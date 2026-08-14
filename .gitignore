@@ -1,0 +1,7 @@
+# Session-local git worktrees. Editing here is worktree-only (see CLAUDE.md), so
+# every change is authored inside `.claude/worktrees/<name>/` — a full checkout of
+# this repo that must never be committed back into it.
+.claude/worktrees/
+
+# OS cruft.
+.DS_Store

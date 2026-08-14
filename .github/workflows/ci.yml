@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Skills single-source check (no drift)
+        run: node scripts/sync-skills.mjs --check
+      - name: Validate manifests, structure, links, leak guard
+        run: node scripts/validate.mjs
+        env:
+          # Context/PII denylist — never committed; lives only as a repo secret.
+          # Absent on fork PRs (by design); generic patterns still run.
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Palmagent"
+  short_description: "Update in place; preserve in-flight turns"
+  default_prompt: "Use $update to update an existing Palmagent install in place via the palmagent CLI, preserving in-flight turns."

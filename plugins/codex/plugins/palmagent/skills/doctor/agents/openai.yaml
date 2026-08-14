@@ -1,0 +1,4 @@
+interface:
+  display_name: "Diagnose Palmagent"
+  short_description: "Health-check + journal-driven fix for a broken instance"
+  default_prompt: "Use $doctor to run palmagent doctor, then correlate systemd + journalctl for both units and propose the fix."
