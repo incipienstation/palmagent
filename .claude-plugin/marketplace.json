@@ -1,0 +1,13 @@
+{
+  "name": "palmagent",
+  "owner": {
+    "name": "Palmagent"
+  },
+  "description": "Operator plugin for running a Palmagent instance: install, reconfigure, diagnose, and update a self-hosted dispatcher. Thin skins over the palmagent CLI.",
+  "plugins": [
+    {
+      "name": "palmagent",
+      "source": "./plugins/claude"
+    }
+  ]
+}

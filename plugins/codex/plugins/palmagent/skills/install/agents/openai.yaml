@@ -1,0 +1,4 @@
+interface:
+  display_name: "Install Palmagent"
+  short_description: "First-run install of Palmagent on this host"
+  default_prompt: "Use $install to stand up a fresh Palmagent instance on this host via the palmagent CLI."

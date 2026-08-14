@@ -1,0 +1,35 @@
+{
+  "name": "palmagent",
+  "version": "0.1.0",
+  "description": "Operator skills for a self-hosted Palmagent instance: install, setup (reconfigure), doctor (diagnose), and update. Thin skins over the palmagent CLI.",
+  "author": {
+    "name": "Palmagent"
+  },
+  "license": "MIT",
+  "keywords": [
+    "palmagent",
+    "self-host",
+    "systemd",
+    "nginx",
+    "ops",
+    "doctor"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Palmagent",
+    "shortDescription": "Install, reconfigure, diagnose, and update a self-hosted dispatcher",
+    "longDescription": "Operator skins over the palmagent CLI. Install a new instance, reconfigure an existing one, diagnose a broken one against systemd + journal logs, and update in place while preserving in-flight agent turns. The CLI is the brain; these skills add conversational confirmation and adaptive diagnosis.",
+    "developerName": "Palmagent",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Install Palmagent on this host",
+      "My dispatcher won't start — diagnose it",
+      "Update the dispatcher to the latest version"
+    ],
+    "brandColor": "#2563EB"
+  }
+}

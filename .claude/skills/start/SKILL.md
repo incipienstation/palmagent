@@ -1,0 +1,13 @@
+---
+name: start
+description: Second stage of the plan → start → verify → ship loop. Enter a git worktree (edits are hook-enforced to worktrees) and branch a feature/* off develop. Use when starting implementation.
+---
+
+# Start
+
+1. `EnterWorktree` — edits are blocked in the main checkout by a hook.
+2. Branch off **`develop`** (fetch first): `git checkout -b feature/<slug> origin/develop`.
+3. Make the change. If you touch a skill body, edit the **canonical** `skills/<name>/SKILL.md`,
+   then run `node scripts/sync-skills.mjs` to regenerate the platform copies — never hand-edit the
+   generated copies under `plugins/`.
+4. Keep the decoupling rule in mind (reference only the `palmagent` CLI). Then `/verify`.

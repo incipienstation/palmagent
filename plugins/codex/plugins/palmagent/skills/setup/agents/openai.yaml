@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reconfigure Palmagent"
+  short_description: "Re-render units + nginx for an existing install"
+  default_prompt: "Use $setup to reconfigure an existing Palmagent install (domain, port, repo roots) via the palmagent CLI."
