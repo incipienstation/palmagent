@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Use when an operator wants to reconfigure or change the settings of an EXISTING Palmagent install on this host — phrases like "change the dispatcher domain", "reconfigure palmagent", "update the repo roots / port / concurrency", "re-render the systemd units or nginx vhost", "move the data dir". Not for first-time install (use install) and not for diagnosing a broken instance (use doctor).
+description: Use when an operator wants to reconfigure or change the settings of an EXISTING Palmagent install on this host — phrases like "change the dispatcher domain", "reconfigure palmagent", "update the repo roots / port / concurrency", or "re-render the systemd units or nginx vhost". Not for moving persistent data, first-time install (use install), or diagnosing a broken instance (use doctor).
 ---
 
 # Reconfigure an existing Palmagent instance
@@ -24,11 +24,13 @@ Substitute it for `<cli>` below.
 `setup` is idempotent but it re-renders host config and may restart the service.
 Before running:
 
-- Ask which values change (domain, internal port, concurrency, repo roots, data
-  dir). Note that **changing the domain re-runs certbot** and requires the new
+- Ask which values change (domain, internal port, concurrency, repo roots).
+  `--data-dir` locates an existing custom installation; it does not move data.
+  Note that **changing the domain re-runs certbot** and requires the new
   domain's DNS A-record + ports 80/443 to be live first.
 - Warn that re-rendering may restart the web unit; in-flight agent turns reattach
-  on a web-only restart, but a domain/auth change is operator-visible.
+  on a web-only restart. A runner unit/artifact change restarts the runner and
+  interrupts active turns; a domain/auth change is operator-visible.
 
 To preview the re-rendered units + nginx vhost without applying:
 

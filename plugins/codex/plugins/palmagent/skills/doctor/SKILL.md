@@ -7,8 +7,8 @@ description: Use when an operator reports a Palmagent instance is unhealthy or w
 
 Thin wrapper over the `palmagent` CLI's `doctor` subcommand, PLUS adaptive
 diagnosis when it reports a fault. The CLI runs the deterministic structured
-checks (units active? runner socket answering? claude/codex installed + authed?
-`nginx -t` clean? TLS expiry? SQLite integrity + WAL? VAPID keys present? port
+checks (units active? runner socket present? claude/codex installed + authed?
+`nginx -t` clean? TLS expiry? SQLite present? VAPID keys present? port
 loopback-only? PWA dist present? disk headroom?) and **exits non-zero on any
 failure**. Your added value is correlating its findings with the live logs.
 

@@ -28,12 +28,12 @@ Before running it:
   operator to the `setup` skill instead).
 - Surface the prerequisites the CLI will preflight, so the operator can fix gaps
   first: Linux + systemd; `node`/`npm`/`git`/`nginx`/`certbot`; `sudo`; and
-  **`claude` and `codex` installed AND already logged in** (vendor login is
-  interactive and must be done before install). A public **domain with a DNS
+  at least one of **`claude` or `codex` installed and already logged in**
+  (vendor login is interactive and must be done before install). A public **domain with a DNS
   A-record** pointing here and ports **80/443** reachable are required for certbot.
 - Ask for the key config values (the CLI prompts in interactive mode, but
   gathering them up front is smoother): domain, internal port (default 4100),
-  concurrency (default 4), data dir, repo roots.
+  concurrency (default 8), data dir, repo roots.
 
 To preview without touching anything, run a dry run first and show the rendered
 units + nginx vhost:
@@ -49,6 +49,10 @@ Once confirmed:
 ```bash
 <cli> install
 ```
+
+Run the CLI as the unprivileged account that should own the agent processes.
+Never prefix the whole command with `sudo`; Palmagent invokes sudo only for
+the systemd, nginx, and certificate operations that need it.
 
 For unattended/CI hosts, pass config via flags/env with `--non-interactive`
 (let the CLI define the exact flags; do not invent them — run `<cli> install --help`

@@ -5,10 +5,11 @@ description: Use when an operator wants to update or upgrade an existing Palmage
 
 # Update a Palmagent instance in place
 
-Thin wrapper over the `palmagent` CLI's `update` subcommand. The CLI does
-the deterministic work: fetch the new version, rebuild, restart the **web** unit
+Thin wrapper over the `palmagent` CLI's `update` subcommand. For an npm
+package installation, the CLI does the deterministic work: fetch the current
+release channel, restart the **web** unit
 (which reattaches to in-flight turns), and restart the **runner only when its
-own source/unit changed** — preserving in-flight agent turns across a normal
+own bundled artifact/unit changed** — preserving in-flight agent turns across a normal
 update. Do **not** restart units by hand in chat; drive the CLI so that logic is
 honored.
 
@@ -34,17 +35,16 @@ Before running, tell the operator what survives:
 ## 3. Run it
 
 ```bash
-<cli> update
+<cli> update --pull
 ```
 
-The CLI self-detaches if it is invoked from inside a dispatcher cgroup (so a
-runner restart can't kill the update mid-flight) — that is expected; follow its
-printed log pointer for progress.
+Source checkouts are maintainer-managed and intentionally reject `--pull`.
+Use the repository pnpm verification/build workflow, then run `<cli> setup`.
+For a custom install location, pass the same `--data-dir` used at installation.
 
 ## 4. Report
 
 Relay the CLI's result: the version now running, whether the runner was
 restarted, and the final healthcheck. If `update` exits non-zero, read its
-output verbatim — the CLI prints recent journal lines on a failed healthcheck;
-the previous version is not auto-restored, so surface the failure and, if the
-operator wants a closer look, hand off to the `doctor` skill.
+output verbatim. The previous version is not auto-restored, so surface the
+failure and hand off to the `doctor` skill for unit and journal correlation.
