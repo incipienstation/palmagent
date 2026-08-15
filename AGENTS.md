@@ -14,9 +14,9 @@ The repository remains private until the migration and public-safety audit are c
 ## Repository boundaries
 
 - The root package is named `palmagent` and is always `private: true`; it coordinates the
-  monorepo and is never published.
-- Internal packages use the `@palmagent/*` scope. The future public CLI package owns the
-  unscoped `palmagent` npm name.
+  monorepo and is never published directly. Its `version` is the single product-version source.
+- Internal packages use the `@palmagent/*` scope and stay private at `0.0.0`. The generated
+  public CLI package owns the unscoped `palmagent` npm name and inherits the root version.
 - Cross-tier contracts belong in `packages/shared`. Applications import them rather than
   redefining wire types.
 - Do not add empty placeholder directories. Add a package or app only when its first working,
@@ -64,6 +64,21 @@ remain platform-specific.
   deployment. Keep each of those as an explicit human approval gate.
 - Promotion from `develop` to `main` is a separate reviewed pull request.
 
+## Versioning and releases
+
+- Use one fixed product version for the generated npm package and both versioned plugin
+  manifests. `pnpm release:check` enforces synchronization.
+- Prereleases (`alpha`, `beta`, `rc`) use npm dist-tag `next`; stable releases use `latest`.
+- A source version, green check, merge, tag, or draft release is not publication evidence.
+- Never publish from a workstation or arbitrary branch. Candidate automation is read-only and
+  produces an artifact only; it contains no registry or deployment credentials.
+- A future publish job must use npm Trusted Publishing and a protected approval environment.
+- Published versions are immutable. Deprecate a bad version, move the dist-tag back, and issue
+  a new version rather than overwriting or reusing one.
+- Keep npm publication, repository visibility, and host deployment as independent approvals.
+
+See `docs/RELEASING.md` for the release train, gates, and rollback procedure.
+
 ## Commands
 
 Run from the repository root:
@@ -74,9 +89,15 @@ pnpm typecheck
 pnpm server:smoke
 pnpm web:verify
 pnpm plugins:check
+pnpm pkg:check
+pnpm pkg:build
+pnpm pkg:smoke
+pnpm release:check
 pnpm verify
 node scripts/sync-skills.mjs
 ```
 
-`pnpm verify` is the complete gate: workspace typechecking, server runtime smoke, PWA
-Playwright and service-worker checks, plugin synchronization, manifests, links, and leak checks.
+`pnpm verify` is the source gate: workspace typechecking, server runtime smoke, CLI render and
+HTTPS invariants, PWA Playwright and service-worker checks, plugin synchronization, manifests,
+links, leak checks, and release-version synchronization. Release candidates additionally run the
+assembled-package leak check and packed-install smoke described in `docs/RELEASING.md`.
