@@ -4,14 +4,15 @@ Palmagent is a self-hosted dispatcher for running Claude Code and Codex from one
 agent-neutral interface. The project combines a server, a mobile-first PWA, a public CLI, and
 operator plugins for both agent platforms.
 
-This repository is being assembled as Palmagent's public source monorepo. The first migration
-slice establishes the workspace and shared wire contracts while preserving the existing plugin
-distribution. Runtime applications and the publishable CLI will be imported in later reviewed
+This repository is being assembled as Palmagent's public source monorepo. The workspace now
+contains the shared wire contracts and the host runtime server while preserving the existing
+plugin distribution. The mobile client and publishable CLI will be imported in later reviewed
 slices; the repository remains private until the public-safety audit is complete.
 
 ## Current layout
 
 ```text
+apps/server/                         Host runtime, agent adapters, SQLite, SSE, and REST
 packages/shared/                     Shared events, task state, permissions, and wire DTOs
 skills/                              Canonical operator skill bodies
 plugins/claude/                      Claude Code plugin distribution
@@ -21,6 +22,9 @@ plugins/codex/                       Codex plugin distribution
 
 The root package is private workspace coordination only. Publishable packages use the
 `@palmagent/*` scope, except for the future public `palmagent` CLI package.
+
+The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
+public environment; Palmagent rejects plaintext authentication origins and non-loopback binds.
 
 ## Plugin skills
 
@@ -41,6 +45,7 @@ Requirements: Node.js 22 or newer and pnpm 11.5.2 (pinned by `packageManager`).
 ```bash
 pnpm install
 pnpm typecheck
+pnpm server:smoke
 pnpm plugins:check
 pnpm verify
 ```

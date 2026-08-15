@@ -8,9 +8,11 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev": "nx run @palmagent/server:dev",
     "typecheck": "nx run-many -t typecheck",
+    "server:smoke": "pnpm --filter @palmagent/server smoke",
     "plugins:check": "node scripts/sync-skills.mjs --check && node scripts/validate.mjs",
-    "verify": "pnpm typecheck && pnpm plugins:check"
+    "verify": "pnpm typecheck && pnpm server:smoke && pnpm plugins:check"
   },
   "devDependencies": {
     "nx": "^20.3.0",
