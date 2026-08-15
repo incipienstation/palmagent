@@ -1,0 +1,19 @@
+{
+  "name": "palmagent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted agent dispatcher and operator tooling.",
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "nx run-many -t typecheck",
+    "plugins:check": "node scripts/sync-skills.mjs --check && node scripts/validate.mjs",
+    "verify": "pnpm typecheck && pnpm plugins:check"
+  },
+  "devDependencies": {
+    "nx": "^20.3.0",
+    "typescript": "^6.0.3"
+  }
+}

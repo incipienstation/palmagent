@@ -1,17 +1,14 @@
 ---
 name: plan
-description: First stage of this repo's plan → start → verify → ship loop. Scope a change to the Palmagent marketplace BEFORE editing — understand the request, read CLAUDE.md plus the canonical skill / manifest / doc you will touch, and decide a small-commit plan. Use when picking up or beginning a task.
+description: First stage of Palmagent's plan → start → verify → ship loop. Scope a monorepo change before editing, read AGENTS.md and the relevant package or plugin contracts, and decide a small-commit plan. Use when picking up or beginning a task.
 ---
 
 # Plan
 
-1. Read `CLAUDE.md` (the rulebook) and the exact files you will change.
-2. Decide WHAT changes — one of:
-   - a **skill body** → edit the canonical `skills/<name>/SKILL.md` (never the generated copies);
-   - a **manifest** → `.claude-plugin/marketplace.json`, `plugins/**/plugin.json`, or the Codex
-     `plugins/codex/.agents/plugins/marketplace.json`;
-   - a **Codex chip** → `plugins/codex/plugins/palmagent/skills/<name>/agents/openai.yaml`;
-   - a **doc**.
-3. Hold the **decoupling rule**: reference only the `palmagent` CLI; never name or describe any
-   other repository, its paths, or its infrastructure. (CI's leak guard will fail otherwise.)
-4. Plan small commits, then hand off to `/start`.
+1. Read `AGENTS.md` and the exact package, app, plugin, or documentation contracts in scope.
+2. Inspect current code and history before deciding whether to import, adapt, or build.
+3. For migration work, choose one coherent working slice and sanitize every file while importing.
+4. For plugin skill bodies, edit only `skills/<name>/SKILL.md`; generated platform copies are not
+   independent sources.
+5. Identify proportionate verification and explicit merge, release, or deployment gates.
+6. Plan small commits, then hand off to `/start`.
