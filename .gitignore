@@ -15,6 +15,7 @@ build/
 # Runtime state.
 apps/server/data/
 .dispatcher/
+.palmagent/
 
 # Local configuration. A value-free example template may be committed.
 .env

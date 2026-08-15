@@ -5,4 +5,6 @@ packages:
 # pnpm blocks dependency build scripts by default; allow the ones we trust.
 # (pnpm 11 moved this out of package.json's "pnpm" field into here.)
 allowBuilds:
+  better-sqlite3: true
+  esbuild: true
   nx: true
