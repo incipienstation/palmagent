@@ -21,6 +21,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
       - name: Verify workspace and plugins
         run: pnpm verify
         env:

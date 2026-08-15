@@ -9,10 +9,13 @@
   },
   "scripts": {
     "dev": "nx run @palmagent/server:dev",
+    "web:dev": "pnpm --filter @palmagent/web dev",
+    "web:build": "pnpm --filter @palmagent/web build",
+    "web:verify": "pnpm --filter @palmagent/web test:e2e && pnpm --filter @palmagent/web test:sw-update",
     "typecheck": "nx run-many -t typecheck",
     "server:smoke": "pnpm --filter @palmagent/server smoke",
     "plugins:check": "node scripts/sync-skills.mjs --check && node scripts/validate.mjs",
-    "verify": "pnpm typecheck && pnpm server:smoke && pnpm plugins:check"
+    "verify": "pnpm typecheck && pnpm server:smoke && pnpm web:verify && pnpm plugins:check"
   },
   "devDependencies": {
     "nx": "^20.3.0",
