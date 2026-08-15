@@ -14,14 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Skills single-source check (no drift)
-        run: node scripts/sync-skills.mjs --check
-      - name: Validate manifests, structure, links, leak guard
-        run: node scripts/validate.mjs
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify workspace and plugins
+        run: pnpm verify
         env:
           # Context/PII denylist — never committed; lives only as a repo secret.
-          # Absent on fork PRs (by design); generic patterns still run.
+          # Required for same-repo PRs and protected-branch pushes. Fork PRs cannot
+          # receive repository secrets, so they still run the generic patterns.
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
