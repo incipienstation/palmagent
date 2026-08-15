@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -42,6 +42,11 @@ try {
   });
   children.push(runner.child);
   await waitUntil("runner socket", () => existsSync(socketPath), runner);
+  assert.equal(
+    statSync(socketPath).mode & 0o777,
+    0o600,
+    "runner socket is not owner-only",
+  );
 
   const web = startTypeScript("src/server.ts", {
     ...sanitizedEnv,
@@ -72,6 +77,16 @@ try {
 
   assert.deepEqual(health, { ok: true });
   assert.equal(existsSync(dbPath), true, "Palmagent database was not created");
+  assert.equal(
+    statSync(tempDir).mode & 0o777,
+    0o700,
+    "state directory is not owner-only",
+  );
+  assert.equal(
+    statSync(dbPath).mode & 0o777,
+    0o600,
+    "Palmagent database is not owner-only",
+  );
   assert.match(web.output(), /using daemon backend/, "server did not connect to the runner daemon");
   console.log("runtime smoke passed");
 } finally {
