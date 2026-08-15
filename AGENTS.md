@@ -71,10 +71,12 @@ Run from the repository root:
 ```bash
 pnpm install
 pnpm typecheck
+pnpm server:smoke
+pnpm web:verify
 pnpm plugins:check
 pnpm verify
 node scripts/sync-skills.mjs
 ```
 
-`pnpm verify` is the current complete gate: workspace typechecking plus plugin synchronization,
-manifest, link, and leak checks. Expand it when runtime applications introduce additional tests.
+`pnpm verify` is the complete gate: workspace typechecking, server runtime smoke, PWA
+Playwright and service-worker checks, plugin synchronization, manifests, links, and leak checks.

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" translate="no" class="notranslate">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Suppress the Google Translate offer + on-select "translate" bubble: the
+         page is lang="en" but renders mixed Korean/English content, which makes
+         Chrome/Android offer to translate (and pop a tooltip on text select). -->
+    <meta name="google" content="notranslate" />
+    <!-- interactive-widget=resizes-content: the on-screen keyboard shrinks the
+         layout viewport (and dvh) instead of just overlaying it, so the h-dvh
+         shell shrinks above the keyboard and the bottom compose/steer bar stays
+         visible. Without it, dvh ignores the keyboard and the input gets covered. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <!-- content="#0d1117" is the DARK fallback (also the PWA manifest splash
+         color); the no-flash bootstrap below overrides it for the resolved theme. -->
+    <meta id="theme-color-meta" name="theme-color" content="#0d1117" />
+    <meta name="description" content="Drive Claude Code + Codex coding agents from your phone." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="__APP_NAME__" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- No-flash theme bootstrap: runs BEFORE the module script / first paint so
+         the correct palette is applied without a flash-of-wrong-theme. Mirror of
+         ThemeProvider's resolve logic — keep them in sync.
+         Resolution order: ?__theme= query override (Playwright/test hook) →
+         localStorage('theme') → 'system' (prefers-color-scheme). -->
+    <script>
+      (function () {
+        try {
+          var DARK_BG = "#0d1117",
+            LIGHT_BG = "#fbfcfd";
+          var q = new URLSearchParams(location.search).get("__theme");
+          var stored = q || localStorage.getItem("theme") || "system";
+          var theme = stored === "light" || stored === "dark" ? stored : "system";
+          var isDark =
+            theme === "dark" ||
+            (theme === "system" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", isDark);
+          var meta = document.getElementById("theme-color-meta");
+          if (meta) meta.setAttribute("content", isDark ? DARK_BG : LIGHT_BG);
+        } catch (e) {}
+      })();
+    </script>
+    <title>__APP_NAME__</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

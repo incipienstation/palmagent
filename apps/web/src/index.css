@@ -1,0 +1,297 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Make the `dark:` utility variant key off the `.dark` class on <html> (toggled by
+   ThemeProvider + the no-flash bootstrap), NOT `@media (prefers-color-scheme: dark)`.
+   Tailwind v4 defaults `dark:` to the media query, which disagreed with our
+   class-based theme tokens: picking "Dark" in Settings on a light OS (or "Light" on
+   a dark OS) flipped the token palette via `.dark` but left every `dark:` utility on
+   the OS preference. Keying both off `.dark` makes the manual theme toggle authoritative. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Dual-theme design tokens ("Quiet Triage").
+
+   Strategy (Tailwind v4): LIGHT is the `:root` default; DARK overrides every
+   token under a `.dark` class on <html> (toggled by ThemeProvider + the inline
+   no-flash bootstrap in index.html). BOTH themes define EVERY token — no partial
+   cascade — so every component reads a token, never a literal hex.
+
+   Dark stays close to the historical GitHub-dark palette so the committed visual
+   snapshots regenerate cleanly; light is a cool neutral slate. `color-scheme`
+   flips per theme. All app-accent / status / question / log tokens are bridged
+   into the `@theme inline` block below so utilities like `bg-card`,
+   `text-strong`, `bg-status-running-bg`, `text-question-fg` Just Work.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+
+  /* shadcn core */
+  --background: #fbfcfd;
+  --foreground: #1c2128;
+  --card: #ffffff;
+  --card-foreground: #1c2128;
+  --popover: #ffffff;
+  --popover-foreground: #1c2128;
+  /* Palmagent brand accent = warm teal (palm-themed). Only the *primary* action
+     color is teal; --color-green / --color-live keep their green semantics
+     (success / online) so codex chips, success checks and the live dot read green. */
+  --primary: #00897b;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f4f7;
+  --secondary-foreground: #1c2128;
+  --muted: #f2f4f7;
+  --muted-foreground: #5a6473;
+  --accent: #eef1f5;
+  --accent-foreground: #1c2128;
+  --destructive: #cf222e;
+  --destructive-foreground: #ffffff;
+  --border: #e2e6eb;
+  --input: #d4d9e0;
+  --ring: #0969da;
+  --radius: 0.625rem; /* 10px — GitHub-crisp */
+
+  /* app-accent palette */
+  --color-strong: #0b1117;
+  --color-faint: #8a929e;
+  --color-blue: #0969da;
+  --color-amber: #9a6700;
+  --color-green: #1a7f37;
+  --color-purple: #8250df;
+  --color-live: #1a7f37;
+  --color-tool-call: #9a6700;
+  --color-primary-active: #00a896; /* teal — primary button border + pressed bg */
+
+  /* per-status pills (low-chroma tinted; -bg / -fg pairs) */
+  --status-queued-bg: #fff8e6;
+  --status-queued-fg: #7a5c00;
+  --status-running-bg: #ddf4ff;
+  --status-running-fg: #0969da;
+  --status-approval-bg: #fff1e0;
+  --status-approval-fg: #9a5800;
+  --status-input-bg: #f3eeff;
+  --status-input-fg: #6639b6;
+  --status-idle-bg: #eef1f5;
+  --status-idle-fg: #5a6473;
+  --status-failed-bg: #ffebe9;
+  --status-failed-fg: #cf222e;
+  --status-cancelled-bg: #fbecf2;
+  --status-cancelled-fg: #9e2f63;
+  --status-archived-bg: #f2f4f7;
+  --status-archived-fg: #8a929e;
+
+  /* question / awaiting-input cluster */
+  --question-bg: #f6f2ff;
+  --question-border: #d9caff;
+  --question-fg: #6639b6;
+  --question-active: #8250df;
+  --question-active-bg: #ede4fd;
+
+  /* destructive button surface (driven from tokens, not literals) */
+  --destructive-bg: #fee2e2;
+  --destructive-border: #fecaca;
+
+  /* switch knob — token-driven (never a literal) so both themes are tunable */
+  --switch-thumb: #ffffff;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* shadcn core */
+  --background: #0d1117;
+  --foreground: #c9d1d9;
+  --card: #161b22;
+  --card-foreground: #e6edf3;
+  --popover: #1c2230;
+  --popover-foreground: #e6edf3;
+  /* Palmagent brand accent = warm teal (palm-themed); brighter on dark for pop. */
+  --primary: #14b8a6;
+  --primary-foreground: #ffffff;
+  --secondary: #21262d;
+  --secondary-foreground: #c9d1d9;
+  --muted: #1c2230;
+  --muted-foreground: #8b949e;
+  --accent: #1c2230;
+  --accent-foreground: #e6edf3;
+  --destructive: #f85149;
+  --destructive-foreground: #ffffff;
+  --border: #21262d;
+  --input: #30363d;
+  --ring: #58a6ff;
+
+  /* app-accent palette */
+  --color-strong: #e6edf3;
+  --color-faint: #6e7681;
+  --color-blue: #58a6ff;
+  --color-amber: #e3b341;
+  --color-green: #56d364;
+  --color-purple: #d2a8ff;
+  --color-live: #2ea043;
+  --color-tool-call: #d29922;
+  --color-primary-active: #2dd4bf; /* teal — primary button border + pressed bg */
+
+  /* per-status pills */
+  --status-queued-bg: #2d2a1f;
+  --status-queued-fg: #d2b96a;
+  --status-running-bg: #10325e;
+  --status-running-fg: #79b8ff;
+  --status-approval-bg: #3a2d12;
+  --status-approval-fg: #e3b341;
+  --status-input-bg: #241a36;
+  --status-input-fg: #c4a3ff;
+  --status-idle-bg: #1f2937;
+  --status-idle-fg: #9ca3af;
+  --status-failed-bg: #3a1d1d;
+  --status-failed-fg: #ff8888;
+  --status-cancelled-bg: #30262d;
+  --status-cancelled-fg: #db8aa8;
+  --status-archived-bg: #21262d;
+  --status-archived-fg: #6e7681;
+
+  /* question / awaiting-input cluster */
+  --question-bg: #241a36;
+  --question-border: #5b3fa0;
+  --question-fg: #c4a3ff;
+  --question-active: #a37bff;
+  --question-active-bg: #5b3fa04d; /* #5b3fa0 @ 30% */
+
+  /* destructive button surface */
+  --destructive-bg: #3d1518;
+  --destructive-border: #6e2a2a;
+
+  /* switch knob — a light grey reads as a knob against the dark track */
+  --switch-thumb: #e6edf3;
+}
+
+@theme inline {
+  /* shadcn core bridges (unchanged names) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* app-accent palette (already `--color-*`; bridged for completeness) */
+  --color-strong: var(--color-strong);
+  --color-faint: var(--color-faint);
+  --color-blue: var(--color-blue);
+  --color-amber: var(--color-amber);
+  --color-green: var(--color-green);
+  --color-purple: var(--color-purple);
+  --color-live: var(--color-live);
+  --color-tool-call: var(--color-tool-call);
+  --color-primary-active: var(--color-primary-active);
+
+  /* per-status pills → bg-status-<name>-bg / text-status-<name>-fg */
+  --color-status-queued-bg: var(--status-queued-bg);
+  --color-status-queued-fg: var(--status-queued-fg);
+  --color-status-running-bg: var(--status-running-bg);
+  --color-status-running-fg: var(--status-running-fg);
+  --color-status-approval-bg: var(--status-approval-bg);
+  --color-status-approval-fg: var(--status-approval-fg);
+  --color-status-input-bg: var(--status-input-bg);
+  --color-status-input-fg: var(--status-input-fg);
+  --color-status-idle-bg: var(--status-idle-bg);
+  --color-status-idle-fg: var(--status-idle-fg);
+  --color-status-failed-bg: var(--status-failed-bg);
+  --color-status-failed-fg: var(--status-failed-fg);
+  --color-status-cancelled-bg: var(--status-cancelled-bg);
+  --color-status-cancelled-fg: var(--status-cancelled-fg);
+  --color-status-archived-bg: var(--status-archived-bg);
+  --color-status-archived-fg: var(--status-archived-fg);
+
+  /* question / awaiting-input cluster */
+  --color-question-bg: var(--question-bg);
+  --color-question-border: var(--question-border);
+  --color-question-fg: var(--question-fg);
+  --color-question-active: var(--question-active);
+  --color-question-active-bg: var(--question-active-bg);
+
+  /* destructive button surface */
+  --color-destructive-bg: var(--destructive-bg);
+  --color-destructive-border: var(--destructive-border);
+
+  /* switch knob → bg-switch-thumb */
+  --color-switch-thumb: var(--switch-thumb);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* streaming-text caret in the event log */
+  --animate-blink: blink 1s steps(2) infinite;
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Full-viewport shell height. `--app-height` is window.innerHeight, mirrored in
+   by viewport.ts; the `100dvh` fallback covers the pre-JS first paint / JS-off.
+   Using the JS-measured height dodges the iOS standalone-PWA dvh over-measurement
+   that, after a reload, pushes the bottom TabBar (the shell's last in-flow child)
+   below the scroll-locked document. Used by AppShell / AuthScreen / AuthGate. */
+@utility h-app {
+  height: var(--app-height, 100dvh);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%; /* fallback for browsers without dvh */
+    /* Track the *visible* viewport. `100%` resolves to the large (toolbar-hidden)
+       viewport on mobile — taller than what's actually on screen when the browser
+       toolbar shows — so the document box overflows and the whole page scrolls
+       even when content fits. var(--app-height) matches the `h-app` app shells
+       exactly (window.innerHeight; `100dvh` is the pre-JS fallback). */
+    height: var(--app-height, 100dvh);
+  }
+  /* App shell: the document itself must never scroll — only the inner
+     `overflow-y-auto` panes do. The viewport scrollbar is governed by the root
+     element (`html`) via overflow propagation, so `body` alone isn't reliably
+     enough; locking `html` too kills any residual document scrollbar (e.g. from
+     sub-pixel dvh rounding) across every browser. */
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  body {
+    @apply bg-background text-foreground m-0 text-[15px] leading-normal antialiased;
+  }
+  /* Radix ScrollArea injects an inner wrapper with display:table (inline style).
+     table-layout:auto lets it expand past any width:100% constraint to fit content,
+     breaking overflow-wrap and truncate. Force display:block so width is governed
+     by the containing block, not table column sizing. */
+  [data-radix-scroll-area-viewport] > * {
+    display: block !important;
+  }
+}

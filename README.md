@@ -5,14 +5,15 @@ agent-neutral interface. The project combines a server, a mobile-first PWA, a pu
 operator plugins for both agent platforms.
 
 This repository is being assembled as Palmagent's public source monorepo. The workspace now
-contains the shared wire contracts and the host runtime server while preserving the existing
-plugin distribution. The mobile client and publishable CLI will be imported in later reviewed
-slices; the repository remains private until the public-safety audit is complete.
+contains the shared wire contracts, host runtime, and mobile PWA while preserving the existing
+plugin distribution. The publishable CLI will be imported in a later reviewed slice; the
+repository remains private until the public-safety audit is complete.
 
 ## Current layout
 
 ```text
 apps/server/                         Host runtime, agent adapters, SQLite, SSE, and REST
+apps/web/                            Mobile-first installable PWA and hermetic UI tests
 packages/shared/                     Shared events, task state, permissions, and wire DTOs
 skills/                              Canonical operator skill bodies
 plugins/claude/                      Claude Code plugin distribution
@@ -46,6 +47,7 @@ Requirements: Node.js 22 or newer and pnpm 11.5.2 (pinned by `packageManager`).
 pnpm install
 pnpm typecheck
 pnpm server:smoke
+pnpm web:verify
 pnpm plugins:check
 pnpm verify
 ```

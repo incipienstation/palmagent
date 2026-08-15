@@ -155,6 +155,9 @@ for (const f of allFiles) {
   let txt;
   try { txt = readFileSync(f, 'utf8'); } catch { continue; }
   txt.split('\n').forEach((line, i) => {
+    // Registry-authored deprecation prose is immutable third-party metadata,
+    // not repository context. Keep scanning every other lockfile field.
+    if (relative(ROOT, f) === 'pnpm-lock.yaml' && /^\s*deprecated:/.test(line)) return;
     const at = `${relative(ROOT, f)}:${i + 1}`;
     if (GENERIC.some((re) => re.test(line))) { hits.add(at); return; }
     const lc = line.toLowerCase();
