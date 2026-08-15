@@ -1,0 +1,48 @@
+name: release candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
+      - name: Verify repository
+        run: pnpm verify
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: "true"
+      - name: Build and verify publishable candidate
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: "true"
+          PKG_PUBLISHABLE: "1"
+          EXPECT_PUBLISHABLE: "1"
+        run: |
+          pnpm pkg:build
+          pnpm release:check --artifact
+          pnpm pkg:leakcheck
+          pnpm pkg:smoke
+          cd build/pkg
+          npm pack --pack-destination ..
+      - name: Upload candidate tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: palmagent-candidate
+          path: build/*.tgz
+          if-no-files-found: error
+          retention-days: 14
