@@ -1,8 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import webpush from "web-push";
 import type { PushPayload, PushSubscriptionJson } from "@palmagent/shared";
 import type { Db } from "./db.js";
+import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 
 // Web Push. VAPID keys are generated once and persisted next to the DB so
 // subscriptions survive restarts (rotating keys would orphan every subscriber).
@@ -67,15 +68,21 @@ export class PushService {
 }
 
 function loadOrCreateVapidKeys(path: string): { publicKey: string; privateKey: string } {
+  let parsed: { publicKey?: string; privateKey?: string } | undefined;
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    if (parsed.publicKey && parsed.privateKey) return parsed;
+    parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    /* missing or corrupt — generate below */
+    /* missing or corrupt */
+  }
+  if (parsed?.publicKey && parsed.privateKey) {
+    // Permission failures must fail closed rather than rotate a valid keypair.
+    ensurePrivateFile(path);
+    return { publicKey: parsed.publicKey, privateKey: parsed.privateKey };
   }
   const keys = webpush.generateVAPIDKeys();
-  mkdirSync(dirname(path), { recursive: true });
+  ensurePrivateParent(dirname(path));
   writeFileSync(path, JSON.stringify(keys, null, 2), { mode: 0o600 });
+  ensurePrivateFile(path);
   console.log(`[push] generated new VAPID keypair at ${path}`);
   return keys;
 }

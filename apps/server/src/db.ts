@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
   AgentEvent, AgentKind, AgentUsage, Permission, PrRef, PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { makePrRef } from "@palmagent/shared";
+import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 
 // SQLite holds metadata + the append-only event log only. Resume still reads the
 // CLIs' local transcripts — there is no external session store. The event log
@@ -48,8 +48,9 @@ export class Db {
   private getSeqStmt!: Database.Statement;
 
   constructor(path: string) {
-    mkdirSync(dirname(path), { recursive: true });
+    ensurePrivateParent(dirname(path));
     this.db = new Database(path);
+    ensurePrivateFile(path);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.migrate();

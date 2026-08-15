@@ -1,9 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer, type Server, type Socket } from "node:net";
-import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { makeNdjsonSplitter } from "./ndjson.js";
 import { DEFAULT_RUNNER_SOCKET, type ClientMsg, type ServerMsg } from "./daemon-protocol.js";
+import { ensurePrivateParent } from "./private-files.js";
 
 // The runner daemon: a long-lived process that OWNS the claude/codex children and
 // their stdio, so the Palmagent web server can restart on every
@@ -31,7 +32,7 @@ class RunnerDaemon {
 
   listen(): void {
     const dir = dirname(this.socketPath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    ensurePrivateParent(dir);
     if (existsSync(this.socketPath)) {
       try {
         unlinkSync(this.socketPath); // clear a stale socket from a prior daemon
@@ -40,6 +41,7 @@ class RunnerDaemon {
       }
     }
     this.server.listen(this.socketPath, () => {
+      chmodSync(this.socketPath, 0o600);
       console.log(`[runner] listening on ${this.socketPath}`);
     });
     this.server.on("error", (e) => console.error("[runner] server error", e));
