@@ -59,10 +59,24 @@ remain platform-specific.
 ## Branching and delivery
 
 - Branch `feature/*` from an up-to-date `origin/develop` in an isolated linked worktree.
-- Open feature pull requests into `develop`, never directly into `main`.
+- Open feature pull requests into `develop`, never directly into `main`, and squash-merge each
+  reviewed feature pull request so it lands as one reversible change.
+- `develop` is the source branch for staging. A merge or green check makes a revision eligible
+  for staging deployment; it is not deployment evidence. Record the exact deployed commit or
+  immutable artifact and verify staging health separately.
 - A green check or PR does not authorize merge, publication, repository visibility changes, or
   deployment. Keep each of those as an explicit human approval gate.
-- Promotion from `develop` to `main` is a separate reviewed pull request.
+- Promotion from `develop` to `main` is a separate reviewed pull request and uses a merge commit,
+  never squash or rebase. This preserves the ancestry of the long-lived integration branch and
+  makes each production/release promotion visible in `main`.
+- `main` is the source branch for production deployment, version tags, and releases. Merging a
+  promotion pull request does not itself authorize any of those actions.
+- Hotfixes branch from `main` and merge into `main` with a merge commit. Immediately propagate the
+  same fix through a short-lived branch from current `develop` and squash-merge it into `develop`
+  so staging and the next promotion retain the fix without weakening either target's merge rule.
+- Keep repository-level squash and merge-commit methods enabled and rebase merge disabled. When
+  branch-targeted rulesets are available, restrict `develop` to squash and `main` to merge commits;
+  until then, maintainers enforce the method at merge time.
 
 ## Versioning and releases
 

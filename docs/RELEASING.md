@@ -41,18 +41,57 @@ Published versions are immutable. Never overwrite or reuse a version. If a
 release is bad, move the dist-tag back to the last good version, deprecate the
 bad version with a useful message, and publish a new patch or prerelease.
 
+## Environment and merge model
+
+Palmagent keeps two long-lived branches because staging acceptance and
+production release are separate gates.
+
+| Branch | Environment role | Incoming pull request | Merge method |
+| --- | --- | --- | --- |
+| `develop` | staging source | `feature/*` or `hotfix-sync/*` | squash |
+| `main` | production and release source | `develop` promotion or `hotfix/*` | merge commit |
+
+Feature branches are short-lived and represent one logical change, so they are
+squash-merged into `develop`. `develop` is long-lived: never squash or rebase a
+`develop` promotion into `main`. Use a merge commit so the promoted commits
+remain ancestors of `main`, later promotion pull requests contain only new
+work, and the release boundary is explicit.
+
+A successful merge or check does not prove that either environment changed.
+Every staging or production deployment must record the exact source commit and
+immutable artifact, then produce its own health evidence. Production should
+promote the artifact accepted in staging when the delivery system supports
+artifact promotion; it must not silently substitute an unreviewed build.
+
+Repository merge methods are intentionally limited to squash and merge commit;
+rebase merge is disabled. Branch-targeted rulesets should enforce squash for
+`develop` and merge commits for `main` when rulesets are available. Until then,
+the reviewer selecting the merge method is the enforcement gate. This policy
+defines branch and approval ownership only; it does not claim that staging or
+production deployment automation already exists.
+
+Hotfixes branch from `main` and return to `main` through a reviewed pull request
+using a merge commit. After landing, create a short-lived branch from current
+`develop`, apply the same fix there, and squash-merge that sync pull request into
+`develop`. Verify staging again before the next promotion. Do not merge the
+long-lived `main` branch directly into `develop` in a way that bypasses the
+target branch's squash-only rule.
+
 ## Branch and approval flow
 
-1. Feature branches start from `origin/develop` and merge into `develop`.
-2. A release-preparation change updates the root version and `CHANGELOG.md` in
+1. Feature branches start from `origin/develop` and squash-merge into `develop`.
+2. Deploy the exact accepted `develop` revision or artifact to staging and
+   record staging health separately from CI.
+3. A release-preparation change updates the root version and `CHANGELOG.md` in
    `develop`.
-3. Promotion from `develop` to `main` is a separate reviewed pull request.
-4. After promotion, create an annotated `v<version>` tag at the exact reviewed
+4. Promotion from `develop` to `main` is a separate reviewed pull request using
+   a merge commit.
+5. After promotion, create an annotated `v<version>` tag at the exact reviewed
    `main` commit.
-5. Create a draft GitHub Release from that tag and inspect its notes and package
+6. Create a draft GitHub Release from that tag and inspect its notes and package
    artifact.
-6. Publishing the GitHub Release is the explicit publication approval.
-7. npm publication, repository visibility, and production-host deployment remain
+7. Publishing the GitHub Release is the explicit publication approval.
+8. npm publication, repository visibility, and production-host deployment remain
    separate gates. None is implied by a passing check, merge, tag, or draft.
 
 Do not publish from a workstation or arbitrary branch. The eventual npm publish
