@@ -4,10 +4,9 @@ import { join } from "node:path";
 import type { ImageAttachment } from "@palmagent/shared";
 import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
 
-// Verified against codex-cli 0.137.0–0.140.0.
-//   dispatch: codex exec "<prompt>" --json --sandbox <mode> -c approval_policy=never
-//   resume:   codex exec resume <thread_id> "<prompt>" --json
-//             -c approval_policy=never -c sandbox_mode=<mode>
+// Codex's launch and JSONL protocol live here as executable integration code.
+// Keep the dispatch/resume matrix and normalized-event behavior covered by the
+// adapter contract tests instead of duplicating version snapshots in docs.
 // The sandbox <mode> (+ optional workspace network_access) is derived from the
 // task's permission via SANDBOX below; approval_policy is always "never" (exec is
 // headless — nothing can answer an approval prompt). See @palmagent/shared
@@ -59,6 +58,33 @@ function codexSandbox(permission?: string): CodexSandbox {
   return SANDBOX[permission ?? ""] ?? SANDBOX["workspace-write"];
 }
 
+type CodexLaunchArgs = Pick<StartArgs, "prompt" | "resumeId" | "permission" | "model" | "effort">;
+
+export function buildCodexArgv(
+  { prompt, resumeId, permission, model, effort }: CodexLaunchArgs,
+  imageArgv: readonly string[] = [],
+): string[] {
+  const modelArgs = [
+    ...(model ? ["-c", `model=${model}`] : []),
+    ...(effort ? ["-c", `model_reasoning_effort=${effort}`] : []),
+  ];
+  const sb = codexSandbox(permission);
+  const sandboxArgs = resumeId ? ["-c", `sandbox_mode=${sb.mode}`] : ["--sandbox", sb.mode];
+  const netArgs = sb.network ? ["-c", "sandbox_workspace_write.network_access=true"] : [];
+  const common = [
+    "--json",
+    "--skip-git-repo-check",
+    "-c", "approval_policy=never",
+    ...sandboxArgs,
+    ...netArgs,
+    ...modelArgs,
+    ...imageArgv,
+  ];
+  return resumeId
+    ? ["exec", "resume", resumeId, prompt, ...common]
+    : ["exec", prompt, ...common];
+}
+
 export class CodexRunner implements AgentRunner {
   readonly agent = "codex" as const;
 
@@ -77,30 +103,11 @@ export class CodexRunner implements AgentRunner {
       return this.wire(taskId, proc, emit, () => {}, () => sessionId, (s) => { sessionId = s; });
     }
 
-    // Model + reasoning effort are config-overridable on both paths (resume
-    // rejects flags, only -c). On a ChatGPT-account login only gpt-5.5 works;
-    // supply OPENAI_API_KEY in the process env (inherited by spawn) to escape
-    // plan-gating. Effort values: minimal|low|medium|high. See NOTES.md.
-    const modelArgs = [
-      ...(model ? ["-c", `model=${model}`] : []),
-      ...(effort ? ["-c", `model_reasoning_effort=${effort}`] : []),
-    ];
-    // Sandbox derived from the task's permission (approval_policy always never).
-    // resume rejects --sandbox, so it sets sandbox_mode via -c; network_access (a
-    // workspace-write sub-key) is harmless on platforms/modes that ignore it.
-    const sb = codexSandbox(permission);
-    const sandboxArgs = resumeId ? ["-c", `sandbox_mode=${sb.mode}`] : ["--sandbox", sb.mode];
-    const netArgs = sb.network ? ["-c", "sandbox_workspace_write.network_access=true"] : [];
     const imgs = spillImages(images);
-    // --skip-git-repo-check: codex refuses to run outside a git work tree
-    // without it (verified 0.138.0, exec + resume). Plain-folder repos run
-    // tasks in non-git cwds; git tasks run in worktrees where the check
-    // passes anyway, so passing it unconditionally only unlocks the former.
-    const argv = resumeId
-      ? ["exec", "resume", resumeId, prompt, "--json", "--skip-git-repo-check",
-         "-c", "approval_policy=never", ...sandboxArgs, ...netArgs, ...modelArgs, ...imgs.argv]
-      : ["exec", prompt, "--json", "--skip-git-repo-check",
-         "-c", "approval_policy=never", ...sandboxArgs, ...netArgs, ...modelArgs, ...imgs.argv];
+    // Plain-folder tasks require --skip-git-repo-check. Headless execution pins
+    // approval_policy=never, while resume expresses sandbox/model settings via
+    // -c because it does not accept the dispatch-only flag forms.
+    const argv = buildCodexArgv({ prompt, resumeId, permission, model, effort }, imgs.argv);
 
     const proc = backend.start({ turnId: taskId, command: "codex", argv, cwd });
     proc.closeStdin(); // we never feed stdin; close it so codex doesn't wait
@@ -202,8 +209,8 @@ export class CodexRunner implements AgentRunner {
       // resume — the service queues the text as the next follow-up (fallback).
       steer: () => false,
       // No graceful interrupt channel either — the service falls back to
-      // cancel() (SIGINT). Rollouts are written incrementally, so
-      // SIGINT-then-resume works (see NOTES.md).
+      // cancel() (SIGINT). Rollouts are written incrementally, so a later turn
+      // can resume from the persisted thread.
       interrupt: () => false,
       // approval_policy=never means codex never pauses for approval.
       approve: () => false,

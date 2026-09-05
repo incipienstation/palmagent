@@ -3,11 +3,9 @@ import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { config } from "./config.js";
 import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
 
-// Verified against claude 2.1.168 / 2.1.177.
-//   dispatch: claude -p --input-format stream-json --output-format stream-json
-//             --verbose --include-partial-messages --permission-mode acceptEdits
-//             --permission-prompt-tool stdio
-//   resume:   ... --resume <session_id>
+// Claude's launch and stream protocol live here as executable integration code.
+// Keep the argument matrix and normalized-event behavior covered by the adapter
+// contract tests instead of duplicating them in a version-specific document.
 // Prompt is delivered as a stream-json user message on stdin (not the -p arg) so
 // the same channel can carry mid-turn steers. The process + stdio are owned by
 // the RunnerBackend (a separate daemon in production), so all of the below — argv,
@@ -32,30 +30,52 @@ const PERMISSION_MODE: Record<string, string> = {
 };
 const permissionMode = (p?: string): string => PERMISSION_MODE[p ?? ""] ?? PERMISSION_MODE[DEFAULT_PERMISSION.claude];
 
+type ClaudeLaunchArgs = Pick<StartArgs, "permission" | "model" | "effort" | "resumeId">;
+type ClaudeUserMessage = {
+  type: "user";
+  message: {
+    role: "user";
+    content: Array<
+      | { type: "image"; source: { type: "base64"; media_type: ImageAttachment["mediaType"]; data: string } }
+      | { type: "text"; text: string }
+    >;
+  };
+};
+
+export function buildClaudeArgv({ permission, model, effort, resumeId }: ClaudeLaunchArgs): string[] {
+  const argv = [
+    "-p",
+    "--input-format", "stream-json",
+    "--output-format", "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-mode", permissionMode(permission),
+    "--permission-prompt-tool", "stdio",
+  ];
+  if (model) argv.push("--model", model);
+  if (effort) argv.push("--effort", effort);
+  if (resumeId) argv.push("--resume", resumeId);
+  return argv;
+}
+
+export function buildClaudeUserMessage(text: string, images: readonly ImageAttachment[] = []): ClaudeUserMessage {
+  const content: ClaudeUserMessage["message"]["content"] = images.map((image) => ({
+    type: "image",
+    source: { type: "base64", media_type: image.mediaType, data: image.data },
+  }));
+  content.push({ type: "text", text });
+  return { type: "user", message: { role: "user", content } };
+}
+
 export class ClaudeRunner implements AgentRunner {
   readonly agent = "claude" as const;
 
   start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
     const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach, resumeFromSeq, pendingInput } = args;
-    const argv = [
-      "-p",
-      "--input-format", "stream-json",
-      "--output-format", "stream-json",
-      "--verbose",
-      "--include-partial-messages",
-      "--permission-mode", permissionMode(permission),
-      // Route "ask" permissions over the stream-json control channel so we can
-      // intercept AskUserQuestion (its checkPermissions always returns "ask").
-      // Verified safe: under acceptEdits, Write/Bash still auto-run and never hit
-      // this channel — only genuinely-interactive tools pause. The flag ALONE is
-      // enough (no `initialize` handshake). See NOTES.md.
-      "--permission-prompt-tool", "stdio",
-    ];
-    if (model) argv.push("--model", model);
-    // --effort is a session-level setting (low|medium|high|xhigh|max), applied on
-    // resume turns too — mirrors --model. See NOTES.md for the verified flag set.
-    if (effort) argv.push("--effort", effort);
-    if (resumeId) argv.push("--resume", resumeId);
+    // `--permission-prompt-tool stdio` routes genuinely interactive requests to
+    // the control channel; non-question requests are denied below. The launch
+    // matrix is centralized so dispatch and resume cannot drift independently.
+    const argv = buildClaudeArgv({ permission, model, effort, resumeId });
 
     let sessionId: string | undefined = resumeId;
 
@@ -94,12 +114,7 @@ export class ClaudeRunner implements AgentRunner {
     // Images ride the same stream-json channel as Anthropic-API image blocks
     // (verified: the CLI forwards them to the model — works mid-turn too).
     const sendUser = (text: string, imgs?: ImageAttachment[]) => {
-      const blocks: unknown[] = (imgs ?? []).map((i) => ({
-        type: "image",
-        source: { type: "base64", media_type: i.mediaType, data: i.data },
-      }));
-      blocks.push({ type: "text", text });
-      writeLine({ type: "user", message: { role: "user", content: blocks } });
+      writeLine(buildClaudeUserMessage(text, imgs));
     };
 
     const scheduleClose = () => {

@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Palmagent runtime server for normalized agent events, durable task state, SSE, and REST control.",
   "scripts": {
+    "contracts": "node --import tsx --test tests/*.test.ts",
+    "contracts:live": "node --import tsx scripts/adapter-live-smoke.mjs",
     "dev": "tsx src/server.ts",
     "runner": "tsx src/runner-daemon.ts",
     "smoke": "node scripts/runtime-smoke.mjs",
