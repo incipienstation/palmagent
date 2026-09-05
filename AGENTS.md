@@ -100,6 +100,8 @@ Run from the repository root:
 ```bash
 pnpm install
 pnpm typecheck
+pnpm server:contracts
+pnpm server:contracts:live -- --agent codex  # optional; requires an authenticated CLI
 pnpm server:smoke
 pnpm web:verify
 pnpm plugins:check
@@ -111,7 +113,9 @@ pnpm verify
 node scripts/sync-skills.mjs
 ```
 
-`pnpm verify` is the source gate: workspace typechecking, server runtime smoke, CLI render and
-HTTPS invariants, PWA Playwright and service-worker checks, plugin synchronization, manifests,
-links, leak checks, and release-version synchronization. Release candidates additionally run the
-assembled-package leak check and packed-install smoke described in `docs/RELEASING.md`.
+`pnpm verify` is the source gate: workspace typechecking, executable Claude/Codex adapter
+contracts, server runtime smoke, CLI render and HTTPS invariants, PWA Playwright and
+service-worker checks, plugin synchronization, manifests, links, leak checks, and release-version
+synchronization. Authenticated live adapter smoke is explicit and is not part of hermetic CI.
+Release candidates additionally run the assembled-package leak check and packed-install smoke
+described in `docs/RELEASING.md`.
