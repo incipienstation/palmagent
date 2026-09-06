@@ -7,6 +7,7 @@ import test from "node:test";
 import type { AnswerRequest } from "@palmagent/shared";
 import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../src/claude.js";
 import { buildCodexArgv, CodexRunner } from "../src/codex.js";
+import { InProcessBackend } from "../src/inproc-backend.js";
 import type {
   Emit,
   ProcHandle,
@@ -333,14 +334,74 @@ test("Claude reattach restores a pending question without replaying the prompt",
     backend,
   );
 
-  assert.deepEqual(backend.attachCalls, [{ turnId: "task-1", fromSeq: 12 }]);
+  assert.deepEqual(backend.attachCalls, [{ turnId: "task-1", fromSeq: 0 }]);
   assert.equal(backend.specs.length, 0);
+  backend.proc.emit({
+    type: "control_request", request_id: "already-answered",
+    request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", input: pendingInput },
+  });
+  backend.proc.emit({
+    type: "control_request", request_id: "already-denied",
+    request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "true" } },
+  });
   assert.equal(backend.proc.writes.length, 0);
+  assert.equal(capture.events.some(({ event }) => event.kind === "question"), false);
   assert.equal(handle.answer({
     requestId: "question-reattach",
     answers: [{ question: "Resume?", selected: ["Resume"] }],
   }), true);
   assert.equal(writtenJson(backend.proc)[0].response.request_id, "question-reattach");
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Claude replayed activity supersedes an earlier result's idle-close timer", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new ClaudeRunner().start(
+    startArgs({ reattach: true, resumeFromSeq: 2 }),
+    capture.emit,
+    backend,
+  );
+  backend.proc.emit({ type: "result", is_error: false });
+  backend.proc.emit({
+    type: "stream_event",
+    event: { type: "content_block_delta", delta: { type: "text_delta", text: "continuing" } },
+  });
+  await delay(1600);
+  assert.equal(backend.proc.closeCount, 0);
+  backend.proc.emit({ type: "result", is_error: false });
+  await delay(1600);
+  assert.equal(backend.proc.closeCount, 1);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("In-process missing executable reports a failed exit", async () => {
+  const dir = mkdtempSync(join(process.env.TMPDIR || "/tmp", "palmagent-missing-cli-"));
+  try {
+    const proc = new InProcessBackend().start({
+      turnId: "missing-command", command: join(dir, "absent"), argv: [], cwd: dir,
+    });
+    const code = await new Promise<number | null>((resolve) => proc.onExit(resolve));
+    assert.equal(code, -1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Claude stop still closes stdin when output drains without a result", async () => {
+  const backend = new FakeBackend();
+  const handle = new ClaudeRunner().start(
+    startArgs({ reattach: true, resumeFromSeq: 0 }), () => {}, backend,
+  );
+  assert.equal(handle.interrupt(), true);
+  backend.proc.emit({
+    type: "stream_event",
+    event: { type: "content_block_delta", delta: { type: "text_delta", text: "draining" } },
+  });
+  await delay(1600);
+  assert.equal(backend.proc.closeCount, 1);
   backend.proc.exit(0);
   await handle.done;
 });

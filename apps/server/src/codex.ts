@@ -89,13 +89,14 @@ export class CodexRunner implements AgentRunner {
   readonly agent = "codex" as const;
 
   start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
-    const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach, resumeFromSeq } = args;
+    const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach } = args;
     let sessionId: string | undefined = resumeId;
 
     // Reattach to a turn already running in the daemon (post-restart): no respawn,
-    // no image spill, no prompt — just consume the replayed stream.
+    // no image spill, no prompt. Replay the full turn to restore terminal state;
+    // the service suppresses persisted events using its saved baseline.
     if (reattach) {
-      const proc = backend.attach(taskId, resumeFromSeq ?? 0);
+      const proc = backend.attach(taskId, 0);
       if (!proc) {
         emit({ taskId, kind: "status", sessionId, payload: { subtype: "reattach_failed" } });
         return { steer: () => false, interrupt: () => false, approve: () => false, answer: () => false, cancel: () => {}, done: Promise.resolve() };

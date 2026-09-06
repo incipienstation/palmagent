@@ -119,7 +119,7 @@ export class DaemonBackend implements RunnerBackend {
   start(spec: SpawnSpec): ProcHandle {
     const h = new RemoteProcHandle(spec.turnId, this);
     this.handles.set(spec.turnId, h);
-    this.send({
+    const sent = this.send({
       t: "start",
       turnId: spec.turnId,
       command: spec.command,
@@ -127,6 +127,8 @@ export class DaemonBackend implements RunnerBackend {
       cwd: spec.cwd,
       env: spec.env ? stringEnv(spec.env) : undefined,
     });
+    // Let the adapter install its exit handler before settling a failed start.
+    if (!sent) queueMicrotask(() => h._exit(-1));
     return h;
   }
 
