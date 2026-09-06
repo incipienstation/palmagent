@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Static validation for the Palmagent marketplace repo.
-//
-// This repo ships no executable code — only manifests + skill markdown — so
-// "tests" are structural validators, not unit tests. A real `plugin marketplace
-// add` + install cannot run in CI (it needs the claude/codex CLIs + vendor
-// login, which are auth-locked), so this is the static gate.
+// Static validation for Palmagent's plugin surfaces and public repository content.
 //
 // LEAK-GUARD OUTPUT POLICY: on any leak match we print `<file>:<line>` ONLY —
 // never the matched token or the line text. Echoing the value into CI logs would
@@ -12,7 +7,8 @@
 // context/PII denylist lives in the `LEAK_DENYLIST` Actions secret (never in the
 // repo). GitHub's secret masking is a backstop, not the primary defense.
 
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -117,16 +113,13 @@ for (const sd of ['skills', 'plugins/claude/skills', 'plugins/codex/plugins/palm
   }
 }
 
-// ---- file walk (exclude .git) --------------------------------------------
-const walk = (dir, acc = []) => {
-  for (const n of readdirSync(dir)) {
-    if (n === '.git') continue;
-    const f = join(dir, n);
-    (statSync(f).isDirectory() ? walk(f, acc) : acc.push(f));
-  }
-  return acc;
-};
-const allFiles = walk(ROOT);
+// ---- version-controlled files (plus untracked candidates) ----------------
+// Respect .gitignore so dependency/build output is never scanned as source.
+const allFiles = execFileSync(
+  'git',
+  ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+  { cwd: ROOT, encoding: 'utf8' },
+).split('\0').filter(Boolean).map((path) => join(ROOT, path));
 
 // ---- 6. relative-link existence in markdown -------------------------------
 for (const f of allFiles.filter((p) => p.endsWith('.md'))) {
@@ -153,6 +146,7 @@ const GENERIC = [
 ];
 const denylist = (process.env.LEAK_DENYLIST || '')
   .split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+const requireDenylist = /^(?:1|true)$/i.test(process.env.REQUIRE_LEAK_DENYLIST || '');
 
 const hits = new Set();
 for (const f of allFiles) {
@@ -161,6 +155,9 @@ for (const f of allFiles) {
   let txt;
   try { txt = readFileSync(f, 'utf8'); } catch { continue; }
   txt.split('\n').forEach((line, i) => {
+    // Registry-authored deprecation prose is immutable third-party metadata,
+    // not repository context. Keep scanning every other lockfile field.
+    if (relative(ROOT, f) === 'pnpm-lock.yaml' && /^\s*deprecated:/.test(line)) return;
     const at = `${relative(ROOT, f)}:${i + 1}`;
     if (GENERIC.some((re) => re.test(line))) { hits.add(at); return; }
     const lc = line.toLowerCase();
@@ -170,7 +167,9 @@ for (const f of allFiles) {
 if (hits.size) {
   fail(`leak guard: ${hits.size} match(es) — values redacted, inspect these locally:\n    ${[...hits].join('\n    ')}`);
 }
-if (!denylist.length) {
+if (!denylist.length && requireDenylist) {
+  fail('leak guard: LEAK_DENYLIST is required for this trusted CI context but is absent');
+} else if (!denylist.length) {
   console.log('· leak guard: context denylist not configured (LEAK_DENYLIST absent) — generic patterns still enforced');
 }
 

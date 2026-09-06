@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Service-worker program: WebWorker globals instead of DOM. Same bundler
+    // resolution as the app so workbox-* and shared types resolve identically.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "WebWorker"],
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "include": ["src/sw.ts"]
+}

@@ -1,0 +1,5 @@
+# Playwright run artifacts (the committed *-snapshots/ baselines are the contract)
+test-results/
+playwright-report/
+blob-report/
+.playwright/

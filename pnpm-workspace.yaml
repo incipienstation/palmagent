@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm blocks dependency build scripts by default; allow the ones we trust.
+# (pnpm 11 moved this out of package.json's "pnpm" field into here.)
+allowBuilds:
+  "@tailwindcss/oxide": true
+  better-sqlite3: true
+  esbuild: true
+  nx: true

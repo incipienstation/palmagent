@@ -1,0 +1,34 @@
+{
+  "name": "palmagent",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Self-hosted agent dispatcher and operator tooling.",
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "nx run @palmagent/server:dev",
+    "web:dev": "pnpm --filter @palmagent/web dev",
+    "web:build": "pnpm --filter @palmagent/web build",
+    "web:verify": "pnpm --filter @palmagent/web test:e2e && pnpm --filter @palmagent/web test:sw-update",
+    "typecheck": "nx run-many -t typecheck",
+    "server:contracts": "pnpm --filter @palmagent/server contracts",
+    "server:contracts:live": "pnpm --filter @palmagent/server contracts:live",
+    "server:smoke": "pnpm --filter @palmagent/server smoke",
+    "plugins:check": "node scripts/sync-skills.mjs --check && node scripts/validate.mjs",
+    "verify": "pnpm typecheck && pnpm server:contracts && pnpm server:smoke && pnpm pkg:check && pnpm web:verify && pnpm plugins:check && pnpm release:check",
+    "pkg:build": "pnpm --filter @palmagent/web build && tsx scripts/build-pkg.ts",
+    "pkg:pack": "pnpm pkg:build && cd build/pkg && npm pack --pack-destination ..",
+    "pkg:check": "node --test scripts/tests/*.test.mjs && tsx apps/server/scripts/cli-render-check.ts",
+    "pkg:leakcheck": "node scripts/pkg-leakcheck.mjs build/pkg",
+    "pkg:smoke": "node scripts/pkg-smoke.mjs",
+    "release:check": "node scripts/check-release.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "nx": "^20.3.0",
+    "typescript": "^6.0.3",
+    "tsx": "^4.19.0"
+  }
+}

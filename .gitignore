@@ -1,7 +1,26 @@
-# Session-local git worktrees. Editing here is worktree-only (see CLAUDE.md), so
-# every change is authored inside `.claude/worktrees/<name>/` — a full checkout of
-# this repo that must never be committed back into it.
+node_modules/
+*.log
+
+# Nx state.
+.nx/cache/
+.nx/workspace-data/
+
+# Build output.
+dist/
+build/
+
+# Session-local git worktrees. Editing here is worktree-only (see AGENTS.md).
 .claude/worktrees/
+
+# Runtime state.
+apps/server/data/
+.dispatcher/
+.palmagent/
+
+# Local configuration. A value-free example template may be committed.
+.env
+.env.*
+!.env.example
 
 # OS cruft.
 .DS_Store
