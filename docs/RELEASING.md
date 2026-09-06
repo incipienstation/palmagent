@@ -101,6 +101,13 @@ release environment.
 
 ## Candidate automation
 
+Trusted repository CI (same-repository pull requests and branch pushes) also
+builds a package, requires the private-context denylist, runs an isolated packed
+install smoke, and uploads a short-lived tarball named for the source commit.
+Use the successful `develop` push artifact for staging and record its SHA-256
+alongside the source commit. This does not publish to npm or deploy a service.
+Fork pull requests continue to run source validation without repository secrets.
+
 `.github/workflows/release-candidate.yml` is deliberately non-publishing. It can
 run manually only from `main` and:
 
