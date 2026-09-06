@@ -14,13 +14,13 @@ export interface StartArgs {
   // Reattach to a turn already running in the runner daemon (after a web-server
   // restart). The adapter consumes the replayed stream but does NOT (re)send the
   // opening prompt — the live turn already received it. `resumeFromSeq` is the
-  // task's persisted line high-water-mark so already-emitted events are dropped.
+  // task's persisted line high-water-mark. Replay starts at zero to reconstruct
+  // terminal state, while persisted effects are suppressed using this baseline.
   reattach?: boolean;
   resumeFromSeq?: number;
   // On reattach to a turn paused on AskUserQuestion: the task's persisted pending
-  // question. The daemon won't replay the original can_use_tool line (its seq is
-  // at/below the high-water-mark), so the adapter re-seeds its requestId→questions
-  // map from this — otherwise answering the turn fails after a web-server restart.
+  // question. Historical control requests are skipped, so the adapter re-seeds
+  // its requestId→questions map from this without reviving answered questions.
   // Claude-only; undefined on fresh starts and for turns not paused on a question.
   pendingInput?: QuestionRequest;
 }
@@ -62,7 +62,7 @@ export interface SpawnSpec {
   command: string; // "claude" | "codex"
   argv: string[];
   cwd: string;
-  env?: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv; // overrides layered onto the backend's environment
 }
 
 // A ChildProcess-like shim. stdout is delivered as already-split NDJSON lines,

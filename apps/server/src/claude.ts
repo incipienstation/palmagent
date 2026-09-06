@@ -85,7 +85,7 @@ export class ClaudeRunner implements AgentRunner {
     // ~/.claude directory on the same host.
     const env = config.claudeConfigDir ? { CLAUDE_CONFIG_DIR: config.claudeConfigDir } : undefined;
     const proc: ProcHandle | undefined = reattach
-      ? backend.attach(taskId, resumeFromSeq ?? 0)
+      ? backend.attach(taskId, 0)
       : backend.start({ turnId: taskId, command: "claude", argv, cwd, env });
     if (!proc) {
       emit({ taskId, kind: "status", sessionId, payload: { subtype: "reattach_failed" } });
@@ -95,14 +95,12 @@ export class ClaudeRunner implements AgentRunner {
     let steerInFlight = false;
     let steerTimer: NodeJS.Timeout | undefined;
     let closeTimer: NodeJS.Timeout | undefined;
+    let restoringClose = false;
     let intReq = 0;
     // AskUserQuestion: control_request id → the CLI's original tool input, kept so
-    // answer() can echo it back with the user's picks. On reattach the daemon does
-    // NOT replay the original can_use_tool line (its seq is at/below the persisted
-    // high-water-mark), so re-seed the map from the task's persisted pendingInput —
-    // otherwise answering a paused-on-question turn fails ("no matching pending
-    // question to answer") after a web-server restart. The CLI child is the same one
-    // still blocked on this request_id, so writing its control_response unblocks it.
+    // answer() can echo it back with the user's picks. Only the persisted pending
+    // request is restored: replaying older requests must not revive answered
+    // questions or send duplicate permission responses.
     const pendingQuestions = new Map<string, { questions: AskQuestion[] }>();
     if (reattach && pendingInput) {
       pendingQuestions.set(pendingInput.requestId, { questions: pendingInput.questions });
@@ -117,8 +115,9 @@ export class ClaudeRunner implements AgentRunner {
       writeLine(buildClaudeUserMessage(text, imgs));
     };
 
-    const scheduleClose = () => {
+    const scheduleClose = (restoring = false) => {
       if (closeTimer) clearTimeout(closeTimer);
+      restoringClose = restoring;
       closeTimer = setTimeout(() => {
         if (!steerInFlight && proc.stdinWritable()) proc.closeStdin();
       }, IDLE_CLOSE_MS);
@@ -126,6 +125,7 @@ export class ClaudeRunner implements AgentRunner {
     const cancelClose = () => {
       if (closeTimer) clearTimeout(closeTimer);
       closeTimer = undefined;
+      restoringClose = false;
     };
 
     // One stdout NDJSON line. `seq` is the per-turn line number — every event we
@@ -137,6 +137,11 @@ export class ClaudeRunner implements AgentRunner {
       try { ev = JSON.parse(line); } catch { return; }
       if (ev.session_id) sessionId = ev.session_id;
       const e = (raw: RawEvent) => emit(raw, seq);
+      const replayed = reattach && seq <= (resumeFromSeq ?? 0);
+
+      // Later activity supersedes a replayed result (for example a steered
+      // turn). Do not cancel a live Stop's backstop while output is draining.
+      if (restoringClose && ["stream_event", "assistant", "user", "control_request"].includes(ev.type)) cancelClose();
 
       switch (ev.type) {
         case "system":
@@ -178,7 +183,7 @@ export class ClaudeRunner implements AgentRunner {
             payload: { subtype: ev.subtype, is_error: ev.is_error, result: ev.result,
               num_turns: ev.num_turns, duration_ms: ev.duration_ms, total_cost_usd: ev.total_cost_usd } });
           // Turn finished. Let the process go idle unless a steer is mid-injection.
-          if (!steerInFlight) scheduleClose();
+          if (!steerInFlight) scheduleClose(!!replayed);
           break;
         case "control_response":
           e({ taskId, kind: "status", sessionId, payload: { subtype: "control_response", response: ev.response } });
@@ -188,6 +193,7 @@ export class ClaudeRunner implements AgentRunner {
         // tools; AskUserQuestion is the one we surface. Anything else is
         // auto-denied to preserve the prior (no-flag) non-interactive behavior.
         case "control_request": {
+          if (replayed) break;
           const reqId: string = ev.request_id;
           const r = ev.request ?? {};
           if (r.subtype !== "can_use_tool") break;

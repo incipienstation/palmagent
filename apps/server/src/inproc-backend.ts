@@ -11,7 +11,7 @@ export class InProcessBackend implements RunnerBackend {
   start(spec: SpawnSpec): ProcHandle {
     const child: ChildProcessWithoutNullStreams = spawn(spec.command, spec.argv, {
       cwd: spec.cwd,
-      env: spec.env ?? process.env,
+      env: spec.env ? { ...process.env, ...spec.env } : process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     return new ChildProcHandle(spec.turnId, child);

@@ -30,6 +30,7 @@ interface TurnState {
   sawResult: boolean; // a terminal result event arrived (claude result / codex turn.completed)
   lastResultError: boolean; // is_error of the LAST result (so an interrupt's aborted result is superseded)
   errored: boolean; // a non-result error event arrived (used only when no result ever did)
+  abnormalExit?: boolean; // signal, spawn failure, or lost backend connection
 }
 
 // The state machine + persistence + lifecycle glue. Everything agent-specific
@@ -471,8 +472,7 @@ export class TaskService {
         reattach: true,
         resumeFromSeq: baseline,
         // If the turn is paused on AskUserQuestion, hand the adapter the persisted
-        // question so it can re-seed its requestId→questions map (the daemon won't
-        // replay the original can_use_tool line — its seq is below the baseline).
+        // question so historical control requests can be skipped during replay.
         pendingInput: task.pendingInput,
       },
       (raw, rawSeq) => this.onRaw(task, raw, rawSeq),
@@ -504,7 +504,16 @@ export class TaskService {
         ts.sawResult = true;
         ts.lastResultError = !!(event.payload as { is_error?: boolean })?.is_error;
       }
+      if (event.kind === "status") {
+        const status = event.payload as { subtype?: string; code?: number | null };
+        if (status.subtype === "process_exit") ts.abnormalExit = status.code !== 0;
+        if (status.subtype === "reattach_failed") ts.abnormalExit = true;
+      }
     }
+    // Rebuild terminal bookkeeping above, but never repeat persisted effects
+    // such as questions, notifications, event inserts, or SSE broadcasts.
+    if (rawSeq !== undefined && rawSeq <= (this.turnBaseline.get(task.taskId) ?? 0)) return;
+
     if (event.kind === "approval_request" && task.status === "running") {
       this.transition(task, "awaiting_approval");
       this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
@@ -540,10 +549,6 @@ export class TaskService {
         this.github?.onNewPrs(task.taskId); // fetch lifecycle/checks promptly
       }
     }
-
-    // Replayed event (already in the log from before the restart): state is
-    // rebuilt above, but don't double-persist or re-broadcast it.
-    if (rawSeq !== undefined && rawSeq <= (this.turnBaseline.get(task.taskId) ?? 0)) return;
 
     // Persist every emitted event (this IS the event log) then fan out to SSE.
     const { id, seq } = this.db.insertEvent(task.taskId, event.kind, event.payload, now);
@@ -590,7 +595,9 @@ export class TaskService {
     // (Codex success = turn.completed with no is_error; a transient mid-turn
     // error item does NOT fail the turn). Only fall back to `errored` (e.g.
     // codex turn.failed, which has no result) when no result ever arrived.
-    const failed = !steerRestart && !!ts && (ts.sawResult ? ts.lastResultError : ts.errored);
+    // A signal, lost backend, or failed spawn is never a normal completion.
+    const failed = !steerRestart && !!ts &&
+      (ts.abnormalExit || (ts.sawResult ? ts.lastResultError : ts.errored));
     this.transition(task, failed ? "failed" : "idle");
 
     // Codex steer fallback: text queued mid-turn runs now as the next turn.
