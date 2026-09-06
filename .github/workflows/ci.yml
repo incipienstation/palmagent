@@ -31,3 +31,26 @@ jobs:
           # receive repository secrets, so they still run the generic patterns.
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - name: Verify packed candidate
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: "true"
+          PKG_PUBLISHABLE: "1"
+          EXPECT_PUBLISHABLE: "1"
+        run: |
+          pnpm pkg:build
+          pnpm release:check --artifact
+          pnpm pkg:leakcheck
+          pnpm pkg:smoke
+          mkdir -p build/candidate
+          cd build/pkg
+          npm pack --pack-destination ../candidate
+      - name: Upload validated staging candidate
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: palmagent-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: build/candidate/*.tgz
+          if-no-files-found: error
+          retention-days: 14
