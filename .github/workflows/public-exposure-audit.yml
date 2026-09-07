@@ -1,0 +1,42 @@
+name: public exposure audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - '.github/workflows/public-exposure-audit.yml'
+      - 'scripts/public-exposure-audit.py'
+      - 'scripts/tests/public-exposure-audit.test.py'
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  audit:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test scan and reporting boundaries
+        run: python3 scripts/tests/public-exposure-audit.test.py
+      - name: Scan historical exposure with the private denylist
+        run: python3 scripts/public-exposure-audit.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          AUDIT_REPORT: ${{ runner.temp }}/public-exposure-audit.json
+      - name: Upload location-only audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-exposure-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/public-exposure-audit.json
+          if-no-files-found: error
+          retention-days: 14
