@@ -168,7 +168,7 @@ deletion of `v*` tags when available; this workflow does not configure repositor
 rules or make tag mutation impossible outside Actions.
 
 After release preparation is promoted and the exact commit is approved, a
-maintainer creates the tag with the approved public Git identity:
+maintainer creates the annotated tag:
 
 ```bash
 release_version='<version>'

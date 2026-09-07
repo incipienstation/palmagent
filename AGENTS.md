@@ -6,10 +6,12 @@ Guidance for coding agents maintaining the Palmagent repository.
 
 Keep instructions focused on context needed to act correctly; link to canonical guidance instead
 of duplicating it. Use [garden](.agents/skills/garden/SKILL.md) to audit and propose context cleanup.
+Write README documentation for human users and contributors, and AGENTS.md for agents doing
+repository work. Retain shared facts where each audience needs them to act correctly.
 
 ## What this is
 
-Palmagent's public-bound pnpm + Nx source monorepo. It will contain the self-hosted dispatcher,
+Palmagent's public-bound pnpm + Nx source monorepo contains the self-hosted dispatcher,
 mobile-first PWA, public CLI, shared contracts, and Claude Code + Codex operator plugins. Migration
 is intentionally incremental: import one coherent slice, sanitize it, verify it, and review it
 before importing the next.
@@ -66,44 +68,27 @@ remain platform-specific.
 - Branch `feature/*` from an up-to-date `origin/develop` in an isolated linked worktree.
 - Open feature pull requests into `develop`, never directly into `main`, and squash-merge each
   reviewed feature pull request so it lands as one reversible change.
-- `develop` is the source branch for staging. A merge or green check makes a revision eligible
-  for staging deployment; it is not deployment evidence. Record the exact deployed commit or
-  immutable artifact and verify staging health separately.
+- `develop` is the staging source; `main` is the production and release source. Record the exact
+  deployed commit or immutable artifact and verify health separately from CI or merge status.
 - A green check or PR does not authorize merge, publication, repository visibility changes, or
   deployment. Keep each of those as an explicit human approval gate.
-- Promotion from `develop` to `main` is a separate reviewed pull request and uses a merge commit,
-  never squash or rebase. This preserves the ancestry of the long-lived integration branch and
-  makes each production/release promotion visible in `main`.
-- `main` is the source branch for production deployment, version tags, and releases. Merging a
-  promotion pull request does not itself authorize any of those actions.
-- Hotfixes branch from `main` and merge into `main` with a merge commit. Immediately propagate the
-  same fix through a short-lived branch from current `develop` and squash-merge it into `develop`
-  so staging and the next promotion retain the fix without weakening either target's merge rule.
-- Keep repository-level squash and merge-commit methods enabled and rebase merge disabled. When
-  branch-targeted rulesets are available, restrict `develop` to squash and `main` to merge commits;
-  until then, maintainers enforce the method at merge time.
+- Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash
+  or rebase. Promotion does not itself authorize tagging, publication, or deployment.
+- Before a hotfix or merge-settings change, follow the
+  [environment and merge model](docs/RELEASING.md#environment-and-merge-model), including hotfix
+  propagation to `develop` and branch-specific merge enforcement.
 
 ## Versioning and releases
 
-- Before changing version fields or creating/pushing a release tag, present the proposed
-  version, release scope, compatibility impact, and validation evidence for human review.
-  Record explicit human approval before execution; a general instruction to proceed, green
-  CI, or a merge is not versioning approval. Automation must not choose or bump versions.
-- Use one fixed product version for the generated npm package and both versioned plugin
-  manifests. `pnpm release:check` enforces synchronization.
-- Prereleases (`alpha`, `beta`, `rc`) use npm dist-tag `next`; stable releases use `latest`.
-- A source version, green check, merge, tag, or draft release is not publication evidence.
-- Release automation starts from an annotated `v<root-version>` tag on `main` history. Tags
-  are immutable. Version preparation includes a nonempty `## <version>` changelog section.
-- Never publish from a workstation or arbitrary branch. Candidate validation is read-only;
-  a separate job may create a draft GitHub Release with the validated artifact. Neither job
-  publishes a release, publishes to npm, or deploys a host.
-- A future publish job must use npm Trusted Publishing and a protected approval environment.
-- Published versions are immutable. Deprecate a bad version, move the dist-tag back, and issue
-  a new version rather than overwriting or reusing one.
-- Keep npm publication, repository visibility, and host deployment as independent approvals.
+Before version edits, tags, publication, or release-workflow changes, read
+[docs/RELEASING.md](docs/RELEASING.md) for version synchronization, channels, approval gates,
+artifact verification, and recovery. Present the proposed version, scope, compatibility impact,
+and validation evidence for explicit human approval before versioning or tagging. General
+permission to proceed, green CI, or a merge is not versioning approval; automation must not
+choose or bump versions. Never publish from a workstation or arbitrary branch.
 
-See `docs/RELEASING.md` for the release train, gates, and rollback procedure.
+Current automation validates candidates and can create a draft GitHub Release; it does not
+publish releases, publish to npm, or deploy a host.
 
 ## Commands
 
