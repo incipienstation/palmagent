@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateRepositorySkills } from './lib/repository-skills.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
@@ -100,7 +101,7 @@ for (const id of [cm?.name, cm?.plugins?.[0]?.name, cp?.name, xm?.name, xm?.plug
 }
 
 // ---- 4. SKILL.md frontmatter (name + description) -------------------------
-for (const sd of ['skills', 'plugins/claude/skills', 'plugins/codex/plugins/palmagent/skills']) {
+for (const sd of ['.harness/skills', 'skills', 'plugins/claude/skills', 'plugins/codex/plugins/palmagent/skills']) {
   const abs = join(ROOT, sd);
   if (!existsSync(abs)) continue;
   for (const n of readdirSync(abs)) {
@@ -112,6 +113,9 @@ for (const sd of ['skills', 'plugins/claude/skills', 'plugins/codex/plugins/palm
     if (!/^description:\s*\S/m.test(fm[1])) fail(`${relative(ROOT, f)}: frontmatter missing \`description\``);
   }
 }
+
+// ---- 5. repository-maintenance skill discovery links ----------------------
+errors.push(...validateRepositorySkills(ROOT));
 
 // ---- version-controlled files (plus untracked candidates) ----------------
 // Respect .gitignore so dependency/build output is never scanned as source.

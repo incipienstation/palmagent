@@ -11,6 +11,7 @@ build/
 
 # Session-local git worktrees. Editing here is worktree-only (see AGENTS.md).
 .claude/worktrees/
+.harness/worktrees/
 
 # Runtime state.
 apps/server/data/

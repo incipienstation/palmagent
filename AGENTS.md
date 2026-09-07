@@ -5,7 +5,7 @@ Guidance for coding agents maintaining the Palmagent repository.
 ## Context discipline
 
 Keep instructions focused on context needed to act correctly; link to canonical guidance instead
-of duplicating it. Use [garden](.agents/skills/garden/SKILL.md) to audit and propose context cleanup.
+of duplicating it. Use [garden](.harness/skills/garden/SKILL.md) to audit and propose context cleanup.
 Write README documentation for human users and contributors, and AGENTS.md for agents doing
 repository work. Retain shared facts where each audience needs them to act correctly.
 
@@ -49,6 +49,15 @@ For every import from a non-public source:
 5. Run both the generic leak guard and the private context denylist before committing.
 6. State which files remain byte-identical because they contain reusable product code. Do not
    rewrite safe code merely to make the diff look different.
+
+## Repository skill single source
+
+Author repository-maintenance skills in `.harness/skills/<name>/SKILL.md`. Both
+`.agents/skills/<name>` and `.claude/skills/<name>` must be relative directory symlinks to
+`../../.harness/skills/<name>`. Add both links when adding a skill; `pnpm plugins:check` validates
+the mapping. Keep Claude-specific hooks and settings under `.claude/`.
+
+Local worktrees under `.harness/worktrees/` are ignored; `.harness/skills/` is tracked.
 
 ## Plugin skill single source
 
