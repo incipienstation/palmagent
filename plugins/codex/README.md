@@ -54,7 +54,7 @@ codex plugin add palmagent@palmagent
 codex plugin list
 ```
 
-Once this repo is published, the same plugin installs straight from git (no clone):
+Install directly from the GitHub repository:
 
 ```bash
 codex plugin marketplace add incipienstation/palmagent --ref main --sparse plugins/codex

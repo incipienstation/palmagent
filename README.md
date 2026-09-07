@@ -4,9 +4,8 @@ Palmagent is a self-hosted dispatcher for running Claude Code and Codex from one
 agent-neutral interface. The project combines a server, a mobile-first PWA, a public CLI, and
 operator plugins for both agent platforms.
 
-This repository is Palmagent's public-bound source monorepo. It contains the shared wire
-contracts, host runtime, mobile PWA, public CLI package assembly, and operator plugins. The
-repository remains private until the public-safety audit and release gates are complete.
+This source monorepo contains the shared wire contracts, host runtime, mobile PWA, public CLI
+package assembly, and operator plugins.
 
 ## Current layout
 
