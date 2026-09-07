@@ -1,17 +1,36 @@
 name: release candidate
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   package:
-    if: github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && !github.event.deleted) || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+      RELEASE_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Validate annotated release tag and main ancestry
+        id: tag
+        if: github.event_name == 'push'
+        run: node scripts/release-tag.mjs check
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -37,12 +56,45 @@ jobs:
           pnpm release:check --artifact
           pnpm pkg:leakcheck
           pnpm pkg:smoke
+          mkdir -p build/release
           cd build/pkg
-          npm pack --pack-destination ..
+          npm pack --pack-destination ../release
+      - name: Record release provenance and notes
+        if: github.event_name == 'push'
+        env:
+          RELEASE_TAG_OBJECT: ${{ steps.tag.outputs.tag-object }}
+        run: node scripts/release-tag.mjs prepare
       - name: Upload candidate tarball
         uses: actions/upload-artifact@v4
         with:
-          name: palmagent-candidate
-          path: build/*.tgz
+          name: palmagent-release-${{ github.sha }}
+          path: build/release/*
           if-no-files-found: error
           retention-days: 14
+
+  draft:
+    needs: package
+    if: github.event_name == 'push' && !github.event.deleted
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          name: palmagent-release-${{ github.sha }}
+          path: build/release
+      - name: Create draft from the verified package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: node scripts/release-tag.mjs draft
