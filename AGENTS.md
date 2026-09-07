@@ -31,13 +31,6 @@ email addresses, user-specific home paths, private domains or addresses, host in
 production data, CLI transcripts, database files, or private-repository references. Replace
 environment-specific examples with explicit placeholders. Sanitize during import, not afterward.
 
-For new maintainer-authored commits, use the maintainer's public GitHub profile display name
-and one maintainer-approved, verified account email in repository-local Git configuration.
-When merging the maintainer's own pull requests with `gh pr merge`, explicitly pass that same
-email with `--author-email`; GitHub-created merges do not inherit local Git identity settings.
-Preserve GitHub's service committer identity on commits it creates. Account attribution does
-not require replacing that service identity, and other contributors retain their own authorship.
-
 The maintainer approved public disclosure of the existing author/committer metadata in these
 pre-normalization commits on 2026-09-07; older PR records may still reference them:
 
@@ -48,8 +41,7 @@ pre-normalization commits on 2026-09-07; older PR records may still reference th
 
 Do not treat that metadata as a public-readiness blocker or rewrite history solely to remove it.
 This exception covers the existing Git metadata, not personal details in source or documentation.
-Keep using the approved public project identity for new commits. Other exposure checks and the
-separate repository-visibility approval still apply.
+Other exposure checks and the separate repository-visibility approval still apply.
 
 `scripts/validate.mjs` scans version-controlled source candidates with generic leak patterns and
 an optional `LEAK_DENYLIST`. It reports only file and line locations, never matched values.
