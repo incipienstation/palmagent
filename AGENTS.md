@@ -2,6 +2,11 @@
 
 Guidance for coding agents maintaining the Palmagent repository.
 
+## Context discipline
+
+Keep instructions focused on context needed to act correctly; link to canonical guidance instead
+of duplicating it. Use [garden](.agents/skills/garden/SKILL.md) to audit and propose context cleanup.
+
 ## What this is
 
 Palmagent's public-bound pnpm + Nx source monorepo. It will contain the self-hosted dispatcher,
