@@ -31,8 +31,15 @@ email addresses, user-specific home paths, private domains or addresses, host in
 production data, CLI transcripts, database files, or private-repository references. Replace
 environment-specific examples with explicit placeholders. Sanitize during import, not afterward.
 
+For new maintainer-authored commits, use the maintainer's public GitHub profile display name
+and one maintainer-approved, verified account email in repository-local Git configuration.
+When merging the maintainer's own pull requests with `gh pr merge`, explicitly pass that same
+email with `--author-email`; GitHub-created merges do not inherit local Git identity settings.
+Preserve GitHub's service committer identity on commits it creates. Account attribution does
+not require replacing that service identity, and other contributors retain their own authorship.
+
 The maintainer approved public disclosure of the existing author/committer metadata in these
-historical commits on 2026-09-07:
+pre-normalization commits on 2026-09-07; older PR records may still reference them:
 
 - `2a7b32d8934dc27b81c1988261720a58cf5243b7`
 - `88965c0639eb22e744dfb5d8aee315d95b70299c`
