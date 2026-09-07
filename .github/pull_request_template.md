@@ -20,4 +20,6 @@ Complete this section when content came from a non-public source. Otherwise mark
 
 ## Delivery boundaries
 
+- [ ] Version changes have prior explicit human approval recorded here, or this PR does not change versions.
+<!-- For version changes, link or summarize the approval of the proposed version and release scope. -->
 - [ ] This PR does not imply merge, publication, repository visibility changes, or deployment.

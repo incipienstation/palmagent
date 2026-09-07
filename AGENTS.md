@@ -80,12 +80,19 @@ remain platform-specific.
 
 ## Versioning and releases
 
+- Before changing version fields or creating/pushing a release tag, present the proposed
+  version, release scope, compatibility impact, and validation evidence for human review.
+  Record explicit human approval before execution; a general instruction to proceed, green
+  CI, or a merge is not versioning approval. Automation must not choose or bump versions.
 - Use one fixed product version for the generated npm package and both versioned plugin
   manifests. `pnpm release:check` enforces synchronization.
 - Prereleases (`alpha`, `beta`, `rc`) use npm dist-tag `next`; stable releases use `latest`.
 - A source version, green check, merge, tag, or draft release is not publication evidence.
-- Never publish from a workstation or arbitrary branch. Candidate automation is read-only and
-  produces an artifact only; it contains no registry or deployment credentials.
+- Release automation starts from an annotated `v<root-version>` tag on `main` history. Tags
+  are immutable. Version preparation includes a nonempty `## <version>` changelog section.
+- Never publish from a workstation or arbitrary branch. Candidate validation is read-only;
+  a separate job may create a draft GitHub Release with the validated artifact. Neither job
+  publishes a release, publishes to npm, or deploys a host.
 - A future publish job must use npm Trusted Publishing and a protected approval environment.
 - Published versions are immutable. Deprecate a bad version, move the dist-tag back, and issue
   a new version rather than overwriting or reusing one.
