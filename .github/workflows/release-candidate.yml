@@ -52,13 +52,9 @@ jobs:
           PKG_PUBLISHABLE: "1"
           EXPECT_PUBLISHABLE: "1"
         run: |
-          pnpm pkg:build
+          pnpm pkg:assemble
           pnpm release:check --artifact
-          pnpm pkg:leakcheck
-          pnpm pkg:smoke
-          mkdir -p build/release
-          cd build/pkg
-          npm pack --pack-destination ../release
+          node scripts/pkg-smoke.mjs --pack-destination build/release
       - name: Record release provenance and notes
         if: github.event_name == 'push'
         env:

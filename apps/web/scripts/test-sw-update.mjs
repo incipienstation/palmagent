@@ -26,16 +26,14 @@ let server = null;
 
 // ---- cleanup ----------------------------------------------------------
 async function cleanup() {
-  if (originalSw !== null) {
-    try {
+  try {
+    if (originalSw !== null) {
       await writeFile(SW_PATH, originalSw);
       console.log("[test] restored sw.js");
-    } catch {
-      /* best-effort */
     }
-  }
-  if (server) {
-    server.kill("SIGTERM");
+  } finally {
+    // A failed restore must fail the gate: packaging reuses these verified bytes.
+    if (server) server.kill("SIGTERM");
   }
 }
 
