@@ -63,12 +63,11 @@ immutable artifact, then produce its own health evidence. Production should
 promote the artifact accepted in staging when the delivery system supports
 artifact promotion; it must not silently substitute an unreviewed build.
 
-Repository merge methods are intentionally limited to squash and merge commit;
-rebase merge is disabled. Branch-targeted rulesets should enforce squash for
-`develop` and merge commits for `main` when rulesets are available. Until then,
-the reviewer selecting the merge method is the enforcement gate. This policy
-defines branch and approval ownership only; it does not claim that staging or
-production deployment automation already exists.
+Repository merge methods are limited to squash and merge commit; rebase merge is
+disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
+Both branches require a pull request and the GitHub Actions `validate` check, and
+block deletion and force pushes. These rules define branch and approval ownership;
+staging and production deployment automation remain future work.
 
 Hotfixes branch from `main` and return to `main` through a reviewed pull request
 using a merge commit. After landing, create a short-lived branch from current
@@ -163,9 +162,10 @@ release assets: if a release already exists, the draft job fails for human revie
 An upload failure may leave a partial draft. Inspect it before any recovery;
 published versions always require a new version. A failed run before draft creation
 may be retried on the same unchanged tag. If source changes are needed, use a new
-version and tag. Configure tag rulesets to restrict creation and block updates and
-deletion of `v*` tags when available; this workflow does not configure repository
-rules or make tag mutation impossible outside Actions.
+version and tag. Active `v*` tag rulesets restrict creation to repository admins
+and block updates and deletion, including by admins. They are managed separately
+from this workflow; future release automation needs its own reviewed tag-creation
+permission.
 
 After release preparation is promoted and the exact commit is approved, a
 maintainer creates the annotated tag:

@@ -11,12 +11,10 @@ repository work. Retain shared facts where each audience needs them to act corre
 
 ## What this is
 
-Palmagent's public-bound pnpm + Nx source monorepo contains the self-hosted dispatcher,
+Palmagent's pnpm + Nx source monorepo contains the self-hosted dispatcher,
 mobile-first PWA, public CLI, shared contracts, and Claude Code + Codex operator plugins. Migration
 is intentionally incremental: import one coherent slice, sanitize it, verify it, and review it
 before importing the next.
-
-The repository remains private until the migration and public-safety audit are complete.
 
 ## Repository boundaries
 
@@ -33,7 +31,7 @@ The repository remains private until the migration and public-safety audit are c
 
 ## Public-safety rule
 
-Treat every committed byte and commit as future public material. Never commit secrets, personal
+Treat every committed byte and commit as public material. Never commit secrets, personal
 email addresses, user-specific home paths, private domains or addresses, host inventories,
 production data, CLI transcripts, database files, or private-repository references. Replace
 environment-specific examples with explicit placeholders. Sanitize during import, not afterward.
