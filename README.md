@@ -45,22 +45,44 @@ Skill bodies are authored once under `skills/` and synchronized to both plugin t
 
 Requirements: Node.js 22 or newer and pnpm 11.5.2 (pinned by `packageManager`).
 
+Install dependencies and start the server:
+
 ```bash
 pnpm install
+pnpm dev
+```
+
+For PWA development, run `pnpm web:dev` in another terminal. See the
+[web development guide](apps/web/README.md) for local ports and UI checks.
+
+Run the complete source validation before submitting a change:
+
+```bash
+pnpm verify
+```
+
+Individual checks are also available while developing:
+
+```bash
 pnpm typecheck
+pnpm server:contracts
 pnpm server:smoke
 pnpm web:verify
 pnpm plugins:check
 pnpm pkg:check
-pnpm pkg:build
-pnpm pkg:smoke
 pnpm release:check
-pnpm verify
 ```
 
-See [AGENTS.md](AGENTS.md) for repository architecture, privacy constraints, and contribution
-workflow. See [docs/RELEASING.md](docs/RELEASING.md) for versioning, candidate artifacts, and the
-separate merge, publication, visibility, and deployment gates.
+The source checks run without a live agent account. With an authenticated CLI, you can additionally
+run `pnpm server:contracts:live -- --agent codex`. To check the assembled npm package, run
+`pnpm pkg:build` followed by `pnpm pkg:smoke`.
+
+Contribute through a `feature/*` branch from `develop` and a pull request targeting `develop`.
+Keep private environment details out of source and examples. [AGENTS.md](AGENTS.md) contains
+the instructions for coding agents working in this repository.
+
+For releases, follow [docs/RELEASING.md](docs/RELEASING.md), which covers versioning, candidate
+artifacts, and the separate merge, publication, visibility, and deployment gates.
 
 ## Install the operator plugin
 
