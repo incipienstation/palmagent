@@ -31,6 +31,19 @@ email addresses, user-specific home paths, private domains or addresses, host in
 production data, CLI transcripts, database files, or private-repository references. Replace
 environment-specific examples with explicit placeholders. Sanitize during import, not afterward.
 
+The maintainer approved public disclosure of the existing author/committer metadata in these
+historical commits on 2026-09-07:
+
+- `2a7b32d8934dc27b81c1988261720a58cf5243b7`
+- `88965c0639eb22e744dfb5d8aee315d95b70299c`
+- `effa40c98985330e1515daa4b8a21f34b5f75f90`
+- `01da2b61e775475bea54028bcead3445e5f48062`
+
+Do not treat that metadata as a public-readiness blocker or rewrite history solely to remove it.
+This exception covers the existing Git metadata, not personal details in source or documentation.
+Keep using the approved public project identity for new commits. Other exposure checks and the
+separate repository-visibility approval still apply.
+
 `scripts/validate.mjs` scans version-controlled source candidates with generic leak patterns and
 an optional `LEAK_DENYLIST`. It reports only file and line locations, never matched values.
 
