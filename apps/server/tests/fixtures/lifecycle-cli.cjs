@@ -16,7 +16,11 @@ let pinged = false;
 const exitCode = () => spec.exitCode ?? (spec.failed ? 1 : 0);
 const emit = (value) => process.stdout.write(JSON.stringify(value) + "\n");
 const marker = (suffix) => path.join(process.env.PROBE_CONTROL, spec.key + suffix);
-const mark = (suffix, data = "") => fs.writeFileSync(marker(suffix), data);
+const mark = (suffix, data = "") => {
+  const temporary = marker(suffix) + `.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, data);
+  fs.renameSync(temporary, marker(suffix));
+};
 const text = (value) => emit(agent === "claude"
   ? { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: value } } }
   : { type: "item.completed", item: { type: "agent_message", text: value } });

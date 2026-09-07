@@ -120,12 +120,26 @@ release environment.
 
 ## Candidate automation
 
-Trusted repository CI (same-repository pull requests and branch pushes) also
-builds a package, requires the private-context denylist, runs an isolated packed
-install smoke, and uploads a short-lived tarball named for the source commit.
-Use the successful `develop` push artifact for staging and record its SHA-256
-alongside the source commit. This does not publish to npm or deploy a service.
-Fork pull requests continue to run source validation without repository secrets.
+The required `validate` check always runs metadata, skill synchronization, link,
+version, and public-content checks. Known documentation and skill-only PRs need
+no dependency installation or runtime tests. Code PRs add type/tooling checks and
+the affected server or PWA tests; shared contracts exercise both. Classification
+uses the complete PR diff, so a documentation follow-up does not hide earlier
+code changes. Unknown paths or unavailable change history select the full gate.
+
+Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
+dependency, workflow, and unknown changes add packed-install verification for
+trusted PRs, but do not upload a staging artifact. Same-repository checks require
+the private-context denylist; fork PRs retain generic source leak checks without
+repository secrets or publishable package generation.
+
+Every `develop` push runs the full source gate, builds a package, runs isolated
+packed-install smoke, and uploads the exact tested tarball named for the source
+commit. Use that successful push artifact for staging and record its SHA-256
+alongside the source commit. Every `main` push runs the full source gate; release
+packages are produced by the separate workflow below. New PR revisions cancel
+superseded PR runs. Branch integration runs are not cancelled by this policy.
+This does not publish to npm or deploy a service.
 
 `.github/workflows/release-candidate.yml` runs on `v*` tag pushes. It retains a
 manual, artifact-only run on `main`; manual runs on tags or other branches are
@@ -134,9 +148,9 @@ skipped. A tag push:
 1. requires an annotated tag matching the root version and the workflow commit;
 2. verifies that commit is in `origin/main` history and has versioned release notes;
 3. installs from the lockfile and runs the complete repository verification gate;
-4. builds the PWA and the self-contained npm package from the tagged checkout;
+4. reuses the PWA built by the source gate to assemble the self-contained npm package;
 5. requires the private-context `LEAK_DENYLIST` and version/plugin synchronization;
-6. installs the packed tarball in a scratch project and boots it;
+6. packs once, installs that tarball in a scratch project, and boots it;
 7. uploads the package, `SHA256SUMS`, `release.json`, and notes as a 14-day workflow
    artifact named `palmagent-release-<commit>`;
 8. downloads that artifact in a separate job, rechecks the tag identity and package

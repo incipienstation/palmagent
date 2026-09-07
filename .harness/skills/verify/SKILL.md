@@ -1,11 +1,19 @@
 ---
 name: verify
-description: Third stage of Palmagent's plan → start → verify → ship loop. Run the complete repository gate and any scope-specific runtime checks before delivery. Use after implementation and before shipping.
+description: Third stage of Palmagent's plan → start → verify → ship loop. Run repository checks appropriate to the change scope before delivery. Use after implementation and before shipping.
 ---
 
 # Verify
 
-Run the current complete gate from the repo root:
+For documentation and skill-only edits, run from the repo root:
+
+```bash
+pnpm plugins:check
+pnpm release:check
+git diff --check
+```
+
+For code, dependencies, workflows, or uncertain scope, run the full local source gate:
 
 ```bash
 pnpm verify
@@ -14,6 +22,9 @@ pnpm verify
 This includes workspace typechecking, operator skill synchronization, repository skill symlinks,
 manifests, links, and leak checks.
 Add focused package, runtime, or browser verification whenever the changed surface requires it.
+CI selects checks from the complete PR diff under the
+[CI and candidate policy](../../../docs/RELEASING.md#candidate-automation); earlier code changes
+in the PR still count even when the latest commit only changes documentation.
 Notes:
 
 - If an operator plugin skill is out of sync, run `node scripts/sync-skills.mjs` (without `--check`)

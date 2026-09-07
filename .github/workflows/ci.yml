@@ -9,45 +9,75 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
-      - name: Verify workspace and plugins
-        run: pnpm verify
+      - name: Select checks from the complete change scope
+        id: scope
+        run: node scripts/ci-scope.mjs
+      - name: Verify repository metadata, skills, links, and public content
+        run: |
+          node --test scripts/tests/ci-scope.test.mjs scripts/tests/repository-skills.test.mjs
+          node scripts/sync-skills.mjs --check
+          node scripts/validate.mjs
+          node scripts/check-release.mjs
         env:
           # Context/PII denylist — never committed; lives only as a repo secret.
           # Required for same-repo PRs and protected-branch pushes. Fork PRs cannot
           # receive repository secrets, so they still run the generic patterns.
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - uses: pnpm/action-setup@v4
+        if: steps.scope.outputs.code == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.scope.outputs.code == 'true'
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        if: steps.scope.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Verify types and tooling
+        if: steps.scope.outputs.code == 'true'
+        run: pnpm typecheck && pnpm pkg:check
+      - name: Verify server contracts and runtime
+        if: steps.scope.outputs.server == 'true'
+        run: pnpm server:contracts && pnpm server:smoke
+      - name: Build the PWA once
+        if: steps.scope.outputs.web == 'true' || (steps.scope.outputs.package == 'true' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository))
+        run: pnpm web:build
+      - name: Install Chromium
+        if: steps.scope.outputs.web == 'true'
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
+      - name: Verify PWA and service worker
+        if: steps.scope.outputs.web == 'true'
+        run: pnpm web:verify:built
       - name: Verify packed candidate
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.scope.outputs.package == 'true' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: "true"
           PKG_PUBLISHABLE: "1"
           EXPECT_PUBLISHABLE: "1"
         run: |
-          pnpm pkg:build
+          pnpm pkg:assemble
           pnpm release:check --artifact
-          pnpm pkg:leakcheck
-          pnpm pkg:smoke
-          mkdir -p build/candidate
-          cd build/pkg
-          npm pack --pack-destination ../candidate
+          node scripts/pkg-smoke.mjs --pack-destination build/candidate
       - name: Upload validated staging candidate
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         uses: actions/upload-artifact@v4
         with:
           name: palmagent-candidate-${{ github.event.pull_request.head.sha || github.sha }}
