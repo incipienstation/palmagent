@@ -126,8 +126,9 @@ synchronization. Authenticated live adapter smoke is explicit and is not part of
 Release candidates additionally run the assembled-package leak check and packed-install smoke
 described in `docs/RELEASING.md`.
 
-CI always reports `validate`, with expensive PR checks selected by the complete change scope.
+CI runs only on PRs and always reports `validate`, with expensive checks selected by the complete
+change scope.
 For documentation and skill-only edits, local `pnpm plugins:check`, `pnpm release:check`, and
 `git diff --check` are sufficient. Follow the [CI and candidate policy](docs/RELEASING.md#candidate-automation)
-for code, packaging, and integration checks. Build the PWA before using `web:verify:built` or
+for code checks and manual staging packages. Build the PWA before using `web:verify:built` or
 `pkg:assemble`; those commands deliberately reuse existing output within the same verified run.

@@ -10,8 +10,7 @@ const isStatic = (path) => /^(?:AGENTS|CLAUDE|README|CHANGELOG)\.md$/.test(path)
     'plugins/codex/.agents/plugins/marketplace.json',
     'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'].includes(path);
 
-export function classifyChanges(paths, eventName = 'pull_request', ref = '') {
-  if (eventName === 'push') return { ...full(), package: ref === 'refs/heads/develop' };
+export function classifyChanges(paths, eventName = 'pull_request') {
   if (eventName !== 'pull_request' || !Array.isArray(paths) || !paths.length) return full();
   const scope = { code: false, server: false, web: false, package: false };
   for (const path of paths) {
