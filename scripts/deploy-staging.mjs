@@ -111,6 +111,9 @@ export async function deploy(config, target, { call = run, health = verifyHealth
     receipt = { environment: 'staging', config, created: new Date().toISOString(), status: 'prepared', target: identity,
       targetPath, previous: { ...previous, path: previousPath }, database: 'untouched by deploy script; activation may migrate schema' };
     save(receiptPath, receipt);
+    // Track attempted operations too: a failed later deployment must invalidate
+    // an older rollback retry even if both packages have identical bytes.
+    save(join(directory, 'latest-operation.json'), { receipt: receiptPath, operation: 'deploy' });
     receipt.status = 'installing'; save(receiptPath, receipt);
     call('npm', ['install', '--global', '--prefix', config.npmPrefix, targetPath, '--registry=https://registry.npmjs.org']);
     installed(config, identity);
@@ -136,21 +139,39 @@ export async function deploy(config, target, { call = run, health = verifyHealth
 export async function rollback(config, path, databaseCompatible, { call = run, health = verifyHealth, installed = verifyInstalled, bind = validateBinding } = {}) {
   assert(databaseCompatible, 'Rollback requires explicit --database-compatible after reviewing schema compatibility');
   config = bind(config, call);
-  const receipt = json(path);
-  assert(receipt.environment === 'staging' && ['succeeded', 'failed'].includes(receipt.status), 'Receipt is not a rollback candidate');
-  for (const key of ['domain', 'pkgDir', 'dataDir', 'npmPrefix']) assert(receipt.config[key] === config[key], 'Rollback receipt belongs to another installation');
-  const previous = inspectPackage(receipt.previous.path, { allowLegacy: true });
-  assert(previous.sha256 === receipt.previous.sha256, 'Rollback artifact checksum mismatch');
   const directory = join(config.dataDir, 'deployments');
+  const latestPath = join(directory, 'latest-operation.json');
   const lock = join(directory, '.lock');
   mkdirSync(lock, { mode: 0o700 });
+  let attempted = false;
+  let receipt;
   try {
     save(join(lock, 'owner.json'), { pid: process.pid, started: new Date().toISOString(), operation: 'rollback' });
+    // Read mutable operation state under the lock, including on retries.
+    receipt = json(path);
+    assert(receipt.environment === 'staging' && ['succeeded', 'failed'].includes(receipt.status), 'Receipt is not a rollback candidate');
+    for (const key of ['domain', 'pkgDir', 'dataDir', 'npmPrefix']) assert(receipt.config[key] === config[key], 'Rollback receipt belongs to another installation');
+    const previous = inspectPackage(receipt.previous.path, { allowLegacy: true });
+    assert(previous.sha256 === receipt.previous.sha256, 'Rollback artifact checksum mismatch');
+    assert(!receipt.rollback || receipt.rollback.status === 'failed', 'Rollback already completed or was interrupted; inspect its recorded state');
+    if (existsSync(latestPath)) {
+      const latest = json(latestPath);
+      assert(resolve(latest.receipt) === resolve(path)
+        && latest.operation === (receipt.rollback ? 'rollback' : 'deploy'), 'A later deployment operation prevents this rollback');
+    } else assert(!receipt.rollback, 'Cannot verify rollback retry ownership without the latest operation record');
+    const resume = receipt.rollback?.failedAt === 'activating';
     // Never roll back over a later deployment or an unrecorded manual overlay.
-    installed(config, receipt.target);
-    receipt.rollback = { status: 'installing', started: new Date().toISOString() }; save(path, receipt);
-    call('npm', ['install', '--global', '--prefix', config.npmPrefix, receipt.previous.path, '--registry=https://registry.npmjs.org']);
-    installed(config, previous);
+    // After activation failed, our own restored package is the expected state.
+    installed(config, resume ? previous : receipt.target);
+    receipt.rollback = { status: resume ? 'activating' : 'installing', started: receipt.rollback?.started ?? new Date().toISOString(),
+      failures: receipt.rollback?.failures ?? [] };
+    save(path, receipt);
+    save(latestPath, { receipt: resolve(path), operation: 'rollback' });
+    attempted = true;
+    if (!resume) {
+      call('npm', ['install', '--global', '--prefix', config.npmPrefix, receipt.previous.path, '--registry=https://registry.npmjs.org']);
+      installed(config, previous);
+    }
     receipt.rollback.status = 'activating'; save(path, receipt);
     call(process.execPath, [join(config.pkgDir, 'cli.js'), 'update', '--data-dir', config.dataDir, '--non-interactive']);
     installed(config, previous);
@@ -159,7 +180,11 @@ export async function rollback(config, path, databaseCompatible, { call = run, h
     save(join(directory, 'current.json'), { receipt: resolve(path), rollback: true });
     return { status: 'rolled-back', receipt: resolve(path), version: previous.version, sha256: previous.sha256 };
   } catch (error) {
-    if (receipt.rollback) { receipt.rollback.failedAt = receipt.rollback.status; receipt.rollback.status = 'failed'; save(path, receipt); }
+    if (attempted) {
+      receipt.rollback.failedAt = receipt.rollback.status;
+      receipt.rollback.failures.push({ phase: receipt.rollback.status, at: new Date().toISOString() });
+      receipt.rollback.status = 'failed'; save(path, receipt);
+    }
     throw error;
   } finally { rmSync(lock, { recursive: true }); }
 }

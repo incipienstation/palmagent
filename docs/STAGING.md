@@ -34,21 +34,32 @@ pnpm staging:deploy deploy --version '<exact-version>' --commit '<40-character-s
 the exact npm version, checks its embedded clean-source identity, and records the archive hash.
 Stable candidates can also be accepted in staging before production promotion.
 
-Before npm setup is complete, use the tarball from a successful `develop` push instead:
+For a CI package, manually run `staging-candidate.yml` on `develop` with the approved source
+commit. Branch pushes do not build staging packages:
 
 ```bash
+gh workflow run staging-candidate.yml --ref develop -f commit='<40-character-source-sha>'
+gh run list --workflow staging-candidate.yml --branch develop --event workflow_dispatch
 gh run view '<run-id>' --json headSha,headBranch,event,conclusion
-gh run download '<run-id>' --name 'palmagent-candidate-<source-sha>' --dir '<private-artifact-directory>'
+gh run download '<run-id>' --name 'palmagent-staging-<source-sha>' --dir '<private-artifact-directory>'
+cat '<private-artifact-directory>/staging.json'
+cat '<private-artifact-directory>/SHA256SUMS'
 sha256sum '<private-artifact-directory>/palmagent-<version>.tgz'
 pnpm staging:deploy deploy --artifact '<package.tgz>' --sha256 '<reviewed-sha256>' --commit '<source-sha>' --dry-run
 pnpm staging:deploy deploy --artifact '<package.tgz>' --sha256 '<reviewed-sha256>' --commit '<source-sha>'
 ```
 
-Confirm the run is a successful `push` to `develop` and its `headSha` matches the requested
-commit. Candidate release assets may also be supplied this way. A locally computed checksum
-pins downloaded bytes; it does not authenticate the producer. Verify the trusted workflow/run
-before approving the checksum. Dirty local builds and packages without source identity cannot
-be new deployment targets.
+Select the requested run and wait for success. Confirm its workflow is `staging-candidate.yml`,
+its event is `workflow_dispatch`, and its branch is `develop`. The run's `headSha` identifies
+the workflow tools; it can differ from the selected package source. In `staging.json`, verify
+`commit` matches the approved source SHA, `workflowCommit` matches the run's `headSha`, and
+`runUrl` points to that run. Check the named tarball's SHA-256 against both `staging.json.sha256`
+and `SHA256SUMS`, then supply that source commit and checksum to the deployment command.
+
+Candidate release assets may also be supplied with `--artifact` after checking their
+`release.json` and trusted release workflow. A locally computed checksum pins downloaded bytes;
+it does not authenticate the producer. Dirty local builds and packages without source identity
+cannot be new deployment targets.
 
 Dry-run downloads and validates into temporary storage. It performs no package installation,
 service restart, or persistent deployment write. Before activation, review schema compatibility,
@@ -66,6 +77,8 @@ Success requires installed product-file hashes, local and public health, the run
 embedded version/commit, and served PWA entry-file hashes to match. The result includes the
 version, commit, SHA-256, and receipt path. `deployments/current.json` points to the latest
 successful operation. CI success or an npm install exit code alone is not readiness evidence.
+`deployments/latest-operation.json` separately records the most recent deployment or rollback
+attempt, including failures, so an older rollback cannot supersede a later operation.
 
 ## Rollback and failures
 
@@ -88,6 +101,12 @@ after activation, restore data, delete previous releases, or conceal the failure
 to overwrite a later deployment or manual overlay. If npm failed halfway through installation,
 the installed files may not match either receipt: inspect the recorded phase and repair the
 package from the retained tarball before attempting activation; do not bypass the drift check.
+
+If rollback installed the previous package but activation or health verification failed, fix
+the cause and repeat the same rollback command. It resumes activation and verification without
+reinstalling when the previous package hashes match and no later deployment operation has
+started. Manual overlays and later operations block the retry. Blocked retries preserve the
+original failure record; actual retry failures append to the receipt's rollback failure history.
 
 An existing lock blocks concurrent operations. If a process was interrupted, inspect
 `deployments/.lock/owner.json`, prove that process has ended, and remove only that stale lock.

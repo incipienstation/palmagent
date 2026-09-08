@@ -91,8 +91,9 @@ Before creating or pushing a tag, obtain approval for its exact version and targ
 valid for the same reviewed action. The tag workflow validates identity and ancestry; it does
 not invent a version or infer approval from a merge.
 
-1. Squash feature PRs into `develop`. Ordinary merges produce a tested CI tarball, without
-   tagging or npm publication. Deploy that exact artifact when staging acceptance is needed.
+1. Squash feature PRs into `develop`. When staging acceptance is needed, manually run
+   `staging-candidate.yml` for the approved source commit and deploy its exact tested tarball.
+   Ordinary merges do not build a package, tag, publish, or deploy.
 2. Propose a concrete prerelease version and release scope. Preview the version change with
    `pnpm release:prepare <version>`; after explicit approval add `--apply`. This synchronizes
    the root and plugin manifests and moves `Unreleased` notes into the chosen version.
