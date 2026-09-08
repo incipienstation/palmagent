@@ -145,6 +145,7 @@ export async function rollback(config, path, databaseCompatible, { call = run, h
   const lock = join(directory, '.lock');
   mkdirSync(lock, { mode: 0o700 });
   try {
+    save(join(lock, 'owner.json'), { pid: process.pid, started: new Date().toISOString(), operation: 'rollback' });
     // Never roll back over a later deployment or an unrecorded manual overlay.
     installed(config, receipt.target);
     receipt.rollback = { status: 'installing', started: new Date().toISOString() }; save(path, receipt);
