@@ -24,6 +24,10 @@ import { ProcessSupervisor } from "./supervisor.js";
 import type { RunnerBackend } from "./types.js";
 import { WorktreeManager } from "./worktree.js";
 
+// Embedded at package build time; source-mode health keeps its existing shape.
+declare const __PALMAGENT_BUILD__: { version: string; sourceCommit: string; dirty: boolean };
+const buildIdentity = typeof __PALMAGENT_BUILD__ === "undefined" ? {} : { build: __PALMAGENT_BUILD__ };
+
 // Pick the process backend: the runner daemon (so a deploy can restart this web
 // server without killing in-flight turns) when RUNNER_SOCKET is set AND reachable,
 // else spawn the CLIs in-process (development, or a degraded fallback if the
@@ -224,7 +228,7 @@ const server = createServer(async (req, res) => {
 
   // ---- auth: unauthenticated health + the always-reachable login/enroll API ----
   // (These must never be gated — they are how you become authenticated.)
-  if (path === "/api/health" && method === "GET") return sendJson(res, 200, { ok: true });
+  if (path === "/api/health" && method === "GET") return sendJson(res, 200, { ok: true, ...buildIdentity });
   if (path.startsWith("/api/auth/")) {
     try {
       if (path === "/api/auth/me" && method === "GET") return sendJson(res, 200, auth.status(req));

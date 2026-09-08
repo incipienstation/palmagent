@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   package:
-    if: (github.event_name == 'push' && !github.event.deleted) || github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && !github.event.deleted) || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Validate annotated release tag and main ancestry
+      - name: Validate annotated tag and channel source branch
         id: tag
         if: github.event_name == 'push'
         run: node scripts/release-tag.mjs check

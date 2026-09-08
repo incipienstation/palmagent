@@ -19,6 +19,7 @@ try {
   for (const dir of ["home", "cache", "tmp", "pack"]) mkdirSync(join(scratch, dir));
   assert(existsSync(join(PKG, "package.json")), "build/pkg missing: run pnpm pkg:build first");
   const pkg = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8"));
+  const buildInfo = JSON.parse(readFileSync(join(PKG, "build-info.json"), "utf8"));
   const binName = Object.keys(pkg.bin ?? {})[0];
   assert(binName, "package has no bin");
   const port = await freePort();
@@ -56,7 +57,11 @@ try {
     if (!server.listening()) continue;
     try {
       const response = await fetch(origin + "/api/health", { signal: AbortSignal.timeout(1000) });
-      if (response.ok && (await response.json()).ok === true) { healthy = true; break; }
+      const health = await response.json();
+      if (response.ok && health.ok === true) {
+        assert.deepEqual(health.build, buildInfo, "running package build identity differs from its artifact");
+        healthy = true; break;
+      }
     } catch { /* not ready yet */ }
   }
   assert(healthy, "new server did not become healthy within the deadline");

@@ -25,7 +25,9 @@
     "pkg:check": "node --test scripts/tests/*.test.mjs && tsx apps/server/scripts/cli-render-check.ts",
     "pkg:leakcheck": "node scripts/pkg-leakcheck.mjs build/pkg",
     "pkg:smoke": "node scripts/pkg-smoke.mjs",
-    "release:check": "node scripts/check-release.mjs"
+    "release:check": "node scripts/check-release.mjs",
+    "release:prepare": "node scripts/release-version.mjs",
+    "staging:deploy": "node scripts/deploy-staging.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

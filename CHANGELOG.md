@@ -4,6 +4,8 @@ All notable user-visible changes to Palmagent are documented here.
 
 ## Unreleased
 
+- Add explicit prerelease/stable release preparation, protected npm Trusted Publishing, and exact-package staging deployment with verified rollback receipts.
+
 ### Added
 
 - Public-source monorepo foundation with shared contracts, host runtime, PWA,

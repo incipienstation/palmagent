@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { versionPolicy } from "./lib/release-version.mjs";
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
@@ -19,8 +20,7 @@ export function releaseNotes(cwd, version) {
 
 export function checkTag(cwd, tag, expectedCommit, expectedTagObject) {
   const version = json(join(cwd, "package.json")).version;
-  assert(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.(0|[1-9]\d*))?$/.test(version)
-    && version !== "0.0.0", "Unsupported release version");
+  const policy = versionPolicy(version);
   assert(tag === `v${version}`, "Release tag must equal v<root-version>");
   assert(/^[0-9a-f]{40}$/.test(expectedCommit ?? ""), "Expected commit SHA is required");
   const ref = `refs/tags/${tag}`;
@@ -29,9 +29,9 @@ export function checkTag(cwd, tag, expectedCommit, expectedTagObject) {
   const commit = git(cwd, "rev-parse", `${ref}^{commit}`);
   assert(commit === expectedCommit && git(cwd, "rev-parse", "HEAD") === commit, "Tag and checkout must match the workflow commit");
   assert(!expectedTagObject || tagObject === expectedTagObject, "Release tag object changed");
-  git(cwd, "merge-base", "--is-ancestor", commit, "refs/remotes/origin/main");
+  git(cwd, "merge-base", "--is-ancestor", commit, `refs/remotes/origin/${policy.branch}`);
   releaseNotes(cwd, version);
-  return { tag, tagObject, commit, version, channel: version.includes("-") ? "next" : "latest" };
+  return { tag, tagObject, commit, ...policy };
 }
 
 export function prepareBundle(cwd, directory, identity, runUrl) {
@@ -42,7 +42,7 @@ export function prepareBundle(cwd, directory, identity, runUrl) {
   writeFileSync(join(directory, "SHA256SUMS"), `${manifest.sha256}  ${filename}\n`);
   writeFileSync(join(directory, "RELEASE_NOTES.md"), releaseNotes(cwd, identity.version)
     + `\nSource commit: \`${identity.commit}\`\n\nValidation: ${runUrl}\n\n`
-    + "This draft does not publish to npm or deploy a host. Review the attached package and checksum before publication.\n");
+    + "Publishing this release requests npm publication through the protected channel environment. Host deployment remains a separate operator action.\n");
   return manifest;
 }
 
