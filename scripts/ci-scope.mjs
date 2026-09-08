@@ -10,7 +10,7 @@ try {
 } catch {
   console.log('Changed paths unavailable; selecting the full gate.');
 }
-const scope = classifyChanges(paths, process.env.GITHUB_EVENT_NAME, process.env.GITHUB_REF);
+const scope = classifyChanges(paths, process.env.GITHUB_EVENT_NAME);
 const output = Object.entries(scope).map(([name, value]) => `${name}=${value}`).join('\n') + '\n';
 console.log(output.trim());
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output);

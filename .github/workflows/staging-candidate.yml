@@ -1,0 +1,74 @@
+name: staging candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full 40-character commit SHA from develop history
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the reviewed workflow tools
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate the exact staging source
+        id: source
+        run: node scripts/staging-candidate.mjs check
+        env:
+          STAGING_COMMIT: ${{ inputs.commit }}
+      - name: Check out the selected source separately
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.commit }}
+          path: candidate
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: candidate/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: candidate/pnpm-lock.yaml
+      - name: Install candidate dependencies
+        working-directory: candidate
+        run: pnpm install --frozen-lockfile
+      - name: Build and verify the staging package
+        working-directory: candidate
+        run: |
+          pnpm plugins:check
+          pnpm release:check
+          pnpm web:build
+          pnpm pkg:assemble
+          pnpm release:check --artifact
+          node scripts/pkg-smoke.mjs --pack-destination build/staging
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: 'true'
+          PKG_PUBLISHABLE: '1'
+          EXPECT_PUBLISHABLE: '1'
+      - name: Record tested package provenance
+        run: node scripts/staging-candidate.mjs record candidate
+        env:
+          STAGING_COMMIT: ${{ steps.source.outputs.commit }}
+      - name: Upload the tested staging package
+        uses: actions/upload-artifact@v4
+        with:
+          name: palmagent-staging-${{ steps.source.outputs.commit }}
+          path: candidate/build/staging/*
+          if-no-files-found: error
+          retention-days: 14

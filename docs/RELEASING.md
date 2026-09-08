@@ -120,7 +120,8 @@ release environment.
 
 ## Candidate automation
 
-The required `validate` check always runs metadata, skill synchronization, link,
+Ordinary CI runs only on pull requests into `develop` or `main`, not on branch
+pushes after merge. The required `validate` check always runs metadata, skill synchronization, link,
 version, and public-content checks. Known documentation and skill-only PRs need
 no dependency installation or runtime tests. Code PRs add type/tooling checks and
 the affected server or PWA tests; shared contracts exercise both. Classification
@@ -133,13 +134,22 @@ trusted PRs, but do not upload a staging artifact. Same-repository checks requir
 the private-context denylist; fork PRs retain generic source leak checks without
 repository secrets or publishable package generation.
 
-Every `develop` push runs the full source gate, builds a package, runs isolated
-packed-install smoke, and uploads the exact tested tarball named for the source
-commit. Use that successful push artifact for staging and record its SHA-256
-alongside the source commit. Every `main` push runs the full source gate; release
-packages are produced by the separate workflow below. New PR revisions cancel
-superseded PR runs. Branch integration runs are not cancelled by this policy.
-This does not publish to npm or deploy a service.
+New PR revisions cancel superseded PR runs. Keep the required `validate` check
+and the rule requiring PRs to be current with their base branch before merge.
+There is no automatic post-merge validation or staging package build.
+
+When a staging package is needed, manually run `staging-candidate.yml` on the
+`develop` branch and provide the full 40-character `commit` SHA. The workflow
+requires that exact commit to belong to `develop` history, then checks it out
+separately from the workflow tools. It runs metadata/leak checks and package
+build/install verification without repeating the PR runtime/browser suites.
+The selected revision must support the current package assembly and smoke commands.
+
+The resulting `palmagent-staging-<commit>` artifact contains the exact installed
+tarball, `SHA256SUMS`, and `staging.json` with source and workflow commit IDs and
+the run URL. Use that artifact for staging and record its checksum alongside
+the source commit and staging health. Runs on other branches are skipped.
+This workflow neither deploys a service nor publishes to npm or GitHub Releases.
 
 `.github/workflows/release-candidate.yml` runs on `v*` tag pushes. It retains a
 manual, artifact-only run on `main`; manual runs on tags or other branches are

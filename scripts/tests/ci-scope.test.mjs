@@ -34,10 +34,9 @@ test('packaging, dependency, workflow, and unknown changes cannot take the stati
   assert.equal(classifyChanges(['packages/shared/src/branding.ts']).package, true);
 });
 
-test('integration pushes run all source checks; only develop produces a staging package', () => {
-  assert.deepEqual(classifyChanges(['README.md'], 'push', 'refs/heads/develop'), all);
-  assert.deepEqual(classifyChanges(['README.md'], 'push', 'refs/heads/main'), { ...all, package: false });
+test('missing scope or an unexpected event cannot select the static shortcut', () => {
   for (const paths of [undefined, []]) assert.deepEqual(classifyChanges(paths), all);
+  assert.deepEqual(classifyChanges(['README.md'], 'push'), all);
   assert.deepEqual(classifyChanges(['README.md'], 'unexpected-event'), all);
 });
 
