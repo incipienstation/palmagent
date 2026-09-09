@@ -22,6 +22,21 @@ test.describe("dispatch form", () => {
     await expect(page).toHaveScreenshot("dispatch.png");
   });
 
+  test("remembers the selected Codex model and submits its exact identifier", async ({ page }) => {
+    await page.getByRole("radio", { name: "codex", exact: true }).click();
+    await page.getByRole("combobox").filter({ hasText: /^default$/ }).first().click();
+    await page.getByRole("option", { name: "gpt-6-astra", exact: true }).click();
+    await page.getByRole("radio", { name: "claude", exact: true }).click();
+    await expect(page.getByRole("combobox").filter({ hasText: "gpt-6-astra" })).toHaveCount(0);
+    await page.getByRole("radio", { name: "codex", exact: true }).click();
+    await expect(page.getByRole("combobox").filter({ hasText: "gpt-6-astra" })).toBeVisible();
+    await assertViewportLocked(page);
+    await page.getByLabel("Prompt").fill("Review the sample project.");
+    const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/tasks");
+    await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+    expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-6-astra" });
+  });
+
   // Worktree isolation is opt-in and git-only. The toggle (below the fold, so the
   // visual baseline can't see it) must be present for a git repo and absent for a
   // plain folder, which always runs in place.

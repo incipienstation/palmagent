@@ -196,8 +196,9 @@ export type { PermissionOption } from "@palmagent/shared";
 // agent. DEFAULT_OPTION = leave it to the server/CLI (the field is omitted from
 // the request). Verified flag sets: claude `--model` aliases + `--effort`
 // (low|medium|high|xhigh|max); codex `-c model=…` + `-c model_reasoning_effort=…`
-// (minimal|low|medium|high). Codex model availability is account/CLI-version
-// gated; gpt-5.5 / gpt-5.4 / gpt-5.4-mini are verified working (codex 0.140).
+// (minimal|low|medium|high). Codex model availability depends on the signed-in
+// account/API key and client version; GPT-5.4 and GPT-5.4 mini are retained only
+// as legacy/API-key options after their 2026-08-31 ChatGPT-sign-in retirement.
 export const DEFAULT_OPTION = "default";
 
 export const MODELS: Record<AgentKind, { value: string; label: string }[]> = {
@@ -209,9 +210,15 @@ export const MODELS: Record<AgentKind, { value: string; label: string }[]> = {
   ],
   codex: [
     { value: DEFAULT_OPTION, label: "default" },
+    { value: "gpt-6-astra", label: "gpt-6-astra" },
+    { value: "gpt-5.6", label: "gpt-5.6" },
+    { value: "gpt-5.6-sol", label: "gpt-5.6-sol" },
+    { value: "gpt-5.6-terra", label: "gpt-5.6-terra" },
+    { value: "gpt-5.6-luna", label: "gpt-5.6-luna" },
+    { value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark" },
     { value: "gpt-5.5", label: "gpt-5.5" },
-    { value: "gpt-5.4", label: "gpt-5.4" },
-    { value: "gpt-5.4-mini", label: "gpt-5.4-mini" },
+    { value: "gpt-5.4", label: "gpt-5.4 (legacy/API)" },
+    { value: "gpt-5.4-mini", label: "gpt-5.4-mini (legacy/API)" },
   ],
 };
 
