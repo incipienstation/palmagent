@@ -22,6 +22,7 @@ function fixture(t, version = "0.1.0-alpha.1") {
   git("commit", "-m", "Release fixture");
   const commit = git("rev-parse", "HEAD");
   git("update-ref", "refs/remotes/origin/main", commit);
+  git("update-ref", "refs/remotes/origin/develop", commit);
   const tag = `v${version}`;
   git("tag", "-a", tag, "-m", "Release fixture");
   const directory = join(cwd, "bundle");
@@ -90,7 +91,7 @@ test("rejects missing tags, mismatched versions and missing workflow identity", 
   assert.throws(() => checkTag(f.cwd, f.tag, f.commit));
 });
 
-test("rejects tags outside main ancestry", (t) => {
+test("rejects tags outside the channel source ancestry", (t) => {
   const f = fixture(t);
   f.git("commit", "--allow-empty", "-m", "Unpromoted work");
   f.git("tag", "-f", "-a", f.tag, "-m", "Unpromoted tag");
@@ -98,11 +99,29 @@ test("rejects tags outside main ancestry", (t) => {
 });
 
 test("accepts an older main commit after main advances", (t) => {
-  const f = fixture(t);
+  const f = fixture(t, "0.1.0");
   f.git("commit", "--allow-empty", "-m", "Later main commit");
   f.git("update-ref", "refs/remotes/origin/main", f.git("rev-parse", "HEAD"));
   f.git("checkout", "--detach", f.commit);
   assert.equal(checkTag(f.cwd, f.tag, f.commit).commit, f.commit);
+});
+
+test("prereleases can originate on develop before main promotion", (t) => {
+  const f = fixture(t);
+  f.git("commit", "--allow-empty", "-m", "Develop candidate");
+  const commit = f.git("rev-parse", "HEAD");
+  f.git("update-ref", "refs/remotes/origin/develop", commit);
+  f.git("tag", "-f", "-a", f.tag, "-m", "Develop candidate");
+  assert.equal(checkTag(f.cwd, f.tag, commit).branch, "develop");
+});
+
+test("stable versions cannot be tagged on unpromoted develop work", (t) => {
+  const f = fixture(t, "0.1.0");
+  f.git("commit", "--allow-empty", "-m", "Not promoted");
+  const commit = f.git("rev-parse", "HEAD");
+  f.git("update-ref", "refs/remotes/origin/develop", commit);
+  f.git("tag", "-f", "-a", f.tag, "-m", "Not promoted");
+  assert.throws(() => checkTag(f.cwd, f.tag, commit));
 });
 
 test("rejects changed tag objects and a checkout different from the event commit", (t) => {

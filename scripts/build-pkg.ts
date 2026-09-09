@@ -13,7 +13,7 @@
 //
 // The generated package is private by default. Candidate automation may set
 // PKG_PUBLISHABLE=1 to inspect the real manifest, but publishing still requires
-// ALLOW_PUBLISH=1 and is intentionally absent from repository workflows.
+// the protected Trusted Publishing workflow.
 import { build, type Plugin } from "esbuild";
 import { execFileSync } from "node:child_process";
 import {
@@ -70,10 +70,17 @@ async function main(): Promise<void> {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
 
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+  const buildInfo = {
+    version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version,
+    sourceCommit: git("rev-parse", "HEAD"),
+    dirty: git("status", "--porcelain", "--untracked-files=normal") !== "",
+  };
   console.log("[build-pkg] bundling server / runner-daemon / cli …");
   await build({
     ...common,
     entryPoints: [join(SERVER, "src/server.ts")],
+    define: { __PALMAGENT_BUILD__: JSON.stringify(buildInfo) },
     outfile: join(OUT, "server.js"),
   });
   await build({
@@ -121,6 +128,7 @@ async function main(): Promise<void> {
     );
   }
   const publishable = process.env.PKG_PUBLISHABLE === "1";
+  writeFileSync(join(OUT, "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n");
 
   const pkg = {
     name: BRANDING.packageName,
@@ -142,6 +150,7 @@ async function main(): Promise<void> {
       "cli.js",
       "server.js",
       "runner-daemon.js",
+      "build-info.json",
       "web",
       "README.md",
       "LICENSE",

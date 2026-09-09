@@ -70,6 +70,7 @@ pnpm web:verify
 pnpm plugins:check
 pnpm pkg:check
 pnpm release:check
+pnpm release:prepare <version>  # read-only proposal; apply only after version approval
 ```
 
 The source checks run without a live agent account. With an authenticated CLI, you can additionally
@@ -104,3 +105,5 @@ See [plugins/codex/README.md](plugins/codex/README.md) for Codex-specific detail
 ## License
 
 [MIT](LICENSE)
+
+Maintainers deploy exact npm versions or tested CI packages with the [staging runbook](docs/STAGING.md).

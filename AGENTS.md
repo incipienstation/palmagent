@@ -75,7 +75,7 @@ remain platform-specific.
 - Branch `feature/*` from an up-to-date `origin/develop` in an isolated linked worktree.
 - Open feature pull requests into `develop`, never directly into `main`, and squash-merge each
   reviewed feature pull request so it lands as one reversible change.
-- `develop` is the staging source; `main` is the production and release source. Record the exact
+- `develop` is the staging and prerelease source; `main` is the stable production source. Record the exact
   deployed commit or immutable artifact and verify health separately from CI or merge status.
 - A green check or PR does not authorize merge, publication, repository visibility changes, or
   deployment. Keep each of those as an explicit human approval gate.
@@ -94,8 +94,10 @@ and validation evidence for explicit human approval before versioning or tagging
 permission to proceed, green CI, or a merge is not versioning approval; automation must not
 choose or bump versions. Never publish from a workstation or arbitrary branch.
 
-Current automation validates candidates and can create a draft GitHub Release; it does not
-publish releases, publish to npm, or deploy a host.
+Candidate automation creates reviewed draft assets. Publishing a GitHub Release requests the
+protected npm publication job (`npm-next` or `npm-latest`); a required reviewer must approve it.
+Host deployment remains operator-initiated through [staging-deploy](.harness/skills/staging-deploy/SKILL.md).
+Keep private environment bindings outside the repository; never infer staging or production from DNS.
 
 ## Commands
 

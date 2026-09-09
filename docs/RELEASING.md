@@ -48,8 +48,8 @@ production release are separate gates.
 
 | Branch | Environment role | Incoming pull request | Merge method |
 | --- | --- | --- | --- |
-| `develop` | staging source | `feature/*` or `hotfix-sync/*` | squash |
-| `main` | production and release source | `develop` promotion or `hotfix/*` | merge commit |
+| `develop` | staging and prerelease source | `feature/*` or `hotfix-sync/*` | squash |
+| `main` | production and stable release source | `develop` promotion or `hotfix/*` | merge commit |
 
 Feature branches are short-lived and represent one logical change, so they are
 squash-merged into `develop`. `develop` is long-lived: never squash or rebase a
@@ -67,7 +67,7 @@ Repository merge methods are limited to squash and merge commit; rebase merge is
 disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
 Both branches require a pull request and the GitHub Actions `validate` check, and
 block deletion and force pushes. These rules define branch and approval ownership;
-staging and production deployment automation remain future work.
+npm publication uses protected channel environments; staging uses an explicit operator command.
 
 Hotfixes branch from `main` and return to `main` through a reviewed pull request
 using a merge commit. After landing, create a short-lived branch from current
@@ -86,37 +86,37 @@ Approval to implement automation, a general instruction to proceed, green CI, or
 a merge does not authorize a version change. Agents and workflows must not select
 or bump the version automatically.
 
-Before creating or pushing the tag, obtain approval for its exact version and
-target `main` commit. Prior approval remains valid for the same reviewed action;
-changes to the proposed version, release scope, or tag target require renewed
-review. These are maintainer and agent procedure gates; the current workflow
-checks tag validity but does not verify a human-approval record through the API.
+Before creating or pushing a tag, obtain approval for its exact version and target commit:
+`develop` ancestry for prereleases, `main` ancestry for stable versions. Prior approval remains
+valid for the same reviewed action. The tag workflow validates identity and ancestry; it does
+not invent a version or infer approval from a merge.
 
-1. Feature branches start from `origin/develop` and squash-merge into `develop`.
-2. Deploy the exact accepted `develop` revision or artifact to staging and
-   record staging health separately from CI.
-3. After human approval of the version proposal, a release-preparation change
-   updates the root version, both plugin manifests,
-   and `CHANGELOG.md` in `develop`. Move the selected changes into a nonempty
-   `## <version>` section (for example, `## 0.1.0-alpha.1`). Keep later work under
-   `## Unreleased`.
-4. Promotion from `develop` to `main` is a separate reviewed pull request using
-   a merge commit.
-5. After promotion and tag approval, create and push an annotated `v<version>`
-   tag at the exact reviewed `main` commit. Never move, delete, or reuse release
-   tags, even if the workflow fails.
-6. The tag push validates that revision and creates a draft GitHub Release with
-   the version's changelog notes, package, checksum, and provenance. Inspect the
-   draft and record acceptance of its exact package before publication or host
-   deployment.
-7. Publishing the GitHub Release is the explicit publication approval.
-8. npm publication, repository visibility, and production-host deployment remain
-   separate gates. None is implied by a passing check, merge, tag, or draft.
+1. Squash feature PRs into `develop`. When staging acceptance is needed, manually run
+   `staging-candidate.yml` for the approved source commit and deploy its exact tested tarball.
+   Ordinary merges do not build a package, tag, publish, or deploy.
+2. Propose a concrete prerelease version and release scope. Preview the version change with
+   `pnpm release:prepare <version>`; after explicit approval add `--apply`. This synchronizes
+   the root and plugin manifests and moves `Unreleased` notes into the chosen version.
+3. Review and squash that preparation PR into `develop`. Approve and create an annotated
+   `v<version>` tag at its exact commit. Candidate CI creates a draft GitHub Release containing
+   the tested package, checksum, and source identity.
+4. Inspect the draft assets, then explicitly publish the GitHub Release. This requests npm
+   publication; the separate `npm-next` required-reviewer approval permits publication to `next`.
+5. Install `palmagent@<exact-version>` into staging using the [staging runbook](STAGING.md).
+   Record package checksum, source commit, runtime identity, and HTTPS/PWA checks.
+6. For stable promotion, propose and approve a stable version. Prepare its version/changelog
+   change in `develop`, then promote through a separate PR into `main` using a merge commit.
+   Tag the reviewed `main` commit. Review its newly built artifact in staging, publish the
+   GitHub Release, and approve `npm-latest`. A stable rebuild has distinct bytes and requires
+   its own acceptance even when based on an accepted prerelease.
+7. After stable promotion, propose the next development prerelease. Use
+   `pnpm release:prepare <next-version> --development` to preview and `--apply` only after
+   version approval. This updates versions while leaving unreleased work under `Unreleased`.
+8. Repository visibility and production-host deployment remain separate approvals. No merge,
+   tag, draft, npm publish, or staging deployment implicitly authorizes them.
 
-Do not publish from a workstation or arbitrary branch. The eventual npm publish
-job must use npm Trusted Publishing with the exact GitHub workflow identity,
-minimal `contents: read` plus `id-token: write` permissions, and a protected
-release environment.
+`release:prepare` never chooses a version, commits, tags, publishes, or deploys. It rejects
+backward versions and inconsistent manifests. Publishing and recovery are described below.
 
 ## Candidate automation
 
@@ -152,11 +152,10 @@ the source commit and staging health. Runs on other branches are skipped.
 This workflow neither deploys a service nor publishes to npm or GitHub Releases.
 
 `.github/workflows/release-candidate.yml` runs on `v*` tag pushes. It retains a
-manual, artifact-only run on `main`; manual runs on tags or other branches are
-skipped. A tag push:
+manual, artifact-only run on `develop` or `main`; manual runs on other refs are skipped. A tag push:
 
 1. requires an annotated tag matching the root version and the workflow commit;
-2. verifies that commit is in `origin/main` history and has versioned release notes;
+2. verifies prerelease ancestry in `origin/develop`, stable ancestry in `origin/main`, and versioned release notes;
 3. installs from the lockfile and runs the complete repository verification gate;
 4. reuses the PWA built by the source gate to assemble the self-contained npm package;
 5. requires the private-context `LEAK_DENYLIST` and version/plugin synchronization;
@@ -174,7 +173,7 @@ The draft command uses `--draft --verify-tag --latest=false`; alpha, beta, and r
 versions also use `--prerelease`. Supported tag versions are `vMAJOR.MINOR.PATCH`
 and `vMAJOR.MINOR.PATCH-{alpha,beta,rc}.N`, with no leading zeroes or build metadata.
 
-`release.json` records the tag object, source commit, version, intended npm channel,
+`release.json` records the tag object, source branch and commit, version, intended npm channel,
 package filename, SHA-256, and workflow URL. This is traceability metadata, not a
 cryptographic attestation or evidence of npm publication. The tagged package is a
 new candidate build; earlier staging acceptance does not automatically validate
@@ -191,13 +190,13 @@ and block updates and deletion, including by admins. They are managed separately
 from this workflow; future release automation needs its own reviewed tag-creation
 permission.
 
-After release preparation is promoted and the exact commit is approved, a
-maintainer creates the annotated tag:
+After release preparation lands on the appropriate branch and the exact commit is approved,
+a maintainer creates the annotated tag:
 
 ```bash
 release_version='<version>'
-release_commit='<reviewed-main-commit>'
-git fetch origin main
+release_commit='<reviewed-source-commit>'
+git fetch origin develop main
 git tag -a "v${release_version}" "$release_commit" -m "Palmagent ${release_version}"
 git push origin "refs/tags/v${release_version}"
 ```
@@ -208,8 +207,50 @@ make it run for an older revision. GitHub tag-push event and draft-command behav
 are documented in the [Actions event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)
 and [GitHub CLI reference](https://cli.github.com/manual/gh_release_create).
 
-A publishing workflow must not be added until the npm Trusted Publisher and the
-human approval mechanism have been reviewed and explicitly authorized.
+## Protected npm publication
+
+`.github/workflows/npm-publish.yml` runs when a human publishes a GitHub Release. Manual
+`workflow_dispatch` on `main` or `develop` retries an already-published GitHub Release by exact
+tag; it cannot publish a draft. It downloads existing assets and does not rebuild them.
+
+The inspection job checks tag identity, channel ancestry, release metadata, checksums, and
+clean package source identity before selecting `npm-next` or `npm-latest`. The publication job
+waits for the environment reviewer, downloads the assets again, verifies the same SHA-256,
+and publishes through GitHub OIDC with provenance. It has `contents: read`, `actions: read`
+(for environment validation), and `id-token: write`. No npm token or host credentials are used.
+The job fails closed unless the environment has required reviewers and the repository variable
+`NPM_PUBLISH_ENABLED` is exactly `true`.
+
+One-time setup, separate from any particular release:
+
+1. Create GitHub environments `npm-next` and `npm-latest`, with the maintainer as a required
+   reviewer. For a sole-maintainer repository, allow self-review so that a release still has a
+   deliberate second approval step. Restrict deployment refs to release tags (`v*`) plus
+   `develop`/`main` for manual retries. Keep administrative protection bypass disabled.
+2. In npm package settings for `palmagent`, configure GitHub Trusted Publishers for this
+   repository, workflow filename `npm-publish.yml`, and each environment (`npm-next`,
+   `npm-latest`). Confirm the authenticated npm account owns the package. No static npm token
+   belongs in GitHub secrets. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
+3. Set repository variable `NPM_PUBLISH_ENABLED=true` only after the trust mapping and required
+   reviewers are verified. Until then CI artifacts remain usable for staging.
+4. The first release must include this workflow in its tagged source; make it available on the
+   default branch for manual dispatch. Package/version/tag approvals remain independent of setup.
+
+The workflow pins Node 24 and npm 11.11.1 on a GitHub-hosted runner. Publishing a prerelease
+uses `next`; stable uses `latest`. It verifies the registry's SHA-512 integrity after upload.
+A retry finding identical published bytes succeeds without republishing or moving dist-tags.
+Different bytes at the same version fail; registry/auth/network errors are never treated as
+proof that a version is absent. Verify the intended dist-tag separately after recovery:
+
+```bash
+npm view palmagent dist-tags --json
+npm view palmagent@<version> dist.integrity
+```
+
+To recover a bad release, explicitly approve deprecation and a dist-tag correction, then issue
+a new version. Do not overwrite a published version or move a release tag. Host rollback is a
+separate operation; see [staging rollback](STAGING.md#rollback-and-failures). Reverting an npm tag
+does not downgrade an already-installed host or restore a database.
 
 ## Release checklist
 
@@ -220,9 +261,9 @@ Before publishing a prerelease or stable release:
 - `EXPECT_PUBLISHABLE=1 pnpm release:check --artifact` passes.
 - `REQUIRE_LEAK_DENYLIST=1 pnpm pkg:leakcheck` passes with the private denylist.
 - `pnpm pkg:smoke` installs the tarball and boots the PWA and SQLite runtime.
-- The tag is `v<root-version>` and points to the intended `main` commit.
+- The tag is `v<root-version>` and points to the intended channel-source commit.
 - The generated tarball contains only the reviewed CLI, server, runner, PWA,
-  README, license, and declared runtime dependencies.
+  README, license, build identity, and declared runtime dependencies.
 - The changelog describes user-visible changes and upgrade considerations.
 - Merge, publication, visibility, and host deployment approvals are recorded
   independently.
