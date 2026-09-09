@@ -8,6 +8,7 @@ All notable user-visible changes to Palmagent are documented here.
 
 ### Added
 
+- Show the latest reported task token usage and cost above the composer, and expand Codex model choices in task and routine forms.
 - Public-source monorepo foundation with shared contracts, host runtime, PWA,
   and Claude Code and Codex operator plugins.
 - Public CLI package assembly, host installer, deterministic release checks,

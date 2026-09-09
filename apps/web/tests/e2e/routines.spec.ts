@@ -38,4 +38,21 @@ test.describe("routines", () => {
   test("matches the visual baseline", async ({ page }) => {
     await expect(page).toHaveScreenshot("routines.png");
   });
+
+  test("legacy model labels do not change the identifier submitted for a routine", async ({ page }) => {
+    await page.route("**/api/routines", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({ json: { routine: { id: "r-created" } } });
+    });
+    await page.getByRole("button", { name: "New routine" }).click();
+    const form = page.locator("form");
+    await form.getByRole("radio", { name: "codex", exact: true }).click();
+    await form.getByRole("combobox").filter({ hasText: /^default$/ }).first().click();
+    await page.getByRole("option", { name: "gpt-5.4-mini (legacy/API)", exact: true }).click();
+    await assertViewportLocked(page);
+    await form.locator("textarea").fill("Review the sample project on schedule.");
+    const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/routines");
+    await form.getByRole("button", { name: "Create routine", exact: true }).click();
+    expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-5.4-mini" });
+  });
 });
