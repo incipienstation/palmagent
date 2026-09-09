@@ -88,6 +88,9 @@ remain platform-specific.
 
 ## Versioning and releases
 
+For user- or operator-facing changes, follow the
+[changelog writing rules](docs/RELEASING.md#changelog-writing-rules).
+
 Before version edits, tags, publication, or release-workflow changes, read
 [docs/RELEASING.md](docs/RELEASING.md) for version synchronization, channels, approval gates,
 artifact verification, and recovery. Present the proposed version, scope, compatibility impact,

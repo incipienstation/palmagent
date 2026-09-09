@@ -41,6 +41,27 @@ Published versions are immutable. Never overwrite or reuse a version. If a
 release is bad, move the dist-tag back to the last good version, deprecate the
 bad version with a useful message, and publish a new patch or prerelease.
 
+## Changelog writing rules
+
+[`CHANGELOG.md`](../CHANGELOG.md) records notable changes for users and installation operators.
+
+- Update `## Unreleased` in the PR that introduces a meaningful change. A PR containing only
+  internal refactoring, CI maintenance, or minor documentation edits needs no changelog entry
+  unless it changes how users or operators use, install, update, or recover Palmagent.
+- Describe the resulting behavior and its impact in plain language. Combine related commits
+  into one entry; do not copy commit logs or PR titles wholesale.
+- Group entries under `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`,
+  including only categories with entries. Explicitly describe breaking changes, deprecations,
+  and required upgrade or recovery steps, linking to detailed instructions when needed.
+- Keep branch policies, approval gates, and CI procedures in this release runbook. Put host
+  deployment and rollback instructions in the [staging runbook](STAGING.md). Changelog entries
+  may summarize a new operator capability without duplicating its procedure.
+- During release preparation, review `Unreleased` for accuracy, omissions, and duplicate
+  entries, then follow the [version approval flow](#branch-and-approval-flow) to move it into
+  the approved version section. Keep `Unreleased` first and version sections newest first.
+  Use exact `## <version>` headings; release automation extracts that section for GitHub
+  Release notes. Preparing the section does not mean the version has been published.
+
 ## Environment and merge model
 
 Palmagent keeps two long-lived branches because staging acceptance and
