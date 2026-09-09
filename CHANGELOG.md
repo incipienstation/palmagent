@@ -13,8 +13,9 @@ All notable user-visible changes to Palmagent are documented here.
   and Claude Code and Codex operator plugins.
 - Public CLI package assembly, host installer, deterministic release checks,
   and a non-publishing release-candidate workflow.
-- Annotated version tags on main trigger validation and draft GitHub Releases
-  with versioned notes, a package checksum, and source provenance.
+- Annotated version tags trigger validation and draft GitHub Releases with versioned notes,
+  a package checksum, and source provenance. Prerelease tags require `develop` ancestry;
+  stable version tags require `main` ancestry.
 
 ### Security
 

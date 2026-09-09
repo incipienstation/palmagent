@@ -75,8 +75,9 @@ remain platform-specific.
 - Branch `feature/*` from an up-to-date `origin/develop` in an isolated linked worktree.
 - Open feature pull requests into `develop`, never directly into `main`, and squash-merge each
   reviewed feature pull request so it lands as one reversible change.
-- `develop` is the staging and prerelease source; `main` is the stable production source. Record the exact
-  deployed commit or immutable artifact and verify health separately from CI or merge status.
+- `develop` is the source for staging, prerelease tags, and prereleases; `main` is the source for
+  production deployment, stable version tags, and stable releases. Record the exact deployed commit
+  or immutable artifact and verify health separately from CI or merge status.
 - A green check or PR does not authorize merge, publication, repository visibility changes, or
   deployment. Keep each of those as an explicit human approval gate.
 - Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash
