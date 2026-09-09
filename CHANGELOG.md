@@ -1,20 +1,21 @@
 # Changelog
 
-All notable user-visible changes to Palmagent are documented here.
+Notable changes for users and installation operators are documented here.
+See the [changelog writing rules](docs/RELEASING.md#changelog-writing-rules).
+An entry does not mean a version has been published.
 
 ## Unreleased
 
-- Add explicit prerelease/stable release preparation, protected npm Trusted Publishing, and exact-package staging deployment with verified rollback receipts.
-
 ### Added
 
-- Show the latest reported task token usage and cost above the composer, and expand Codex model choices in task and routine forms.
-- Public-source monorepo foundation with shared contracts, host runtime, PWA,
+- Self-hosted dispatcher, mobile-first PWA, public CLI and host installer,
   and Claude Code and Codex operator plugins.
-- Public CLI package assembly, host installer, deterministic release checks,
-  and a non-publishing release-candidate workflow.
-- Annotated version tags on main trigger validation and draft GitHub Releases
-  with versioned notes, a package checksum, and source provenance.
+- Show the latest reported task token usage and cost above the composer.
+- Expand Codex model choices in task and routine forms.
+- Deploy an exact npm version or verified package to staging, with checks of the running
+  version and PWA, deployment records, and verified rollback to a retained package. Operators
+  must assess database compatibility and backup or restore needs separately; package rollback
+  does not restore the database. See the [staging runbook](docs/STAGING.md).
 
 ### Security
 
@@ -22,7 +23,6 @@ All notable user-visible changes to Palmagent are documented here.
   certificate bootstrap never proxies application traffic over plaintext.
 - Installation refuses a root service identity, and persistent state, bearer
   sessions, runner sockets, and installer metadata are owner-only.
-- Source and assembled-package leak scans support a private fail-closed denylist.
 
 ### Changed
 
@@ -32,6 +32,3 @@ All notable user-visible changes to Palmagent are documented here.
 - Public self-update is package-only; source checkouts use the maintainer pnpm
   workflow instead of mutating Git from the installed CLI.
 - Dry runs render to standard output without writing into the data directory.
-
-No version listed here has been published merely because it appears in source.
-See [the release policy](docs/RELEASING.md).
