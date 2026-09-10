@@ -64,6 +64,9 @@ export function buildCodexArgv(
   { prompt, resumeId, permission, model, effort }: CodexLaunchArgs,
   imageArgv: readonly string[] = [],
 ): string[] {
+  // Model and reasoning-effort overrides use -c on both fresh and resumed turns.
+  // Supported models and effort levels depend on the installed CLI, selected
+  // model, and authenticated account/API access.
   const modelArgs = [
     ...(model ? ["-c", `model=${model}`] : []),
     ...(effort ? ["-c", `model_reasoning_effort=${effort}`] : []),
