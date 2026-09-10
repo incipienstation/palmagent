@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.1
+
 ### Added
 
 - Self-hosted dispatcher, mobile-first PWA, public CLI and host installer,
@@ -26,6 +28,10 @@ An entry does not mean a version has been published.
 
 ### Changed
 
+- Require Node.js 22 or newer, up from Node.js 14 in the published name-reservation
+  placeholder `0.0.1-alpha.0`. This is the first functional npm package. Host installation
+  requires Linux with systemd, nginx, sudo, a public HTTPS domain, and an authenticated
+  Claude Code or Codex CLI.
 - Every management command consistently honors `--data-dir`.
 - Runner artifacts are fingerprinted so setup and package updates restart the
   daemon only when its unit or executable content changed.
