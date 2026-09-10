@@ -43,7 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir build/release --pattern '*.tgz' --pattern release.json --pattern SHA256SUMS
-      - name: Validate release, artifact, and protected environment
+      - name: Validate release, artifact, and channel approval policy
         id: identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,6 +52,8 @@ jobs:
   publish:
     needs: inspect
     runs-on: ubuntu-latest
+    # npm-next has no reviewer gate; npm-latest retains required reviewers.
+    # Keep both environments for their npm Trusted Publisher OIDC bindings.
     environment: ${{ needs.inspect.outputs.environment }}
     permissions:
       contents: read

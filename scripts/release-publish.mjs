@@ -24,6 +24,16 @@ export function validatePublication(cwd, directory, release, env) {
   return { ...identity, path, sha256: manifest.sha256, environment: `npm-${identity.channel}` };
 }
 
+export function validatePublicationEnvironment(identity, protection) {
+  assert(['next', 'latest'].includes(identity.channel), 'Unknown npm publication channel');
+  assert(identity.environment === `npm-${identity.channel}` && protection.name === identity.environment,
+    'npm environment differs from release channel');
+  if (identity.channel === 'latest') {
+    assert(protection.protection_rules?.some((rule) => rule.type === 'required_reviewers' && rule.reviewers?.length > 0),
+      'Stable npm environment must have required reviewers');
+  }
+}
+
 export async function publishPackage(identity, { run, registryVersion, env }) {
   assert(env.GITHUB_ACTIONS === 'true' && env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
     'Publication requires GitHub Actions OIDC');
@@ -60,8 +70,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const remote = api(`git/ref/tags/${identity.tag}`);
     assert(remote.object.type === 'tag' && remote.object.sha === identity.tagObject, 'Remote tag changed');
     const protection = api(`environments/${identity.environment}`);
-    assert(protection.protection_rules?.some((rule) => rule.type === 'required_reviewers' && rule.reviewers?.length > 0),
-      'npm environment must have required reviewers');
+    validatePublicationEnvironment(identity, protection);
     if (process.argv[2] === 'check') {
       if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `environment=${identity.environment}\ncommit=${identity.commit}\nversion=${identity.version}\nchannel=${identity.channel}\nsha256=${identity.sha256}\n`);
       if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `Package: palmagent@${identity.version}\n\nChannel: ${identity.channel}\n\nCommit: ${identity.commit}\n\nSHA-256: ${identity.sha256}\n`);

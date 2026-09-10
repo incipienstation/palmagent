@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Prereleases publish to npm `next` after GitHub Release publication and automated validation,
+  without a second approval. Stable releases retain the `npm-latest` reviewer gate. Existing
+  tags keep their original publication checks; see the [release runbook](docs/RELEASING.md#protected-npm-publication).
+
 ## 0.1.0-alpha.2
 
 ### Added
