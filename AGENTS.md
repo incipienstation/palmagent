@@ -78,8 +78,11 @@ remain platform-specific.
 - `develop` is the source for staging, prerelease tags, and prereleases; `main` is the source for
   production deployment, stable version tags, and stable releases. Record the exact deployed commit
   or immutable artifact and verify health separately from CI or merge status.
-- A green check or PR does not authorize merge, publication, repository visibility changes, or
-  deployment. Keep each of those as an explicit human approval gate.
+- Completing an authorized task includes automatic squash merge of its verified PR into
+  `develop` through [ship](.harness/skills/ship/SKILL.md), unless the user requests PR-only delivery,
+  a draft, or a merge hold. Merges into `main` still require explicit human approval.
+- Versioning, tagging, publication, repository visibility changes, and deployment keep their
+  separate approval rules; an automatic `develop` merge does not authorize those actions.
 - Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash
   or rebase. Promotion does not itself authorize tagging, publication, or deployment.
 - Before a hotfix or merge-settings change, follow the

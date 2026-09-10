@@ -78,6 +78,12 @@ squash-merged into `develop`. `develop` is long-lived: never squash or rebase a
 remain ancestors of `main`, later promotion pull requests contain only new
 work, and the release boundary is explicit.
 
+For an authorized task, [ship](../.harness/skills/ship/SKILL.md) automatically squash-merges its
+verified, non-draft PR into `develop` after required checks and repository review requirements
+are satisfied. A user request for PR-only delivery, a draft, or a merge hold takes precedence.
+Merges into `main` retain explicit human approval. This policy applies to the PR being shipped;
+it does not enable unattended merging of unrelated repository PRs.
+
 A successful merge or check does not prove that either environment changed.
 Every staging or production deployment must record the exact source commit and
 immutable artifact, then produce its own health evidence. Production should

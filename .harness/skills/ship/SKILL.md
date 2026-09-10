@@ -1,15 +1,23 @@
 ---
 name: ship
-description: Final stage of Palmagent's plan → start → verify → ship loop. Deliver verified work through a pull request into develop, then finish authorized worktree cleanup after merge. Use when finishing a task or completing post-merge cleanup.
+description: Final stage of Palmagent's plan → start → verify → ship loop. Automatically squash-merge verified task pull requests into develop, then finish authorized worktree cleanup. Use when finishing a task or completing post-merge cleanup.
 ---
 
 # Ship
 
-1. Commit small, with a clear message.
+1. Review the complete task diff and commit it with a clear message.
 2. Push the `feature/*` branch and open a PR with **base = `develop`** (never `main` directly).
-3. Wait for CI to pass and report the evidence. Do not merge without explicit human approval.
-4. Do not infer publication, visibility changes, or deployment from a green PR. Each is a separate
-   action with its own explicit approval. Promote `develop` to `main` with a dedicated PR.
+3. For the task's non-draft PR into `develop`, wait for required CI checks on its current head
+   to pass and for repository review requirements to be satisfied, then squash-merge automatically.
+   No additional human confirmation is needed unless the user requested a draft, PR-only delivery,
+   or an explicit merge hold. Confirm the PR base and head immediately before merging; use
+   `gh pr merge <pr-number> --squash --match-head-commit <verified-head-sha>`. If the head or base
+   changes, update and reverify as needed. Resolve task-owned conflicts before merging; never
+   bypass failing checks, unresolved reviews, or branch protections with `--admin`.
+4. Report the merged commit and validation evidence. Merges into `main` still require explicit
+   human approval and use a merge commit through a dedicated PR. Versioning, tagging, publication,
+   visibility changes, and deployment retain their separate approval rules in the
+   [release runbook](../../../docs/RELEASING.md); automatic `develop` merge does not authorize them.
 5. Keep the worktree while the PR is open or implementation/review is still active. After merge,
    complete the cleanup below and report anything retained with its reason.
 
