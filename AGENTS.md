@@ -98,8 +98,9 @@ and validation evidence for explicit human approval before versioning or tagging
 permission to proceed, green CI, or a merge is not versioning approval; automation must not
 choose or bump versions. Never publish from a workstation or arbitrary branch.
 
-Candidate automation creates reviewed draft assets. Publishing a GitHub Release requests the
-protected npm publication job (`npm-next` or `npm-latest`); a required reviewer must approve it.
+Candidate automation creates reviewed draft assets. Publishing a prerelease GitHub Release
+authorizes automatic npm publication through `npm-next` after validation. Stable publication
+through `npm-latest` additionally requires an environment reviewer's approval.
 Host deployment remains operator-initiated through [staging-deploy](.harness/skills/staging-deploy/SKILL.md).
 Keep private environment bindings outside the repository; never infer staging or production from DNS.
 

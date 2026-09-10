@@ -88,7 +88,9 @@ Repository merge methods are limited to squash and merge commit; rebase merge is
 disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
 Both branches require a pull request and the GitHub Actions `validate` check, and
 block deletion and force pushes. These rules define branch and approval ownership;
-npm publication uses protected channel environments; staging uses an explicit operator command.
+npm publication uses channel environments: prereleases publish automatically after Release
+publication and validation, while stable releases require an additional reviewer. Staging uses
+an explicit operator command.
 
 Hotfixes branch from `main` and return to `main` through a reviewed pull request
 using a merge commit. After landing, create a short-lived branch from current
@@ -121,8 +123,9 @@ not invent a version or infer approval from a merge.
 3. Review and squash that preparation PR into `develop`. Approve and create an annotated
    `v<version>` tag at its exact commit. Candidate CI creates a draft GitHub Release containing
    the tested package, checksum, and source identity.
-4. Inspect the draft assets, then explicitly publish the GitHub Release. This requests npm
-   publication; the separate `npm-next` required-reviewer approval permits publication to `next`.
+4. Inspect the draft assets, then explicitly publish the prerelease GitHub Release. This is
+   the final human publication approval: after validation, `npm-next` publishes to `next`
+   automatically without a second reviewer gate.
 5. Install `palmagent@<exact-version>` into staging using the [staging runbook](STAGING.md).
    Record package checksum, source commit, runtime identity, and HTTPS/PWA checks.
 6. For stable promotion, propose and approve a stable version. Prepare its version/changelog
@@ -235,27 +238,39 @@ and [GitHub CLI reference](https://cli.github.com/manual/gh_release_create).
 tag; it cannot publish a draft. It downloads existing assets and does not rebuild them.
 
 The inspection job checks tag identity, channel ancestry, release metadata, checksums, and
-clean package source identity before selecting `npm-next` or `npm-latest`. The publication job
-waits for the environment reviewer, downloads the assets again, verifies the same SHA-256,
+clean package source identity before selecting `npm-next` or `npm-latest`. Prereleases proceed
+automatically through `npm-next`; stable releases wait for the `npm-latest` environment reviewer.
+The publication job downloads the assets again, verifies the same SHA-256,
 and publishes through GitHub OIDC with provenance. It has `contents: read`, `actions: read`
 (for environment validation), and `id-token: write`. No npm token or host credentials are used.
-The job fails closed unless the environment has required reviewers and the repository variable
-`NPM_PUBLISH_ENABLED` is exactly `true`.
+The job rejects an environment that does not match the release channel. Stable publication
+fails closed unless `npm-latest` has required reviewers. Both channels require the repository
+variable `NPM_PUBLISH_ENABLED` to be exactly `true`.
 
 One-time setup, separate from any particular release:
 
-1. Create GitHub environments `npm-next` and `npm-latest`, with the maintainer as a required
-   reviewer. For a sole-maintainer repository, allow self-review so that a release still has a
-   deliberate second approval step. Restrict deployment refs to release tags (`v*`) plus
-   `develop`/`main` for manual retries. Keep administrative protection bypass disabled.
+1. Create GitHub environment `npm-next` without required reviewers or a wait timer, and
+   `npm-latest` with the maintainer as a required reviewer. For a sole-maintainer repository,
+   allow self-review on `npm-latest` so stable publication has a deliberate second approval.
+   Restrict deployment refs on both environments to release tags (`v*`) plus `develop`/`main`
+   for manual retries. Keep administrative protection bypass disabled.
 2. In npm package settings for `palmagent`, configure GitHub Trusted Publishers for this
    repository, workflow filename `npm-publish.yml`, and each environment (`npm-next`,
    `npm-latest`). Confirm the authenticated npm account owns the package. No static npm token
    belongs in GitHub secrets. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
-3. Set repository variable `NPM_PUBLISH_ENABLED=true` only after the trust mapping and required
-   reviewers are verified. Until then CI artifacts remain usable for staging.
+3. Set repository variable `NPM_PUBLISH_ENABLED=true` only after the trust mappings and each
+   channel's environment policy are verified. Until then CI artifacts remain usable for staging.
 4. The first release must include this workflow in its tagged source; make it available on the
    default branch for manual dispatch. Package/version/tag approvals remain independent of setup.
+
+When migrating from reviewer gates on both channels, land the channel-aware validation first,
+then remove required reviewers and any wait timer from `npm-next`. Preserve its environment,
+deployment-ref restrictions, and Trusted Publisher binding; leave `npm-latest` unchanged.
+Publication checks are loaded from the tagged source, including on manual retries. Tags created
+before this policy change retain their old reviewer requirement and cannot be retried with a
+reviewer-free `npm-next`. Do not move old tags or replace published assets to change that policy;
+inspect an older release separately before planning recovery. New prerelease tags must include
+the updated validation code to use automatic publication.
 
 The workflow pins Node 24 and npm 11.11.1 on a GitHub-hosted runner. Publishing a prerelease
 uses `next`; stable uses `latest`. It verifies the registry's SHA-512 integrity after upload.
