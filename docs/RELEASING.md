@@ -34,8 +34,50 @@ Prereleases publish only to the `next` dist-tag. Stable releases publish to
 | `0.1.0-alpha.1`, `beta`, or `rc` | `next` | `npm install -g palmagent@next` |
 | `0.1.0` and later stable versions | `latest` | `npm install -g palmagent` |
 
-An installation that started on a prerelease stays on `next` when
-`palmagent update --pull` runs. A stable installation stays on `latest`.
+Users see **Stable** (`latest`, default) and **Preview** (`next`, explicit opt-in).
+Preview is available to everyone; developer status is not an access rule. Staging
+is an environment role, not a public release channel or permission to access a host.
+
+New installations save `--channel stable` by default; Preview users install
+`palmagent@next` and run `palmagent install --channel preview`. Existing installations
+without `RELEASE_CHANNEL` infer their current channel once from the installed version
+and save it after a successful update/setup. An explicit saved choice takes precedence
+over the installed version, including after Preview reaches a stable version.
+
+- `palmagent update --pull` follows the saved channel.
+- `palmagent update --pull --channel preview` opts into Preview.
+- `palmagent update --pull --channel stable` returns to Stable when it can advance
+  or retain the installed version. An older Stable target is refused.
+- `palmagent update --pull --to <exact-version>` selects one release within the
+  chosen channel policy without changing the saved channel. It does not create a
+  permanent version pin. Stable rejects prereleases; all downgrades are refused.
+- `--dry-run` shows the intended channel/spec without writing config or contacting
+  npm. A real pull resolves and validates one exact version before installing it.
+
+Registry errors and missing tags fail without switching channels. A channel choice is
+saved only after update health succeeds; package or restart failure is not rolled back
+automatically. Returning to an older version requires a separate database-aware rollback.
+
+### CLI and operator plugin compatibility
+
+Release artifacts still share one product version. Independently installed CLI and
+plugin copies can differ within that version's `x.x.x`: for example, a `0.1.0-alpha.2`
+plugin can pair with `0.1.0-beta.1`, `0.1.0-rc.1`, or `0.1.0`, but not `0.1.1` or `0.2.0`.
+This is Palmagent's CLI contract promise, including prereleases; it is not a general
+SemVer guarantee. Changes that break operator commands must move to a new base version.
+
+`palmagent compatibility --plugin-version <version>` checks this mapping without
+loading host configuration or changing anything. Operator skills read their own installed
+manifest and require a successful check before invoking host operations. Older CLIs
+without this command require an explicitly chosen compatible release before these skills
+can run. Manual CLI use does not require a plugin.
+
+npm dist-tags do not select plugin marketplace refs. Install a plugin from a published
+`v<version>` tag in the same base version, using the platform's marketplace ref support.
+A moving `main`/`develop` marketplace can include unpublished changes and is intended for
+maintainer source testing. Plugin managers control refresh/caching separately, so a CLI
+update is not evidence of a plugin update. The combined transactional updater remains a
+follow-up; this release adds channel selection and compatibility preflight only.
 
 Published versions are immutable. Never overwrite or reuse a version. If a
 release is bad, move the dist-tag back to the last good version, deprecate the

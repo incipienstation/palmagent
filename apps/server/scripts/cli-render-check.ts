@@ -1,6 +1,7 @@
 import {
   chmodSync,
   existsSync,
+  readFileSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -36,6 +37,8 @@ import {
 } from "../src/cli/runner-state.js";
 import { renderUnits, runnerUnitName, webUnitName } from "../src/cli/units.js";
 
+import { compatiblePlugin, releaseChannel, validateUpdateTarget } from "../src/cli/release-policy.js";
+
 let failures = 0;
 function check(condition: boolean, message: string): void {
   if (condition) {
@@ -46,12 +49,31 @@ function check(condition: boolean, message: string): void {
   console.error("✗ " + message);
 }
 
+function rejects(fn: () => unknown): boolean {
+  try { fn(); return false; } catch { return true; }
+}
+for (const version of ["0.1.0-alpha.1", "0.1.0-beta.3", "0.1.0-rc.1", "0.1.0"]) {
+  check(compatiblePlugin(version, "0.1.0-alpha.2"), `plugin accepts the same base: ${version}`);
+}
+for (const version of ["0.1.1-alpha.1", "0.1.1", "0.2.0", "1.1.0"]) {
+  check(!compatiblePlugin(version, "0.1.0-alpha.2"), `plugin rejects a different base: ${version}`);
+}
+check(rejects(() => compatiblePlugin("next", "0.1.0")), "compatibility rejects moving tags");
+check(rejects(() => releaseChannel("next")), "channel input uses explicit Stable/Preview vocabulary");
+check(rejects(() => validateUpdateTarget("0.1.0", "0.2.0-alpha.1", "stable")), "Stable rejects prereleases even when newer");
+check(rejects(() => validateUpdateTarget("0.2.0-alpha.1", "0.1.0", "stable")), "returning to Stable cannot silently downgrade");
+check(rejects(() => validateUpdateTarget("0.1.0", "0.1.0-rc.1", "preview")), "Preview cannot downgrade a stable install");
+check(rejects(() => validateUpdateTarget("0.1.0-alpha.10", "0.1.0-alpha.2", "preview")), "prerelease sequence ordering is numeric");
+check(validateUpdateTarget("0.1.0-alpha.2", "0.1.0", "stable") === "0.1.0", "Preview can advance to Stable");
+check(validateUpdateTarget("0.1.0", "0.2.0-alpha.1", "preview") === "0.2.0-alpha.1", "explicit Preview accepts a newer prerelease");
+
 const loopback = ["127", "0", "0", "1"].join(".");
 const sourceRoot = "/srv/palmagent";
 const dataRoot = "/var/lib/palmagent";
 const domain = "palmagent.example.com";
 const config: InstallConfig = {
   mode: "source",
+  releaseChannel: "stable",
   user: "palmagent",
   group: "palmagent",
   dataDir: dataRoot,
@@ -226,6 +248,7 @@ try {
     user: "palmagent",
     group: "palmagent",
     mode: "package",
+    releaseChannel: "stable",
     pkgDir: packageRoot,
     workingDir: packageRoot,
     dataDir: scratch,
@@ -248,6 +271,10 @@ try {
     "install config is owner-readable only",
   );
   const roundTrip = loadConfig({ dataDir: scratch, pkgDir: packageRoot });
+  check(roundTrip.releaseChannel === "stable", "Stable channel survives config serialization");
+  saveConfig({ ...written, releaseChannel: "preview" });
+  check(loadConfig({ dataDir: scratch }).releaseChannel === "preview", "Preview is preserved independently of package version");
+  saveConfig(written);
   check(
     roundTrip.domain === domain,
     "install config round-trips the public domain",
@@ -335,6 +362,8 @@ try {
     postUpgradeArgs(fingerprinted, customFlags).includes(scratch),
     "the upgraded CLI re-exec preserves an explicit data directory",
   );
+  check(postUpgradeArgs({ ...fingerprinted, releaseChannel: "preview" }, customFlags).includes("preview"),
+    "upgraded CLI receives the chosen channel before it has been saved");
   const captured: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
@@ -354,6 +383,86 @@ try {
     !existsSync(join(scratch, "render")),
     "dry-run renders to output without writing a render directory",
   );
+
+  const beforeChannelDryRun = readFileSync(installEnvPath(scratch), "utf8");
+  captured.length = 0;
+  console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
+  try {
+    await update({ ...customFlags, pull: true, get: (key) => key === "channel" ? "preview" : customFlags.get(key) });
+  } finally { console.log = originalLog; }
+  check(captured.some((line) => line.includes("palmagent@next")), "Preview dry-run selects next");
+  check(readFileSync(installEnvPath(scratch), "utf8") === beforeChannelDryRun, "channel dry-run leaves config byte-identical");
+
+  const migrationPackage = join(scratch, "migration-package");
+  mkdirSync(migrationPackage);
+  writeFileSync(join(migrationPackage, "package.json"), JSON.stringify({ version: "0.1.0-alpha.2" }));
+  saveConfig({ ...written, pkgDir: migrationPackage, releaseChannel: undefined });
+  captured.length = 0;
+  console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
+  try { await update({ ...customFlags, pull: true }); }
+  finally { console.log = originalLog; }
+  check(captured.some((line) => line.includes("palmagent@next")), "legacy prerelease installations keep Preview until explicitly changed");
+  saveConfig({ ...written, pkgDir: migrationPackage, releaseChannel: "stable" });
+  captured.length = 0;
+  console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
+  try { await update({ ...customFlags, pull: true }); }
+  finally { console.log = originalLog; }
+  check(captured.some((line) => line.includes("palmagent@latest")), "saved Stable choice overrides installed prerelease inference");
+
+  // Exercise the real update preflight with a fake npm. The install branch fails
+  // deliberately, so these checks never install a package or apply host config.
+  const fakeBin = join(scratch, "fake-bin");
+  const npmCalls = join(scratch, "npm-calls.jsonl");
+  mkdirSync(fakeBin);
+  writeFileSync(join(fakeBin, "npm"), `#!${process.execPath}
+const fs = require("node:fs");
+fs.appendFileSync(process.env.TEST_NPM_CALLS, JSON.stringify(process.argv.slice(2)) + "\\n");
+if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
+  console.log(JSON.stringify(process.env.TEST_NPM_TARGET));
+} else {
+  console.error("simulated npm failure");
+  process.exit(1);
+}
+`, { mode: 0o755 });
+  const originalEnv = { ...process.env };
+  const preflightConfig = readFileSync(installEnvPath(scratch), "utf8");
+  try {
+    process.env.PATH = fakeBin + ":" + process.env.PATH;
+    process.env.TEST_NPM_CALLS = npmCalls;
+    process.env.TEST_NPM_TARGET = "0.2.0-alpha.1";
+    console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
+    console.error = console.log;
+    let refusedPrerelease = false;
+    try { await update({ ...customFlags, dryRun: false, pull: true }); }
+    catch (error) { refusedPrerelease = String(error).includes("Stable cannot install"); }
+    const rejectedCalls = readFileSync(npmCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    check(refusedPrerelease && rejectedCalls.length === 1 && rejectedCalls[0][0] === "view",
+      "a prerelease behind latest is refused before npm installation");
+
+    writeFileSync(npmCalls, "");
+    process.env.TEST_NPM_TARGET = "0.1.0-alpha.2";
+    const failedPull = await update({ ...customFlags, dryRun: false, pull: true,
+      get: (key) => key === "channel" ? "preview" : customFlags.get(key) });
+    const installCalls = readFileSync(npmCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    check(failedPull === 1 && JSON.stringify(installCalls) === JSON.stringify([
+      ["view", "palmagent@next", "version", "--json"],
+      ["install", "-g", "palmagent@0.1.0-alpha.2"],
+    ]), "a real pull installs the resolved exact version and stops on npm failure");
+
+    writeFileSync(npmCalls, "");
+    delete process.env.TEST_NPM_TARGET;
+    let failedResolution = false;
+    try { await update({ ...customFlags, dryRun: false, pull: true }); }
+    catch (error) { failedResolution = String(error).includes("could not resolve"); }
+    check(failedResolution && readFileSync(npmCalls, "utf8").trim().split("\n").length === 1,
+      "registry failure does not fall back to another channel");
+    check(readFileSync(installEnvPath(scratch), "utf8") === preflightConfig,
+      "failed pulls leave the saved channel and installation config unchanged");
+  } finally {
+    process.env = originalEnv;
+    console.log = originalLog;
+    console.error = originalError;
+  }
 
   const sourceRoot = join(scratch, "source-checkout");
   saveConfig({

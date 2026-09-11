@@ -1,6 +1,6 @@
 // Install and boot exactly the tarball packed by this run, with isolated state.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -46,6 +46,24 @@ try {
   execFileSync("npm", ["install", tarball], options);
   const bin = join(scratch, "node_modules/.bin", binName);
   assert.equal(execFileSync(bin, ["--version"], { env, encoding: "utf8" }).trim(), pkg.version);
+
+  const baseVersion = pkg.version.split("-")[0];
+  for (const pluginVersion of [baseVersion, `${baseVersion}-alpha.1`, `${baseVersion}-beta.1`, `${baseVersion}-rc.1`]) {
+    assert.match(execFileSync(bin, ["compatibility", "--plugin-version", pluginVersion],
+      { env, encoding: "utf8" }), /: compatible/);
+  }
+  const [major, minor, patch] = baseVersion.split(".").map(Number);
+  for (const cliArgs of [
+    ["compatibility", "--plugin-version", `${major}.${minor}.${patch + 1}`],
+    ["compatibility", "--plugin-version", "next"],
+    ["compatibility", "--plugin-version"],
+    ["update", "--channel"],
+    ["doctor", "--channel", "preview"],
+  ]) {
+    const result = spawnSync(bin, cliArgs, { env, encoding: "utf8" });
+    assert.equal(result.status, 1, `invalid CLI request should fail: ${cliArgs.join(" ")}`);
+  }
+  assert(!existsSync(join(scratch, "data")), "compatibility and invalid flags must not create installation state");
 
   server = startSmokeServer(bin, scratch, env);
   const origin = `http://localhost:${port}`;

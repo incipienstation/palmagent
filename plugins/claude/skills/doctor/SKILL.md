@@ -21,6 +21,26 @@ command -v palmagent || echo "use: npx palmagent"
 Use the global `palmagent` bin if present, else `npx palmagent`.
 Substitute it for `<cli>` below.
 
+Before invoking an operation, read this installed plugin's version from
+`../../.claude-plugin/plugin.json` or `../../.codex-plugin/plugin.json`, relative
+to this skill directory, and run:
+
+```bash
+<cli> compatibility --plugin-version <installed-plugin-version>
+```
+
+Proceed only on exit 0. The CLI and plugin must share the same `x.x.x`, including
+alpha, beta, and rc versions. If the command is unavailable, the manifest cannot
+be read, or the check fails, stop and explain which released CLI/plugin pair is
+needed; do not bypass the check or substitute a moving `npx` version. Plugin
+installation is managed separately by Claude Code or Codex. This check does not
+update either component.
+
+Stable is the default for new installations. Use Preview only when the operator
+opts in; it is available to everyone. If a CLI must be installed, use
+`palmagent@latest` for Stable or `palmagent@next` for Preview. A missing Stable
+release is not permission to fall back to Preview.
+
 ## 2. Run the diagnostics
 
 ```bash
