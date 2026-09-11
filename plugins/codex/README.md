@@ -54,10 +54,12 @@ codex plugin add palmagent@palmagent
 codex plugin list
 ```
 
-Install directly from the GitHub repository:
+Install a published release from GitHub. Replace `<version>` with a plugin version
+sharing the CLI's `x.x.x` (including prereleases). Choose a stable tag for Stable
+or opt into a prerelease tag for Preview:
 
 ```bash
-codex plugin marketplace add incipienstation/palmagent --ref main --sparse plugins/codex
+codex plugin marketplace add incipienstation/palmagent --ref 'v<version>' --sparse plugins/codex
 codex plugin add palmagent@palmagent
 ```
 
@@ -75,7 +77,10 @@ codex plugin marketplace remove palmagent
 ## Prerequisite: the CLI must be reachable
 
 These skills assume the `palmagent` CLI is on `PATH` (global `npm i -g palmagent`) or
-runnable via `npx palmagent`. The skills probe for it first and fall back to `npx`.
+runnable via `npx palmagent`. The skills probe for it first and check the installed plugin version against
+`palmagent compatibility --plugin-version <version>` before host operations.
+A pinned marketplace does not advance when npm `latest` or `next` changes;
+select a matching published plugin tag explicitly when changing base versions.
 
 ## Single source for skill bodies
 

@@ -20,6 +20,13 @@ import {
   saveConfig,
   validateInstallInput,
 } from "./config.js";
+import {
+  channelTag,
+  productVersion,
+  releaseChannel,
+  validateUpdateTarget,
+  type ReleaseChannel,
+} from "./release-policy.js";
 import { preflight, doctor, printChecks } from "./checks.js";
 import { renderNginx } from "./nginx.js";
 import {
@@ -62,6 +69,7 @@ export function postUpgradeArgs(
     "update",
     "--data-dir",
     cfg.dataDir,
+    ...(cfg.releaseChannel ? ["--channel", cfg.releaseChannel] : []),
     ...(flags.nonInteractive ? ["-y"] : []),
   ];
 }
@@ -147,8 +155,18 @@ export async function gatherConfig(
     pushSubject: flags.get("push-subject") ?? base.pushSubject,
   });
 
+  const requestedChannel = flags.get("channel");
+  const selectedChannel = requestedChannel !== undefined
+    ? releaseChannel(requestedChannel)
+    : base.releaseChannel ?? (requireInstalled ? inferredChannel(base.pkgDir) : "stable");
+  if (!requireInstalled && rt.mode === "package" && selectedChannel === "stable" &&
+      productVersion(installedVersion(rt.pkgDir)).prerelease) {
+    throw new Error("this is a Preview build; opt in with --channel preview or install a published Stable release");
+  }
+
   const cfg: InstallConfig = {
     ...base,
+    releaseChannel: selectedChannel,
     mode: rt.mode,
     pkgDir: rt.pkgDir,
     repoDir: rt.repoDir,
@@ -581,21 +599,19 @@ const POST_UPGRADE_ENV = "PALMAGENT_UPDATE_POST_UPGRADE";
 // we retry with sudo (a system-owned npm prefix). This tracks however the package
 // was originally `npm i -g`'d — a plain install stays plain, a root install
 // escalates — instead of unconditionally running sudo+nvm (a known footgun).
-function installedReleaseTag(pkgDir?: string): "next" | "latest" {
-  if (!pkgDir) return "latest";
-  try {
-    const version = String(
-      JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version ??
-        "",
-    );
-    return version.includes("-") ? "next" : "latest";
-  } catch {
-    return "latest";
-  }
+function installedVersion(pkgDir?: string): string {
+  if (!pkgDir) throw new Error("installed package directory is missing");
+  const version = String(JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version);
+  productVersion(version);
+  return version;
 }
 
-function npmGlobalInstall(pkg: string, tag: "next" | "latest"): boolean {
-  const spec = `${pkg}@${tag}`;
+function inferredChannel(pkgDir?: string): ReleaseChannel {
+  return pkgDir && productVersion(installedVersion(pkgDir)).prerelease ? "preview" : "stable";
+}
+
+function npmGlobalInstall(pkg: string, version: string): boolean {
+  const spec = `${pkg}@${version}`;
   const first = run("npm", ["install", "-g", spec]);
   if (first.ok) return true;
   if (
@@ -612,6 +628,17 @@ function npmGlobalInstall(pkg: string, tag: "next" | "latest"): boolean {
 export async function update(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} update`);
   const cfg = loadInstalledConfig(flags);
+  cfg.releaseChannel = flags.get("channel") !== undefined
+    ? releaseChannel(flags.get("channel")!)
+    : cfg.releaseChannel ?? inferredChannel(cfg.pkgDir);
+  const requestedVersion = flags.get("to");
+  if (requestedVersion !== undefined) {
+    if (!flags.pull || cfg.mode !== "package") {
+      throw new Error("--to requires update --pull on a package installation");
+    }
+    validateUpdateTarget(installedVersion(cfg.pkgDir), requestedVersion, cfg.releaseChannel);
+  }
+  log.info(`Update channel: ${cfg.releaseChannel === "stable" ? "Stable" : "Preview"} (${channelTag(cfg.releaseChannel)})`);
 
   // `--pull` fetches the current npm dist-tag for package installs. Source
   // checkouts are maintainer-managed and never mutate Git from this host CLI.
@@ -626,28 +653,37 @@ export async function update(flags: Flags): Promise<number> {
     cfg.mode === "package" &&
     process.env[POST_UPGRADE_ENV] !== "1"
   ) {
-    const releaseTag = installedReleaseTag(cfg.pkgDir);
+    const releaseTag = channelTag(cfg.releaseChannel);
+    const spec = requestedVersion ?? releaseTag;
     // Package install: pull the new bundle from npm, then hand off to the
     // freshly-installed CLI so the units render from ITS (possibly newer)
     // templates — this process is still the OLD cli.js bundle (cf. the deploy
     // self-modify gotcha). The sentinel env stops the child re-upgrading.
     if (flags.dryRun) {
       log.info(
-        `[dry-run] would run: npm install -g ${BRANDING.packageName}@${releaseTag}, then re-render units + restart`,
+        `[dry-run] would run: npm install -g ${BRANDING.packageName}@${spec} (resolve and validate an exact version first), then re-render units + restart`,
       );
     } else {
-      log.info(
-        `upgrading ${BRANDING.packageName} via npm (i -g ${BRANDING.packageName}@${releaseTag}) …`,
-      );
-      if (!npmGlobalInstall(BRANDING.packageName, releaseTag)) {
+      const resolved = run("npm", ["view", `${BRANDING.packageName}@${spec}`, "version", "--json"]);
+      if (!resolved.ok) throw new Error(`could not resolve ${BRANDING.packageName}@${spec}; the selected channel may not be published yet (no fallback)`);
+      const target = JSON.parse(resolved.stdout);
+      if (typeof target !== "string") throw new Error("npm did not return one exact version");
+      validateUpdateTarget(installedVersion(cfg.pkgDir), target, cfg.releaseChannel);
+      if (requestedVersion && target !== requestedVersion) throw new Error("npm resolved a different version than requested");
+      log.info(`upgrading ${BRANDING.packageName} to ${target} …`);
+      if (!npmGlobalInstall(BRANDING.packageName, target)) {
         log.err(
-          `npm upgrade failed — install it yourself (\`npm i -g ${BRANDING.packageName}@${releaseTag}\`, add sudo if your npm prefix needs it) then re-run \`${BRANDING.cliName} update\`.`,
+          `npm upgrade failed — install it yourself (\`npm i -g ${BRANDING.packageName}@${target}\`, add sudo if your npm prefix needs it) then re-run \`${BRANDING.cliName} update\`.`,
         );
         return 1;
       }
       log.ok(`upgraded ${BRANDING.packageName}`);
       const bin = which(BRANDING.cliName);
       if (bin) {
+        const actual = run(bin, ["--version"]);
+        if (!actual.ok || actual.stdout.trim() !== target || installedVersion(cfg.pkgDir) !== target) {
+          throw new Error("the CLI on PATH does not match the installed target; service configuration was not applied");
+        }
         log.info("applying units + restarting with the upgraded CLI …");
         const child = spawnSync(
           bin,
@@ -659,9 +695,7 @@ export async function update(flags: Flags): Promise<number> {
         );
         return child.status ?? 1;
       }
-      log.warn(
-        `could not locate the upgraded ${BRANDING.cliName} on PATH — applying units with the current CLI; re-run \`${BRANDING.cliName} setup --data-dir ${cfg.dataDir}\` if this release changed the unit templates.`,
-      );
+      throw new Error(`could not locate the upgraded ${BRANDING.cliName} on PATH; service configuration was not applied`);
     }
   }
 
@@ -683,6 +717,7 @@ export async function update(flags: Flags): Promise<number> {
   }
   restartWeb();
   const ok = await healthcheck(cfg);
+  if (ok) saveConfig(cfg);
   log[ok ? "ok" : "err"](ok ? `updated + healthy` : "not healthy after update");
   return ok ? 0 : 1;
 }
@@ -756,6 +791,12 @@ export async function passkey(flags: Flags): Promise<number> {
 
 export function runDoctor(flags: Flags): number {
   const cfg = loadInstalledConfig(flags);
+  try {
+    const channel = cfg.releaseChannel ?? inferredChannel(cfg.pkgDir);
+    log.info(`Update channel: ${channel === "stable" ? "Stable" : "Preview"} (${channelTag(channel)})`);
+  } catch {
+    log.warn("Update channel is unknown: installed package metadata is missing or invalid");
+  }
   return printChecks(
     `${BRANDING.productName} doctor — ${cfg.domain}`,
     doctor(cfg),

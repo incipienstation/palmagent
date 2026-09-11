@@ -19,6 +19,28 @@ command -v palmagent || echo "use: npx palmagent"
 Use the global `palmagent` bin if present; otherwise fall back to
 `npx palmagent`. Substitute that resolved command for `<cli>` below.
 
+Before invoking an operation, read this installed plugin's version from
+`../../.claude-plugin/plugin.json` or `../../.codex-plugin/plugin.json`, relative
+to this skill directory, and run:
+
+```bash
+<cli> compatibility --plugin-version <installed-plugin-version>
+```
+
+Proceed only on exit 0. The CLI and plugin must share the same `x.x.x`, including
+alpha, beta, and rc versions. If the command is unavailable, the manifest cannot
+be read, or the check fails, stop and explain which released CLI/plugin pair is
+needed; do not bypass the check or substitute a moving `npx` version. Plugin
+installation is managed separately by Claude Code or Codex. This check does not
+update either component.
+
+Stable is the default for new installations. Use Preview only when the operator
+opts in; it is available to everyone. If a CLI must be installed, use
+`palmagent@latest` for Stable or `palmagent@next` for Preview. A missing Stable
+release is not permission to fall back to Preview.
+
+For a Preview installation, replace `--channel stable` with `--channel preview`.
+
 ## 2. Confirm intent (this changes the host)
 
 `install` is first-run setup and it touches systemd, nginx, and TLS via `sudo`.
@@ -39,7 +61,7 @@ To preview without touching anything, run a dry run first and show the rendered
 units + nginx vhost:
 
 ```bash
-<cli> install --dry-run
+<cli> install --channel stable --dry-run
 ```
 
 ## 3. Run it
@@ -47,7 +69,7 @@ units + nginx vhost:
 Once confirmed:
 
 ```bash
-<cli> install
+<cli> install --channel stable
 ```
 
 Run the CLI as the unprivileged account that should own the agent processes.
@@ -55,7 +77,7 @@ Never prefix the whole command with `sudo`; Palmagent invokes sudo only for
 the systemd, nginx, and certificate operations that need it.
 
 For unattended/CI hosts, pass config via flags/env with `--non-interactive`
-(let the CLI define the exact flags; do not invent them — run `<cli> install --help`
+(let the CLI define the exact flags; do not invent them — run `<cli> install --channel stable --help`
 if unsure).
 
 ## 4. Report

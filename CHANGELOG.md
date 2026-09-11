@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Choose Stable (default) or opt into Preview for CLI updates. The choice is saved,
+  exact release targets are supported, and updates refuse downgrades or prereleases
+  on Stable. See the [channel guide](docs/RELEASING.md#npm-channels).
+- Operator plugins check that the CLI shares their `x.x.x` version, including prereleases,
+  before running host operations. CLI and plugin installation remain separate.
+
 ### Changed
 
 - Prereleases publish to npm `next` after GitHub Release publication and automated validation,

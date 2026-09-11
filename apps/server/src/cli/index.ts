@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BRANDING } from "@palmagent/shared";
 import { ensurePrivateDirectory } from "../private-files.js";
+import { compatiblePlugin } from "./release-policy.js";
 import { resolveDataDir } from "./config.js";
 import {
   install,
@@ -70,6 +71,10 @@ function parseFlags(argv: string[]): Flags {
       continue;
     }
     const key = a.slice(2);
+    if (["channel", "to", "plugin-version"].includes(key) &&
+        (i + 1 === argv.length || argv[i + 1].startsWith("-"))) {
+      throw new Error(`--${key} requires a value`);
+    }
     if (bools.has(key)) set.add(key);
     else if (i + 1 < argv.length && !argv[i + 1].startsWith("--"))
       vals[key] = argv[++i];
@@ -94,7 +99,8 @@ Commands:
   install      First-run setup: systemd units, nginx, TLS (certbot), first passkey
   setup        Reconfigure an existing install + re-render units/nginx
   doctor       Diagnose a running instance + suggest fixes
-  update       Apply config, or fetch the installed npm channel with --pull (package installs only)
+  update       Apply config, or fetch the selected release channel with --pull
+  compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove the units + nginx vhost (data preserved unless --purge)
   passkey      Mint a fresh device-enroll link for an existing install
   start        Run the web server directly (dev/manual; reads env)
@@ -109,7 +115,10 @@ Common options:
   --repo-roots <list>  Colon-separated repo scan roots
   --claude-config-dir <path>  Claude CLI config/creds dir (CLAUDE_CONFIG_DIR); blank = ~/.claude
   --force              Proceed past failed preflight (install)
-  --pull               update: fetch the installed npm release channel (source checkouts are maintainer-managed)
+  --pull               update: fetch the selected npm release channel (package installs only)
+  --channel <name>     stable (default for new installs) or preview; remembered for updates
+  --to <version>       update --pull: select an exact version; downgrades are rejected
+  --plugin-version <v> compatibility: require the same x.x.x, including prereleases
   --purge              uninstall: also delete the data dir (irreversible)
 
   --version            Print the version
@@ -124,7 +133,23 @@ async function main(): Promise<void> {
     return;
   }
   const flags = parseFlags(rest);
+  for (const [flag, commands] of Object.entries({
+    channel: ["install", "setup", "update"],
+    to: ["update"],
+    "plugin-version": ["compatibility"],
+  })) {
+    if (flags.get(flag) !== undefined && !commands.includes(cmd)) {
+      throw new Error(`--${flag} is only supported by ${commands.join("/")}`);
+    }
+  }
   switch (cmd) {
+    case "compatibility": {
+      const pluginVersion = flags.get("plugin-version");
+      if (!pluginVersion) throw new Error("compatibility requires --plugin-version <version>");
+      const ok = compatiblePlugin(version(), pluginVersion);
+      console.log(`CLI ${version()} / plugin ${pluginVersion}: ${ok ? "compatible" : "incompatible (different x.x.x); install a matching plugin release"}`);
+      process.exit(ok ? 0 : 1);
+    }
     case "start":
       return start(flags);
     case "install":

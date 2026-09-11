@@ -26,6 +26,8 @@ export type RunMode = "package" | "source";
 
 export interface InstallConfig {
   mode: RunMode;
+  /** Explicit update preference; absent on installations predating channel selection. */
+  releaseChannel?: "stable" | "preview";
   user: string;
   group: string;
   /** Persistent data (SQLite + VAPID keys + install.env). */
@@ -125,6 +127,7 @@ const PushSubject = z
 const InstallEnv = z
   .object({
     MODE: z.enum(["package", "source"]).optional(),
+    RELEASE_CHANNEL: z.enum(["stable", "preview"]).optional(),
     RUN_USER: z.string().min(1).optional(),
     RUN_GROUP: z.string().min(1).optional(),
     DOMAIN: PublicDomain.optional(),
@@ -328,6 +331,7 @@ export function loadConfig(
 
   return {
     mode,
+    releaseChannel: e.RELEASE_CHANNEL,
     user,
     group: e.RUN_GROUP ?? safeGroup(user) ?? user,
     dataDir,
@@ -362,6 +366,7 @@ export function saveConfig(cfg: InstallConfig): string {
     `# ${BRANDING.productName} install config — written by \`${BRANDING.cliName} install/setup\`.`,
     `# Edit then re-run \`${BRANDING.cliName} setup\` to re-render the units + nginx vhost.`,
     `MODE=${cfg.mode}`,
+    cfg.releaseChannel ? `RELEASE_CHANNEL=${cfg.releaseChannel}` : "",
     `RUN_USER=${cfg.user}`,
     `RUN_GROUP=${cfg.group}`,
     `DOMAIN=${cfg.domain}`,

@@ -28,6 +28,35 @@ unscoped public `palmagent` package under `build/pkg`.
 The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
 public environment; Palmagent rejects plaintext authentication origins and non-loopback binds.
 
+## Choose a release channel
+
+**Stable** is the default for everyday use. **Preview** is an optional early-access
+channel for anyone who wants to test upcoming releases; no developer role is required.
+
+```bash
+npm install -g palmagent@latest
+palmagent install --channel stable
+```
+
+<details>
+<summary>Try Preview</summary>
+
+```bash
+npm install -g palmagent@next
+palmagent install --channel preview
+```
+
+Preview includes alpha, beta, and release-candidate versions. Use it on an installation
+where you can accept prerelease changes. It does not grant access to a maintainer's staging host.
+
+</details>
+
+`palmagent update --pull` keeps the saved channel. Switch explicitly with
+`palmagent update --pull --channel preview` or `--channel stable`. A switch that
+would downgrade is refused; wait for Stable to catch up or plan a separate rollback.
+If Stable has not been published yet, the default installation fails rather than
+silently installing Preview. See [release channels and compatibility](docs/RELEASING.md#npm-channels).
+
 ## Plugin skills
 
 | Skill | CLI command | Purpose |
@@ -86,17 +115,21 @@ artifacts, and the separate merge, publication, visibility, and deployment gates
 
 ## Install the operator plugin
 
+Choose a **published** plugin tag with the same `x.x.x` as `palmagent --version`.
+Replace `<version>` below with that version. Use a stable tag for Stable and an
+explicit prerelease tag for Preview; marketplace refs are independent of npm tags.
+
 ### Claude Code
 
 ```text
-/plugin marketplace add incipienstation/palmagent
+/plugin marketplace add https://github.com/incipienstation/palmagent.git#v<version>
 /plugin install palmagent@palmagent
 ```
 
 ### Codex
 
 ```bash
-codex plugin marketplace add incipienstation/palmagent --ref main --sparse plugins/codex
+codex plugin marketplace add incipienstation/palmagent --ref 'v<version>' --sparse plugins/codex
 codex plugin add palmagent@palmagent
 ```
 
