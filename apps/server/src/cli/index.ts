@@ -116,7 +116,7 @@ Common options:
   --claude-config-dir <path>  Claude CLI config/creds dir (CLAUDE_CONFIG_DIR); blank = ~/.claude
   --force              Proceed past failed preflight (install)
   --pull               update: fetch the selected npm release channel (package installs only)
-  --channel <name>     stable (default for new installs) or preview; saved after success
+  --channel <name>     stable (default for new installs) or preview; remembered for updates
   --to <version>       update --pull: select an exact version; downgrades are rejected
   --plugin-version <v> compatibility: require the same x.x.x, including prereleases
   --purge              uninstall: also delete the data dir (irreversible)

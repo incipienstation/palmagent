@@ -40,8 +40,9 @@ is an environment role, not a public release channel or permission to access a h
 
 New installations save `--channel stable` by default; Preview users install
 `palmagent@next` and run `palmagent install --channel preview`. Existing installations
-without `RELEASE_CHANNEL` infer their current channel once from the installed version
-and save it after a successful update/setup. An explicit saved choice takes precedence
+without `RELEASE_CHANNEL` infer their current channel from the installed version.
+Install/setup write the choice with the rest of the installation configuration;
+updates save it after health succeeds. An explicit saved choice takes precedence
 over the installed version, including after Preview reaches a stable version.
 
 - `palmagent update --pull` follows the saved channel.
