@@ -37,6 +37,7 @@ import {
 } from "../src/cli/runner-state.js";
 import { renderUnits, runnerUnitName, webUnitName } from "../src/cli/units.js";
 
+import { setUserChannel, userConfigPath } from "../src/cli/user-config.js";
 import { compatiblePlugin, releaseChannel, validateUpdateTarget } from "../src/cli/release-policy.js";
 
 let failures = 0;
@@ -225,6 +226,8 @@ check(
 );
 
 const scratch = mkdtempSync(join(tmpdir(), "palmagent-cli-check-"));
+const previousPalmagentHome = process.env.PALMAGENT_HOME;
+process.env.PALMAGENT_HOME = join(scratch, "preferences");
 try {
   const fallback = loadConfig({ dataDir: scratch });
   check(
@@ -271,9 +274,9 @@ try {
     "install config is owner-readable only",
   );
   const roundTrip = loadConfig({ dataDir: scratch, pkgDir: packageRoot });
-  check(roundTrip.releaseChannel === "stable", "Stable channel survives config serialization");
-  saveConfig({ ...written, releaseChannel: "preview" });
-  check(loadConfig({ dataDir: scratch }).releaseChannel === "preview", "Preview is preserved independently of package version");
+  check(!readFileSync(installEnvPath(scratch), "utf8").includes("RELEASE_CHANNEL="),
+    "service config no longer persists the user channel");
+  setUserChannel("stable");
   saveConfig(written);
   check(
     roundTrip.domain === domain,
@@ -397,12 +400,14 @@ try {
   mkdirSync(migrationPackage);
   writeFileSync(join(migrationPackage, "package.json"), JSON.stringify({ version: "0.1.0-alpha.2" }));
   saveConfig({ ...written, pkgDir: migrationPackage, releaseChannel: undefined });
+  rmSync(userConfigPath());
   captured.length = 0;
   console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
   try { await update({ ...customFlags, pull: true }); }
   finally { console.log = originalLog; }
   check(captured.some((line) => line.includes("palmagent@next")), "legacy prerelease installations keep Preview until explicitly changed");
-  saveConfig({ ...written, pkgDir: migrationPackage, releaseChannel: "stable" });
+  saveConfig({ ...written, pkgDir: migrationPackage });
+  setUserChannel("stable");
   captured.length = 0;
   console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
   try { await update({ ...customFlags, pull: true }); }
@@ -426,6 +431,7 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
 `, { mode: 0o755 });
   const originalEnv = { ...process.env };
   const preflightConfig = readFileSync(installEnvPath(scratch), "utf8");
+  const savedPreferences = readFileSync(userConfigPath(), "utf8");
   try {
     process.env.PATH = fakeBin + ":" + process.env.PATH;
     process.env.TEST_NPM_CALLS = npmCalls;
@@ -457,7 +463,9 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
     check(failedResolution && readFileSync(npmCalls, "utf8").trim().split("\n").length === 1,
       "registry failure does not fall back to another channel");
     check(readFileSync(installEnvPath(scratch), "utf8") === preflightConfig,
-      "failed pulls leave the saved channel and installation config unchanged");
+      "failed pulls leave the installation config unchanged");
+    check(readFileSync(userConfigPath(), "utf8") === savedPreferences,
+      "failed pulls do not change the shared user preference");
   } finally {
     process.env = originalEnv;
     console.log = originalLog;
@@ -549,6 +557,8 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
     "installer config rejects a plaintext push contact",
   );
 } finally {
+  if (previousPalmagentHome === undefined) delete process.env.PALMAGENT_HOME;
+  else process.env.PALMAGENT_HOME = previousPalmagentHome;
   rmSync(scratch, { recursive: true, force: true });
 }
 

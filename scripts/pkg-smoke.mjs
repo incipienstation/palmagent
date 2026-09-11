@@ -65,6 +65,21 @@ try {
   }
   assert(!existsSync(join(scratch, "data")), "compatibility and invalid flags must not create installation state");
 
+  const configPath = join(env.HOME, ".palmagent", "config.json");
+  const readPreferences = (cwd = scratch) => JSON.parse(execFileSync(bin, ["config", "get"],
+    { cwd, env, encoding: "utf8" }));
+  assert.deepEqual(readPreferences(), { schemaVersion: 1, channel: "stable" });
+  assert(!existsSync(configPath), "reading settings must not create a file");
+  execFileSync(bin, ["config", "init"], { env, encoding: "utf8" });
+  execFileSync(bin, ["config", "set", "--channel", "preview"], { env, encoding: "utf8" });
+  assert.equal(readPreferences(join(scratch, "home")).channel, "preview", "another process and working directory share preferences");
+  const savedPreferences = readFileSync(configPath, "utf8");
+  execFileSync(bin, ["config", "init"], { env, encoding: "utf8" });
+  execFileSync(bin, ["config", "set", "--channel", "stable", "--dry-run"], { env, encoding: "utf8" });
+  assert.equal(readFileSync(configPath, "utf8"), savedPreferences);
+  assert.equal(statSync(configPath).mode & 0o777, 0o600);
+  assert(!existsSync(join(scratch, "data")), "settings changes must not initialize service data");
+
   server = startSmokeServer(bin, scratch, env);
   const origin = `http://localhost:${port}`;
   let healthy = false;
@@ -90,6 +105,7 @@ try {
   assert(existsSync(db), "scratch SQLite database missing");
   assert.equal(statSync(join(scratch, "data")).mode & 0o777, 0o700);
   assert.equal(statSync(db).mode & 0o777, 0o600);
+  assert.equal(readFileSync(configPath, "utf8"), savedPreferences, "starting the service preserves preferences");
   console.log("[smoke] PASS: packed CLI, isolated SQLite, and PWA");
 } finally {
   await server?.stop();

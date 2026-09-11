@@ -6,9 +6,11 @@
 // package `bin`. server.js, runner-daemon.js, and web/ sit beside it.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { BRANDING } from "@palmagent/shared";
 import { ensurePrivateDirectory } from "../private-files.js";
+import { getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
 import { compatiblePlugin } from "./release-policy.js";
 import { resolveDataDir } from "./config.js";
 import {
@@ -100,6 +102,7 @@ Commands:
   setup        Reconfigure an existing install + re-render units/nginx
   doctor       Diagnose a running instance + suggest fixes
   update       Apply config, or fetch the selected release channel with --pull
+  config       Internal plugin settings API: get, init, set --channel <name>
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove the units + nginx vhost (data preserved unless --purge)
   passkey      Mint a fresh device-enroll link for an existing install
@@ -134,7 +137,7 @@ async function main(): Promise<void> {
   }
   const flags = parseFlags(rest);
   for (const [flag, commands] of Object.entries({
-    channel: ["install", "setup", "update"],
+    channel: ["config", "install", "setup", "update"],
     to: ["update"],
     "plugin-version": ["compatibility"],
   })) {
@@ -143,6 +146,24 @@ async function main(): Promise<void> {
     }
   }
   switch (cmd) {
+    case "config": {
+      const action = rest[0];
+      if (!["get", "init", "set"].includes(action)) {
+        throw new Error("usage: config get|init|set [--channel stable|preview] [--data-dir <path>] [--dry-run]");
+      }
+      parseArgs({ args: rest.slice(1), strict: true, allowPositionals: false, options: {
+        channel: { type: "string" }, "data-dir": { type: "string" }, "dry-run": { type: "boolean" },
+      } });
+      if (action !== "set" && flags.get("channel") !== undefined) {
+        throw new Error("--channel requires config set");
+      }
+      const options = { dataDir: flags.get("data-dir"), dryRun: flags.dryRun };
+      const config = action === "get" ? getUserConfig(options)
+        : action === "init" ? initUserConfig(options)
+        : setUserChannel(flags.get("channel") ?? "", options);
+      console.log(JSON.stringify(config));
+      return;
+    }
     case "compatibility": {
       const pluginVersion = flags.get("plugin-version");
       if (!pluginVersion) throw new Error("compatibility requires --plugin-version <version>");

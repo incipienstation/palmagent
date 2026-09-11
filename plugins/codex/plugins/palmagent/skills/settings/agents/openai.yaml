@@ -1,0 +1,4 @@
+interface:
+  display_name: "Palmagent Settings"
+  short_description: "View preferences or choose Stable and Preview"
+  default_prompt: "Use $settings to view or change my saved Palmagent preferences."

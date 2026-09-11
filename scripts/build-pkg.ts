@@ -175,9 +175,6 @@ async function main(): Promise<void> {
   // the CLI's own commands — no `docs/…` path (the docs are not in the package) and
   // no repo/handle. `<cli> --help`/`doctor` are the in-package guidance surface.
   const cli = BRANDING.cliName;
-  const installSpec = version.includes("-")
-    ? `${BRANDING.packageName}@next`
-    : BRANDING.packageName;
   const readme = [
     `# ${BRANDING.productName}`,
     "",
@@ -194,24 +191,18 @@ async function main(): Promise<void> {
     "",
     "## Quickstart",
     "",
-    "```sh",
-    `npm i -g ${installSpec}`,
-    `${cli} install --channel ${version.includes("-") ? "preview" : "stable"} --domain your.domain.example   # systemd units, nginx, TLS, first passkey`,
-    `${cli} doctor                                  # diagnose a running instance`,
-    "```",
+    "Use the Palmagent operator plugin in Claude Code or Codex to install and manage the service.",
+    "The plugin handles CLI installation and commands internally; users do not run this CLI directly.",
+    "Ask the plugin to install Palmagent, show settings, choose Preview, or update the service.",
     "",
-    "Run the CLI as the unprivileged account that should own the agent processes; do not",
-    "prefix the whole command with sudo. If you install with `--data-dir`, pass that same",
-    "option to later setup, doctor, update, passkey, and uninstall commands.",
+    "Stable is the default for new users. Preview is an explicit choice available to everyone.",
+    "Both plugins share ~/.palmagent/config.json; settings survive updates and service reinstalls.",
+    "Changing the saved channel does not deploy a release. Updates refuse downgrades and",
+    "prereleases on Stable; a missing Stable release does not fall back to Preview.",
     "",
-    "Stable is the default update channel. Preview is optional for anyone testing upcoming releases.",
-    `Use \`${cli} update --pull --channel preview\` to opt in, or \`--channel stable\` to return.`,
-    "The choice is saved after success. Downgrades and prereleases on Stable are refused.",
-    `Use \`--to <exact-version>\` with \`update --pull\` to select a specific release.`,
-    "A missing Stable release does not fall back to Preview. Plugin installation is separate.",
+    "## Internal commands",
     "",
-    "## Commands",
-    "",
+    `- \`${cli} config\`     Shared user settings: get, init, set --channel stable|preview`,
     `- \`${cli} install\`    First-run setup: systemd units, nginx, TLS (certbot), first passkey`,
     `- \`${cli} setup\`      Reconfigure an existing install + re-render units/nginx`,
     `- \`${cli} doctor\`     Diagnose a running instance + suggest fixes`,

@@ -15,12 +15,20 @@ honored.
 
 ## 1. Locate the CLI
 
-```bash
-command -v palmagent || echo "use: npx palmagent"
-```
+The plugin runs all installation and CLI steps internally; never ask the user to
+install the CLI, run these commands, or edit configuration files. Before choosing
+a bootstrap package, read `~/.palmagent/config.json` (or `config.json` under
+`PALMAGENT_HOME` when set). Honor an explicitly requested channel; otherwise use
+its saved `channel` or the existing installation's legacy channel. Only a fresh
+user with no choice defaults to Stable. Reject malformed JSON, unsupported `schemaVersion`, or an invalid channel rather
+than guessing or resetting preferences. Both agent platforms share this file.
 
-Use the global `palmagent` bin if present, else `npx palmagent`.
-Substitute it for `<cli>` below.
+Use the installed CLI when available. If it must be bootstrapped, resolve the
+chosen npm tag (`latest` for Stable, `next` for Preview) to one exact version and
+use that same version for all bootstrap commands. Do not silently switch channels
+or substitute a moving `npx` version after a compatibility failure.
+
+Substitute the resolved internal command for `<cli>` below.
 
 Before invoking an operation, read this installed plugin's version from
 `../../.claude-plugin/plugin.json` or `../../.codex-plugin/plugin.json`, relative
@@ -42,6 +50,16 @@ opts in; it is available to everyone. If a CLI must be installed, use
 `palmagent@latest` for Stable or `palmagent@next` for Preview. A missing Stable
 release is not permission to fall back to Preview.
 
+Read effective settings with `<cli> config get` (pass the installation's
+`--data-dir` when custom). For an authorized install/setup/update, run
+`<cli> config init` with the same data directory to migrate legacy channel settings
+before applying service changes. `config get` is read-only. Preserve the user file
+across plugin/package refresh, service removal, and reinstall. Never store settings
+inside a plugin cache or edit `install.env` to change the channel.
+
+For a preference-only request, use the `settings` skill. It changes the saved
+choice without deploying a release or restarting services.
+
 ## 2. Confirm intent and warn about survival
 
 Before running, tell the operator what survives:
@@ -58,8 +76,9 @@ Before running, tell the operator what survives:
 <cli> update --pull
 ```
 
-The saved channel is preserved. To switch explicitly, add `--channel stable` or
-`--channel preview`; never select Preview just because it has a newer version.
+The shared user channel is preserved. An explicit request to change the preference
+is handled through `settings` before updating; never select Preview just because
+it has a newer version. Saving a preference does not mean a release was deployed.
 For an exact release, add `--to <version>` with `--pull`. Downgrades are refused.
 Use `--dry-run` to inspect the plan; it does not resolve registry versions.
 
