@@ -38,12 +38,41 @@ Users see **Stable** (`latest`, default) and **Preview** (`next`, explicit opt-i
 Preview is available to everyone; developer status is not an access rule. Staging
 is an environment role, not a public release channel or permission to access a host.
 
-New installations save `--channel stable` by default; Preview users install
-`palmagent@next` and run `palmagent install --channel preview`. Existing installations
-without `RELEASE_CHANNEL` infer their current channel from the installed version.
-Install/setup write the choice with the rest of the installation configuration;
-updates save it after health succeeds. An explicit saved choice takes precedence
-over the installed version, including after Preview reaches a stable version.
+The plugin is the user interface and owns CLI bootstrap and invocation. Users ask it
+to install, update, or change settings; they do not need to run these commands themselves.
+
+### Shared user settings
+
+Both plugins read `~/.palmagent/config.json` with `schemaVersion: 1` and `channel`
+(`stable` or `preview`). This is the channel's single source of truth. The host may
+set an absolute `PALMAGENT_HOME` directory for isolation; agent-specific plugin caches
+and service data directories do not determine the user settings location.
+
+The internal `config get` command is read-only. When the file is missing, it reads
+`RELEASE_CHANNEL` from the selected installation's `install.env`; older package installs
+without that key infer their channel from package metadata. A fresh user defaults to Stable.
+Pass the same `--data-dir` for an existing custom installation to locate migration input.
+
+`config init` persists that result once and never overwrites an existing user file.
+Install/setup initialize settings before saving service configuration; successful updates
+also initialize settings when needed. Service configuration saves no longer write
+`RELEASE_CHANNEL`. A leftover legacy key is ignored whenever the user file exists and
+is removed on the next service configuration save. Migration leaves other installation
+values intact. Package versions never override a migrated preference.
+
+The `settings` skill uses `config set --channel stable|preview` for an explicit preference
+change. It works before a service is installed and does not deploy or restart anything.
+The preference remains saved even if a later, separately requested deployment fails.
+The existing operation-level `--channel` override is still supported: install/setup save
+it with configuration, and update saves it only after health succeeds.
+
+Config writes validate known fields, preserve unrelated fields, and atomically replace
+the file. New directories are private (0700), and written files are owner-only (0600).
+Invalid JSON, unknown schema versions, or invalid channel values fail without resetting
+the file. `config get` and `config init/set --dry-run` never write settings. Config files
+are outside plugin/package caches and survive service removal and reinstall.
+
+The following commands describe the internal execution interface:
 
 - `palmagent update --pull` follows the saved channel.
 - `palmagent update --pull --channel preview` opts into Preview.
@@ -55,9 +84,9 @@ over the installed version, including after Preview reaches a stable version.
 - `--dry-run` shows the intended channel/spec without writing config or contacting
   npm. A real pull resolves and validates one exact version before installing it.
 
-Registry errors and missing tags fail without switching channels. A channel choice is
-saved only after update health succeeds; package or restart failure is not rolled back
-automatically. Returning to an older version requires a separate database-aware rollback.
+Registry errors and missing tags fail without switching channels. An update's explicit
+channel override is saved only after health succeeds; package or restart failure is not
+rolled back automatically. Returning to an older version requires a separate database-aware rollback.
 
 ### CLI and operator plugin compatibility
 
@@ -71,7 +100,7 @@ SemVer guarantee. Changes that break operator commands must move to a new base v
 loading host configuration or changing anything. Operator skills read their own installed
 manifest and require a successful check before invoking host operations. Older CLIs
 without this command require an explicitly chosen compatible release before these skills
-can run. Manual CLI use does not require a plugin.
+can run. The CLI remains the internal execution layer for plugin operations.
 
 npm dist-tags do not select plugin marketplace refs. Install a plugin from a published
 `v<version>` tag in the same base version, using the platform's marketplace ref support.

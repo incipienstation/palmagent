@@ -30,37 +30,44 @@ public environment; Palmagent rejects plaintext authentication origins and non-l
 
 ## Choose a release channel
 
-**Stable** is the default for everyday use. **Preview** is an optional early-access
-channel for anyone who wants to test upcoming releases; no developer role is required.
+Use the Palmagent plugin in Claude Code or Codex. The plugin handles its internal
+CLI installation and commands; users do not need to install or run the CLI directly.
 
-```bash
-npm install -g palmagent@latest
-palmagent install --channel stable
-```
+**Stable** is the default for a new user. Ask Palmagent to install the service or
+show your settings, and it uses your saved preference on subsequent requests.
 
 <details>
 <summary>Try Preview</summary>
 
-```bash
-npm install -g palmagent@next
-palmagent install --channel preview
-```
-
-Preview includes alpha, beta, and release-candidate versions. Use it on an installation
-where you can accept prerelease changes. It does not grant access to a maintainer's staging host.
+Tell the Palmagent plugin: **“Use Preview for Palmagent.”** It saves the preference
+and keeps it for future updates. Preview is available to everyone and includes alpha,
+beta, and release-candidate versions. Saving this choice does not deploy a release;
+ask Palmagent to update when ready. Preview does not grant access to a staging host.
 
 </details>
 
-`palmagent update --pull` keeps the saved channel. Switch explicitly with
-`palmagent update --pull --channel preview` or `--channel stable`. A switch that
-would downgrade is refused; wait for Stable to catch up or plan a separate rollback.
-If Stable has not been published yet, the default installation fails rather than
-silently installing Preview. See [release channels and compatibility](docs/RELEASING.md#npm-channels).
+Both plugins share `~/.palmagent/config.json`. Settings survive new conversations,
+plugin/package updates, and service reinstall. The plugin manages this file:
+
+```json
+{
+  "schemaVersion": 1,
+  "channel": "stable"
+}
+```
+
+Ask Palmagent to return to Stable to change the saved preference. An update that would
+downgrade is refused; returning to an older release requires a separately planned rollback.
+A missing Stable release never falls back to Preview. See the
+[settings and channel policy](docs/RELEASING.md#npm-channels).
 
 ## Plugin skills
 
+The CLI commands below are internal plugin operations.
+
 | Skill | CLI command | Purpose |
 | --- | --- | --- |
+| `settings` | `palmagent config` | View or change shared user preferences without changing the service |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |
 | `setup` | `palmagent setup` | Reconfigure an existing installation |
 | `doctor` | `palmagent doctor` | Diagnose service and host integration problems |

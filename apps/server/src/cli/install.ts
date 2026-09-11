@@ -23,10 +23,9 @@ import {
 import {
   channelTag,
   productVersion,
-  releaseChannel,
   validateUpdateTarget,
-  type ReleaseChannel,
 } from "./release-policy.js";
+import { assertUserConfigPreserved, getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
 import { preflight, doctor, printChecks } from "./checks.js";
 import { renderNginx } from "./nginx.js";
 import {
@@ -72,6 +71,11 @@ export function postUpgradeArgs(
     ...(cfg.releaseChannel ? ["--channel", cfg.releaseChannel] : []),
     ...(flags.nonInteractive ? ["-y"] : []),
   ];
+}
+
+function persistUserChannel(cfg: InstallConfig, flags: Flags): void {
+  if (flags.get("channel") !== undefined) setUserChannel(cfg.releaseChannel!);
+  else initUserConfig({ dataDir: cfg.dataDir });
 }
 
 const SYSTEMD_DIR = "/etc/systemd/system";
@@ -157,8 +161,8 @@ export async function gatherConfig(
 
   const requestedChannel = flags.get("channel");
   const selectedChannel = requestedChannel !== undefined
-    ? releaseChannel(requestedChannel)
-    : base.releaseChannel ?? (requireInstalled ? inferredChannel(base.pkgDir) : "stable");
+    ? setUserChannel(requestedChannel, { dryRun: true }).channel
+    : getUserConfig({ dataDir }).channel;
   if (!requireInstalled && rt.mode === "package" && selectedChannel === "stable" &&
       productVersion(installedVersion(rt.pkgDir)).prerelease) {
     throw new Error("this is a Preview build; opt in with --channel preview or install a published Stable release");
@@ -522,6 +526,7 @@ export async function install(flags: Flags): Promise<number> {
     return 1;
 
   if (!flags.dryRun) {
+    persistUserChannel(cfg, flags);
     const saved = saveConfig(cfg);
     log.ok(`wrote ${saved}`);
   } else {
@@ -567,6 +572,7 @@ export async function setup(flags: Flags): Promise<number> {
   log.step("TLS");
   ensureTlsCertificate(cfg, flags);
   if (!flags.dryRun) {
+    persistUserChannel(cfg, flags);
     saveConfig(cfg);
     log.ok("updated install.env");
   }
@@ -606,10 +612,6 @@ function installedVersion(pkgDir?: string): string {
   return version;
 }
 
-function inferredChannel(pkgDir?: string): ReleaseChannel {
-  return pkgDir && productVersion(installedVersion(pkgDir)).prerelease ? "preview" : "stable";
-}
-
 function npmGlobalInstall(pkg: string, version: string): boolean {
   const spec = `${pkg}@${version}`;
   const first = run("npm", ["install", "-g", spec]);
@@ -629,8 +631,8 @@ export async function update(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} update`);
   const cfg = loadInstalledConfig(flags);
   cfg.releaseChannel = flags.get("channel") !== undefined
-    ? releaseChannel(flags.get("channel")!)
-    : cfg.releaseChannel ?? inferredChannel(cfg.pkgDir);
+    ? setUserChannel(flags.get("channel")!, { dryRun: true }).channel
+    : getUserConfig({ dataDir: cfg.dataDir }).channel;
   const requestedVersion = flags.get("to");
   if (requestedVersion !== undefined) {
     if (!flags.pull || cfg.mode !== "package") {
@@ -717,7 +719,10 @@ export async function update(flags: Flags): Promise<number> {
   }
   restartWeb();
   const ok = await healthcheck(cfg);
-  if (ok) saveConfig(cfg);
+  if (ok) {
+    persistUserChannel(cfg, flags);
+    saveConfig(cfg);
+  }
   log[ok ? "ok" : "err"](ok ? `updated + healthy` : "not healthy after update");
   return ok ? 0 : 1;
 }
@@ -725,7 +730,10 @@ export async function update(flags: Flags): Promise<number> {
 export async function uninstall(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} uninstall`);
   const cfg = loadInstalledConfig(flags);
-  if (flags.purge) assertSafePurgeTarget(cfg.dataDir);
+  if (flags.purge) {
+    assertSafePurgeTarget(cfg.dataDir);
+    assertUserConfigPreserved(cfg.dataDir);
+  }
   const units = renderUnits(cfg);
   if (flags.dryRun) {
     log.info(
@@ -744,6 +752,8 @@ export async function uninstall(flags: Flags): Promise<number> {
   )
     return 1;
 
+  // Preserve a legacy channel before service data can be removed.
+  initUserConfig({ dataDir: cfg.dataDir });
   for (const name of [units.web.name, units.runner.name]) {
     sudo(["systemctl", "disable", "--now", name]);
     sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
@@ -792,10 +802,10 @@ export async function passkey(flags: Flags): Promise<number> {
 export function runDoctor(flags: Flags): number {
   const cfg = loadInstalledConfig(flags);
   try {
-    const channel = cfg.releaseChannel ?? inferredChannel(cfg.pkgDir);
+    const channel = getUserConfig({ dataDir: cfg.dataDir }).channel;
     log.info(`Update channel: ${channel === "stable" ? "Stable" : "Preview"} (${channelTag(channel)})`);
   } catch {
-    log.warn("Update channel is unknown: installed package metadata is missing or invalid");
+    log.warn("Update channel is unknown: user or legacy settings could not be read");
   }
   return printChecks(
     `${BRANDING.productName} doctor — ${cfg.domain}`,

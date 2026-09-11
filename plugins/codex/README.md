@@ -10,6 +10,7 @@ description):
 
 | Skill                | Drives            | Use it for                                   |
 |----------------------|-------------------|----------------------------------------------|
+| `settings` | Internal config API | View or change shared user preferences |
 | `install` | `palmagent install` | First-run install on a fresh host   |
 | `setup`   | `palmagent setup`   | Reconfigure an existing install     |
 | `doctor`  | `palmagent doctor`  | Diagnose a broken instance (+journal) |
@@ -30,6 +31,7 @@ plugins/codex/                                  ← marketplace ROOT (pass THIS 
     └── palmagent/                              ← the plugin (folder name == plugin.json "name")
         ├── .codex-plugin/plugin.json            ← required manifest
         └── skills/
+            ├── settings/ SKILL.md + agents/openai.yaml
             ├── install/  SKILL.md + agents/openai.yaml
             ├── setup/    SKILL.md + agents/openai.yaml
             ├── doctor/   SKILL.md + agents/openai.yaml
@@ -74,13 +76,17 @@ codex plugin marketplace remove palmagent
 > After any (re)install, **start a new Codex thread** — that is the boundary at which Codex
 > picks up new skills (verified in codex's bundled `plugin-creator` skill guidance).
 
-## Prerequisite: the CLI must be reachable
+## Shared user settings
 
-These skills assume the `palmagent` CLI is on `PATH` (global `npm i -g palmagent`) or
-runnable via `npx palmagent`. The skills probe for it first and check the installed plugin version against
-`palmagent compatibility --plugin-version <version>` before host operations.
-A pinned marketplace does not advance when npm `latest` or `next` changes;
-select a matching published plugin tag explicitly when changing base versions.
+The plugin handles CLI bootstrap and invocation internally. Users ask Palmagent to
+install, update, or change preferences; they do not need to install or run the CLI.
+Both agent platforms share `~/.palmagent/config.json`, outside plugin caches. The
+`settings` skill reads and changes this file through the internal configuration API.
+A saved channel survives new threads, plugin refreshes, and service reinstalls.
+
+A pinned marketplace does not advance when npm `latest` or `next` changes. A plugin
+from a different `x.x.x` needs a compatible published release. See the root README
+for channel selection and compatibility behavior.
 
 ## Single source for skill bodies
 

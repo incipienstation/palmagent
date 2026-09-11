@@ -1,6 +1,6 @@
 {
   "name": "palmagent",
-  "description": "Operator skills for a self-hosted Palmagent instance — install, setup (reconfigure), doctor (diagnose), and update. Thin wrappers around the palmagent CLI that add conversational confirmation and adaptive, journal-driven diagnosis.",
+  "description": "Operator skills for a self-hosted Palmagent instance — settings, install, setup (reconfigure), doctor (diagnose), and update. Thin wrappers around the palmagent CLI that add conversational confirmation and adaptive, journal-driven diagnosis.",
   "version": "0.1.0-alpha.2",
   "author": {
     "name": "Palmagent"

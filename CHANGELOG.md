@@ -8,6 +8,11 @@ An entry does not mean a version has been published.
 
 ### Added
 
+- Palmagent plugins share persistent preferences in `~/.palmagent/config.json`. Ask the
+  plugin to view settings or choose Stable/Preview; the choice survives conversations,
+  plugin updates, and service reinstall. Existing installation channel preferences migrate
+  without overriding a saved user choice. Invalid settings are preserved for diagnosis.
+
 - Choose Stable (default) or opt into Preview for CLI updates. The choice is saved,
   exact release targets are supported, and updates refuse downgrades or prereleases
   on Stable. See the [channel guide](docs/RELEASING.md#npm-channels).
