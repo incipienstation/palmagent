@@ -138,8 +138,8 @@ existing assets and tags must match exactly, and published assets are never over
 4. Configure npm Trusted Publishers for repository workflow `npm-publish.yml` and each channel
    environment. Keep `NPM_PUBLISH_ENABLED=true` only with verified trust bindings. The workflow
    uses Node 24 and npm 11.11.1. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
-5. Make the workflows available on the default branch for dispatch, using a reviewed promotion
-   PR and merge commit. Confirm source eligibility, the App installation/permissions, tag rules,
+5. Make the workflows available on the repository default branch for dispatch through its normal
+   reviewed PR path. Confirm source eligibility, the App installation/permissions, tag rules,
    and channel environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing
    authorization to publish eligible Preview changes; it does not authorize host deployment.
 
