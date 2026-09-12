@@ -1,7 +1,7 @@
 # Changelog
 
 Notable changes for users and installation operators are documented here.
-See the [changelog writing rules](docs/RELEASING.md#changelog-writing-rules).
+See the [changelog writing rules](.harness/skills/release/references/policy.md#changelog-writing-rules).
 An entry does not mean a version has been published.
 
 ## Unreleased
@@ -35,7 +35,7 @@ An entry does not mean a version has been published.
 
 - Choose Stable (default) or opt into Preview for CLI updates. The choice is saved,
   exact release targets are supported, and updates refuse downgrades or prereleases
-  on Stable. See the [channel guide](docs/RELEASING.md#npm-channels).
+  on Stable. See the [channel guide](.harness/skills/release/references/channels-and-updates.md#npm-channels).
 - Operator plugins check that the CLI shares their `x.x.x` version, including prereleases,
   before running host operations. Plugin installation uses each platform's native manager.
 
@@ -43,7 +43,7 @@ An entry does not mean a version has been published.
 
 - Prereleases publish to npm `next` after GitHub Release publication and automated validation,
   without a second approval. Stable releases retain the `npm-latest` reviewer gate. Existing
-  tags keep their original publication checks; see the [release runbook](docs/RELEASING.md#protected-npm-publication).
+  tags keep their original publication checks; see the [release runbook](.harness/skills/release/references/automation.md#protected-npm-publication).
 
 ## 0.1.0-alpha.2
 

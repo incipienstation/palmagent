@@ -23,7 +23,7 @@ This includes workspace typechecking, operator skill synchronization, repository
 manifests, links, and leak checks.
 Add focused package, runtime, or browser verification whenever the changed surface requires it.
 CI selects checks from the complete PR diff under the
-[CI and candidate policy](../../../docs/RELEASING.md#candidate-automation); earlier code changes
+[CI and candidate policy](../release/references/automation.md#candidate-automation); earlier code changes
 in the PR still count even when the latest commit only changes documentation.
 Notes:
 

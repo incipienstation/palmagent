@@ -23,4 +23,4 @@ Retain failure evidence; inspect locks and current state before retrying. Roll b
 the operator has accepted database compatibility; package rollback does not restore a database.
 
 Version selection, npm publication, and production deployment follow
-[the release runbook](../../../docs/RELEASING.md) and remain separate actions.
+[the release skill](../release/SKILL.md) and remain separate actions.

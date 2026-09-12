@@ -17,7 +17,7 @@ skills/                              Canonical operator skill bodies
 plugins/claude/                      Claude Code plugin distribution
 plugins/codex/                       Codex plugin distribution
 scripts/build-pkg.ts                  Self-contained public npm package assembly
-docs/RELEASING.md                     Versioning, approval gates, and release runbook
+.harness/skills/release/              Release workflow, policies, and verification
 .claude-plugin/marketplace.json      Claude Code marketplace entry
 ```
 
@@ -59,7 +59,7 @@ plugin/package updates, and service reinstall. The plugin manages this file:
 Ask Palmagent to return to Stable to change the saved preference. An update that would
 downgrade is refused; returning to an older release requires a separately planned rollback.
 A missing Stable release never falls back to Preview. See the
-[settings and channel policy](docs/RELEASING.md#npm-channels).
+[settings and channel policy](.harness/skills/release/references/channels-and-updates.md#npm-channels).
 
 ## Plugin skills
 
@@ -93,7 +93,7 @@ automatic advancement currently applies to prereleases within the same version l
 Ask **“Show my update settings”** to check the preference, timer, and last result,
 or **“Turn off automatic updates”** to stop future attempts. An update already
 applying is allowed to finish. Failed installations pause automatic retries until
-a successful manual recovery. See the [update policy](docs/RELEASING.md#coordinated-and-automatic-updates).
+a successful manual recovery. See the [update policy](.harness/skills/release/references/channels-and-updates.md#coordinated-and-automatic-updates).
 
 ## Development
 
@@ -136,7 +136,7 @@ Contribute through a `feature/*` branch from `develop` and a pull request target
 Keep private environment details out of source and examples. [AGENTS.md](AGENTS.md) contains
 the instructions for coding agents working in this repository.
 
-For releases, follow [docs/RELEASING.md](docs/RELEASING.md), which covers versioning, candidate
+For releases, follow the [release skill](.harness/skills/release/SKILL.md), which covers versioning, candidate
 artifacts, and the separate merge, publication, visibility, and deployment gates.
 
 ## Install the operator plugin
