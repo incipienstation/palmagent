@@ -190,3 +190,17 @@ test("scheduler rendering preserves custom paths, owner, environment, and the sa
   setUserAutoUpdate(true, { dryRun: true });
   assert.equal(getUserConfig().autoUpdate, undefined);
 });
+
+test("systemd accepts the generated scheduler units", { skip: process.platform !== "linux" }, (t) => {
+  const { cfg } = fixture(t);
+  const directory = mkdtempSync(join(tmpdir(), "palmagent-systemd-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const rendered = renderAutoUpdateUnits({ ...cfg, dataDir: "/srv/palmagent state" });
+  const service = join(directory, "palmagent-update.service");
+  const timer = join(directory, "palmagent-update.timer");
+  writeFileSync(service, rendered.service);
+  writeFileSync(timer, rendered.timer);
+  const checked = spawnSync("systemd-analyze", ["verify", "--man=no", service, timer], { encoding: "utf8" });
+  assert.equal(checked.error, undefined);
+  assert.equal(checked.status, 0, checked.stderr);
+});

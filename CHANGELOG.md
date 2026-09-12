@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Automatic update timers now load correctly in systemd. The updater uses its explicit
+  installation paths without an unnecessary working-directory setting.
+
 ### Added
 
 - Ask Palmagent to plan or apply an update across its package and operator plugins.
