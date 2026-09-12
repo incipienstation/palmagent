@@ -4,7 +4,7 @@
 // degrade gracefully when a tool is absent.
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { BRANDING } from "@palmagent/shared";
+import { BRANDING, AGENT_CLI_COMPATIBILITY, compatibleAgentCli } from "@palmagent/shared";
 import type { InstallConfig } from "./config.js";
 import { runnerUnitName, webUnitName } from "./units.js";
 import { log, run, sudo, which } from "./sh.js";
@@ -50,6 +50,10 @@ function checkAgents(claudeConfigDir?: string): Check[] {
       continue;
     }
     checks.push({ name: tool, level: "ok", detail: path });
+    const reported = run(tool, ["--version"], { timeout: 10_000 });
+    const version = reported.stdout.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?\b/)?.[0] ?? "unknown";
+    checks.push({ name: `${tool} compatibility`, level: compatibleAgentCli(tool, version) ? "ok" : "warn",
+      detail: `${version}; adapter range ${AGENT_CLI_COMPATIBILITY[tool].range}` });
     const ok = authStatus(
       tool,
       tool === "claude" ? claudeConfigDir : undefined,

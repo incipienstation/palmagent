@@ -24,6 +24,7 @@ type TaskRow = {
   id: string; repo_id: string; agent: string; title: string | null; prompt: string;
   status: string; interrupted: number; session_id: string | null; branch: string | null;
   worktree_path: string | null; permission: string; model: string | null; effort: string | null;
+  session_control: string | null;
   pr_url: string | null; pr_urls: string | null; pending_input: string | null;
   created_at: number; updated_at: number; last_activity_at: number;
 };
@@ -47,7 +48,7 @@ export class Db {
   private insertEventStmt!: Database.Statement;
   private getSeqStmt!: Database.Statement;
 
-  constructor(path: string) {
+  constructor(readonly path: string) {
     ensurePrivateParent(dirname(path));
     this.db = new Database(path);
     ensurePrivateFile(path);
@@ -161,8 +162,9 @@ export class Db {
         used_at INTEGER
       );
     `);
-    // Additive migration for databases created before PR references were persisted.
+    // Additive migrations preserve existing native sessions and task events.
     const taskCols = (this.db.pragma("table_info(tasks)") as { name: string }[]).map((c) => c.name);
+    if (!taskCols.includes("session_control")) this.db.exec("ALTER TABLE tasks ADD COLUMN session_control TEXT");
     if (!taskCols.includes("pr_url")) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN pr_url TEXT`);
     }
@@ -246,9 +248,9 @@ export class Db {
   insertTask(t: TaskState) {
     this.db.prepare(
       `INSERT INTO tasks (id, repo_id, agent, title, prompt, status, interrupted, session_id,
-         branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, created_at, updated_at, last_activity_at)
+         branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, session_control, created_at, updated_at, last_activity_at)
        VALUES (@id, @repo_id, @agent, @title, @prompt, @status, @interrupted, @session_id,
-         @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @created_at, @updated_at, @last_activity_at)`,
+         @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @session_control, @created_at, @updated_at, @last_activity_at)`,
     ).run(taskToRow(t));
   }
   getTask(id: string): TaskState | undefined {
@@ -260,6 +262,25 @@ export class Db {
       ? this.db.prepare(`SELECT * FROM tasks WHERE status = ? ORDER BY created_at`).all(status)
       : this.db.prepare(`SELECT * FROM tasks ORDER BY created_at`).all();
     return (rows as TaskRow[]).map(rowToTask);
+  }
+  setSessionControl(id: string, control: TaskState["sessionControl"]) {
+    this.db.prepare("UPDATE tasks SET session_control = ? WHERE id = ?").run(JSON.stringify(control), id);
+  }
+  appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[] {
+    return this.db.transaction(() => {
+      const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));
+      if (rawSeq !== undefined) this.setTaskRawSeq(taskId, rawSeq);
+      this.touchTask(taskId, Date.now());
+      return rows;
+    })();
+  }
+  importSessionEvents(task: TaskState, events: AgentEvent[]): EventRow[] {
+    return this.db.transaction(() => {
+      const rows = events.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
+      this.setSessionControl(task.taskId, task.sessionControl);
+      if (events.length) this.touchTask(task.taskId, Date.now());
+      return rows;
+    })();
   }
   setTaskStatus(id: string, status: TaskStatus, interrupted: boolean, now: number) {
     this.db.prepare(
@@ -638,6 +659,7 @@ function rowToTask(r: TaskRow): TaskState {
     status: r.status as TaskStatus,
     interrupted: r.interrupted === 1,
     sessionId: r.session_id ?? undefined,
+    sessionControl: r.session_control ? JSON.parse(r.session_control) : undefined,
     branch: r.branch ?? undefined,
     worktreePath: r.worktree_path ?? undefined,
     permission: r.permission as Permission,
@@ -662,6 +684,7 @@ function taskToRow(t: TaskState) {
     status: t.status,
     interrupted: t.interrupted ? 1 : 0,
     session_id: t.sessionId ?? null,
+    session_control: t.sessionControl ? JSON.stringify(t.sessionControl) : null,
     branch: t.branch ?? null,
     worktree_path: t.worktreePath ?? null,
     permission: t.permission,

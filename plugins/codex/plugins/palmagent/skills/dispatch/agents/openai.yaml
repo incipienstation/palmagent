@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dispatch to Palmagent"
+  short_description: "Continue this local session in Palmagent"
+  default_prompt: "Use $dispatch to send this local agent session to Palmagent."

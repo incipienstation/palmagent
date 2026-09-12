@@ -6,6 +6,16 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Manage sessions by their working directory, with desktop navigation and a mobile directory picker.
+- Release an idle session to a shell and copy its native Claude/Codex resume command.
+  Use the dispatch plugin skill to return a local session; Palmagent waits for the
+  local CLI to exit and synchronizes new messages before accepting follow-up.
+- Render supported structured PNG, JPEG, WebP, and GIF outputs in the session log.
+- Agent CLI version ranges are included in package and plugin compatibility metadata
+  and reported by `palmagent compatibility` and doctor checks.
+
 ### Fixed
 
 - Operator plugins reuse authorized installation, reconfiguration, and repair requests

@@ -67,6 +67,7 @@ The CLI commands below are internal plugin operations.
 
 | Skill | CLI command | Purpose |
 | --- | --- | --- |
+| `dispatch` | `palmagent session dispatch` | Continue the current local agent session in Palmagent |
 | `settings` | `palmagent config`, `palmagent auto-update` | Manage shared preferences and the automatic update timer |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |
 | `setup` | `palmagent setup` | Reconfigure an existing installation |
@@ -75,6 +76,43 @@ The CLI commands below are internal plugin operations.
 
 Skill bodies are authored once under `skills/` and synchronized to both plugin trees with
 `node scripts/sync-skills.mjs`.
+
+## Sessions and working directories
+
+The Tasks screen has a working-directory sidebar on desktop and a directory picker
+on mobile. Isolated task worktrees appear as separate directories; selecting a
+folder filters every status group and is remembered on that browser.
+
+Open a task's **Resume in shell** panel after its turn finishes. **Release to shell**
+pauses Palmagent control and provides a quoted native `codex resume` or `claude --resume`
+command with the session ID, directory, provider home, instance binding, and selected model/effort.
+Run it on the same host under the service account. The native CLI controls its own
+interactive permission prompts. Open only one local writer for a session.
+
+To send an active local session to Palmagent, use the **dispatch** plugin skill.
+It registers the exact native session and waits for that CLI process to close.
+The task remains unavailable for follow-up until new transcript messages have been
+imported. Both directions retain the native session ID and working directory;
+Palmagent stores normalized display events and a checked synchronization cursor.
+It never copies credentials or rewrites the provider's transcript. Returning tasks
+keep their Palmagent permission/model choices; newly imported tasks use Palmagent's
+provider defaults. Select the next turn's settings in the task composer.
+
+Transfers currently require Linux, a shared local provider home, and a native JSONL
+transcript of at most 64 MiB. Missing, rewritten, incomplete, or identity-mismatched
+transcripts leave the transfer pending with an error. No turn starts automatically
+when a transfer completes. Raw native commands cannot prevent another independently
+started CLI from opening the same session.
+
+Structured tool image outputs render in both output modes when they contain PNG,
+JPEG, WebP, or GIF data (up to 5 MiB each, four images per event). Unsupported formats
+remain a text notice. Arbitrary filesystem paths in tool output are not served.
+
+`palmagent compatibility` reports the current agent CLI ranges. The canonical
+[agent metadata](packages/shared/src/agent-compatibility.json) is included in both
+plugins and the assembled package. These are bounded adapter lanes, checked with
+hermetic protocol fixtures; authenticated live provider smoke remains a separate
+check. Doctor reports installed CLI versions outside the declared ranges.
 
 ## Updates
 

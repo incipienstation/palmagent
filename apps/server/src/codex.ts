@@ -113,7 +113,7 @@ export class CodexRunner implements AgentRunner {
     // -c because it does not accept the dispatch-only flag forms.
     const argv = buildCodexArgv({ prompt, resumeId, permission, model, effort }, imgs.argv);
 
-    const proc = backend.start({ turnId: taskId, command: "codex", argv, cwd });
+    const proc = backend.start({ turnId: taskId, command: "codex", argv, cwd, ...(args.providerHome ? { env: { CODEX_HOME: args.providerHome } } : {}) });
     proc.closeStdin(); // we never feed stdin; close it so codex doesn't wait
 
     return this.wire(taskId, proc, emit, imgs.cleanup, () => sessionId, (s) => { sessionId = s; });

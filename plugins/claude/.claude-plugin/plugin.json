@@ -1,6 +1,6 @@
 {
   "name": "palmagent",
-  "description": "Operator skills for a self-hosted Palmagent instance — settings, install, setup (reconfigure), doctor (diagnose), and update. Thin wrappers around the palmagent CLI that add conversational confirmation and adaptive, journal-driven diagnosis.",
+  "description": "Palmagent skills for settings, installation, diagnosis, updates, and dispatching a local Claude or Codex session to the self-hosted dispatcher.",
   "version": "0.1.0-alpha.3",
   "author": {
     "name": "Palmagent"

@@ -3,6 +3,7 @@
 // we never redefine it here. SSE (read) lives in the stream hooks; this file is
 // the control plane (REST) only.
 import type {
+  SessionHandoffResponse,
   AgentKind,
   AgentUsage,
   AnswerRequest,
@@ -117,6 +118,7 @@ export const api = {
       `/api/tasks/${encodeURIComponent(id)}/answer`,
       req,
     ).then((r) => r.task),
+  handoff: (id: string) => request<SessionHandoffResponse>("POST", `/api/tasks/${encodeURIComponent(id)}/handoff`),
   stop: (id: string) =>
     request<{ task: TaskState }>("POST", `/api/tasks/${encodeURIComponent(id)}/stop`).then(
       (r) => r.task,

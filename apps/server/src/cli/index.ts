@@ -8,7 +8,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
-import { BRANDING } from "@palmagent/shared";
+import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
+import { sessionCommand } from "./session.js";
 import { ensurePrivateDirectory } from "../private-files.js";
 import { getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
 import { compatiblePlugin } from "./release-policy.js";
@@ -117,6 +118,7 @@ Commands:
   update       Apply config, or fetch the selected release channel with --pull
   auto-update  Internal scheduler API: enable, disable, status (off by default)
   config       Internal plugin settings API: get, init, set --channel <name>
+  session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove the units + nginx vhost (data preserved unless --purge)
   passkey      Mint a fresh device-enroll link for an existing install
@@ -196,9 +198,11 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(config));
       return;
     }
+    case "session":
+      return sessionCommand(process.argv.slice(3));
     case "compatibility": {
       const pluginVersion = flags.get("plugin-version");
-      if (!pluginVersion) throw new Error("compatibility requires --plugin-version <version>");
+      if (!pluginVersion) { console.log(JSON.stringify({ version: version(), agents: AGENT_CLI_COMPATIBILITY })); return; }
       const ok = compatiblePlugin(version(), pluginVersion);
       console.log(`CLI ${version()} / plugin ${pluginVersion}: ${ok ? "compatible" : "incompatible (different x.x.x); install a matching plugin release"}`);
       process.exit(ok ? 0 : 1);

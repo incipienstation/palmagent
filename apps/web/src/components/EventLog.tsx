@@ -25,6 +25,7 @@ import { Markdown } from "./Markdown";
 // rail-grouped band beneath it.
 const KIND_CLASS: Record<AgentEventKind, string> = {
   assistant_text: "text-strong",
+  output_image: "text-strong",
   status: "text-faint",
   tool_call: "text-tool-call",
   tool_result: "text-muted-foreground",
@@ -36,7 +37,7 @@ const KIND_CLASS: Record<AgentEventKind, string> = {
 
 // Left-rail color per machinery kind — the 2px border that groups a run of
 // machinery lines into one visual band.
-const KIND_RAIL: Record<Exclude<AgentEventKind, "assistant_text" | "question">, string> = {
+const KIND_RAIL: Record<Exclude<AgentEventKind, "assistant_text" | "question" | "output_image">, string> = {
   status: "border-l-border",
   tool_call: "border-l-tool-call/60",
   tool_result: "border-l-border",
@@ -110,7 +111,7 @@ function MachineryLine({
   expanded,
   onToggle,
 }: {
-  kind: Exclude<AgentEventKind, "assistant_text" | "question">;
+  kind: Exclude<AgentEventKind, "assistant_text" | "question" | "output_image">;
   detail: string;
   full: string;
   expanded: boolean;
@@ -242,6 +243,11 @@ export function EventLog({ log, live, prompt }: { log: LogItem[]; live: boolean;
             return <QuestionRecord key={item.key} questions={qs} />;
           }
 
+          if (item.kind === "output_image") {
+            const img = item.event.payload as { mediaType?: string; data?: string };
+            if (!img.data || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(img.mediaType ?? "")) return null;
+            return <figure key={item.key} className="my-3"><img src={`data:${img.mediaType};base64,${img.data}`} alt="Session output" loading="lazy" className="max-h-96 max-w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
+          }
           if (item.kind === "assistant_text") {
             const isLast = i === log.length - 1;
             return (

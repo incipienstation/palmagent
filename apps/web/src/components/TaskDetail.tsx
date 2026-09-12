@@ -40,6 +40,8 @@ import { AgentTag, StatusBadge } from "./chips";
 import { PrChip } from "./PrChip";
 import { EventLog } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
+import { SessionHandoff } from "./SessionHandoff";
+import { Alert } from "./ui/alert";
 import { TaskStatusline } from "./TaskStatusline";
 
 function errMsg(e: unknown): string {
@@ -85,6 +87,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const [busy, setBusy] = useState(false);
   const att = useImageAttachments((msg) => toast({ title: msg, variant: "destructive" }));
 
+  const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
   const status = task?.status;
   const running = status === "running";
   const awaiting = status === "awaiting_approval";
@@ -96,7 +99,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // back instead of the dead composer stacking under the panel and burying the log.
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
-  const composeMode: "steer" | "followup" | null = running
+  const composeMode: "steer" | "followup" | null = localOwner ? null : running
     ? "steer"
     : status === "idle" || status === "failed"
       ? "followup"
@@ -168,7 +171,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const heading = task?.title?.trim() || task?.prompt.split("\n")[0]?.trim() || taskId;
   const canStop = active;
   const canCancel = running || status === "queued";
-  const canArchive = !active && status !== "archived";
+  const canArchive = !localOwner && !active && status !== "archived";
 
   return (
     <AppShell>
@@ -203,6 +206,8 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             onArchive={() => act(() => api.archive(taskId), () => navigate("/"))}
           />
         </div>
+        {task?.sessionId && <div className="px-4 pb-2"><SessionHandoff task={task} /></div>}
+        {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Waiting for the local CLI to close and synchronize." : "This session is controlled in a local shell. Use the dispatch skill there to return it.")}</Alert>}
         <Separator />
 
         <EventLog log={log} live={running} prompt={task?.prompt} />

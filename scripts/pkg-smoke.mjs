@@ -47,6 +47,11 @@ try {
   const bin = join(scratch, "node_modules/.bin", binName);
   assert.equal(execFileSync(bin, ["--version"], { env, encoding: "utf8" }).trim(), pkg.version);
 
+  const agentMetadata = JSON.parse(readFileSync(join(ROOT, "packages/shared/src/agent-compatibility.json"), "utf8"));
+  assert.deepEqual(pkg.palmagent.agentCliCompatibility, agentMetadata, "package metadata preserves the declared agent ranges");
+  assert.deepEqual(JSON.parse(execFileSync(bin, ["compatibility"], { env, encoding: "utf8" })),
+    { version: pkg.version, agents: agentMetadata }, "packed CLI reports the same compatibility metadata");
+
   const baseVersion = pkg.version.split("-")[0];
   for (const pluginVersion of [baseVersion, `${baseVersion}-alpha.1`, `${baseVersion}-beta.1`, `${baseVersion}-rc.1`]) {
     assert.match(execFileSync(bin, ["compatibility", "--plugin-version", pluginVersion],
@@ -103,6 +108,10 @@ try {
     } catch { /* not ready yet */ }
   }
   assert(healthy, "new server did not become healthy within the deadline");
+  const compatibility = await fetch(origin + "/api/compatibility", { signal: AbortSignal.timeout(3000) });
+  assert.equal(compatibility.status, 200);
+  assert.deepEqual(await compatibility.json(), { agents: agentMetadata });
+  assert.equal(statSync(join(scratch, "data/session-control.sock")).mode & 0o777, 0o600);
   const shell = await fetch(origin + "/", { signal: AbortSignal.timeout(3000) });
   assert(shell.ok && (await shell.text()).includes('<div id="root"'), "PWA shell missing");
   server.assertRunning();

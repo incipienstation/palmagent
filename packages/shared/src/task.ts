@@ -119,6 +119,7 @@ export interface TaskState {
   status: TaskStatus;
   interrupted: boolean; // true once a turn was cut short (e.g. restart recovery)
   sessionId?: string; // claude session_id | codex thread_id
+  sessionControl?: SessionControl;
   branch?: string; // agent/<taskId>
   worktreePath?: string; // the stable cwd for the task's whole life
   prs?: PrRef[]; // every GitHub PR opened in this task's event stream, in first-seen order
@@ -130,4 +131,28 @@ export interface TaskState {
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
+}
+
+// Native transcripts stay with the provider. The cursor is a checked byte
+// boundary, committed atomically with imported events. Ownership survives restart.
+export interface SessionControl {
+  owner: "palmagent" | "local" | "returning";
+  home: string;
+  transcript: string;
+  cursor: number;
+  prefixHash: string;
+  waitPid?: number;
+  waitIdentity?: string;
+  error?: string;
+}
+export interface SessionHandoffResponse {
+  task: TaskState;
+  command: string;
+}
+export interface DispatchSessionRequest {
+  agent: AgentKind;
+  sessionId: string;
+  cwd: string;
+  home: string;
+  waitPid: number;
 }
