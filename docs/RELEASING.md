@@ -1,5 +1,8 @@
 # Versioning and releases
 
+Use the repository [release skill](../.harness/skills/release/SKILL.md) to execute or resume
+maintainer release work. This document defines the release contract and automation details.
+
 Palmagent uses one fixed product version for every user-facing artifact. The root
 `package.json` is the canonical version source even though the workspace remains
 `private: true` and is never published directly.

@@ -101,6 +101,9 @@ and validation evidence for explicit human approval before versioning or tagging
 permission to proceed, green CI, or a merge is not versioning approval; automation must not
 choose or bump versions. Never publish from a workstation or arbitrary branch.
 
+Use [release](.harness/skills/release/SKILL.md) to prepare, resume, publish, or recover a release
+through the existing automation. Keep release-specific evidence outside the reusable skill.
+
 Candidate automation creates reviewed draft assets. Publishing a prerelease GitHub Release
 authorizes automatic npm publication through `npm-next` after validation. Stable publication
 through `npm-latest` additionally requires an environment reviewer's approval.
