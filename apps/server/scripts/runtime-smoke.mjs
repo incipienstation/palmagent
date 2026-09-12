@@ -75,7 +75,7 @@ try {
     web,
   );
 
-  assert.deepEqual(health, { ok: true });
+  assert.deepEqual(health, { ok: true, updateMaintenance: false });
   assert.equal(existsSync(dbPath), true, "Palmagent database was not created");
   assert.equal(
     statSync(tempDir).mode & 0o777,

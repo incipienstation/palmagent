@@ -56,7 +56,14 @@ export class TaskService {
     private readonly backend: RunnerBackend,
     private readonly worktrees: WorktreeManager,
     private readonly push?: PushService,
+    private readonly maintenance: () => boolean = () => false,
   ) {}
+
+  get updating(): boolean { return this.maintenance(); }
+
+  private assertTaskAdmission(): void {
+    if (this.updating) throw new HttpError(503, "Palmagent is updating. Try starting the task again shortly.");
+  }
 
   // Hydrate from DB and run restart recovery. Turns still alive in the runner
   // daemon are REATTACHED (they survived the deploy); the rest are reset to
@@ -217,6 +224,7 @@ export class TaskService {
 
   // ---- task lifecycle ----
   createTask(req: CreateTaskRequest): TaskState {
+    this.assertTaskAdmission();
     if (req?.agent !== "claude" && req?.agent !== "codex") throw badRequest("agent must be 'claude' or 'codex'");
     if (!req.prompt) throw badRequest("prompt is required");
     const images = sanitizeImages(req.images);
@@ -262,6 +270,7 @@ export class TaskService {
   }
 
   followup(id: string, prompt: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): TaskState {
+    this.assertTaskAdmission();
     const task = this.getTask(id);
     if (!prompt) throw badRequest("prompt is required");
     const images = sanitizeImages(rawImages);
@@ -277,6 +286,7 @@ export class TaskService {
   }
 
   steer(id: string, text: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): SteerResponse {
+    if (!this.supervisor.has(id)) this.assertTaskAdmission();
     const task = this.getTask(id);
     if (!text) throw badRequest("text is required");
     const images = sanitizeImages(rawImages);

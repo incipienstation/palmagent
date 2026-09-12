@@ -1,6 +1,6 @@
 ---
 name: settings
-description: Use when a user wants to view or change Palmagent preferences, choose Stable or Preview, remember a release channel, or check which channel they use. Changes user preferences only; installing or updating a running service is a separate operation.
+description: Use when a user wants to view or change Palmagent preferences, choose Stable or Preview, or enable, disable, or check automatic updates. Manages shared preferences and the update timer; an immediate update is a separate request.
 ---
 
 # Palmagent user settings
@@ -51,6 +51,36 @@ or restart a service. If the user also requested an update, continue through `up
 `config init` creates the file once, migrating the selected installation's legacy
 channel when available; an existing user file always wins. Pass the same custom
 `--data-dir` to initialization. `config init/set --dry-run` changes nothing.
+
+## Automatic updates
+
+Automatic updates are off unless the user explicitly enables them. The optional
+`autoUpdate` boolean lives in the same user file; absent means false. Describe the
+policy before enabling it: check about every six hours, follow the saved channel,
+keep the existing `x.x.x` compatibility line and plugins, defer during active,
+queued, or waiting tasks, and pause retries after an installation failure.
+A new version line needs the `update` skill to coordinate plugin changes.
+On Stable, a new patch release also needs that flow. Do not describe this first
+automatic-update policy as fully unattended Stable upgrades.
+
+For an existing package installation, use the scheduler API below, retaining its
+custom `--data-dir`. Check `<cli> --help` for `auto-update` first; if unsupported,
+use `update` to prepare a supporting published release. Enabling requires the
+installation owner and non-interactive service-management access.
+
+```bash
+<cli> auto-update status
+<cli> auto-update enable
+<cli> auto-update disable
+```
+
+Choose only the action the user requested. `status` is read-only. Enable/disable
+configure the background timer and save the preference; never rewrite the JSON
+or systemd files directly. Report both the saved setting and actual timer state,
+including a failed-update hold. Enabling permits later unattended updates; it
+does not prove an update ran. Disabling stops future attempts and lets an already
+applying update finish safely. `--dry-run` previews enable/disable without writes.
+Service removal stops the timer while retaining the preference for reinstall.
 
 ## Errors
 

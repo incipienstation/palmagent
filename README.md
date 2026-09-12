@@ -67,14 +67,33 @@ The CLI commands below are internal plugin operations.
 
 | Skill | CLI command | Purpose |
 | --- | --- | --- |
-| `settings` | `palmagent config` | View or change shared user preferences without changing the service |
+| `settings` | `palmagent config`, `palmagent auto-update` | Manage shared preferences and the automatic update timer |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |
 | `setup` | `palmagent setup` | Reconfigure an existing installation |
 | `doctor` | `palmagent doctor` | Diagnose service and host integration problems |
-| `update` | `palmagent update` | Update while preserving in-flight work when possible |
+| `update` | `palmagent update` | Plan and coordinate package/plugin updates, then verify the running version |
 
 Skill bodies are authored once under `skills/` and synchronized to both plugin trees with
 `node scripts/sync-skills.mjs`.
+
+## Updates
+
+Ask **“Check for Palmagent updates”** to see the target version and which plugins
+need changing. Ask **“Update Palmagent”** to apply that plan. The CLI, server, web
+app, and runner ship together; compatible operator plugins can stay installed.
+
+Ask **“Turn on automatic updates”** to enable background checks about every six
+hours on an installed service. Automatic updates are off by default and follow
+your saved Stable/Preview channel. They stay within the current `x.x.x` version
+line, keep plugins, and defer while tasks are running, queued, or waiting for you.
+A version that needs a plugin change waits for a plugin-assisted update.
+With the current compatibility rule, a new Stable patch also needs that flow;
+automatic advancement currently applies to prereleases within the same version line.
+
+Ask **“Show my update settings”** to check the preference, timer, and last result,
+or **“Turn off automatic updates”** to stop future attempts. An update already
+applying is allowed to finish. Failed installations pause automatic retries until
+a successful manual recovery. See the [update policy](docs/RELEASING.md#coordinated-and-automatic-updates).
 
 ## Development
 

@@ -57,10 +57,10 @@ export function sudoWriteFile(
   const staged = `${path}.palmagent-${process.pid}.tmp`;
   try {
     writeFileSync(local, content, { mode: 0o600 });
-    const installed = run("sudo", ["install", "-m", mode, local, staged]);
+    const installed = sudo(["install", "-m", mode, local, staged]);
     if (!installed.ok) return false;
-    const moved = run("sudo", ["mv", "-f", staged, path]);
-    if (!moved.ok) run("sudo", ["rm", "-f", staged]);
+    const moved = sudo(["mv", "-f", staged, path]);
+    if (!moved.ok) sudo(["rm", "-f", staged]);
     return moved.ok;
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -69,7 +69,7 @@ export function sudoWriteFile(
 
 /** Run a privileged command (sudo). Returns the result. */
 export function sudo(args: string[]): RunResult {
-  return run("sudo", args);
+  return run("sudo", [...(process.env.PALMAGENT_NON_INTERACTIVE === "1" ? ["-n"] : []), ...args]);
 }
 
 // ---- logging ----

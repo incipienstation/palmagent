@@ -365,7 +365,7 @@ try {
     postUpgradeArgs(fingerprinted, customFlags).includes(scratch),
     "the upgraded CLI re-exec preserves an explicit data directory",
   );
-  check(postUpgradeArgs({ ...fingerprinted, releaseChannel: "preview" }, customFlags).includes("preview"),
+  check(postUpgradeArgs({ ...fingerprinted, releaseChannel: "preview" }, { ...customFlags, get: (key) => key === "channel" ? "preview" : customFlags.get(key) }).includes("preview"),
     "upgraded CLI receives the chosen channel before it has been saved");
   const captured: string[] = [];
   const originalLog = console.log;
@@ -396,7 +396,7 @@ try {
   check(captured.some((line) => line.includes("palmagent@next")), "Preview dry-run selects next");
   check(readFileSync(installEnvPath(scratch), "utf8") === beforeChannelDryRun, "channel dry-run leaves config byte-identical");
 
-  const migrationPackage = join(scratch, "migration-package");
+  const migrationPackage = join(scratch, "palmagent");
   mkdirSync(migrationPackage);
   writeFileSync(join(migrationPackage, "package.json"), JSON.stringify({ version: "0.1.0-alpha.2" }));
   saveConfig({ ...written, pkgDir: migrationPackage, releaseChannel: undefined });
@@ -424,6 +424,8 @@ const fs = require("node:fs");
 fs.appendFileSync(process.env.TEST_NPM_CALLS, JSON.stringify(process.argv.slice(2)) + "\\n");
 if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
   console.log(JSON.stringify(process.env.TEST_NPM_TARGET));
+} else if (process.argv[2] === "root") {
+  console.log(process.env.TEST_NPM_ROOT);
 } else {
   console.error("simulated npm failure");
   process.exit(1);
@@ -432,9 +434,12 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
   const originalEnv = { ...process.env };
   const preflightConfig = readFileSync(installEnvPath(scratch), "utf8");
   const savedPreferences = readFileSync(userConfigPath(), "utf8");
+  const pluginManifest = join(scratch, "plugin.json");
+  writeFileSync(pluginManifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.2" }));
   try {
     process.env.PATH = fakeBin + ":" + process.env.PATH;
     process.env.TEST_NPM_CALLS = npmCalls;
+    process.env.TEST_NPM_ROOT = scratch;
     process.env.TEST_NPM_TARGET = "0.2.0-alpha.1";
     console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
     console.error = console.log;
@@ -446,13 +451,14 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
       "a prerelease behind latest is refused before npm installation");
 
     writeFileSync(npmCalls, "");
-    process.env.TEST_NPM_TARGET = "0.1.0-alpha.2";
+    process.env.TEST_NPM_TARGET = "0.1.0-alpha.3";
     const failedPull = await update({ ...customFlags, dryRun: false, pull: true,
-      get: (key) => key === "channel" ? "preview" : customFlags.get(key) });
+      get: (key) => key === "channel" ? "preview" : key === "plugin-manifest" ? pluginManifest : customFlags.get(key) });
     const installCalls = readFileSync(npmCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     check(failedPull === 1 && JSON.stringify(installCalls) === JSON.stringify([
       ["view", "palmagent@next", "version", "--json"],
-      ["install", "-g", "palmagent@0.1.0-alpha.2"],
+      ["root", "-g"],
+      ["install", "-g", "palmagent@0.1.0-alpha.3"],
     ]), "a real pull installs the resolved exact version and stops on npm failure");
 
     writeFileSync(npmCalls, "");

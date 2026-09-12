@@ -74,7 +74,11 @@ are outside plugin/package caches and survive service removal and reinstall.
 
 The following commands describe the internal execution interface:
 
-- `palmagent update --pull` follows the saved channel.
+For coordinated manual pulls, also pass `--plugin-manifest <path>` for each
+participating installed plugin; the channel and target examples below omit that
+repeated argument for readability.
+
+- `palmagent update --pull --plugin-manifest <installed-plugin.json>` follows the saved channel.
 - `palmagent update --pull --channel preview` opts into Preview.
 - `palmagent update --pull --channel stable` returns to Stable when it can advance
   or retain the installed version. An older Stable target is refused.
@@ -106,8 +110,74 @@ npm dist-tags do not select plugin marketplace refs. Install a plugin from a pub
 `v<version>` tag in the same base version, using the platform's marketplace ref support.
 A moving `main`/`develop` marketplace can include unpublished changes and is intended for
 maintainer source testing. Plugin managers control refresh/caching separately, so a CLI
-update is not evidence of a plugin update. The combined transactional updater remains a
-follow-up; this release adds channel selection and compatibility preflight only.
+update is not evidence of a plugin update. The coordinated update skill uses native
+manager operations and verifies installed manifests separately from runtime health.
+
+### Coordinated and automatic updates
+
+The package is one update unit containing the CLI, server, PWA, and runner. The
+`update` plugin coordinates it with participating Claude Code and Codex plugins:
+
+1. `update --plan --plugin-manifest <path>` resolves a single exact npm target and
+   returns JSON with the package action and each plugin's keep/update decision.
+   Repeat the manifest argument for each participating installation and scope.
+   Planning is read-only; unlike `--dry-run`, it contacts npm.
+2. If a plugin needs changing, the agent uses its native manager and the exact
+   published Git tag, retaining the previous ref/scope for recovery. It verifies
+   actual installed manifests before proceeding. A catalog refresh is insufficient.
+3. `update --pull --to <planned-version> --plugin-manifest <verified-path>` checks
+   target compatibility before replacing the package. The active npm prefix must
+   own the installed package. It invokes the installed target CLI directly and
+  verifies that `/api/health` reports the intended package version.
+
+Legacy plugins can still call `update --pull` without manifest arguments within
+the current `x.x.x`; crossing that line requires the manifest-based flow. This
+keeps existing plugin commands compatible within the promised version line.
+
+Skills check CLI help for the new planning flags before using them. Older CLIs
+may ignore unknown flags; use a temporary exact released CLI that supports the
+interface, never send these flags to a legacy updater. A current package can
+still need a plugin repair. A compatible package already at the target is checked
+for runtime health and retained.
+
+This coordinates a single user request; it is not an atomic transaction across
+independent plugin managers, npm, systemd, and SQLite. A plugin may need a native
+reload or a new agent session before its new skills become active.
+
+The settings skill exposes `auto-update enable|disable|status`. Enabling stores
+`autoUpdate: true` in the shared user file and activates the systemd update timer;
+an absent value means off. Enabling requires an installed package, its owner, and
+non-interactive service-management access. The timer invokes the same updater
+with `--pull --automatic`, about every six hours with jitter, under that owner
+and the installation's saved PATH, data directory, and user configuration home.
+
+Automatic updates retain plugins and stay within the current package's `x.x.x`.
+They defer a new compatibility line, including any new Stable patch release, to
+the update skill. Unattended advancement therefore applies to prereleases within
+one version line under the current compatibility promise. Before package mutation,
+the updater opens a maintenance window that temporarily rejects new task starts
+and follow-ups and defers routine dispatch. The server acknowledges the window;
+the updater then checks SQLite and the runner for active, queued, or waiting work.
+Busy or unverifiable state defers the update and releases the window. This avoids
+an idle-check/start race and also protects an in-process fallback backend. A
+crashed updater does not leave admissions disabled: maintenance ownership includes
+the process start identity and boot identity, so PID reuse is not mistaken for a
+live update. Older servers without maintenance support defer automatic updates.
+
+A shared OS lock serializes package updates, install/setup, service removal, and
+scheduler changes for the user configuration home. `update-result.json` in the
+installation data directory records the previous/target versions and result. An
+installation/activation failure or interrupted attempt pauses automatic retries;
+`doctor` and `auto-update status` expose the hold. A successful manual update or
+repair clears it. An exact same-version retry can repair a recorded failed attempt.
+No package or database is automatically restored. Inspect actual package/runtime
+identity after failure and plan any downgrade with database compatibility in mind.
+
+Disabling prevents future attempts without killing an update mid-install. Service
+removal stops and removes the timer while preserving user preferences; reinstall
+or setup restores a previously enabled timer only after service health succeeds.
+These source capabilities do not enable a timer or deploy an update on a host
+merely because their PR is merged.
 
 Published versions are immutable. Never overwrite or reuse a version. If a
 release is bad, move the dist-tag back to the last good version, deprecate the

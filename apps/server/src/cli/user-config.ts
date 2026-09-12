@@ -14,6 +14,7 @@ import { productVersion, releaseChannel, type ReleaseChannel } from "./release-p
 const UserConfigSchema = z.object({
   schemaVersion: z.literal(1),
   channel: z.enum(["stable", "preview"]),
+  autoUpdate: z.boolean().optional(),
 }).passthrough();
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -115,6 +116,13 @@ export function setUserChannel(value: string, options: Options = {}): UserConfig
   const config = { ...(readSaved() ?? { schemaVersion: 1 as const }), channel };
   if (options.dryRun) return config;
   writeAtomic(config, false);
+  return config;
+}
+
+/** Only the scheduler controller enables execution; absent means disabled. */
+export function setUserAutoUpdate(enabled: boolean, options: Options = {}): UserConfig {
+  const config = { ...getUserConfig(options), autoUpdate: enabled };
+  if (!options.dryRun) writeAtomic(config, false);
   return config;
 }
 
