@@ -16,7 +16,7 @@ description):
 | `doctor`  | `palmagent doctor`  | Diagnose a broken instance (+journal) |
 | `update`  | `palmagent update`  | Plan, coordinate, and verify updates |
 
-## Layout (verified against codex 0.139.0)
+## Layout (verified against codex 0.154.0)
 
 This directory **is a Codex marketplace root**: it holds `.agents/plugins/marketplace.json`
 and a sibling `plugins/` dir, exactly like the installed `openai-curated` marketplace
@@ -38,7 +38,7 @@ plugins/codex/                                  ← marketplace ROOT (pass THIS 
             └── update/   SKILL.md + agents/openai.yaml
 ```
 
-## Install (verified `codex plugin` commands, 0.139.0)
+## Install (verified `codex plugin` commands, 0.154.0)
 
 ### Plugin path (recommended)
 
@@ -61,14 +61,26 @@ sharing the CLI's `x.x.x` (including prereleases). Choose a stable tag for Stabl
 or opt into a prerelease tag for Preview:
 
 ```bash
-codex plugin marketplace add incipienstation/palmagent --ref 'v<version>' --sparse plugins/codex
+git clone --depth 1 --branch 'v<version>' https://github.com/incipienstation/palmagent.git '/abs/path/to/palmagent-v<version>'
+codex plugin marketplace add '/abs/path/to/palmagent-v<version>/plugins/codex'
 codex plugin add palmagent@palmagent
 ```
 
-Manage / refresh / remove:
+Use an unused absolute checkout directory and retain it as the marketplace source.
+The catalog lives below the repository root: `--sparse plugins/codex` limits the Git
+checkout but does not change the marketplace root, so registering the repository URL
+with that flag fails. Register the local `plugins/codex` directory instead.
+
+To change versions, prepare a separate checkout of the exact published tag and verify
+its plugin manifest first. Record the old source path and installed version, then use
+native remove/add commands to repoint only the Palmagent marketplace and reinstall
+its plugin. Inspect the registered source and installed manifest afterward; re-adding
+an existing marketplace can retain its old source. Keep the old checkout for recovery.
+A local marketplace does not advance through `marketplace upgrade`.
+
+Remove:
 
 ```bash
-codex plugin marketplace upgrade            # refresh a git marketplace snapshot
 codex plugin remove palmagent@palmagent
 codex plugin marketplace remove palmagent
 ```
@@ -104,6 +116,6 @@ To update a skill, edit the repo-root `skills/<name>/SKILL.md` and run
 hand-edit them. Manifests and `openai.yaml` files remain platform-specific.
 
 > Symlinks were rejected: consumers clone this repo directly, and some clients
-> (Windows / `core.symlinks=false`) materialize symlinks as plain text, while Codex
-> `--sparse plugins/codex` would not fetch a link target outside the cone. Committed real files in
+> (Windows / `core.symlinks=false`) materialize symlinks as plain text, and a sparse
+> checkout would not fetch a link target outside its selected directories. Committed real files in
 > every tree are robust everywhere.
