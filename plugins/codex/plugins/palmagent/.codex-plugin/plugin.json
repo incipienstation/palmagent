@@ -1,6 +1,6 @@
 {
   "name": "palmagent",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Operator skills for a self-hosted Palmagent instance: settings, install, setup (reconfigure), doctor (diagnose), and update. Thin skins over the palmagent CLI.",
   "author": {
     "name": "Palmagent"
