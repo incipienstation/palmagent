@@ -1,75 +1,86 @@
 #!/usr/bin/env node
-// Single-source skill bodies.
-//
-// The canonical, platform-neutral SKILL.md lives in `skills/<name>/SKILL.md`.
-// It is copied verbatim into each platform tree (Claude + Codex). Editing a
-// skill body = edit the canonical, then run this script. CI runs `--check` to
-// forbid drift between the canonical and the generated copies.
-//
-// Why copies (not symlinks): consumers clone this repo directly and some clients
-// (Windows / core.symlinks=false) materialize symlinks as plain text files, and
-// Codex `--sparse plugins/codex` would not fetch a link target outside the cone.
-// Real files in every tree are robust everywhere; this script + CI keep them in
-// sync.
-
+// Canonical operator skill bodies and shared references are copied verbatim into
+// both plugin packages. Real files keep each installed plugin self-contained.
+// Platform manifests and agents/openai.yaml remain outside this sync boundary.
 import {
-  readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync,
+  readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const CANON = join(ROOT, 'skills');
-const TARGETS = [
-  join(ROOT, 'plugins/claude/skills'),
-  join(ROOT, 'plugins/codex/plugins/palmagent/skills'),
-];
-const check = process.argv.includes('--check');
-
-const hasSkill = (base, n) => existsSync(join(base, n, 'SKILL.md'));
-const names = existsSync(CANON)
-  ? readdirSync(CANON).filter((n) => hasSkill(CANON, n))
-  : [];
-if (names.length === 0) {
-  console.error('no canonical skills found under skills/<name>/SKILL.md');
-  process.exit(1);
-}
-
-const drift = [];
-for (const name of names) {
-  const src = readFileSync(join(CANON, name, 'SKILL.md'), 'utf8');
-  for (const base of TARGETS) {
-    const dest = join(base, name, 'SKILL.md');
-    if (check) {
-      const cur = existsSync(dest) ? readFileSync(dest, 'utf8') : null;
-      if (cur !== src) drift.push(relative(ROOT, dest));
-    } else {
-      mkdirSync(dirname(dest), { recursive: true });
-      writeFileSync(dest, src);
+function sharedFiles(base) {
+  const directory = join(base, '.shared');
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    if (!entry.isFile() || entry.name === 'SKILL.md') {
+      throw new Error('skills/.shared must contain supporting files only, without SKILL.md');
     }
-  }
+    return join('.shared', entry.name);
+  });
 }
 
-// A skill present in a platform tree but absent from the canonical is also drift.
-if (check) {
-  const canon = new Set(names);
-  for (const base of TARGETS) {
-    if (!existsSync(base)) continue;
-    for (const n of readdirSync(base)) {
-      if (hasSkill(base, n) && !canon.has(n)) {
-        drift.push(`${relative(ROOT, join(base, n, 'SKILL.md'))} (no canonical source)`);
+export function syncSkills(root, { check = false } = {}) {
+  const canonical = join(root, 'skills');
+  const targets = [join(root, 'plugins/claude/skills'), join(root, 'plugins/codex/plugins/palmagent/skills')];
+  const hasSkill = (base, name) => existsSync(join(base, name, 'SKILL.md'));
+  const names = existsSync(canonical)
+    ? readdirSync(canonical).filter((name) => name !== '.shared' && hasSkill(canonical, name))
+    : [];
+  if (!names.length) throw new Error('no canonical skills found under skills/<name>/SKILL.md');
+
+  const shared = sharedFiles(canonical);
+  // Inventory before writes so invalid supporting entries cannot cause a partial sync.
+  const inventories = targets.map(sharedFiles);
+  const files = [...names.map((name) => join(name, 'SKILL.md')), ...shared];
+  const drift = [];
+  for (const file of files) {
+    const source = readFileSync(join(canonical, file));
+    for (const base of targets) {
+      const destination = join(base, file);
+      if (check) {
+        if (!existsSync(destination) || !readFileSync(destination).equals(source)) {
+          drift.push(relative(root, destination));
+        }
+      } else {
+        mkdirSync(dirname(destination), { recursive: true });
+        writeFileSync(destination, source);
       }
     }
   }
+
+  for (const [index, base] of targets.entries()) {
+    // Only .shared is fully managed: remove obsolete helper copies, never platform wrappers.
+    for (const file of inventories[index]) {
+      if (shared.includes(file)) continue;
+      const destination = join(base, file);
+      if (check) drift.push(`${relative(root, destination)} (no canonical source)`);
+      else rmSync(destination);
+    }
+    if (check && existsSync(base)) {
+      for (const name of readdirSync(base)) {
+        if (hasSkill(base, name) && !names.includes(name)) {
+          drift.push(`${relative(root, join(base, name, 'SKILL.md'))} (no canonical source)`);
+        }
+      }
+    }
+  }
+  return { skillCount: names.length, sharedCount: shared.length, drift };
 }
 
-if (check) {
-  if (drift.length) {
-    console.error('✗ skills out of sync with canonical (run: node scripts/sync-skills.mjs):');
-    for (const d of drift) console.error('  - ' + d);
-    process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    const check = process.argv.includes('--check');
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const result = syncSkills(root, { check });
+    if (result.drift.length) {
+      console.error('✗ skills or shared references out of sync (run: node scripts/sync-skills.mjs):');
+      for (const path of result.drift) console.error(`  - ${path}`);
+      process.exitCode = 1;
+    } else {
+      console.log(`✓ ${check ? 'in sync' : 'synced'}: ${result.skillCount} skills + ${result.sharedCount} shared files × 2 platform trees`);
+    }
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
   }
-  console.log(`✓ skills in sync (${names.length} canonical × ${TARGETS.length} trees)`);
-} else {
-  console.log(`✓ synced ${names.length} skill(s) → ${TARGETS.length} platform tree(s)`);
 }

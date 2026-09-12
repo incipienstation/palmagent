@@ -109,7 +109,9 @@ pnpm dev
 For PWA development, run `pnpm web:dev` in another terminal. See the
 [web development guide](apps/web/README.md) for local ports and UI checks.
 
-Run the complete source validation before submitting a change:
+Follow the [verification skill](.harness/skills/verify/SKILL.md) before submitting a change.
+Documentation and skill-only edits use its scoped checks. For code, dependencies,
+workflows, or uncertain scope, run the complete source gate:
 
 ```bash
 pnpm verify

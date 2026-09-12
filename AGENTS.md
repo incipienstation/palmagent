@@ -67,8 +67,13 @@ Each operator skill is authored once in `skills/<name>/SKILL.md`. Run
 - `plugins/claude/skills/<name>/SKILL.md`
 - `plugins/codex/plugins/palmagent/skills/<name>/SKILL.md`
 
-Never hand-edit generated skill copies. Platform manifests and Codex `agents/openai.yaml` files
-remain platform-specific.
+Shared operator references are authored in `skills/.shared/` and copied verbatim into
+both platform `skills/.shared/` directories by the same command. Each skill explicitly
+links the reference it needs. This is supporting content, not another skill: do not add
+`SKILL.md` there. `--check` validates reference content and stale generated files too.
+
+Never hand-edit generated skill or reference copies. Platform manifests and Codex
+`agents/openai.yaml` files remain platform-specific.
 
 ## Branching and delivery
 

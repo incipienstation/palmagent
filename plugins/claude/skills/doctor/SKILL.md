@@ -12,61 +12,24 @@ checks (units active? runner socket present? claude/codex installed + authed?
 loopback-only? PWA dist present? disk headroom?) and **exits non-zero on any
 failure**. Your added value is correlating its findings with the live logs.
 
-## 1. Locate the CLI
+## 1. Inspect without changing the installation
 
-The plugin runs all installation and CLI steps internally; never ask the user to
-install the CLI, run these commands, or edit configuration files. Before choosing
-a bootstrap package, read `~/.palmagent/config.json` (or `config.json` under
-`PALMAGENT_HOME` when set). Honor an explicitly requested channel; otherwise use
-its saved `channel` or the existing installation's legacy channel. Only a fresh
-user with no choice defaults to Stable. Reject malformed JSON, unsupported `schemaVersion`, or an invalid channel rather
-than guessing or resetting preferences. Both agent platforms share this file.
+Read the [shared CLI bootstrap guidance](../.shared/bootstrap.md) for discovery and
+channel selection. Before applying its compatibility gate, gather read-only evidence:
+installed package and plugin versions, runtime health, service state, journals, and
+`auto-update status` when the installed CLI supports it. A mismatch must not block those
+checks. Preserve invalid settings for diagnosis; never replace packages, initialize
+configuration, or erase update results just to make diagnostics run.
 
-Use the installed CLI when available. If it must be bootstrapped, resolve the
-chosen npm tag (`latest` for Stable, `next` for Preview) to one exact version and
-use that same version for all bootstrap commands. Do not silently switch channels
-or substitute a moving `npx` version after a compatibility failure.
-
-Substitute the resolved internal command for `<cli>` below.
-
-Before invoking an operation, read this installed plugin's version from
-`../../.claude-plugin/plugin.json` or `../../.codex-plugin/plugin.json`, relative
-to this skill directory, and run:
-
-```bash
-<cli> compatibility --plugin-version <installed-plugin-version>
-```
-
-Proceed only on exit 0. The CLI and plugin must share the same `x.x.x`, including
-alpha, beta, and rc versions. If the command is unavailable, the manifest cannot
-be read, or the check fails, stop and explain which released CLI/plugin pair is
-needed; do not bypass the check or substitute a moving `npx` version. Plugin
-installation is managed separately by Claude Code or Codex. This check does not
-update either component.
-
-Stable is the default for new installations. Use Preview only when the operator
-opts in; it is available to everyone. If a CLI must be installed, use
-`palmagent@latest` for Stable or `palmagent@next` for Preview. A missing Stable
-release is not permission to fall back to Preview.
-
-Read effective settings with `<cli> config get` (pass the installation's
-`--data-dir` when custom). For an authorized install/setup/update, run
-`<cli> config init` with the same data directory to migrate legacy channel settings
-before applying service changes. `config get` is read-only. Preserve the user file
-across plugin/package refresh, service removal, and reinstall. Never store settings
-inside a plugin cache or edit `install.env` to change the channel.
-
-For a preference-only request, use the `settings` skill. It changes the saved
-choice without deploying a release or restarting services.
+Use a temporary exact compatible CLI if needed for `doctor`. If no compatible command
+is available, continue the file, health, and journal inspection and report why the CLI
+check could not run. This exception permits evidence collection, not host changes.
 
 ## 2. Run the diagnostics
 
-After an update failure, first inspect the installed package version, runtime
-health identity, native plugin inventory, and `auto-update status` when supported.
-A plugin mismatch must not prevent these read-only checks. Use a temporary exact
-compatible CLI if needed; never replace packages or erase update results just to
-make diagnostics run. A `failed` or unfinished `applying` update result keeps
-automatic retries paused even when other health checks are green.
+Apply the shared compatibility check before invoking `doctor`. After an update failure,
+a `failed` or unfinished `applying` result keeps automatic retries paused even when
+other health checks are green.
 
 ```bash
 <cli> doctor
