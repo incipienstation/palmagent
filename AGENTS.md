@@ -4,6 +4,12 @@ Guidance for coding agents maintaining the Palmagent repository.
 
 ## Context discipline
 
+Read this file and the relevant canonical skills from the current checkout at task start,
+after switching checkouts, and before citing a repository rule as a reason to pause. Reconcile
+older injected instruction snapshots with current files, Git history, and the user's latest
+explicit decisions. Carry forward authorization for the same scope; ask only about a remaining
+ambiguity or an action outside that scope. A stale snapshot alone is not a new approval gate.
+
 Keep instructions focused on context needed to act correctly; link to canonical guidance instead
 of duplicating it. Use [garden](.harness/skills/garden/SKILL.md) to audit and propose context cleanup.
 Write README documentation for human users and contributors, and AGENTS.md for agents doing
@@ -86,6 +92,9 @@ Never hand-edit generated skill or reference copies. Platform manifests and Code
 - Completing an authorized task includes automatic squash merge of its verified PR into
   `develop` through [ship](.harness/skills/ship/SKILL.md), unless the user requests PR-only delivery,
   a draft, or a merge hold. Merges into `main` still require explicit human approval.
+- Completion also includes removing that task's worktree and local branch after the
+  [ship cleanup checks](.harness/skills/ship/SKILL.md#post-merge-worktree-cleanup) pass, unless
+  the user requests retention. Preserve resources that fail those checks.
 - Versioning, tagging, publication, repository visibility changes, and deployment keep their
   separate approval rules; an automatic `develop` merge does not authorize those actions.
 - Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash

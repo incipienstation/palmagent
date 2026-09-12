@@ -5,7 +5,9 @@ description: First stage of Palmagent's plan → start → verify → ship loop.
 
 # Plan
 
-1. Read `AGENTS.md` and the exact package, app, plugin, or documentation contracts in scope.
+1. Read the current checkout's [AGENTS.md](../../../AGENTS.md#context-discipline) and the exact
+   package, app, plugin, or documentation contracts in scope; refresh older injected guidance
+   under its context discipline before deciding that human input is needed.
 2. Inspect current code and history before deciding whether to import, adapt, or build.
 3. For migration work, choose one coherent working slice and sanitize every file while importing.
 4. Follow the [skill source guidance](../../../AGENTS.md#repository-skill-single-source) for

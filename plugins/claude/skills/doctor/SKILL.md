@@ -80,7 +80,10 @@ then propose the concrete fix. Common patterns to recognize:
   before restoring a plugin or retrying the exact release through `update`.
   Package replacement does not restore a database; plan downgrades separately.
 
-Always name the **exact remediation command** and confirm with the operator before
-running anything that changes the host (restarts, rebuilds, certbot, nginx
-reloads). If the fix is a reconfigure, hand off to the `setup` skill; if it is a
-version bump, hand off to `update`.
+Name the **exact remediation command** and its effects before running it. Apply the
+shared authorization guidance: a repair request permits remediation within its scope
+without another confirmation; a diagnosis-only request stops before host changes.
+Ask only when the proposed fix introduces an unapproved effect, such as interrupting
+active work, deleting data, or changing the requested target. If the fix is a reconfigure,
+hand off to `setup`; if it needs a package update, hand off to `update`, carrying the
+same authorization and its limits forward.

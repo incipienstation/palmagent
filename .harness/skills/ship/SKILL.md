@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Final stage of Palmagent's plan → start → verify → ship loop. Automatically squash-merge verified task pull requests into develop, then finish authorized worktree cleanup. Use when finishing a task or completing post-merge cleanup.
+description: Final stage of Palmagent's plan → start → verify → ship loop. Automatically squash-merge verified task pull requests into develop and clean up the completed task's verified worktree and local branch. Use when finishing a task or completing post-merge cleanup.
 ---
 
 # Ship
@@ -30,9 +30,13 @@ with no later commits. Check tracked, untracked, and ignored files for work or l
 removal would discard. A clean `git status` alone does not account for ignored files, and squash
 merges do not preserve the feature head as an ancestor of the base branch.
 
-Use cleanup authorization already given for these resources; do not ask again. If it is absent,
-present the exact worktree and local branches for approval before deleting them. Preserve the
-main checkout, other tasks' worktrees, and any resource whose ownership or contents are uncertain.
+Completing the authorized task includes removing its verified worktree and local branch;
+no separate cleanup confirmation is needed unless the user requests retention. Discard only
+the merged source and identified, reproducible output generated for this task. Preserve a
+worktree with later commits, uncommitted work, private data, uncertain ignored files, or an
+active session or process. Report the specific reason for retention and ask only if resolving
+it requires a new decision. Preserve the main checkout and other tasks' worktrees; this is
+not blanket authorization to clean up previously retained resources.
 
 Select the exit/removal procedure by the running environment and how the worktree was created,
 not by the presence of `.agents` or `.claude` directories:
@@ -48,7 +52,7 @@ not by the presence of `.agents` or `.claude` directories:
   has moved. Once no session, task-owned process, or pending tool call still uses it, run
   `git worktree remove <worktree-path>` from a retained checkout, without `--force`.
 
-Remove an approved task-local branch with `git branch -d <branch>` only after its worktree is
+Remove the verified task-local branch with `git branch -d <branch>` only after its worktree is
 removed. If Git refuses, including after a squash merge, retain the branch and explain why;
 do not silently escalate to `-D`. Remote branch deletion is a separate action. Avoid blanket
 worktree pruning or directory deletion to clear an error.

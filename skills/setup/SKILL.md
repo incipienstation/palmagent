@@ -15,12 +15,14 @@ files or nginx config by hand in chat; drive the CLI.
 Read and follow the [shared CLI bootstrap guidance](../.shared/bootstrap.md).
 Use its exact command, saved channel, compatibility check, and custom data directory.
 
-## 2. Confirm what is changing
+## 2. Resolve the requested changes
 
 `setup` is idempotent but it re-renders host config and may restart the service.
 Before running:
 
-- Ask which values change (domain, internal port, concurrency, repo roots).
+- Read the existing settings and apply the user's requested changes to domain,
+  internal port, concurrency, or repo roots. Retain unspecified values and ask
+  only about missing required information or an unresolved choice.
   `--data-dir` locates an existing custom installation; it does not move data.
   Note that **changing the domain re-runs certbot** and requires the new
   domain's DNS A-record + ports 80/443 to be live first.
@@ -41,11 +43,13 @@ For this authorized operation, run `<cli> config init` with the same custom
 overwriting an existing user file; do not initialize during a dry-run-only request.
 
 ```bash
-<cli> setup
+<cli> setup --non-interactive <changed-config-flags>
 ```
 
-For unattended use, pass the changed values as flags/env with `--non-interactive`
-(check `<cli> setup --help` for the exact flags rather than guessing).
+Replace `<changed-config-flags>` with the requested values using the supported flags
+from `<cli> setup --help`. Reuse the existing authorization under the shared guidance;
+if runner changes would interrupt active work, defer until it finishes unless that
+interruption is already authorized.
 
 ## 4. Report
 
