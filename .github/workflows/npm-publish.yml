@@ -1,13 +1,17 @@
 name: npm publication
+run-name: Publish ${{ inputs.commit || inputs.tag }}
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
+      commit:
+        description: Exact prepared develop/main commit to publish
+        type: string
+      candidate_run:
+        description: Reuse candidate bytes from a previous run (recovery)
+        type: string
       tag:
-        description: Published GitHub Release tag to retry (exact vX.Y.Z[-alpha.N])
-        required: true
+        description: Legacy retry of an already-public GitHub Release; omit commit
         type: string
 
 permissions:
@@ -15,16 +19,104 @@ permissions:
   actions: read
 
 concurrency:
-  group: npm-publication
+  group: npm-publication-${{ inputs.commit || inputs.tag }}
   cancel-in-progress: false
+  queue: max
 
 env:
-  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
   GH_REPO: ${{ github.repository }}
+  RELEASE_TAG: ${{ inputs.tag }}
 
 jobs:
-  inspect:
-    if: github.event_name == 'release' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+  input:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require one exact source or legacy tag
+        env:
+          SOURCE_COMMIT: ${{ inputs.commit }}
+          LEGACY_TAG: ${{ inputs.tag }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+        run: |
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            const {SOURCE_COMMIT: commit, LEGACY_TAG: tag, CANDIDATE_RUN: run} = process.env;
+            assert(Boolean(commit) !== Boolean(tag), "Supply exactly one commit or legacy tag");
+            assert(!commit || /^[a-f0-9]{40}$/.test(commit), "Commit must be a full SHA");
+            assert(!tag || /^v[0-9A-Za-z.-]+$/.test(tag), "Invalid legacy tag");
+            assert(!run || (commit && /^[1-9][0-9]*$/.test(run)), "Invalid candidate run");
+          '
+
+  candidate:
+    needs: input
+    if: inputs.commit != ''
+    uses: ./.github/workflows/release-candidate.yml
+    with:
+      commit: ${{ inputs.commit }}
+      candidate_run: ${{ inputs.candidate_run }}
+    secrets:
+      LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+
+  publish:
+    needs: candidate
+    if: inputs.commit != ''
+    runs-on: ubuntu-latest
+    # This is the single Stable approval, before tag creation, npm publication, or public Release.
+    environment: npm-${{ needs.candidate.outputs.channel }}
+    concurrency:
+      group: npm-channel-${{ needs.candidate.outputs.channel }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Check out workflow tools
+        uses: actions/checkout@v4
+        with:
+          path: tooling
+          persist-credentials: false
+      - name: Check out the reviewed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.candidate.outputs.artifact }}
+          run-id: ${{ needs.candidate.outputs.producer }}
+          github-token: ${{ github.token }}
+          path: source/build/release
+      - name: Create the repository-scoped release credential
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-actions: read
+      - name: Install the OIDC-capable npm CLI
+        run: npm install --global npm@11.11.1 --ignore-scripts
+      - name: Finalize the reviewed candidate without rebuilding
+        run: node tooling/scripts/release-finalize.mjs source source/build/release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_COMMIT: ${{ needs.candidate.outputs.commit }}
+          CANDIDATE_RUN_ID: ${{ needs.candidate.outputs.producer }}
+          EXPECTED_ARTIFACT_SHA256: ${{ needs.candidate.outputs.sha256 }}
+          RELEASE_ENVIRONMENT: npm-${{ needs.candidate.outputs.channel }}
+          NPM_PUBLISH_ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}
+
+  legacy-inspect:
+    needs: input
+    if: inputs.tag != ''
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.identity.outputs.environment }}
@@ -49,12 +141,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-publish.mjs check
 
-  publish:
-    needs: inspect
+  legacy-publish:
+    needs: legacy-inspect
+    if: inputs.tag != ''
     runs-on: ubuntu-latest
     # npm-next has no reviewer gate; npm-latest retains required reviewers.
     # Keep both environments for their npm Trusted Publisher OIDC bindings.
-    environment: ${{ needs.inspect.outputs.environment }}
+    environment: ${{ needs.legacy-inspect.outputs.environment }}
+    concurrency:
+      group: npm-channel-${{ needs.legacy-inspect.outputs.environment == 'npm-next' && 'next' || 'latest' }}
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       actions: read
@@ -62,7 +159,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.inspect.outputs.commit }}
+          ref: ${{ needs.legacy-inspect.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -79,5 +176,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NPM_PUBLISH_ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}
-          EXPECTED_ARTIFACT_SHA256: ${{ needs.inspect.outputs.sha256 }}
+          EXPECTED_ARTIFACT_SHA256: ${{ needs.legacy-inspect.outputs.sha256 }}
         run: node scripts/release-publish.mjs publish

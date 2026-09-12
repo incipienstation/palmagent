@@ -127,7 +127,7 @@ pnpm web:verify
 pnpm plugins:check
 pnpm pkg:check
 pnpm release:check
-pnpm release:prepare <version>  # read-only proposal; apply only after version approval
+pnpm release:prepare <version>  # preview the version and changelog change
 ```
 
 The source checks run without a live agent account. With an authenticated CLI, you can additionally
@@ -139,7 +139,8 @@ Keep private environment details out of source and examples. [AGENTS.md](AGENTS.
 the instructions for coding agents working in this repository.
 
 For releases, follow the [release skill](.harness/skills/release/SKILL.md), which covers versioning, candidate
-artifacts, and the separate merge, publication, visibility, and deployment gates.
+artifacts, automatic Preview publication for product changes on `develop`, and the single Stable
+publication approval. Repository visibility and host deployment remain separate decisions.
 
 ## Install the operator plugin
 

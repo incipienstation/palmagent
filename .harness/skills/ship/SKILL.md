@@ -14,11 +14,12 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
    `gh pr merge <pr-number> --squash --match-head-commit <verified-head-sha>`. If the head or base
    changes, update and reverify as needed. Resolve task-owned conflicts before merging; never
    bypass failing checks, unresolved reviews, or branch protections with `--admin`.
-4. Report the merged commit and validation evidence. Merges into `main` still require explicit
-   human approval and use a merge commit through a dedicated PR. Versioning, tagging, publication,
-   visibility changes, and deployment retain their separate approval rules in the
-   [release policy](../release/references/policy.md#branch-and-approval-flow); automatic `develop` merge does not authorize them.
-   When release work is requested, continue through [release](../release/SKILL.md).
+4. Report the merged commit and validation evidence. Follow the
+   [release policy](../release/references/policy.md#branch-and-approval-flow) for release work:
+   product changes on `develop` can trigger automatic Preview publication; a requested Stable
+   release includes its dedicated `main` promotion PR with a merge commit and required checks.
+   Other `main` merges require explicit approval. Stable tagging/publication wait for the final
+   candidate approval. Visibility and host deployment remain separate.
 5. Keep the worktree while the PR is open or implementation/review is still active. After merge,
    complete the cleanup below and report anything retained with its reason.
 

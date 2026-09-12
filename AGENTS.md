@@ -91,14 +91,17 @@ Never hand-edit generated skill or reference copies. Platform manifests and Code
   or immutable artifact and verify health separately from CI or merge status.
 - Completing an authorized task includes automatic squash merge of its verified PR into
   `develop` through [ship](.harness/skills/ship/SKILL.md), unless the user requests PR-only delivery,
-  a draft, or a merge hold. Merges into `main` still require explicit human approval.
+  a draft, or a merge hold. Requested Stable release preparation may also promote into `main` under the
+  [release policy](.harness/skills/release/references/policy.md#branch-and-approval-flow). Other `main` merges require explicit approval.
 - Completion also includes removing that task's worktree and local branch after the
   [ship cleanup checks](.harness/skills/ship/SKILL.md#post-merge-worktree-cleanup) pass, unless
   the user requests retention. Preserve resources that fail those checks.
-- Versioning, tagging, publication, repository visibility changes, and deployment keep their
-  separate approval rules; an automatic `develop` merge does not authorize those actions.
+- Product changes merged into `develop` are eligible for automatic Preview versioning, tagging,
+  and publication under the release policy. Repository visibility and host deployment remain
+  independent approvals.
 - Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash
-  or rebase. Promotion does not itself authorize tagging, publication, or deployment.
+  or rebase. Stable tagging and publication wait for the final candidate approval; host deployment
+  remains separate.
 - Before a hotfix or merge-settings change, follow the
   [environment and merge model](.harness/skills/release/references/policy.md#environment-and-merge-model), including hotfix
   propagation to `develop` and branch-specific merge enforcement.
@@ -110,10 +113,11 @@ For user- or operator-facing changes, follow the
 
 Use [release](.harness/skills/release/SKILL.md) before version edits, tags, publication, or
 release-workflow changes. Its references own version synchronization, channels, approval gates,
-artifact verification, and recovery. Present the proposed version, scope, compatibility impact,
-and validation evidence for explicit approval before versioning or tagging. General permission
-to proceed, green CI, or a merge is not versioning approval; never choose or bump versions
-automatically or publish from a workstation. Keep release-specific evidence outside the skill.
+artifact verification, and recovery. Preview automation selects versions within the declared
+prerelease lane. A requested Stable release includes version preparation, PRs, promotion, and
+candidate verification; its single `npm-latest` approval covers the exact candidate before
+tagging, npm publication, and public Release creation. Never publish from a workstation.
+Keep release-specific evidence outside the skill.
 
 Host deployment remains operator-initiated through [staging-deploy](.harness/skills/staging-deploy/SKILL.md).
 Keep private environment bindings outside the repository; never infer staging or production from DNS.

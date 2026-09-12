@@ -18,7 +18,8 @@ repository secrets or publishable package generation.
 
 New PR revisions cancel superseded PR runs. Keep the required `validate` check
 and the rule requiring PRs to be current with their base branch before merge.
-There is no automatic post-merge validation or staging package build.
+Post-merge Preview automation has its own eligibility check and candidate verification.
+It does not build a staging deployment package for every merge.
 
 When a staging package is needed, manually run `staging-candidate.yml` on the
 `develop` branch and provide the full 40-character `commit` SHA. The workflow
@@ -33,135 +34,156 @@ the run URL. Use that artifact for staging and record its checksum alongside
 the source commit and staging health. Runs on other branches are skipped.
 This workflow neither deploys a service nor publishes to npm or GitHub Releases.
 
-`.github/workflows/release-candidate.yml` runs on `v*` tag pushes. It retains a
-manual, artifact-only run on `develop` or `main`; manual runs on other refs are skipped. A tag push:
+`release-candidate.yml` is a read-only, commit-based reusable workflow, also available through
+manual dispatch on `develop` or `main`. It never creates tags or Releases. The agent can invoke
+it on the maintainer's behalf; no Run workflow UI interaction is required.
 
-1. requires an annotated tag matching the root version and the workflow commit;
-2. verifies prerelease ancestry in `origin/develop`, stable ancestry in `origin/main`, and versioned release notes;
-3. installs from the lockfile and runs the complete repository verification gate;
-4. reuses the PWA built by the source gate to assemble the self-contained npm package;
-5. requires the private-context `LEAK_DENYLIST` and version/plugin synchronization;
-6. packs once, installs that tarball in a scratch project, and boots it;
-7. uploads the package, `SHA256SUMS`, `release.json`, and notes as a 14-day workflow
-   artifact named `palmagent-release-<commit>`;
-8. downloads that artifact in a separate job, rechecks the tag identity and package
-   checksum, then creates a draft GitHub Release with the package, checksum, and
-   provenance attached. It does not rebuild the package in the draft job.
+1. Check out workflow tools separately from the exact 40-character product commit.
+2. Verify the version, release notes, and `develop` ancestry for Preview or `main` for Stable.
+3. Install frozen dependencies and run `pnpm verify` with the private `LEAK_DENYLIST` required.
+4. Assemble once from the PWA built in that run, validate the publishable package, pack it,
+   install that exact tarball in a scratch project, and boot it.
+5. Record `candidate.json`, `SHA256SUMS`, and `RELEASE_NOTES.md` alongside the tarball in
+   `palmagent-candidate-<commit>`, retained for 90 days. The manifest binds version, commit,
+   channel, filename, SHA-256, repository, and producer run.
+6. Present version, commit, channel, checksum, notes, and the validation run in the job summary.
 
-The candidate job has read-only repository permissions. Only the draft job has
-`contents: write`, and its token is passed only to the draft step. Neither job has
-registry credentials, OIDC permission, a release-publication step, or host access.
-The draft command uses `--draft --verify-tag --latest=false`; alpha, beta, and rc
-versions also use `--prerelease`. Supported tag versions are `vMAJOR.MINOR.PATCH`
-and `vMAJOR.MINOR.PATCH-{alpha,beta,rc}.N`, with no leading zeroes or build metadata.
+The candidate receives read-only repository/Actions permissions and the leak denylist only;
+it has no release App key, npm credential, OIDC permission, or host access. A rerun reuses the
+original artifact if present. Explicit `candidate_run` recovery must find the immutable artifact
+in an approved workflow on `develop`/`main`; an expired/missing artifact is not silently rebuilt.
 
-`release.json` records the tag object, source branch and commit, version, intended npm channel,
-package filename, SHA-256, and workflow URL. This is traceability metadata, not a
-cryptographic attestation or evidence of npm publication. The tagged package is a
-new candidate build; earlier staging acceptance does not automatically validate
-its bytes. Verify this artifact in staging before deploying the identical package
-to production.
-
-Runs for a tag are serialized. Reruns never replace existing draft or published
-release assets: if a release already exists, the draft job fails for human review.
-An upload failure may leave a partial draft. Inspect it before any recovery;
-published versions always require a new version. A failed run before draft creation
-may be retried on the same unchanged tag. If source changes are needed, use a new
-version and tag. Active `v*` tag rulesets restrict creation to repository admins
-and block updates and deletion, including by admins. They are managed separately
-from this workflow; future release automation needs its own reviewed tag-creation
-permission.
-
-After release preparation lands on the appropriate branch and the exact commit is approved,
-a maintainer creates the annotated tag:
+For a standalone candidate, select the exact prepared commit:
 
 ```bash
-release_version='<version>'
-release_commit='<reviewed-source-commit>'
-git fetch origin develop main
-git tag -a "v${release_version}" "$release_commit" -m "Palmagent ${release_version}"
-git push origin "refs/tags/v${release_version}"
+gh workflow run release-candidate.yml --ref develop -f commit='<full-source-sha>'
 ```
 
-Replace the placeholders first. Push only the intended tag, not every local tag.
-The commit must contain this workflow; adding automation to a later commit cannot
-make it run for an older revision. GitHub tag-push event and draft-command behavior
-are documented in the [Actions event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)
-and [GitHub CLI reference](https://cli.github.com/manual/gh_release_create).
+Use `main` for Stable when the updated workflow is available there. Source and workflow revisions
+are distinct: the current `develop` workflow can also verify a Stable source already on `main`.
+A candidate build alone does not imply staging acceptance or publication.
+
+## Automatic Preview
+
+`preview-release.yml` runs on `develop` pushes after its setup switch is enabled. It compares
+the latest source against the last verified successful Preview; eligibility is implemented in
+`scripts/lib/preview-plan.mjs`. It creates only a version/changelog preparation PR, waits for
+`validate`, and merges with the exact head SHA and squash method. Branch protections remain in
+force. If `develop` advances, it reprepares its own metadata branch with a lease and reruns CI.
+It does not force-push `develop`, bypass review requirements, or merge unrelated PRs.
+
+After the preparation merge, the controller creates the annotated Preview tag and dispatches
+`npm-publish.yml` with the exact commit. This builds the candidate, publishes through `npm-next`,
+and exposes the GitHub prerelease only after npm bytes and `next` are verified. A pending run
+checks newer product changes after the current publication completes. The controller resumes
+its own merged preparations and tags before allocating another version, preventing metadata
+pushes from causing a release loop. A retained draft or open preparation PR remains inspectable.
+
+Concurrency keeps the active Preview and coalesces later pushes into one pending comparison.
+Publication jobs also serialize per npm channel and retain pending approvals using `queue: max`.
+A candidate older than its current npm channel fails before tag/publication writes; it never
+moves a dist-tag backward. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+To resume from a session after fixing a failed run:
+
+```bash
+gh workflow run preview-release.yml --ref develop
+```
+
+No separate version, tag, or publication confirmation is needed within Preview policy. CI
+failure, a draft/closed preparation PR, identity mismatch, or unavailable evidence stops the
+run; inspect the retained state rather than bypassing it. The first enabled run can include
+all eligible product changes since the last successful Preview, not just the enabling commit.
 
 ## Protected npm publication
 
-`.github/workflows/npm-publish.yml` runs when a human publishes a GitHub Release. Manual
-`workflow_dispatch` on `main` or `develop` retries an already-published GitHub Release by exact
-tag; it cannot publish a draft. It downloads existing assets and does not rebuild them.
+`npm-publish.yml` takes one exact `commit`, invokes the candidate workflow, then selects its
+channel environment. `npm-next` has no reviewer gate. `npm-latest` is the single Stable human
+approval, after the exact candidate and checks are available and before any Stable tag, npm
+publication, or public Release is created. The maintainer reviews compatibility and acceptance
+evidence alongside the candidate summary. Do not add a second conversational approval.
 
-The inspection job checks tag identity, channel ancestry, release metadata, checksums, and
-clean package source identity before selecting `npm-next` or `npm-latest`. Prereleases proceed
-automatically through `npm-next`; stable releases wait for the `npm-latest` environment reviewer.
-The publication job downloads the assets again, verifies the same SHA-256,
-and publishes through GitHub OIDC with provenance. It has `contents: read`, `actions: read`
-(for environment validation), and `id-token: write`. No npm token or host credentials are used.
-The job rejects an environment that does not match the release channel. Stable publication
-fails closed unless `npm-latest` has required reviewers. Both channels require the repository
-variable `NPM_PUBLISH_ENABLED` to be exactly `true`.
+```bash
+gh workflow run npm-publish.yml --ref develop -f commit='<prepared-channel-source-sha>'
+# Reuse previously inspected candidate bytes, including for Stable acceptance:
+gh workflow run npm-publish.yml --ref develop -f commit='<prepared-channel-source-sha>' -f candidate_run='<producer-run-id>'
+```
 
-One-time setup, separate from any particular release:
+The final job downloads those exact bytes and revalidates the source, checksum, package identity,
+and environment policy. It then creates or verifies the annotated tag, creates or resumes the
+draft with immutable assets, publishes via npm OIDC/provenance, downloads and verifies registry
+bytes and the intended dist-tag, and makes the GitHub Release public last. Stable tagging takes
+place only inside this job after approval. No rebuild or npm token is used.
 
-1. Create GitHub environment `npm-next` without required reviewers or a wait timer, and
-   `npm-latest` with the maintainer as a required reviewer. For a sole-maintainer repository,
-   allow self-review on `npm-latest` so stable publication has a deliberate second approval.
-   Restrict deployment refs on both environments to release tags (`v*`) plus `develop`/`main`
-   for manual retries. Keep administrative protection bypass disabled.
-2. In npm package settings for `palmagent`, configure GitHub Trusted Publishers for this
-   repository, workflow filename `npm-publish.yml`, and each environment (`npm-next`,
-   `npm-latest`). Confirm the authenticated npm account owns the package. No static npm token
-   belongs in GitHub secrets. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
-3. Set repository variable `NPM_PUBLISH_ENABLED=true` only after the trust mappings and each
-   channel's environment policy are verified. Until then CI artifacts remain usable for staging.
-4. The first release must include this workflow in its tagged source; make it available on the
-   default branch for manual dispatch. Package/version/tag approvals remain independent of setup.
+`release.json` adds the annotated tag object to the candidate's version, commit, branch, channel,
+filename, SHA-256, and validation run URL. It is traceability metadata, not itself a cryptographic
+attestation or proof of npm publication. Check the registry's version, SHA-512 integrity,
+downloaded tarball SHA-256, and channel separately. Partial drafts may fill only missing assets;
+existing assets and tags must match exactly, and published assets are never overwritten.
 
-When migrating from reviewer gates on both channels, land the channel-aware validation first,
-then remove required reviewers and any wait timer from `npm-next`. Preserve its environment,
-deployment-ref restrictions, and Trusted Publisher binding; leave `npm-latest` unchanged.
-Publication checks are loaded from the tagged source, including on manual retries. Tags created
-before this policy change retain their old reviewer requirement and cannot be retried with a
-reviewer-free `npm-next`. Do not move old tags or replace published assets to change that policy;
-inspect an older release separately before planning recovery. New prerelease tags must include
-the updated validation code to use automatic publication.
+### One-time setup
 
-The workflow pins Node 24 and npm 11.11.1 on a GitHub-hosted runner. Publishing a prerelease
-uses `next`; stable uses `latest`. It verifies the registry's SHA-512 integrity after upload.
-A retry finding identical published bytes succeeds without republishing or moving dist-tags.
-Different bytes at the same version fail; registry/auth/network errors are never treated as
-proof that a version is absent. Verify the intended dist-tag separately after recovery:
+1. Install a dedicated GitHub App on this repository only, with Contents and Pull requests
+   write, Actions write, Checks read, and implicit Metadata read. Store its client ID as
+   `RELEASE_APP_CLIENT_ID` and private key as `RELEASE_APP_PRIVATE_KEY` in repository Actions
+   settings. The workflow mints short-lived installation tokens with the permissions needed by
+   each job. App-created PRs trigger CI; a repository `GITHUB_TOKEN` push/PR does not provide
+   that behavior. See [GitHub App tokens](https://github.com/actions/create-github-app-token).
+2. Add only that App's integration ID to the **tag creation** ruleset bypass actors. Preserve
+   the separate tag update/deletion prohibition, including for the App. Do not add a branch
+   protection bypass: its preparation PRs must pass the same checks and reviews as other PRs.
+3. Keep `npm-next` without reviewers or a wait timer; keep `npm-latest` with a required reviewer,
+   no administrator bypass, and self-review allowed for a sole maintainer. Allow the intended
+   `develop`/`main` workflow refs (and `v*` only if legacy retries need them).
+4. Configure npm Trusted Publishers for repository workflow `npm-publish.yml` and each channel
+   environment. Keep `NPM_PUBLISH_ENABLED=true` only with verified trust bindings. The workflow
+   uses Node 24 and npm 11.11.1. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
+5. Make the workflows available on the repository default branch for dispatch through its normal
+   reviewed PR path. Confirm source eligibility, the App installation/permissions, tag rules,
+   and channel environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing
+   authorization to publish eligible Preview changes; it does not authorize host deployment.
+
+Until the App and switch are configured, the Preview job is skipped. The new finalizer also
+needs the App for tag and Release writes. Do not substitute a personal token, weaken protections,
+or copy a maintainer credential into CI to avoid the setup step.
+
+### Recovery
+
+Inspect Actions runs, tags, drafts, release assets, and npm before retrying. A failed upload can
+already have published the immutable npm version. Retry with the same source and `candidate_run`;
+identical registry bytes skip npm upload, and the job verifies the channel before exposing the
+Release. Automatic Preview searches earlier recovery runs for the original producer artifact.
+Changed or expired evidence requires deliberate recovery; do not silently rebuild reviewed bytes.
+
+Legacy already-public releases can still be retried with `-f tag='v<version>'`, omitting `commit`.
+This path uses the original release assets and tagged validation code, retains channel gates,
+and never creates a new tag or Release. Tag pushes and manually publishing a Release no longer
+start the new release train. Older immutable workflow revisions can retain their historical
+behavior; use the current branch workflow for the new policy.
 
 ```bash
 npm view palmagent dist-tags --json
 npm view palmagent@<version> dist.integrity
 ```
 
-To recover a bad release, explicitly approve deprecation and a dist-tag correction, then issue
-a new version. Do not overwrite a published version or move a release tag. Host rollback is a
-separate operation; see [staging rollback](../../../../docs/STAGING.md#rollback-and-failures). Reverting an npm tag
-does not downgrade an already-installed host or restore a database.
+Deprecation and dist-tag correction require a separate request. Issue a new version for changed
+source or bad published bytes; never overwrite a version or move a release tag. If a failed Preview
+needs a source fix, pause the Preview switch and let active runs finish. Prepare an unused version
+on fixed `develop` through a verified PR, then dispatch `npm-publish.yml` for that exact commit.
+Keep the failed tag/candidate evidence. After successful publication establishes the new baseline,
+restore the switch. This is recovery within Preview authorization, not a parallel release train;
+ordinary retries intentionally resume the older pending preparation first. Host rollback is
+separate; see [staging rollback](../../../../docs/STAGING.md#rollback-and-failures).
 
 ## Release checklist
 
-Before publishing a prerelease or stable release:
+Candidate CI verifies source, private and generic leak checks, synchronized product versions,
+package contents, packed install, SQLite runtime, and PWA boot. Check its exact commit, checksum,
+notes, and producer run. Keep compatibility and required upgrade steps in the release notes.
+No Stable tag should exist before its final approval; verify tag identity afterward.
 
-- `pnpm verify` passes.
-- `PKG_PUBLISHABLE=1 pnpm pkg:build` passes.
-- `EXPECT_PUBLISHABLE=1 pnpm release:check --artifact` passes.
-- `REQUIRE_LEAK_DENYLIST=1 pnpm pkg:leakcheck` passes with the private denylist.
-- `pnpm pkg:smoke` installs the tarball and boots the PWA and SQLite runtime.
-- The tag is `v<root-version>` and points to the intended channel-source commit.
-- The generated tarball contains only the reviewed CLI, server, runner, PWA,
-  README, license, build identity, and declared runtime dependencies.
-- The changelog describes user-visible changes and upgrade considerations.
-- Merge, publication, visibility, and host deployment approvals are recorded
-  independently.
-
-For stable releases, also verify a clean-host install, an update from the
-previous stable version, database backup and quick-check, passkey login, HTTPS,
-SSE reconnect, and rollback to the previous npm dist-tag.
+For Stable, also complete applicable clean-host install, update from the previous Stable,
+database backup/quick-check, passkey login, HTTPS, SSE reconnect, and rollback acceptance on the
+exact candidate. Record live checks and their limitations with the candidate's review evidence;
+hermetic CI does not prove them. A first Stable release has no previous Stable to upgrade from.
+Repository visibility and host deployment remain separately authorized and verified.
