@@ -1,74 +1,23 @@
 // Wire protocol between the dispatcher backend and clients (the PWA, demo, and
 // operator tooling). The browser reads with SSE and controls tasks with REST.
 import type { AgentEvent, AgentKind } from "./events.js";
-import type { Permission, Repo, Routine, RoutinePreset, RoutineRun, TaskState } from "./task.js";
+import type { Repo, Routine, RoutineRun, TaskState } from "./task.js";
 
 // ---- REST request bodies ----
-export interface CreateRepoRequest {
-  path: string;
-  name?: string;
-  defaultBaseRef?: string; // defaults to the repo's current branch
-}
+export type { CreateRepoRequest } from "./requests.js";
 // An image the user attached to a prompt (pasted or picked in the PWA).
 // Claude gets it as a base64 image content block; Codex as a temp file via -i.
-export interface ImageAttachment {
-  mediaType: string; // image/png | image/jpeg | image/webp | image/gif
-  data: string; // base64, no data: URL prefix
-}
-export interface CreateTaskRequest {
-  repoId: string;
-  agent: AgentKind;
-  prompt: string;
-  permission?: Permission; // per-agent value; defaults to DEFAULT_PERMISSION[agent]
-  model?: string;
-  effort?: string; // reasoning effort (claude --effort / codex model_reasoning_effort)
-  title?: string;
-  images?: ImageAttachment[];
-  // Run this git task in an isolated per-task worktree+branch instead
-  // of directly in the repo. Default false = run in place. Ignored for plain
-  // folders (vcs "none"), which always run in place.
-  isolate?: boolean;
-}
-export interface FollowupRequest {
-  prompt: string;
-  images?: ImageAttachment[];
-  // Override the task's model / reasoning effort / permission for this and every
-  // later turn. Omitted = keep the task's current setting (the common case); "" =
-  // reset to the agent's default (clear the override). All three are per-agent.
-  model?: string;
-  effort?: string;
-  permission?: Permission;
-}
-export interface SteerRequest {
-  text: string;
-  images?: ImageAttachment[];
-  // Change the model / reasoning effort / permission for the steered (and every
-  // later) turn. Omitted = keep the current setting; "" = reset to the agent's
-  // default. A change can't be applied to a process already running, so a Claude
-  // turn is interrupted and resumed with the new flags (see SteerResponse.restarted);
-  // Codex picks them up on its next turn.
-  model?: string;
-  effort?: string;
-  permission?: Permission;
-}
-export interface ApproveRequest {
-  decision: "approve" | "deny";
-  scope?: string;
-}
+export type { ImageAttachment } from "./requests.js";
+export type { CreateTaskRequest } from "./requests.js";
+export type { FollowupRequest } from "./requests.js";
+export type { SteerRequest } from "./requests.js";
+export type { ApproveRequest } from "./requests.js";
 // The user's answer to a Claude AskUserQuestion (the task is `awaiting_input`).
 // One entry per question asked; `selected` holds the chosen option label(s)
 // (empty = that question was skipped), `notes` an optional free-text custom
 // answer. `requestId` must match the pending question's id.
-export interface QuestionAnswer {
-  question: string; // the question text (the CLI's answer key)
-  selected: string[]; // chosen option label(s); [] when skipped
-  notes?: string; // optional free-text note / custom answer
-}
-export interface AnswerRequest {
-  requestId: string;
-  answers: QuestionAnswer[];
-  response?: string; // optional overall free-text reply
-}
+export type { QuestionAnswer } from "./requests.js";
+export type { AnswerRequest } from "./requests.js";
 
 // ---- REST response bodies ----
 export interface ReposResponse {
@@ -150,34 +99,8 @@ export interface FsListResponse {
 }
 
 // ---- Routines ----
-export interface CreateRoutineRequest {
-  repoId: string;
-  agent: AgentKind;
-  prompt: string;
-  // Cadence. `preset` (default "custom") picks how the schedule is built:
-  // friendly presets compile to cron server-side using `hour`/`dayOfWeek`;
-  // "manual" never auto-fires; "custom" (or omitted) uses the raw `schedule`.
-  preset?: RoutinePreset;
-  schedule?: string; // 5-field cron — required for "custom"/omitted, ignored otherwise
-  hour?: number; // 0-23, for daily/weekly/weekdays (default 9)
-  dayOfWeek?: number; // 0-6 (Sun-Sat), for weekly (default 1 = Monday)
-  permission?: Permission;
-  model?: string;
-  effort?: string;
-  title?: string;
-}
-export interface UpdateRoutineRequest {
-  prompt?: string;
-  preset?: RoutinePreset;
-  schedule?: string;
-  hour?: number;
-  dayOfWeek?: number;
-  permission?: Permission;
-  model?: string;
-  effort?: string;
-  title?: string;
-  enabled?: boolean;
-}
+export type { CreateRoutineRequest } from "./requests.js";
+export type { UpdateRoutineRequest } from "./requests.js";
 export interface RoutinesResponse {
   routines: Routine[];
 }
@@ -191,20 +114,12 @@ export interface RoutineRunsResponse {
 // ---- Web Push ----
 // The browser's PushSubscription.toJSON() shape; kept loose on purpose so the
 // client can pass it through without re-validation.
-export interface PushSubscriptionJson {
-  endpoint: string;
-  expirationTime?: number | null;
-  keys?: Record<string, string>;
-}
+export type { PushSubscriptionJson } from "./requests.js";
 export interface PushKeyResponse {
   publicKey: string; // VAPID public key (base64url) for pushManager.subscribe
 }
-export interface PushSubscribeRequest {
-  subscription: PushSubscriptionJson;
-}
-export interface PushUnsubscribeRequest {
-  endpoint: string;
-}
+export type { PushSubscribeRequest } from "./requests.js";
+export type { PushUnsubscribeRequest } from "./requests.js";
 // The payload a push message carries (sw.ts shows it as a notification).
 export interface PushPayload {
   title: string;

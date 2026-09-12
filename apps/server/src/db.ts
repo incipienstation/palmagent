@@ -363,6 +363,14 @@ export class Db {
     return { id, seq };
   }
 
+  // Durable boundary between SSE replay and queued live events.
+  eventCursor(taskId?: string): number {
+    const row = taskId
+      ? this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS cursor FROM events WHERE task_id = ?").get(taskId)
+      : this.db.prepare("SELECT COALESCE(MAX(id), 0) AS cursor FROM events").get();
+    return (row as { cursor: number }).cursor;
+  }
+
   // Replay for the inbox stream: rows whose global id is past Last-Event-ID.
   eventsAfterGlobal(afterId: number, limit = 5000): EventRow[] {
     const rows = this.db.prepare(

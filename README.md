@@ -25,6 +25,13 @@ The root package remains private workspace coordination, but its version is the 
 product version. Internal `@palmagent/*` packages remain private; the build assembles the
 unscoped public `palmagent` package under `build/pkg`.
 
+The HTTP layer uses Hono on Node.js. The browser API, passkey authentication,
+SSE, and PWA files share one app; local session dispatch uses a separate app on
+an owner-only Unix socket. Shared request schemas live in
+`@palmagent/shared/requests`; services receive validated values without HTTP
+request objects. Runtime startup and shutdown are separate from app construction.
+The runner daemon keeps its existing NDJSON protocol and survives web-server restarts.
+
 The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
 public environment; Palmagent rejects plaintext authentication origins and non-loopback binds.
 

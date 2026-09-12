@@ -4,3 +4,4 @@ export * from "./permissions.js";
 export * from "./protocol.js";
 export * from "./branding.js";
 export * from "./compatibility.js";
+export type * from "./requests.js";

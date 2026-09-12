@@ -11,6 +11,9 @@ import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 // 404/410 from the push service mean the subscription is gone — prune it.
 
 export class PushService {
+  private closed = false;
+  close(): void { this.closed = true; }
+
   private publicKey: string;
   private readonly enabled: boolean;
 
@@ -49,7 +52,7 @@ export class PushService {
 
   // Broadcast to every stored subscription. Never throws.
   notify(payload: PushPayload): void {
-    if (!this.enabled) return; // push disabled (no PUSH_SUBJECT)
+    if (this.closed || !this.enabled) return; // push disabled (no PUSH_SUBJECT)
     const subs = this.db.listPushSubs();
     if (!subs.length) return;
     const body = JSON.stringify(payload);
@@ -57,6 +60,7 @@ export class PushService {
       webpush
         .sendNotification(sub as webpush.PushSubscription, body, { TTL: 3600 })
         .catch((err: { statusCode?: number }) => {
+          if (this.closed) return;
           if (err?.statusCode === 404 || err?.statusCode === 410) {
             this.db.deletePushSub(sub.endpoint); // subscription expired/revoked
           } else {

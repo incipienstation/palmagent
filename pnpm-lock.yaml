@@ -23,6 +23,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.13.7)
       '@palmagent/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -32,6 +35,9 @@ importers:
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.7
       web-push:
         specifier: ^3.6.7
         version: 3.6.7
@@ -162,6 +168,10 @@ importers:
         version: 7.4.1
 
   packages/shared:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^6.0.3
@@ -1176,6 +1186,12 @@ packages:
 
   '@hexagon/base64@1.1.28':
     resolution: {integrity: sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==}
+
+  '@hono/node-server@2.1.1':
+    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
 
   '@isaacs/cliui@9.0.0':
     resolution: {integrity: sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg==}
@@ -2976,6 +2992,10 @@ packages:
 
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
+
+  hono@4.13.7:
+    resolution: {integrity: sha512-c8/gF9ac8Y78/agExVocyLevgR+JlpNB444Py0FSX8pJoPdYUfUzRcXtYEYGwt6l19qIlVZPN5Mfsw9jFShmQQ==}
+    engines: {node: '>=16.9.0'}
 
   html-url-attributes@3.0.1:
     resolution: {integrity: sha512-ol6UPyBWqsrO6EJySPz2O7ZSr856WDrEzM5zMqp+FJJLGMW35cLYmmZnl0vztAZxRUoNZJFTCohfjuIJ8I4QBQ==}
@@ -5221,6 +5241,10 @@ snapshots:
 
   '@hexagon/base64@1.1.28': {}
 
+  '@hono/node-server@2.1.1(hono@4.13.7)':
+    dependencies:
+      hono: 4.13.7
+
   '@isaacs/cliui@9.0.0': {}
 
   '@jest/schemas@29.6.3':
@@ -7159,6 +7183,8 @@ snapshots:
   hast-util-whitespace@3.0.0:
     dependencies:
       '@types/hast': 3.0.5
+
+  hono@4.13.7: {}
 
   html-url-attributes@3.0.1: {}
 

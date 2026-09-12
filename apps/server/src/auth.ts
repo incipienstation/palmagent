@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import type { IncomingMessage } from "node:http";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -54,56 +53,32 @@ export interface AuthStatus {
   credentialCount: number;
 }
 
-// ---- cookie helpers (Node's http has none) ----
-export function parseCookies(req: IncomingMessage): Record<string, string> {
-  const header = req.headers.cookie;
-  if (!header) return {};
-  const out: Record<string, string> = {};
-  for (const part of header.split(";")) {
-    const i = part.indexOf("=");
-    if (i < 0) continue;
-    const k = part.slice(0, i).trim();
-    const v = part.slice(i + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
-  }
-  return out;
-}
-
-function serializeCookie(name: string, value: string, maxAgeSec: number): string {
-  // Secure + HttpOnly + SameSite=Lax: same-origin only (EventSource sends it
-  // automatically), not readable by JS, not sent on cross-site sub-requests.
-  const parts = [
-    `${name}=${encodeURIComponent(value)}`,
-    "Path=/",
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax",
-    `Max-Age=${maxAgeSec}`,
-  ];
-  return parts.join("; ");
-}
+// The HTTP adapter owns cookie parsing and serialization.
+export interface AuthCredentials { sessionToken?: string; challengeId?: string }
+export interface AuthCookie { name: string; value: string; maxAge: number }
+export const CHALLENGE_COOKIE_NAME = CHALLENGE_COOKIE;
+const cookie = (name: string, value: string, maxAge: number): AuthCookie => ({ name, value, maxAge });
 
 export class AuthService {
   private challenges = new Map<string, ChallengeEntry>();
 
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly settings = config) {}
 
   get enabled(): boolean {
-    return config.authEnabled;
+    return this.settings.authEnabled;
   }
 
-  status(req: IncomingMessage): AuthStatus {
+  status(credentials: AuthCredentials): AuthStatus {
     return {
-      authenticated: this.verifyRequest(req),
-      required: config.authEnabled,
+      authenticated: this.verifySession(credentials.sessionToken),
+      required: this.settings.authEnabled,
       credentialCount: this.db.countCredentials(),
     };
   }
 
   // ---- session ----
   /** True if the request carries a valid, unexpired session cookie. Slides the expiry. */
-  verifyRequest(req: IncomingMessage): boolean {
-    const token = parseCookies(req)[config.cookieName];
+  verifySession(token: string | undefined): boolean {
     if (!token) return false;
     const now = Date.now();
     const sess = this.db.getSession(token);
@@ -113,23 +88,23 @@ export class AuthService {
       return false;
     }
     // Sliding window: refresh when past the first third of the lifetime.
-    if (now - sess.createdAt > config.sessionTtlMs / 3) {
-      this.db.refreshSession(token, now + config.sessionTtlMs);
+    if (now - sess.createdAt > this.settings.sessionTtlMs / 3) {
+      this.db.refreshSession(token, now + this.settings.sessionTtlMs);
     }
     return true;
   }
 
-  private issueSession(label?: string): string {
+  private issueSession(label?: string): AuthCookie {
     const token = randomBytes(32).toString("base64url");
     const now = Date.now();
-    this.db.createSession(token, now, now + config.sessionTtlMs, label);
-    return serializeCookie(config.cookieName, token, Math.floor(config.sessionTtlMs / 1000));
+    this.db.createSession(token, now, now + this.settings.sessionTtlMs, label);
+    return cookie(this.settings.cookieName, token, Math.floor(this.settings.sessionTtlMs / 1000));
   }
 
-  logout(req: IncomingMessage): string {
-    const token = parseCookies(req)[config.cookieName];
+  logout(credentials: AuthCredentials): AuthCookie {
+    const token = credentials.sessionToken;
     if (token) this.db.deleteSession(token);
-    return serializeCookie(config.cookieName, "", 0);
+    return cookie(this.settings.cookieName, "", 0);
   }
 
   // ---- challenge bookkeeping ----
@@ -145,10 +120,10 @@ export class AuthService {
     this.challenges.set(id, entry);
     return id;
   }
-  private takeChallenge(req: IncomingMessage, kind: "reg" | "auth"): ChallengeEntry {
-    const id = parseCookies(req)[CHALLENGE_COOKIE];
+  private takeChallenge(credentials: AuthCredentials, kind: "reg" | "auth"): ChallengeEntry {
+    const id = credentials.challengeId;
     const entry = id ? this.challenges.get(id) : undefined;
-    if (!entry || entry.kind !== kind || entry.expiresAt <= Date.now()) {
+    if (!id || !entry || entry.kind !== kind || entry.expiresAt <= Date.now()) {
       if (id) this.challenges.delete(id);
       throw new HttpError(400, "challenge expired — restart the passkey flow");
     }
@@ -159,25 +134,25 @@ export class AuthService {
     const now = Date.now();
     for (const [id, e] of this.challenges) if (e.expiresAt <= now) this.challenges.delete(id);
   }
-  private challengeCookie(id: string): string {
-    return serializeCookie(CHALLENGE_COOKIE, id, Math.floor(CHALLENGE_TTL_MS / 1000));
+  private challengeCookie(id: string): AuthCookie {
+    return cookie(CHALLENGE_COOKIE, id, Math.floor(CHALLENGE_TTL_MS / 1000));
   }
 
   // ---- registration (add a passkey) ----
   /** Authorized either by a valid host enroll token OR an existing session. */
   async beginRegistration(
-    req: IncomingMessage,
+    credentials: AuthCredentials,
     enrollToken?: string,
-  ): Promise<{ options: PublicKeyCredentialCreationOptionsJSON; setCookie: string }> {
-    const sessionAuthorized = this.verifyRequest(req);
+  ): Promise<{ options: PublicKeyCredentialCreationOptionsJSON; setCookie: AuthCookie }> {
+    const sessionAuthorized = this.verifySession(credentials.sessionToken);
     const tokenValid = !!enrollToken && this.db.isEnrollTokenValid(enrollToken, Date.now());
     if (!sessionAuthorized && !tokenValid) {
       throw new HttpError(403, "registration requires a valid enroll token (mint one with the host CLI)");
     }
     const existing = this.db.listCredentials();
     const options = await generateRegistrationOptions({
-      rpName: config.rpName,
-      rpID: config.rpId,
+      rpName: this.settings.rpName,
+      rpID: this.settings.rpId,
       userName: USER_NAME,
       userID: USER_ID,
       attestationType: "none",
@@ -197,16 +172,16 @@ export class AuthService {
   }
 
   async finishRegistration(
-    req: IncomingMessage,
+    credentials: AuthCredentials,
     response: RegistrationResponseJSON,
     label?: string,
-  ): Promise<{ setCookies: string[] }> {
-    const entry = this.takeChallenge(req, "reg");
+  ): Promise<{ setCookies: AuthCookie[] }> {
+    const entry = this.takeChallenge(credentials, "reg");
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge: entry.challenge,
-      expectedOrigin: config.authOrigin,
-      expectedRPID: config.rpId,
+      expectedOrigin: this.settings.authOrigin,
+      expectedRPID: this.settings.rpId,
       requireUserVerification: false,
     });
     if (!verification.verified || !verification.registrationInfo) {
@@ -227,17 +202,17 @@ export class AuthService {
       createdAt: now,
       lastUsedAt: now,
     });
-    return { setCookies: [this.issueSession(label), serializeCookie(CHALLENGE_COOKIE, "", 0)] };
+    return { setCookies: [this.issueSession(label), cookie(CHALLENGE_COOKIE, "", 0)] };
   }
 
   // ---- authentication (sign in) ----
   async beginAuthentication(): Promise<{
     options: PublicKeyCredentialRequestOptionsJSON;
-    setCookie: string;
+    setCookie: AuthCookie;
   }> {
     // Empty allowCredentials → the platform offers any discoverable passkey for this RP.
     const options = await generateAuthenticationOptions({
-      rpID: config.rpId,
+      rpID: this.settings.rpId,
       userVerification: "preferred",
       allowCredentials: [],
     });
@@ -250,17 +225,17 @@ export class AuthService {
   }
 
   async finishAuthentication(
-    req: IncomingMessage,
+    credentials: AuthCredentials,
     response: AuthenticationResponseJSON,
-  ): Promise<{ setCookies: string[] }> {
-    const entry = this.takeChallenge(req, "auth");
+  ): Promise<{ setCookies: AuthCookie[] }> {
+    const entry = this.takeChallenge(credentials, "auth");
     const cred = this.db.getCredential(response.id);
     if (!cred) throw new HttpError(400, "unknown passkey");
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge: entry.challenge,
-      expectedOrigin: config.authOrigin,
-      expectedRPID: config.rpId,
+      expectedOrigin: this.settings.authOrigin,
+      expectedRPID: this.settings.rpId,
       credential: {
         id: cred.credentialId,
         publicKey: new Uint8Array(Buffer.from(cred.publicKey, "base64url")),
@@ -271,7 +246,7 @@ export class AuthService {
     });
     if (!verification.verified) throw new HttpError(401, "passkey assertion failed");
     this.db.bumpCredentialCounter(cred.credentialId, verification.authenticationInfo.newCounter, Date.now());
-    return { setCookies: [this.issueSession(cred.label ?? undefined), serializeCookie(CHALLENGE_COOKIE, "", 0)] };
+    return { setCookies: [this.issueSession(cred.label ?? undefined), cookie(CHALLENGE_COOKIE, "", 0)] };
   }
 
   // Mint a single-use, 15-minute enroll token (used by the host CLI, and by the
