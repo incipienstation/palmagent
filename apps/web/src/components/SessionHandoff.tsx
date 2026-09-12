@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { Copy, Terminal } from "lucide-react";
 import { api } from "../api";
@@ -12,6 +12,9 @@ export function SessionHandoff({ task }: { task: TaskState }) {
   const [busy, setBusy] = useState(false);
   const local = task.sessionControl?.owner === "local";
   const returning = task.sessionControl?.owner === "returning";
+  useEffect(() => {
+    if (task.sessionControl?.owner !== "local") setCommand("");
+  }, [task.taskId, task.sessionControl?.owner]);
   async function prepare() {
     setBusy(true);
     try { const result = await api.handoff(task.taskId); setCommand(result.command); }

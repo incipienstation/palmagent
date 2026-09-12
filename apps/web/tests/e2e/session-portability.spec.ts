@@ -68,3 +68,24 @@ for (const owner of ["local", "returning"] as const) test(`${owner} ownership di
   await expect(page.getByRole("button", { name: "Task actions" })).toBeDisabled();
   await assertViewportLocked(page);
 });
+
+
+test("a returned session requires a new release before showing its old shell command", async ({ page }) => {
+  let owner = "palmagent";
+  const current = () => ({ ...source, sessionControl: { owner, home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } });
+  await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: [current()] })}\n\n` }));
+  await page.route("**/api/tasks/t-idle-rich/handoff", (route) => {
+    owner = "local";
+    return route.fulfill({ json: { task: current(), command: "claude --resume sess-idle-0003" } });
+  });
+  await page.goto("/#/task/t-idle-rich");
+  await page.getByRole("button", { name: "Resume in shell" }).click();
+  await page.getByRole("button", { name: "Release to shell" }).click();
+  await expect(page.getByRole("button", { name: "Copy resume command" })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByRole("button", { name: "Show resume command" })).toBeVisible();
+  owner = "palmagent";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByRole("button", { name: "Release to shell" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy resume command" })).toBeHidden();
+});

@@ -18,6 +18,8 @@ An entry does not mean a version has been published.
 
 ### Fixed
 
+- Use the N-API SQLite binding to avoid native statement-cleanup crashes with recent Node 24 builds.
+
 - Operator plugins reuse authorized installation, reconfiguration, and repair requests
   and known settings across skill handoffs, asking only for missing inputs or new effects.
 
