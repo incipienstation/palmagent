@@ -155,10 +155,14 @@ explicit prerelease tag for Preview; marketplace refs are independent of npm tag
 ### Codex
 
 ```bash
-codex plugin marketplace add incipienstation/palmagent --ref 'v<version>' --sparse plugins/codex
+git clone --depth 1 --branch 'v<version>' https://github.com/incipienstation/palmagent.git '/abs/path/to/palmagent-v<version>'
+codex plugin marketplace add '/abs/path/to/palmagent-v<version>/plugins/codex'
 codex plugin add palmagent@palmagent
 ```
 
+Replace the checkout path with an unused absolute directory and retain it as the local
+marketplace source. Codex needs the nested `plugins/codex` marketplace root;
+`--sparse plugins/codex` does not make that directory the root of a Git marketplace.
 See [plugins/codex/README.md](plugins/codex/README.md) for Codex-specific details.
 
 ## License

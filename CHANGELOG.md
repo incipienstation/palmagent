@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Codex plugin installation and update instructions now register the nested marketplace
+  from a checkout of the published tag. The previous Git sparse-checkout command could
+  not find the marketplace catalog. Existing published tags work with the corrected path.
+
 ## 0.1.0-alpha.3
 
 ### Fixed

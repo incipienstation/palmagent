@@ -52,9 +52,14 @@ published `v<targetVersion>` marketplace ref and the platform's native manager:
 
 - Claude Code: the Palmagent Git marketplace URL accepts `#v<targetVersion>`;
   install/update `palmagent@palmagent` in the original scope.
-- Codex: marketplace add accepts `incipienstation/palmagent --ref
-  v<targetVersion> --sparse plugins/codex`; install with `codex plugin add
-  palmagent@palmagent`.
+- Codex: clone `https://github.com/incipienstation/palmagent.git` at the exact
+  `v<targetVersion>` tag into a new, retained operator-owned directory. Verify the
+  checkout ref and `plugins/codex/plugins/palmagent/.codex-plugin/plugin.json`.
+  Register its absolute `plugins/codex` path with `codex plugin marketplace add`,
+  then install with `codex plugin add palmagent@palmagent`. The repository root
+  has no Codex catalog; `--sparse plugins/codex` does not relocate the marketplace
+  root. Keep the checkout as the local source; native marketplace upgrade does
+  not advance it. Prepare a separate checkout for each target version.
 
 Read native command help before mutation. Save the original source/ref, scope,
 and plugin version for recovery. Verify the target ref and manifest before
