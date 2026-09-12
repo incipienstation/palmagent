@@ -39,6 +39,9 @@ interface TurnState {
 // The state machine + persistence + lifecycle glue. Everything agent-specific
 // stays behind getRunner() — this file never branches on agent kind.
 export class TaskService {
+  private shuttingDown = false;
+  beginShutdown(): void { this.shuttingDown = true; }
+
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
   private sessionMismatch = new Set<string>();
   private turnState = new Map<string, TurnState>(); // per-active-turn error tracking
@@ -66,7 +69,7 @@ export class TaskService {
   get updating(): boolean { return this.maintenance(); }
 
   private assertTaskAdmission(): void {
-    if (this.updating) throw new HttpError(503, "Palmagent is updating. Try starting the task again shortly.");
+    if (this.updating || this.shuttingDown) throw new HttpError(503, "Palmagent is updating. Try starting the task again shortly.");
   }
 
   // Hydrate from DB and run restart recovery. Turns still alive in the runner
@@ -506,7 +509,7 @@ export class TaskService {
       await this.supervisor.acquire();
       // The wait is the only interleave point: bail if the task was cancelled,
       // archived, or stopped (→ idle) while queued.
-      if (task.status !== "queued") {
+      if (this.shuttingDown || task.status !== "queued") {
         this.supervisor.release(task.taskId);
         return;
       }
@@ -515,6 +518,7 @@ export class TaskService {
   }
 
   private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[]): void {
+    if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
     const runner = getRunner(task.agent);
     this.sessionMismatch.delete(task.taskId);
     this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
@@ -588,6 +592,7 @@ export class TaskService {
   // DB insert + SSE fan-out are suppressed for events at or below the reattach
   // baseline (already persisted in a prior life).
   private onRaw(task: TaskState, raw: RawEvent, rawSeq?: number): void {
+    if (this.shuttingDown) return;
     if (this.sessionMismatch.has(task.taskId)) return;
     if (task.sessionId && raw.sessionId && task.sessionId !== raw.sessionId) {
       this.sessionMismatch.add(task.taskId);
@@ -669,6 +674,7 @@ export class TaskService {
   }
 
   private finishTurn(task: TaskState): void {
+    if (this.shuttingDown) return;
     this.supervisor.release(task.taskId);
     // The turn's process has exited — tell the daemon to drop its replay buffer
     // (no-op for the in-process backend) and forget this turn's reattach baseline.

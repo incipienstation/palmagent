@@ -1,4 +1,6 @@
 import { createServer, request } from "node:http";
+import { getRequestListener } from "@hono/node-server";
+import { createSessionApp } from "./local/app.js";
 import { chmodSync, lstatSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { DispatchSessionRequest } from "@palmagent/shared";
@@ -44,17 +46,8 @@ export async function startSessionControl(dataDir: string, service: TaskService)
     });
     try { unlinkSync(socket); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const server = createServer({ requestTimeout: 10_000 }, (req, res) => {
-    const send = (status: number, value: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)); };
-    if (req.method !== "POST" || req.url !== "/dispatch") return send(404, { error: "not found" });
-    let body = "";
-    req.on("data", (chunk) => { body += chunk; if (body.length > 16_384) req.destroy(); });
-    req.on("end", () => {
-      try { send(200, { task: service.dispatchSession(JSON.parse(body)) }); }
-      catch (error) { send(409, { error: error instanceof Error ? error.message : "Session dispatch failed" }); }
-    });
-    req.on("error", () => {});
-  });
+  const app = createSessionApp(service);
+  const server = createServer({ requestTimeout: 10_000 }, getRequestListener(app.fetch));
   const oldMask = process.umask(0o077);
   try {
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(socket, () => { chmodSync(socket, 0o600); resolve(); }); });

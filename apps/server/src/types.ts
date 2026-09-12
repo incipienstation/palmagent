@@ -80,6 +80,8 @@ export interface ProcHandle {
 }
 
 export interface RunnerBackend {
+  // Disconnect this client / stop locally owned children; never stop daemon-owned turns.
+  close?(): void | Promise<void>;
   // Optional connect step (DaemonBackend dials the socket). Resolves false if the
   // backend could not become ready (caller may fall back to InProcessBackend).
   init?(): Promise<boolean>;

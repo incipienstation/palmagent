@@ -26,6 +26,7 @@ const FAILED_CONCLUSIONS = new Set(["failure", "timed_out", "cancelled", "action
 const isTerminal = (pr: PrRef): boolean => pr.status === "merged" || pr.status === "closed";
 
 export class GithubService {
+  private stopped = false;
   private timer?: ReturnType<typeof setInterval>;
   private tokenResolved = false;
   private token: string | null = null;
@@ -36,11 +37,13 @@ export class GithubService {
   constructor(private readonly sink: PrStatusSink, private readonly explicitToken?: string) {}
 
   start(): void {
+    this.stopped = false;
     this.timer = setInterval(() => void this.refreshAll(), REFRESH_MS);
     this.timer.unref(); // never hold the process open for a poll
   }
 
   stop(): void {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
   }
 
@@ -57,11 +60,11 @@ export class GithubService {
   }
 
   private async refreshTask(taskId: string): Promise<void> {
-    if (this.inFlight.has(taskId)) return;
+    if (this.stopped || this.inFlight.has(taskId)) return;
     const entry = this.sink.tasksWithPrs().find((t) => t.taskId === taskId);
     if (!entry) return;
     const token = await this.resolveToken();
-    if (!token) return; // fail-soft: no token ⇒ leave PRs as plain links
+    if (this.stopped || !token) return; // fail-soft: no token ⇒ leave PRs as plain links
     this.inFlight.add(taskId);
     try {
       const patches = new Map<string, Partial<PrRef>>();
@@ -73,7 +76,7 @@ export class GithubService {
             if (patch) patches.set(pr.url, patch);
           }),
       );
-      if (patches.size) this.sink.applyPrStatuses(taskId, patches);
+      if (!this.stopped && patches.size) this.sink.applyPrStatuses(taskId, patches);
     } finally {
       this.inFlight.delete(taskId);
     }

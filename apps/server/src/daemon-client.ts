@@ -12,13 +12,14 @@ export class DaemonBackend implements RunnerBackend {
   private handles = new Map<string, RemoteProcHandle>();
   private liveWaiters: Array<(turns: string[]) => void> = [];
   private reconnecting = false;
+  private closed = false;
 
   constructor(private readonly socketPath: string) {}
 
   // Dial the socket once, with a short bounded retry. Resolves false if the
   // daemon never answers — the caller then falls back to InProcessBackend.
   async init(): Promise<boolean> {
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 10 && !this.closed; attempt++) {
       if (await this.dial()) return true;
       await delay(300);
     }
@@ -32,6 +33,7 @@ export class DaemonBackend implements RunnerBackend {
       const ok = () => {
         if (settled) return;
         settled = true;
+        if (this.closed) { sock.destroy(); resolve(false); return; }
         this.attachSocket(sock);
         resolve(true);
       };
@@ -60,6 +62,7 @@ export class DaemonBackend implements RunnerBackend {
   private onClose(): void {
     this.connected = false;
     this.sock = undefined;
+    if (this.closed) return;
     // The daemon went away → its children died with it. Settle every in-flight
     // handle so the tasks don't hang, then try to reconnect for future turns.
     for (const h of [...this.handles.values()]) h._exit(-1);
@@ -72,7 +75,7 @@ export class DaemonBackend implements RunnerBackend {
     if (this.reconnecting) return;
     this.reconnecting = true;
     try {
-      while (!this.connected) {
+      while (!this.connected && !this.closed) {
         if (await this.dial()) break;
         await delay(1000);
       }
@@ -108,6 +111,15 @@ export class DaemonBackend implements RunnerBackend {
     if (msg.t === "line") h._line(msg.seq, msg.line);
     else if (msg.t === "stderr") h._stderr(msg.text);
     else if (msg.t === "exit") h._exit(msg.code);
+  }
+
+  close(): void {
+    this.closed = true;
+    this.connected = false;
+    this.handles.clear(); // no synthetic exits: daemon replay owns final outcomes
+    for (const waiter of this.liveWaiters.splice(0)) waiter([]);
+    this.sock?.destroy();
+    this.sock = undefined;
   }
 
   send(msg: ClientMsg): boolean {

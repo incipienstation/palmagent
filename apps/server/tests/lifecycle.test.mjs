@@ -116,7 +116,14 @@ async function harness(t, daemon = true) {
       try { return (await c.api("health")).ok; } catch { return false; }
     });
   };
-  c.restart = async () => { await kill(c.web); await c.webStart(); };
+  c.restart = async (graceful = false) => {
+    if (graceful) {
+      c.web.kill("SIGTERM");
+      await until("graceful web exit", () => c.web.exitCode !== null);
+      assert.equal(c.web.exitCode, 0, logs.join(""));
+    } else await kill(c.web);
+    await c.webStart();
+  };
   c.task = async (id) => (await c.api("tasks/" + id)).task;
   c.waitTask = (id, predicate) => until("task state " + id, async () => {
     const task = await c.task(id);
@@ -327,12 +334,12 @@ for (const daemon of [true, false]) {
   });
 }
 
-test("Claude: pending question survives restart and answered question stays cleared", options, async (t) => {
+test("Claude: pending question survives graceful restart and answered question stays cleared", options, async (t) => {
   const c = await harness(t);
   const task = await c.create("claude", "question", "answered-hold");
   const pending = await c.waitTask(task.taskId, (task) => task.status === "awaiting_input");
   const rows = c.rows(task.taskId);
-  await c.restart();
+  await c.restart(true);
   assert.deepEqual((await c.task(task.taskId)).pendingInput, pending.pendingInput);
   assert.deepEqual(c.rows(task.taskId), rows);
   await c.api("tasks/" + task.taskId + "/answer", {

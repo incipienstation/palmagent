@@ -149,10 +149,4 @@ export interface SessionHandoffResponse {
   task: TaskState;
   command: string;
 }
-export interface DispatchSessionRequest {
-  agent: AgentKind;
-  sessionId: string;
-  cwd: string;
-  home: string;
-  waitPid: number;
-}
+export type { DispatchSessionRequest } from "./requests.js";

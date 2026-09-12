@@ -16,7 +16,19 @@ An entry does not mean a version has been published.
 - Agent CLI version ranges are included in package and plugin compatibility metadata
   and reported by `palmagent compatibility` and doctor checks.
 
+### Changed
+
+- Migrate the browser API and local session-control HTTP to Hono, with shared
+  request validation and graceful web-server shutdown that preserves daemon-owned turns.
+- Malformed request fields now return a consistent JSON 400 response before mutation;
+  unexpected server errors return a generic message while details remain in server logs.
+
 ### Fixed
+
+- Replay the complete SSE backlog across reconnects, including histories longer than
+  5,000 events, and bound pending output for slow clients.
+- Count request body limits in bytes and return JSON 413 responses for oversized uploads.
+
 
 - Use the N-API SQLite binding to avoid native statement-cleanup crashes with recent Node 24 builds.
 

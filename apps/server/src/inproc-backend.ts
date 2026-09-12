@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { makeNdjsonSplitter } from "./ndjson.js";
 import type { ProcHandle, RunnerBackend, SpawnSpec } from "./types.js";
@@ -8,12 +9,29 @@ import type { ProcHandle, RunnerBackend, SpawnSpec } from "./types.js";
 // `attach()` can never reattach and `listLive()` is always empty — restart
 // recovery falls back to idle(interrupted), the pre-daemon behavior.
 export class InProcessBackend implements RunnerBackend {
+  private children = new Set<ChildProcessWithoutNullStreams>();
+
+  async close(): Promise<void> {
+    await Promise.all([...this.children].map(async (child) => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const exited = once(child, "exit");
+      child.kill("SIGINT");
+      const deadline = setTimeout(() => child.kill("SIGKILL"), 2000);
+      try { await exited; } finally {
+        clearTimeout(deadline);
+        // A descendant retaining inherited pipes must not hold shutdown open.
+        child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
+      }
+    }));
+  }
   start(spec: SpawnSpec): ProcHandle {
     const child: ChildProcessWithoutNullStreams = spawn(spec.command, spec.argv, {
       cwd: spec.cwd,
       env: spec.env ? { ...process.env, ...spec.env } : process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    this.children.add(child);
+    child.once("close", () => this.children.delete(child));
     return new ChildProcHandle(spec.turnId, child);
   }
 
