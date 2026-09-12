@@ -86,27 +86,21 @@ remain platform-specific.
 - Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash
   or rebase. Promotion does not itself authorize tagging, publication, or deployment.
 - Before a hotfix or merge-settings change, follow the
-  [environment and merge model](docs/RELEASING.md#environment-and-merge-model), including hotfix
+  [environment and merge model](.harness/skills/release/references/policy.md#environment-and-merge-model), including hotfix
   propagation to `develop` and branch-specific merge enforcement.
 
 ## Versioning and releases
 
 For user- or operator-facing changes, follow the
-[changelog writing rules](docs/RELEASING.md#changelog-writing-rules).
+[changelog writing rules](.harness/skills/release/references/policy.md#changelog-writing-rules).
 
-Before version edits, tags, publication, or release-workflow changes, read
-[docs/RELEASING.md](docs/RELEASING.md) for version synchronization, channels, approval gates,
+Use [release](.harness/skills/release/SKILL.md) before version edits, tags, publication, or
+release-workflow changes. Its references own version synchronization, channels, approval gates,
 artifact verification, and recovery. Present the proposed version, scope, compatibility impact,
-and validation evidence for explicit human approval before versioning or tagging. General
-permission to proceed, green CI, or a merge is not versioning approval; automation must not
-choose or bump versions. Never publish from a workstation or arbitrary branch.
+and validation evidence for explicit approval before versioning or tagging. General permission
+to proceed, green CI, or a merge is not versioning approval; never choose or bump versions
+automatically or publish from a workstation. Keep release-specific evidence outside the skill.
 
-Use [release](.harness/skills/release/SKILL.md) to prepare, resume, publish, or recover a release
-through the existing automation. Keep release-specific evidence outside the reusable skill.
-
-Candidate automation creates reviewed draft assets. Publishing a prerelease GitHub Release
-authorizes automatic npm publication through `npm-next` after validation. Stable publication
-through `npm-latest` additionally requires an environment reviewer's approval.
 Host deployment remains operator-initiated through [staging-deploy](.harness/skills/staging-deploy/SKILL.md).
 Keep private environment bindings outside the repository; never infer staging or production from DNS.
 
@@ -135,11 +129,11 @@ contracts, server runtime smoke, CLI render and HTTPS invariants, PWA Playwright
 service-worker checks, plugin synchronization, manifests, links, leak checks, and release-version
 synchronization. Authenticated live adapter smoke is explicit and is not part of hermetic CI.
 Release candidates additionally run the assembled-package leak check and packed-install smoke
-described in `docs/RELEASING.md`.
+described in the [release automation reference](.harness/skills/release/references/automation.md).
 
 CI runs only on PRs and always reports `validate`, with expensive checks selected by the complete
 change scope.
 For documentation and skill-only edits, local `pnpm plugins:check`, `pnpm release:check`, and
-`git diff --check` are sufficient. Follow the [CI and candidate policy](docs/RELEASING.md#candidate-automation)
+`git diff --check` are sufficient. Follow the [CI and candidate policy](.harness/skills/release/references/automation.md#candidate-automation)
 for code checks and manual staging packages. Build the PWA before using `web:verify:built` or
 `pkg:assemble`; those commands deliberately reuse existing output within the same verified run.
