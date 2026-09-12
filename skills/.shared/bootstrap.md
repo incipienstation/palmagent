@@ -4,6 +4,21 @@ Read this reference when an operator skill needs the CLI. The invoking skill own
 requested operation and its diagnostic exceptions. Handle CLI discovery and bootstrap
 internally; never ask the user to install the CLI, run these commands, or edit configuration.
 
+## Reuse authorization and known inputs
+
+An install, reconfiguration, update, or repair request authorizes the corresponding scoped
+operation. Carry that authorization across skill handoffs and retries for the same target
+and effects; do not ask the same permission again. Inspect current state before retrying a
+failed or interrupted operation. A diagnosis, inspection, or preview-only
+request authorizes evidence collection, not host changes. Before an unapproved change,
+finish the available inspection and present its exact target, command, and impact.
+
+Read existing settings and reuse values already supplied by the user. Ask only for required
+values that cannot be determined, or a material choice outside the authorized scope, such
+as interrupting active work or deleting data. Explain the planned effects, then run authorized
+operations with explicit flags and `--non-interactive` when supported to avoid a second CLI
+prompt. Non-interactive mode carries an existing decision; it does not supply missing consent.
+
 ## Select the channel and exact command
 
 Before choosing a bootstrap package, read `~/.palmagent/config.json` (or `config.json`

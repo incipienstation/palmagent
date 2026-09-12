@@ -8,6 +8,9 @@ An entry does not mean a version has been published.
 
 ### Fixed
 
+- Operator plugins reuse authorized installation, reconfiguration, and repair requests
+  and known settings across skill handoffs, asking only for missing inputs or new effects.
+
 - Operator plugins share one CLI bootstrap guide with exact-version installation targets.
   Diagnostics can collect read-only evidence when CLI/plugin compatibility checks fail,
   without replacing the installed package or resetting preferences.
