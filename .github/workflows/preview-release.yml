@@ -1,0 +1,53 @@
+name: automatic preview
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-release
+  cancel-in-progress: false
+  # Keep the active release; the default single pending run coalesces later pushes.
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/develop' && vars.PREVIEW_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out workflow tools
+        uses: actions/checkout@v4
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Create the repository-scoped release credential
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: write
+          permission-checks: read
+      - name: Check out the latest develop source
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare, verify, and publish eligible product changes
+        run: node tooling/scripts/preview-release.mjs source
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PREVIEW_RELEASE_ENABLED: ${{ vars.PREVIEW_RELEASE_ENABLED }}

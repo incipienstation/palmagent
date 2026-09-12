@@ -1,98 +1,128 @@
 name: release candidate
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact source commit; defaults to the selected branch head
+        type: string
+  workflow_call:
+    secrets:
+      LEAK_DENYLIST:
+        required: true
+    inputs:
+      commit:
+        required: true
+        type: string
+      candidate_run:
+        description: Reuse the immutable candidate from this Actions run
+        type: string
+        default: ''
+    outputs:
+      commit:
+        value: ${{ jobs.package.outputs.commit }}
+      channel:
+        value: ${{ jobs.package.outputs.channel }}
+      version:
+        value: ${{ jobs.package.outputs.version }}
+      sha256:
+        value: ${{ jobs.package.outputs.sha256 }}
+      artifact:
+        value: ${{ jobs.package.outputs.artifact }}
+      producer:
+        value: ${{ jobs.package.outputs.producer }}
 
 permissions:
   contents: read
-
-concurrency:
-  group: release-candidate-${{ github.ref }}
-  cancel-in-progress: false
+  actions: read
 
 jobs:
   package:
-    if: (github.event_name == 'push' && !github.event.deleted) || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      channel: ${{ steps.identity.outputs.channel }}
+      version: ${{ steps.identity.outputs.version }}
+      sha256: ${{ steps.identity.outputs.sha256 }}
+      artifact: ${{ steps.artifact.outputs.artifact }}
+      producer: ${{ steps.artifact.outputs.producer }}
     env:
-      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
-      RELEASE_COMMIT: ${{ github.sha }}
+      RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out workflow tools
+        uses: actions/checkout@v4
         with:
-          # Preserve annotated tag objects while checking out the exact event commit.
-          ref: ${{ github.sha }}
-          fetch-depth: 0
+          path: tooling
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-      - name: Validate annotated tag and channel source branch
-        id: tag
-        if: github.event_name == 'push'
-        run: node scripts/release-tag.mjs check
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+          node-version: '24'
+      - name: Select immutable candidate storage
+        id: artifact
+        run: node tooling/scripts/release-candidate.mjs artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run }}
+      - name: Check out the exact product source
+        uses: actions/checkout@v4
         with:
-          node-version: "24"
+          ref: ${{ env.RELEASE_COMMIT }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate source identity and channel ancestry
+        run: node tooling/scripts/release-candidate.mjs source source
+      - uses: actions/download-artifact@v4
+        if: steps.artifact.outputs.reuse == 'true'
+        with:
+          name: ${{ steps.artifact.outputs.artifact }}
+          run-id: ${{ steps.artifact.outputs.producer }}
+          github-token: ${{ github.token }}
+          path: source/build/release
+      - uses: pnpm/action-setup@v4
+        if: steps.artifact.outputs.reuse != 'true'
+        with:
+          package_json_file: source/package.json
+      - uses: actions/setup-node@v4
+        if: steps.artifact.outputs.reuse != 'true'
+        with:
+          node-version: '24'
           cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
-      - name: Verify repository
-        run: pnpm verify
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: "true"
-      - name: Build and verify publishable candidate
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: "true"
-          PKG_PUBLISHABLE: "1"
-          EXPECT_PUBLISHABLE: "1"
+          cache-dependency-path: source/pnpm-lock.yaml
+      - name: Install candidate dependencies and Chromium
+        if: steps.artifact.outputs.reuse != 'true'
+        working-directory: source
         run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @palmagent/web exec playwright install --with-deps chromium
+      - name: Verify and pack the exact candidate
+        if: steps.artifact.outputs.reuse != 'true'
+        working-directory: source
+        run: |
+          pnpm verify
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/release
-      - name: Record release provenance and notes
-        if: github.event_name == 'push'
         env:
-          RELEASE_TAG_OBJECT: ${{ steps.tag.outputs.tag-object }}
-        run: node scripts/release-tag.mjs prepare
-      - name: Upload candidate tarball
-        uses: actions/upload-artifact@v4
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: 'true'
+          PKG_PUBLISHABLE: '1'
+          EXPECT_PUBLISHABLE: '1'
+      - name: Record candidate identity without creating a tag
+        if: steps.artifact.outputs.reuse != 'true'
+        run: node tooling/scripts/release-candidate.mjs prepare source source/build/release
+      - name: Verify the candidate and present the approval evidence
+        id: identity
+        run: node tooling/scripts/release-candidate.mjs check source source/build/release
+        env:
+          CANDIDATE_RUN_ID: ${{ steps.artifact.outputs.producer }}
+      - uses: actions/upload-artifact@v4
+        if: steps.artifact.outputs.reuse != 'true'
         with:
-          name: palmagent-release-${{ github.sha }}
-          path: build/release/*
+          name: ${{ steps.artifact.outputs.artifact }}
+          path: source/build/release/*
           if-no-files-found: error
-          retention-days: 14
-
-  draft:
-    needs: package
-    if: github.event_name == 'push' && !github.event.deleted
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-      - uses: actions/download-artifact@v4
-        with:
-          name: palmagent-release-${{ github.sha }}
-          path: build/release
-      - name: Create draft from the verified package
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_COMMIT: ${{ github.sha }}
-        run: node scripts/release-tag.mjs draft
+          retention-days: 90
