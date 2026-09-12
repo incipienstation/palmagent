@@ -33,7 +33,7 @@ Before running:
 To preview the re-rendered units + nginx vhost without applying:
 
 ```bash
-<cli> setup --dry-run
+<cli> setup --dry-run --non-interactive <changed-config-flags>
 ```
 
 ## 3. Run it

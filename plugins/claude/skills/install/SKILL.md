@@ -38,7 +38,7 @@ To preview without touching anything, run a dry run first and show the rendered
 units + nginx vhost:
 
 ```bash
-<cli> install --dry-run
+<cli> install --dry-run --non-interactive <resolved-config-flags>
 ```
 
 ## 3. Run it
