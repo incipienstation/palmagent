@@ -11,13 +11,9 @@ run the CLI, edit configuration, or manually restart services.
 
 ## 1. Inspect and plan
 
-Read `~/.palmagent/config.json` (`PALMAGENT_HOME/config.json` when overridden).
-Honor an explicit channel request through `settings`; otherwise retain the saved
-channel, legacy installation channel, or Stable for a fresh user. Never infer
-Preview consent or fall back to it when Stable is unavailable.
-
-Locate the installed CLI as in `install`, preserving the installation's custom
-`--data-dir` throughout. Check `<cli> --help` for `--plan` and `--plugin-manifest`
+Read and follow the [shared CLI bootstrap guidance](../.shared/bootstrap.md).
+Honor an explicit channel request through `settings` and preserve the installation's
+custom `--data-dir` throughout. Check `<cli> --help` for `--plan` and `--plugin-manifest`
 before using them: older CLIs may ignore unknown flags. If absent, bootstrap an
 exact published CLI release compatible with this plugin into a temporary command,
 without replacing the installed service package, and check its help again. Stop

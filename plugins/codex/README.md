@@ -111,7 +111,14 @@ The two platforms differ **only** in their discovery wrappers — Claude reads
 `.codex-plugin/plugin.json` → `skills/<s>/SKILL.md`, plus this per-skill `agents/openai.yaml`
 chip file Claude does not read. The **`SKILL.md` bodies are identical** across both.
 
-To update a skill, edit the repo-root `skills/<name>/SKILL.md` and run
+Common CLI preparation lives in `skills/.shared/bootstrap.md` in the source repository.
+Each skill links `../.shared/bootstrap.md`; synchronization includes a real copy inside
+both plugin packages. `.shared` is our helper-directory convention, not a manifest field
+or automatically loaded context. Both [Codex](https://developers.openai.com/plugins/build/skills#add-supporting-resources)
+and [Claude Code](https://code.claude.com/docs/en/skills#add-supporting-files) support explicitly
+referenced files. Keep the helper directory without a `SKILL.md` so it is not another skill.
+
+To update a skill or shared reference, edit its repo-root source under `skills/` and run
 `node scripts/sync-skills.mjs`. CI checks that both platform copies match the source; do not
 hand-edit them. Manifests and `openai.yaml` files remain platform-specific.
 

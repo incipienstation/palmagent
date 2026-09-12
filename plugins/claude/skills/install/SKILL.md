@@ -12,53 +12,11 @@ re-implement any setup steps in chat.
 
 ## 1. Locate the CLI
 
-The plugin runs all installation and CLI steps internally; never ask the user to
-install the CLI, run these commands, or edit configuration files. Before choosing
-a bootstrap package, read `~/.palmagent/config.json` (or `config.json` under
-`PALMAGENT_HOME` when set). Honor an explicitly requested channel; otherwise use
-its saved `channel` or the existing installation's legacy channel. Only a fresh
-user with no choice defaults to Stable. Reject malformed JSON, unsupported `schemaVersion`, or an invalid channel rather
-than guessing or resetting preferences. Both agent platforms share this file.
+Read and follow the [shared CLI bootstrap guidance](../.shared/bootstrap.md).
+Use its exact command, saved channel, compatibility check, and custom data directory.
 
-Use the installed CLI when available. If it must be bootstrapped, resolve the
-chosen npm tag (`latest` for Stable, `next` for Preview) to one exact version and
-use that same version for all bootstrap commands. Do not silently switch channels
-or substitute a moving `npx` version after a compatibility failure.
-
-Substitute the resolved internal command for `<cli>` below.
-
-Before invoking an operation, read this installed plugin's version from
-`../../.claude-plugin/plugin.json` or `../../.codex-plugin/plugin.json`, relative
-to this skill directory, and run:
-
-```bash
-<cli> compatibility --plugin-version <installed-plugin-version>
-```
-
-Proceed only on exit 0. The CLI and plugin must share the same `x.x.x`, including
-alpha, beta, and rc versions. If the command is unavailable, the manifest cannot
-be read, or the check fails, stop and explain which released CLI/plugin pair is
-needed; do not bypass the check or substitute a moving `npx` version. Plugin
-installation is managed separately by Claude Code or Codex. This check does not
-update either component.
-
-Stable is the default for new installations. Use Preview only when the operator
-opts in; it is available to everyone. If a CLI must be installed, use
-`palmagent@latest` for Stable or `palmagent@next` for Preview. A missing Stable
-release is not permission to fall back to Preview.
-
-Read effective settings with `<cli> config get` (pass the installation's
-`--data-dir` when custom). For an authorized install/setup/update, run
-`<cli> config init` with the same data directory to migrate legacy channel settings
-before applying service changes. `config get` is read-only. Preserve the user file
-across plugin/package refresh, service removal, and reinstall. Never store settings
-inside a plugin cache or edit `install.env` to change the channel.
-
-For a preference-only request, use the `settings` skill. It changes the saved
-choice without deploying a release or restarting services.
-
-Use the saved channel. If the user requests a different one, save it through
-`settings` before installation; do not reset a returning Preview user to Stable.
+If the user requests a different channel, save it through `settings` before installation;
+do not reset a returning Preview user to Stable.
 
 ## 2. Confirm intent (this changes the host)
 
@@ -84,6 +42,10 @@ units + nginx vhost:
 ```
 
 ## 3. Run it
+
+For this authorized operation, run `<cli> config init` with the same custom
+`--data-dir` before applying service changes. It migrates legacy preferences without
+overwriting an existing user file; do not initialize during a dry-run-only request.
 
 Once confirmed:
 

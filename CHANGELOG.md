@@ -8,6 +8,10 @@ An entry does not mean a version has been published.
 
 ### Fixed
 
+- Operator plugins share one CLI bootstrap guide with exact-version installation targets.
+  Diagnostics can collect read-only evidence when CLI/plugin compatibility checks fail,
+  without replacing the installed package or resetting preferences.
+
 - Codex plugin installation and update instructions now register the nested marketplace
   from a checkout of the published tag. The previous Git sparse-checkout command could
   not find the marketplace catalog. Existing published tags work with the corrected path.

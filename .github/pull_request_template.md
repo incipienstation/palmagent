@@ -22,4 +22,7 @@ Complete this section when content came from a non-public source. Otherwise mark
 
 - [ ] Version changes have prior explicit human approval recorded here, or this PR does not change versions.
 <!-- For version changes, link or summarize the approval of the proposed version and release scope. -->
-- [ ] This PR does not imply merge, publication, repository visibility changes, or deployment.
+- [ ] Delivery follows [ship](../.harness/skills/ship/SKILL.md): verified task PRs into `develop`
+  squash-merge automatically unless the user requests PR-only delivery, a draft, or a merge hold.
+- [ ] Merges into `main`, version changes, tags, publication, repository visibility changes, and
+  host deployment retain their separate approvals under [release policy](../.harness/skills/release/references/policy.md#branch-and-approval-flow).

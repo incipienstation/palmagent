@@ -15,12 +15,9 @@ updates, plugin reinstalls, and service removal.
 
 ## Read the settings
 
-Locate the internal CLI using the same bootstrap and compatibility procedure as
-`install`. Read the shared user file before choosing a bootstrap channel; Stable
-is the default only when no preference or existing installation is available.
-Honor an explicitly requested channel when bootstrapping; this also lets a new
-user opt into Preview before any Stable release is available. Keep bootstrap
-commands pinned to the resolved exact version.
+Follow the [shared CLI bootstrap guidance](../.shared/bootstrap.md) for discovery,
+channel selection, exact-version bootstrap, and compatibility. An explicit Preview
+request also applies during bootstrap when no Stable release is available.
 
 ```bash
 <cli> config get
