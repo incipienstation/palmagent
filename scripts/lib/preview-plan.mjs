@@ -22,8 +22,13 @@ export function isProductPath(path) {
 function normalizedJson(path, value, { ignoreScripts = true } = {}) {
   const json = JSON.parse(value);
   if (preparationFiles.includes(path)) delete json.version;
-  // Root command aliases do not ship. Dependency and toolchain changes still count.
-  if (ignoreScripts && path === 'package.json') delete json.scripts;
+  // Build entrypoints affect shipped bytes; development/test command aliases do not.
+  if (ignoreScripts && path === 'package.json') {
+    const buildScripts = Object.fromEntries(Object.entries(json.scripts ?? {})
+      .filter(([name]) => ['web:build', 'pkg:build', 'pkg:assemble'].includes(name)));
+    delete json.scripts;
+    if (Object.keys(buildScripts).length) json.scripts = buildScripts;
+  }
   const sorted = (value) => Array.isArray(value) ? value.map(sorted)
     : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])])) : value;
   return JSON.stringify(sorted(json));

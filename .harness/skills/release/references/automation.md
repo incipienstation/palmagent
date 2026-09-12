@@ -167,10 +167,13 @@ npm view palmagent@<version> dist.integrity
 ```
 
 Deprecation and dist-tag correction require a separate request. Issue a new version for changed
-source or bad published bytes; never overwrite a version or move a release tag. To abandon an
-unpublished failed Preview, retain its tag/candidate evidence and explicitly resolve the pending
-preparation before advancing the lane; ordinary retries intentionally resume it first. Host rollback
-is separate; see [staging rollback](../../../../docs/STAGING.md#rollback-and-failures).
+source or bad published bytes; never overwrite a version or move a release tag. If a failed Preview
+needs a source fix, pause the Preview switch and let active runs finish. Prepare an unused version
+on fixed `develop` through a verified PR, then dispatch `npm-publish.yml` for that exact commit.
+Keep the failed tag/candidate evidence. After successful publication establishes the new baseline,
+restore the switch. This is recovery within Preview authorization, not a parallel release train;
+ordinary retries intentionally resume the older pending preparation first. Host rollback is
+separate; see [staging rollback](../../../../docs/STAGING.md#rollback-and-failures).
 
 ## Release checklist
 

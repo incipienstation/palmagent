@@ -124,3 +124,11 @@ test('a preparation cannot smuggle root command changes through the non-product 
   assert.deepEqual(productChanges(f.root, f.source, head), []);
   assert.throws(() => assertPreparation(f.root, f.source, head, '0.1.0-alpha.2'), /other than version/);
 });
+
+test('root build entrypoint changes remain product inputs even though test aliases do not', (t) => {
+  const f = releaseFixture(t);
+  const pkg = JSON.parse(readFileSync(join(f.root, 'package.json'), 'utf8'));
+  f.put('package.json', JSON.stringify({ ...pkg, scripts: { 'pkg:assemble': 'tsx scripts/new-builder.ts' } }));
+  const head = f.commit();
+  assert.deepEqual(productChanges(f.root, f.source, head), ['package.json']);
+});
