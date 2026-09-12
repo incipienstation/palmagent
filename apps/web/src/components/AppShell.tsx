@@ -31,18 +31,20 @@ const ROOT_ROUTES = new Set(["inbox", "routines", "usage"]);
 export function AppShell({
   children,
   attention,
+  wide,
 }: {
   children: ReactNode;
   /** Inbox passes this so the Inbox tab shows an attention dot when any task
       is awaiting input/approval (it owns the task list; the shell stays data-agnostic). */
   attention?: boolean;
+  wide?: boolean;
 }) {
   const updateReady = usePwaUpdate();
   const route = useRoute();
   const isRoot = ROOT_ROUTES.has(route.name);
   return (
     <div
-      className="mx-auto flex h-app max-w-[720px] flex-col"
+      className={cn("mx-auto flex h-app flex-col", wide ? "max-w-[1100px]" : "max-w-[720px]")}
       style={
         {
           "--banner-h": updateReady ? "60px" : "0px",

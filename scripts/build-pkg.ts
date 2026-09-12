@@ -26,6 +26,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENT_CLI_COMPATIBILITY } from "../packages/shared/src/compatibility.js";
 import { BRANDING } from "../packages/shared/src/branding.js";
 
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
   const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
   const buildInfo = {
     version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version,
+    agentCliCompatibility: AGENT_CLI_COMPATIBILITY,
     sourceCommit: git("rev-parse", "HEAD"),
     dirty: git("status", "--porcelain", "--untracked-files=normal") !== "",
   };
@@ -133,6 +135,7 @@ async function main(): Promise<void> {
   const pkg = {
     name: BRANDING.packageName,
     version,
+    palmagent: { agentCliCompatibility: AGENT_CLI_COMPATIBILITY },
     description: `${BRANDING.productName} — self-hosted Claude Code + Codex dispatcher`,
     type: "module",
     license: "MIT",

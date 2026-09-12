@@ -6,6 +6,7 @@ export type AgentKind = "claude" | "codex";
 
 export type AgentEventKind =
   | "status" // lifecycle: init, turn started/ended, reasoning, retries
+  | "output_image" // bounded raster image; payload: ImageAttachment
   | "assistant_text" // streamed assistant prose (token deltas for Claude, items for Codex)
   | "tool_call" // a tool/command the agent decided to run
   | "tool_result" // the result of a tool/command

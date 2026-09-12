@@ -64,6 +64,16 @@ export function syncSkills(root, { check = false } = {}) {
       }
     }
   }
+  const metadata = join(root, 'packages/shared/src/agent-compatibility.json');
+  if (existsSync(metadata)) {
+    const source = readFileSync(metadata);
+    for (const base of targets) {
+      const destination = join(dirname(base), 'agent-compatibility.json');
+      if (check) {
+        if (!existsSync(destination) || !readFileSync(destination).equals(source)) drift.push(relative(root, destination));
+      } else writeFileSync(destination, source);
+    }
+  }
   return { skillCount: names.length, sharedCount: shared.length, drift };
 }
 

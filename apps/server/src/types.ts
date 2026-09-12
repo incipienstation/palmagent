@@ -7,6 +7,7 @@ export interface StartArgs {
   cwd: string; // the task's worktree path — stable for the task's whole life
   prompt: string;
   images?: ImageAttachment[]; // attached to the opening user message of the turn
+  providerHome?: string; // pinned native transcript/config root for this session
   resumeId?: string; // present => resume an existing session/thread by id
   permission?: Permission; // mapped per adapter; agent-specific safe default
   model?: string; // optional model override

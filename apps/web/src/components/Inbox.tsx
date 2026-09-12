@@ -1,6 +1,6 @@
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
 import { Inbox as InboxIcon, Plus } from "lucide-react";
-import { createContext, useContext, useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,8 @@ import { reloadApp } from "../pwa";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag, RepoChip, StatusBadge } from "./chips";
+import { taskDirectory, WorkingDirectories } from "./WorkingDirectories";
+import { Badge } from "./ui/badge";
 import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
@@ -68,6 +70,7 @@ const ATTENTION_RAIL: Partial<Record<TaskStatus, string>> = {
 function TaskMeta({ task, showTime }: { task: TaskState; showTime?: boolean }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-faint">
+      {task.sessionControl && task.sessionControl.owner !== "palmagent" && <Badge variant="secondary">{task.sessionControl.owner === "local" ? "Local shell" : "Returning"}</Badge>}
       {task.model && <span>{task.model}</span>}
       {task.effort && <span>effort {task.effort}</span>}
       <span>{task.permission}</span>
@@ -294,8 +297,11 @@ export function InboxView({
     refresh();
   }, [tasks, repos, refresh]);
 
+  const [selected, setSelected] = useState(() => { try { return localStorage.getItem("working-directory") ?? "all"; } catch { return "all"; } });
+  const selectDirectory = (path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } };
+  const filtered = selected === "all" ? tasks : tasks.filter((task) => taskDirectory(task, repos) === selected);
   const byStatus = new Map<TaskStatus, TaskState[]>();
-  for (const t of tasks) {
+  for (const t of filtered) {
     const arr = byStatus.get(t.status) ?? [];
     arr.push(t);
     byStatus.set(t.status, arr);
@@ -306,13 +312,15 @@ export function InboxView({
   const attention = tasks.some(
     (t) => t.status === "awaiting_input" || t.status === "awaiting_approval",
   );
-  const isEmpty = !loading && tasks.length === 0;
+  const isEmpty = !loading && filtered.length === 0;
 
   return (
     <ReposContext.Provider value={repos}>
-      <AppShell attention={attention}>
+      <AppShell attention={attention} wide>
         <AppBar title="Tasks" brand conn={conn} settings />
-        <PullToRefresh className="min-h-0 flex-1" onRefresh={reloadApp}>
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} />
+        <PullToRefresh className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
           {/* The pb wrapper tracks the tab bar + banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
           <div className="pb-[calc(var(--tabbar-h,0px)+var(--banner-h,0px)+88px)]">
@@ -321,7 +329,7 @@ export function InboxView({
             ) : isEmpty ? (
               <EmptyState
                 icon={InboxIcon}
-                title="No tasks yet"
+                title={selected === "all" ? "No tasks yet" : "No tasks in this directory"}
                 subtitle="Send your first task to an agent and track it here."
                 action={{ label: "Dispatch a task", onClick: () => navigate("/new") }}
               />
@@ -332,9 +340,10 @@ export function InboxView({
             )}
           </div>
         </PullToRefresh>
+        </div>
         <Button
           size="icon"
-          className="fixed right-[max(16px,calc((100vw-720px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--tabbar-h,0px)+var(--banner-h,0px))] z-20 size-14 rounded-full shadow-[0_10px_28px_-6px_rgba(0,137,123,0.40),0_3px_10px_-4px_rgba(0,0,0,0.18)] transition-[bottom,transform,box-shadow,background-color] duration-200 active:translate-y-0.5 active:shadow-[0_4px_12px_-6px_rgba(0,137,123,0.34),0_2px_6px_-4px_rgba(0,0,0,0.16)] dark:shadow-[0_12px_34px_-6px_rgba(20,184,166,0.50),0_4px_14px_-4px_rgba(0,0,0,0.55)] dark:active:shadow-[0_6px_18px_-6px_rgba(20,184,166,0.40),0_2px_8px_-4px_rgba(0,0,0,0.5)]"
+          className="fixed right-[max(16px,calc((100vw-1100px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--tabbar-h,0px)+var(--banner-h,0px))] z-20 size-14 rounded-full shadow-[0_10px_28px_-6px_rgba(0,137,123,0.40),0_3px_10px_-4px_rgba(0,0,0,0.18)] transition-[bottom,transform,box-shadow,background-color] duration-200 active:translate-y-0.5 active:shadow-[0_4px_12px_-6px_rgba(0,137,123,0.34),0_2px_6px_-4px_rgba(0,0,0,0.16)] dark:shadow-[0_12px_34px_-6px_rgba(20,184,166,0.50),0_4px_14px_-4px_rgba(0,0,0,0.55)] dark:active:shadow-[0_6px_18px_-6px_rgba(20,184,166,0.40),0_2px_8px_-4px_rgba(0,0,0,0.5)]"
           aria-label="Dispatch new task"
           onClick={() => navigate("/new")}
         >

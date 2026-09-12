@@ -6,7 +6,7 @@ import type {
   AuthenticationResponseJSON,
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
-import { BRANDING } from "@palmagent/shared";
+import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
 import type { PushSubscriptionJson, TaskStatus } from "@palmagent/shared";
 import { AuthService } from "./auth.js";
 import { config, validateConfig } from "./config.js";
@@ -23,6 +23,7 @@ import { HttpError, TaskService } from "./service.js";
 import { ProcessSupervisor } from "./supervisor.js";
 import type { RunnerBackend } from "./types.js";
 import { WorktreeManager } from "./worktree.js";
+import { startSessionControl } from "./session-control.js";
 import { isUpdateMaintenance } from "./update-maintenance.js";
 
 // Embedded at package build time; source-mode health keeps its existing shape.
@@ -58,6 +59,7 @@ const push = new PushService(db, config.vapidKeyPath ?? join(dirname(config.dbPa
 const backend = await selectBackend();
 const service = new TaskService(db, hub, supervisor, backend, worktrees, push, () => isUpdateMaintenance(config.dbPath));
 await service.init(); // hydrate + restart recovery (reattach live daemon turns)
+await startSessionControl(dirname(config.dbPath), service);
 const routines = new RoutineService(db, service);
 routines.start(); // cron ticker (skips runs missed while down)
 const github = new GithubService(service, config.githubToken);
@@ -214,7 +216,7 @@ async function serveStatic(res: ServerResponse, urlPath: string): Promise<boolea
 }
 
 // --------------------------------------------------------------------- router
-const TASK_ROUTE = /^\/api\/tasks\/([^/]+)(?:\/(followup|steer|approve|answer|stop|cancel))?$/;
+const TASK_ROUTE = /^\/api\/tasks\/([^/]+)(?:\/(followup|steer|approve|answer|stop|cancel|handoff))?$/;
 const ROUTINE_ROUTE = /^\/api\/routines\/([^/]+)(?:\/(run|runs))?$/;
 
 const server = createServer(async (req, res) => {
@@ -298,6 +300,7 @@ const server = createServer(async (req, res) => {
 
   // REST
   try {
+    if (path === "/api/compatibility" && method === "GET") return sendJson(res, 200, { agents: AGENT_CLI_COMPATIBILITY });
     if (path === "/api/push/key" && method === "GET") {
       return sendJson(res, 200, { publicKey: push.getPublicKey() });
     }
@@ -367,6 +370,7 @@ const server = createServer(async (req, res) => {
     if (m) {
       const id = decodeURIComponent(m[1]);
       const action = m[2];
+      if (action === "handoff" && method === "POST") return sendJson(res, 200, service.handoff(id));
       if (!action) {
         if (method === "GET") return sendJson(res, 200, { task: service.getTask(id) });
         if (method === "DELETE") return sendJson(res, 200, { task: service.archive(id) });

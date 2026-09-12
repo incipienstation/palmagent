@@ -1,7 +1,7 @@
 {
   "name": "palmagent",
   "version": "0.1.0-alpha.3",
-  "description": "Operator skills for a self-hosted Palmagent instance: settings, install, setup (reconfigure), doctor (diagnose), and update. Thin skins over the palmagent CLI.",
+  "description": "Palmagent skills for settings, installation, diagnosis, updates, and dispatching a local Claude or Codex session to the self-hosted dispatcher.",
   "author": {
     "name": "Palmagent"
   },
@@ -27,7 +27,7 @@
     ],
     "defaultPrompt": [
       "Install Palmagent on this host",
-      "My dispatcher won't start — diagnose it",
+      "My dispatcher won't start \u2014 diagnose it",
       "Update the dispatcher to the latest version"
     ],
     "brandColor": "#2563EB"

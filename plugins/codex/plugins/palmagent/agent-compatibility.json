@@ -1,0 +1,12 @@
+{
+  "claude": {
+    "range": ">=2.1.268 <2.2.0",
+    "minimum": "2.1.268",
+    "exclusiveMaximum": "2.2.0"
+  },
+  "codex": {
+    "range": ">=0.154.0 <0.155.0",
+    "minimum": "0.154.0",
+    "exclusiveMaximum": "0.155.0"
+  }
+}

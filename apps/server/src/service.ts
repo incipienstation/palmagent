@@ -1,10 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import type {
-  AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
+  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION, makePrRef } from "@palmagent/shared";
+import { checkpointSession, emptyTranscriptHash, locateSession, nativeHome, processIdentity, resumeCommand, synchronizeSession } from "./native-session.js";
+import { extractOutputImages } from "./output-images.js";
+import { realpathSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
 import type { Db } from "./db.js";
 import type { GithubService } from "./github.js";
@@ -37,6 +40,7 @@ interface TurnState {
 // stays behind getRunner() — this file never branches on agent kind.
 export class TaskService {
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
+  private sessionMismatch = new Set<string>();
   private turnState = new Map<string, TurnState>(); // per-active-turn error tracking
   private pendingSteer = new Map<string, { text: string; images: ImageAttachment[] }[]>(); // codex steer → next-turn queue
   private stopping = new Set<string>(); // user-requested stop → settle idle(interrupted), not failed
@@ -175,6 +179,82 @@ export class TaskService {
     return t;
   }
 
+  private assertSessionOwnership(task: TaskState): void {
+    if (task.sessionControl && task.sessionControl.owner !== "palmagent") {
+      throw conflict("This session is controlled in a local shell. Dispatch it back after closing the local CLI.");
+    }
+  }
+
+  handoff(id: string): SessionHandoffResponse {
+    const task = this.getTask(id);
+    if (task.sessionControl?.owner === "local") return { task, command: resumeCommand(task, dirname(this.db.path)) };
+    this.assertSessionOwnership(task);
+    if (this.supervisor.has(id) || !["idle", "failed"].includes(task.status)) throw conflict("Stop the active turn and wait for it to finish before handing off");
+    if (!task.sessionId) throw conflict("This task has no native session yet");
+    let control: TaskState["sessionControl"];
+    try { control = checkpointSession(task); } catch (error) { throw conflict(error instanceof Error ? error.message : "Native session is unavailable"); }
+    this.db.setSessionControl(id, control);
+    task.sessionControl = control;
+    this.broadcastTasks();
+    return { task, command: resumeCommand(task, dirname(this.db.path)) };
+  }
+
+  // This entry point is exposed only on the owner-only local control socket.
+  dispatchSession(req: DispatchSessionRequest): TaskState {
+    this.assertTaskAdmission();
+    if (!req || !["claude", "codex"].includes(req.agent) || typeof req.cwd !== "string" || typeof req.home !== "string") throw badRequest("agent, sessionId, cwd and provider home are required");
+    let task = this.listTasks().find((t) => t.agent === req.agent && t.sessionId === req.sessionId);
+    if (realpathSync(req.home) !== realpathSync(task?.sessionControl?.home ?? nativeHome(req.agent))) throw conflict("The local CLI and Palmagent must use the same provider home");
+    const identity = processIdentity(req.waitPid);
+    if (!identity) throw conflict("The local CLI must still be running when requesting dispatch");
+    const argv = readFileSync(`/proc/${req.waitPid}/cmdline`, "utf8").split("\0");
+    if (!argv.slice(0, 2).some((arg) => basename(arg) === req.agent || basename(arg) === `${req.agent}.js`)) throw badRequest("waitPid must identify the native agent CLI");
+    const cwd = realpathSync(req.cwd);
+    const transcript = locateSession(req.agent, req.sessionId, cwd, req.home);
+    if (task) {
+      if (realpathSync(task.worktreePath!) !== cwd || !task.sessionControl || task.sessionControl.owner === "palmagent") throw conflict("This session is already controlled by Palmagent or has a different working directory");
+      if (task.sessionControl.owner === "returning" && (task.sessionControl.waitPid !== req.waitPid || task.sessionControl.waitIdentity !== identity)) throw conflict("A different local writer is already returning this session");
+    } else {
+      const now = Date.now();
+      const repo = this.createRepo({ path: cwd });
+      task = { taskId: genId("t"), repoId: repo.id, agent: req.agent, prompt: "Imported local session", title: "Local session", status: "idle", interrupted: false,
+        sessionId: req.sessionId, worktreePath: cwd, permission: DEFAULT_PERMISSION[req.agent], createdAt: now, updatedAt: now, lastActivityAt: now,
+        sessionControl: { owner: "local", home: realpathSync(req.home), transcript, cursor: 0, prefixHash: emptyTranscriptHash } };
+      this.db.insertTask(task);
+      this.cache.set(task.taskId, task);
+    }
+    const control = { ...task.sessionControl!, owner: "returning" as const, waitPid: req.waitPid, waitIdentity: identity, error: undefined };
+    this.db.setSessionControl(task.taskId, control);
+    task.sessionControl = control;
+    this.broadcastTasks();
+    return task;
+  }
+
+  reconcileLocalSessions(): void {
+    for (const task of this.cache.values()) {
+      const control = task.sessionControl;
+      if (control?.owner !== "returning") continue;
+      try {
+        if (!control.waitPid || !control.waitIdentity) throw new Error("Missing local writer identity");
+        if (processIdentity(control.waitPid) === control.waitIdentity) continue;
+        const synced = synchronizeSession(task);
+        const updated = { ...task, sessionControl: synced.control };
+        const rows = this.db.importSessionEvents(updated, synced.events);
+        task.sessionControl = synced.control;
+        if (rows.length) task.lastActivityAt = Date.now();
+        for (const row of rows) this.hub.emitEvent(row);
+        this.broadcastTasks();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Session synchronization failed";
+        if (control.error === message) continue;
+        const failed = { ...control, error: message };
+        this.db.setSessionControl(task.taskId, failed);
+        task.sessionControl = failed;
+        this.broadcastTasks();
+      }
+    }
+  }
+
   // ---- GitHub PR status (github.ts implements the fetch; we are its sink) ----
   attachGithub(gh: GithubService): void {
     this.github = gh;
@@ -248,6 +328,7 @@ export class TaskService {
       prompt: req.prompt,
       status: "queued",
       interrupted: false,
+      sessionControl: { owner: "palmagent", home: nativeHome(req.agent), transcript: "", cursor: 0, prefixHash: emptyTranscriptHash },
       branch: wt?.branch,
       worktreePath: wt?.path ?? repo.path,
       permission: req.permission ?? defaultPermission(req.agent),
@@ -272,6 +353,7 @@ export class TaskService {
   followup(id: string, prompt: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): TaskState {
     this.assertTaskAdmission();
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     if (!prompt) throw badRequest("prompt is required");
     const images = sanitizeImages(rawImages);
     if (this.supervisor.has(id)) throw conflict("a turn is already active");
@@ -288,6 +370,7 @@ export class TaskService {
   steer(id: string, text: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): SteerResponse {
     if (!this.supervisor.has(id)) this.assertTaskAdmission();
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     if (!text) throw badRequest("text is required");
     const images = sanitizeImages(rawImages);
     const nImages = images?.length ?? 0;
@@ -335,6 +418,7 @@ export class TaskService {
 
   approve(id: string, decision: string, scope?: string): TaskState {
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     const now = Date.now();
     this.db.insertApproval(id, null, scope ? JSON.stringify({ scope }) : null, decision, now);
     this.supervisor.get(id)?.approve(decision, scope);
@@ -349,6 +433,7 @@ export class TaskService {
   // resume `running`. 409 if the task isn't actually paused on a question.
   answer(id: string, req: AnswerRequest): TaskState {
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     if (task.status !== "awaiting_input") throw conflict(`task is not awaiting input (${task.status})`);
     if (!req?.requestId) throw badRequest("requestId is required");
     const handle = this.supervisor.get(id);
@@ -366,6 +451,7 @@ export class TaskService {
   // idle(interrupted=true) and a follow-up resumes off the CLI transcript.
   stop(id: string): TaskState {
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     if (task.status === "cancelled" || task.status === "archived") {
       throw conflict(`cannot stop a ${task.status} task`);
     }
@@ -390,6 +476,7 @@ export class TaskService {
 
   cancel(id: string): TaskState {
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     if (task.status === "cancelled" || task.status === "archived") return task; // idempotent
     this.pendingSteer.delete(id);
     const handle = this.supervisor.get(id);
@@ -404,6 +491,7 @@ export class TaskService {
 
   archive(id: string): TaskState {
     const task = this.getTask(id);
+    this.assertSessionOwnership(task);
     if (task.status === "archived") return task; // idempotent
     if (this.supervisor.has(id)) throw conflict("cancel the active turn before archiving");
     this.transition(task, "archived");
@@ -428,6 +516,7 @@ export class TaskService {
 
   private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[]): void {
     const runner = getRunner(task.agent);
+    this.sessionMismatch.delete(task.taskId);
     this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
     // A brand-new turn starts a fresh stdout stream: baseline 0, nothing replayed.
     this.turnBaseline.set(task.taskId, 0);
@@ -442,6 +531,7 @@ export class TaskService {
           prompt,
           images,
           resumeId,
+          providerHome: task.sessionControl?.home,
           permission: task.permission,
           model: task.model,
           effort: task.effort,
@@ -498,8 +588,18 @@ export class TaskService {
   // DB insert + SSE fan-out are suppressed for events at or below the reattach
   // baseline (already persisted in a prior life).
   private onRaw(task: TaskState, raw: RawEvent, rawSeq?: number): void {
+    if (this.sessionMismatch.has(task.taskId)) return;
+    if (task.sessionId && raw.sessionId && task.sessionId !== raw.sessionId) {
+      this.sessionMismatch.add(task.taskId);
+      const state = this.turnState.get(task.taskId);
+      if (state) { state.errored = true; state.abnormalExit = true; }
+      this.pendingSteer.delete(task.taskId);
+      raw = { taskId: task.taskId, sessionId: task.sessionId, kind: "error", payload: { message: "The CLI returned a different session identity. The turn was stopped; the original session is retained." } };
+      queueMicrotask(() => this.supervisor.get(task.taskId)?.cancel());
+    }
     const now = Date.now();
-    const event = { ...raw, agent: task.agent, ts: now };
+    const output = raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status" ? extractOutputImages(raw.payload) : { payload: raw.payload, images: [] };
+    const event = { ...raw, payload: output.payload, agent: task.agent, ts: now };
 
     if (event.sessionId && task.sessionId !== event.sessionId) {
       task.sessionId = event.sessionId; // capture claude session_id / codex thread_id
@@ -560,13 +660,12 @@ export class TaskService {
       }
     }
 
-    // Persist every emitted event (this IS the event log) then fan out to SSE.
-    const { id, seq } = this.db.insertEvent(task.taskId, event.kind, event.payload, now);
-    // Advance the reattach high-water-mark so a future restart resumes past here.
-    if (rawSeq !== undefined) this.db.setTaskRawSeq(task.taskId, rawSeq);
-    this.db.touchTask(task.taskId, now);
+    // Commit all images from this source line with the event and replay cursor.
+    // A restart cannot preserve the cursor while dropping an image from that line.
+    const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: image }))];
+    const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq);
     task.lastActivityAt = now;
-    this.hub.emitEvent({ id, seq, event });
+    for (const row of rows) this.hub.emitEvent(row);
   }
 
   private finishTurn(task: TaskState): void {

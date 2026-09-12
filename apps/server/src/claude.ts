@@ -83,7 +83,8 @@ export class ClaudeRunner implements AgentRunner {
     // fresh one. A failed reattach (turn no longer live) settles immediately.
     // CLAUDE_CONFIG_DIR isolates headless sessions from an interactively-used
     // ~/.claude directory on the same host.
-    const env = config.claudeConfigDir ? { CLAUDE_CONFIG_DIR: config.claudeConfigDir } : undefined;
+    const providerHome = args.providerHome ?? config.claudeConfigDir;
+    const env = providerHome ? { CLAUDE_CONFIG_DIR: providerHome } : undefined;
     const proc: ProcHandle | undefined = reattach
       ? backend.attach(taskId, 0)
       : backend.start({ turnId: taskId, command: "claude", argv, cwd, env });
