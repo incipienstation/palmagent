@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.3
+
 ### Fixed
 
 - Automatic update timers now load correctly in systemd. The updater uses its explicit
