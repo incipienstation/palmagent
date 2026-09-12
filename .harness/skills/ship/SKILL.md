@@ -18,6 +18,7 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
    human approval and use a merge commit through a dedicated PR. Versioning, tagging, publication,
    visibility changes, and deployment retain their separate approval rules in the
    [release runbook](../../../docs/RELEASING.md); automatic `develop` merge does not authorize them.
+   When release work is requested, continue through [release](../release/SKILL.md).
 5. Keep the worktree while the PR is open or implementation/review is still active. After merge,
    complete the cleanup below and report anything retained with its reason.
 
