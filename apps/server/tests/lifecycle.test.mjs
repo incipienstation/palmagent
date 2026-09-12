@@ -7,6 +7,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import Database from "better-sqlite3";
+import { beginUpdateMaintenance, isUpdateMaintenance } from "../src/update-maintenance.ts";
+import { verifyUpdateIdle } from "../src/cli/update-idle.ts";
 
 const serverDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = join(serverDir, "tests/fixtures/lifecycle-cli.cjs");
@@ -287,6 +289,41 @@ for (const restart of [false, true]) {
     await c.waitTask(task.taskId, (task) => task.status === "idle");
     assert(existsSync(c.marker("terminal", ".eof")));
     assert.equal(c.rows(task.taskId).filter((row) => row.kind === "result").length, 1);
+  });
+}
+
+for (const daemon of [true, false]) {
+  test(`update maintenance blocks new admissions and preserves active work (${daemon ? "daemon" : "in-process"})`, options, async (t) => {
+    const c = await harness(t, daemon);
+    const task = await c.create("codex", "maintenance");
+    const cfg = { host: "localhost", port: Number(c.env.PORT), dbPath: c.env.DISPATCHER_DB, runnerSocket: c.env.RUNNER_SOCKET };
+    const finish = beginUpdateMaintenance(cfg.dbPath);
+    try {
+      assert.equal((await c.api("health")).updateMaintenance, true);
+      assert.equal(await verifyUpdateIdle(cfg), false, "in-flight metadata defers even with an in-process backend");
+      const response = await fetch(c.base + "/api/tasks", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repoId: c.repo.id, agent: "codex", prompt: "new task" }),
+      });
+      assert.equal(response.status, 503);
+      assert.match((await response.json()).error, /updating/);
+      assert.equal((await c.task(task.taskId)).status, "running");
+      c.mark("maintenance", ".release");
+      await c.waitTask(task.taskId, (task) => task.status === "idle");
+      for (const action of ["followup", "steer"]) {
+        const blocked = await fetch(c.base + `/api/tasks/${task.taskId}/${action}`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ prompt: "next", text: "next" }),
+        });
+        assert.equal(blocked.status, 503, action + " cannot bypass admission");
+      }
+      if (daemon) assert.equal(await verifyUpdateIdle(cfg), true);
+    } finally { finish(); }
+    assert.equal(isUpdateMaintenance(cfg.dbPath), false);
+    assert.equal((await c.api("health")).updateMaintenance, false);
+    await c.api("tasks/" + task.taskId + "/followup", { prompt: JSON.stringify({ key: "after-maintenance", mode: "auto" }) });
+    await c.ready("after-maintenance");
+    await c.waitTask(task.taskId, (task) => task.status === "idle");
   });
 }
 

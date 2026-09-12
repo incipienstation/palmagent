@@ -1,7 +1,7 @@
 // Install and boot exactly the tarball packed by this run, with isolated state.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,6 +59,10 @@ try {
     ["compatibility", "--plugin-version"],
     ["update", "--channel"],
     ["doctor", "--channel", "preview"],
+    ["update", "--plan=false"],
+    ["update", "--plugin-manifest"],
+    ["doctor", "--automatic"],
+    ["auto-update", "enable", "--unexpected"],
   ]) {
     const result = spawnSync(bin, cliArgs, { env, encoding: "utf8" });
     assert.equal(result.status, 1, `invalid CLI request should fail: ${cliArgs.join(" ")}`);
@@ -93,6 +97,7 @@ try {
       const health = await response.json();
       if (response.ok && health.ok === true) {
         assert.deepEqual(health.build, buildInfo, "running package build identity differs from its artifact");
+        assert.equal(health.updateMaintenance, false, "packed server exposes the maintenance handshake");
         healthy = true; break;
       }
     } catch { /* not ready yet */ }
@@ -106,6 +111,28 @@ try {
   assert.equal(statSync(join(scratch, "data")).mode & 0o777, 0o700);
   assert.equal(statSync(db).mode & 0o777, 0o600);
   assert.equal(readFileSync(configPath, "utf8"), savedPreferences, "starting the service preserves preferences");
+
+  // The installed package's read-only planner uses fake registry metadata. No
+  // systemd, real global install, or plugin-manager state is touched.
+  const fakeBin = join(scratch, "registry-bin");
+  mkdirSync(fakeBin);
+  const target = `${major}.${minor + 1}.0`;
+  writeFileSync(join(fakeBin, "npm"), `#!${process.execPath}\nif (process.argv[2] !== 'view') process.exit(1);\nconsole.log(JSON.stringify(${JSON.stringify(target)}));\n`, { mode: 0o700 });
+  const manifest = join(scratch, "installed-plugin.json");
+  writeFileSync(manifest, JSON.stringify({ name: "palmagent", version: pkg.version }));
+  const installEnv = join(scratch, "data/install.env");
+  writeFileSync(installEnv, ["MODE=package", "RUN_USER=palmagent", "RUN_GROUP=palmagent", "DOMAIN=palmagent.example.com", `PKG_DIR=${join(scratch, "node_modules", pkg.name)}`, `DATA_DIR=${join(scratch, "data")}`, ""].join("\n"));
+  const beforePlan = readFileSync(installEnv, "utf8");
+  const plan = JSON.parse(execFileSync(bin, ["update", "--plan", "--data-dir", join(scratch, "data"), "--plugin-manifest", manifest], {
+    cwd: scratch, env: { ...env, PATH: fakeBin + ":" + env.PATH }, encoding: "utf8",
+  }));
+  assert.equal(plan.targetVersion, target);
+  assert.equal(plan.plugins[0].action, "update");
+  assert.equal(plan.automaticEligible, false);
+  execFileSync(bin, ["auto-update", "enable", "--dry-run", "--data-dir", join(scratch, "data")], { env, encoding: "utf8" });
+  assert.equal(readFileSync(installEnv, "utf8"), beforePlan);
+  assert.equal(readFileSync(configPath, "utf8"), savedPreferences);
+  assert(!existsSync(join(scratch, "data/update-result.json")), "planning never creates an update receipt");
   console.log("[smoke] PASS: packed CLI, isolated SQLite, and PWA");
 } finally {
   await server?.stop();

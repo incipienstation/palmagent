@@ -50,6 +50,7 @@ export class RoutineService {
   }
 
   private tick(): void {
+    if (this.tasks.updating) return;
     const now = Date.now();
     for (const r of this.db.listRoutines()) {
       if (!r.enabled || !r.nextRunAt || r.nextRunAt > now) continue;

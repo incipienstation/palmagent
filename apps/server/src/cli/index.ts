@@ -13,8 +13,12 @@ import { ensurePrivateDirectory } from "../private-files.js";
 import { getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
 import { compatiblePlugin } from "./release-policy.js";
 import { resolveDataDir } from "./config.js";
+import { userConfigPath } from "./user-config.js";
+import { acquireUpdateLock } from "./update-state.js";
+import { autoUpdateStatus, configureAutoUpdate } from "./auto-update.js";
 import {
   install,
+  loadInstalledConfig,
   type Flags,
   passkey,
   runDoctor,
@@ -57,8 +61,11 @@ function parseFlags(argv: string[]): Flags {
     "force",
     "purge",
     "pull",
+    "plan",
+    "automatic",
   ]);
   const vals: Record<string, string> = {};
+  const multiple: Record<string, string[]> = {};
   const set = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -70,16 +77,19 @@ function parseFlags(argv: string[]): Flags {
     const eq = a.indexOf("=");
     if (eq >= 0) {
       vals[a.slice(2, eq)] = a.slice(eq + 1);
+      (multiple[a.slice(2, eq)] ??= []).push(a.slice(eq + 1));
       continue;
     }
     const key = a.slice(2);
-    if (["channel", "to", "plugin-version"].includes(key) &&
+    if (["channel", "to", "plugin-version", "plugin-manifest", "expected-version"].includes(key) &&
         (i + 1 === argv.length || argv[i + 1].startsWith("-"))) {
       throw new Error(`--${key} requires a value`);
     }
     if (bools.has(key)) set.add(key);
-    else if (i + 1 < argv.length && !argv[i + 1].startsWith("--"))
+    else if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
       vals[key] = argv[++i];
+      (multiple[key] ??= []).push(vals[key]);
+    }
     else set.add(key);
   }
   return {
@@ -88,7 +98,10 @@ function parseFlags(argv: string[]): Flags {
     force: set.has("force"),
     purge: set.has("purge"),
     pull: set.has("pull"),
+    plan: set.has("plan"),
+    automatic: set.has("automatic"),
     get: (k) => vals[k],
+    getAll: (k) => multiple[k] ?? [],
   };
 }
 
@@ -102,6 +115,7 @@ Commands:
   setup        Reconfigure an existing install + re-render units/nginx
   doctor       Diagnose a running instance + suggest fixes
   update       Apply config, or fetch the selected release channel with --pull
+  auto-update  Internal scheduler API: enable, disable, status (off by default)
   config       Internal plugin settings API: get, init, set --channel <name>
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove the units + nginx vhost (data preserved unless --purge)
@@ -119,6 +133,9 @@ Common options:
   --claude-config-dir <path>  Claude CLI config/creds dir (CLAUDE_CONFIG_DIR); blank = ~/.claude
   --force              Proceed past failed preflight (install)
   --pull               update: fetch the selected npm release channel (package installs only)
+  --plan               update: resolve the exact target and plugin actions as JSON; change nothing
+  --plugin-manifest <p> update: installed plugin.json path; repeat for each participating plugin
+  --automatic          update --pull: saved opt-in, same compatibility line, idle tasks only
   --channel <name>     stable (default for new installs) or preview; remembered for updates
   --to <version>       update --pull: select an exact version; downgrades are rejected
   --plugin-version <v> compatibility: require the same x.x.x, including prereleases
@@ -136,16 +153,31 @@ async function main(): Promise<void> {
     return;
   }
   const flags = parseFlags(rest);
+  if (flags.nonInteractive || flags.automatic) process.env.PALMAGENT_NON_INTERACTIVE = "1";
   for (const [flag, commands] of Object.entries({
     channel: ["config", "install", "setup", "update"],
     to: ["update"],
     "plugin-version": ["compatibility"],
+    "plugin-manifest": ["update"],
+    "expected-version": ["update"],
   })) {
     if (flags.get(flag) !== undefined && !commands.includes(cmd)) {
       throw new Error(`--${flag} is only supported by ${commands.join("/")}`);
     }
   }
+  if ((flags.plan || flags.automatic) && cmd !== "update") throw new Error("--plan and --automatic are update options");
   switch (cmd) {
+    case "auto-update": {
+      const action = rest[0];
+      if (!["enable", "disable", "status"].includes(action)) throw new Error("usage: auto-update enable|disable|status [--data-dir <path>] [--dry-run]");
+      parseArgs({ args: rest.slice(1), strict: true, allowPositionals: false, options: {
+        "data-dir": { type: "string" }, "dry-run": { type: "boolean" }, "non-interactive": { type: "boolean", short: "y" },
+      } });
+      const cfg = loadInstalledConfig(flags);
+      if (action !== "status") await withHostLock(flags, async () => configureAutoUpdate(cfg, action === "enable", flags.dryRun));
+      if (!flags.dryRun) console.log(JSON.stringify(autoUpdateStatus(cfg)));
+      return;
+    }
     case "config": {
       const action = rest[0];
       if (!["get", "init", "set"].includes(action)) {
@@ -174,15 +206,22 @@ async function main(): Promise<void> {
     case "start":
       return start(flags);
     case "install":
-      process.exit(await install(flags));
+      process.exit(await withHostLock(flags, () => install(flags)));
     case "setup":
-      process.exit(await setup(flags));
+      process.exit(await withHostLock(flags, () => setup(flags)));
     case "doctor":
       process.exit(runDoctor(flags));
     case "update":
-      process.exit(await update(flags));
+      parseArgs({ args: rest, strict: true, allowPositionals: false, options: {
+        "dry-run": { type: "boolean" }, "non-interactive": { type: "boolean", short: "y" },
+        pull: { type: "boolean" }, plan: { type: "boolean" }, automatic: { type: "boolean" },
+        "data-dir": { type: "string" }, channel: { type: "string" }, to: { type: "string" },
+        "plugin-manifest": { type: "string", multiple: true }, "expected-version": { type: "string" },
+      } });
+      process.exit(flags.pull || flags.plan || process.env.PALMAGENT_UPDATE_POST_UPGRADE === "1"
+        ? await update(flags) : await withHostLock(flags, () => update(flags)));
     case "uninstall":
-      process.exit(await uninstall(flags));
+      process.exit(await withHostLock(flags, () => uninstall(flags)));
     case "passkey":
       process.exit(await passkey(flags));
     case "--version":
@@ -199,6 +238,12 @@ async function main(): Promise<void> {
       printHelp();
       process.exit(2);
   }
+}
+
+async function withHostLock<T>(flags: Flags, operation: () => Promise<T>): Promise<T> {
+  if (flags.dryRun) return operation();
+  const unlock = acquireUpdateLock(dirname(userConfigPath()));
+  try { return await operation(); } finally { unlock(); }
 }
 
 main().catch((e) => {

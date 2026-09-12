@@ -7,7 +7,7 @@
 // checked-out maintainer build, but public self-update is package-only.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { BRANDING } from "@palmagent/shared";
 import {
   assertSafeInstallerIdentity,
@@ -22,10 +22,16 @@ import {
 } from "./config.js";
 import {
   channelTag,
+  compatiblePlugin,
   productVersion,
   validateUpdateTarget,
 } from "./release-policy.js";
-import { assertUserConfigPreserved, getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
+import { assertUserConfigPreserved, getUserConfig, initUserConfig, setUserChannel, userConfigPath } from "./user-config.js";
+import { readPluginVersions, resolveUpdatePlan } from "./update-plan.js";
+import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "./update-state.js";
+import { beginUpdateMaintenance } from "../update-maintenance.js";
+import { verifyUpdateIdle } from "./update-idle.js";
+import { configureAutoUpdate, removeAutoUpdateTimer } from "./auto-update.js";
 import { preflight, doctor, printChecks } from "./checks.js";
 import { renderNginx } from "./nginx.js";
 import {
@@ -50,7 +56,10 @@ export interface Flags {
   force: boolean;
   purge: boolean;
   pull: boolean;
+  plan?: boolean;
+  automatic?: boolean;
   get(key: string): string | undefined;
+  getAll?(key: string): string[];
 }
 
 export function loadInstalledConfig(flags: Flags): InstallConfig {
@@ -68,7 +77,7 @@ export function postUpgradeArgs(
     "update",
     "--data-dir",
     cfg.dataDir,
-    ...(cfg.releaseChannel ? ["--channel", cfg.releaseChannel] : []),
+    ...(flags.get("channel") ? ["--channel", cfg.releaseChannel!] : []),
     ...(flags.nonInteractive ? ["-y"] : []),
   ];
 }
@@ -485,13 +494,20 @@ function startServices(cfg: InstallConfig): void {
   restartWeb();
 }
 
-async function healthcheck(cfg: InstallConfig): Promise<boolean> {
+function runtimeIsHealthy(cfg: InstallConfig, expectedVersion?: string): boolean {
+  const r = run("curl", ["--max-time", "5", "-fsS", `http://${cfg.host}:${cfg.port}/api/health`]);
+  if (!r.ok) return false;
+  try {
+    const health = JSON.parse(r.stdout);
+    return health.ok === true && (!expectedVersion || health.build?.version === expectedVersion);
+  } catch { return false; }
+}
+
+async function healthcheck(cfg: InstallConfig, expectedVersion?: string): Promise<boolean> {
   // Host-local transport stays on loopback. Every browser-facing origin is
   // HTTPS-only through the generated nginx vhost.
-  const url = `http://${cfg.host}:${cfg.port}/api/health`;
   for (let i = 0; i < 30; i++) {
-    const r = run("curl", ["-fsS", url]);
-    if (r.ok) return true;
+    if (runtimeIsHealthy(cfg, expectedVersion)) return true;
     run("sleep", ["1"]);
   }
   return false;
@@ -553,6 +569,7 @@ export async function install(flags: Flags): Promise<number> {
     log.ok(
       `host-local health check passed; public origin is https://${cfg.domain}`,
     );
+    if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
     log.step("first passkey");
     await enrollPasskey(cfg, flags);
   }
@@ -590,6 +607,7 @@ export async function setup(flags: Flags): Promise<number> {
     restartWeb();
     const ok = await healthcheck(cfg);
     log[ok ? "ok" : "err"](ok ? "healthy" : "not healthy after restart");
+    if (ok && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
     return ok ? 0 : 1;
   }
   return 0;
@@ -612,94 +630,145 @@ function installedVersion(pkgDir?: string): string {
   return version;
 }
 
-function npmGlobalInstall(pkg: string, version: string): boolean {
+function npmGlobalInstall(pkg: string, version: string, globalRoot: string): boolean {
   const spec = `${pkg}@${version}`;
-  const first = run("npm", ["install", "-g", spec]);
+  const first = run("npm", ["install", "-g", spec], { timeout: 600_000 });
   if (first.ok) return true;
   if (
     /EACCES|permission denied|EROFS/i.test(first.stderr) &&
     canSudoNonInteractive()
   ) {
+    if (basename(globalRoot) !== "node_modules" || basename(dirname(globalRoot)) !== "lib") {
+      throw new Error("cannot safely identify the existing npm prefix for a privileged retry");
+    }
     log.info("retrying the global install with sudo …");
-    return sudo(["npm", "install", "-g", spec]).ok;
+    return sudo(["npm", "install", "-g", "--prefix", dirname(dirname(globalRoot)), spec]).ok;
   }
   if (first.stderr.trim()) log.err(first.stderr.trim());
   return false;
 }
 
 export async function update(flags: Flags): Promise<number> {
-  log.step(`${BRANDING.productName} update`);
   const cfg = loadInstalledConfig(flags);
   cfg.releaseChannel = flags.get("channel") !== undefined
     ? setUserChannel(flags.get("channel")!, { dryRun: true }).channel
     : getUserConfig({ dataDir: cfg.dataDir }).channel;
   const requestedVersion = flags.get("to");
   if (requestedVersion !== undefined) {
-    if (!flags.pull || cfg.mode !== "package") {
+    if ((!flags.pull && !flags.plan) || cfg.mode !== "package") {
       throw new Error("--to requires update --pull on a package installation");
     }
     validateUpdateTarget(installedVersion(cfg.pkgDir), requestedVersion, cfg.releaseChannel);
   }
-  log.info(`Update channel: ${cfg.releaseChannel === "stable" ? "Stable" : "Preview"} (${channelTag(cfg.releaseChannel)})`);
-
-  // `--pull` fetches the current npm dist-tag for package installs. Source
-  // checkouts are maintainer-managed and never mutate Git from this host CLI.
-  // A bare `update` only re-renders units + restarts.
-  if (flags.pull && cfg.mode === "source") {
-    log.err(
-      "source checkouts are maintainer-managed and cannot self-update; use the repository pnpm verification/build workflow, then run palmagent setup",
-    );
+  if ((flags.pull || flags.plan) && cfg.mode === "source") {
+    log.err("source checkouts are maintainer-managed and cannot self-update; use the repository build workflow and setup");
     return 1;
-  } else if (
-    flags.pull &&
-    cfg.mode === "package" &&
-    process.env[POST_UPGRADE_ENV] !== "1"
-  ) {
-    const releaseTag = channelTag(cfg.releaseChannel);
-    const spec = requestedVersion ?? releaseTag;
-    // Package install: pull the new bundle from npm, then hand off to the
-    // freshly-installed CLI so the units render from ITS (possibly newer)
-    // templates — this process is still the OLD cli.js bundle (cf. the deploy
-    // self-modify gotcha). The sentinel env stops the child re-upgrading.
-    if (flags.dryRun) {
-      log.info(
-        `[dry-run] would run: npm install -g ${BRANDING.packageName}@${spec} (resolve and validate an exact version first), then re-render units + restart`,
-      );
-    } else {
-      const resolved = run("npm", ["view", `${BRANDING.packageName}@${spec}`, "version", "--json"]);
-      if (!resolved.ok) throw new Error(`could not resolve ${BRANDING.packageName}@${spec}; the selected channel may not be published yet (no fallback)`);
-      const target = JSON.parse(resolved.stdout);
-      if (typeof target !== "string") throw new Error("npm did not return one exact version");
-      validateUpdateTarget(installedVersion(cfg.pkgDir), target, cfg.releaseChannel);
-      if (requestedVersion && target !== requestedVersion) throw new Error("npm resolved a different version than requested");
-      log.info(`upgrading ${BRANDING.packageName} to ${target} …`);
-      if (!npmGlobalInstall(BRANDING.packageName, target)) {
-        log.err(
-          `npm upgrade failed — install it yourself (\`npm i -g ${BRANDING.packageName}@${target}\`, add sudo if your npm prefix needs it) then re-run \`${BRANDING.cliName} update\`.`,
-        );
-        return 1;
-      }
-      log.ok(`upgraded ${BRANDING.packageName}`);
-      const bin = which(BRANDING.cliName);
-      if (bin) {
-        const actual = run(bin, ["--version"]);
-        if (!actual.ok || actual.stdout.trim() !== target || installedVersion(cfg.pkgDir) !== target) {
-          throw new Error("the CLI on PATH does not match the installed target; service configuration was not applied");
-        }
-        log.info("applying units + restarting with the upgraded CLI …");
-        const child = spawnSync(
-          bin,
-          postUpgradeArgs(cfg, flags),
-          {
-            stdio: "inherit",
-            env: { ...process.env, [POST_UPGRADE_ENV]: "1" },
-          },
-        );
-        return child.status ?? 1;
-      }
-      throw new Error(`could not locate the upgraded ${BRANDING.cliName} on PATH; service configuration was not applied`);
-    }
   }
+  const pluginPaths = flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []);
+  const plugins = readPluginVersions(pluginPaths);
+  if (flags.plan) {
+    if (flags.dryRun || flags.automatic) throw new Error("--plan cannot be combined with --dry-run or --automatic");
+    console.log(JSON.stringify(resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion)));
+    return 0;
+  }
+  if (flags.automatic && (!flags.pull || requestedVersion || flags.get("channel"))) throw new Error("--automatic requires --pull and follows only the saved channel");
+  log.step(`${BRANDING.productName} update`);
+  log.info(`Update channel: ${cfg.releaseChannel === "stable" ? "Stable" : "Preview"} (${channelTag(cfg.releaseChannel)})`);
+  if (!flags.pull) return applyInstalledUpdate(cfg, flags);
+  if (flags.automatic && !getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) {
+    log.info("automatic updates are off; nothing changed");
+    return 0;
+  }
+  if (flags.dryRun) {
+    log.info(`[dry-run] would resolve ${BRANDING.packageName}@${requestedVersion ?? channelTag(cfg.releaseChannel)}, verify plugin compatibility, install the exact target, and verify runtime health`);
+    return 0;
+  }
+
+  const unlock = acquireUpdateLock(dirname(userConfigPath()));
+  let endMaintenance: (() => void) | undefined;
+  try {
+    const previous = readUpdateReceipt(cfg.dataDir);
+    if (flags.automatic && (previous?.status === "failed" || previous?.status === "applying")) {
+      log.warn("automatic updates are paused after an unsuccessful attempt; use the update plugin to inspect and recover");
+      return 0;
+    }
+    const plan = resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion);
+    const record = (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => writeUpdateReceipt(cfg.dataDir, {
+      status, previousVersion: plan.currentVersion, targetVersion: plan.targetVersion, reason,
+    });
+    if (flags.automatic && !plan.automaticEligible) {
+      record("deferred", "plugin-update-required");
+      log.info("a plugin-assisted update is needed for the new compatibility line; automatic update deferred");
+      return 0;
+    }
+    // Legacy plugins already checked their current CLI's compatibility. Keep
+    // their existing --pull call working inside that line; a transition needs
+    // explicit installed-manifest evidence from the coordinated update flow.
+    if (!plugins.length && !plan.automaticEligible) throw new Error("crossing a compatibility line requires --plugin-manifest for each participating installed plugin; use update --plan first");
+    if (plan.plugins.some((plugin) => plugin.action === "update")) throw new Error("the target needs a matching plugin; refresh it through its native manager, verify its installed manifest, and retry the same exact target");
+    const recovering = previous?.status === "failed" || previous?.status === "applying";
+    if (plan.packageAction === "keep" && !recovering) {
+      if (!runtimeIsHealthy(cfg, plan.currentVersion)) throw new Error("the package is current but its running version is not healthy; use the doctor plugin before retrying");
+      record("succeeded", "already-current");
+      log.ok(`package ${plan.currentVersion} is already current and healthy; compatible plugins are retained`);
+      return 0;
+    }
+    // Do not accidentally install to another npm prefix and only discover that
+    // mismatch after replacing an unrelated global package.
+    const root = run("npm", ["root", "-g"], { timeout: 10_000 });
+    if (!root.ok || resolve(root.stdout.trim(), BRANDING.packageName) !== resolve(cfg.pkgDir!)) throw new Error("the active npm prefix does not own this installation; package files were not changed");
+    if (flags.automatic) {
+      if (!canSudoNonInteractive()) throw new Error("automatic updates require non-interactive service-management access");
+      endMaintenance = beginUpdateMaintenance(cfg.dbPath);
+      try {
+        if (!await verifyUpdateIdle(cfg)) {
+          record("deferred", "tasks-active");
+          log.info("tasks are running, waiting, or queued; automatic update deferred");
+          return 0;
+        }
+      } catch {
+        record("deferred", "idle-state-unverified");
+        log.warn("could not verify an idle maintenance window; automatic update deferred");
+        return 0;
+      }
+      const latestSettings = getUserConfig({ dataDir: cfg.dataDir });
+      if (!latestSettings.autoUpdate || latestSettings.channel !== plan.channel) {
+        record("deferred", "settings-changed");
+        return 0;
+      }
+    }
+    // Preserve a legacy preference while its package metadata is still intact.
+    initUserConfig({ dataDir: cfg.dataDir });
+    record("applying", "package-install");
+    try {
+      log.info(`updating the package to ${plan.targetVersion}; compatible plugins are retained`);
+      if (!npmGlobalInstall(BRANDING.packageName, plan.targetVersion, root.stdout.trim())) throw new Error("package installation failed");
+      const cli = join(cfg.pkgDir!, "cli.js");
+      const actual = run(process.execPath, [cli, "--version"]);
+      if (!actual.ok || actual.stdout.trim() !== plan.targetVersion || installedVersion(cfg.pkgDir) !== plan.targetVersion) throw new Error("installed package identity does not match the planned target");
+      const child = spawnSync(process.execPath, [cli, ...postUpgradeArgs(cfg, flags), "--expected-version", plan.targetVersion], {
+        stdio: "inherit", env: { ...process.env, [POST_UPGRADE_ENV]: "1", ...(flags.automatic ? { PALMAGENT_NON_INTERACTIVE: "1" } : {}) },
+      });
+      if (child.status !== 0) throw new Error("service activation or target health verification failed");
+      if (!runtimeIsHealthy(cfg, plan.targetVersion)) throw new Error("the running service does not match the healthy target version");
+      const finalPlugins = readPluginVersions(pluginPaths);
+      if (finalPlugins.some((plugin) => !compatiblePlugin(plan.targetVersion, plugin.version))) throw new Error("a plugin changed during the update and is no longer compatible");
+      record("succeeded", "runtime-and-compatibility-verified");
+      log.ok(`package ${plan.targetVersion} is healthy; ${plugins.length ? "participating plugin compatibility is verified" : "the plugin compatibility line is unchanged"}`);
+      return 0;
+    } catch (error) {
+      record("failed", "manual-recovery-required");
+      log.err(`${error instanceof Error ? error.message : "update failed"}; automatic retries are paused. Use the doctor/update plugin to recover; the previous package and database were not restored.`);
+      return 1;
+    }
+  } finally {
+    try { endMaintenance?.(); } finally { unlock(); }
+  }
+}
+
+async function applyInstalledUpdate(cfg: InstallConfig, flags: Flags): Promise<number> {
+  const expectedVersion = flags.get("expected-version");
+  if (expectedVersion && (process.env[POST_UPGRADE_ENV] !== "1" || installedVersion(cfg.pkgDir) !== expectedVersion)) throw new Error("invalid update activation target");
 
   // Re-render units; restart the runner only when its unit or artifact changed
   // so a web-only update does not kill in-flight turns.
@@ -718,7 +787,7 @@ export async function update(flags: Flags): Promise<number> {
     log.ok("runner unchanged — leaving it up so in-flight turns survive");
   }
   restartWeb();
-  const ok = await healthcheck(cfg);
+  const ok = await healthcheck(cfg, expectedVersion);
   if (ok) {
     persistUserChannel(cfg, flags);
     saveConfig(cfg);
@@ -754,6 +823,7 @@ export async function uninstall(flags: Flags): Promise<number> {
 
   // Preserve a legacy channel before service data can be removed.
   initUserConfig({ dataDir: cfg.dataDir });
+  removeAutoUpdateTimer();
   for (const name of [units.web.name, units.runner.name]) {
     sudo(["systemctl", "disable", "--now", name]);
     sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
@@ -801,14 +871,25 @@ export async function passkey(flags: Flags): Promise<number> {
 
 export function runDoctor(flags: Flags): number {
   const cfg = loadInstalledConfig(flags);
+  let updateFailure = false;
+  try {
+    const receipt = readUpdateReceipt(cfg.dataDir);
+    if (receipt) log.info(`Last update: ${receipt.status} (${receipt.previousVersion} → ${receipt.targetVersion}; ${receipt.reason})`);
+    updateFailure = receipt?.status === "failed" || receipt?.status === "applying";
+    if (updateFailure) log.warn("automatic retries are paused; inspect package/runtime identity and recover through the update plugin");
+  } catch {
+    updateFailure = true;
+    log.warn("the last update result is unreadable; inspect it before retrying");
+  }
   try {
     const channel = getUserConfig({ dataDir: cfg.dataDir }).channel;
     log.info(`Update channel: ${channel === "stable" ? "Stable" : "Preview"} (${channelTag(channel)})`);
   } catch {
     log.warn("Update channel is unknown: user or legacy settings could not be read");
   }
-  return printChecks(
+  const code = printChecks(
     `${BRANDING.productName} doctor — ${cfg.domain}`,
     doctor(cfg),
   );
+  return code || (updateFailure ? 1 : 0);
 }

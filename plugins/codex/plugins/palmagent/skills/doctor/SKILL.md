@@ -61,6 +61,13 @@ choice without deploying a release or restarting services.
 
 ## 2. Run the diagnostics
 
+After an update failure, first inspect the installed package version, runtime
+health identity, native plugin inventory, and `auto-update status` when supported.
+A plugin mismatch must not prevent these read-only checks. Use a temporary exact
+compatible CLI if needed; never replace packages or erase update results just to
+make diagnostics run. A `failed` or unfinished `applying` update result keeps
+automatic retries paused even when other health checks are green.
+
 ```bash
 <cli> doctor
 ```
@@ -105,6 +112,10 @@ then propose the concrete fix. Common patterns to recognize:
   `journalctl -u nginx --no-pager -n 50`; an expired cert means re-run certbot.
 - **Auth/passkey failures** → check that the RP id/origin match the live domain
   (a domain change without `setup` desyncs them).
+- **Automatic updates paused** → inspect the last update result and the update
+  service journal. Determine the actual installed and running package versions
+  before restoring a plugin or retrying the exact release through `update`.
+  Package replacement does not restore a database; plan downgrades separately.
 
 Always name the **exact remediation command** and confirm with the operator before
 running anything that changes the host (restarts, rebuilds, certbot, nginx

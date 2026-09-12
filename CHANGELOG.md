@@ -8,6 +8,13 @@ An entry does not mean a version has been published.
 
 ### Added
 
+- Ask Palmagent to plan or apply an update across its package and operator plugins.
+  Compatible plugins stay installed; required plugin changes are checked before
+  the service package is replaced. Completion verifies the running version and health.
+- Opt into automatic updates through plugin settings. Background checks follow the
+  saved channel within the current compatibility line, defer during active work, and
+  pause retries after an installation failure. Automatic updates are off by default.
+
 - Palmagent plugins share persistent preferences in `~/.palmagent/config.json`. Ask the
   plugin to view settings or choose Stable/Preview; the choice survives conversations,
   plugin updates, and service reinstall. Existing installation channel preferences migrate
@@ -17,7 +24,7 @@ An entry does not mean a version has been published.
   exact release targets are supported, and updates refuse downgrades or prereleases
   on Stable. See the [channel guide](docs/RELEASING.md#npm-channels).
 - Operator plugins check that the CLI shares their `x.x.x` version, including prereleases,
-  before running host operations. CLI and plugin installation remain separate.
+  before running host operations. Plugin installation uses each platform's native manager.
 
 ### Changed
 

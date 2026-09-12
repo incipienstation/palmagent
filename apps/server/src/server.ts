@@ -23,6 +23,7 @@ import { HttpError, TaskService } from "./service.js";
 import { ProcessSupervisor } from "./supervisor.js";
 import type { RunnerBackend } from "./types.js";
 import { WorktreeManager } from "./worktree.js";
+import { isUpdateMaintenance } from "./update-maintenance.js";
 
 // Embedded at package build time; source-mode health keeps its existing shape.
 declare const __PALMAGENT_BUILD__: { version: string; sourceCommit: string; dirty: boolean };
@@ -55,7 +56,7 @@ const supervisor = new ProcessSupervisor(config.concurrency);
 const worktrees = new WorktreeManager();
 const push = new PushService(db, config.vapidKeyPath ?? join(dirname(config.dbPath), "vapid.json"), config.pushSubject);
 const backend = await selectBackend();
-const service = new TaskService(db, hub, supervisor, backend, worktrees, push);
+const service = new TaskService(db, hub, supervisor, backend, worktrees, push, () => isUpdateMaintenance(config.dbPath));
 await service.init(); // hydrate + restart recovery (reattach live daemon turns)
 const routines = new RoutineService(db, service);
 routines.start(); // cron ticker (skips runs missed while down)
@@ -228,7 +229,7 @@ const server = createServer(async (req, res) => {
 
   // ---- auth: unauthenticated health + the always-reachable login/enroll API ----
   // (These must never be gated — they are how you become authenticated.)
-  if (path === "/api/health" && method === "GET") return sendJson(res, 200, { ok: true, ...buildIdentity });
+  if (path === "/api/health" && method === "GET") return sendJson(res, 200, { ok: true, updateMaintenance: service.updating, ...buildIdentity });
   if (path.startsWith("/api/auth/")) {
     try {
       if (path === "/api/auth/me" && method === "GET") return sendJson(res, 200, auth.status(req));

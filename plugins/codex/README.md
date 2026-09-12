@@ -10,11 +10,11 @@ description):
 
 | Skill                | Drives            | Use it for                                   |
 |----------------------|-------------------|----------------------------------------------|
-| `settings` | Internal config API | View or change shared user preferences |
+| `settings` | Config and scheduler APIs | Manage channels and automatic updates |
 | `install` | `palmagent install` | First-run install on a fresh host   |
 | `setup`   | `palmagent setup`   | Reconfigure an existing install     |
 | `doctor`  | `palmagent doctor`  | Diagnose a broken instance (+journal) |
-| `update`  | `palmagent update`  | Update in place (preserves turns)   |
+| `update`  | `palmagent update`  | Plan, coordinate, and verify updates |
 
 ## Layout (verified against codex 0.139.0)
 
@@ -83,6 +83,9 @@ install, update, or change preferences; they do not need to install or run the C
 Both agent platforms share `~/.palmagent/config.json`, outside plugin caches. The
 `settings` skill reads and changes this file through the internal configuration API.
 A saved channel survives new threads, plugin refreshes, and service reinstalls.
+Automatic updates are opt-in through the same skill. They follow the saved channel
+within the current compatibility line, retain plugins, and defer during active work.
+The update skill coordinates a required plugin change through Codex's native manager.
 
 A pinned marketplace does not advance when npm `latest` or `next` changes. A plugin
 from a different `x.x.x` needs a compatible published release. See the root README

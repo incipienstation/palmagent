@@ -72,6 +72,7 @@ test("invalid and future config versions fail closed without exposing values or 
     '{"private":"do-not-echo-this",',
     '{"schemaVersion":2,"channel":"preview"}',
     '{"schemaVersion":1,"channel":"unexpected"}',
+    '{"schemaVersion":1,"channel":"stable","autoUpdate":"yes"}',
     '{"channel":"preview"}',
     '[]',
   ]) {
