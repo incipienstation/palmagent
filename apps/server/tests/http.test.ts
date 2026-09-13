@@ -17,8 +17,10 @@ import { ProcessSupervisor } from "../src/supervisor.js";
 import { WorktreeManager } from "../src/worktree.js";
 import { createApp, MAX_BODY_BYTES } from "../src/http/app.js";
 import { startSessionControl, sessionSocket } from "../src/session-control.js";
+import type { HttpDependencies } from "../src/http/types.js";
+import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 
-function fixture(t: test.TestContext, authEnabled = true) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDependencies, "updates" | "build"> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
@@ -27,7 +29,7 @@ function fixture(t: test.TestContext, authEnabled = true) {
   const auth = new AuthService(db, settings);
   const shutdown = new AbortController();
   const app = createApp({ db, hub, service, auth, config: settings, shutdown: shutdown.signal,
-    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service) });
+    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service), ...extra });
   const cleanup: Array<() => Promise<void>> = [];
   t.after(async () => {
     shutdown.abort();
@@ -80,6 +82,49 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   const logout = await fetch(base + "/api/auth/logout", { method: "POST", headers });
   assert.match(logout.headers.get("set-cookie")!, /Max-Age=0/i);
   assert.equal((await fetch(base + "/api/tasks", { headers })).status, 401);
+});
+
+test("update settings require authentication, validate one bounded preference, and report the running build", async (t) => {
+  let changes = 0;
+  const state: UpdateSettingsState = { availability: "available", settings: {
+    channel: "stable", autoUpdate: false, timerActive: false, lastUpdate: null,
+  } };
+  const updates = {
+    async status() { return state; },
+    async change(change: import("@palmagent/shared").UpdateSettingsChange) {
+      changes++;
+      Object.assign(state.settings!, change);
+      return state;
+    },
+  };
+  const f = fixture(t, true, { updates, build: { version: "0.1.0-alpha.4", sourceCommit: "fixture", dirty: false } });
+  const path = "/api/settings/updates";
+  const now = Date.now();
+  f.db.createSession("settings-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=settings-session`, "content-type": "application/json" };
+  assert.equal((await f.app.request(path)).status, 401);
+  assert.equal((await f.app.request(path, { method: "PATCH", body: '{"autoUpdate":true}' })).status, 401);
+  const initial = await f.app.request(path, { headers });
+  assert.equal(initial.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await initial.json(), { ...state, currentVersion: "0.1.0-alpha.4" });
+  for (const input of ["{", "null", "[]", "{}", '{"autoUpdate":"true"}', '{"channel":"next"}',
+    '{"autoUpdate":true,"channel":"preview"}', '{"autoUpdate":true,"command":"install"}', '{"dataDir":"/other"}']) {
+    assert.equal((await f.app.request(path, { method: "PATCH", headers, body: input })).status, 400, input);
+  }
+  assert.equal((await f.app.request(path, { method: "PATCH", headers: { ...headers, origin: "https://other.example" }, body: '{"autoUpdate":true}' })).status, 403);
+  assert.equal(changes, 0);
+  for (const change of [{ channel: "preview" }, { autoUpdate: true }]) {
+    const result = await f.app.request(path, { method: "PATCH", headers, body: JSON.stringify(change) });
+    assert.equal(result.status, 200);
+    assert.equal((await result.json() as UpdateSettingsStatus).currentVersion, "0.1.0-alpha.4");
+  }
+  assert.equal(changes, 2);
+  assert.equal(state.settings?.channel, "preview");
+  assert.equal(state.settings?.autoUpdate, true);
+  const dev = fixture(t, false, { updates });
+  assert.equal((await (await dev.app.request(path)).json() as UpdateSettingsStatus).availability, "authentication-required");
+  assert.equal((await dev.app.request(path, { method: "PATCH", body: '{"autoUpdate":false}' })).status, 403);
+  assert.equal(changes, 2);
 });
 
 test("SSE joins paginated replay to live output exactly once and releases slow or disconnected clients", async (t) => {

@@ -547,3 +547,15 @@ export const routineRuns = {
     { id: 11, routineId: "r-custom", firedAt: T - 1_700_000, status: "fired", taskId: "t-idle-rich" },
   ],
 };
+/** @type {import('@palmagent/shared').UpdateSettingsStatus} */
+export const updateSettings = {
+  currentVersion: "0.1.0-alpha.4",
+  availability: "available",
+  settings: {
+    channel: "preview", autoUpdate: false, timerActive: false,
+    lastUpdate: {
+      schemaVersion: 1, status: "succeeded", previousVersion: "0.1.0-alpha.4", targetVersion: "0.1.0-alpha.4",
+      reason: "already-current", checkedAt: "2026-01-01T12:00:00.000Z",
+    },
+  },
+};

@@ -6,7 +6,8 @@
   "description": "Shared contracts: normalized AgentEvent schema, task state, REST DTOs, and SSE frames.",
   "exports": {
     ".": "./src/index.ts",
-    "./requests": "./src/requests.ts"
+    "./requests": "./src/requests.ts",
+    "./updates": "./src/updates.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

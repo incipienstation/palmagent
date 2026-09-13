@@ -42,7 +42,7 @@ export function which(tool: string): string | undefined {
 
 /** True if we can run sudo without an interactive password prompt. */
 export function canSudoNonInteractive(): boolean {
-  return run("sudo", ["-n", "true"]).ok;
+  return run("sudo", ["-n", "true"], { timeout: 5000 }).ok;
 }
 
 /** Atomically replace a root-owned file. The candidate is installed beside the

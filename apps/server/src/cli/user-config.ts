@@ -7,13 +7,14 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { UpdateChannelSchema } from "@palmagent/shared/updates";
 import { ensurePrivateParent } from "../private-files.js";
 import { installEnvPath, parseEnvFile, resolveDataDir } from "./config.js";
 import { productVersion, releaseChannel, type ReleaseChannel } from "./release-policy.js";
 
 const UserConfigSchema = z.object({
   schemaVersion: z.literal(1),
-  channel: z.enum(["stable", "preview"]),
+  channel: UpdateChannelSchema,
   autoUpdate: z.boolean().optional(),
 }).passthrough();
 

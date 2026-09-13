@@ -111,6 +111,9 @@ try {
   const compatibility = await fetch(origin + "/api/compatibility", { signal: AbortSignal.timeout(3000) });
   assert.equal(compatibility.status, 200);
   assert.deepEqual(await compatibility.json(), { agents: agentMetadata });
+  const updates = await fetch(origin + "/api/settings/updates", { signal: AbortSignal.timeout(10_000) });
+  assert.equal(updates.status, 200);
+  assert.deepEqual(await updates.json(), { currentVersion: pkg.version, availability: "not-installed", settings: null });
   assert.equal(statSync(join(scratch, "data/session-control.sock")).mode & 0o777, 0o600);
   const shell = await fetch(origin + "/", { signal: AbortSignal.timeout(3000) });
   assert(shell.ok && (await shell.text()).includes('<div id="root"'), "PWA shell missing");
@@ -132,6 +135,14 @@ try {
   const installEnv = join(scratch, "data/install.env");
   writeFileSync(installEnv, ["MODE=package", "RUN_USER=palmagent", "RUN_GROUP=palmagent", "DOMAIN=palmagent.example.com", `PKG_DIR=${join(scratch, "node_modules", pkg.name)}`, `DATA_DIR=${join(scratch, "data")}`, ""].join("\n"));
   const beforePlan = readFileSync(installEnv, "utf8");
+  const updateSettings = await (await fetch(origin + "/api/settings/updates", { signal: AbortSignal.timeout(10_000) })).json();
+  assert.equal(updateSettings.currentVersion, pkg.version, "settings report the running server's embedded version");
+  assert.equal(updateSettings.settings.channel, "preview", "packed web/CLI bridge reads the shared preferences");
+  assert.equal(updateSettings.settings.autoUpdate, false);
+  const unauthenticatedChange = await fetch(origin + "/api/settings/updates", {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ autoUpdate: true }),
+  });
+  assert.equal(unauthenticatedChange.status, 403, "host settings cannot be changed with auth disabled");
   const plan = JSON.parse(execFileSync(bin, ["update", "--plan", "--data-dir", join(scratch, "data"), "--plugin-manifest", manifest], {
     cwd: scratch, env: { ...env, PATH: fakeBin + ":" + env.PATH }, encoding: "utf8",
   }));

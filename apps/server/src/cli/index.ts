@@ -16,7 +16,7 @@ import { compatiblePlugin } from "./release-policy.js";
 import { resolveDataDir } from "./config.js";
 import { userConfigPath } from "./user-config.js";
 import { acquireUpdateLock } from "./update-state.js";
-import { autoUpdateStatus, configureAutoUpdate } from "./auto-update.js";
+import { applyUpdateSettings, autoUpdateStatus, runUpdateSettingsCommand } from "./update-settings.js";
 import {
   install,
   loadInstalledConfig,
@@ -117,6 +117,7 @@ Commands:
   doctor       Diagnose a running instance + suggest fixes
   update       Apply config, or fetch the selected release channel with --pull
   auto-update  Internal scheduler API: enable, disable, status (off by default)
+  update-settings  Internal web settings bridge (JSON; no package installation)
   config       Internal plugin settings API: get, init, set --channel <name>
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
@@ -154,6 +155,11 @@ async function main(): Promise<void> {
     printHelp();
     return;
   }
+  if (cmd === "update-settings") {
+    process.env.PALMAGENT_NON_INTERACTIVE = "1";
+    console.log(JSON.stringify(runUpdateSettingsCommand(rest)));
+    return;
+  }
   const flags = parseFlags(rest);
   if (flags.nonInteractive || flags.automatic) process.env.PALMAGENT_NON_INTERACTIVE = "1";
   for (const [flag, commands] of Object.entries({
@@ -176,7 +182,7 @@ async function main(): Promise<void> {
         "data-dir": { type: "string" }, "dry-run": { type: "boolean" }, "non-interactive": { type: "boolean", short: "y" },
       } });
       const cfg = loadInstalledConfig(flags);
-      if (action !== "status") await withHostLock(flags, async () => configureAutoUpdate(cfg, action === "enable", flags.dryRun));
+      if (action !== "status") await withHostLock(flags, async () => applyUpdateSettings(cfg, { autoUpdate: action === "enable" }, flags.dryRun));
       if (!flags.dryRun) console.log(JSON.stringify(autoUpdateStatus(cfg)));
       return;
     }
@@ -192,9 +198,8 @@ async function main(): Promise<void> {
         throw new Error("--channel requires config set");
       }
       const options = { dataDir: flags.get("data-dir"), dryRun: flags.dryRun };
-      const config = action === "get" ? getUserConfig(options)
-        : action === "init" ? initUserConfig(options)
-        : setUserChannel(flags.get("channel") ?? "", options);
+      const config = action === "get" ? getUserConfig(options) : await withHostLock(flags, async () =>
+        action === "init" ? initUserConfig(options) : setUserChannel(flags.get("channel") ?? "", options));
       console.log(JSON.stringify(config));
       return;
     }

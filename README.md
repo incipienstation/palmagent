@@ -140,6 +140,15 @@ or **“Turn off automatic updates”** to stop future attempts. An update alrea
 applying is allowed to finish. Failed installations pause automatic retries until
 a successful manual recovery. See the [update policy](.harness/skills/release/references/channels-and-updates.md#coordinated-and-automatic-updates).
 
+In the web app, open **Settings → Updates** to see the running server version,
+choose Stable or Preview, toggle automatic updates, and inspect the last check.
+These preferences are shared with the CLI and both operator plugins. Saving a
+channel does not immediately install a release or downgrade the current version.
+Changing settings requires a signed-in session and a package installation whose
+owner has non-interactive service-management access. Source builds show their
+status without offering host update controls. The web app's **Refresh** banner
+separately loads web assets after a deployment.
+
 ## Development
 
 Requirements: Node.js 22 or newer and pnpm 11.5.2 (pinned by `packageManager`).

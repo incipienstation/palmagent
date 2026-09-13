@@ -15,7 +15,7 @@ import { homedir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { BRANDING } from "@palmagent/shared";
+import { BRANDING, type UpdateChannel } from "@palmagent/shared";
 import {
   ensurePrivateDirectory,
   ensurePrivateFile,
@@ -27,7 +27,7 @@ export type RunMode = "package" | "source";
 export interface InstallConfig {
   mode: RunMode;
   /** Effective channel for this operation; persisted only in the user config. */
-  releaseChannel?: "stable" | "preview";
+  releaseChannel?: UpdateChannel;
   user: string;
   group: string;
   /** Persistent data (SQLite + VAPID keys + install.env). */

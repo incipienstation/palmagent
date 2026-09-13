@@ -39,6 +39,10 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { deny
 // would hang the request, so never let Workbox touch it.
 registerRoute(({ url }) => url.pathname.startsWith("/api/stream"), new NetworkOnly());
 
+// Installation settings and the running version must never fall back to a stale
+// offline snapshot, including when reconciling a save whose response was lost.
+registerRoute(({ url }) => url.pathname === "/api/settings/updates", new NetworkOnly());
+
 // REST: network-first so control/read calls are always fresh online, with a
 // short-lived cache as an offline courtesy.
 registerRoute(

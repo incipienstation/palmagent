@@ -8,6 +8,7 @@ import { taskRoutes } from "./routes/tasks.js";
 import { repoRoutes } from "./routes/repos.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pushRoutes } from "./routes/push.js";
+import { updateSettingsRoutes } from "./routes/update-settings.js";
 import { staticFiles } from "./static.js";
 import { sessionStream } from "./stream.js";
 import type { HttpDependencies } from "./types.js";
@@ -50,6 +51,7 @@ export function createApp(deps: HttpDependencies) {
   app.route("/api", repoRoutes(deps));
   app.route("/api/routines", routineRoutes(deps));
   app.route("/api/push", pushRoutes(deps));
+  app.route("/api/settings/updates", updateSettingsRoutes(deps));
   app.get("*", staticFiles(config.staticDir));
   return app;
 }

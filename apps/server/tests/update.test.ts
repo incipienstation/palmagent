@@ -185,7 +185,7 @@ test("scheduler rendering preserves custom paths, owner, environment, and the sa
   assert.match(rendered.timer, /00,06,12,18:00:00/);
   assert.throws(() => renderAutoUpdateUnits({ ...cfg, mode: "source" }), /installed Palmagent package/);
   assert.throws(() => renderAutoUpdateUnits({ ...cfg, user: "root" }), /unprivileged/);
-  assert.throws(() => renderAutoUpdateUnits({ ...cfg, dataDir: "/srv/data\nExecStart=unexpected" }), /invalid automatic update unit value/);
+  assert.throws(() => renderAutoUpdateUnits({ ...cfg, dataDir: "/srv/data\nExecStart=unexpected" }), /invalid systemd unit value/);
   assert.equal(getUserConfig().autoUpdate, undefined);
   setUserAutoUpdate(true, { dryRun: true });
   assert.equal(getUserConfig().autoUpdate, undefined);
