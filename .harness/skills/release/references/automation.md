@@ -70,10 +70,11 @@ the latest source against the last verified successful Preview; eligibility is i
 `scripts/lib/preview-plan.mjs`. It creates only a version/changelog preparation PR, waits for
 the native `ci.yml` pull-request run, and merges with the exact head SHA and squash method.
 It verifies the workflow, repository, PR event, branch, commit, successful run, and successful
-`validate` job. GitHub holds workflows on `GITHUB_TOKEN`-created PRs for maintainer approval.
-The controller reports the run URL and waits up to 20 minutes for approval and CI completion;
-this setup is not fully unattended. Branch protections remain in force. If `develop` advances,
-it reprepares its own metadata branch with a lease and waits for the new head's CI.
+`validate` job. A configured release GitHub App creates PRs whose CI runs automatically. Without
+App configuration, GitHub holds `GITHUB_TOKEN`-created PR workflows for maintainer approval.
+The controller reports a held run's URL and waits up to 20 minutes for approval and CI completion;
+the built-in token fallback is not fully unattended. Branch protections remain in force. If
+`develop` advances, it reprepares its own metadata branch with a lease and waits for the new head's CI.
 It does not force-push `develop`, bypass review requirements, or merge unrelated PRs.
 
 After the preparation merge, the controller creates the annotated Preview tag and dispatches
@@ -137,10 +138,22 @@ existing assets and tags must match exactly, and published assets are never over
 
 ### One-time setup
 
-1. In repository Actions settings, enable **Allow GitHub Actions to create and approve pull
-   requests**. Keep default workflow permissions read-only. Preview declares only Contents,
-   Pull requests, and Actions write; the protected publication job declares Contents write,
-   Actions read, and OIDC write. No GitHub App registration or stored release token is needed.
+1. For unattended Preview, register a private GitHub App owned by the repository owner and install
+   it only on this repository. Use the repository URL as its homepage, disable webhooks, and grant
+   repository **Contents**, **Pull requests**, and **Actions** read/write; Metadata read is automatic.
+   No organization permissions, user authorization callback, or branch/ruleset bypass is required.
+   Generate a private key, store it directly as Actions secret `RELEASE_APP_PRIVATE_KEY`, and then
+   set Actions variable `RELEASE_APP_CLIENT_ID` to the App's Client ID. Do not paste the key into
+   chat or commit it. `actions/create-github-app-token@v3` creates a short-lived token for the current
+   repository with those explicit permissions and revokes it after the job. Its App slug determines
+   the commit/PR bot identity. Missing key, installation, or permissions fails the job; a configured
+   App never silently falls back to the built-in bot. Finish any pending preparation/release before
+   switching identities. See [GitHub App token setup](https://github.com/actions/create-github-app-token).
+   Without the Client ID, the workflow retains the supervised built-in token mode; that mode needs
+   **Allow GitHub Actions to create and approve pull requests** enabled in Actions settings.
+   Keep default workflow permissions read-only. Preview declares Contents, Pull requests, and
+   Actions write for the fallback. The protected publication job retains its built-in token with
+   Contents write, Actions read, and OIDC write; it does not receive the App private key.
 2. Permit creation of new `v*` tags by repository writers: disable the separate tag-creation
    restriction if present. Keep the tag update/deletion prohibition active with no bypass, and
    preserve branch protections. This permits writers to create new release tags; it does not
@@ -152,8 +165,8 @@ existing assets and tags must match exactly, and published assets are never over
    environment. Keep `NPM_PUBLISH_ENABLED=true` only with verified trust bindings. The workflow
    uses Node 24 and npm 11.11.1. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
 5. Make the workflows available on the repository default branch for dispatch through its normal
-   reviewed PR path. Confirm source eligibility, Actions PR permission, tag rules, and channel
-   environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing authorization
+   reviewed PR path. Confirm source eligibility, App installation (or fallback Actions PR permission),
+   tag rules, and channel environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing authorization
    to publish eligible Preview changes; it does not authorize host deployment.
 
 The built-in token does not provide ordinary push-triggered workflow chaining. The controller
@@ -163,9 +176,11 @@ on the same commit can succeed while the held PR still reports its required chec
 do not use that run as a substitute for the maintainer-approved PR workflow. See
 [workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 and [bot-created PR approvals](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/).
-Until the Preview switch is enabled, the controller job is skipped. Fully unattended PR CI
-requires a separately authorized credential design; do not self-approve held workflows with the
-bot token or copy a maintainer credential into Actions.
+Until the Preview switch is enabled, the controller job is skipped. App-created PRs trigger native
+CI without the built-in token's approval hold. Verify the first eligible product change through
+preparation PR CI, squash merge, publication run, public Release, and npm `next`; merely configuring
+the App or a successful no-change run does not prove unattended publication. Do not self-approve
+held workflows with the bot token or copy a maintainer credential into Actions.
 
 ### Recovery
 

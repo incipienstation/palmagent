@@ -112,10 +112,11 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 Preview, verified against GitHub Release metadata, the annotated tag, and npm package bytes.
 Runtime source, shipped operator plugins/skills, product dependencies, and packaging inputs
 qualify. Development docs, `.harness`, tests alone, and version/changelog preparation do not.
-The release classifier is independent of CI test selection. The built-in GitHub token requires
-maintainer approval before its preparation PR workflow can satisfy merge checks; see the
-[approval and resume procedure](automation.md#automatic-preview). This execution constraint
-does not add a Preview publication approval, but prevents fully unattended releases.
+The release classifier is independent of CI test selection. A repository-scoped release GitHub
+App enables unattended preparation PR CI. Without App configuration, the built-in GitHub token
+requires maintainer approval before its PR workflow can satisfy merge checks; see the
+[approval and resume procedure](automation.md#automatic-preview). The fallback therefore remains
+supervised even though Preview publication itself has standing authorization.
 
 The controller serializes version selection, creates a metadata-only preparation PR, waits
 for required CI/protections, and squash-merges the exact head. Later product merges are

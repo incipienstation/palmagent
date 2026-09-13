@@ -16,6 +16,20 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 const ancestor = (cwd, a, b) => spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd, stdio: 'ignore' }).status === 0;
 const preview = (version) => RELEASE_VERSION.test(version) && version.includes('-');
 
+export function releaseBot(env, lookup = (login) => JSON.parse(execFileSync('gh', ['api', `users/${login}`], {
+  encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+}))) {
+  const app = Boolean(env.RELEASE_APP_CLIENT_ID);
+  const slug = app ? env.RELEASE_APP_SLUG : 'github-actions';
+  assert(typeof slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug), 'Missing or invalid release App identity');
+  assert(app || !env.RELEASE_APP_SLUG, 'Release App identity requires a configured client ID');
+  const login = `${slug}[bot]`;
+  const bot = lookup(login);
+  assert(bot.type === 'Bot' && bot.login === login && Number.isSafeInteger(bot.id) && bot.id > 0,
+    'Unexpected release bot identity');
+  return bot;
+}
+
 export function preparationMarker(pr) {
   const match = /<!-- palmagent-preview:(\{[^\n]+\}) -->/.exec(pr.body ?? '');
   if (!match) return null;
@@ -225,11 +239,11 @@ async function prepare(cwd, repository, baseline, registry, tags, bot) {
 export async function runPreview(cwd, env) {
   assert(env.GITHUB_ACTIONS === 'true' && env.GITHUB_REF === 'refs/heads/develop', 'Preview automation runs only on develop in Actions');
   assert(env.PREVIEW_RELEASE_ENABLED === 'true', 'Automatic Preview is not enabled');
+  assert(env.GH_TOKEN, 'Missing release GitHub token');
   assert(/^[\w.-]+\/[\w.-]+$/.test(env.GH_REPO ?? ''), 'Missing repository identity');
   assert(!git(cwd, 'status', '--porcelain'), 'Preview source checkout must be clean');
   const repository = env.GH_REPO;
-  const bot = JSON.parse(execFileSync('gh', ['api', 'users/github-actions[bot]'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-  assert(bot.type === 'Bot' && bot.login === 'github-actions[bot]', 'Unexpected release bot identity');
+  const bot = releaseBot(env);
   git(cwd, 'fetch', 'origin', 'develop', '--tags');
   const source = git(cwd, 'rev-parse', 'origin/develop');
   const registry = await registryMetadata();
