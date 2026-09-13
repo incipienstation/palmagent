@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import { checkTag } from './release-tag.mjs';
 import { hashFile, inspectPackage } from './lib/package-artifact.mjs';
 
@@ -34,7 +35,7 @@ export function validatePublicationEnvironment(identity, protection) {
   }
 }
 
-export async function publishPackage(identity, { run, registryVersion, env }) {
+export async function publishPackage(identity, { run, registryVersion, env, sleep = delay }) {
   assert(env.GITHUB_ACTIONS === 'true' && env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
     'Publication requires GitHub Actions OIDC');
   assert(env.NPM_PUBLISH_ENABLED === 'true', 'Publication is not enabled for this repository');
@@ -46,7 +47,14 @@ export async function publishPackage(identity, { run, registryVersion, env }) {
     return 'already-published'; // Retry after upload succeeded: no tag movement or overwrite.
   }
   run('npm', ['publish', identity.path, '--tag', identity.channel, '--access', 'public', '--provenance', '--ignore-scripts', '--registry=https://registry.npmjs.org']);
-  const published = await registryVersion(identity.version);
+  let published = await registryVersion(identity.version);
+  // A successful upload can precede visibility through the registry's read endpoints.
+  // Retry absence only: reported integrity conflicts and lookup errors remain fatal.
+  for (let attempt = 0; !published && attempt < 12; attempt++) {
+    await sleep(5000);
+    published = await registryVersion(identity.version);
+  }
+  assert(published, 'Registry version is not visible after upload; retry with the original candidate');
   assert(published?.dist?.integrity === `sha512-${hashFile(identity.path, 'sha512', 'base64')}`, 'Registry package integrity verification failed');
   return 'published';
 }

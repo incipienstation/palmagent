@@ -35,8 +35,9 @@ For Preview, inspect or resume `preview-release.yml` using
 [automatic Preview](references/automation.md#automatic-preview). It owns version allocation,
 metadata PRs, tagging, and publication; do not race it with manual version edits or publication.
 If setup is incomplete, finish the reviewable code and identify the missing configuration.
-Use the built-in `GITHUB_TOKEN` and the documented explicit CI dispatch. Do not substitute a
-personal token or bypass branch checks and existing-tag protections.
+Use the built-in `GITHUB_TOKEN`. GitHub requires maintainer approval of its preparation PR
+workflow before CI counts toward merge protection; follow the documented approval/resume step.
+Do not store a personal token in Actions or bypass branch checks and existing-tag protections.
 
 For a requested Stable release, select a version from scope and compatibility, preview and apply
 `pnpm release:prepare <version>`, and use [start](../start/SKILL.md), [verify](../verify/SKILL.md),
