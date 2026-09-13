@@ -19,6 +19,8 @@ import { describeEvent } from "../format";
 import { useOutputMode } from "../OutputModeProvider";
 import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
+import { Disclosure } from "./Disclosure";
+import { activityLabel, failed, presentTranscript, type Activity } from "../transcript";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
 // strong text; machinery (tool_call/result/status/error/etc.) reads as a quieter,
@@ -167,17 +169,31 @@ export function EventLog({ log, live, prompt, loading = false }: { log: LogItem[
   // by LogItem.key. Reset the overrides when the mode changes so a switch lands every
   // row on that mode's default rather than an inverted mix.
   const { mode } = useOutputMode();
-  const [toggled, setToggled] = useState<Set<number>>(() => new Set());
-  useEffect(() => setToggled(new Set()), [mode]);
+  const [toggled, setToggled] = useState<Set<string>>(() => new Set());
+  const [openActivity, setOpenActivity] = useState<Set<number>>(() => new Set());
+  useEffect(() => { setToggled(new Set()); setOpenActivity(new Set()); }, [mode]);
+  // A late phase marker can prepend progress or join groups. Track their member
+  // keys so an already-open record stays open even when its leading key changes.
+  const activityOpen = (row: Activity) => row.items.some((item) => openActivity.has(item.key));
+  const toggleActivity = (row: Activity, open: boolean) => {
+    stick.current = false;
+    setOpenActivity((previous) => {
+      const next = new Set(previous);
+      for (const item of row.items) { if (open) next.add(item.key); else next.delete(item.key); }
+      return next;
+    });
+  };
   const modeExpands = mode === "verbose";
-  const isExpanded = (key: number) => (toggled.has(key) ? !modeExpands : modeExpands);
-  const toggle = (key: number) =>
+  const isExpanded = (key: string) => (toggled.has(key) ? !modeExpands : modeExpands);
+  const toggle = (key: string) => {
+    stick.current = false;
     setToggled((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+  };
 
   const onScroll = () => {
     const el = ref.current;
@@ -199,6 +215,80 @@ export function EventLog({ log, live, prompt, loading = false }: { log: LogItem[
       (it.event.payload as Record<string, unknown> | undefined)?.subtype === "dispatch",
   );
 
+  const renderItem = (item: LogItem, raw = false) => {
+    // status events with subtype steer/followup + text → render as "You" bubble
+    if (item.kind === "status") {
+      const p = (item.event.payload ?? {}) as Record<string, unknown>;
+      const sub = typeof p.subtype === "string" ? p.subtype : "";
+      const text = typeof p.text === "string" ? p.text.trim() : "";
+      if ((sub === "steer" || sub === "followup" || sub === "dispatch") && text) {
+        const meta = p.queued === true ? "queued" : p.injected === true ? "injected" : undefined;
+        return <UserBubble key={item.key} text={text} meta={meta} />;
+      }
+      // The user's answer to an AskUserQuestion → render as a "You" bubble.
+      if (sub === "answer") {
+        const rows = Array.isArray(p.answers) ? (p.answers as QuestionAnswer[]) : [];
+        const summary = rows
+          .map((a) => (a.selected?.length ? a.selected.join(", ") : a.notes || "(skipped)"))
+          .join(" · ");
+        const resp = typeof p.response === "string" ? p.response.trim() : "";
+        return (
+          <UserBubble
+            key={item.key}
+            text={[summary, resp].filter(Boolean).join(" — ") || "(skipped)"}
+            meta="answer"
+          />
+        );
+      }
+    }
+
+    // The agent's question itself → a read-only record of what was asked.
+    if (item.kind === "question") {
+      const qs = ((item.event.payload as { questions?: AskQuestion[] })?.questions) ?? [];
+      return <QuestionRecord key={item.key} questions={qs} />;
+    }
+
+    if (item.kind === "output_image") {
+      const img = item.event.payload as { mediaType?: string; data?: string };
+      if (!img.data || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(img.mediaType ?? "")) return null;
+      return <figure key={item.key} className="my-3"><img src={`data:${img.mediaType};base64,${img.data}`} alt="Session output" loading="lazy" className="max-h-96 max-w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
+    }
+    if (item.kind === "assistant_text") {
+      const isLast = item.key === log.at(-1)?.key;
+      return (
+        <div
+          className={cn(
+            "mb-2.5 font-sans text-[15px] leading-[22px] break-words [overflow-wrap:anywhere]",
+            KIND_CLASS.assistant_text,
+          )}
+          key={item.key}
+        >
+          <Markdown
+            trailing={
+              live && isLast ? (
+                <span className="ml-0.5 inline-block w-[7px] animate-blink bg-live align-text-bottom">
+                  &nbsp;
+                </span>
+              ) : undefined
+            }
+          >
+            {item.text}
+          </Markdown>
+        </div>
+      );
+    }
+
+    return (
+      <MachineryLine
+        key={item.key}
+        kind={!raw && failed(item) ? "error" : item.kind}
+        detail={raw ? describeEvent(item.event, { full: true }) : failed(item) && (item.kind === "tool_call" || item.kind === "tool_result") ? "Tool failed — expand for details" : describeEvent(item.event)}
+        full={describeEvent(item.event, { full: true })}
+        expanded={raw || isExpanded(`message-${item.key}`)}
+        onToggle={() => toggle(`message-${item.key}`)}
+      />
+    );
+  };
   return (
     <ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
       <ScrollAreaPrimitive.Viewport
@@ -210,85 +300,14 @@ export function EventLog({ log, live, prompt, loading = false }: { log: LogItem[
         {log.length === 0 && (
           <div className={cn("mb-1.5 [overflow-wrap:anywhere]", KIND_CLASS.status)}>{loading ? "Loading history…" : "waiting for events…"}</div>
         )}
-        {log.map((item, i) => {
-          // status events with subtype steer/followup + text → render as "You" bubble
-          if (item.kind === "status") {
-            const p = (item.event.payload ?? {}) as Record<string, unknown>;
-            const sub = typeof p.subtype === "string" ? p.subtype : "";
-            const text = typeof p.text === "string" ? p.text.trim() : "";
-            if ((sub === "steer" || sub === "followup" || sub === "dispatch") && text) {
-              const meta = p.queued === true ? "queued" : p.injected === true ? "injected" : undefined;
-              return <UserBubble key={item.key} text={text} meta={meta} />;
-            }
-            // The user's answer to an AskUserQuestion → render as a "You" bubble.
-            if (sub === "answer") {
-              const rows = Array.isArray(p.answers) ? (p.answers as QuestionAnswer[]) : [];
-              const summary = rows
-                .map((a) => (a.selected?.length ? a.selected.join(", ") : a.notes || "(skipped)"))
-                .join(" · ");
-              const resp = typeof p.response === "string" ? p.response.trim() : "";
-              return (
-                <UserBubble
-                  key={item.key}
-                  text={[summary, resp].filter(Boolean).join(" — ") || "(skipped)"}
-                  meta="answer"
-                />
-              );
-            }
-          }
-
-          // The agent's question itself → a read-only record of what was asked.
-          if (item.kind === "question") {
-            const qs = ((item.event.payload as { questions?: AskQuestion[] })?.questions) ?? [];
-            return <QuestionRecord key={item.key} questions={qs} />;
-          }
-
-          if (item.kind === "output_image") {
-            const img = item.event.payload as { mediaType?: string; data?: string };
-            if (!img.data || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(img.mediaType ?? "")) return null;
-            return <figure key={item.key} className="my-3"><img src={`data:${img.mediaType};base64,${img.data}`} alt="Session output" loading="lazy" className="max-h-96 max-w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
-          }
-          if (item.kind === "assistant_text") {
-            const isLast = i === log.length - 1;
-            return (
-              <div
-                className={cn(
-                  "mb-2.5 font-sans text-[15px] leading-[22px] break-words [overflow-wrap:anywhere]",
-                  KIND_CLASS.assistant_text,
-                )}
-                key={item.key}
-              >
-                <Markdown
-                  trailing={
-                    live && isLast ? (
-                      <span className="ml-0.5 inline-block w-[7px] animate-blink bg-live align-text-bottom">
-                        &nbsp;
-                      </span>
-                    ) : undefined
-                  }
-                >
-                  {item.text}
-                </Markdown>
-              </div>
-            );
-          }
-
-          // Compact mode drops raw status lifecycle noise (init/turn/reasoning):
-          // the meaningful status subtypes already rendered as bubbles above, and
-          // tool work + results stay (collapsed). null renders nothing.
-          if (mode === "compact" && item.kind === "status") return null;
-
-          return (
-            <MachineryLine
-              key={item.key}
-              kind={item.kind}
-              detail={describeEvent(item.event)}
-              full={describeEvent(item.event, { full: true })}
-              expanded={isExpanded(item.key)}
-              onToggle={() => toggle(item.key)}
-            />
-          );
-        })}
+        {presentTranscript(log, mode, live).map((row) => row.type === "message"
+          ? <div key={`message-${row.key}`}>{renderItem(row.item)}</div>
+          : <div key={`activity-${row.key}`} data-activity className="mb-2 min-w-0 font-sans text-muted-foreground">
+              <Disclosure label={activityLabel(row, mode)} open={activityOpen(row)} onOpenChange={(open) => toggleActivity(row, open)}>
+                <div className="font-mono text-[12px]">{row.items.map((item) => <div key={item.key}>{renderItem(item, true)}</div>)}</div>
+              </Disclosure>
+              {!activityOpen(row) && row.preview && <div data-progress-preview className={cn("text-[13px] break-words [overflow-wrap:anywhere]", mode === "compact" ? "line-clamp-1" : "line-clamp-2")}>{row.preview}</div>}
+            </div>)}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
     </ScrollAreaPrimitive.Root>

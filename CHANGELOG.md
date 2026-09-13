@@ -12,6 +12,14 @@ An entry does not mean a version has been published.
   countdowns. Claude and Codex show their own quota windows, with additional
   model limits and credits in Details. Limits refresh while sessions are idle too.
 
+## 0.1.0-alpha.8
+
+### Changed
+
+- Compact and Default keep session output focused with folded activity, short progress previews,
+  and less metadata and usage clutter. Expand activity or session details to inspect the full
+  record; questions, failures, final answers, and unclassified older messages remain visible.
+
 ## 0.1.0-alpha.7
 
 ### Added

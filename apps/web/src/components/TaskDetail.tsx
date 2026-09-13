@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, MoreVertical, Square, Trash2 } from "lucide-react";
+import { Archive, Info, MoreVertical, Square, Trash2 } from "lucide-react";
 
 import {
   AlertDialog,
@@ -43,6 +43,8 @@ import { QuestionCard } from "./QuestionCard";
 import { SessionHandoff } from "./SessionHandoff";
 import { Alert } from "./ui/alert";
 import { TaskStatusline } from "./TaskStatusline";
+import { useOutputMode } from "../OutputModeProvider";
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
 function errMsg(e: unknown): string {
   return e instanceof ApiError || e instanceof Error ? e.message : String(e);
@@ -55,6 +57,7 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 }
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
+  const { mode } = useOutputMode();
   const { log, conn, loadingHistory, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
@@ -178,24 +181,39 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       <AppBar title={heading} back conn={conn} />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Metadata strip: agent/status + machine meta chips, PR link, and the
-            destructive overflow menu (Stop / Cancel / Archive). The chips sit on a
-            single line that scrolls horizontally *inside* this row (never wrapping,
-            never widening the document) — too many chips to ever fit a phone width,
-            so a swipe-able carousel beats an awkward 2-line wrap. */}
-        <div className="flex items-center gap-x-3 px-4 py-2.5">
+        {/* Keep primary context in one row; configuration lives
+            in Session details. Verbose retains the full metadata strip. */}
+        <div className="flex items-center gap-x-2 px-4 py-1">
           <div className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap text-[12.5px] text-faint [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
             {task && <AgentTag agent={task.agent} />}
             {task && <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
-            {task?.branch && <span className="font-mono text-muted-foreground">{task.branch}</span>}
-            {task?.model && <span>{task.model}</span>}
-            {task?.effort && <span>effort {task.effort}</span>}
-            {task && <span>{permLabel(task.agent, task.permission)}</span>}
-            {task?.sessionId && (
+            {mode !== "verbose" && <PrChip prs={task?.prs} />}
+            {mode !== "compact" && task?.branch && <span className="font-mono text-muted-foreground">{task.branch}</span>}
+            {mode === "verbose" && task?.model && <span>{task.model}</span>}
+            {mode === "verbose" && task?.effort && <span>effort {task.effort}</span>}
+            {mode === "verbose" && task && <span>{permLabel(task.agent, task.permission)}</span>}
+            {mode === "verbose" && task?.sessionId && (
               <span className="font-mono text-muted-foreground">sid {task.sessionId.slice(0, 8)}</span>
             )}
-            <PrChip prs={task?.prs} />
+            {mode === "verbose" && <PrChip prs={task?.prs} />}
           </div>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-11 shrink-0" aria-label="Session details"><Info data-icon="inline-start" /></Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription>Session configuration and identity.</SheetDescription></SheetHeader>
+              <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto px-4 text-sm [overflow-wrap:anywhere]">
+                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+                  {task?.branch && <><dt>Branch</dt><dd>{task.branch}</dd></>}
+                  {task?.model && <><dt>Model</dt><dd>{task.model}</dd></>}
+                  {task?.effort && <><dt>Effort</dt><dd>{task.effort}</dd></>}
+                  {task && <><dt>Permission</dt><dd>{permLabel(task.agent, task.permission)}</dd></>}
+                  {task?.sessionId && <><dt>Session</dt><dd>{task.sessionId}</dd></>}
+                </dl>
+              </div>
+            </SheetContent>
+          </Sheet>
           <TaskActionsMenu
             busy={busy}
             canStop={canStop}

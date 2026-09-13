@@ -87,6 +87,22 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    experimental; unsupported CLI responses and failed reads show an unavailable
    state. Codex uses the app-server `account/rateLimits/read` request.
 
+## Output detail
+
+Settings → Detail controls the session transcript and surrounding metadata:
+
+- **Compact** collects background work per turn and previews only the latest known progress
+  while running. Configuration is available in Session details.
+- **Default** groups adjacent activity and keeps a two-line progress preview.
+- **Verbose** shows all recorded events.
+
+Account allowance and reset countdowns stay visible in every mode. Account Details shows
+the additional provider-specific quota windows.
+
+Activity expands to the full recorded output. Questions, approval requests, failures, final
+answers, and images stay visible. Older messages and providers without explicit progress/final
+metadata retain their prose; the client does not guess which text is safe to fold.
+
 ## How it talks to the backend
 
 - **Contracts come from `@palmagent/shared`** (`AgentEvent`, `TaskState`,

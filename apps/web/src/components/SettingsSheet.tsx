@@ -82,8 +82,7 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
 
           <Separator />
 
-          {/* Output detail — how much agent machinery (tool calls/results/status)
-              the event log shows. Prose, questions, result + errors always show. */}
+          {/* Output detail controls activity, progress, metadata and usage density. */}
           <SettingRow label="Detail">
             <ToggleGroup
               type="single"
