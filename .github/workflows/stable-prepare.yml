@@ -1,0 +1,77 @@
+name: stable preparation
+run-name: Stable ${{ inputs.phase }} ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Prepare versions on develop, or open its promotion into main
+        type: choice
+        options: [prepare, promote]
+        required: true
+      version:
+        description: Exact requested Stable version
+        type: string
+        required: true
+      commit:
+        description: Reviewed current develop commit (40 characters)
+        type: string
+        required: true
+      dry_run:
+        description: Validate without pushing a branch or opening a PR
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize source preparation with Preview allocation, including dry runs.
+  group: preview-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require release App configuration
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+        run: test -n "$CLIENT_ID" || { echo 'Configure the release GitHub App first'; exit 1; }
+      - name: Check out workflow tools
+        uses: actions/checkout@v4
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check out the requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create repository-scoped release App token
+        id: release-app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: write
+      - name: Validate and prepare the requested Stable PR
+        run: node tooling/scripts/stable-prepare.mjs source
+        env:
+          GH_TOKEN: ${{ steps.release-app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
+          RELEASE_PHASE: ${{ inputs.phase }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_DRY_RUN: ${{ inputs.dry_run }}

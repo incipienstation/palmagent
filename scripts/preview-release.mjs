@@ -9,6 +9,7 @@ import { productChanges, nextPreviewVersion, preparationFiles, assertPreparation
 import { prepareVersion } from './release-version.mjs';
 import { inspectSource, candidateArtifact } from './release-candidate.mjs';
 import { ensureReleaseTag } from './release-finalize.mjs';
+import { releaseBot } from './lib/release-bot.mjs';
 import { github, githubPages, registryMetadata, registryTarball, delay } from './lib/release-github.mjs';
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -16,19 +17,7 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 const ancestor = (cwd, a, b) => spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd, stdio: 'ignore' }).status === 0;
 const preview = (version) => RELEASE_VERSION.test(version) && version.includes('-');
 
-export function releaseBot(env, lookup = (login) => JSON.parse(execFileSync('gh', ['api', `users/${login}`], {
-  encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-}))) {
-  const app = Boolean(env.RELEASE_APP_CLIENT_ID);
-  const slug = app ? env.RELEASE_APP_SLUG : 'github-actions';
-  assert(typeof slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug), 'Missing or invalid release App identity');
-  assert(app || !env.RELEASE_APP_SLUG, 'Release App identity requires a configured client ID');
-  const login = `${slug}[bot]`;
-  const bot = lookup(login);
-  assert(bot.type === 'Bot' && bot.login === login && Number.isSafeInteger(bot.id) && bot.id > 0,
-    'Unexpected release bot identity');
-  return bot;
-}
+export { releaseBot } from './lib/release-bot.mjs';
 
 export function preparationMarker(pr) {
   const match = /<!-- palmagent-preview:(\{[^\n]+\}) -->/.exec(pr.body ?? '');
