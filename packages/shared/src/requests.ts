@@ -15,6 +15,7 @@ export const CreateTaskSchema = z.object({
   isolate: z.boolean().optional(), // false/omitted runs in place; ignored for plain folders
 });
 export const FollowupSchema = z.object({ prompt: text, images, ...settings });
+export const RenameTaskSchema = z.object({ title: text.trim().min(1, "Enter a session name.").max(200, "Use 200 characters or fewer.").regex(/^[^\r\n]*$/, "Use a single line for the session name.") });
 export const SteerSchema = z.object({ text, images, ...settings });
 export const ApproveSchema = z.object({ decision: z.enum(["approve", "deny"]), scope: text.optional() });
 export const QuestionAnswerSchema = z.object({ question: text, selected: z.array(text), notes: text.optional() });
@@ -61,6 +62,7 @@ export type CreateRepoRequest = z.infer<typeof CreateRepoSchema>;
 export type ImageAttachment = z.infer<typeof ImageAttachmentSchema>;
 export type CreateTaskRequest = z.infer<typeof CreateTaskSchema>;
 export type FollowupRequest = z.infer<typeof FollowupSchema>;
+export type RenameTaskRequest = z.infer<typeof RenameTaskSchema>;
 export type SteerRequest = z.infer<typeof SteerSchema>;
 export type ApproveRequest = z.infer<typeof ApproveSchema>;
 export type QuestionAnswer = z.infer<typeof QuestionAnswerSchema>;

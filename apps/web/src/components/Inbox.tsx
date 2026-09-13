@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { taskTitle } from "@/lib/task-title";
 import { statusSection } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
@@ -18,6 +19,7 @@ import { Badge } from "./ui/badge";
 import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
+import { SessionActionsMenu } from "./SessionActionsMenu";
 
 // repoId → Repo map for the rows, provided once by InboxView so each card can
 // resolve its project name without prop-drilling through StatusGroup.
@@ -38,12 +40,6 @@ const GROUP_ORDER: InboxStatus[] = [
   "cancelled",
   "archived",
 ];
-function titleOf(t: TaskState): string {
-  if (t.title && t.title.trim()) return t.title;
-  const first = t.prompt.split("\n").find((l) => l.trim());
-  return first?.trim() || "(untitled task)";
-}
-
 // Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
 // a short date past a week so the dense list stays scannable.
 function relTime(ms: number): string {
@@ -84,7 +80,7 @@ function TaskMeta({ task, showTime }: { task: TaskState; showTime?: boolean }) {
 }
 
 // The 1–2 line body under the headline. Returns null when the prompt would only
-// repeat the title (the common no-explicit-title case, where titleOf() already
+// repeat the title (the common no-explicit-title case, where taskTitle() already
 // IS the prompt's first line) so the card never shows the same text twice; when
 // there's a multi-line prompt it shows the remainder, and an explicit title
 // shows the full prompt as added context.
@@ -103,7 +99,7 @@ function previewOf(t: TaskState): string | null {
 function CardContextLine({ task }: { task: TaskState }) {
   const repos = useContext(ReposContext);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 pr-10">
       <RepoChip repo={repos.get(task.repoId)} isolated={!!task.branch} />
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
         <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
@@ -119,12 +115,12 @@ function CardContextLine({ task }: { task: TaskState }) {
 // header no longer shows a green connected-dot), and the pulse reads as "alive".
 function CardHeadline({ task }: { task: TaskState }) {
   return (
-    <div className="mt-1 flex items-start gap-2">
+    <div className="mt-1 flex items-start gap-2 pr-10">
       {task.status === "running" && (
         <span aria-hidden className="mt-[6px] size-2 shrink-0 animate-pulse rounded-full bg-live" />
       )}
       <span className="min-w-0 flex-1 line-clamp-2 text-[15px] leading-5 font-semibold text-strong [overflow-wrap:anywhere]">
-        {titleOf(task)}
+        {taskTitle(task)}
       </span>
     </div>
   );
@@ -147,19 +143,24 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
 function TaskRow({ task }: { task: TaskState }) {
   const preview = previewOf(task);
   return (
-    <button
-      className="block w-full border-b border-border px-4 py-2.5 text-left transition-colors active:bg-accent"
-      onClick={(e) => navIfInRow(e, task.taskId)}
-    >
-      <CardContextLine task={task} />
-      <CardHeadline task={task} />
-      {preview && (
-        <div className="mt-1 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground [overflow-wrap:anywhere]">
-          {preview}
-        </div>
-      )}
-      <TaskMeta task={task} showTime />
-    </button>
+    <div className="relative border-b border-border">
+      <button
+        className="block w-full px-4 py-2.5 text-left transition-colors active:bg-accent"
+        onClick={(e) => navIfInRow(e, task.taskId)}
+      >
+        <CardContextLine task={task} />
+        <CardHeadline task={task} />
+        {preview && (
+          <div className="mt-1 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground [overflow-wrap:anywhere]">
+            {preview}
+          </div>
+        )}
+        <TaskMeta task={task} showTime />
+      </button>
+      <div className="absolute top-2 right-1">
+        <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} />
+      </div>
+    </div>
   );
 }
 
@@ -170,39 +171,44 @@ function PriorityRow({ task }: { task: TaskState }) {
   const q = task.pendingInput?.questions[0];
   const preview = previewOf(task);
   return (
-    <button
-      className="mb-2.5 block w-full text-left"
-      onClick={(e) => navIfInRow(e, task.taskId)}
-    >
-      <Card
-        variant="attention"
-        className={cn(
-          "px-3.5 py-3 transition-colors active:bg-accent",
-          ATTENTION_RAIL[task.status],
-        )}
+    <div className="relative mb-2.5">
+      <button
+        className="block w-full text-left"
+        onClick={(e) => navIfInRow(e, task.taskId)}
       >
-        <CardContextLine task={task} />
-        <CardHeadline task={task} />
-        {task.status === "awaiting_input" && q ? (
-          <div className="mt-2 rounded-lg border border-question-border bg-question-bg px-2.5 py-2">
-            <div className="text-[11px] font-semibold tracking-wide text-question-fg uppercase">
-              🙋 {q.header || "The agent has a question"}
+        <Card
+          variant="attention"
+          className={cn(
+            "px-3.5 py-3 transition-colors active:bg-accent",
+            ATTENTION_RAIL[task.status],
+          )}
+        >
+          <CardContextLine task={task} />
+          <CardHeadline task={task} />
+          {task.status === "awaiting_input" && q ? (
+            <div className="mt-2 rounded-lg border border-question-border bg-question-bg px-2.5 py-2">
+              <div className="text-[11px] font-semibold tracking-wide text-question-fg uppercase">
+                🙋 {q.header || "The agent has a question"}
+              </div>
+              <div className="mt-0.5 line-clamp-2 text-[13px] text-strong [overflow-wrap:anywhere]">
+                {q.question}
+              </div>
+              <div className="mt-1 text-[11px] text-question-fg">Tap to answer →</div>
             </div>
-            <div className="mt-0.5 line-clamp-2 text-[13px] text-strong [overflow-wrap:anywhere]">
-              {q.question}
-            </div>
-            <div className="mt-1 text-[11px] text-question-fg">Tap to answer →</div>
-          </div>
-        ) : (
-          preview && (
-            <div className="mt-1 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground [overflow-wrap:anywhere]">
-              {preview}
-            </div>
-          )
-        )}
-        <TaskMeta task={task} showTime />
-      </Card>
-    </button>
+          ) : (
+            preview && (
+              <div className="mt-1 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground [overflow-wrap:anywhere]">
+                {preview}
+              </div>
+            )
+          )}
+          <TaskMeta task={task} showTime />
+        </Card>
+      </button>
+      <div className="absolute top-2 right-1">
+        <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} />
+      </div>
+    </div>
   );
 }
 

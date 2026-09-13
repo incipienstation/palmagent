@@ -19,6 +19,7 @@ import type {
   FollowupRequest,
   FsListResponse,
   Repo,
+  RenameTaskRequest,
   Routine,
   RoutineRun,
   SteerRequest,
@@ -105,6 +106,8 @@ export const api = {
   getAccountLimits: (id: string) => request<AccountLimits>("GET", `/api/tasks/${encodeURIComponent(id)}/account-limits`),
   createTask: (req: CreateTaskRequest) =>
     request<{ task: TaskState }>("POST", "/api/tasks", req).then((r) => r.task),
+  renameTask: (id: string, req: RenameTaskRequest) =>
+    request<{ task: TaskState }>("PATCH", `/api/tasks/${encodeURIComponent(id)}`, req).then((r) => r.task),
 
   // ---- usage (per-agent aggregate over the result event log) ----
   getUsage: () => request<{ usage: AgentUsage[] }>("GET", "/api/usage").then((r) => r.usage),

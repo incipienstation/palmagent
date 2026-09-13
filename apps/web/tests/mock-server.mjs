@@ -103,12 +103,15 @@ function openSse(res) {
 }
 const tasksFrame = (res, replayThrough) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, replayThrough })}\n\n`);
 
+const taskClients = new Set();
+
 function handleStream(req, res, url) {
   const taskId = url.searchParams.get("task") || undefined;
   if (taskId && !tasks.some((t) => t.taskId === taskId)) {
     return json(res, 404, { error: `no such task: ${taskId}` });
   }
   openSse(res);
+  taskClients.add(res);
   tasksFrame(res, taskId ? (events[taskId] ?? []).length : undefined); // current state up front (both stream kinds send this first)
 
   if (taskId) {
@@ -129,7 +132,7 @@ function handleStream(req, res, url) {
       /* socket gone */
     }
   }, 15_000);
-  const close = () => clearInterval(keepAlive);
+  const close = () => { clearInterval(keepAlive); taskClients.delete(res); };
   req.on("close", close);
   res.on("close", close);
 }
@@ -158,7 +161,7 @@ async function serveStatic(res, pathname) {
 }
 
 // ----------------------------------------------------------------- router
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const { pathname } = url;
   const m = req.method ?? "GET";
@@ -220,6 +223,21 @@ const server = createServer((req, res) => {
       return json(res, 404, { error: `unmocked GET ${pathname}` });
     }
     // ---- writes: echo back a plausible task/result so the UI can proceed ----
+    if (m === "PATCH" && pathname.startsWith("/api/tasks/")) {
+      const task = tasks.find((t) => t.taskId === decodeURIComponent(pathname.slice("/api/tasks/".length)));
+      if (!task) return json(res, 404, { error: "no such task" });
+      let input;
+      try {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        input = JSON.parse(body);
+      } catch { return json(res, 400, { error: "invalid JSON" }); }
+      const title = typeof input?.title === "string" ? input.title.trim() : "";
+      if (!title || title.length > 200 || /[\r\n]/.test(title)) return json(res, 400, { error: "invalid title" });
+      task.title = title;
+      for (const client of taskClients) tasksFrame(client);
+      return json(res, 200, { task });
+    }
     const first = tasks[0];
     if (m === "POST" && pathname === "/api/tasks") return json(res, 200, { task: first });
     if (pathname.endsWith("/steer")) return json(res, 200, { injected: true, queued: false });

@@ -65,7 +65,10 @@ for (const owner of ["local", "returning"] as const) test(`${owner} ownership di
   await expect(page.getByRole("img", { name: "Session output" })).toBeVisible();
   await expect.poll(() => page.getByRole("img", { name: "Session output" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
   await expect(page.getByRole("button", { name: owner === "local" ? "Local shell" : "Continue in Palmagent" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Task actions" })).toBeDisabled();
+  await page.getByRole("button", { name: "Task actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Rename" })).toBeEnabled();
+  await expect(page.getByRole("menuitem", { name: "Archive" })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await assertViewportLocked(page);
 });
 
@@ -107,6 +110,7 @@ test("live preview is readable before handoff and enables input only when owners
   await expect(page.getByPlaceholder("Read-only while controlled in your local CLI.")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await assertViewportLocked(page);
+  await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeInViewport();
   await expect(page).toHaveScreenshot("session-live-preview.png");
   owner = "palmagent";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));

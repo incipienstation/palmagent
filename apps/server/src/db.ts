@@ -266,6 +266,9 @@ export class Db {
   setSessionControl(id: string, control: TaskState["sessionControl"]) {
     this.db.prepare("UPDATE tasks SET session_control = ? WHERE id = ?").run(JSON.stringify(control), id);
   }
+  setTaskTitle(id: string, title: string, now: number) {
+    this.db.prepare("UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
+  }
   appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[] {
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));

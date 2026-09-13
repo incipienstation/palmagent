@@ -253,3 +253,71 @@ test("private dispatch bounds chunked UTF-8 bytes and rejects malformed input be
   assert.equal(f.service.listTasks().length, 0);
   assert.equal((await f.app.request("/dispatch", { method: "POST" })).status, 404);
 });
+
+test("session rename persists and broadcasts display metadata without changing execution or activity", async (t) => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "rename-repo", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "rename-task", repoId: "rename-repo", agent: "codex", title: "Original", prompt: "Keep the prompt", permission: "read-only", status: "idle", interrupted: false, sessionId: "native-session", createdAt: 1, updatedAt: 2, lastActivityAt: 3 });
+  await f.service.init();
+  const now = Date.now();
+  f.db.createSession("rename-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=rename-session`, "content-type": "application/json" };
+  const path = "/api/tasks/rename-task";
+  const rename = (input: unknown, requestHeaders = headers) => f.app.request(path, { method: "PATCH", headers: requestHeaders, body: JSON.stringify(input) });
+  assert.equal((await rename({ title: "Unauthorized" }, { ...headers, cookie: "" })).status, 401);
+  assert.equal((await rename({ title: "Cross origin" }, { ...headers, origin: "https://other.example" } as typeof headers)).status, 403);
+  for (const input of [{}, { title: null }, { title: 4 }, { title: "" }, { title: "   " }, { title: "x".repeat(201) }, { title: "two\nlines" }]) {
+    assert.equal((await rename(input)).status, 400);
+  }
+  assert.equal(f.db.getTask("rename-task")!.title, "Original");
+  assert.equal((await f.app.request("/api/tasks/missing", { method: "PATCH", headers, body: '{"title":"Valid"}' })).status, 404);
+
+  const readers = await Promise.all(["/api/stream", "/api/stream?task=rename-task"].map(async (url) => {
+    const response = await f.app.request(url, { headers });
+    const reader = response.body!.getReader();
+    t.after(() => reader.cancel());
+    return reader;
+  }));
+  async function snapshot(reader: ReadableStreamDefaultReader<Uint8Array>) {
+    let buffer = "";
+    while (true) {
+      const chunk = await reader.read();
+      assert.equal(chunk.done, false);
+      buffer += new TextDecoder().decode(chunk.value);
+      for (const line of buffer.split("\n")) {
+        if (line.startsWith("data: ")) {
+          const frame = JSON.parse(line.slice(6));
+          if (frame.type === "tasks") return frame.tasks;
+        }
+      }
+    }
+  }
+  for (const reader of readers) await snapshot(reader);
+  let broadcasts = 0;
+  f.hub.onTasks(() => broadcasts++);
+  for (const status of ["running", "awaiting_input", "idle", "archived"] as const) {
+    const task = f.service.getTask("rename-task");
+    task.status = status;
+    f.db.setTaskStatus(task.taskId, status, false, task.updatedAt);
+    if (status === "idle") {
+      task.sessionControl = { owner: "local", home: f.dir, transcript: join(f.dir, "session.jsonl"), cursor: 0, prefixHash: "fixture" };
+      f.db.setSessionControl(task.taskId, task.sessionControl);
+    }
+    const before = structuredClone(task);
+    const result = await rename({ title: `  Renamed ${status} 한글  `, prompt: "must not change", status: "cancelled" });
+    assert.equal(result.status, 200);
+    const expected = { ...before, title: `Renamed ${status} 한글`, updatedAt: task.updatedAt };
+    assert.deepEqual((await result.json() as { task: unknown }).task, JSON.parse(JSON.stringify(expected)));
+    assert.deepEqual(f.db.getTask(task.taskId), expected);
+    for (const reader of readers) assert.equal((await snapshot(reader))[0].title, expected.title);
+  }
+  assert.equal(broadcasts, 4);
+  assert.equal(f.db.eventCursor("rename-task"), 0, "rename must not create a conversation event");
+  const updatedAt = f.service.getTask("rename-task").updatedAt;
+  await rename({ title: "Renamed archived 한글" });
+  assert.equal(broadcasts, 4, "identical rename should be a no-op");
+  assert.equal(f.service.getTask("rename-task").updatedAt, updatedAt);
+  const reopened = new Db(join(f.dir, "state/palmagent.db"));
+  try { assert.equal(reopened.getTask("rename-task")!.title, "Renamed archived 한글"); }
+  finally { reopened.close(); }
+});

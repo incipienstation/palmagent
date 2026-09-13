@@ -70,7 +70,8 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
 1. **Dispatch** (`#/new`) — pick/register a repo, choose agent + permission,
    send a prompt → `POST /api/tasks`.
 2. **Inbox** (`#/`) — ONE `GET /api/stream`; every task rendered live from the
-   `tasks` snapshot frames, grouped by status.
+   `tasks` snapshot frames, grouped by status. Use a row's **⋮ → Rename** to
+   change its session name without opening it.
 3. **Task detail + steer** (`#/task/:id`) — scoped `GET /api/stream?task=:id`;
    live event log (assistant token deltas coalesced, tool calls/results, result)
    with follow-up, steer (surfaces *injected* mid-turn vs *queued* next-turn),
@@ -86,6 +87,11 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    turn or reading credentials itself. Claude's `get_usage` control request is
    experimental; unsupported CLI responses and failed reads show an unavailable
    state. Codex uses the app-server `account/rateLimits/read` request.
+
+The detail header's **⋮ → Rename** opens the same editor. Names are saved in
+Palmagent and synchronized across connected screens, including for running and
+local sessions. Renaming keeps the original prompt, native CLI session, and activity
+order intact.
 
 ## Output detail
 

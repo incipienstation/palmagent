@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Rename sessions from the task list or detail header, with names saved across devices
+  without changing their activity order or interrupting ongoing work.
+
 ## 0.1.0-alpha.10
 
 ### Changed
