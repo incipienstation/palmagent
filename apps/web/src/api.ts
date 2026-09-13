@@ -24,6 +24,8 @@ import type {
   TaskState,
   TaskStatus,
   UpdateRoutineRequest,
+  UpdateSettingsChange,
+  UpdateSettingsStatus,
   ValidateRepoPathResponse,
 } from "@palmagent/shared";
 import type {
@@ -71,6 +73,10 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
 }
 
 export const api = {
+  updateSettings: {
+    get: () => request<UpdateSettingsStatus>("GET", "/api/settings/updates"),
+    change: (change: UpdateSettingsChange) => request<UpdateSettingsStatus>("PATCH", "/api/settings/updates", change),
+  },
   listRepos: () => request<{ repos: Repo[] }>("GET", "/api/repos").then((r) => r.repos),
   createRepo: (req: CreateRepoRequest) =>
     request<{ repo: Repo }>("POST", "/api/repos", req).then((r) => r.repo),

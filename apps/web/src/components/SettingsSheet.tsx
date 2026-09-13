@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
 import {
@@ -27,6 +27,7 @@ import type { ConnState } from "../hooks/useInbox";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
 import { PushToggle } from "./PushToggle";
+import { UpdateSettings } from "./UpdateSettings";
 
 async function signOut() {
   try {
@@ -43,16 +44,17 @@ async function signOut() {
 export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: ConnState }) {
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
+  const [open, setOpen] = useState(false);
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>{children}</SheetTrigger>
-      <SheetContent>
+      <SheetContent className="max-h-[90dvh]">
         <SheetHeader>
           <SheetTitle>Settings</SheetTitle>
           <SheetDescription className="sr-only">App preferences and account</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-col px-4 pb-2">
+        <div data-slot="settings-scroll" className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-4 pb-2">
           {/* Appearance — the theme toggle's home. */}
           <SettingRow label="Appearance">
             <ToggleGroup
@@ -120,6 +122,9 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
             </>
           )}
 
+          {open && <UpdateSettings />}
+          <Separator />
+
           {/* Account — sign out, behind an AlertDialog confirm. */}
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -152,7 +157,7 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
 
 function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-[44px] items-center justify-between gap-3 py-2">
+    <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2">
       <span className="text-[15px] text-foreground">{label}</span>
       {children}
     </div>

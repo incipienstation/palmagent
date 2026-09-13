@@ -16,7 +16,7 @@ import { existsSync } from "node:fs";
 import { join, normalize, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { repos, tasks, events, usage, routines, routineRuns } from "./fixtures.mjs";
+import { repos, tasks, events, usage, routines, routineRuns, updateSettings } from "./fixtures.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -171,6 +171,7 @@ const server = createServer((req, res) => {
       if (pathname === "/api/auth/me")
         return json(res, 200, { authenticated: true, required: false, credentialCount: 1 });
       if (pathname === "/api/health") return json(res, 200, { ok: true });
+      if (pathname === "/api/settings/updates") return json(res, 200, updateSettings);
       if (pathname === "/api/repos") return json(res, 200, { repos });
       if (pathname === "/api/repos/discover")
         return json(res, 200, { repos: [], roots: ["/projects"], scannedAt: 0 });

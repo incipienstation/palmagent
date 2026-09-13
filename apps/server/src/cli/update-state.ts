@@ -2,19 +2,17 @@ import { closeSync, constants, fsyncSync, lstatSync, openSync, readFileSync, ren
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { z } from "zod";
+import { UpdateReceiptSchema, type UpdateReceipt } from "@palmagent/shared/updates";
 import { ensurePrivateParent } from "../private-files.js";
 
-const ReceiptSchema = z.object({
-  schemaVersion: z.literal(1),
-  status: z.enum(["applying", "succeeded", "failed", "deferred"]),
-  previousVersion: z.string(), targetVersion: z.string(),
-  reason: z.string(), checkedAt: z.string(),
-});
-export type UpdateReceipt = z.infer<typeof ReceiptSchema>;
+export type { UpdateReceipt } from "@palmagent/shared";
+
+export class UpdateBusyError extends Error {
+  constructor() { super("another Palmagent operation is already running; retry after it finishes"); }
+}
 
 export function readUpdateReceipt(dataDir: string): UpdateReceipt | undefined {
-  try { return ReceiptSchema.parse(JSON.parse(readFileSync(join(dataDir, "update-result.json"), "utf8"))); }
+  try { return UpdateReceiptSchema.parse(JSON.parse(readFileSync(join(dataDir, "update-result.json"), "utf8"))); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw new Error("cannot read the last update result; inspect it before retrying an update");
@@ -50,7 +48,7 @@ export function acquireUpdateLock(dataDir: string): () => void {
   });
   if (result.status !== 0) {
     closeSync(fd);
-    throw new Error(result.status === 75 ? "another Palmagent operation is already running; retry after it finishes" : "cannot acquire the update lock; flock is required");
+    throw result.status === 75 ? new UpdateBusyError() : new Error("cannot acquire the update lock; flock is required");
   }
   return () => closeSync(fd);
 }

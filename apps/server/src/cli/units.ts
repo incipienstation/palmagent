@@ -11,7 +11,10 @@
 //
 // `renderUnits` is pure (no I/O) so it can be validated without touching a host.
 import { BRANDING } from "@palmagent/shared";
+import { dirname } from "node:path";
 import type { InstallConfig } from "./config.js";
+import { userConfigPath } from "./user-config.js";
+import { quoteSystemd } from "./systemd.js";
 
 export interface RenderOpts {
   /** First-line comment. Defaults to a CLI-authored banner. */
@@ -21,6 +24,8 @@ export interface RenderOpts {
   runnerUnitName?: string;
   /** Absolute node binary for package-mode ExecStart (default: the current node). */
   nodeBin?: string;
+  /** Shared CLI/plugin settings directory, including custom PALMAGENT_HOME. */
+  settingsHome?: string;
 }
 
 export interface RenderedUnit {
@@ -116,6 +121,8 @@ export function renderUnits(
     `Environment=PORT=${cfg.port}`,
     `Environment=DISPATCH_CONCURRENCY=${cfg.concurrency}`,
     `Environment=DISPATCHER_DB=${cfg.dbPath}`,
+    `Environment=${quoteSystemd(`DISPATCHER_DATA_DIR=${cfg.dataDir}`)}`,
+    `Environment=${quoteSystemd(`PALMAGENT_HOME=${opts.settingsHome ?? dirname(userConfigPath())}`)}`,
     `Environment=RUNNER_SOCKET=${cfg.runnerSocket}`,
     "Environment=DISABLE_AUTOUPDATER=1",
     // Web Push contact, only when configured (unset ⇒ push disabled — no default).

@@ -1,8 +1,10 @@
 // Product release policy: plugin contracts are shared only within one x.x.x.
-export type ReleaseChannel = "stable" | "preview";
+import { UpdateChannelSchema, type UpdateChannel } from "@palmagent/shared/updates";
+export type ReleaseChannel = UpdateChannel;
 
 export function releaseChannel(value: string): ReleaseChannel {
-  if (value === "stable" || value === "preview") return value;
+  const parsed = UpdateChannelSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
   throw new Error("channel must be stable or preview");
 }
 

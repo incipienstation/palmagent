@@ -3,18 +3,13 @@ import { dirname, join } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { BRANDING } from "@palmagent/shared";
 import type { InstallConfig } from "./config.js";
-import { getUserConfig, setUserAutoUpdate, userConfigPath } from "./user-config.js";
-import { readUpdateReceipt } from "./update-state.js";
-import { canSudoNonInteractive, log, run, sudo, sudoWriteFile } from "./sh.js";
+import { setUserAutoUpdate, userConfigPath } from "./user-config.js";
+import { canSudoNonInteractive, log, sudo, sudoWriteFile } from "./sh.js";
+import { quoteSystemd as quote } from "./systemd.js";
 
 export const autoUpdateService = `${BRANDING.unitBase}-update.service`;
 export const autoUpdateTimer = `${BRANDING.unitBase}-update.timer`;
 const UNIT_DIR = "/etc/systemd/system";
-
-function quote(value: string): string {
-  if (/[\r\n\0]/.test(value)) throw new Error("invalid automatic update unit value");
-  return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%") + '"';
-}
 
 export function renderAutoUpdateUnits(cfg: InstallConfig, options = { node: process.execPath, home: homedir(), configHome: dirname(userConfigPath()) }) {
   if (cfg.mode !== "package" || !cfg.pkgDir) throw new Error("automatic updates require an installed Palmagent package");
@@ -39,13 +34,6 @@ export function renderAutoUpdateUnits(cfg: InstallConfig, options = { node: proc
       `Unit=${autoUpdateService}`, "", "[Install]", "WantedBy=timers.target", "",
     ].join("\n"),
   };
-}
-
-export function autoUpdateStatus(cfg: InstallConfig) {
-  const settings = getUserConfig({ dataDir: cfg.dataDir });
-  // Read-only; no sudo prompt, initialization, or timer changes.
-  const active = run("systemctl", ["is-active", autoUpdateTimer]);
-  return { enabled: settings.autoUpdate ?? false, timerActive: active.ok, channel: settings.channel, lastUpdate: readUpdateReceipt(cfg.dataDir) ?? null };
 }
 
 export function configureAutoUpdate(cfg: InstallConfig, enabled: boolean, dryRun = false): void {

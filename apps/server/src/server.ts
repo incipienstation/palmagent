@@ -1,16 +1,22 @@
 import { createServer, type Server } from "node:http";
 import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getRequestListener } from "@hono/node-server";
 import { BRANDING } from "@palmagent/shared";
 import { createApp } from "./http/app.js";
 import { createRuntime } from "./runtime.js";
 import { startSessionControl } from "./session-control.js";
+import { createUpdateSettingsService } from "./update-settings.js";
 
 declare const __PALMAGENT_BUILD__: { version: string; sourceCommit: string; dirty: boolean };
 const build = typeof __PALMAGENT_BUILD__ === "undefined" ? undefined : __PALMAGENT_BUILD__;
 const runtime = await createRuntime();
 const shutdown = new AbortController();
-const app = createApp({ ...runtime, build, shutdown: shutdown.signal });
+const updates = createUpdateSettingsService({
+  packageDir: build ? dirname(fileURLToPath(import.meta.url)) : undefined,
+  dataDir: runtime.config.dataDir, dbPath: runtime.config.dbPath,
+});
+const app = createApp({ ...runtime, build, updates, shutdown: shutdown.signal });
 const server = createServer(getRequestListener(app.fetch));
 let local: Server | undefined;
 let closing: Promise<void> | undefined;

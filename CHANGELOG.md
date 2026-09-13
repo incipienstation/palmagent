@@ -6,6 +6,16 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- See the running Palmagent version and manage automatic updates, release channel,
+  and the last update result from Settings. Preferences stay shared with operator plugins.
+
+### Fixed
+
+- Preserve custom data and settings directories in the web service so UI and CLI
+  update controls manage the same installation.
+
 ## 0.1.0-alpha.4
 
 ### Added
