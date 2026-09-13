@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  actions: write
 
 concurrency:
   group: preview-release
@@ -27,16 +29,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Create the repository-scoped release credential
-        id: app
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-actions: write
-          permission-checks: read
       - name: Check out the latest develop source
         uses: actions/checkout@v4
         with:
@@ -47,7 +39,6 @@ jobs:
       - name: Prepare, verify, and publish eligible product changes
         run: node tooling/scripts/preview-release.mjs source
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_APP_SLUG: ${{ steps.app.outputs.app-slug }}
           PREVIEW_RELEASE_ENABLED: ${{ vars.PREVIEW_RELEASE_ENABLED }}

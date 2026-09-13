@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isProductPath, productChanges, nextPreviewVersion, assertPreparation } from '../lib/preview-plan.mjs';
-import { planPreview, preparationMarker, mergePreparation, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
+import { planPreview, preparationMarker, preparationValidation, assertPreparationRun, mergePreparation, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
 import { prepareVersion } from '../release-version.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -64,25 +64,57 @@ test('preparation contains only synchronized versions and changelog, with fallba
   assert.deepEqual(preparationMarker({ body: `<!-- palmagent-preview:{"source":"${f.source}","version":"0.1.0-alpha.2"} -->` }), { source: f.source, version: '0.1.0-alpha.2' });
 });
 
-test('preparation merge obeys exact head, passing Actions check, updated base, and server protections', async () => {
+test('preparation merge obeys exact CI identity, successful validate, updated base, and server protections', async () => {
   const source = 'a'.repeat(40), head = 'b'.repeat(40), merged = 'c'.repeat(40);
+  const branch = 'feature/preview-0.1.0-alpha.2';
   let didMerge = false;
+  const run = { repository: { full_name: repository }, path: '.github/workflows/ci.yml', event: 'workflow_dispatch',
+    head_branch: branch, head_sha: head, status: 'completed', conclusion: 'success' };
   const api = (_repo, path, options) => {
-    if (path === 'pulls/1') return { head: { sha: head }, base: { ref: 'develop' }, state: 'open', mergeable: true, merged: didMerge, merge_commit_sha: merged };
+    if (path === 'pulls/1') return { number: 1, head: { sha: head, ref: branch }, base: { ref: 'develop' }, state: 'open', mergeable: true, merged: didMerge, merge_commit_sha: merged };
     if (path === 'git/ref/heads/develop') return { object: { sha: source } };
-    if (path.includes('check-runs')) return { check_runs: [{ name: 'validate', app: { slug: 'github-actions' }, status: 'completed', conclusion: 'success' }] };
+    if (path === 'actions/runs/42') return run;
     assert.equal(path, 'pulls/1/merge'); assert.deepEqual(options.body, { sha: head, merge_method: 'squash' }); didMerge = true;
   };
-  assert.equal(await mergePreparation('', repository, { number: 1 }, head, source, { api }), merged);
-  await assert.rejects(mergePreparation('', repository, { number: 1 }, 'd'.repeat(40), source, { api }), /identity changed/);
+  const pages = () => [{ name: 'validate', head_sha: head, status: 'completed', conclusion: 'success' }];
+  const adapters = { api, pages, validation: async () => 42 };
+  assert.equal(await mergePreparation('', repository, { number: 1 }, head, source, adapters), merged);
+  await assert.rejects(mergePreparation('', repository, { number: 1 }, 'd'.repeat(40), source, adapters), /identity changed/);
   didMerge = false;
-  assert.equal(await mergePreparation('', repository, { number: 1 }, head, 'd'.repeat(40), { api }), null);
+  assert.equal(await mergePreparation('', repository, { number: 1 }, head, 'd'.repeat(40), adapters), null);
   await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
-    api: (repo, path, options) => path.includes('check-runs') ? { check_runs: [{ name: 'validate', app: { slug: 'github-actions' }, status: 'completed', conclusion: 'failure' }] } : api(repo, path, options),
+    ...adapters, api: (repo, path, options) => path === 'actions/runs/42' ? { ...run, conclusion: 'failure' } : api(repo, path, options),
   }), /CI failed/);
   await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
-    api: (repo, path, options) => { if (path.endsWith('/merge')) throw new Error('review required'); return api(repo, path, options); },
+    ...adapters, pages: () => [{ ...pages()[0], conclusion: 'skipped' }],
+  }), /no successful validate/);
+  await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
+    ...adapters, api: (repo, path, options) => { if (path.endsWith('/merge')) throw new Error('review required'); return api(repo, path, options); },
   }), /review required/);
+  for (const change of [{ head_sha: source }, { head_branch: 'develop' }, { event: 'pull_request' },
+    { path: '.github/workflows/other.yml' }, { repository: { full_name: 'other/repo' } }]) {
+    assert.throws(() => assertPreparationRun({ ...run, ...change }, repository, branch, head), /identity differs/);
+  }
+});
+
+test('preparation explicitly dispatches its branch and expected commit; resume reuses visible CI', async () => {
+  const head = 'b'.repeat(40), branch = 'feature/preview-0.1.0-alpha.2';
+  const pr = { number: 1, head: { ref: branch } };
+  let dispatched = false;
+  const run = { id: 42, display_title: `Preview CI ${head}`, status: 'in_progress' };
+  const pages = () => dispatched ? [run] : [];
+  const api = (_repo, path, options) => {
+    assert.equal(path, 'actions/workflows/ci.yml/dispatches');
+    assert.deepEqual(options.body, { ref: branch, inputs: { pr: '1', head } });
+    assert(!dispatched); dispatched = true;
+  };
+  const adapters = { api, pages, sleep: async () => {} };
+  assert.equal(await preparationValidation(repository, pr, head, adapters), 42);
+  assert.equal(await preparationValidation(repository, pr, head, adapters), 42);
+  dispatched = false;
+  assert.equal(await preparationValidation(repository, pr, head, {
+    ...adapters, pages: () => dispatched ? [run] : [{ ...run, id: 41, status: 'completed', conclusion: 'failure' }],
+  }), 42);
 });
 
 test('failed publication retry reuses original candidate producer across repeated recovery runs', async () => {
