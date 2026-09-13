@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.6
+
 ### Fixed
 
 - Open sessions at the latest message without visibly scrolling through replayed history.
