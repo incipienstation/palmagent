@@ -40,11 +40,14 @@ the built-in `GITHUB_TOKEN` needs maintainer approval of preparation PR CI; foll
 approval/resume step. Finish pending preparations before switching the release bot identity.
 Do not store a personal token in Actions or bypass branch checks and existing-tag protections.
 
-For a requested Stable release, select a version from scope and compatibility, preview and apply
-`pnpm release:prepare <version>`, and use [start](../start/SKILL.md), [verify](../verify/SKILL.md),
-and [ship](../ship/SKILL.md) for its preparation PR. Promote through a dedicated PR into `main`
-with a merge commit after required checks. Version edits and this promotion are preparation;
-do not request separate publication approvals for them.
+For a requested Stable release, select the version and review the changelog, then use the
+[Stable App preparation workflow](references/automation.md#stable-app-preparation) for its version
+PR and subsequent promotion PR. Dispatch each phase with the reviewed current `develop` SHA;
+the shared release App opens the PR and native CI runs under its identity. Wait for exact-head
+checks and review requirements, then squash the preparation into `develop` and merge the dedicated
+`develop` to `main` promotion with a merge commit. Follow [ship](../ship/SKILL.md) for review and
+verification; the workflow itself opens PRs and never merges, tags, or publishes. These are
+preparation steps within the Stable request; do not request separate publication approvals for them.
 
 Build the exact final source with [candidate automation](references/automation.md#candidate-automation).
 Inspect the tarball, `candidate.json`, `SHA256SUMS`, packaged identity, notes, and producer run.

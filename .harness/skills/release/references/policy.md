@@ -136,9 +136,10 @@ Notable and breaking changes still need meaningful changelog entries in their pr
 
 ### Stable
 
-For a requested Stable release, choose the version from scope and compatibility, prepare
-versions/changelog on `develop`, verify and squash the preparation PR, then promote through
-a dedicated PR into `main` using a merge commit. Required checks and repository review rules
+For a requested Stable release, choose the version from scope and compatibility and review
+the changelog. Use the [Stable App preparation workflow](automation.md#stable-app-preparation)
+to open the version PR on `develop` and, after its verified squash merge, the dedicated
+promotion PR into `main`. Use a merge commit for that promotion. Required checks and repository review rules
 still apply. This is preparation authorization, not permission to bypass protections.
 
 Build and inspect the exact final `main` candidate and complete the applicable

@@ -63,6 +63,46 @@ Use `main` for Stable when the updated workflow is available there. Source and w
 are distinct: the current `develop` workflow can also verify a Stable source already on `main`.
 A candidate build alone does not imply staging acceptance or publication.
 
+## Stable App preparation
+
+`stable-prepare.yml` uses the same `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY` as
+Preview. It requires the App and has no personal-token or built-in-bot fallback. A maintainer's
+Stable request authorizes the agent to dispatch it; a repository workflow update alone is not
+an instruction to issue a Stable release.
+
+Review the requested Stable version and `Unreleased` notes first. Empty notes fail closed; add
+reviewed notes through a normal PR before preparing. Each phase pins the current `develop` SHA
+and refuses drift, existing tags, published versions, or an unrelated preparation PR. Its default
+dry-run validates in the disposable checkout without pushing or opening a PR.
+
+```bash
+gh workflow run stable-prepare.yml --ref develop \
+  -f phase=prepare -f version='<stable-version>' -f commit='<reviewed-develop-sha>' -F dry_run=true
+gh workflow run stable-prepare.yml --ref develop \
+  -f phase=prepare -f version='<stable-version>' -f commit='<reviewed-develop-sha>' -F dry_run=false
+```
+
+The result identifies the App-owned `feature/stable-<version>` PR into `develop`, its source and
+head. Wait for native PR CI and reviews, verify its metadata-only diff, and squash-merge the
+exact head. The workflow never merges PRs. Then dispatch promotion with the newly reviewed
+`develop` head and the same version:
+
+```bash
+gh workflow run stable-prepare.yml --ref develop \
+  -f phase=promote -f version='<stable-version>' -f commit='<prepared-develop-sha>' -F dry_run=false
+```
+
+This opens the dedicated `develop` → `main` PR under the same App. Verify exact-head CI and
+reviews before merging with a merge commit. Promotion requires synchronized Stable versions,
+versioned notes, and `main` ancestry. It never pushes either long-lived branch directly.
+
+Identical retries retain an open, matching App PR after validating its identity and preparation
+tree. A closed/draft/edited PR or changed source requires inspection; no branch is overwritten.
+If a branch push succeeded but PR creation failed, retain that branch and inspect it before
+recovery. Both phases share the Preview concurrency group so source preparation is serialized.
+After promotion, use the existing exact candidate workflow and final `npm-latest` approval.
+The App preparation job has no npm credentials or publication step.
+
 ## Automatic Preview
 
 `preview-release.yml` runs on `develop` pushes after its setup switch is enabled. It compares
@@ -138,7 +178,7 @@ existing assets and tags must match exactly, and published assets are never over
 
 ### One-time setup
 
-1. For unattended Preview, register a private GitHub App owned by the repository owner and install
+1. For release PR automation, register a private GitHub App owned by the repository owner and install
    it only on this repository. Use the repository URL as its homepage, disable webhooks, and grant
    repository **Contents**, **Pull requests**, and **Actions** read/write; Metadata read is automatic.
    No organization permissions, user authorization callback, or branch/ruleset bypass is required.
