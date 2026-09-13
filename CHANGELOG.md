@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.4
+
 ### Added
 
 - Manage sessions by their working directory, with desktop navigation and a mobile directory picker.
