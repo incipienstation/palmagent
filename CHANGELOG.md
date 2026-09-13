@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.5
+
 ### Added
 
 - See the running Palmagent version and manage automatic updates, release channel,
