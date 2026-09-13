@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.13
+
 ### Fixed
 
 - Manual CLI updates now preserve running Codex and Claude sessions by checking
