@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.10
+
 ### Changed
 
 - Check for updates when opening or returning to the app, with Check again and
