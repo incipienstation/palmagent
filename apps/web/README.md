@@ -76,6 +76,20 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    with follow-up, steer (surfaces *injected* mid-turn vs *queued* next-turn),
    stop (interrupt the turn, task stays resumable), cancel, and archive.
 
+## Output detail
+
+Settings → Detail controls the session transcript and surrounding metadata:
+
+- **Compact** collects background work per turn and previews only the latest known progress
+  while running. Usage and configuration are available in Session details.
+- **Default** groups adjacent activity, keeps a two-line progress preview, and offers a
+  single-line summary when usage has been reported.
+- **Verbose** shows all recorded events and detailed usage.
+
+Activity expands to the full recorded output. Questions, approval requests, failures, final
+answers, and images stay visible. Older messages and providers without explicit progress/final
+metadata retain their prose; the client does not guess which text is safe to fold.
+
 ## How it talks to the backend
 
 - **Contracts come from `@palmagent/shared`** (`AgentEvent`, `TaskState`,

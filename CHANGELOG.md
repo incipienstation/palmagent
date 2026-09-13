@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Compact and Default keep session output focused with folded activity, short progress previews,
+  and less metadata and usage clutter. Expand activity or session details to inspect the full
+  record; questions, failures, final answers, and unclassified older messages remain visible.
+
 ## 0.1.0-alpha.7
 
 ### Added

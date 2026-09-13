@@ -572,3 +572,46 @@ test("live smoke kills descendants holding pipes after their wrapper exits", {
     rmSync(binDir, { recursive: true, force: true });
   }
 });
+
+test("Claude preserves message identity and explicit progress/final boundaries", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new ClaudeRunner().start(startArgs(), capture.emit, backend);
+  for (const [id, reason, text] of [["m1", "tool_use", "Checking files"], ["m2", "end_turn", "Finished"]]) {
+    backend.proc.emit({ type: "stream_event", event: { type: "message_start", message: { id } } });
+    backend.proc.emit({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
+    backend.proc.emit({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: reason } } });
+    backend.proc.emit({ type: "stream_event", event: { type: "message_stop" } });
+  }
+  assert.deepEqual(capture.events.map(({ event }) => event.payload), [
+    { text: "Checking files", messageId: "m1" },
+    { subtype: "assistant_message", messageId: "m1", phase: "progress" },
+    { text: "Finished", messageId: "m2" },
+    { subtype: "assistant_message", messageId: "m2", phase: "final" },
+  ]);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Codex preserves supplied message phases and stable tool identities without guessing legacy phases", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new CodexRunner().start(startArgs(), capture.emit, backend);
+  for (const [id, phase] of [["m1", "commentary"], ["m2", "final_answer"], ["m3", undefined]]) {
+    backend.proc.emit({ type: "item.completed", item: { type: "agent_message", id, phase, text: id } });
+  }
+  backend.proc.emit({ type: "item.started", item: { type: "command_execution", id: "t1", command: "false", status: "in_progress" } });
+  backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "t1", command: "false", status: "failed", exit_code: 1 } });
+  const data = capture.events.map(({ event }) => event.payload as Record<string, unknown>);
+  assert.deepEqual(data.slice(0, 3), [
+    { text: "m1", messageId: "m1", phase: "progress" },
+    { text: "m2", messageId: "m2", phase: "final" },
+    { text: "m3", messageId: "m3" },
+  ]);
+  assert.equal(data[3].id, "t1");
+  assert.equal(data[4].id, "t1");
+  assert.equal(data[5].tool_use_id, "t1");
+  assert.equal(data[5].exit_code, 1);
+  backend.proc.exit(0);
+  await handle.done;
+});

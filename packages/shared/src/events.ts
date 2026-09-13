@@ -4,6 +4,20 @@
 
 export type AgentKind = "claude" | "codex";
 
+// Optional presentation metadata. Missing phase means unclassified prose and
+// must never be treated as disposable progress, including persisted old events.
+export type AssistantPhase = "progress" | "final";
+export interface AssistantTextPayload {
+  text: string;
+  messageId?: string;
+  phase?: AssistantPhase;
+}
+export interface AssistantMessageStatus {
+  subtype: "assistant_message";
+  messageId: string;
+  phase: AssistantPhase;
+}
+
 export type AgentEventKind =
   | "status" // lifecycle: init, turn started/ended, reasoning, retries
   | "output_image" // bounded raster image; payload: ImageAttachment

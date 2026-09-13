@@ -1,17 +1,9 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 
-// "Output mode" — how much agent MACHINERY (tool_call / tool_result / status) the
-// event log shows. Prose (assistant markdown), question cards, the final result,
-// and errors are signal and stay visible in EVERY mode; this only governs the
-// density of the machinery band beneath them.
-//   compact  — machinery collapsed to a one-line summary AND raw status lifecycle
-//              noise (init/turn/reasoning) hidden; tap a row to expand its detail.
-//   default  — machinery one-line summary (today's density), status shown; tap to
-//              expand. The middle option, and the default.
-//   verbose  — machinery expanded by default to its full, untruncated detail.
-// Modelled as a context (not a bare hook) so the Settings toggle and every open
-// EventLog stay in sync the instant the user changes it — mirrors ThemeProvider.
-
+// Compact groups background work per turn; Default groups adjacent work and
+// shows a short progress preview; Verbose exposes all recorded events.
+// Questions, failures, final answers and unclassified legacy prose stay visible.
+// The setting also controls task metadata and usage density.
 export type OutputMode = "compact" | "default" | "verbose";
 
 const STORAGE_KEY = "pref:output-mode";

@@ -93,6 +93,7 @@ export class ClaudeRunner implements AgentRunner {
       return { steer: () => false, interrupt: () => false, approve: () => false, answer: () => false, cancel: () => {}, done: Promise.resolve() };
     }
 
+    let messageId: string | undefined;
     let steerInFlight = false;
     let steerTimer: NodeJS.Timeout | undefined;
     let closeTimer: NodeJS.Timeout | undefined;
@@ -154,8 +155,16 @@ export class ClaudeRunner implements AgentRunner {
           break;
         case "stream_event": {
           const inner = ev.event;
+          if (inner?.type === "message_start") messageId = inner.message?.id;
+          if (inner?.type === "message_delta" && messageId) {
+            const reason = inner.delta?.stop_reason;
+            const phase = reason === "tool_use" ? "progress" : reason === "end_turn" ? "final" : undefined;
+            if (phase) e({ taskId, kind: "status", sessionId,
+              payload: { subtype: "assistant_message", messageId, phase } });
+          }
+          if (inner?.type === "message_stop") messageId = undefined;
           if (inner?.type === "content_block_delta" && inner.delta?.type === "text_delta") {
-            e({ taskId, kind: "assistant_text", sessionId, payload: { text: inner.delta.text } });
+            e({ taskId, kind: "assistant_text", sessionId, payload: { text: inner.delta.text, ...(messageId ? { messageId } : {}) } });
           }
           break;
         }
