@@ -196,6 +196,18 @@ export class TaskService {
     }
   }
 
+  rename(id: string, title: string): TaskState {
+    const task = this.getTask(id);
+    if (task.title === title) return task;
+    const now = Date.now();
+    // Display metadata only: no agent event, activity bump, or ownership handoff.
+    this.db.setTaskTitle(id, title, now);
+    task.title = title;
+    task.updatedAt = now;
+    this.broadcastTasks();
+    return task;
+  }
+
   handoff(id: string): SessionHandoffResponse {
     const task = this.getTask(id);
     if (task.sessionControl?.owner === "local") return { task, command: resumeCommand(task, dirname(this.db.path)) };

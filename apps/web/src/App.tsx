@@ -1,3 +1,4 @@
+import { taskTitle } from "./lib/task-title";
 import { useAccessUpdates } from "./hooks/useAccessUpdates";
 import { AuthGate } from "./auth/AuthGate";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
@@ -30,7 +31,7 @@ function AppInner() {
         : route.name === "usage"
           ? "Usage"
           : route.name === "task"
-            ? active?.title?.trim() || active?.prompt.split("\n")[0]?.trim() || "Task"
+            ? active ? taskTitle(active) : "Task"
             : "Tasks";
   useDocumentTitle(pageTitle);
 

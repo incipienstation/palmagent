@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, IdParamsSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, IdParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { body, parse } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 
@@ -12,6 +12,10 @@ export function taskRoutes({ service }: HttpDependencies) {
   app.get("/:id/account-limits", async (c) => {
     c.header("Cache-Control", "no-store");
     return c.json(await service.accountLimits(id(c)));
+  });
+  app.patch("/:id", async (c) => {
+    const input = await body(c, RenameTaskSchema);
+    return c.json({ task: service.rename(id(c), input.title) });
   });
   app.delete("/:id", (c) => c.json({ task: service.archive(id(c)) }));
   app.post("/:id/handoff", (c) => c.json(service.handoff(id(c))));

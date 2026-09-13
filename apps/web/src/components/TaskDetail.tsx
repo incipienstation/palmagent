@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Info, MoreVertical, Square, Trash2 } from "lucide-react";
+import { Archive, Info, Square, Trash2 } from "lucide-react";
 
 import {
   AlertDialog,
@@ -13,12 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -42,6 +37,8 @@ import { EventLog } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
 import { SessionHandoff } from "./SessionHandoff";
 import { Alert } from "./ui/alert";
+import { SessionActionsMenu } from "./SessionActionsMenu";
+import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
 import { useOutputMode } from "../OutputModeProvider";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
@@ -171,14 +168,27 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     }
   }
 
-  const heading = task?.title?.trim() || task?.prompt.split("\n")[0]?.trim() || taskId;
+  const heading = task ? taskTitle(task) : taskId;
   const canStop = active;
   const canCancel = running || status === "queued";
   const canArchive = !localOwner && !active && status !== "archived";
 
   return (
     <AppShell>
-      <AppBar title={heading} back conn={conn} />
+      <AppBar title={heading} back conn={conn}>
+        {task && (
+          <TaskActionsMenu
+            task={task}
+            busy={busy}
+            canStop={canStop}
+            canCancel={canCancel}
+            canArchive={canArchive}
+            onStop={() => act(() => api.stop(taskId))}
+            onCancel={() => act(() => api.cancel(taskId))}
+            onArchive={() => act(() => api.archive(taskId), () => navigate("/"))}
+          />
+        )}
+      </AppBar>
 
       <div className="flex min-h-0 flex-1 flex-col">
         {/* Keep primary context in one row; configuration lives
@@ -214,15 +224,6 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               </div>
             </SheetContent>
           </Sheet>
-          <TaskActionsMenu
-            busy={busy}
-            canStop={canStop}
-            canCancel={canCancel}
-            canArchive={canArchive}
-            onStop={() => act(() => api.stop(taskId))}
-            onCancel={() => act(() => api.cancel(taskId))}
-            onArchive={() => act(() => api.archive(taskId), () => navigate("/"))}
-          />
         </div>
         {task?.sessionId && <div className="px-4 pb-2"><SessionHandoff task={task} /></div>}
         {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
@@ -401,6 +402,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 // triggers keep their accessible names (`Stop`/`Cancel`/`Archive`) and the same
 // REST call fires on confirm.
 function TaskActionsMenu({
+  task,
   busy,
   canStop,
   canCancel,
@@ -409,6 +411,7 @@ function TaskActionsMenu({
   onCancel,
   onArchive,
 }: {
+  task: TaskState;
   busy: boolean;
   canStop: boolean;
   canCancel: boolean;
@@ -421,37 +424,24 @@ function TaskActionsMenu({
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 text-faint"
-            disabled={busy || (!canStop && !canCancel && !canArchive)}
-            aria-label="Task actions"
-          >
-            <MoreVertical className="size-5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem disabled={!canStop} onSelect={onStop}>
-            <Square className="text-faint" />
-            Stop
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={!canCancel}
-            onSelect={() => setConfirm("cancel")}
-          >
-            <Trash2 />
-            Cancel
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={!canArchive} onSelect={() => setConfirm("archive")}>
-            <Archive className="text-faint" />
-            Archive
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <SessionActionsMenu task={task} disabled={busy}>
+        <DropdownMenuItem disabled={!canStop} onSelect={onStop}>
+          <Square className="text-faint" />
+          Stop
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={!canCancel}
+          onSelect={() => setConfirm("cancel")}
+        >
+          <Trash2 />
+          Cancel
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!canArchive} onSelect={() => setConfirm("archive")}>
+          <Archive className="text-faint" />
+          Archive
+        </DropdownMenuItem>
+      </SessionActionsMenu>
 
       <AlertDialog open={confirm === "cancel"} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>
