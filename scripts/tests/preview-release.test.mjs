@@ -1,13 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isProductPath, productChanges, nextPreviewVersion, assertPreparation } from '../lib/preview-plan.mjs';
-import { planPreview, preparationMarker, preparationValidation, assertPreparationRun, mergePreparation, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
+import { releaseBot, planPreview, preparationMarker, preparationValidation, assertPreparationRun, mergePreparation, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
 import { prepareVersion } from '../release-version.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { releaseFixture } from './release-fixture.mjs';
 const repository = 'example/palmagent';
+
+test('release authentication resolves the selected bot and refuses incomplete App configuration', () => {
+  const lookup = (login) => ({ login, type: 'Bot', id: 123 });
+  assert.equal(releaseBot({}, lookup).login, 'github-actions[bot]');
+  const env = { RELEASE_APP_CLIENT_ID: 'configured-client', RELEASE_APP_SLUG: 'example-releases' };
+  assert.equal(releaseBot(env, lookup).login, 'example-releases[bot]');
+  const unexpected = () => { throw new Error('Lookup must not run'); };
+  for (const invalid of [
+    { RELEASE_APP_CLIENT_ID: 'configured-client' },
+    { RELEASE_APP_SLUG: 'example-releases' },
+    { ...env, RELEASE_APP_SLUG: '../users' },
+  ]) assert.throws(() => releaseBot(invalid, unexpected), /release App|Release App/);
+  assert.throws(() => releaseBot(env, () => lookup('github-actions[bot]')), /Unexpected/);
+  assert.throws(() => releaseBot(env, (login) => ({ ...lookup(login), type: 'User' })), /Unexpected/);
+  assert.throws(() => releaseBot(env, (login) => ({ ...lookup(login), id: '123' })), /Unexpected/);
+});
 
 test('Preview classifies shipped product inputs separately from tests and maintenance instructions', () => {
   for (const path of ['apps/server/src/index.ts', 'apps/web/public/sw.js', 'packages/shared/src/index.ts', 'skills/.shared/bootstrap.md',

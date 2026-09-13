@@ -36,9 +36,21 @@ jobs:
           path: source
           fetch-depth: 0
           persist-credentials: false
+      - name: Create repository-scoped release App token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        id: release-app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: write
       - name: Prepare, verify, and publish eligible product changes
         run: node tooling/scripts/preview-release.mjs source
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ vars.RELEASE_APP_CLIENT_ID == '' && github.token || steps.release-app.outputs.token }}
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
           GH_REPO: ${{ github.repository }}
           PREVIEW_RELEASE_ENABLED: ${{ vars.PREVIEW_RELEASE_ENABLED }}
