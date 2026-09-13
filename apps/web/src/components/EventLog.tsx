@@ -158,7 +158,7 @@ function MachineryLine({
 // Mobile-friendly log: a plain scrolling list (no virtualization dep — turns are
 // human-scale). Sticks to the bottom while you're already at the bottom, but
 // won't yank you down if you've scrolled up to read.
-export function EventLog({ log, live, prompt }: { log: LogItem[]; live: boolean; prompt?: string }) {
+export function EventLog({ log, live, prompt, loading = false }: { log: LogItem[]; live: boolean; prompt?: string; loading?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -208,7 +208,7 @@ export function EventLog({ log, live, prompt }: { log: LogItem[]; live: boolean;
       >
         {!hasDispatchEvent && prompt?.trim() && <UserBubble text={prompt.trim()} />}
         {log.length === 0 && (
-          <div className={cn("mb-1.5 [overflow-wrap:anywhere]", KIND_CLASS.status)}>waiting for events…</div>
+          <div className={cn("mb-1.5 [overflow-wrap:anywhere]", KIND_CLASS.status)}>{loading ? "Loading history…" : "waiting for events…"}</div>
         )}
         {log.map((item, i) => {
           // status events with subtype steer/followup + text → render as "You" bubble

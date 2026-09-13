@@ -141,6 +141,8 @@ export interface SseEventFrame {
 export interface SseTasksFrame {
   type: "tasks";
   tasks: TaskState[];
+  // Initial scoped snapshot: replay ends at this per-task sequence (0 if empty).
+  replayThrough?: number;
 }
 export type SseFrame = SseEventFrame | SseTasksFrame;
 

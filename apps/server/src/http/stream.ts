@@ -19,13 +19,13 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown }
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new HttpError(400, "invalid event cursor");
   const idOf = (row: EventRow) => taskId ? row.seq : row.id;
   const frame = (row: EventRow) => `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: row.event })}\n\n`;
-  const snapshot = () => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks() })}\n\n`;
+  const snapshot = (replayThrough?: number) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), replayThrough })}\n\n`;
 
   const response = streamSSE(c, async (stream) => {
     // Capture a durable boundary and subscribe synchronously BEFORE the first
     // asynchronous write. New events queue behind replay; no gap or duplicate.
     const boundary = db.eventCursor(taskId);
-    const firstSnapshot = snapshot();
+    const firstSnapshot = snapshot(taskId ? boundary : undefined);
     let pendingBytes = 0;
     const queue: string[] = [];
     let wake: (() => void) | undefined;

@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Open sessions at the latest message without visibly scrolling through replayed history.
+  Live updates still follow the bottom unless you scroll up to read earlier messages.
+
 ## 0.1.0-alpha.5
 
 ### Added

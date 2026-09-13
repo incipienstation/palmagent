@@ -101,7 +101,7 @@ function openSse(res) {
   });
   res.write(": connected\n\n");
 }
-const tasksFrame = (res) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks })}\n\n`);
+const tasksFrame = (res, replayThrough) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, replayThrough })}\n\n`);
 
 function handleStream(req, res, url) {
   const taskId = url.searchParams.get("task") || undefined;
@@ -109,7 +109,7 @@ function handleStream(req, res, url) {
     return json(res, 404, { error: `no such task: ${taskId}` });
   }
   openSse(res);
-  tasksFrame(res); // current state up front (both stream kinds send this first)
+  tasksFrame(res, taskId ? (events[taskId] ?? []).length : undefined); // current state up front (both stream kinds send this first)
 
   if (taskId) {
     // Replay the whole scoped stream immediately, stamping the per-task seq on
