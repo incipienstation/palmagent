@@ -2,8 +2,11 @@
 
 ## Candidate automation
 
-Ordinary CI runs only on pull requests into `develop` or `main`, not on branch
-pushes after merge. The required `validate` check always runs metadata, skill synchronization, link,
+Ordinary CI runs on pull requests into `develop` or `main`, not on branch pushes after merge.
+Preview preparation also dispatches this workflow on its exact feature head. The dispatch guard
+verifies the Actions-owned PR, same repository, current `develop` parent, expected SHA, and
+version/changelog-only diff before secret-bearing checks. Dispatches run the full gate.
+The required `validate` check always runs metadata, skill synchronization, link,
 version, and public-content checks. Known documentation and skill-only PRs need
 no dependency installation or runtime tests. Code PRs add type/tooling checks and
 the affected server or PWA tests; shared contracts exercise both. Classification
@@ -49,7 +52,7 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 6. Present version, commit, channel, checksum, notes, and the validation run in the job summary.
 
 The candidate receives read-only repository/Actions permissions and the leak denylist only;
-it has no release App key, npm credential, OIDC permission, or host access. A rerun reuses the
+it has no repository write permission, npm credential, OIDC permission, or host access. A rerun reuses the
 original artifact if present. Explicit `candidate_run` recovery must find the immutable artifact
 in an approved workflow on `develop`/`main`; an expired/missing artifact is not silently rebuilt.
 
@@ -68,8 +71,10 @@ A candidate build alone does not imply staging acceptance or publication.
 `preview-release.yml` runs on `develop` pushes after its setup switch is enabled. It compares
 the latest source against the last verified successful Preview; eligibility is implemented in
 `scripts/lib/preview-plan.mjs`. It creates only a version/changelog preparation PR, waits for
-`validate`, and merges with the exact head SHA and squash method. Branch protections remain in
-force. If `develop` advances, it reprepares its own metadata branch with a lease and reruns CI.
+an explicitly dispatched `ci.yml` run on the preparation branch, and merges with the exact head
+SHA and squash method. It verifies the workflow, repository, event, branch, commit, successful
+run, and successful `validate` job. Branch protections remain in force. If `develop` advances,
+it reprepares its own metadata branch with a lease and reruns CI.
 It does not force-push `develop`, bypass review requirements, or merge unrelated PRs.
 
 After the preparation merge, the controller creates the annotated Preview tag and dispatches
@@ -123,15 +128,14 @@ existing assets and tags must match exactly, and published assets are never over
 
 ### One-time setup
 
-1. Install a dedicated GitHub App on this repository only, with Contents and Pull requests
-   write, Actions write, Checks read, and implicit Metadata read. Store its client ID as
-   `RELEASE_APP_CLIENT_ID` and private key as `RELEASE_APP_PRIVATE_KEY` in repository Actions
-   settings. The workflow mints short-lived installation tokens with the permissions needed by
-   each job. App-created PRs trigger CI; a repository `GITHUB_TOKEN` push/PR does not provide
-   that behavior. See [GitHub App tokens](https://github.com/actions/create-github-app-token).
-2. Add only that App's integration ID to the **tag creation** ruleset bypass actors. Preserve
-   the separate tag update/deletion prohibition, including for the App. Do not add a branch
-   protection bypass: its preparation PRs must pass the same checks and reviews as other PRs.
+1. In repository Actions settings, enable **Allow GitHub Actions to create and approve pull
+   requests**. Keep default workflow permissions read-only. Preview declares only Contents,
+   Pull requests, and Actions write; the protected publication job declares Contents write,
+   Actions read, and OIDC write. No GitHub App registration or stored release token is needed.
+2. Permit creation of new `v*` tags by repository writers: disable the separate tag-creation
+   restriction if present. Keep the tag update/deletion prohibition active with no bypass, and
+   preserve branch protections. This permits writers to create new release tags; it does not
+   grant automatic publication to arbitrary tags or permit changing an existing tag.
 3. Keep `npm-next` without reviewers or a wait timer; keep `npm-latest` with a required reviewer,
    no administrator bypass, and self-review allowed for a sole maintainer. Allow the intended
    `develop`/`main` workflow refs (and `v*` only if legacy retries need them).
@@ -139,13 +143,17 @@ existing assets and tags must match exactly, and published assets are never over
    environment. Keep `NPM_PUBLISH_ENABLED=true` only with verified trust bindings. The workflow
    uses Node 24 and npm 11.11.1. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
 5. Make the workflows available on the repository default branch for dispatch through its normal
-   reviewed PR path. Confirm source eligibility, the App installation/permissions, tag rules,
-   and channel environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing
-   authorization to publish eligible Preview changes; it does not authorize host deployment.
+   reviewed PR path. Confirm source eligibility, Actions PR permission, tag rules, and channel
+   environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing authorization
+   to publish eligible Preview changes; it does not authorize host deployment.
 
-Until the App and switch are configured, the Preview job is skipped. The new finalizer also
-needs the App for tag and Release writes. Do not substitute a personal token, weaken protections,
-or copy a maintainer credential into CI to avoid the setup step.
+The built-in token does not provide ordinary push-triggered workflow chaining. The controller
+explicitly dispatches preparation CI and publication, and queues another Preview comparison when
+new product changes remain. `workflow_dispatch` can start a workflow using `GITHUB_TOKEN`;
+see [workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+Preparation CI uses a separate concurrency group from automatic PR runs so any approval-pending
+PR run cannot cancel the explicit dispatch. Required `validate` and current-base rules still
+apply to the merge. Until the Preview switch is enabled, the controller job is skipped.
 
 ### Recovery
 

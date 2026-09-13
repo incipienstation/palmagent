@@ -68,7 +68,7 @@ jobs:
       cancel-in-progress: false
       queue: max
     permissions:
-      contents: read
+      contents: write
       actions: read
       id-token: write
     steps:
@@ -94,20 +94,12 @@ jobs:
           run-id: ${{ needs.candidate.outputs.producer }}
           github-token: ${{ github.token }}
           path: source/build/release
-      - name: Create the repository-scoped release credential
-        id: app
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-actions: read
       - name: Install the OIDC-capable npm CLI
         run: npm install --global npm@11.11.1 --ignore-scripts
       - name: Finalize the reviewed candidate without rebuilding
         run: node tooling/scripts/release-finalize.mjs source source/build/release
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ needs.candidate.outputs.commit }}
           CANDIDATE_RUN_ID: ${{ needs.candidate.outputs.producer }}
           EXPECTED_ARTIFACT_SHA256: ${{ needs.candidate.outputs.sha256 }}

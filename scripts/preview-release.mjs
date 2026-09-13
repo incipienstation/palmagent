@@ -115,7 +115,34 @@ export async function waitForPublication(repository, commit, { api = github, pag
   return run;
 }
 
-export async function mergePreparation(cwd, repository, pr, expectedHead, source, { api = github, sleep = delay } = {}) {
+export async function preparationValidation(repository, pr, expectedHead, { api = github, pages = githubPages, sleep = delay } = {}) {
+  const title = `Preview CI ${expectedHead}`;
+  const runs = () => pages(repository, 'actions/workflows/ci.yml/runs?event=workflow_dispatch', 'workflow_runs')
+    .filter((run) => run.display_title === title).sort((a, b) => b.id - a.id);
+  let run = runs()[0];
+  if (!run || run.status === 'completed' && run.conclusion !== 'success') {
+    const previousId = run?.id ?? 0;
+    api(repository, 'actions/workflows/ci.yml/dispatches', { method: 'POST', body: {
+      ref: pr.head.ref, inputs: { pr: String(pr.number), head: expectedHead },
+    } });
+    const deadline = Date.now() + 60000;
+    do {
+      await sleep(3000);
+      run = runs().find((candidate) => candidate.id > previousId);
+    } while (!run && Date.now() < deadline);
+    assert(run, 'Preparation CI dispatch is not visible; inspect Actions before retrying');
+  }
+  return run.id;
+}
+
+export function assertPreparationRun(run, repository, branch, expectedHead) {
+  assert(run.repository?.full_name === repository && run.path === '.github/workflows/ci.yml'
+    && run.event === 'workflow_dispatch' && run.head_branch === branch && run.head_sha === expectedHead,
+  'Preparation CI identity differs from the selected PR');
+}
+
+export async function mergePreparation(cwd, repository, pr, expectedHead, source, { api = github, pages = githubPages, sleep = delay, validation = preparationValidation } = {}) {
+  let runId;
   const deadline = Date.now() + 20 * 60 * 1000;
   while (Date.now() < deadline) {
     const current = api(repository, `pulls/${pr.number}`);
@@ -124,10 +151,15 @@ export async function mergePreparation(cwd, repository, pr, expectedHead, source
     assert(current.state === 'open' && !current.draft, 'Preparation PR was closed or held as a draft');
     const head = api(repository, 'git/ref/heads/develop').object.sha;
     if (head !== source) return null; // Reprepare the same owned branch against the newer source.
-    const checks = api(repository, `commits/${expectedHead}/check-runs?filter=latest&per_page=100`).check_runs;
-    const validate = checks.filter((check) => check.name === 'validate' && check.app?.slug === 'github-actions');
-    assert(!validate.some((check) => check.status === 'completed' && check.conclusion !== 'success'), 'Preparation CI failed; inspect its run');
-    if (validate.length && validate.every((check) => check.status === 'completed' && check.conclusion === 'success') && current.mergeable) {
+    runId ??= await validation(repository, current, expectedHead, { api, pages, sleep });
+    const run = api(repository, `actions/runs/${runId}`);
+    assertPreparationRun(run, repository, current.head.ref, expectedHead);
+    assert(run.status !== 'completed' || run.conclusion === 'success', 'Preparation CI failed; inspect its run');
+    if (run.status === 'completed' && current.mergeable) {
+      const jobs = pages(repository, `actions/runs/${runId}/jobs?filter=latest`, 'jobs');
+      const validate = jobs.filter((job) => job.name === 'validate');
+      assert(validate.length === 1 && validate[0].head_sha === expectedHead && validate[0].status === 'completed'
+        && validate[0].conclusion === 'success', 'Preparation CI has no successful validate job on the selected head');
       try {
         api(repository, `pulls/${pr.number}/merge`, { method: 'PUT', body: { sha: expectedHead, merge_method: 'squash' } });
       } catch (error) {
@@ -197,11 +229,11 @@ async function prepare(cwd, repository, baseline, registry, tags, bot) {
 export async function runPreview(cwd, env) {
   assert(env.GITHUB_ACTIONS === 'true' && env.GITHUB_REF === 'refs/heads/develop', 'Preview automation runs only on develop in Actions');
   assert(env.PREVIEW_RELEASE_ENABLED === 'true', 'Automatic Preview is not enabled');
-  assert(/^[\w.-]+\/[\w.-]+$/.test(env.GH_REPO ?? '') && /^[\w-]+$/.test(env.RELEASE_APP_SLUG ?? ''), 'Missing release app identity');
+  assert(/^[\w.-]+\/[\w.-]+$/.test(env.GH_REPO ?? ''), 'Missing repository identity');
   assert(!git(cwd, 'status', '--porcelain'), 'Preview source checkout must be clean');
   const repository = env.GH_REPO;
-  const bot = JSON.parse(execFileSync('gh', ['api', `users/${env.RELEASE_APP_SLUG}[bot]`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-  assert(bot.type === 'Bot' && bot.login === `${env.RELEASE_APP_SLUG}[bot]`, 'Unexpected release bot identity');
+  const bot = JSON.parse(execFileSync('gh', ['api', 'users/github-actions[bot]'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  assert(bot.type === 'Bot' && bot.login === 'github-actions[bot]', 'Unexpected release bot identity');
   git(cwd, 'fetch', 'origin', 'develop', '--tags');
   const source = git(cwd, 'rev-parse', 'origin/develop');
   const registry = await registryMetadata();
