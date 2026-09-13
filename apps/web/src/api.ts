@@ -2,6 +2,7 @@
 // @palmagent/shared — the wire contract is shared with the backend, so
 // we never redefine it here. SSE (read) lives in the stream hooks; this file is
 // the control plane (REST) only.
+import { clientVersion, observeServerVersion } from "./pwa";
 import type {
   AccountLimits,
   SessionHandoffResponse,
@@ -25,6 +26,7 @@ import type {
   TaskState,
   TaskStatus,
   UpdateRoutineRequest,
+  UpdateAction,
   UpdateSettingsChange,
   UpdateSettingsStatus,
   ValidateRepoPathResponse,
@@ -58,9 +60,10 @@ export function setOnUnauthorized(fn: (() => void) | null): void {
 async function request<T>(method: string, path: string, body?: unknown, opts?: { authProbe?: boolean }): Promise<T> {
   const res = await fetch(path, {
     method,
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
+    headers: { "x-palmagent-version": clientVersion, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  observeServerVersion(res.headers.get("x-palmagent-version"));
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     if (res.status === 401 && !opts?.authProbe) onUnauthorized?.();
@@ -75,6 +78,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
 
 export const api = {
   updateSettings: {
+    action: (action: UpdateAction) => request<UpdateSettingsStatus>("POST", "/api/settings/updates", action),
     get: () => request<UpdateSettingsStatus>("GET", "/api/settings/updates"),
     change: (change: UpdateSettingsChange) => request<UpdateSettingsStatus>("PATCH", "/api/settings/updates", change),
   },

@@ -9,6 +9,15 @@ type EventListener = (row: EventRow) => void;
 type TasksListener = (tasks: TaskState[]) => void;
 
 export class Hub {
+  private updateSubs = new Set<() => void>();
+  onUpdates(listener: () => void): () => void {
+    this.updateSubs.add(listener);
+    return () => { this.updateSubs.delete(listener); };
+  }
+  emitUpdates(): void {
+    for (const listener of this.updateSubs) { try { listener(); } catch { /* isolate subscribers */ } }
+  }
+
   private eventSubs = new Set<EventListener>();
   private tasksSubs = new Set<TasksListener>();
 

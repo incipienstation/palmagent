@@ -90,10 +90,12 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
 test("update settings require authentication, validate one bounded preference, and report the running build", async (t) => {
   let changes = 0;
   const state: UpdateSettingsState = { availability: "available", settings: {
-    channel: "stable", autoUpdate: false, timerActive: false, lastUpdate: null,
+    channel: "stable", autoUpdate: false, discovery: null, pending: null, lastUpdate: null,
   } };
   const updates = {
     async status() { return state; },
+    async action() { changes++; return state; },
+    async resume() { return state; },
     async change(change: import("@palmagent/shared").UpdateSettingsChange) {
       changes++;
       Object.assign(state.settings!, change);
@@ -128,6 +130,20 @@ test("update settings require authentication, validate one bounded preference, a
   assert.equal((await (await dev.app.request(path)).json() as UpdateSettingsStatus).availability, "authentication-required");
   assert.equal((await dev.app.request(path, { method: "PATCH", body: '{"autoUpdate":false}' })).status, 403);
   assert.equal(changes, 2);
+  assert.equal((await f.app.request(path, { method: "POST", body: '{"action":"visit"}' })).status, 401);
+  assert.equal((await dev.app.request(path, { method: "POST", body: '{"action":"visit"}' })).status, 403);
+  for (const input of [{ action: "resume" }, { action: "install" }, { action: "install", version: "1.0.0", command: "sh" }, { action: "visit", path: "/other" }]) {
+    assert.equal((await f.app.request(path, { method: "POST", headers, body: JSON.stringify(input) })).status, 400);
+  }
+  assert.equal((await f.app.request(path, { method: "POST", headers: { ...headers, origin: "https://other.example" }, body: '{"action":"visit"}' })).status, 403);
+  const old = await f.app.request(path, { method: "POST", headers: { ...headers, "x-palmagent-version": "0.1.0-alpha.3" }, body: '{"action":"visit"}' });
+  assert.equal(old.status, 409);
+  assert.equal(old.headers.get("x-palmagent-version"), "0.1.0-alpha.4");
+  assert.equal(changes, 2, "old screens cannot change the new server");
+  for (const input of [{ action: "visit" }, { action: "check" }, { action: "install", version: "0.1.0-alpha.5" }]) {
+    assert.equal((await f.app.request(path, { method: "POST", headers: { ...headers, "x-palmagent-version": "0.1.0-alpha.4" }, body: JSON.stringify(input) })).status, 200);
+  }
+  assert.equal(changes, 5);
 });
 
 test("account limits use the task's provider home without starting a turn and are not browser-cacheable", async (t) => {

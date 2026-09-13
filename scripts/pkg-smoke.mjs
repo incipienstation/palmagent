@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { freePort, smokeEnv, startSmokeServer } from "./lib/pkg-smoke-runtime.mjs";
@@ -153,7 +153,24 @@ try {
   assert.equal(readFileSync(installEnv, "utf8"), beforePlan);
   assert.equal(readFileSync(configPath, "utf8"), savedPreferences);
   assert(!existsSync(join(scratch, "data/update-result.json")), "planning never creates an update receipt");
-  console.log("[smoke] PASS: packed CLI, isolated SQLite, and PWA");
+  // Exercise the actual bundled access bridge with a fake registry and privilege
+  // tool. The incompatible target can be discovered but never installed.
+  writeFileSync(join(fakeBin, "sudo"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+  writeFileSync(installEnv, beforePlan.replace("RUN_USER=palmagent", `RUN_USER=${userInfo().username}`));
+  const accessEnv = { ...env, PATH: fakeBin + ":" + env.PATH };
+  const access = (action) => JSON.parse(execFileSync(bin, ["update-settings", action,
+    "--data-dir", join(scratch, "data"), "--expected-db", db], { cwd: scratch, env: accessEnv, encoding: "utf8" }));
+  const visit = access("visit");
+  assert.equal(visit.ok, true);
+  assert.equal(visit.state.settings.discovery.targetVersion, target);
+  assert.equal(visit.state.settings.discovery.eligible, false);
+  assert.equal(visit.state.settings.pending, null);
+  writeFileSync(join(fakeBin, "npm"), "#!/bin/sh\nexit 1\n", { mode: 0o700 });
+  assert.deepEqual(access("visit").state.settings.discovery, visit.state.settings.discovery, "a repeat access reuses cached availability");
+  assert.equal(access("check").state.settings.discovery.error, true, "Check again reaches the registry instead of rereading status");
+  execFileSync(bin, ["update-request", "--data-dir", join(scratch, "data")], { env: accessEnv, encoding: "utf8" });
+  assert(!existsSync(join(scratch, "data/update-result.json")), "checking does not create an installation result");
+  console.log("[smoke] PASS: packed CLI, access checks, isolated SQLite, and PWA");
 } finally {
   await server?.stop();
   rmSync(scratch, { recursive: true, force: true });

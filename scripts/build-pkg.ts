@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     "## Internal commands",
     "",
     `- \`${cli} config\`     Shared user settings: get, init, set --channel stable|preview`,
-    `- \`${cli} auto-update\` Background timer: enable, disable, status`,
+    `- \`${cli} auto-update\` Access-triggered updates: enable, disable, status`,
     `- \`${cli} install\`    First-run setup: systemd units, nginx, TLS (certbot), first passkey`,
     `- \`${cli} setup\`      Reconfigure an existing install + re-render units/nginx`,
     `- \`${cli} doctor\`     Diagnose a running instance + suggest fixes`,

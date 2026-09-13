@@ -21,12 +21,35 @@ export const UpdateSettingsChangeSchema = z.union([
 ]);
 export type UpdateSettingsChange = z.infer<typeof UpdateSettingsChangeSchema>;
 
+export const UpdateActionSchema = z.union([
+  z.object({ action: z.enum(["visit", "check"]) }).strict(),
+  z.object({ action: z.literal("install"), version: z.string().min(1).max(100) }).strict(),
+]);
+export type UpdateAction = z.infer<typeof UpdateActionSchema>;
+
+export const UpdateDiscoverySchema = z.object({
+  channel: UpdateChannelSchema,
+  currentVersion: z.string(),
+  targetVersion: z.string().nullable(),
+  checkedAt: z.string().datetime(),
+  eligible: z.boolean(),
+  error: z.boolean(),
+});
+export type UpdateDiscovery = z.infer<typeof UpdateDiscoverySchema>;
+
+export const UpdateRequestSchema = z.object({
+  id: z.string().uuid(), channel: UpdateChannelSchema,
+  currentVersion: z.string(), targetVersion: z.string(), automatic: z.boolean(),
+});
+export type UpdateRequest = z.infer<typeof UpdateRequestSchema>;
+
 export const UpdateSettingsStateSchema = z.object({
   availability: z.enum(["available", "not-installed", "source-install", "installation-mismatch", "permission-required", "authentication-required", "unavailable"]),
   settings: z.object({
     channel: UpdateChannelSchema,
     autoUpdate: z.boolean(),
-    timerActive: z.boolean(),
+    discovery: UpdateDiscoverySchema.nullable(),
+    pending: UpdateRequestSchema.nullable(),
     lastUpdate: UpdateReceiptSchema.nullable(),
   }).nullable(),
 });
@@ -38,6 +61,6 @@ export type UpdateSettingsStatus = UpdateSettingsState & {
 
 export const UpdateSettingsCommandResultSchema = z.union([
   z.object({ ok: z.literal(true), state: UpdateSettingsStateSchema }),
-  z.object({ ok: z.literal(false), error: z.enum(["busy", "unavailable", "save-failed"]) }),
+  z.object({ ok: z.literal(false), error: z.enum(["busy", "unavailable", "save-failed", "stale-update", "update-failed"]) }),
 ]);
 export type UpdateSettingsCommandResult = z.infer<typeof UpdateSettingsCommandResultSchema>;

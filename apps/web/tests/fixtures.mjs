@@ -552,7 +552,8 @@ export const updateSettings = {
   currentVersion: "0.1.0-alpha.4",
   availability: "available",
   settings: {
-    channel: "preview", autoUpdate: false, timerActive: false,
+    channel: "preview", autoUpdate: false, discovery: { channel: "preview", currentVersion: "0.1.0-alpha.4", targetVersion: "0.1.0-alpha.4",
+      eligible: true, error: false, checkedAt: "2026-01-01T12:00:00.000Z" }, pending: null,
     lastUpdate: {
       schemaVersion: 1, status: "succeeded", previousVersion: "0.1.0-alpha.4", targetVersion: "0.1.0-alpha.4",
       reason: "already-current", checkedAt: "2026-01-01T12:00:00.000Z",

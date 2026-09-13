@@ -1,3 +1,6 @@
+import { bindUpdateActivity } from "./update-activity.js";
+import { watch } from "node:fs";
+import { readUpdateAccess, updateAccessFile } from "./cli/update-access.js";
 import { createServer, type Server } from "node:http";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +19,13 @@ const updates = createUpdateSettingsService({
   packageDir: build ? dirname(fileURLToPath(import.meta.url)) : undefined,
   dataDir: runtime.config.dataDir, dbPath: runtime.config.dbPath,
 });
+const updateActivity = bindUpdateActivity(runtime.hub,
+  () => Boolean(build && readUpdateAccess(runtime.config.dataDir).pending), () => updates.resume());
+// Native file events deliver results from the independent updater. No status timer.
+const updateWatcher = build ? watch(runtime.config.dataDir, (_event, filename) => {
+  if (filename === updateAccessFile || filename === "update-result.json") runtime.hub.emitUpdates();
+}) : undefined;
+updateWatcher?.on("error", () => { updateWatcher.close(); });
 const app = createApp({ ...runtime, build, updates, shutdown: shutdown.signal });
 const server = createServer(getRequestListener(app.fetch));
 let local: Server | undefined;
@@ -30,6 +40,8 @@ function closeServer(listener: Server): Promise<void> {
 }
 function close() {
   return closing ??= (async () => {
+    updateActivity.close();
+    updateWatcher?.close();
     shutdown.abort(); // stop admission and release SSE subscriptions first
     await Promise.all([closeServer(server), ...(local ? [closeServer(local)] : [])]);
     await runtime.close();
@@ -45,5 +57,6 @@ try {
     server.listen(runtime.config.port, runtime.config.host, () => { server.off("error", reject); resolve(); });
   });
   runtime.start();
+  void updateActivity.wake();
   console.log(`${BRANDING.productName} internal listener on ${runtime.config.host}:${runtime.config.port}  ·  TLS required at the public edge  ·  db=${runtime.config.dbPath}  ·  cap=${runtime.config.concurrency}`);
 } catch (error) { await close(); throw error; }

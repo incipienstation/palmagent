@@ -47,7 +47,7 @@ test.describe("root back-guard (standalone)", () => {
 
     // Absorbed: the exit hint shows, the inbox is still mounted (app not closed),
     // and the guard re-covered the floor (armed for a second, real back).
-    await expect(page.getByText("Press back again to exit")).toBeVisible();
+    await expect(page.getByText("Press back again to exit", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
     expect(await page.evaluate(guardMarker)).toBe("app");
   });

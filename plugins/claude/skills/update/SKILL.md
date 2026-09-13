@@ -99,8 +99,8 @@ required, say so rather than claiming its loaded skills changed already.
 
 An installation or activation failure records the previous/target versions and
 pauses automatic retries. Inspect `auto-update status` and use `doctor` for
-runtime/package identity and logs. Do not erase the failure record to resume a
-timer. Do not claim package or database rollback: no automatic rollback occurs.
+runtime/package identity and logs. Do not erase the failure record to resume automatic
+attempts. Do not claim package or database rollback: no automatic rollback occurs.
 Restore a prior plugin only after verifying which package is actually installed
 and running; a partial package failure is not evidence that the old pair remains
 intact. Plan any package downgrade and database recovery separately.
@@ -108,5 +108,5 @@ intact. Plan any package downgrade and database recovery separately.
 Automatic updates reuse this package planner and activation flow. They run only
 when explicitly enabled, stay within the installed package's `x.x.x`, retain
 plugins, and defer when a new compatibility line or active/queued/waiting tasks
-require user attention. `settings` controls the timer. Source checkouts remain
+require user attention. `settings` controls access-triggered updates. Source checkouts remain
 maintainer-managed and use the repository build workflow followed by `setup`.

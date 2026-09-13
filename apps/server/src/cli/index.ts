@@ -15,6 +15,7 @@ import { getUserConfig, initUserConfig, setUserChannel } from "./user-config.js"
 import { compatiblePlugin } from "./release-policy.js";
 import { resolveDataDir } from "./config.js";
 import { userConfigPath } from "./user-config.js";
+import { readUpdateAccess } from "./update-access.js";
 import { acquireUpdateLock } from "./update-state.js";
 import { applyUpdateSettings, autoUpdateStatus, runUpdateSettingsCommand } from "./update-settings.js";
 import {
@@ -116,8 +117,8 @@ Commands:
   setup        Reconfigure an existing install + re-render units/nginx
   doctor       Diagnose a running instance + suggest fixes
   update       Apply config, or fetch the selected release channel with --pull
-  auto-update  Internal scheduler API: enable, disable, status (off by default)
-  update-settings  Internal web settings bridge (JSON; no package installation)
+  auto-update  Access-triggered updates: enable, disable, status (off by default)
+  update-settings  Internal web update bridge (JSON; installation runs separately)
   config       Internal plugin settings API: get, init, set --channel <name>
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
@@ -158,6 +159,17 @@ async function main(): Promise<void> {
   if (cmd === "update-settings") {
     process.env.PALMAGENT_NON_INTERACTIVE = "1";
     console.log(JSON.stringify(runUpdateSettingsCommand(rest)));
+    return;
+  }
+  if (cmd === "update-request") {
+    const { values } = parseArgs({ args: rest, strict: true, allowPositionals: false, options: { "data-dir": { type: "string" } } });
+    if (!values["data-dir"]) throw new Error("update request requires an installation");
+    const request = readUpdateAccess(values["data-dir"]).pending;
+    if (!request) return;
+    process.env.PALMAGENT_NON_INTERACTIVE = "1";
+    process.exitCode = await update({ dryRun: false, nonInteractive: true, force: false, purge: false,
+      pull: true, automatic: request.automatic, request,
+      get: (key) => key === "data-dir" ? values["data-dir"] : key === "to" ? request.targetVersion : undefined });
     return;
   }
   const flags = parseFlags(rest);

@@ -11,7 +11,7 @@ import type { HttpDependencies } from "./types.js";
 const MAX_PENDING_BYTES = 64 * 1024 * 1024;
 const MAX_PENDING_FRAMES = 1024;
 
-export function sessionStream(c: Context, { db, hub, service, config, shutdown }: HttpDependencies) {
+export function sessionStream(c: Context, { db, hub, service, config, shutdown, build }: HttpDependencies) {
   const query = parse(StreamQuerySchema, c.req.query());
   const taskId = query.task || undefined;
   if (taskId) service.getTask(taskId);
@@ -19,7 +19,7 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown }
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new HttpError(400, "invalid event cursor");
   const idOf = (row: EventRow) => taskId ? row.seq : row.id;
   const frame = (row: EventRow) => `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: row.event })}\n\n`;
-  const snapshot = (replayThrough?: number) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), replayThrough })}\n\n`;
+  const snapshot = (replayThrough?: number) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), replayThrough, version: build?.version })}\n\n`;
 
   const response = streamSSE(c, async (stream) => {
     // Capture a durable boundary and subscribe synchronously BEFORE the first
@@ -40,6 +40,7 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown }
     const offEvent = hub.onEvent((row) => {
       if ((!taskId || row.event.taskId === taskId) && idOf(row) > Math.max(boundary, cursor)) enqueue(frame(row));
     });
+    const offUpdates = taskId ? () => {} : hub.onUpdates(() => enqueue('data: {"type":"updates"}\n\n'));
     const offTasks = hub.onTasks(() => enqueue(snapshot()));
     const keepAlive = setInterval(() => enqueue(":keep-alive\n\n"), config.keepAliveMs);
     const abort = () => stream.abort();
@@ -47,7 +48,7 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown }
       if (closed) return;
       closed = true;
       clearInterval(keepAlive);
-      offEvent(); offTasks();
+      offEvent(); offTasks(); offUpdates();
       shutdown?.removeEventListener("abort", abort);
       c.req.raw.signal.removeEventListener("abort", abort);
       queue.length = 0;

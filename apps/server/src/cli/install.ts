@@ -31,7 +31,7 @@ import { readPluginVersions, resolveUpdatePlan } from "./update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "./update-state.js";
 import { beginUpdateMaintenance } from "../update-maintenance.js";
 import { verifyUpdateIdle } from "./update-idle.js";
-import { configureAutoUpdate, removeAutoUpdateTimer } from "./auto-update.js";
+import { configureAutoUpdate, retireAutoUpdateTimer, removeAutoUpdateTimer } from "./auto-update.js";
 import { preflight, doctor, printChecks } from "./checks.js";
 import { renderNginx } from "./nginx.js";
 import {
@@ -50,6 +50,8 @@ import {
   which,
 } from "./sh.js";
 
+import { clearUpdateRequest, validUpdateRequest } from "./update-access.js";
+
 export interface Flags {
   dryRun: boolean;
   nonInteractive: boolean;
@@ -58,6 +60,7 @@ export interface Flags {
   pull: boolean;
   plan?: boolean;
   automatic?: boolean;
+  request?: import("@palmagent/shared").UpdateRequest;
   get(key: string): string | undefined;
   getAll?(key: string): string[];
 }
@@ -569,6 +572,7 @@ export async function install(flags: Flags): Promise<number> {
     log.ok(
       `host-local health check passed; public origin is https://${cfg.domain}`,
     );
+    retireAutoUpdateTimer();
     if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
     log.step("first passkey");
     await enrollPasskey(cfg, flags);
@@ -607,6 +611,7 @@ export async function setup(flags: Flags): Promise<number> {
     restartWeb();
     const ok = await healthcheck(cfg);
     log[ok ? "ok" : "err"](ok ? "healthy" : "not healthy after restart");
+    if (ok) retireAutoUpdateTimer();
     if (ok && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
     return ok ? 0 : 1;
   }
@@ -686,12 +691,16 @@ export async function update(flags: Flags): Promise<number> {
 
   const unlock = acquireUpdateLock(dirname(userConfigPath()));
   let endMaintenance: (() => void) | undefined;
+  let keepRequestedUpdate = false;
+  let canRecordRequestError = false;
   try {
+    if (flags.request && !validUpdateRequest(cfg, flags.request)) return 0;
     const previous = readUpdateReceipt(cfg.dataDir);
-    if (flags.automatic && (previous?.status === "failed" || previous?.status === "applying")) {
+    if ((flags.automatic || flags.request) && (previous?.status === "failed" || previous?.status === "applying")) {
       log.warn("automatic updates are paused after an unsuccessful attempt; use the update plugin to inspect and recover");
       return 0;
     }
+    canRecordRequestError = true;
     const plan = resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion);
     const record = (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => writeUpdateReceipt(cfg.dataDir, {
       status, previousVersion: plan.currentVersion, targetVersion: plan.targetVersion, reason,
@@ -717,22 +726,24 @@ export async function update(flags: Flags): Promise<number> {
     // mismatch after replacing an unrelated global package.
     const root = run("npm", ["root", "-g"], { timeout: 10_000 });
     if (!root.ok || resolve(root.stdout.trim(), BRANDING.packageName) !== resolve(cfg.pkgDir!)) throw new Error("the active npm prefix does not own this installation; package files were not changed");
-    if (flags.automatic) {
+    if (flags.automatic || flags.request) {
       if (!canSudoNonInteractive()) throw new Error("automatic updates require non-interactive service-management access");
       endMaintenance = beginUpdateMaintenance(cfg.dbPath);
       try {
         if (!await verifyUpdateIdle(cfg)) {
+          keepRequestedUpdate = true;
           record("deferred", "tasks-active");
           log.info("tasks are running, waiting, or queued; automatic update deferred");
           return 0;
         }
       } catch {
+        keepRequestedUpdate = true;
         record("deferred", "idle-state-unverified");
         log.warn("could not verify an idle maintenance window; automatic update deferred");
         return 0;
       }
       const latestSettings = getUserConfig({ dataDir: cfg.dataDir });
-      if (!latestSettings.autoUpdate || latestSettings.channel !== plan.channel) {
+      if ((flags.automatic && !latestSettings.autoUpdate) || latestSettings.channel !== plan.channel) {
         record("deferred", "settings-changed");
         return 0;
       }
@@ -761,8 +772,17 @@ export async function update(flags: Flags): Promise<number> {
       log.err(`${error instanceof Error ? error.message : "update failed"}; automatic retries are paused. Use the doctor/update plugin to recover; the previous package and database were not restored.`);
       return 1;
     }
+  } catch (error) {
+    if (!flags.request || !canRecordRequestError) throw error;
+    writeUpdateReceipt(cfg.dataDir, { status: "deferred", previousVersion: flags.request.currentVersion,
+      targetVersion: flags.request.targetVersion, reason: "request-failed" });
+    log.err("the requested update could not start; check availability or use the update plugin");
+    return 1;
   } finally {
-    try { endMaintenance?.(); } finally { unlock(); }
+    try {
+      endMaintenance?.();
+      if (flags.request && !keepRequestedUpdate) clearUpdateRequest(cfg, flags.request.id);
+    } finally { unlock(); }
   }
 }
 
@@ -789,6 +809,7 @@ async function applyInstalledUpdate(cfg: InstallConfig, flags: Flags): Promise<n
   restartWeb();
   const ok = await healthcheck(cfg, expectedVersion);
   if (ok) {
+    retireAutoUpdateTimer();
     persistUserChannel(cfg, flags);
     saveConfig(cfg);
   }

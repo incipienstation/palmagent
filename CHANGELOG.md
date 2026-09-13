@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Check for updates when opening or returning to the app, with Check again and
+  Update actions in Settings. Updates wait for active tasks to finish and then
+  resume automatically. The six-hour timer is removed when this version is activated.
+- When the server changes version, the app checks for its new screen code and asks
+  you to refresh before submitting further changes.
+
 ## 0.1.0-alpha.9
 
 ### Changed
