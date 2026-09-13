@@ -101,7 +101,7 @@ function openSse(res) {
   });
   res.write(": connected\n\n");
 }
-const tasksFrame = (res, replayThrough) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, replayThrough })}\n\n`);
+const tasksFrame = (res, replayThrough, history) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, replayThrough, history })}\n\n`);
 
 const taskClients = new Set();
 
@@ -112,14 +112,22 @@ function handleStream(req, res, url) {
   }
   openSse(res);
   taskClients.add(res);
-  tasksFrame(res, taskId ? (events[taskId] ?? []).length : undefined); // current state up front (both stream kinds send this first)
+  const stream = events[taskId] ?? [];
+  const cursor = Number(req.headers["last-event-id"] ?? url.searchParams.get("lastEventId") ?? 0);
+  const tail = taskId && url.searchParams.has("tail") && !url.searchParams.has("lastEventId") && !req.headers["last-event-id"];
+  let after = tail ? Math.max(0, stream.length - 200) : cursor;
+  while (tail && after > 0 && stream[after]?.kind === "assistant_text" && stream[after - 1]?.kind === "assistant_text") after--;
+  if (tail) res.write(`id: ${after}\n`);
+  tasksFrame(res, taskId ? stream.length : undefined, tail ? {
+    after, before: after > 0 ? after + 1 : null,
+  } : undefined);
 
   if (taskId) {
     // Replay the whole scoped stream immediately, stamping the per-task seq on
     // the `id:` line in fixture order. Sending synchronously keeps the rendered
     // log deterministic for snapshots (no inter-event timing to settle).
-    const stream = events[taskId] ?? [];
     stream.forEach((ev, i) => {
+      if (i < after) return;
       const event = { taskId, agent: tasks.find((t) => t.taskId === taskId).agent, ts: 0, ...ev };
       res.write(`id: ${i + 1}\ndata: ${JSON.stringify({ type: "event", event })}\n\n`);
     });
@@ -198,6 +206,18 @@ const server = createServer(async (req, res) => {
       if (pathname === "/api/tasks") {
         const status = url.searchParams.get("status");
         return json(res, 200, { tasks: status ? tasks.filter((t) => t.status === status) : tasks });
+      }
+      const historyMatch = /^\/api\/tasks\/([^/]+)\/history$/.exec(pathname);
+      if (historyMatch) {
+        const id = decodeURIComponent(historyMatch[1]);
+        const stream = events[id] ?? [];
+        const before = Number(url.searchParams.get("before"));
+        let start = Math.max(0, Math.min(stream.length, before - 1) - 200);
+        while (start > 0 && stream[start]?.kind === "assistant_text" && stream[start - 1]?.kind === "assistant_text") start--;
+        const agent = tasks.find((task) => task.taskId === id)?.agent ?? "codex";
+        return json(res, 200, { events: stream.slice(start, before - 1).map((event, i) => ({
+          seq: start + i + 1, event: { taskId: id, agent, ts: 0, ...event },
+        })), before: start > 0 ? start + 1 : null });
       }
       if (pathname.startsWith("/api/tasks/")) {
         if (pathname.endsWith("/account-limits")) {

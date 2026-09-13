@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import type {
   AgentEvent, AgentKind, AgentUsage, Permission, PrRef, PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, TaskState, TaskStatus,
 } from "@palmagent/shared";
-import { makePrRef } from "@palmagent/shared";
+import { HISTORY_PAGE_EVENTS, makePrRef } from "@palmagent/shared";
 import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 
 // SQLite holds metadata + the append-only event log only. Resume still reads the
@@ -391,6 +391,30 @@ export class Db {
        WHERE e.task_id = ? AND e.seq > ? ORDER BY e.seq LIMIT ?`,
     ).all(taskId, afterSeq, limit) as EventJoinRow[];
     return rows.map(rowToEvent);
+  }
+
+  // Select a recent page without cutting a token-streamed Markdown message in
+  // half. The target is an event count; one whole assistant run can exceed it.
+  historyStart(taskId: string, before: number, limit = HISTORY_PAGE_EVENTS): number {
+    const edge = this.db.prepare(`SELECT seq, kind FROM events
+      WHERE task_id = ? AND seq < ? ORDER BY seq DESC LIMIT 1 OFFSET ?`)
+      .get(taskId, before, limit - 1) as { seq: number; kind: string } | undefined;
+    if (!edge) return 1;
+    if (edge.kind !== "assistant_text") return edge.seq;
+    const previous = this.db.prepare(`SELECT seq FROM events
+      WHERE task_id = ? AND seq < ? AND kind != 'assistant_text' ORDER BY seq DESC LIMIT 1`)
+      .get(taskId, edge.seq) as { seq: number } | undefined;
+    return (previous?.seq ?? 0) + 1;
+  }
+
+  historyPage(taskId: string, before: number): import("@palmagent/shared").TaskHistoryResponse {
+    const start = this.historyStart(taskId, before);
+    const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+      FROM events e JOIN tasks t ON t.id = e.task_id
+      WHERE e.task_id = ? AND e.seq >= ? AND e.seq < ? ORDER BY e.seq`)
+      .all(taskId, start, before) as EventJoinRow[];
+    return { events: rows.map((row) => ({ seq: row.seq, event: rowToEvent(row).event })),
+      before: start > 1 ? start : null };
   }
 
   // ---- usage (per-agent aggregate over the result event log) ----

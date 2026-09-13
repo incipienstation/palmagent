@@ -1,3 +1,4 @@
+import type { SseTasksFrame } from "@palmagent/shared";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { StreamQuerySchema } from "@palmagent/shared/requests";
@@ -15,17 +16,26 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
   const query = parse(StreamQuerySchema, c.req.query());
   const taskId = query.task || undefined;
   if (taskId) service.getTask(taskId);
-  const cursor = Number(c.req.header("last-event-id") ?? query.lastEventId ?? 0);
+  const cursorText = c.req.header("last-event-id") ?? query.lastEventId;
+  const cursor = Number(cursorText ?? 0);
+  const snapshotsOnly = query.snapshots === "1";
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new HttpError(400, "invalid event cursor");
   const idOf = (row: EventRow) => taskId ? row.seq : row.id;
   const frame = (row: EventRow) => `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: row.event })}\n\n`;
-  const snapshot = (replayThrough?: number) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), replayThrough, version: build?.version })}\n\n`;
+  const snapshot = (replayThrough?: number, history?: SseTasksFrame["history"]) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), replayThrough, history, version: build?.version })}\n\n`;
 
   const response = streamSSE(c, async (stream) => {
     // Capture a durable boundary and subscribe synchronously BEFORE the first
     // asynchronous write. New events queue behind replay; no gap or duplicate.
     const boundary = db.eventCursor(taskId);
-    const firstSnapshot = snapshot(taskId ? boundary : undefined);
+    const start = taskId && query.tail && cursorText === undefined
+      ? db.historyStart(taskId, boundary + 1) : undefined;
+    const history = start !== undefined && taskId
+      ? { after: start - 1, before: start > 1 ? start : null }
+      : undefined;
+    // Seed EventSource's native reconnect cursor before the first history event.
+    // This also preserves an empty session's explicit zero cursor on reconnect.
+    const firstSnapshot = (history ? `id: ${history.after}\n` : "") + snapshot(taskId ? boundary : undefined, history);
     let pendingBytes = 0;
     const queue: string[] = [];
     let wake: (() => void) | undefined;
@@ -37,7 +47,7 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
       queue.push(value);
       wake?.();
     };
-    const offEvent = hub.onEvent((row) => {
+    const offEvent = snapshotsOnly ? () => {} : hub.onEvent((row) => {
       if ((!taskId || row.event.taskId === taskId) && idOf(row) > Math.max(boundary, cursor)) enqueue(frame(row));
     });
     const offUpdates = taskId ? () => {} : hub.onUpdates(() => enqueue('data: {"type":"updates"}\n\n'));
@@ -61,7 +71,7 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
     try {
       if (closed) return;
       await stream.write(": connected\n\n" + firstSnapshot);
-      let after = cursor;
+      let after = snapshotsOnly ? boundary : start !== undefined ? start - 1 : cursor;
       while (!closed && after < boundary) {
         const rows = (taskId ? db.eventsAfterSeq(taskId, after, 16) : db.eventsAfterGlobal(after, 16)).filter((row) => idOf(row) <= boundary);
         if (!rows.length) break;

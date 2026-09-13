@@ -1,14 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
-
-import { installScopedStream, send, event, open } from "./_scoped-stream";
+import { test, expect } from "@playwright/test";
+import { installScopedStream, send, event, open, viewport, expectBottom, type Harness } from "./_session-stream";
 
 test.beforeEach(async ({ page }) => installScopedStream(page));
-
-const viewport = (page: Page) => page.locator("[data-radix-scroll-area-viewport]").first();
-async function expectBottom(page: Page) {
-  await expect.poll(() => viewport(page).evaluate((el) =>
-    el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(1);
-}
 
 test("opens delayed history at the bottom and preserves live follow and reading position", async ({ page }) => {
   await open(page, "t-idle-rich");
@@ -26,7 +19,8 @@ test("opens delayed history at the bottom and preserves live follow and reading 
     Object.assign(window, { initialScrollSamples: samples });
     const sample = () => {
       const el = document.querySelector("[data-radix-scroll-area-viewport]");
-      if (el?.textContent?.includes("Latest history")) {
+      if (el?.textContent?.includes("Latest history") &&
+          getComputedStyle(el.querySelector('[data-testid="virtuoso-item-list"]') ?? el).visibility === "visible") {
         samples.push(el.scrollHeight - el.clientHeight - el.scrollTop);
       }
       if (samples.length < 5) requestAnimationFrame(sample);
@@ -100,4 +94,20 @@ test("empty history and older servers do not leave a loading state", async ({ pa
   await send(page, "t-run", { type: "tasks", tasks: [] });
   await event(page, "t-run", 1, "Legacy history");
   await expect(page.getByText("Legacy history")).toBeVisible();
+});
+
+
+test("viewport resizing follows the bottom without moving a reader in older history", async ({ page }) => {
+  await open(page, "t-idle-rich");
+  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 1 });
+  await event(page, "t-idle-rich", 1, "Long session history\n\n".repeat(200));
+  await expectBottom(page);
+  await page.setViewportSize({ width: 360, height: 650 });
+  await expectBottom(page);
+  await viewport(page).evaluate((el) => { el.scrollTop = 100; });
+  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
+  await page.setViewportSize({ width: 360, height: 600 });
+  await event(page, "t-idle-rich", 2, "A new streamed line\n\n");
+  await expect(page.getByText(/A new streamed line/)).toHaveCount(1);
+  expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
 });

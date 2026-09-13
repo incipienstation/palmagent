@@ -32,7 +32,7 @@ export async function installScopedStream(page: Page) {
   });
 }
 
-type Harness = Window & {
+export type Harness = Window & {
   sendScopedFrame(taskId: string, frame: unknown, seq?: number): void;
   hasScopedStream(taskId: string): boolean;
 };

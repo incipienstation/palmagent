@@ -27,7 +27,7 @@ export function connectSse(
     es?.close();
     onConn("connecting");
     const lastId = getLastId();
-    const url = lastId
+    const url = lastId !== undefined && lastId !== ""
       ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lastEventId=${encodeURIComponent(String(lastId))}`
       : baseUrl;
     es = new EventSource(url);

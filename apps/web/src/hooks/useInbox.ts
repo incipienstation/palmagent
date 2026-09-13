@@ -1,6 +1,6 @@
 import { updatesChanged } from "../update-events";
 import { observeServerVersion } from "../pwa";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { SseFrame, TaskState } from "@palmagent/shared";
 import { connectSse, type ConnState } from "./sse";
 
@@ -11,21 +11,16 @@ export interface Inbox {
   conn: ConnState;
 }
 
-// The ONE inbox stream (GET /api/stream). The server pushes a fresh `tasks`
-// snapshot on connect and on every state change, so the inbox just mirrors the
-// latest snapshot — it ignores per-event frames (the task detail consumes those
-// on its scoped stream). connectSse re-dials on foreground/online and replays
-// from the last event id, so the next snapshot resyncs us after a mobile gap.
+// The inbox needs only fresh task snapshots, including after mobile reconnects.
+// Event replay is reserved for the selected session's scoped stream.
 export function useInbox(): Inbox {
   const [tasks, setTasks] = useState<TaskState[]>([]);
   const [conn, setConn] = useState<ConnState>("connecting");
-  const lastId = useRef<string>("");
 
   useEffect(() => {
     return connectSse(
-      "/api/stream",
+      "/api/stream?snapshots=1",
       (e) => {
-        if (e.lastEventId) lastId.current = e.lastEventId; // track the global id high-water-mark
         let frame: SseFrame;
         try {
           frame = JSON.parse(e.data) as SseFrame;
@@ -39,7 +34,7 @@ export function useInbox(): Inbox {
         if (frame.type === "updates") updatesChanged();
       },
       setConn,
-      () => lastId.current,
+      () => undefined,
     );
   }, []);
 

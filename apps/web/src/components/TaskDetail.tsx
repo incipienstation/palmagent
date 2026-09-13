@@ -55,7 +55,7 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
   const { mode } = useOutputMode();
-  const { log, conn, loadingHistory, task: streamTask } = useTaskStream(taskId);
+  const { log, conn, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
   // when the long-lived inbox stream freezes in the background. Fall back to the
@@ -229,7 +229,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
         <Separator />
 
-        <EventLog log={log} live={running} loading={loadingHistory} prompt={loadingHistory ? undefined : task?.prompt} />
+        <EventLog log={log} live={running} loading={loadingHistory}
+          prompt={loadingHistory || hasEarlier ? undefined : task?.prompt}
+          hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier} />
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}

@@ -134,6 +134,7 @@ export interface PushPayload {
 // per-task seq on a scoped stream (`/api/stream?task=:id`) — so EventSource
 // replays via Last-Event-ID on reconnect. `tasks` frames carry no id (they are
 // state snapshots, not log entries) and a fresh one is sent on every connect.
+// An initial tail snapshot seeds id with history.after for native reconnects.
 export interface SseEventFrame {
   type: "event";
   event: AgentEvent;
@@ -144,7 +145,12 @@ export interface SseTasksFrame {
   // Initial scoped snapshot: replay ends at this per-task sequence (0 if empty).
   replayThrough?: number;
   version?: string;
+  history?: { after: number; before: number | null };
 }
+// History pages use the same per-task sequence as the scoped SSE cursor.
+export interface TaskHistoryEvent { seq: number; event: AgentEvent }
+export interface TaskHistoryResponse { events: TaskHistoryEvent[]; before: number | null }
+export const HISTORY_PAGE_EVENTS = 200;
 export type SseFrame = SseEventFrame | SseTasksFrame | { type: "updates" };
 
 // ---- auth (in-app WebAuthn / passkeys) ----

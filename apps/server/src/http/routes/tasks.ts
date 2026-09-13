@@ -1,9 +1,9 @@
 import { Hono, type Context } from "hono";
-import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, IdParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { body, parse } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 
-export function taskRoutes({ service }: HttpDependencies) {
+export function taskRoutes({ service, db }: HttpDependencies) {
   const app = new Hono();
   const id = (c: Context) => parse(IdParamsSchema, c.req.param()).id;
   app.get("/", (c) => c.json({ tasks: service.listTasks(parse(TaskQuerySchema, c.req.query()).status) }));
@@ -16,6 +16,13 @@ export function taskRoutes({ service }: HttpDependencies) {
   app.patch("/:id", async (c) => {
     const input = await body(c, RenameTaskSchema);
     return c.json({ task: service.rename(id(c), input.title) });
+  });
+  app.get("/:id/history", (c) => {
+    const taskId = id(c);
+    service.getTask(taskId);
+    const { before } = parse(HistoryQuerySchema, c.req.query());
+    c.header("cache-control", "no-store");
+    return c.json(db.historyPage(taskId, before));
   });
   app.delete("/:id", (c) => c.json({ task: service.archive(id(c)) }));
   app.post("/:id/handoff", (c) => c.json(service.handoff(id(c))));

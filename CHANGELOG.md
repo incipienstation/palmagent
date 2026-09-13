@@ -30,6 +30,9 @@ An entry does not mean a version has been published.
 - Replace session token counters with remaining account allowance and reset
   countdowns. Claude and Codex show their own quota windows, with additional
   model limits and credits in Details. Limits refresh while sessions are idle too.
+- Long sessions open with recent history and render only nearby messages. Scroll up
+  to load earlier messages while retaining your reading position; live output is
+  batched for smoother updates. The inbox no longer downloads unused event history.
 
 ## 0.1.0-alpha.8
 
