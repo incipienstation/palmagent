@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.9
+
 ### Changed
 
 - Replace session token counters with remaining account allowance and reset
