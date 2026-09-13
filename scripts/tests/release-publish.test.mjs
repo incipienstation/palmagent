@@ -49,6 +49,32 @@ test('publish reviewed bytes once; retry checks registry integrity without movin
   } finally { rmSync(root, { recursive: true }); }
 });
 
+test('post-upload verification tolerates delayed visibility without republishing or hiding conflicts', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'palmagent-publish-test-'));
+  t.after(() => rmSync(root, { recursive: true }));
+  const path = join(root, 'package.tgz'); writeFileSync(path, 'reviewed bytes');
+  const identity = { path, version: '0.1.0-alpha.1', channel: 'next' };
+  const published = { dist: { integrity: `sha512-${hashFile(path, 'sha512', 'base64')}` } };
+  let reads = 0, uploads = 0, waits = 0;
+  const adapters = { env, run: () => { uploads++; }, sleep: async () => { waits++; },
+    registryVersion: async () => ++reads < 4 ? null : published };
+  assert.equal(await publishPackage(identity, adapters), 'published');
+  assert.equal(uploads, 1); assert.equal(waits, 2);
+  reads = uploads = waits = 0;
+  await assert.rejects(publishPackage(identity, { ...adapters, registryVersion: async () => { reads++; return null; } }), /not visible after upload/);
+  assert.equal(uploads, 1); assert.equal(waits, 12); assert.equal(reads, 14);
+  reads = uploads = waits = 0;
+  await assert.rejects(publishPackage(identity, { ...adapters,
+    registryVersion: async () => ++reads === 1 ? null : { dist: { integrity: 'different' } },
+  }), /integrity verification failed/);
+  assert.equal(uploads, 1); assert.equal(waits, 0);
+  reads = uploads = waits = 0;
+  await assert.rejects(publishPackage(identity, { ...adapters,
+    registryVersion: async () => { if (++reads === 1) return null; throw new Error('registry unavailable'); },
+  }), /registry unavailable/);
+  assert.equal(uploads, 1); assert.equal(waits, 0);
+});
+
 for (const version of ['0.1.0-alpha.1', '0.1.0-beta.1', '0.1.0-rc.1', '0.1.0']) {
   test(`publication binds ${version} to its channel, released metadata, tag object, branch and checksums`, () => {
     const root = mkdtempSync(join(tmpdir(), 'palmagent-publication-test-'));

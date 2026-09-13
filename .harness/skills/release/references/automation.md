@@ -169,8 +169,10 @@ bot token or copy a maintainer credential into Actions.
 
 ### Recovery
 
-Inspect Actions runs, tags, drafts, release assets, and npm before retrying. A failed upload can
-already have published the immutable npm version. Retry with the same source and `candidate_run`;
+Inspect Actions runs, tags, drafts, release assets, and npm before retrying. An interrupted upload
+or failed post-upload verification can leave the immutable npm version published. After a successful
+upload, verification retries missing version metadata at five-second intervals, up to 12 retries.
+A reported integrity mismatch or registry lookup error stops immediately. Retry with the same source and `candidate_run`;
 identical registry bytes skip npm upload, and the job verifies the channel before exposing the
 Release. Automatic Preview searches earlier recovery runs for the original producer artifact.
 Changed or expired evidence requires deliberate recovery; do not silently rebuild reviewed bytes.
