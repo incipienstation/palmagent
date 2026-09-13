@@ -132,25 +132,27 @@ export class CodexRunner implements AgentRunner {
       const sessionId = getSession();
       switch (item?.type) {
         case "agent_message":
-          e({ taskId, kind: "assistant_text", sessionId, payload: { text: item.text } });
+          e({ taskId, kind: "assistant_text", sessionId, payload: { text: item.text, messageId: item.id,
+            ...(item.phase === "commentary" ? { phase: "progress" } :
+              item.phase === "final_answer" ? { phase: "final" } : {}) } });
           break;
         case "reasoning":
           e({ taskId, kind: "status", sessionId, payload: { subtype: "reasoning", text: item.text } });
           break;
         case "command_execution":
           e({ taskId, kind: "tool_call", sessionId,
-            payload: { name: "bash", command: item.command, status: item.status } });
+            payload: { id: item.id, name: "bash", command: item.command, status: item.status } });
           if (item.aggregated_output != null || item.exit_code != null) {
             e({ taskId, kind: "tool_result", sessionId,
-              payload: { output: item.aggregated_output, exit_code: item.exit_code } });
+              payload: { tool_use_id: item.id, output: item.aggregated_output, exit_code: item.exit_code, status: item.status } });
           }
           break;
         case "file_change":
-          e({ taskId, kind: "tool_call", sessionId, payload: { name: "file_change", changes: item.changes } });
+          e({ taskId, kind: "tool_call", sessionId, payload: { id: item.id, name: "file_change", changes: item.changes, status: item.status } });
           break;
         case "mcp_tool_call":
         case "web_search":
-          e({ taskId, kind: "tool_call", sessionId, payload: { name: item.type, item } });
+          e({ taskId, kind: "tool_call", sessionId, payload: { id: item.id, name: item.type, status: item.status, item } });
           break;
         case "error":
           e({ taskId, kind: "error", sessionId, payload: { message: item.message } });

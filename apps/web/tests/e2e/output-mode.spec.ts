@@ -1,66 +1,106 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { assertViewportLocked } from "./_helpers";
+import { installScopedStream, open, send } from "./_scoped-stream";
 
-// The "output mode" setting (Settings → Detail) governs how much agent MACHINERY
-// the event log shows. t-idle-nginx carries a raw status + tool work + a long,
-// multi-line tool_result (with an unbreakable URL) so the collapse/expand
-// affordance, its horizontal-overflow containment, and the per-mode defaults can
-// all be exercised on the Galaxy S25 (360×780) viewport.
-
-const HEADING = "Tighten the nginx rate limits";
-// In the collapsed one-line summary (first 400 chars of the output):
-const IN_SUMMARY = "x-accel-buffering";
-// Only in the FULL output, past the 400-char cap → revealed only when expanded:
 const ONLY_WHEN_EXPANDED = "zero 503s under the new nginx.conf";
+const viewport = (page: Page) => page.locator("[data-radix-scroll-area-viewport]").first();
 
-test.describe("output mode — machinery density", () => {
-  test("default: a long machinery row is collapsed; tapping expands it without overflowing the pane", async ({
-    page,
-  }) => {
+for (const mode of ["compact", "default", "verbose"] as const) {
+  test(`${mode}: output density and full record access on mobile`, async ({ page }) => {
+    await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await page.goto("/#/task/t-idle-nginx");
-    await expect(page.getByRole("heading", { name: HEADING })).toBeVisible();
-
-    // The long tool_result collapses to a one-line summary → an expandable row
-    // (role=button). Its tail is not in the DOM yet.
-    const row = page.getByRole("button", { name: new RegExp(IN_SUMMARY) });
-    await expect(row).toBeVisible();
-    await expect(page.getByText(ONLY_WHEN_EXPANDED)).toHaveCount(0);
-
-    await row.click();
-
-    // Now the full, untruncated output is shown…
-    await expect(page.getByText(ONLY_WHEN_EXPANDED)).toBeVisible();
-    // …and neither the document nor the log pane overflows horizontally — the
-    // unbreakable URL wraps inside the pane (the mobile contract).
-    await assertViewportLocked(page);
-    const overflow = await page
-      .locator("[data-radix-scroll-area-viewport]")
-      .first()
-      .evaluate((el) => el.scrollWidth - el.clientWidth);
-    expect(overflow, "expanded machinery output widened the event log pane").toBeLessThanOrEqual(1);
-
-    await expect(page).toHaveScreenshot("output-mode-expanded.png");
-  });
-
-  test("verbose: machinery is expanded by default (no tap)", async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("pref:output-mode", "verbose"));
-    await page.goto("/#/task/t-idle-nginx");
-    await expect(page.getByRole("heading", { name: HEADING })).toBeVisible();
-
-    // Full output is shown on load — no interaction needed.
+    if (mode !== "verbose") {
+      await expect(page.getByText(ONLY_WHEN_EXPANDED)).toHaveCount(0);
+      await expect(page.getByText("session started")).toHaveCount(0);
+      // Legacy prose has no phase metadata and must remain readable.
+      await expect(page.getByText("Adding a per-IP")).toBeVisible();
+      await expect(page.getByText("Per-IP rate limit added; SSE stream verified unthrottled.", { exact: true })).toBeVisible();
+      await expect(page).toHaveScreenshot(`output-mode-${mode}.png`);
+      await page.getByRole("button", { name: /(?:Activity|Commands) · 1 tool$/ }).click();
+    }
     await expect(page.getByText(ONLY_WHEN_EXPANDED)).toBeVisible();
     await assertViewportLocked(page);
+    expect(await viewport(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    if (mode === "default") await expect(page).toHaveScreenshot("output-mode-expanded.png");
   });
+}
 
-  test("compact: raw status lifecycle noise is hidden, tool work stays", async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
-    await page.goto("/#/task/t-idle-nginx");
-    await expect(page.getByRole("heading", { name: HEADING })).toBeVisible();
+test("compact keeps usage and configuration in session details", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
+  await page.goto("/#/task/t-idle-rich");
+  await expect(page.getByRole("button", { name: /Latest usage/ })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Task usage" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Session details", exact: true }).click();
+  const detail = page.getByRole("dialog");
+  await expect(detail.getByText("Permission", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Input 18.2K", { exact: true })).toBeVisible();
+  await assertViewportLocked(page);
+});
 
-    // The "session started" init status is dropped…
-    await expect(page.getByText("session started")).toHaveCount(0);
-    // …but the assistant prose and the (collapsed) tool work remain.
-    await expect(page.getByText("Adding a per-IP")).toBeVisible();
-    await expect(page.getByText(IN_SUMMARY)).toBeVisible();
+for (const mode of ["compact", "default"] as const) {
+  test(`${mode}: growing work stays folded, preserves reading state and surfaces failures`, async ({ page }) => {
+    await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
+    await installScopedStream(page);
+    await open(page, "t-run");
+    await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 0 });
+    let seq = 0;
+    const emit = async (kind: string, payload: unknown) => send(page, "t-run", { type: "event", event: {
+      taskId: "t-run", agent: "codex", ts: seq, kind, payload,
+    } }, ++seq);
+    await emit("assistant_text", { text: "Checking project files. ".repeat(12), phase: "progress", messageId: "progress-1" });
+    for (let i = 0; i < 20; i++) {
+      await emit("tool_call", { id: `tool-${i}`, name: "bash", command: "echo checked" });
+      await emit("tool_result", { tool_use_id: `tool-${i}`, output: `Full tool output ${i}`, exit_code: 0 });
+    }
+    await expect(page.locator("[data-activity]")).toHaveCount(1);
+    await expect(page.getByText("Full tool output 0", { exact: false })).toHaveCount(0);
+    const preview = page.locator("[data-progress-preview]");
+    expect(await preview.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(mode === "compact" ? 24 : 42);
+    const group = page.locator("[data-activity]").getByRole("button").first();
+    await group.focus();
+    await page.keyboard.press("Enter");
+    await expect(group).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
+    await viewport(page).evaluate((el) => { el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
+    await emit("tool_call", { id: "next-tool", name: "bash", command: "echo more" });
+    await expect(group).toHaveAttribute("aria-expanded", "true");
+    expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(50);
+    await group.click();
+    await emit("tool_result", { tool_use_id: "next-tool", output: "Test command failed", exit_code: 1 });
+    await expect(page.getByText("Tool failed — expand for details")).toBeVisible();
+    await expect(page.getByRole("button", { name: /1 failed/ })).toBeVisible();
+    await emit("question", { questions: [{ question: "Which target?", options: [{ label: "Preview" }] }] });
+    await expect(page.getByText("Which target?", { exact: true })).toBeVisible();
+    await emit("status", { subtype: "answer", answers: [{ selected: ["Preview"] }] });
+    await emit("assistant_text", { text: "Finished checking.", phase: "final", messageId: "final-1" });
+    await emit("result", { result: "Finished checking." });
+    await expect(page.getByText("Finished checking.", { exact: true })).toHaveCount(1);
+    await expect(page.locator("[data-progress-preview]")).toHaveCount(mode === "compact" ? 0 : 1);
+    await assertViewportLocked(page);
   });
+}
+
+test("late classification preserves open activity and separate assistant messages", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
+  await installScopedStream(page);
+  await open(page, "t-run");
+  await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 0 });
+  let seq = 0;
+  const emit = (kind: string, payload: unknown) => send(page, "t-run", { type: "event", event: {
+    taskId: "t-run", agent: "claude", ts: seq, kind, payload,
+  } }, ++seq);
+  await emit("assistant_text", { text: "Inspecting files", messageId: "m1" });
+  await emit("tool_call", { id: "t1", name: "Read", input: { file_path: "README.md" } });
+  await page.locator("[data-activity]").getByRole("button").first().click();
+  await emit("status", { subtype: "assistant_message", messageId: "m1", phase: "progress" });
+  await expect(page.locator("[data-activity]").getByRole("button").first()).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("[data-activity]").getByText("Inspecting files", { exact: true })).toBeVisible();
+  await page.locator("[data-activity]").getByRole("button").first().click();
+  await emit("assistant_text", { text: "Final ", messageId: "m2" });
+  await emit("assistant_text", { text: "answer", messageId: "m2" });
+  await emit("assistant_text", { text: "A separate message", messageId: "m3" });
+  await emit("result", { result: "Final answer" });
+  await expect(page.getByText("Final answer", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("A separate message", { exact: true })).toHaveCount(1);
+  await expect(page.locator("[data-progress-preview]")).toHaveCount(0);
 });

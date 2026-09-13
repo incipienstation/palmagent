@@ -12,11 +12,14 @@ async function reports(page: Page, payloads: unknown[], agent = "codex") {
     await route.fulfill({ contentType: "text/event-stream", body });
   });
   await page.goto("/#/task/t-run");
-  return page.getByRole("region", { name: "Task usage" });
+  await page.getByRole("button", { name: "Session details", exact: true }).click();
+  return page.getByRole("dialog").getByRole("region", { name: "Task usage" });
 }
 
-test("usage is visible above the mobile composer", async ({ page }) => {
+test("default usage is a single summary with details on demand", async ({ page }) => {
   await page.goto("/#/task/t-idle-rich");
+  await expect(page.getByRole("region", { name: "Task usage" })).toHaveCount(0);
+  await page.getByRole("button", { name: /Latest usage/ }).click();
   const line = page.getByRole("region", { name: "Task usage" });
   await expect(line.getByText("Input 18.2K", { exact: true })).toBeVisible();
   await expect(line.getByText("Output 2.9K", { exact: true })).toBeVisible();

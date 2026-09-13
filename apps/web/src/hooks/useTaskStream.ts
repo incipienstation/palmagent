@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentEvent, AgentEventKind, AgentKind, SseFrame, TaskState } from "@palmagent/shared";
+import type { AgentEvent, AgentEventKind, AgentKind, AssistantTextPayload, SseFrame, TaskState } from "@palmagent/shared";
 import { connectSse, type ConnState } from "./sse";
 
 // The log is a list of render items. Consecutive `assistant_text` deltas (Claude
 // streams token-by-token) are coalesced into one growing bubble; every other
 // event kind is its own item. Each item keeps a stable `key` for React.
 export type LogItem =
-  | { key: number; kind: "assistant_text"; agent: AgentKind; text: string }
+  | { key: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
   | { key: number; kind: Exclude<AgentEventKind, "assistant_text">; event: AgentEvent };
 
 export type { ConnState };
@@ -79,12 +79,15 @@ export function useTaskStream(taskId: string): TaskStream {
 
         const ev = frame.event;
         if (ev.kind === "assistant_text") {
+          const p = (ev.payload ?? {}) as Partial<AssistantTextPayload>;
           const text = textOf(ev);
+          const messageId = typeof p.messageId === "string" ? p.messageId : undefined;
+          const phase = p.phase === "progress" || p.phase === "final" ? p.phase : undefined;
           const last = items[items.length - 1];
-          if (last && last.kind === "assistant_text") {
+          if (last && last.kind === "assistant_text" && last.agent === ev.agent && last.messageId === messageId && last.phase === phase) {
             items[items.length - 1] = { ...last, text: last.text + text };
           } else {
-            items.push({ key: keyCounter.current++, kind: "assistant_text", agent: ev.agent, text });
+            items.push({ key: keyCounter.current++, kind: "assistant_text", agent: ev.agent, text, messageId, phase });
           }
         } else {
           items.push({ key: keyCounter.current++, kind: ev.kind, event: ev });
