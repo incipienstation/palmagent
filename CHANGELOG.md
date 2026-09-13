@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.7
+
 ### Added
 
 - View saved messages from dispatched local sessions while the CLI stays open. Follow-up
