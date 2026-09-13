@@ -7,6 +7,7 @@ import type {
 import { DEFAULT_PERMISSION, makePrRef } from "@palmagent/shared";
 import { checkpointSession, emptyTranscriptHash, locateSession, nativeHome, processIdentity, resumeCommand, synchronizeSession } from "./native-session.js";
 import { extractOutputImages } from "./output-images.js";
+import { AccountLimitReader } from "./account-limits.js";
 import { realpathSync, readFileSync } from "node:fs";
 import { config } from "./config.js";
 import type { Db } from "./db.js";
@@ -39,6 +40,13 @@ interface TurnState {
 // The state machine + persistence + lifecycle glue. Everything agent-specific
 // stays behind getRunner() — this file never branches on agent kind.
 export class TaskService {
+  private accountLimitReader = new AccountLimitReader();
+
+  accountLimits(taskId: string) {
+    const task = this.getTask(taskId);
+    return this.accountLimitReader.get(task.agent, task.sessionControl?.home ?? nativeHome(task.agent));
+  }
+
   private shuttingDown = false;
   beginShutdown(): void { this.shuttingDown = true; }
 

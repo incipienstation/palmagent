@@ -215,7 +215,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
         <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-card/85 px-4 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
-          <TaskStatusline log={log} running={running} />
+          {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
               questions={task.pendingInput.questions}

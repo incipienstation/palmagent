@@ -2,8 +2,8 @@
 
 Mobile-first, **installable** PWA that drives the Palmagent backend over
 **SSE (read) + REST (control)**. React + Vite + TypeScript, service worker via
-`vite-plugin-pwa` (Workbox). The UI is **agent-agnostic** — it renders the
-normalized `AgentEvent` and only ever uses agent kind for a label/colour.
+`vite-plugin-pwa` (Workbox). The event log renders normalized `AgentEvent` records. Account-limit views
+follow each provider's quota structure.
 
 ## UI stack (shadcn-style)
 
@@ -75,6 +75,17 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    live event log (assistant token deltas coalesced, tool calls/results, result)
    with follow-up, steer (surfaces *injected* mid-turn vs *queued* next-turn),
    stop (interrupt the turn, task stays resumable), cancel, and archive.
+4. **Account limits** — session footers show remaining account allowance and reset
+   countdowns, including while idle or previewing a local session. When available,
+   Claude shows 5-hour, weekly, and model-specific windows; Codex keeps its named quota buckets
+   and reported window lengths. Details show additional windows and available
+   credits/extra usage. These are shared account limits, not session token totals.
+   Reads are cached per provider home for five minutes. Missing data stays unknown;
+   a passed reset time waits for a new report instead of assuming a full allowance.
+   The server asks the installed CLI for account limits without starting a model
+   turn or reading credentials itself. Claude's `get_usage` control request is
+   experimental; unsupported CLI responses and failed reads show an unavailable
+   state. Codex uses the app-server `account/rateLimits/read` request.
 
 ## How it talks to the backend
 

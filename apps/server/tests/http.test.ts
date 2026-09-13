@@ -6,6 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { getRequestListener } from "@hono/node-server";
 import { AuthService } from "../src/auth.js";
+import { AccountLimitReader } from "../src/account-limits.js";
+import { nativeHome } from "../src/native-session.js";
 import { config } from "../src/config.js";
 import { Db } from "../src/db.js";
 import { Hub } from "../src/hub.js";
@@ -57,7 +59,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/compatibility", "/api/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/stream", "/api/unknown"]) {
     assert.equal((await fetch(base + path)).status, 401);
   }
   assert.equal((await fetch(base + "/api/auth/enroll-token", { method: "POST" })).status, 401);
@@ -65,6 +67,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
     assert.equal((await fetch(base + "/api/tasks", { headers: { cookie } })).status, 401);
   }
   assert.equal((await fetch(base + "/api/tasks", { headers })).status, 200);
+  assert.equal((await fetch(base + "/api/tasks/missing/account-limits", { headers })).status, 404);
   assert.equal((await fetch(base + "/api/tasks/", { headers })).status, 404);
   assert.equal((await fetch(base + "/api/stream", { method: "HEAD", headers })).status, 404);
   assert.equal((await fetch(base + "/api/tasks/%ZZ", { headers })).status, 400);
@@ -125,6 +128,29 @@ test("update settings require authentication, validate one bounded preference, a
   assert.equal((await (await dev.app.request(path)).json() as UpdateSettingsStatus).availability, "authentication-required");
   assert.equal((await dev.app.request(path, { method: "PATCH", body: '{"autoUpdate":false}' })).status, 403);
   assert.equal(changes, 2);
+});
+
+test("account limits use the task's provider home without starting a turn and are not browser-cacheable", async (t) => {
+  const f = fixture(t, false);
+  const home = join(f.dir, "selected-account");
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const agent of ["claude", "codex"] as const) f.db.insertTask({ taskId: agent, repoId: "r", agent, prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1,
+    ...(agent === "codex" ? { sessionControl: { owner: "palmagent" as const, home, transcript: join(home, "session.jsonl"), cursor: 0, prefixHash: "fixture" } } : {}),
+  });
+  await f.service.init();
+  const calls: unknown[] = [];
+  t.mock.method(AccountLimitReader.prototype, "get", async (agent: "claude" | "codex", providerHome: string) => {
+    calls.push([agent, providerHome]);
+    return agent === "claude" ? { agent, state: "unavailable", checkedAt: 1, modelLimits: [] } : { agent, state: "ready", checkedAt: 1, buckets: [] };
+  });
+  for (const agent of ["claude", "codex"] as const) {
+    const response = await f.app.request(`/api/tasks/${agent}/account-limits`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal((await response.json() as { agent: string }).agent, agent);
+    assert.equal(f.service.getTask(agent).status, "idle");
+  }
+  assert.deepEqual(calls, [["claude", nativeHome("claude")], ["codex", home]]);
 });
 
 test("SSE joins paginated replay to live output exactly once and releases slow or disconnected clients", async (t) => {

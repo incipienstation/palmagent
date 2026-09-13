@@ -5,4 +5,5 @@ export * from "./protocol.js";
 export * from "./branding.js";
 export * from "./compatibility.js";
 export type * from "./updates.js";
+export type * from "./account-limits.js";
 export type * from "./requests.js";

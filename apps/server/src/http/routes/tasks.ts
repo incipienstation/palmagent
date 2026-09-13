@@ -9,6 +9,10 @@ export function taskRoutes({ service }: HttpDependencies) {
   app.get("/", (c) => c.json({ tasks: service.listTasks(parse(TaskQuerySchema, c.req.query()).status) }));
   app.post("/", async (c) => c.json({ task: service.createTask(await body(c, CreateTaskSchema)) }, 201));
   app.get("/:id", (c) => c.json({ task: service.getTask(id(c)) }));
+  app.get("/:id/account-limits", async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json(await service.accountLimits(id(c)));
+  });
   app.delete("/:id", (c) => c.json({ task: service.archive(id(c)) }));
   app.post("/:id/handoff", (c) => c.json(service.handoff(id(c))));
   app.post("/:id/followup", async (c) => {
