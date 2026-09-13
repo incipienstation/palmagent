@@ -25,6 +25,15 @@ export function isUpdateMaintenance(dbPath: string): boolean {
   } catch (error) { return (error as NodeJS.ErrnoException).code !== "ENOENT"; }
 }
 
+/** Only the live updater parent may lend its maintenance window to activation. */
+export function updateMaintenanceOwnedBy(dbPath: string, pid: number): boolean {
+  try {
+    const value = JSON.parse(readFileSync(maintenancePath(dbPath), "utf8"));
+    return value.schemaVersion === 1 && value.pid === pid && typeof value.token === "string" &&
+      value.identity === processIdentity(pid);
+  } catch { return false; }
+}
+
 /** The caller holds the installation lock throughout this maintenance window. */
 export function beginUpdateMaintenance(dbPath: string): () => void {
   if (isUpdateMaintenance(dbPath)) throw new Error("an update maintenance window is already active");

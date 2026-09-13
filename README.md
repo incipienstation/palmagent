@@ -150,6 +150,12 @@ version and waits for active tasks to finish. Automatic updates use the same flo
 when enabled. There is no recurring update timer. Existing timers are retired
 when the updated package is activated.
 
+Updates never interrupt running Codex or Claude sessions. Manual CLI updates and source-update `setup` also
+verify an idle maintenance window before replacing packages or activating services;
+`--force` does not bypass this check. If activity cannot be verified, the update
+stops safely. Let work finish and retry. Local CLI sessions remain independently
+owned, and a web restart reconnects to surviving runner-owned sessions.
+
 After the server changes version, the app checks for its new service worker and
 asks you to refresh. An outdated app cannot submit changes to a different server
 version. This guards the browser/server transition; it does not add package or

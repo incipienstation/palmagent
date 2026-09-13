@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Manual CLI updates now preserve running Codex and Claude sessions by checking
+  task and runner activity before package replacement, service activation, or
+  source-update `setup`.
+  Active or unverifiable work blocks the update even with `--force`.
+
 ## 0.1.0-alpha.12
 
 ### Changed

@@ -8,10 +8,10 @@ import { join } from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { verifyUpdateIdle, runnerIsIdle } from "../src/cli/update-idle.js";
-import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath } from "../src/update-maintenance.js";
+import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath, updateMaintenanceOwnedBy } from "../src/update-maintenance.js";
 import type { InstallConfig } from "../src/cli/config.js";
 
-test("automatic update idle verification requires an acknowledgement and checks waiting/queued tasks and runner state", async (t) => {
+test("update idle verification requires an acknowledgement and checks waiting/queued tasks and runner state", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "palmagent-update-idle-"));
   const dbPath = join(directory, "tasks.db");
   const db = new Database(dbPath);
@@ -56,11 +56,15 @@ test("maintenance releases normally and a reused PID cannot retain an old window
   const dbPath = join(directory, "tasks.db");
   const release = beginUpdateMaintenance(dbPath);
   assert.equal(isUpdateMaintenance(dbPath), true);
+  assert.equal(updateMaintenanceOwnedBy(dbPath, process.pid), true);
+  assert.equal(updateMaintenanceOwnedBy(dbPath, process.ppid), false);
   assert.throws(() => beginUpdateMaintenance(dbPath), /already active/);
   release();
   assert.equal(isUpdateMaintenance(dbPath), false);
+  assert.equal(updateMaintenanceOwnedBy(dbPath, process.pid), false);
   writeFileSync(maintenancePath(dbPath), JSON.stringify({ schemaVersion: 1, pid: process.pid, identity: "a-prior-boot:1" }));
   assert.equal(isUpdateMaintenance(dbPath), false);
+  assert.equal(updateMaintenanceOwnedBy(dbPath, process.pid), false);
   beginUpdateMaintenance(dbPath)();
   writeFileSync(maintenancePath(dbPath), "malformed");
   assert.equal(isUpdateMaintenance(dbPath), true, "unreadable ownership must fail closed");
