@@ -68,8 +68,8 @@ test('preparation merge obeys exact CI identity, successful validate, updated ba
   const source = 'a'.repeat(40), head = 'b'.repeat(40), merged = 'c'.repeat(40);
   const branch = 'feature/preview-0.1.0-alpha.2';
   let didMerge = false;
-  const run = { repository: { full_name: repository }, path: '.github/workflows/ci.yml', event: 'workflow_dispatch',
-    head_branch: branch, head_sha: head, status: 'completed', conclusion: 'success' };
+  const run = { repository: { full_name: repository }, path: '.github/workflows/ci.yml', event: 'pull_request',
+    head_branch: branch, head_sha: head, status: 'completed', conclusion: 'success', html_url: 'https://example.invalid/run' };
   const api = (_repo, path, options) => {
     if (path === 'pulls/1') return { number: 1, head: { sha: head, ref: branch }, base: { ref: 'develop' }, state: 'open', mergeable: true, merged: didMerge, merge_commit_sha: merged };
     if (path === 'git/ref/heads/develop') return { object: { sha: source } };
@@ -91,30 +91,29 @@ test('preparation merge obeys exact CI identity, successful validate, updated ba
   await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
     ...adapters, api: (repo, path, options) => { if (path.endsWith('/merge')) throw new Error('review required'); return api(repo, path, options); },
   }), /review required/);
-  for (const change of [{ head_sha: source }, { head_branch: 'develop' }, { event: 'pull_request' },
+  run.conclusion = 'action_required';
+  let approved = false;
+  assert.equal(await mergePreparation('', repository, { number: 1 }, head, source, {
+    ...adapters, sleep: async () => { assert(!didMerge); approved = true; run.conclusion = 'success'; },
+  }), merged);
+  assert(approved, 'must wait for approval rather than treating the held run as a success');
+  for (const change of [{ head_sha: source }, { head_branch: 'develop' }, { event: 'workflow_dispatch' },
     { path: '.github/workflows/other.yml' }, { repository: { full_name: 'other/repo' } }]) {
     assert.throws(() => assertPreparationRun({ ...run, ...change }, repository, branch, head), /identity differs/);
   }
 });
 
-test('preparation explicitly dispatches its branch and expected commit; resume reuses visible CI', async () => {
-  const head = 'b'.repeat(40), branch = 'feature/preview-0.1.0-alpha.2';
-  const pr = { number: 1, head: { ref: branch } };
-  let dispatched = false;
-  const run = { id: 42, display_title: `Preview CI ${head}`, status: 'in_progress' };
-  const pages = () => dispatched ? [run] : [];
-  const api = (_repo, path, options) => {
-    assert.equal(path, 'actions/workflows/ci.yml/dispatches');
-    assert.deepEqual(options.body, { ref: branch, inputs: { pr: '1', head } });
-    assert(!dispatched); dispatched = true;
+test('preparation selects the latest native PR workflow for its exact head and PR', async () => {
+  const head = 'b'.repeat(40), pr = { number: 1 };
+  const run = { id: 42, head_sha: head, pull_requests: [{ number: 1 }], status: 'completed', conclusion: 'action_required' };
+  let calls = 0;
+  const pages = (_repo, path) => {
+    assert.equal(path, 'actions/workflows/ci.yml/runs?event=pull_request');
+    if (!calls++) return []; // GitHub may create the run after returning the PR.
+    return [{ ...run, id: 44, pull_requests: [{ number: 2 }] }, { ...run, id: 43, head_sha: 'c'.repeat(40) }, run, { ...run, id: 41 }];
   };
-  const adapters = { api, pages, sleep: async () => {} };
-  assert.equal(await preparationValidation(repository, pr, head, adapters), 42);
-  assert.equal(await preparationValidation(repository, pr, head, adapters), 42);
-  dispatched = false;
-  assert.equal(await preparationValidation(repository, pr, head, {
-    ...adapters, pages: () => dispatched ? [run] : [{ ...run, id: 41, status: 'completed', conclusion: 'failure' }],
-  }), 42);
+  assert.equal(await preparationValidation(repository, pr, head, { pages, sleep: async () => {} }), 42);
+  assert.equal(calls, 2);
 });
 
 test('failed publication retry reuses original candidate producer across repeated recovery runs', async () => {

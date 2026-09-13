@@ -115,34 +115,26 @@ export async function waitForPublication(repository, commit, { api = github, pag
   return run;
 }
 
-export async function preparationValidation(repository, pr, expectedHead, { api = github, pages = githubPages, sleep = delay } = {}) {
-  const title = `Preview CI ${expectedHead}`;
-  const runs = () => pages(repository, 'actions/workflows/ci.yml/runs?event=workflow_dispatch', 'workflow_runs')
-    .filter((run) => run.display_title === title).sort((a, b) => b.id - a.id);
-  let run = runs()[0];
-  if (!run || run.status === 'completed' && run.conclusion !== 'success') {
-    const previousId = run?.id ?? 0;
-    api(repository, 'actions/workflows/ci.yml/dispatches', { method: 'POST', body: {
-      ref: pr.head.ref, inputs: { pr: String(pr.number), head: expectedHead },
-    } });
-    const deadline = Date.now() + 60000;
-    do {
-      await sleep(3000);
-      run = runs().find((candidate) => candidate.id > previousId);
-    } while (!run && Date.now() < deadline);
-    assert(run, 'Preparation CI dispatch is not visible; inspect Actions before retrying');
-  }
-  return run.id;
+export async function preparationValidation(repository, pr, expectedHead, { pages = githubPages, sleep = delay } = {}) {
+  const deadline = Date.now() + 60000;
+  do {
+    const runs = pages(repository, 'actions/workflows/ci.yml/runs?event=pull_request', 'workflow_runs')
+      .filter((run) => run.head_sha === expectedHead && run.pull_requests?.some((item) => item.number === pr.number))
+      .sort((a, b) => b.id - a.id);
+    if (runs.length) return runs[0].id;
+    await sleep(3000);
+  } while (Date.now() < deadline);
+  throw new Error('Preparation PR CI is not visible; inspect Actions before retrying');
 }
 
 export function assertPreparationRun(run, repository, branch, expectedHead) {
   assert(run.repository?.full_name === repository && run.path === '.github/workflows/ci.yml'
-    && run.event === 'workflow_dispatch' && run.head_branch === branch && run.head_sha === expectedHead,
+    && run.event === 'pull_request' && run.head_branch === branch && run.head_sha === expectedHead,
   'Preparation CI identity differs from the selected PR');
 }
 
 export async function mergePreparation(cwd, repository, pr, expectedHead, source, { api = github, pages = githubPages, sleep = delay, validation = preparationValidation } = {}) {
-  let runId;
+  let runId, approvalReported = false;
   const deadline = Date.now() + 20 * 60 * 1000;
   while (Date.now() < deadline) {
     const current = api(repository, `pulls/${pr.number}`);
@@ -154,8 +146,12 @@ export async function mergePreparation(cwd, repository, pr, expectedHead, source
     runId ??= await validation(repository, current, expectedHead, { api, pages, sleep });
     const run = api(repository, `actions/runs/${runId}`);
     assertPreparationRun(run, repository, current.head.ref, expectedHead);
-    assert(run.status !== 'completed' || run.conclusion === 'success', 'Preparation CI failed; inspect its run');
-    if (run.status === 'completed' && current.mergeable) {
+    if (run.conclusion === 'action_required' && !approvalReported) {
+      console.log(`Preparation CI needs maintainer approval: ${run.html_url}`);
+      approvalReported = true;
+    }
+    assert(run.status !== 'completed' || ['success', 'action_required'].includes(run.conclusion), 'Preparation CI failed; inspect its run');
+    if (run.status === 'completed' && run.conclusion === 'success' && current.mergeable) {
       const jobs = pages(repository, `actions/runs/${runId}/jobs?filter=latest`, 'jobs');
       const validate = jobs.filter((job) => job.name === 'validate');
       assert(validate.length === 1 && validate[0].head_sha === expectedHead && validate[0].status === 'completed'
@@ -174,7 +170,7 @@ export async function mergePreparation(cwd, repository, pr, expectedHead, source
     }
     await sleep(15000);
   }
-  throw new Error('Preparation CI or review requirements did not finish; inspect the retained PR');
+  throw new Error('Preparation CI or review requirements did not finish; approve the retained PR workflow if required, then resume Preview');
 }
 
 async function prepare(cwd, repository, baseline, registry, tags, bot) {

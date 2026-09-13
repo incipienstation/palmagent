@@ -1,26 +1,14 @@
 name: ci
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Preview CI {0}', inputs.head) || github.event.pull_request.title }}
 
 on:
   pull_request:
     branches: [main, develop]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: Owned Preview preparation PR number
-        type: string
-        required: true
-      head:
-        description: Exact preparation head SHA
-        type: string
-        required: true
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.pr }}
+  group: ci-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -35,11 +23,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Verify the dispatched Preview preparation identity
-        if: github.event_name == 'workflow_dispatch'
-        run: node scripts/ci-preparation.mjs
-        env:
-          GH_TOKEN: ${{ github.token }}
       - name: Select checks from the complete change scope
         id: scope
         run: node scripts/ci-scope.mjs
@@ -51,10 +34,10 @@ jobs:
           node scripts/check-release.mjs
         env:
           # Context/PII denylist — never committed; lives only as a repo secret.
-          # Required for same-repo PRs and verified Preview dispatches. Fork PRs cannot
+          # Required for same-repo PRs. Fork PRs cannot
           # receive repository secrets, so they still run the generic patterns.
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+          REQUIRE_LEAK_DENYLIST: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
       - uses: pnpm/action-setup@v4
         if: steps.scope.outputs.code == 'true'
       - uses: actions/setup-node@v4
@@ -72,7 +55,7 @@ jobs:
         if: steps.scope.outputs.server == 'true'
         run: pnpm server:contracts && pnpm server:smoke
       - name: Build the PWA once
-        if: steps.scope.outputs.web == 'true' || (steps.scope.outputs.package == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository))
+        if: steps.scope.outputs.web == 'true' || (steps.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
         run: pnpm web:build
       - name: Install Chromium
         if: steps.scope.outputs.web == 'true'
@@ -81,7 +64,7 @@ jobs:
         if: steps.scope.outputs.web == 'true'
         run: pnpm web:verify:built
       - name: Verify packed candidate
-        if: steps.scope.outputs.package == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: steps.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
         env:
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: "true"

@@ -78,8 +78,8 @@ Repository merge methods are limited to squash and merge commit; rebase merge is
 disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
 Both branches require a pull request and the GitHub Actions `validate` check, and
 block deletion and force pushes. These rules define branch and approval ownership;
-npm publication uses channel environments: eligible Preview changes publish automatically, while Stable waits for one reviewer approval
-before tag creation and publication. Staging uses
+npm publication uses channel environments: eligible Preview changes publish after their required
+PR CI passes, while Stable waits for one reviewer approval before tag creation and publication. Staging uses
 an explicit operator command.
 
 Hotfixes branch from `main` and return to `main` through a reviewed pull request
@@ -99,7 +99,7 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 
 | Phase | Preview | Requested Stable release |
 | --- | --- | --- |
-| Version, changelog, preparation PR and checks | Automatic | Prepare automatically; present in final evidence |
+| Version, changelog, preparation PR and checks | Automatic preparation; maintainer approves bot PR workflow execution | Prepare automatically; present in final evidence |
 | Channel-source merge | Squash into `develop` | Dedicated `develop` to `main` PR, merge commit after required checks |
 | Exact candidate build and verification | Automatic | Automatic, before final approval |
 | Annotated tag | Automatic, after preparation merge | After final approval |
@@ -112,7 +112,10 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 Preview, verified against GitHub Release metadata, the annotated tag, and npm package bytes.
 Runtime source, shipped operator plugins/skills, product dependencies, and packaging inputs
 qualify. Development docs, `.harness`, tests alone, and version/changelog preparation do not.
-The release classifier is independent of CI test selection.
+The release classifier is independent of CI test selection. The built-in GitHub token requires
+maintainer approval before its preparation PR workflow can satisfy merge checks; see the
+[approval and resume procedure](automation.md#automatic-preview). This execution constraint
+does not add a Preview publication approval, but prevents fully unattended releases.
 
 The controller serializes version selection, creates a metadata-only preparation PR, waits
 for required CI/protections, and squash-merges the exact head. Later product merges are

@@ -2,10 +2,7 @@
 
 ## Candidate automation
 
-Ordinary CI runs on pull requests into `develop` or `main`, not on branch pushes after merge.
-Preview preparation also dispatches this workflow on its exact feature head. The dispatch guard
-verifies the Actions-owned PR, same repository, current `develop` parent, expected SHA, and
-version/changelog-only diff before secret-bearing checks. Dispatches run the full gate.
+Ordinary CI runs only on pull requests into `develop` or `main`, not on branch pushes after merge.
 The required `validate` check always runs metadata, skill synchronization, link,
 version, and public-content checks. Known documentation and skill-only PRs need
 no dependency installation or runtime tests. Code PRs add type/tooling checks and
@@ -71,10 +68,12 @@ A candidate build alone does not imply staging acceptance or publication.
 `preview-release.yml` runs on `develop` pushes after its setup switch is enabled. It compares
 the latest source against the last verified successful Preview; eligibility is implemented in
 `scripts/lib/preview-plan.mjs`. It creates only a version/changelog preparation PR, waits for
-an explicitly dispatched `ci.yml` run on the preparation branch, and merges with the exact head
-SHA and squash method. It verifies the workflow, repository, event, branch, commit, successful
-run, and successful `validate` job. Branch protections remain in force. If `develop` advances,
-it reprepares its own metadata branch with a lease and reruns CI.
+the native `ci.yml` pull-request run, and merges with the exact head SHA and squash method.
+It verifies the workflow, repository, PR event, branch, commit, successful run, and successful
+`validate` job. GitHub holds workflows on `GITHUB_TOKEN`-created PRs for maintainer approval.
+The controller reports the run URL and waits up to 20 minutes for approval and CI completion;
+this setup is not fully unattended. Branch protections remain in force. If `develop` advances,
+it reprepares its own metadata branch with a lease and waits for the new head's CI.
 It does not force-push `develop`, bypass review requirements, or merge unrelated PRs.
 
 After the preparation merge, the controller creates the annotated Preview tag and dispatches
@@ -89,7 +88,17 @@ Publication jobs also serialize per npm channel and retain pending approvals usi
 A candidate older than its current npm channel fails before tag/publication writes; it never
 moves a dist-tag backward. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-To resume from a session after fixing a failed run:
+For an approval-held preparation, inspect the PR's exact source, head, and metadata-only diff.
+A maintainer with write access can select **Approve workflows to run** on the PR. In an authorized
+release session, the existing maintainer login can submit the reviewed workflow approval:
+
+```bash
+gh api --method POST 'repos/<owner>/<repo>/actions/runs/<preparation-ci-run-id>/approve'
+```
+
+This is GitHub's workflow-execution approval, not a new Preview publication approval. The
+controller continues when that PR run passes. If its wait already expired, or after fixing a
+failed run, resume it with:
 
 ```bash
 gh workflow run preview-release.yml --ref develop
@@ -148,12 +157,15 @@ existing assets and tags must match exactly, and published assets are never over
    to publish eligible Preview changes; it does not authorize host deployment.
 
 The built-in token does not provide ordinary push-triggered workflow chaining. The controller
-explicitly dispatches preparation CI and publication, and queues another Preview comparison when
-new product changes remain. `workflow_dispatch` can start a workflow using `GITHUB_TOKEN`;
-see [workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
-Preparation CI uses a separate concurrency group from automatic PR runs so any approval-pending
-PR run cannot cancel the explicit dispatch. Required `validate` and current-base rules still
-apply to the merge. Until the Preview switch is enabled, the controller job is skipped.
+explicitly dispatches publication and queues another Preview comparison when product changes
+remain. It uses the native PR CI run for preparation checks. A separate `workflow_dispatch` run
+on the same commit can succeed while the held PR still reports its required check as expected;
+do not use that run as a substitute for the maintainer-approved PR workflow. See
+[workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+and [bot-created PR approvals](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/).
+Until the Preview switch is enabled, the controller job is skipped. Fully unattended PR CI
+requires a separately authorized credential design; do not self-approve held workflows with the
+bot token or copy a maintainer credential into Actions.
 
 ### Recovery
 
