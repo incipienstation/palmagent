@@ -55,7 +55,7 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 }
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
-  const { log, conn, task: streamTask } = useTaskStream(taskId);
+  const { log, conn, loadingHistory, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
   // when the long-lived inbox stream freezes in the background. Fall back to the
@@ -210,7 +210,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Waiting for the local CLI to close and synchronize." : "This session is controlled in a local shell. Use the dispatch skill there to return it.")}</Alert>}
         <Separator />
 
-        <EventLog log={log} live={running} prompt={task?.prompt} />
+        <EventLog log={log} live={running} loading={loadingHistory} prompt={loadingHistory ? undefined : task?.prompt} />
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}

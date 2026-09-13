@@ -14,6 +14,7 @@ export type { ConnState };
 export interface TaskStream {
   log: LogItem[];
   conn: ConnState;
+  loadingHistory: boolean;
   // This task's latest snapshot, taken from the `tasks` frames the scoped stream
   // also carries. The detail view trusts THIS over the inbox-provided task: the
   // scoped stream is the one that's actually connected while you're on the page,
@@ -29,6 +30,7 @@ export function useTaskStream(taskId: string): TaskStream {
   const [log, setLog] = useState<LogItem[]>([]);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [task, setTask] = useState<TaskState | undefined>(undefined);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const lastSeq = useRef(0);
   const keyCounter = useRef(0);
 
@@ -37,6 +39,15 @@ export function useTaskStream(taskId: string): TaskStream {
     keyCounter.current = 0;
     setLog([]);
     setTask(undefined);
+    setLoadingHistory(true);
+    const items: LogItem[] = [];
+    let replayThrough = 0;
+    let historyReady = false;
+    const publish = () => {
+      historyReady = true;
+      setLoadingHistory(false);
+      setLog([...items]);
+    };
 
     return connectSse(
       `/api/stream?task=${encodeURIComponent(taskId)}`,
@@ -52,6 +63,10 @@ export function useTaskStream(taskId: string): TaskStream {
         if (frame.type === "tasks") {
           const mine = frame.tasks.find((t) => t.taskId === taskId);
           if (mine) setTask(mine);
+          if (!historyReady) {
+            replayThrough = frame.replayThrough ?? 0;
+            if (lastSeq.current >= replayThrough) publish();
+          }
           return;
         }
 
@@ -63,25 +78,27 @@ export function useTaskStream(taskId: string): TaskStream {
         }
 
         const ev = frame.event;
-        setLog((prev) => {
-          if (ev.kind === "assistant_text") {
-            const text = textOf(ev);
-            const last = prev[prev.length - 1];
-            if (last && last.kind === "assistant_text") {
-              const merged: LogItem = { ...last, text: last.text + text };
-              return [...prev.slice(0, -1), merged];
-            }
-            return [...prev, { key: keyCounter.current++, kind: "assistant_text", agent: ev.agent, text }];
+        if (ev.kind === "assistant_text") {
+          const text = textOf(ev);
+          const last = items[items.length - 1];
+          if (last && last.kind === "assistant_text") {
+            items[items.length - 1] = { ...last, text: last.text + text };
+          } else {
+            items.push({ key: keyCounter.current++, kind: "assistant_text", agent: ev.agent, text });
           }
-          return [...prev, { key: keyCounter.current++, kind: ev.kind, event: ev }];
-        });
+        } else {
+          items.push({ key: keyCounter.current++, kind: ev.kind, event: ev });
+        }
+        // Network chunks may split replay across many paints. Publish the initial
+        // transcript only at its durable boundary; later events remain live.
+        if (historyReady || lastSeq.current >= replayThrough) publish();
       },
       setConn,
       () => lastSeq.current,
     );
   }, [taskId]);
 
-  return { log, conn, task };
+  return { log, conn, task, loadingHistory };
 }
 
 function textOf(ev: AgentEvent): string {

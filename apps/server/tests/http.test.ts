@@ -143,6 +143,8 @@ test("SSE joins paginated replay to live output exactly once and releases slow o
     const reader = response.body!.getReader();
     let buffer = new TextDecoder().decode((await reader.read()).value);
     assert.match(buffer, /"type":"tasks"/);
+    const snapshot = JSON.parse(buffer.split("data: ")[1].split("\n")[0]);
+    assert.equal(snapshot.replayThrough, scoped ? f.db.eventCursor("t") : undefined);
     const row = f.db.insertEvent("t", "assistant_text", { text: "live" }, Date.now());
     f.hub.emitEvent(f.db.eventsAfterGlobal(row.id - 1, 1)[0]);
     const target = scoped ? row.seq : row.id;

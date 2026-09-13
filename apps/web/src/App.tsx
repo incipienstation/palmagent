@@ -36,7 +36,7 @@ function AppInner() {
   if (route.name === "routines") return <RoutinesView />;
   if (route.name === "usage") return <UsageView />;
   if (route.name === "task") {
-    return <TaskDetailView taskId={route.id} task={tasks.find((t) => t.taskId === route.id)} />;
+    return <TaskDetailView key={route.id} taskId={route.id} task={tasks.find((t) => t.taskId === route.id)} />;
   }
   return <InboxView tasks={tasks} conn={conn} />;
 }
