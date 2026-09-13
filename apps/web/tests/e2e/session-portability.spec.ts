@@ -64,7 +64,7 @@ for (const owner of ["local", "returning"] as const) test(`${owner} ownership di
   await expect(page.getByRole("textbox")).toBeDisabled();
   await expect(page.getByRole("img", { name: "Session output" })).toBeVisible();
   await expect.poll(() => page.getByRole("img", { name: "Session output" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
-  await expect(page.getByRole("button", { name: owner === "local" ? "Local shell" : "Returning from shell" })).toBeVisible();
+  await expect(page.getByRole("button", { name: owner === "local" ? "Local shell" : "Continue in Palmagent" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Task actions" })).toBeDisabled();
   await assertViewportLocked(page);
 });
@@ -88,4 +88,45 @@ test("a returned session requires a new release before showing its old shell com
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByRole("button", { name: "Release to shell" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy resume command" })).toBeHidden();
+});
+
+test("live preview is readable before handoff and enables input only when ownership transfers", async ({ page }) => {
+  let owner: "returning" | "palmagent" = "returning";
+  const current = () => ({ ...source, sessionControl: { owner, home: "/provider", transcript: "/provider/session.jsonl", cursor: 42, prefixHash: "fixture" } });
+  await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body:
+    `data: ${JSON.stringify({ type: "tasks", tasks: [current()] })}\n\n` +
+    `id: 1\ndata: ${JSON.stringify({ type: "event", event: { taskId: source.taskId, agent: source.agent, kind: "assistant_text", ts: 0, payload: { text: "Saved locally and visible before closing the CLI." } } })}\n\n`,
+  }));
+  await page.goto("/");
+  const local = page.locator("section").filter({ has: page.getByRole("heading", { name: "Local sessions", exact: true }) });
+  await expect(local.getByText("Wire the web QA harness")).toBeVisible();
+  await expect(local.getByText("Live preview", { exact: true })).toBeVisible();
+  await page.goto("/#/task/t-idle-rich");
+  await expect(page.getByText("Saved locally and visible before closing the CLI.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Done", { exact: true })).toBeHidden();
+  await expect(page.getByPlaceholder("Read-only while controlled in your local CLI.")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await assertViewportLocked(page);
+  await expect(page).toHaveScreenshot("session-live-preview.png");
+  owner = "palmagent";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("Live preview", { exact: true })).toBeHidden();
+  await expect(page.getByPlaceholder("Send a follow-up turn… (paste images here)")).toBeEnabled();
+  await expect(page.getByText("Saved locally and visible before closing the CLI.", { exact: true })).toHaveCount(1);
+});
+
+test("a preview synchronization error retains visible history and explains why input is paused", async ({ page }) => {
+  const task = { ...source, sessionControl: { owner: "returning", home: "/provider", transcript: "/provider/session.jsonl", cursor: 42, prefixHash: "fixture", error: "Native transcript changed before the synchronization cursor" } };
+  await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body:
+    `data: ${JSON.stringify({ type: "tasks", tasks: [task] })}\n\n` +
+    `id: 1\ndata: ${JSON.stringify({ type: "event", event: { taskId: source.taskId, agent: source.agent, kind: "assistant_text", ts: 0, payload: { text: "Previously synchronized message" } } })}\n\n`,
+  }));
+  await page.goto("/#/task/t-idle-rich");
+  await expect(page.getByText("Previously synchronized message", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sync issue", { exact: true })).toBeVisible();
+  await expect(page.getByText(task.sessionControl.error, { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox")).toBeDisabled();
+  await page.getByRole("button", { name: "Continue in Palmagent", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText(task.sessionControl.error);
+  await expect(page.getByRole("button", { name: "Release to shell" })).toBeHidden();
 });

@@ -186,7 +186,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         <div className="flex items-center gap-x-3 px-4 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap text-[12.5px] text-faint [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
             {task && <AgentTag agent={task.agent} />}
-            {task && <StatusBadge status={task.status} interrupted={task.interrupted} />}
+            {task && <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
             {task?.branch && <span className="font-mono text-muted-foreground">{task.branch}</span>}
             {task?.model && <span>{task.model}</span>}
             {task?.effort && <span>effort {task.effort}</span>}
@@ -207,7 +207,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           />
         </div>
         {task?.sessionId && <div className="px-4 pb-2"><SessionHandoff task={task} /></div>}
-        {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Waiting for the local CLI to close and synchronize." : "This session is controlled in a local shell. Use the dispatch skill there to return it.")}</Alert>}
+        {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
         <Separator />
 
         <EventLog log={log} live={running} loading={loadingHistory} prompt={loadingHistory ? undefined : task?.prompt} />
@@ -270,7 +270,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               onChange={(e) => setCompose(e.target.value)}
               onPaste={att.onPaste}
               placeholder={
-                composeMode === "steer"
+                localOwner
+                  ? "Read-only while controlled in your local CLI."
+                  : composeMode === "steer"
                   ? "Steer the running turn… (paste images here)"
                   : composeMode === "followup"
                     ? "Send a follow-up turn… (paste images here)"

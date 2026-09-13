@@ -1,4 +1,4 @@
-import type { AgentKind, Repo, TaskStatus } from "@palmagent/shared";
+import type { AgentKind, Repo, SessionControl, TaskStatus } from "@palmagent/shared";
 import { Folder, FolderGit2, GitBranch } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -54,10 +54,10 @@ const STATUS_STYLE: Record<TaskStatus, string> = {
   archived: "bg-status-archived-bg text-status-archived-fg",
 };
 
-export function StatusBadge({ status, interrupted }: { status: TaskStatus; interrupted?: boolean }) {
+export function StatusBadge({ status, interrupted, sessionControl }: { status: TaskStatus; interrupted?: boolean; sessionControl?: SessionControl }) {
   return (
     <Badge className={cn("px-2 py-0.5 font-medium", STATUS_STYLE[status])}>
-      {statusLabel(status, interrupted)}
+      {statusLabel(status, interrupted, sessionControl)}
     </Badge>
   );
 }
