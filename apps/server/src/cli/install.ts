@@ -29,7 +29,7 @@ import {
 import { assertUserConfigPreserved, getUserConfig, initUserConfig, setUserChannel, userConfigPath } from "./user-config.js";
 import { readPluginVersions, resolveUpdatePlan } from "./update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "./update-state.js";
-import { beginUpdateMaintenance } from "../update-maintenance.js";
+import { beginUpdateMaintenance, updateMaintenanceOwnedBy } from "../update-maintenance.js";
 import { verifyUpdateIdle } from "./update-idle.js";
 import { configureAutoUpdate, retireAutoUpdateTimer, removeAutoUpdateTimer } from "./auto-update.js";
 import { preflight, doctor, printChecks } from "./checks.js";
@@ -589,6 +589,11 @@ export async function setup(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} setup (reconfigure)`);
   if (!flags.dryRun) assertSafeInstallerIdentity();
   const cfg = await gatherConfig(flags, true);
+  // Check the current listener, even when reconfiguration selects a new port.
+  return withIdleActivation(loadInstalledConfig(flags), flags, () => applySetup(cfg, flags));
+}
+
+async function applySetup(cfg: InstallConfig, flags: Flags): Promise<number> {
   const artifactChanged = runnerArtifactChanged(cfg);
   log.step("TLS");
   ensureTlsCertificate(cfg, flags);
@@ -602,7 +607,7 @@ export async function setup(flags: Flags): Promise<number> {
   if (!flags.dryRun) {
     if (runnerChanged || artifactChanged) {
       log.warn(
-        `runner ${runnerChanged ? "unit" : "artifact"} changed — restarting it (ends in-flight turns)`,
+        `runner ${runnerChanged ? "unit" : "artifact"} changed — restarting the idle runner`,
       );
       restartRunner(cfg);
     } else {
@@ -726,22 +731,27 @@ export async function update(flags: Flags): Promise<number> {
     // mismatch after replacing an unrelated global package.
     const root = run("npm", ["root", "-g"], { timeout: 10_000 });
     if (!root.ok || resolve(root.stdout.trim(), BRANDING.packageName) !== resolve(cfg.pkgDir!)) throw new Error("the active npm prefix does not own this installation; package files were not changed");
+    if ((flags.automatic || flags.request) && !canSudoNonInteractive()) {
+      throw new Error("automatic updates require non-interactive service-management access");
+    }
+    // Every package replacement holds admission closed and verifies both the DB
+    // and runner. Manual invocation and --force never authorize interrupting a turn.
+    endMaintenance = beginUpdateMaintenance(cfg.dbPath);
+    let idle: boolean;
+    try { idle = await verifyUpdateIdle(cfg); }
+    catch {
+      keepRequestedUpdate = true;
+      if (!recovering) record("deferred", "idle-state-unverified");
+      log.warn("could not verify an idle maintenance window; update deferred without changing the package");
+      return flags.automatic || flags.request ? 0 : 1;
+    }
+    if (!idle) {
+      keepRequestedUpdate = true;
+      if (!recovering) record("deferred", "tasks-active");
+      log.info("tasks are running, waiting, or queued; update deferred without interrupting sessions");
+      return flags.automatic || flags.request ? 0 : 1;
+    }
     if (flags.automatic || flags.request) {
-      if (!canSudoNonInteractive()) throw new Error("automatic updates require non-interactive service-management access");
-      endMaintenance = beginUpdateMaintenance(cfg.dbPath);
-      try {
-        if (!await verifyUpdateIdle(cfg)) {
-          keepRequestedUpdate = true;
-          record("deferred", "tasks-active");
-          log.info("tasks are running, waiting, or queued; automatic update deferred");
-          return 0;
-        }
-      } catch {
-        keepRequestedUpdate = true;
-        record("deferred", "idle-state-unverified");
-        log.warn("could not verify an idle maintenance window; automatic update deferred");
-        return 0;
-      }
       const latestSettings = getUserConfig({ dataDir: cfg.dataDir });
       if ((flags.automatic && !latestSettings.autoUpdate) || latestSettings.channel !== plan.channel) {
         record("deferred", "settings-changed");
@@ -790,8 +800,37 @@ async function applyInstalledUpdate(cfg: InstallConfig, flags: Flags): Promise<n
   const expectedVersion = flags.get("expected-version");
   if (expectedVersion && (process.env[POST_UPGRADE_ENV] !== "1" || installedVersion(cfg.pkgDir) !== expectedVersion)) throw new Error("invalid update activation target");
 
+  return withIdleActivation(cfg, flags, () => activateInstalledUpdate(cfg, flags, expectedVersion), expectedVersion);
+}
+
+async function withIdleActivation(cfg: InstallConfig, flags: Flags, activate: () => Promise<number>, expectedVersion?: string): Promise<number> {
+  if (flags.dryRun) return activate();
+  let unlock: (() => void) | undefined;
+  let endMaintenance: (() => void) | undefined;
+  try {
+    if (expectedVersion) {
+      // The package installer still owns the host lock and admission barrier.
+      // An environment flag alone cannot bypass the direct activation guard.
+      if (!updateMaintenanceOwnedBy(cfg.dbPath, process.ppid)) {
+        throw new Error("update activation requires its live parent's maintenance window");
+      }
+    } else {
+      unlock = acquireUpdateLock(dirname(userConfigPath()));
+      endMaintenance = beginUpdateMaintenance(cfg.dbPath);
+    }
+    if (!await verifyUpdateIdle(cfg)) {
+      log.warn("tasks are active; service activation deferred without interrupting sessions");
+      return 1;
+    }
+    return await activate();
+  } finally {
+    try { endMaintenance?.(); } finally { unlock?.(); }
+  }
+}
+
+async function activateInstalledUpdate(cfg: InstallConfig, flags: Flags, expectedVersion?: string): Promise<number> {
   // Re-render units; restart the runner only when its unit or artifact changed
-  // so a web-only update does not kill in-flight turns.
+  // after the guarded update has verified that no turns can be interrupted.
   ensureTlsCertificate(cfg, flags);
   const artifactChanged = runnerArtifactChanged(cfg);
   const { runnerChanged } = applyUnits(cfg, flags);
@@ -800,7 +839,7 @@ async function applyInstalledUpdate(cfg: InstallConfig, flags: Flags): Promise<n
 
   if (runnerChanged || artifactChanged) {
     log.warn(
-      `runner ${runnerChanged ? "unit" : "artifact"} changed — restarting it (ends in-flight turns)`,
+      `runner ${runnerChanged ? "unit" : "artifact"} changed — restarting the idle runner`,
     );
     restartRunner(cfg);
   } else {

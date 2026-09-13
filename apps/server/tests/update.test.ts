@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { createServer } from "node:net";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -12,7 +12,8 @@ import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "../src
 import { autoUpdateService, startRequestedUpdate, retireAutoUpdateTimer, renderAutoUpdateUnits } from "../src/cli/auto-update.js";
 import { DEFAULT_CAPS, saveConfig, type InstallConfig } from "../src/cli/config.js";
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../src/cli/user-config.js";
-import { update, type Flags } from "../src/cli/install.js";
+import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath } from "../src/update-maintenance.js";
+import { update, setup, type Flags } from "../src/cli/install.js";
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "palmagent-updates-"));
@@ -37,6 +38,14 @@ function fixture(t: TestContext) {
   const manifest = join(root, "plugin.json");
   writeFileSync(manifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.1" }));
   const calls = join(root, "calls.jsonl");
+  writeFileSync(join(root, "bin", "sudo"), `#!${process.execPath}
+require('node:fs').appendFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'host.jsonl'), JSON.stringify(process.argv.slice(2)) + '\\n');
+`, { mode: 0o700 });
+  writeFileSync(join(root, "bin", "systemctl"), `#!${process.execPath}
+const args = process.argv.slice(2);
+require('node:fs').appendFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'host.jsonl'), JSON.stringify(['systemctl', ...args]) + '\\n');
+process.exit(args.join(' ') === 'is-active --quiet palmagent-runner.service' ? 0 : 1);
+`, { mode: 0o700 });
   writeFileSync(join(root, "bin", "curl"), `#!${process.execPath}\nconsole.log(JSON.stringify({ ok: true, build: { version: process.env.TEST_UPDATE_HEALTH || '0.1.0-alpha.2' } }));\n`, { mode: 0o700 });
   writeFileSync(join(root, "bin", "npm"), `#!${process.execPath}
 const fs = require('node:fs');
@@ -57,6 +66,24 @@ else process.exit(1);
     try { return readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]); }
     catch { return []; }
   } };
+}
+
+async function idleFixture(t: TestContext, f: ReturnType<typeof fixture>, turns: string[] = []) {
+  const db = new Database(f.cfg.dbPath);
+  db.exec("CREATE TABLE tasks (status TEXT)");
+  t.after(() => db.close());
+  t.mock.method(globalThis, "fetch", async () => {
+    assert.equal(isUpdateMaintenance(f.cfg.dbPath), true, "admission is closed before checking activity");
+    return Response.json({ ok: true, updateMaintenance: true });
+  });
+  const messages: unknown[] = [];
+  const runner = createServer((socket) => socket.on("data", (data) => {
+    messages.push(JSON.parse(data.toString()));
+    socket.end(JSON.stringify({ t: "live", turns }) + "\n");
+  }));
+  await new Promise<void>((resolve) => runner.listen(f.cfg.runnerSocket, resolve));
+  t.after(() => new Promise<void>((resolve) => runner.close(() => resolve())));
+  return { db, turns, messages };
 }
 
 test("one planner retains compatible plugins and identifies a required version-line transition", () => {
@@ -108,6 +135,7 @@ test("automatic updates are opt-in and defer across compatibility lines", async 
 
 test("legacy plugin pull calls remain supported within the current compatibility line", async (t) => {
   const f = fixture(t);
+  await idleFixture(t, f);
   rmSync(userConfigPath());
   assert.equal(await update({ ...f.flags, get: (key) => key === "data-dir" ? f.cfg.dataDir : undefined }), 1);
   assert.deepEqual(f.readCalls().map((args) => args[0]), ["view", "root", "install"], "the fixture reaches installation rather than rejecting an old plugin's supported call");
@@ -116,6 +144,7 @@ test("legacy plugin pull calls remain supported within the current compatibility
 
 test("an installation failure preserves preferences and blocks later automatic attempts", async (t) => {
   const f = fixture(t);
+  await idleFixture(t, f);
   setUserAutoUpdate(true);
   const before = readFileSync(userConfigPath(), "utf8");
   assert.equal(await update(f.flags), 1);
@@ -147,6 +176,7 @@ test("a healthy unchanged target is a no-op and a wrong npm prefix never install
 
 test("activation uses the installed CLI and verifies runtime identity independently of its exit code", async (t) => {
   const f = fixture(t);
+  await idleFixture(t, f);
   process.env.TEST_UPDATE_INSTALL = "success";
   // A nominally successful activation that leaves the old server alive is a failure.
   assert.equal(await update(f.flags), 1);
@@ -323,3 +353,135 @@ test("a corrupt failure record is never replaced by a recoverable request result
   assert.equal(readFileSync(result, "utf8"), "{invalid");
   assert(!f.readCalls().some((args) => args[0] === "install"));
 });
+
+for (const pull of [true, false]) {
+  test(`manual ${pull ? "package replacement" : "service activation"} preserves active sessions even with force`, async (t) => {
+    const f = fixture(t);
+    const idle = await idleFixture(t, f);
+    const before = readFileSync(join(f.cfg.pkgDir!, "package.json"), "utf8");
+    for (const status of ["running", "queued", "awaiting_input", "awaiting_approval"]) {
+      idle.db.prepare("INSERT INTO tasks VALUES (?)").run(status);
+      assert.equal(await update({ ...f.flags, pull, force: true }), 1, status);
+      assert.equal(isUpdateMaintenance(f.cfg.dbPath), false, "deferral reopens task admission");
+      idle.db.exec("DELETE FROM tasks");
+    }
+    idle.turns.push("live-codex", "live-claude");
+    assert.equal(await update({ ...f.flags, pull, force: true }), 1, "runner activity also blocks when DB is idle");
+    assert.deepEqual(idle.messages, [{ t: "hello" }], "activity checks never signal, resume, or cancel a turn");
+    assert.equal(readFileSync(join(f.cfg.pkgDir!, "package.json"), "utf8"), before);
+    assert(!f.readCalls().some((args) => args[0] === "install"));
+    assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" }, "no service/config mutation before idle verification");
+    assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+  });
+
+  test(`manual ${pull ? "replacement" : "activation"} fails closed when activity cannot be verified`, async (t) => {
+    const f = fixture(t);
+    const idle = await idleFixture(t, f);
+    t.mock.method(globalThis, "fetch", async () => Response.json({ ok: true, updateMaintenance: false }));
+    if (pull) assert.equal(await update(f.flags), 1);
+    else await assert.rejects(update({ ...f.flags, pull }), /maintenance/);
+    assert.deepEqual(idle.messages, []);
+    assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+    assert(!f.readCalls().some((args) => args[0] === "install"));
+    assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" });
+  });
+}
+
+test("a deferred recovery retains the failed receipt and automatic retry hold", async (t) => {
+  const f = fixture(t);
+  const idle = await idleFixture(t, f);
+  idle.db.exec("INSERT INTO tasks VALUES ('running')");
+  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0-alpha.3", reason: "manual-recovery-required" });
+  const before = readUpdateReceipt(f.cfg.dataDir);
+  assert.equal(await update(f.flags), 1);
+  assert.deepEqual(readUpdateReceipt(f.cfg.dataDir), before);
+  assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+});
+
+test("an activation sentinel without the live updater parent's window cannot bypass safety", async (t) => {
+  const f = fixture(t);
+  process.env.PALMAGENT_UPDATE_POST_UPGRADE = "1";
+  const flags = { ...f.flags, pull: false, get: (key: string) => key === "expected-version" ? "0.1.0-alpha.2" : f.flags.get(key) };
+  await assert.rejects(update(flags), /parent's maintenance window/);
+  writeFileSync(maintenancePath(f.cfg.dbPath), JSON.stringify({ schemaVersion: 1, pid: process.ppid, identity: "prior-boot:1", token: "fixture" }));
+  await assert.rejects(update(flags), /parent's maintenance window/);
+  assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" });
+});
+
+test("source setup checks the current listener and leaves active sessions and configuration intact", async (t) => {
+  const f = fixture(t);
+  const idle = await idleFixture(t, f);
+  idle.turns.push("live-codex", "live-claude");
+  const before = readFileSync(join(f.cfg.dataDir, "install.env"), "utf8");
+  // Setup is also the maintainer source-update path. A new port must not become
+  // the activity probe target until the existing installation is safely idle.
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    assert.equal(url, `http://${f.cfg.host}:${f.cfg.port}/api/health`);
+    return Response.json({ ok: true, updateMaintenance: true });
+  });
+  assert.equal(await setup({ ...f.flags, get: (key) => key === "port" ? "4101" : f.flags.get(key) }), 1);
+  assert.equal(readFileSync(join(f.cfg.dataDir, "install.env"), "utf8"), before);
+  assert.deepEqual(idle.messages, [{ t: "hello" }]);
+  assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+  assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" });
+});
+
+test("idle direct activation may restart services only after both activity checks", async (t) => {
+  const f = fixture(t);
+  const idle = await idleFixture(t, f);
+  writeFileSync(join(f.cfg.pkgDir!, "runner-daemon.js"), "// Fixture runner artifact\n");
+  assert.equal(await update({ ...f.flags, pull: false }), 0);
+  assert.deepEqual(idle.messages, [{ t: "hello" }]);
+  const calls = readFileSync(join(f.root, "host.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert(calls.some((args) => args.join(" ") === "systemctl restart palmagent-runner.service"));
+  assert(calls.some((args) => args.join(" ") === "systemctl restart palmagent.service"));
+  assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+});
+
+test("the activation child reuses its live parent's lock but still rejects a busy runner", async (t) => {
+  const f = fixture(t);
+  const idle = await idleFixture(t, f, ["live-codex"]);
+  const unlock = acquireUpdateLock(dirname(userConfigPath()));
+  const release = beginUpdateMaintenance(f.cfg.dbPath);
+  try {
+    const script = `
+      import { update } from ${JSON.stringify(new URL("../src/cli/install.ts", import.meta.url).href)};
+      globalThis.fetch = async () => Response.json({ ok: true, updateMaintenance: true });
+      const code = await update({ dryRun: false, nonInteractive: true, force: false, purge: false, pull: false,
+        get: (key) => key === 'data-dir' ? process.env.TEST_ACTIVATION_DATA : key === 'expected-version' ? '0.1.0-alpha.2' : undefined });
+      process.exit(code);
+    `;
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+      env: { ...process.env, TEST_ACTIVATION_DATA: f.cfg.dataDir, PALMAGENT_UPDATE_POST_UPGRADE: "1" }, stdio: "pipe", timeout: 10_000,
+    });
+    let errors = "";
+    child.stderr.on("data", (chunk) => { errors += chunk; });
+    const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+    assert.equal(code, 1, errors);
+    assert.deepEqual(idle.messages, [{ t: "hello" }], "child passed parent ownership validation and checked activity");
+    assert.equal(isUpdateMaintenance(f.cfg.dbPath), true, "child must not release its parent's window");
+    assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" });
+  } finally { release(); unlock(); }
+});
+
+for (const command of ["update", "setup"]) {
+  test(`${command} CLI entrypoint owns one lock and reaches the session guard`, async (t) => {
+    const f = fixture(t);
+    const idle = await idleFixture(t, f, ["live-claude"]);
+    const script = `
+      globalThis.fetch = async () => Response.json({ ok: true, updateMaintenance: true });
+      process.argv = [process.execPath, 'fixture', process.env.TEST_ACTIVATION_COMMAND, '--data-dir', process.env.TEST_ACTIVATION_DATA, '-y'];
+      await import(${JSON.stringify(new URL("../src/cli/index.ts", import.meta.url).href)});
+    `;
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+      env: { ...process.env, TEST_ACTIVATION_DATA: f.cfg.dataDir, TEST_ACTIVATION_COMMAND: command }, stdio: "pipe", timeout: 10_000,
+    });
+    let errors = "";
+    child.stderr.on("data", (chunk) => { errors += chunk; });
+    const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+    assert.equal(code, 1, errors);
+    assert.deepEqual(idle.messages, [{ t: "hello" }], "entrypoint must reach activity checks without trying to acquire the lock twice");
+    assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+    assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" });
+  });
+}

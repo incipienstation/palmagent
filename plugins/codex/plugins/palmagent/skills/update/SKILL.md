@@ -74,9 +74,12 @@ the native managers using the recorded prior refs and report what was restored.
 
 ## 3. Apply and verify
 
-Explain that a web restart preserves runner-owned turns, but a changed runner
-requires a restart that ends active turns. If active work would be interrupted,
-defer until it finishes unless the user has explicitly accepted interruption.
+Preserve every running Codex and Claude session. A web restart reconnects to
+runner-owned turns; viewing a local CLI session never transfers its execution
+ownership. Package replacement, direct service activation, and source-update
+`setup` verify an idle maintenance window before changing files or restarting services. Active or
+unverifiable work defers the update, including manual calls and `--force`.
+Let sessions finish naturally and retry; never stop them to make an update proceed.
 Drive the CLI's service logic; do not restart units yourself.
 
 ```bash

@@ -144,11 +144,17 @@ one version line under the current compatibility promise. Before package mutatio
 the updater opens a maintenance window that temporarily rejects new task starts
 and follow-ups and defers routine dispatch. The server acknowledges the window;
 the updater then checks SQLite and the runner for active, queued, or waiting work.
+Manual CLI package replacement, direct activation, and source-update `setup`
+require the same barrier;
+`--force` cannot bypass session protection. The activation child must verify its
+live updater parent's maintenance ownership before reusing that barrier. Unknown
+activity defers the operation rather than restarting a potentially busy runner.
+A deferred manual recovery preserves any existing failure hold.
 Busy or unverifiable state defers the update and releases the window. This avoids
 an idle-check/start race and also protects an in-process fallback backend. A
 crashed updater does not leave admissions disabled: maintenance ownership includes
 the process start identity and boot identity, so PID reuse is not mistaken for a
-live update. Older servers without maintenance support defer automatic updates.
+live update. Servers without maintenance support defer updates until activity can be verified.
 
 A shared OS lock serializes package updates, install/setup, service removal, and
 update preference and request changes for the user configuration home. `update-result.json` in the

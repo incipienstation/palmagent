@@ -229,7 +229,7 @@ async function main(): Promise<void> {
     case "install":
       process.exit(await withHostLock(flags, () => install(flags)));
     case "setup":
-      process.exit(await withHostLock(flags, () => setup(flags)));
+      process.exit(await setup(flags));
     case "doctor":
       process.exit(runDoctor(flags));
     case "update":
@@ -239,8 +239,8 @@ async function main(): Promise<void> {
         "data-dir": { type: "string" }, channel: { type: "string" }, to: { type: "string" },
         "plugin-manifest": { type: "string", multiple: true }, "expected-version": { type: "string" },
       } });
-      process.exit(flags.pull || flags.plan || process.env.PALMAGENT_UPDATE_POST_UPGRADE === "1"
-        ? await update(flags) : await withHostLock(flags, () => update(flags)));
+      // Update and setup own their locks across activity checks and activation.
+      process.exit(await update(flags));
     case "uninstall":
       process.exit(await withHostLock(flags, () => uninstall(flags)));
     case "passkey":

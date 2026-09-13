@@ -38,7 +38,7 @@ export async function verifyUpdateIdle(cfg: InstallConfig): Promise<boolean> {
   const response = await fetch(`http://${cfg.host}:${cfg.port}/api/health`, { signal: AbortSignal.timeout(5_000) });
   const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean };
   if (!response.ok || health.ok !== true || health.updateMaintenance !== true) {
-    throw new Error("the running server does not support automatic update maintenance");
+    throw new Error("the running server does not support update maintenance");
   }
   const db = new Database(cfg.dbPath, { readonly: true, fileMustExist: true });
   try {

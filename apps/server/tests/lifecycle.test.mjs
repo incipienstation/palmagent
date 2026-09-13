@@ -205,6 +205,27 @@ for (const agent of ["claude", "codex"]) {
     assert.deepEqual(await replay(c, task.taskId, 2, true), rows.filter((row) => row.id > 2).map((row) => row.id));
   });
 
+  test(`${agent}: graceful view restart preserves the same running process and session`, options, async (t) => {
+    const c = await harness(t);
+    const task = await c.create(agent, "view-restart");
+    const child = await c.ready("view-restart");
+    await c.restart(true);
+    process.kill(child.pid, 0);
+    const live = await c.waitTask(task.taskId, (task) => task.status === "running");
+    assert.equal(live.sessionId, task.sessionId);
+    assert.equal(live.interrupted, false);
+    assert.deepEqual(await c.ready("view-restart"), child, "the view must not create a replacement CLI process");
+    c.mark("view-restart", ".release");
+    const final = await c.waitTask(task.taskId, (task) => task.status === "idle");
+    assert.equal(final.sessionId, task.sessionId);
+    assert.equal(final.interrupted, false);
+    const rows = c.rows(task.taskId);
+    for (const text of ["view-restart:before", "view-restart:after"]) {
+      assert.equal(rows.filter((row) => row.kind === "assistant_text" && JSON.parse(row.payload_json).text === text).length, 1);
+    }
+    assert.equal(rows.filter((row) => row.kind === "result").length, 1);
+  });
+
   test(`${agent}: stop and resume preserve session and worktree`, options, async (t) => {
     const c = await harness(t);
     const task = await c.create(agent, "first");

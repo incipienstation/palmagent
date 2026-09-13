@@ -458,8 +458,7 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
     check(failedPull === 1 && JSON.stringify(installCalls) === JSON.stringify([
       ["view", "palmagent@next", "version", "--json"],
       ["root", "-g"],
-      ["install", "-g", "palmagent@0.1.0-alpha.3"],
-    ]), "a real pull installs the resolved exact version and stops on npm failure");
+    ]), "a real pull refuses package replacement when an idle maintenance window cannot be verified");
 
     writeFileSync(npmCalls, "");
     delete process.env.TEST_NPM_TARGET;
