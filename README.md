@@ -75,7 +75,7 @@ The CLI commands below are internal plugin operations.
 | Skill | CLI command | Purpose |
 | --- | --- | --- |
 | `dispatch` | `palmagent session dispatch` | Continue the current local agent session in Palmagent |
-| `settings` | `palmagent config`, `palmagent auto-update` | Manage shared preferences and the automatic update timer |
+| `settings` | `palmagent config`, `palmagent auto-update` | Manage shared preferences and access-triggered updates |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |
 | `setup` | `palmagent setup` | Reconfigure an existing installation |
 | `doctor` | `palmagent doctor` | Diagnose service and host integration problems |
@@ -129,21 +129,32 @@ Ask **“Check for Palmagent updates”** to see the target version and which pl
 need changing. Ask **“Update Palmagent”** to apply that plan. The CLI, server, web
 app, and runner ship together; compatible operator plugins can stay installed.
 
-Ask **“Turn on automatic updates”** to enable background checks about every six
-hours on an installed service. Automatic updates are off by default and follow
+Ask **“Turn on automatic updates”** to install eligible updates discovered when
+you open or return to the app. Automatic updates are off by default and follow
 your saved Stable/Preview channel. They stay within the current `x.x.x` version
 line, keep plugins, and defer while tasks are running, queued, or waiting for you.
 A version that needs a plugin change waits for a plugin-assisted update.
 With the current compatibility rule, a new Stable patch also needs that flow;
 automatic advancement currently applies to prereleases within the same version line.
 
-Ask **“Show my update settings”** to check the preference, timer, and last result,
+Ask **“Show my update settings”** to check the preference, pending request, and last result,
 or **“Turn off automatic updates”** to stop future attempts. An update already
 applying is allowed to finish. Failed installations pause automatic retries until
 a successful manual recovery. See the [update policy](.harness/skills/release/references/channels-and-updates.md#coordinated-and-automatic-updates).
 
 In the web app, open **Settings → Updates** to see the running server version,
 choose Stable or Preview, toggle automatic updates, and inspect the last check.
+The app checks on connection and foreground return, reusing checks made within
+15 minutes. **Check again** checks immediately; **Update** schedules the displayed
+version and waits for active tasks to finish. Automatic updates use the same flow
+when enabled. There is no recurring update timer. Existing timers are retired
+when the updated package is activated.
+
+After the server changes version, the app checks for its new service worker and
+asks you to refresh. An outdated app cannot submit changes to a different server
+version. This guards the browser/server transition; it does not add package or
+SQLite rollback.
+
 These preferences are shared with the CLI and both operator plugins. Saving a
 channel does not immediately install a release or downgrade the current version.
 Changing settings requires a signed-in session and a package installation whose

@@ -121,11 +121,21 @@ independent plugin managers, npm, systemd, and SQLite. A plugin may need a nativ
 reload or a new agent session before its new skills become active.
 
 The settings skill exposes `auto-update enable|disable|status`. Enabling stores
-`autoUpdate: true` in the shared user file and activates the systemd update timer;
-an absent value means off. Enabling requires an installed package, its owner, and
-non-interactive service-management access. The timer invokes the same updater
-with `--pull --automatic`, about every six hours with jitter, under that owner
-and the installation's saved PATH, data directory, and user configuration home.
+`autoUpdate: true` in the shared user file; an absent value means off. Enabling
+requires an installed package, its owner, and non-interactive service-management
+access. Signed-in app connection and foreground return check the saved channel.
+Ordinary access reuses a 15-minute result; **Check again** bypasses the cache.
+Time passing never triggers a check. Existing recurring timers are removed on
+package activation and update-setting changes.
+
+**Update** pins the displayed version in `update-access.json`. Automatic access
+checks can request eligible updates when enabled; changing channel only checks
+availability and cancels a request in the former channel. Active-task completion
+resumes a pending request. The one-shot systemd executor reads that durable request
+and rechecks authorization, channel, compatibility, and idle state under the host
+lock. It survives a web-server restart and never chooses a different release
+because the npm tag moved. Native file events notify connected Settings screens
+of request/result changes without status polling.
 
 Automatic updates retain plugins and stay within the current package's `x.x.x`.
 They defer a new compatibility line, including any new Stable patch release, to
@@ -141,7 +151,7 @@ the process start identity and boot identity, so PID reuse is not mistaken for a
 live update. Older servers without maintenance support defer automatic updates.
 
 A shared OS lock serializes package updates, install/setup, service removal, and
-scheduler changes for the user configuration home. `update-result.json` in the
+update preference and request changes for the user configuration home. `update-result.json` in the
 installation data directory records the previous/target versions and result. An
 installation/activation failure or interrupted attempt pauses automatic retries;
 `doctor` and `auto-update status` expose the hold. A successful manual update or

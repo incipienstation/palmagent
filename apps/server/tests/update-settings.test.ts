@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UpdateSettingsChange, UpdateSettingsState } from "@palmagent/shared";
 import { createUpdateSettingsService } from "../src/update-settings.js";
-import { runUpdateSettingsCommand } from "../src/cli/update-settings.js";
+import { runUpdateSettingsCommand as executeSettingsCommand } from "../src/cli/update-settings.js";
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../src/cli/user-config.js";
 import { acquireUpdateLock } from "../src/cli/update-state.js";
 import { loadConfig } from "../src/cli/config.js";
@@ -19,7 +19,7 @@ function directory(t: test.TestContext) {
 }
 
 const state: UpdateSettingsState = { availability: "available", settings: {
-  channel: "preview", autoUpdate: false, timerActive: false, lastUpdate: null,
+  channel: "preview", autoUpdate: false, discovery: null, pending: null, lastUpdate: null,
 } };
 
 test("the web bridge invokes only its own CLI, validates input/output, and hides subprocess details", async (t) => {
@@ -67,6 +67,7 @@ function installedFixture(t: test.TestContext) {
     }
   });
   const bin = join(root, "bin"); mkdirSync(bin);
+  writeFileSync(join(bin, "npm"), "#!/bin/sh\nexit 1\n", { mode: 0o700 });
   const data = join(root, "data"); mkdirSync(data);
   const db = join(data, "palmagent.db");
   process.env.PALMAGENT_HOME = join(root, "preferences");
@@ -128,10 +129,10 @@ test("settings fail closed for mismatched installations and invalid files, and r
   assert(rendered.web.text.includes('Environment="PALMAGENT_HOME=/srv/settings %% owner"'));
 });
 
-test("automatic settings are saved only after scheduler activation and preserve the selected channel", (t) => {
+test("automatic settings are saved only after executor preparation and preserve the selected channel", (t) => {
   const f = installedFixture(t);
   setUserChannel("preview");
-  f.executable("sudo", 'case "$*" in *"enable --now"*) exit 1;; *) exit 0;; esac');
+  f.executable("sudo", 'case "$*" in *"daemon-reload"*) exit 1;; *) exit 0;; esac');
   assert.deepEqual(runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"]), { ok: false, error: "save-failed" });
   assert.equal(getUserConfig().autoUpdate, undefined);
   assert.equal(getUserConfig().channel, "preview");
@@ -143,3 +144,7 @@ test("automatic settings are saved only after scheduler activation and preserve 
   assert.equal(getUserConfig().autoUpdate, false);
   assert.equal(getUserConfig().channel, "preview");
 });
+
+function runUpdateSettingsCommand(args: string[]) {
+  return executeSettingsCommand(args, () => ({ discovery: null, pending: null }));
+}

@@ -120,7 +120,7 @@ export function setUserChannel(value: string, options: Options = {}): UserConfig
   return config;
 }
 
-/** Only the scheduler controller enables execution; absent means disabled. */
+/** Only the update settings controller enables execution; absent means disabled. */
 export function setUserAutoUpdate(enabled: boolean, options: Options = {}): UserConfig {
   const config = { ...getUserConfig(options), autoUpdate: enabled };
   if (!options.dryRun) writeAtomic(config, false);

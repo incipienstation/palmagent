@@ -8,6 +8,27 @@ import { registerSW } from "virtual:pwa-register";
 // only activates + reloads when the user taps Refresh. Drafts are additionally
 // persisted (useDraft) so the reload is always safe.
 
+declare const __PALMAGENT_WEB_VERSION__: string;
+export const clientVersion = __PALMAGENT_WEB_VERSION__;
+let serverChanged = false;
+let checking: Promise<void> | undefined;
+export function checkPwaUpdate(): Promise<void> {
+  if (!("serviceWorker" in navigator)) return Promise.resolve();
+  return checking ??= navigator.serviceWorker.getRegistration().then(async (registration) => {
+    await registration?.update();
+  }).catch(() => {}).finally(() => { checking = undefined; });
+}
+export function observeServerVersion(version?: string | null): void {
+  if (!version || version === clientVersion || serverChanged) return;
+  serverChanged = true;
+  dismissed = false;
+  emit();
+  void checkPwaUpdate();
+}
+export function useServerChanged(): boolean {
+  return useSyncExternalStore(subscribe, () => serverChanged, () => false);
+}
+
 let waiting = false; // a new SW is installed and waiting to take over
 let dismissed = false; // user dismissed the banner for the current update
 let applying = false; // user tapped Refresh — activation in progress
@@ -78,7 +99,7 @@ const subscribe = (cb: () => void) => {
   listeners.add(cb);
   return () => void listeners.delete(cb);
 };
-const shouldShow = () => waiting && !dismissed;
+const shouldShow = () => serverChanged || (waiting && !dismissed);
 const getApplying = () => applying;
 
 /** True when a deployed update is waiting and the user hasn't dismissed it. */

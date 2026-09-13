@@ -25,19 +25,24 @@ function updateMessage(result: UpdateReceipt): string {
     "tasks-active": "Update postponed while tasks are running or waiting. It will be checked again later.",
     "idle-state-unverified": "Update postponed because Palmagent could not confirm that all tasks were idle.",
     "plugin-update-required": "This release needs a matching plugin update. Use the update plugin to continue.",
+    "request-failed": "The update could not start. Check again or use the update plugin.",
     "settings-changed": "Update postponed because the update settings changed.",
   };
   return reasons[result.reason] ?? "The last update was postponed. Check the installation before retrying.";
 }
 
 export function UpdateSettings() {
-  const { status, busy, saving, stale, error, reload, change } = useUpdateSettings();
+  const { status, busy, saving, stale, error, reload, install, change } = useUpdateSettings();
   const automaticId = useId();
   const channelId = useId();
   const settings = status?.settings;
   const disabled = busy || status?.availability !== "available" || !settings;
   const last = settings?.lastUpdate;
-  const checkedAt = last ? new Date(last.checkedAt) : null;
+  const discovery = settings?.discovery;
+  const pending = settings?.pending;
+  const checkedAt = discovery ? new Date(discovery.checkedAt) : null;
+  const newer = discovery?.targetVersion && discovery.targetVersion !== status?.currentVersion;
+  const paused = last?.status === "failed" || last?.status === "applying";
 
   return (
     <section aria-label="Updates" className="flex flex-col gap-3 py-3">
@@ -57,7 +62,7 @@ export function UpdateSettings() {
         <Field orientation="horizontal" data-disabled={disabled}>
           <FieldContent className="gap-1">
             <FieldLabel htmlFor={automaticId}>Automatic updates</FieldLabel>
-            <FieldDescription className="text-xs">Checks about every six hours and installs when tasks are idle. Releases needing plugin updates require the update plugin.</FieldDescription>
+            <FieldDescription className="text-xs">Checks when you open the app and updates after active tasks finish.</FieldDescription>
           </FieldContent>
           <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled}
             onCheckedChange={(autoUpdate) => void change({ autoUpdate })} />
@@ -74,17 +79,23 @@ export function UpdateSettings() {
           {settings.channel === "preview" ? "Preview includes alpha, beta, and release candidates." : "Stable follows stable releases only."}
           {" "}Changing channel does not install or downgrade immediately.
         </p>
-        {settings.autoUpdate && !settings.timerActive && <Alert variant="warning">
-          Automatic updates are enabled, but scheduling is inactive. Turn the setting off and on to restore it.
-        </Alert>}
-        {last ? <div className="flex flex-col gap-1 text-xs text-muted-foreground" role="status">
-          <p>{updateMessage(last)}</p>
-          {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last check: <time dateTime={last.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
-        </div> : <p className="text-xs text-muted-foreground">No update checks recorded yet.</p>}
+        <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
+          {discovery?.error ? <Alert variant="warning">Could not check for updates. Try again when connected.</Alert>
+            : newer ? <p>Version {discovery.targetVersion} is available.</p>
+            : discovery ? <p>You are up to date.</p> : <p>No update checks yet.</p>}
+          {newer && !discovery?.eligible && <Alert>This release needs a matching operator plugin. Use the update plugin to continue.</Alert>}
+          {pending && !paused && <p>Update to {pending.targetVersion} is scheduled. It will start after active tasks finish.</p>}
+          {last && (paused || (!pending && last.status === "deferred")) && <p>{updateMessage(last)}</p>}
+          {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
+        </div>
       </FieldGroup>}
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground" role="status">{saving ? "Saving…" : busy && status ? "Refreshing…" : ""}</span>
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => void reload()}>Refresh status</Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => void reload()}>Check again</Button>
+          {newer && discovery?.eligible && <Button size="sm" disabled={disabled || Boolean(pending) || paused}
+            onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
+        </div>
       </div>
     </section>
   );

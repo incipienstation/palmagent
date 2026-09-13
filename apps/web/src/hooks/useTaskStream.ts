@@ -77,6 +77,7 @@ export function useTaskStream(taskId: string): TaskStream {
           lastSeq.current = seq;
         }
 
+        if (frame.type !== "event") return;
         const ev = frame.event;
         if (ev.kind === "assistant_text") {
           const p = (ev.payload ?? {}) as Partial<AssistantTextPayload>;

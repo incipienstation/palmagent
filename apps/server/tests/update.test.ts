@@ -1,12 +1,15 @@
+import Database from "better-sqlite3";
+import { createServer } from "node:net";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { checkUpdateAccess, readUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../src/cli/update-access.js";
 import { planUpdate, readPluginVersions, resolveUpdatePlan } from "../src/cli/update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "../src/cli/update-state.js";
-import { renderAutoUpdateUnits } from "../src/cli/auto-update.js";
+import { autoUpdateService, startRequestedUpdate, retireAutoUpdateTimer, renderAutoUpdateUnits } from "../src/cli/auto-update.js";
 import { DEFAULT_CAPS, saveConfig, type InstallConfig } from "../src/cli/config.js";
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../src/cli/user-config.js";
 import { update, type Flags } from "../src/cli/install.js";
@@ -171,18 +174,19 @@ test("the shared operation lock excludes another process and releases on close",
   assert.throws(() => acquireUpdateLock(directory), /regular file/);
 });
 
-test("scheduler rendering preserves custom paths, owner, environment, and the saved-channel contract", (t) => {
+test("executor rendering preserves custom paths, owner, environment, and the saved-channel contract", (t) => {
   const { cfg } = fixture(t);
   const rendered = renderAutoUpdateUnits({ ...cfg, dataDir: "/srv/palmagent state", pkgDir: "/opt/palmagent package" }, {
     node: "/usr/bin/node", home: "/srv/operator", configHome: "/srv/operator/preferences",
   });
   assert.match(rendered.service, /User=palmagent/);
   assert.match(rendered.service, /"\/opt\/palmagent package\/cli.js"/);
-  assert.match(rendered.service, /"--automatic"/);
+  assert.match(rendered.service, /"update-request"/);
   assert.match(rendered.service, /PALMAGENT_NON_INTERACTIVE=1/);
   assert.match(rendered.service, /PALMAGENT_HOME=\/srv\/operator\/preferences/);
   assert(!rendered.service.includes("--channel"));
-  assert.match(rendered.timer, /00,06,12,18:00:00/);
+  assert.equal("timer" in rendered, false);
+  assert(!rendered.service.includes("OnCalendar"));
   assert.throws(() => renderAutoUpdateUnits({ ...cfg, mode: "source" }), /installed Palmagent package/);
   assert.throws(() => renderAutoUpdateUnits({ ...cfg, user: "root" }), /unprivileged/);
   assert.throws(() => renderAutoUpdateUnits({ ...cfg, dataDir: "/srv/data\nExecStart=unexpected" }), /invalid systemd unit value/);
@@ -191,16 +195,131 @@ test("scheduler rendering preserves custom paths, owner, environment, and the sa
   assert.equal(getUserConfig().autoUpdate, undefined);
 });
 
-test("systemd accepts the generated scheduler units", { skip: process.platform !== "linux" }, (t) => {
+test("systemd accepts the generated event-triggered executor", { skip: process.platform !== "linux" }, (t) => {
   const { cfg } = fixture(t);
   const directory = mkdtempSync(join(tmpdir(), "palmagent-systemd-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const rendered = renderAutoUpdateUnits({ ...cfg, dataDir: "/srv/palmagent state" });
-  const service = join(directory, "palmagent-update.service");
-  const timer = join(directory, "palmagent-update.timer");
+  const service = join(directory, autoUpdateService.replace("@.", "@fixture."));
   writeFileSync(service, rendered.service);
-  writeFileSync(timer, rendered.timer);
-  const checked = spawnSync("systemd-analyze", ["verify", "--man=no", service, timer], { encoding: "utf8" });
+  const checked = spawnSync("systemd-analyze", ["verify", "--man=no", service], { encoding: "utf8" });
   assert.equal(checked.error, undefined);
   assert.equal(checked.status, 0, checked.stderr);
+});
+
+test("access checks reuse a short cache, refresh on demand/channel change, and keep failed checks distinct", (t) => {
+  const f = fixture(t);
+  const now = Date.now();
+  const first = checkUpdateAccess(f.cfg, false, now);
+  assert.equal(first.discovery?.targetVersion, "0.1.0-alpha.3");
+  assert.equal(first.pending, null, "checking alone never authorizes installation");
+  assert.deepEqual(checkUpdateAccess(f.cfg, false, now + 1000), first);
+  assert.equal(f.readCalls().length, 1);
+  checkUpdateAccess(f.cfg, true, now + 2000);
+  assert.equal(f.readCalls().length, 2);
+  checkUpdateAccess(f.cfg, false, now + 16 * 60_000);
+  assert.equal(f.readCalls().length, 3);
+  setUserChannel("stable");
+  const failed = checkUpdateAccess(f.cfg, false, now + 16 * 60_000 + 1);
+  assert.equal(failed.discovery?.error, true, "a prerelease in Stable is not reported as current");
+  assert.equal(failed.discovery?.targetVersion, null);
+  checkUpdateAccess(f.cfg, false, now + 16 * 60_000 + 2);
+  assert.equal(f.readCalls().length, 4, "failed checks are throttled too");
+});
+
+test("an install request pins the displayed target and cannot cross channel, version, or preference changes", (t) => {
+  const f = fixture(t);
+  checkUpdateAccess(f.cfg, true);
+  assert.throws(() => requestUpdateAccess(f.cfg, true));
+  assert.throws(() => requestUpdateAccess(f.cfg, false, "0.1.0-alpha.9"));
+  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  const manual = readUpdateAccess(f.cfg.dataDir).pending!;
+  assert.equal(manual.automatic, false);
+  assert(validUpdateRequest(f.cfg, manual));
+  setUserAutoUpdate(true);
+  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.4";
+  checkUpdateAccess(f.cfg, true);
+  requestUpdateAccess(f.cfg, true);
+  assert.deepEqual(readUpdateAccess(f.cfg.dataDir).pending, manual, "later checks cannot replace an approved exact target");
+  setUserChannel("stable");
+  assert.equal(validUpdateRequest(f.cfg, manual), false);
+  clearUpdateRequest(f.cfg, manual.id);
+  assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+  setUserChannel("preview");
+  requestUpdateAccess(f.cfg, true);
+  const automatic = readUpdateAccess(f.cfg.dataDir).pending!;
+  setUserAutoUpdate(false);
+  assert.equal(validUpdateRequest(f.cfg, automatic), false);
+  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0-alpha.4", reason: "manual-recovery-required" });
+  assert.throws(() => requestUpdateAccess(f.cfg, false, "0.1.0-alpha.4"), /recovery/);
+});
+
+test("a cancelled durable request never reaches registry resolution or installation", async (t) => {
+  const f = fixture(t);
+  checkUpdateAccess(f.cfg, true);
+  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  const request = readUpdateAccess(f.cfg.dataDir).pending!;
+  clearUpdateRequest(f.cfg);
+  assert.equal(await update({ ...f.flags, request }), 0);
+  assert.deepEqual(f.readCalls().map((args) => args[0]), ["view"]);
+});
+
+test("a manual app update preserves busy work and resumes the pinned release without enabling automatic updates", async (t) => {
+  const f = fixture(t);
+  const db = new Database(f.cfg.dbPath);
+  t.after(() => db.close());
+  db.exec("CREATE TABLE tasks (status TEXT); INSERT INTO tasks VALUES ('running')");
+  writeFileSync(join(f.root, "bin", "sudo"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+  t.mock.method(globalThis, "fetch", async () => Response.json({ ok: true, updateMaintenance: true }));
+  checkUpdateAccess(f.cfg, true);
+  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  const request = readUpdateAccess(f.cfg.dataDir).pending!;
+  const flags = { ...f.flags, request, get: (key: string) => key === "to" ? request.targetVersion : f.flags.get(key) };
+  assert.equal(await update(flags), 0);
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "tasks-active");
+  assert.deepEqual(readUpdateAccess(f.cfg.dataDir).pending, request);
+  assert(!f.readCalls().some((args) => args[0] === "install"));
+  db.exec("UPDATE tasks SET status = 'idle'");
+  const runner = createServer((socket) => socket.on("data", () => socket.write('{"t":"live","turns":[]}\n')));
+  await new Promise<void>((resolve) => runner.listen(f.cfg.runnerSocket, resolve));
+  t.after(() => new Promise<void>((resolve) => runner.close(() => resolve())));
+  process.env.TEST_UPDATE_INSTALL = "success";
+  process.env.TEST_UPDATE_HEALTH = "0.1.0-alpha.3";
+  assert.equal(await update(flags), 0);
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, "succeeded");
+  assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+  assert.equal(getUserConfig().autoUpdate, undefined);
+  assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0-alpha.3"]);
+});
+
+test("migration disables and removes only the legacy recurring timer", (t) => {
+  const f = fixture(t);
+  const unitDir = join(f.root, "units"); mkdirSync(unitDir);
+  writeFileSync(join(unitDir, "palmagent-update.timer"), "[Timer]\nOnCalendar=daily\n");
+  writeFileSync(join(f.root, "bin", "sudo"), `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(f.calls)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+`, { mode: 0o700 });
+  retireAutoUpdateTimer(unitDir);
+  assert.deepEqual(f.readCalls(), [
+    ["systemctl", "disable", "--now", "palmagent-update.timer"],
+    ["rm", "-f", join(unitDir, "palmagent-update.timer")],
+    ["systemctl", "daemon-reload"],
+  ]);
+  startRequestedUpdate(); startRequestedUpdate();
+  const starts = f.readCalls().slice(-2);
+  assert(starts.every((args) => args.slice(0, 3).join(" ") === "systemctl start --no-block"));
+  assert(starts.every((args) => /^palmagent-update@[a-f0-9-]+\.service$/.test(args[3])));
+  assert.notEqual(starts[0][3], starts[1][3], "a new event cannot be swallowed by a service still exiting");
+});
+
+test("a corrupt failure record is never replaced by a recoverable request result", async (t) => {
+  const f = fixture(t);
+  checkUpdateAccess(f.cfg, true);
+  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  const request = readUpdateAccess(f.cfg.dataDir).pending!;
+  const result = join(f.cfg.dataDir, "update-result.json");
+  writeFileSync(result, "{invalid");
+  await assert.rejects(update({ ...f.flags, request }), /last update result/);
+  assert.equal(readFileSync(result, "utf8"), "{invalid");
+  assert(!f.readCalls().some((args) => args[0] === "install"));
 });

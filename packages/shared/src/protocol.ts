@@ -143,8 +143,9 @@ export interface SseTasksFrame {
   tasks: TaskState[];
   // Initial scoped snapshot: replay ends at this per-task sequence (0 if empty).
   replayThrough?: number;
+  version?: string;
 }
-export type SseFrame = SseEventFrame | SseTasksFrame;
+export type SseFrame = SseEventFrame | SseTasksFrame | { type: "updates" };
 
 // ---- auth (in-app WebAuthn / passkeys) ----
 // GET /api/auth/me. The WebAuthn options/response payloads (login/register) are

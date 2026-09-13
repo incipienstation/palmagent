@@ -1,3 +1,5 @@
+import { updatesChanged } from "../update-events";
+import { observeServerVersion } from "../pwa";
 import { useEffect, useRef, useState } from "react";
 import type { SseFrame, TaskState } from "@palmagent/shared";
 import { connectSse, type ConnState } from "./sse";
@@ -30,7 +32,11 @@ export function useInbox(): Inbox {
         } catch {
           return;
         }
-        if (frame.type === "tasks") setTasks(frame.tasks);
+        if (frame.type === "tasks") {
+          observeServerVersion(frame.version);
+          setTasks(frame.tasks);
+        }
+        if (frame.type === "updates") updatesChanged();
       },
       setConn,
       () => lastId.current,

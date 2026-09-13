@@ -18,7 +18,7 @@ test("settings show the running version, save shared preferences, and remain usa
   await page.route("**/api/settings/updates", async (route) => {
     if (route.request().method() === "PATCH") {
       const change = route.request().postDataJSON(); changes.push(change);
-      state = { ...state, settings: { ...state.settings!, ...change, timerActive: change.autoUpdate ?? state.settings!.timerActive } };
+      state = { ...state, settings: { ...state.settings!, ...change } };
     }
     await route.fulfill({ json: state });
   });
@@ -50,7 +50,6 @@ test("a failed save reconciles the actual setting rather than showing a false ro
   await page.route("**/api/settings/updates", async (route) => {
     if (route.request().method() === "PATCH") {
       state.settings!.autoUpdate = true;
-      state.settings!.timerActive = true;
       return route.fulfill({ status: 503, json: { error: "Could not confirm the update setting. Refresh its status before trying again." } });
     }
     reads++;
@@ -62,7 +61,7 @@ test("a failed save reconciles the actual setting rather than showing a false ro
   await expect(page.getByRole("alert")).toContainText("Could not confirm");
   await expect(automatic).toBeChecked();
   await expect(automatic).toBeEnabled();
-  expect(reads).toBe(2);
+  expect(reads).toBeGreaterThanOrEqual(2);
 });
 
 test("pending saves disable both controls and do not change the displayed running version", async ({ page }) => {
@@ -89,8 +88,8 @@ test("unavailable management keeps the current version visible and explains the 
   await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeDisabled();
   await expect(page.getByRole("alert")).toContainText("installation owner");
   await page.setViewportSize({ width: 320, height: 568 });
-  await page.getByRole("button", { name: "Refresh status", exact: true }).scrollIntoViewIfNeeded();
-  await expect(page.getByRole("button", { name: "Refresh status", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Check again", exact: true }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeVisible();
   expect(await page.locator('[data-slot="settings-scroll"]').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
   await assertViewportLocked(page);
 });
@@ -98,7 +97,6 @@ test("unavailable management keeps the current version visible and explains the 
 test("the last result explains why an enabled automatic update is paused", async ({ page }) => {
   const state = structuredClone(updateSettings) as UpdateSettingsStatus;
   state.settings!.autoUpdate = true;
-  state.settings!.timerActive = true;
   state.settings!.lastUpdate!.status = "failed";
   state.settings!.lastUpdate!.targetVersion = "0.1.0-alpha.5";
   await page.route("**/api/settings/updates", (route) => route.fulfill({ json: state }));
@@ -114,12 +112,12 @@ test("a failed refresh marks the last known version and removes stale controls u
   await openSettings(page);
   await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeEnabled();
   online = false;
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
   await expect(page.getByText("Last seen version", { exact: true })).toBeVisible();
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
   await expect(page.getByRole("switch", { name: "Automatic updates" })).toHaveCount(0);
   online = true;
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
   await expect(page.getByText("Current version", { exact: true })).toBeVisible();
   await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeEnabled();
 });
@@ -144,4 +142,61 @@ test.describe("update settings with the real service worker", () => {
     });
     expect(offline).toBeNull();
   });
+});
+
+test("app access checks once, foreground return checks again, and elapsed time never polls", async ({ page }) => {
+  const actions: string[] = [];
+  await page.clock.install();
+  await page.route("**/api/settings/updates", async (route) => {
+    if (route.request().method() === "POST") actions.push(route.request().postDataJSON().action);
+    await route.fulfill({ json: updateSettings });
+  });
+  await page.goto("/");
+  await expect.poll(() => actions).toEqual(["visit"]);
+  await page.clock.fastForward(7 * 60 * 60 * 1000);
+  expect(actions).toEqual(["visit"]);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => actions).toEqual(["visit", "visit"]);
+});
+
+test("Settings checks the registry and requests the displayed update without enabling automatic updates", async ({ page }) => {
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  const actions: unknown[] = [];
+  state.settings!.discovery!.targetVersion = "0.1.0-alpha.5";
+  await page.route("**/api/settings/updates", async (route) => {
+    if (route.request().method() === "POST") {
+      const action = route.request().postDataJSON(); actions.push(action);
+      if (action.action === "install") state.settings!.pending = {
+        id: "ddc3ac21-a723-4c89-b0ab-a21a4cdd9b4d", channel: "preview",
+        currentVersion: "0.1.0-alpha.4", targetVersion: action.version, automatic: false,
+      };
+    }
+    await route.fulfill({ json: state });
+  });
+  await openSettings(page);
+  await expect(page.getByText("Version 0.1.0-alpha.5 is available.")).toBeVisible();
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect.poll(() => actions).toContainEqual({ action: "check" });
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Update scheduled", exact: true })).toBeDisabled();
+  await expect(page.getByText(/It will start after active tasks finish/)).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Automatic updates" })).not.toBeChecked();
+  expect(actions).toContainEqual({ action: "install", version: "0.1.0-alpha.5" });
+});
+
+test("a changed server version keeps the app open and requires a matching screen refresh", async ({ page }) => {
+  await page.route("**/api/settings/updates", (route) => route.fulfill({
+    json: updateSettings, headers: { "x-palmagent-version": "0.1.0-alpha.999" },
+  }));
+  await page.goto("/");
+  await expect(page.getByText("Refresh to continue with the updated server.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dismiss update", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeVisible();
 });

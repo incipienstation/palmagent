@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -26,6 +27,7 @@ if (apiTargetUrl.protocol !== "https:" && !(apiTargetUrl.protocol === "http:" &&
 }
 
 export default defineConfig({
+  define: { __PALMAGENT_WEB_VERSION__: JSON.stringify(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version) },
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

@@ -22,6 +22,7 @@ export function createApp(deps: HttpDependencies) {
   app.notFound((c) => c.json({ error: "not found" }, 404));
   app.use("*", async (c, next) => {
     const path = c.req.path;
+    if (deps.build && path.startsWith("/api/")) c.header("X-Palmagent-Version", deps.build.version);
     const publicRoute = (path === "/api/health" && c.req.method === "GET") || path.startsWith("/api/auth/");
     if (auth.enabled && path.startsWith("/api/") && !publicRoute) {
       if (c.req.method !== "GET" && c.req.method !== "HEAD") {
@@ -33,6 +34,11 @@ export function createApp(deps: HttpDependencies) {
         }
       }
       if (!auth.verifySession(getCookie(c, config.cookieName))) return c.json({ error: "unauthorized" }, 401);
+    }
+    const clientVersion = c.req.header("x-palmagent-version");
+    if (deps.build && clientVersion && clientVersion !== deps.build.version && path.startsWith("/api/") &&
+        !path.startsWith("/api/auth/") && !["GET", "HEAD"].includes(c.req.method)) {
+      return c.json({ error: "Palmagent was updated. Refresh the app before making changes.", code: "update-required" }, 409);
     }
     // Preserve the existing HEAD/strict-path contract; in particular HEAD must
     // never open an SSE subscription through Hono's implicit GET dispatch.

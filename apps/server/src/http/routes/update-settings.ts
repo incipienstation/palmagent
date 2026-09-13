@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { UpdateSettingsChangeSchema } from "@palmagent/shared/requests";
+import { UpdateActionSchema } from "@palmagent/shared/updates";
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { HttpError } from "../../service.js";
 import { body } from "../input.js";
@@ -20,6 +21,12 @@ export function updateSettingsRoutes({ updates, auth, build }: HttpDependencies)
     const change = await body(c, UpdateSettingsChangeSchema);
     if (!updates) throw new HttpError(503, "Update settings are unavailable.");
     return c.json(status(await updates.change(change)));
+  });
+  app.post("/", async (c) => {
+    if (!auth.enabled) throw new HttpError(403, "Sign-in must be enabled to manage updates.");
+    const action = await body(c, UpdateActionSchema);
+    if (!updates) throw new HttpError(503, "Update settings are unavailable.");
+    return c.json(status(await updates.action(action)));
   });
   return app;
 }

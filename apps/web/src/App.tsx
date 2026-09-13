@@ -1,3 +1,4 @@
+import { useAccessUpdates } from "./hooks/useAccessUpdates";
 import { AuthGate } from "./auth/AuthGate";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import { useInbox } from "./hooks/useInbox";
@@ -14,6 +15,7 @@ function AppInner() {
   // current view, so the task list stays live everywhere (and we never open more
   // than one /api/stream). The task detail opens its own scoped stream on top.
   const { tasks, conn } = useInbox();
+  useAccessUpdates(conn);
 
   // Per-route browser/OS title (page-first + brand suffix). Centralized here so
   // the route → page-name map lives in one place; the task page reuses the same
