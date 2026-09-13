@@ -3,6 +3,7 @@
 // we never redefine it here. SSE (read) lives in the stream hooks; this file is
 // the control plane (REST) only.
 import type {
+  AccountLimits,
   SessionHandoffResponse,
   AgentKind,
   AgentUsage,
@@ -97,6 +98,7 @@ export const api = {
     ),
   getTask: (id: string) =>
     request<{ task: TaskState }>("GET", `/api/tasks/${encodeURIComponent(id)}`).then((r) => r.task),
+  getAccountLimits: (id: string) => request<AccountLimits>("GET", `/api/tasks/${encodeURIComponent(id)}/account-limits`),
   createTask: (req: CreateTaskRequest) =>
     request<{ task: TaskState }>("POST", "/api/tasks", req).then((r) => r.task),
 

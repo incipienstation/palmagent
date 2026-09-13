@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Replace session token counters with remaining account allowance and reset
+  countdowns. Claude and Codex show their own quota windows, with additional
+  model limits and credits in Details. Limits refresh while sessions are idle too.
+
 ## 0.1.0-alpha.8
 
 ### Changed

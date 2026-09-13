@@ -181,7 +181,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       <AppBar title={heading} back conn={conn} />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Keep primary context in one row; configuration and exact usage live
+        {/* Keep primary context in one row; configuration lives
             in Session details. Verbose retains the full metadata strip. */}
         <div className="flex items-center gap-x-2 px-4 py-1">
           <div className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap text-[12.5px] text-faint [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
@@ -202,7 +202,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               <Button variant="ghost" size="icon" className="size-11 shrink-0" aria-label="Session details"><Info data-icon="inline-start" /></Button>
             </SheetTrigger>
             <SheetContent>
-              <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription>Configuration and latest reported usage.</SheetDescription></SheetHeader>
+              <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription>Session configuration and identity.</SheetDescription></SheetHeader>
               <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto px-4 text-sm [overflow-wrap:anywhere]">
                 <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
                   {task?.branch && <><dt>Branch</dt><dd>{task.branch}</dd></>}
@@ -211,7 +211,6 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
                   {task && <><dt>Permission</dt><dd>{permLabel(task.agent, task.permission)}</dd></>}
                   {task?.sessionId && <><dt>Session</dt><dd>{task.sessionId}</dd></>}
                 </dl>
-                <TaskStatusline log={log} running={running} detailed />
               </div>
             </SheetContent>
           </Sheet>
@@ -234,7 +233,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
         <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-card/85 px-4 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
-          <TaskStatusline log={log} running={running} />
+          {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
               questions={task.pendingInput.questions}

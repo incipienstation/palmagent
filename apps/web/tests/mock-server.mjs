@@ -197,6 +197,15 @@ const server = createServer((req, res) => {
         return json(res, 200, { tasks: status ? tasks.filter((t) => t.status === status) : tasks });
       }
       if (pathname.startsWith("/api/tasks/")) {
+        if (pathname.endsWith("/account-limits")) {
+          const id = decodeURIComponent(pathname.slice("/api/tasks/".length, -"/account-limits".length));
+          const task = tasks.find((t) => t.taskId === id);
+          if (!task) return json(res, 404, { error: "no such task" });
+          const window = { usedPercent: 28, resetsAt: Date.now() + 100 * 60_000 };
+          return json(res, 200, task.agent === "claude"
+            ? { agent: "claude", state: "ready", checkedAt: Date.now(), fiveHour: window, modelLimits: [] }
+            : { agent: "codex", state: "ready", checkedAt: Date.now(), buckets: [{ id: "codex", name: "Codex", primary: { ...window, windowMinutes: 300 } }] });
+        }
         const id = decodeURIComponent(pathname.slice("/api/tasks/".length));
         const task = tasks.find((t) => t.taskId === id);
         return task ? json(res, 200, { task }) : json(res, 404, { error: "no such task" });

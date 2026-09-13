@@ -25,15 +25,16 @@ for (const mode of ["compact", "default", "verbose"] as const) {
   });
 }
 
-test("compact keeps usage and configuration in session details", async ({ page }) => {
+test("compact keeps account limits visible and configuration in session details", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByRole("button", { name: /Latest usage/ })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Task usage" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Account limits" }).getByText("72% left", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Session details", exact: true }).click();
   const detail = page.getByRole("dialog");
   await expect(detail.getByText("Permission", { exact: true })).toBeVisible();
-  await expect(detail.getByText("Input 18.2K", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Model", { exact: true })).toBeVisible();
   await assertViewportLocked(page);
 });
 
