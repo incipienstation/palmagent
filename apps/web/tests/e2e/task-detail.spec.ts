@@ -25,6 +25,7 @@ test.describe("task detail", () => {
   });
 
   test("shows the dispatch prompt as a You bubble and a follow-up composer", async ({ page }) => {
+    await page.locator("[data-radix-scroll-area-viewport]").first().evaluate((el) => { el.scrollTop = 0; });
     await expect(page.getByText("You", { exact: true })).toBeVisible();
     // idle task → follow-up composer is enabled.
     await expect(page.getByPlaceholder(/Send a follow-up turn/)).toBeVisible();

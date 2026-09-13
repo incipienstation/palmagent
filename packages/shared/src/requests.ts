@@ -35,7 +35,12 @@ export const PushUnsubscribeSchema = z.object({ endpoint: required });
 export const DispatchSessionSchema = z.object({ agent, sessionId: required, cwd: required, home: required, waitPid: z.number().int().positive() });
 export const TaskStatusSchema = z.enum(["queued", "running", "awaiting_approval", "awaiting_input", "idle", "archived", "failed", "cancelled"]);
 export const TaskQuerySchema = z.object({ status: TaskStatusSchema.optional() });
-export const StreamQuerySchema = z.object({ task: text.optional(), lastEventId: text.optional() });
+const cursor = z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+export const HistoryQuerySchema = z.object({ before: cursor });
+export const StreamQuerySchema = z.object({
+  task: text.optional(), lastEventId: text.optional(),
+  tail: z.literal("1").optional(), snapshots: z.literal("1").optional(),
+});
 export const PathQuerySchema = z.object({ path: text.optional() });
 export const DiscoverQuerySchema = z.object({ refresh: z.enum(["0", "1"]).optional() });
 export const IdParamsSchema = z.object({ id: required });

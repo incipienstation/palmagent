@@ -1,111 +1,135 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, AgentEventKind, AgentKind, AssistantTextPayload, SseFrame, TaskState } from "@palmagent/shared";
+import { api } from "../api";
 import { connectSse, type ConnState } from "./sse";
 
-// The log is a list of render items. Consecutive `assistant_text` deltas (Claude
-// streams token-by-token) are coalesced into one growing bubble; every other
-// event kind is its own item. Each item keeps a stable `key` for React.
+// The first event's durable sequence is the row key. Replacing a growing text
+// item preserves every other row's identity for memoized transcript rendering.
 export type LogItem =
   | { key: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
   | { key: number; kind: Exclude<AgentEventKind, "assistant_text">; event: AgentEvent };
-
 export type { ConnState };
 
 export interface TaskStream {
   log: LogItem[];
   conn: ConnState;
   loadingHistory: boolean;
-  // This task's latest snapshot, taken from the `tasks` frames the scoped stream
-  // also carries. The detail view trusts THIS over the inbox-provided task: the
-  // scoped stream is the one that's actually connected while you're on the page,
-  // so it reflects status changes (e.g. running → awaiting_input) even when the
-  // long-lived inbox stream has gone stale in the background.
+  hasEarlier: boolean;
+  loadingEarlier: boolean;
+  historyError?: string;
+  loadEarlier: () => void;
+  // The scoped snapshot remains authoritative even if the inbox was suspended.
   task?: TaskState;
 }
 
-// Scoped stream (GET /api/stream?task=:id). The SSE `id:` is the per-task seq;
-// re-dials replay everything after it. We additionally gate on a monotonic seq
-// so a replayed event is never rendered twice and ordering holds.
+function append(items: LogItem[], event: AgentEvent, seq: number) {
+  if (event.kind === "assistant_text") {
+    const payload = (event.payload ?? {}) as Partial<AssistantTextPayload>;
+    const text = typeof payload?.text === "string" ? payload.text : "";
+    const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
+    const phase = payload.phase === "progress" || payload.phase === "final" ? payload.phase : undefined;
+    const last = items.at(-1);
+    if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && last.phase === phase) items[items.length - 1] = { ...last, text: last.text + text };
+    else items.push({ key: seq, kind: "assistant_text", agent: event.agent, text, messageId, phase });
+  } else items.push({ key: seq, kind: event.kind, event });
+}
+
 export function useTaskStream(taskId: string): TaskStream {
   const [log, setLog] = useState<LogItem[]>([]);
   const [conn, setConn] = useState<ConnState>("connecting");
-  const [task, setTask] = useState<TaskState | undefined>(undefined);
+  const [task, setTask] = useState<TaskState>();
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const lastSeq = useRef(0);
-  const keyCounter = useRef(0);
+  const [hasEarlier, setHasEarlier] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const load = useRef<() => void>(() => {});
+  const loadEarlier = useCallback(() => load.current(), []);
 
   useEffect(() => {
-    lastSeq.current = 0;
-    keyCounter.current = 0;
-    setLog([]);
-    setTask(undefined);
-    setLoadingHistory(true);
-    const items: LogItem[] = [];
+    setLog([]); setTask(undefined);
+    setLoadingHistory(true); setHasEarlier(false); setLoadingEarlier(false); setHistoryError(undefined);
+    let items: LogItem[] = [];
+    let lastSeq = 0;
+    let receivedSnapshot = false;
     let replayThrough = 0;
-    let historyReady = false;
+    let ready = false;
+    let before: number | null = null;
+    let animation = 0;
+    let disposed = false;
+    let request: AbortController | undefined;
+
     const publish = () => {
-      historyReady = true;
-      setLoadingHistory(false);
+      animation = 0;
       setLog([...items]);
+      setHasEarlier(before !== null);
+      setLoadingHistory(false);
+    };
+    const schedule = () => {
+      if (!animation) animation = requestAnimationFrame(publish);
     };
 
-    return connectSse(
-      `/api/stream?task=${encodeURIComponent(taskId)}`,
-      (e) => {
+    load.current = async () => {
+      if (!ready || before === null || request) return;
+      const controller = new AbortController();
+      request = controller;
+      setLoadingEarlier(true); setHistoryError(undefined);
+      try {
+        const page = await api.taskHistory(taskId, before, controller.signal);
+        if (disposed) return;
+        const older: LogItem[] = [];
+        // The server starts pages at whole-message boundaries. Filter overlap
+        // defensively without changing the live cursor.
+        for (const row of page.events) {
+          if (row.seq < before) append(older, row.event, row.seq);
+        }
+        items = [...older, ...items];
+        before = page.before;
+        schedule();
+      } catch (error) {
+        if (!disposed) setHistoryError(error instanceof Error ? error.message : "Could not load earlier messages.");
+      } finally {
+        if (!disposed) { request = undefined; setLoadingEarlier(false); }
+      }
+    };
+
+    const disconnect = connectSse(
+      `/api/stream?task=${encodeURIComponent(taskId)}&tail=1`,
+      (message) => {
         let frame: SseFrame;
-        try {
-          frame = JSON.parse(e.data) as SseFrame;
-        } catch {
-          return;
-        }
-        // The scoped stream carries `tasks` snapshots too — keep this task's
-        // current state so the detail view has a live, authoritative status.
+        try { frame = JSON.parse(message.data) as SseFrame; } catch { return; }
         if (frame.type === "tasks") {
-          const mine = frame.tasks.find((t) => t.taskId === taskId);
+          const mine = frame.tasks.find((entry) => entry.taskId === taskId);
           if (mine) setTask(mine);
-          if (!historyReady) {
+          if (!receivedSnapshot && frame.history) {
+            lastSeq = frame.history.after;
+            before = frame.history.before;
+          }
+          receivedSnapshot = true;
+          if (!ready) {
             replayThrough = frame.replayThrough ?? 0;
-            if (lastSeq.current >= replayThrough) publish();
+            if (lastSeq >= replayThrough) { ready = true; schedule(); }
           }
           return;
         }
-
-        // Dedupe/replay guard: per-task seq rides on the SSE id line.
-        const seq = Number(e.lastEventId);
-        if (Number.isFinite(seq)) {
-          if (seq <= lastSeq.current) return;
-          lastSeq.current = seq;
-        }
-
         if (frame.type !== "event") return;
-        const ev = frame.event;
-        if (ev.kind === "assistant_text") {
-          const p = (ev.payload ?? {}) as Partial<AssistantTextPayload>;
-          const text = textOf(ev);
-          const messageId = typeof p.messageId === "string" ? p.messageId : undefined;
-          const phase = p.phase === "progress" || p.phase === "final" ? p.phase : undefined;
-          const last = items[items.length - 1];
-          if (last && last.kind === "assistant_text" && last.agent === ev.agent && last.messageId === messageId && last.phase === phase) {
-            items[items.length - 1] = { ...last, text: last.text + text };
-          } else {
-            items.push({ key: keyCounter.current++, kind: "assistant_text", agent: ev.agent, text, messageId, phase });
-          }
-        } else {
-          items.push({ key: keyCounter.current++, kind: ev.kind, event: ev });
-        }
-        // Network chunks may split replay across many paints. Publish the initial
-        // transcript only at its durable boundary; later events remain live.
-        if (historyReady || lastSeq.current >= replayThrough) publish();
+        const seq = Number(message.lastEventId);
+        if (!Number.isSafeInteger(seq) || seq <= lastSeq) return;
+        lastSeq = seq;
+        receivedSnapshot = true;
+        append(items, frame.event, seq);
+        if (ready || lastSeq >= replayThrough) { ready = true; schedule(); }
       },
       setConn,
-      () => lastSeq.current,
+      // Explicit zero on reconnect is significant: even an initially empty
+      // session must resume every missed event instead of selecting a new tail.
+      () => receivedSnapshot ? lastSeq : undefined,
     );
+    return () => {
+      disposed = true;
+      disconnect(); request?.abort(); cancelAnimationFrame(animation);
+      load.current = () => {};
+    };
   }, [taskId]);
 
-  return { log, conn, task, loadingHistory };
-}
-
-function textOf(ev: AgentEvent): string {
-  const p = ev.payload as { text?: unknown } | null;
-  return p && typeof p.text === "string" ? p.text : "";
+  return { log, conn, task, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier };
 }

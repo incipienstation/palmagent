@@ -59,7 +59,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/stream", "/api/unknown"]) {
     assert.equal((await fetch(base + path)).status, 401);
   }
   assert.equal((await fetch(base + "/api/auth/enroll-token", { method: "POST" })).status, 401);
@@ -320,4 +320,80 @@ test("session rename persists and broadcasts display metadata without changing e
   const reopened = new Db(join(f.dir, "state/palmagent.db"));
   try { assert.equal(reopened.getTask("rename-task")!.title, "Renamed archived 한글"); }
   finally { reopened.close(); }
+});
+
+test("recent history pages join live replay, and preserve whole messages", async (t) => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  f.db.insertEvent("t", "result", { usage: { input_tokens: 1234 } }, 1);
+  for (let i = 2; i <= 1000; i++) f.db.insertEvent("t", "tool_result", { text: `row ${i}` }, i);
+  await f.service.init();
+  const response = await f.app.request("/api/stream?task=t&tail=1");
+  const reader = response.body!.getReader();
+  let buffer = new TextDecoder().decode((await reader.read()).value);
+  const snapshot = JSON.parse(buffer.split("data: ")[1].split("\n")[0]);
+  assert.match(buffer, /id: 800\n/);
+  assert.equal(snapshot.history.after, 800);
+  assert.equal(snapshot.history.before, 801);
+  assert.equal(snapshot.replayThrough, 1000);
+  const live = f.db.insertEvent("t", "tool_result", { text: "live" }, 1001);
+  f.hub.emitEvent(f.db.eventsAfterSeq("t", 1000)[0]);
+  while (!buffer.includes(`id: ${live.seq}\n`)) buffer += new TextDecoder().decode((await reader.read()).value);
+  const ids = [...buffer.matchAll(/^id: (\d+)$/gm)].map((match) => Number(match[1]));
+  assert.deepEqual(ids, Array.from({ length: 202 }, (_, i) => i + 800));
+  await reader.cancel();
+
+  const collected: number[] = [];
+  let before: number | null = 801;
+  while (before !== null) {
+    const pageResponse = await f.app.request(`/api/tasks/t/history?before=${before}`);
+    assert.equal(pageResponse.headers.get("cache-control"), "no-store");
+    const page = await pageResponse.json() as import("@palmagent/shared").TaskHistoryResponse;
+    assert.ok(page.events.length <= 200);
+    collected.unshift(...page.events.map((row) => row.seq));
+    before = page.before;
+  }
+  assert.deepEqual(collected, Array.from({ length: 800 }, (_, i) => i + 1));
+  assert.equal((await f.app.request("/api/tasks/missing/history?before=2")).status, 404);
+  for (const value of ["", "0", "-1", "1.5", "NaN", "9007199254740992"]) {
+    assert.equal((await f.app.request(`/api/tasks/t/history?before=${value}`)).status, 400);
+  }
+  // A page edge inside a Markdown fence moves back to the start of the run.
+  for (let i = 0; i < 500; i++) f.db.insertEvent("t", "assistant_text", { text: i === 0 ? "```ts\n" : "content\n" }, 2000 + i);
+  f.db.insertEvent("t", "assistant_text", { text: "```" }, 3000);
+  const page = f.db.historyPage("t", f.db.eventCursor("t") + 1);
+  assert.equal(page.events[0].seq, 1002);
+  assert.equal(page.events.length, 501);
+  assert.equal(page.before, 1002);
+
+  // An explicit reconnect cursor must never be replaced by a fresh tail,
+  // including zero (an initially empty session may have accumulated many rows).
+  for (const cursor of [0, 500]) {
+    const resumed = await f.app.request(`/api/stream?task=t&tail=1&lastEventId=${cursor}`);
+    const reader = resumed.body!.getReader();
+    let chunk = new TextDecoder().decode((await reader.read()).value);
+    assert.ok(!chunk.includes('"history"'));
+    while (!chunk.includes("id:")) chunk += new TextDecoder().decode((await reader.read()).value);
+    assert.match(chunk, new RegExp(`id: ${cursor + 1}\\n`));
+    await reader.cancel();
+  }
+});
+
+test("snapshot-only inbox streams omit historical and live event bodies", async (t) => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  f.db.insertEvent("t", "assistant_text", { text: "unused history" }, 1);
+  await f.service.init();
+  const response = await f.app.request("/api/stream?snapshots=1");
+  const reader = response.body!.getReader();
+  const initial = new TextDecoder().decode((await reader.read()).value);
+  assert.match(initial, /"type":"tasks"/);
+  f.hub.emitEvent({ id: 2, seq: 2, event: { taskId: "t", agent: "codex", ts: 1, kind: "assistant_text", payload: { text: "unused" } } });
+  f.hub.emitTasks([]);
+  const next = new TextDecoder().decode((await reader.read()).value);
+  assert.match(next, /"type":"tasks"/);
+  assert.ok(!next.includes('"type":"event"'));
+  await reader.cancel();
 });

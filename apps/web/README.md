@@ -73,7 +73,7 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    `tasks` snapshot frames, grouped by status. Use a row's **⋮ → Rename** to
    change its session name without opening it.
 3. **Task detail + steer** (`#/task/:id`) — scoped `GET /api/stream?task=:id`;
-   live event log (assistant token deltas coalesced, tool calls/results, result)
+   virtualized event log (assistant token deltas coalesced, tool calls/results, result)
    with follow-up, steer (surfaces *injected* mid-turn vs *queued* next-turn),
    stop (interrupt the turn, task stays resumable), cancel, and archive.
 4. **Account limits** — session footers show remaining account allowance and reset
@@ -119,6 +119,14 @@ metadata retain their prose; the client does not guess which text is safe to fol
   `Last-Event-ID`; the server replays everything after it. The scoped stream
   additionally gates on the per-task `seq` (carried on the SSE `id:` line) so a
   replayed event is never rendered twice — no gaps, no dupes.
+- **History and rendering:** the scoped stream requests a recent page with `tail=1`.
+  Its initial snapshot identifies the replay boundary and older-history cursor;
+  `GET /api/tasks/:id/history?before=:seq` loads earlier pages without changing the
+  live cursor. Pages target 200 events and include whole assistant messages so
+  Markdown is never split at a page boundary. React Virtuoso renders nearby rows
+  in the Radix scroll area;
+  row expansion survives scrolling out of view, and live events publish once per
+  animation frame. The inbox requests `snapshots=1` to omit unused event bodies.
 - **Service worker:** app shell is precached (cache-first) with a navigation
   fallback so the shell loads offline; `/api/*` is network-first **except**
   `/api/stream`, which is `NetworkOnly` (an open event-stream must never be

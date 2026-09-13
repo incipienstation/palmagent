@@ -6,6 +6,7 @@ import { clientVersion, observeServerVersion } from "./pwa";
 import type {
   AccountLimits,
   SessionHandoffResponse,
+  TaskHistoryResponse,
   AgentKind,
   AgentUsage,
   AnswerRequest,
@@ -58,9 +59,10 @@ export function setOnUnauthorized(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: string, path: string, body?: unknown, opts?: { authProbe?: boolean }): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, opts?: { authProbe?: boolean; signal?: AbortSignal }): Promise<T> {
   const res = await fetch(path, {
     method,
+    signal: opts?.signal,
     headers: { "x-palmagent-version": clientVersion, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -101,6 +103,8 @@ export const api = {
     request<{ tasks: TaskState[] }>("GET", `/api/tasks${status ? `?status=${status}` : ""}`).then(
       (r) => r.tasks,
     ),
+  taskHistory: (id: string, before: number, signal?: AbortSignal) =>
+    request<TaskHistoryResponse>("GET", `/api/tasks/${encodeURIComponent(id)}/history?before=${before}`, undefined, { signal }),
   getTask: (id: string) =>
     request<{ task: TaskState }>("GET", `/api/tasks/${encodeURIComponent(id)}`).then((r) => r.task),
   getAccountLimits: (id: string) => request<AccountLimits>("GET", `/api/tasks/${encodeURIComponent(id)}/account-limits`),
