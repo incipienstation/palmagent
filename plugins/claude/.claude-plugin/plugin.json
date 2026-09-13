@@ -1,7 +1,7 @@
 {
   "name": "palmagent",
   "description": "Palmagent skills for settings, installation, diagnosis, updates, and dispatching a local Claude or Codex session to the self-hosted dispatcher.",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "author": {
     "name": "Palmagent"
   }
