@@ -26,11 +26,13 @@ const ReposContext = createContext<Map<string, Repo>>(new Map());
 // Attention-ordered grouping. Every status the backend can emit is represented
 // AND every group header is always rendered (empty ones collapse to a faint
 // "—"), so nothing silently disappears from the inbox.
-const GROUP_ORDER: TaskStatus[] = [
+type InboxStatus = TaskStatus | "local";
+const GROUP_ORDER: InboxStatus[] = [
   "awaiting_input",
   "awaiting_approval",
   "running",
   "queued",
+  "local",
   "idle",
   "failed",
   "cancelled",
@@ -104,7 +106,7 @@ function CardContextLine({ task }: { task: TaskState }) {
     <div className="flex items-center gap-2">
       <RepoChip repo={repos.get(task.repoId)} isolated={!!task.branch} />
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
-        <StatusBadge status={task.status} interrupted={task.interrupted} />
+        <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
         <AgentTag agent={task.agent} />
       </span>
     </div>
@@ -210,7 +212,7 @@ function PriorityRow({ task }: { task: TaskState }) {
 // longer fence off an empty band: they collapse to a single faint "LABEL —" line
 // (no divider, tight top space) so every status label is still present and
 // nothing silently disappears.
-function StatusGroup({ status, tasks }: { status: TaskStatus; tasks: TaskState[] }) {
+function StatusGroup({ status, tasks }: { status: InboxStatus; tasks: TaskState[] }) {
   const label = statusSection(status);
 
   if (tasks.length === 0) {
@@ -300,11 +302,12 @@ export function InboxView({
   const [selected, setSelected] = useState(() => { try { return localStorage.getItem("working-directory") ?? "all"; } catch { return "all"; } });
   const selectDirectory = (path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } };
   const filtered = selected === "all" ? tasks : tasks.filter((task) => taskDirectory(task, repos) === selected);
-  const byStatus = new Map<TaskStatus, TaskState[]>();
+  const byStatus = new Map<InboxStatus, TaskState[]>();
   for (const t of filtered) {
-    const arr = byStatus.get(t.status) ?? [];
+    const group = t.sessionControl && t.sessionControl.owner !== "palmagent" ? "local" : t.status;
+    const arr = byStatus.get(group) ?? [];
     arr.push(t);
-    byStatus.set(t.status, arr);
+    byStatus.set(group, arr);
   }
   // Most-recent first within each group.
   for (const arr of byStatus.values()) arr.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
@@ -334,7 +337,7 @@ export function InboxView({
                 action={{ label: "Dispatch a task", onClick: () => navigate("/new") }}
               />
             ) : (
-              GROUP_ORDER.map((status) => (
+              GROUP_ORDER.filter((status) => status !== "local" || byStatus.has(status)).map((status) => (
                 <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} />
               ))
             )}

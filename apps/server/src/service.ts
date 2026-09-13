@@ -239,8 +239,9 @@ export class TaskService {
       if (control?.owner !== "returning") continue;
       try {
         if (!control.waitPid || !control.waitIdentity) throw new Error("Missing local writer identity");
-        if (processIdentity(control.waitPid) === control.waitIdentity) continue;
-        const synced = synchronizeSession(task);
+        const preview = processIdentity(control.waitPid) === control.waitIdentity;
+        const synced = synchronizeSession(task, { preview });
+        if (preview && synced.control.cursor === control.cursor && !control.error) continue;
         const updated = { ...task, sessionControl: synced.control };
         const rows = this.db.importSessionEvents(updated, synced.events);
         task.sessionControl = synced.control;

@@ -62,11 +62,14 @@ export function locateSession(agent: AgentKind, sessionId: string, cwd: string, 
   return path;
 }
 
-function readTranscript(path: string): Buffer {
+function readTranscript(path: string, preview = false): Buffer {
   if (!statSync(path).isFile() || statSync(path).size > 64 * 1024 * 1024) throw new Error("Native transcript is not a regular file or exceeds 64 MiB");
   const data = readFileSync(path);
   if (data.length > 64 * 1024 * 1024) throw new Error("Native transcript exceeds 64 MiB");
-  if (data.length && data[data.length - 1] !== 10) throw new Error("Native transcript has an unfinished record; try again after the CLI closes");
+  if (data.length && data[data.length - 1] !== 10) {
+    if (preview) return data.subarray(0, data.lastIndexOf(10) + 1);
+    throw new Error("Native transcript has an unfinished record; try again after the CLI closes");
+  }
   return data;
 }
 
@@ -74,9 +77,21 @@ type RecordValue = Record<string, any>;
 function records(data: Buffer): RecordValue[] {
   return data.toString("utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as RecordValue);
 }
-function verifySession(rows: RecordValue[], task: Pick<TaskState, "sessionId" | "agent" | "worktreePath">) {
-  const meta = task.agent === "codex" ? rows.find((r) => r.type === "session_meta")?.payload
-    : rows.find((r) => r.sessionId === task.sessionId && r.cwd);
+function verifySession(data: Buffer, task: Pick<TaskState, "sessionId" | "agent" | "worktreePath">) {
+  let meta: RecordValue | undefined;
+  // Identity is near the beginning; avoid reparsing the entire saved history on
+  // every preview poll. The prefix hash still verifies all previously read bytes.
+  for (let start = 0; start < data.length;) {
+    const end = data.indexOf(10, start);
+    if (end < 0) break;
+    const text = data.subarray(start, end).toString("utf8").trim();
+    start = end + 1;
+    if (!text) continue;
+    const row = JSON.parse(text) as RecordValue;
+    meta = task.agent === "codex" ? row.type === "session_meta" ? row.payload : undefined
+      : row.sessionId === task.sessionId && row.cwd ? row : undefined;
+    if (meta) break;
+  }
   if (!meta || (task.agent === "codex" ? meta.id : meta.sessionId) !== task.sessionId || realpathSync(meta.cwd) !== realpathSync(task.worktreePath!)) {
     throw new Error("Native session identity or working directory does not match");
   }
@@ -86,19 +101,23 @@ export function checkpointSession(task: TaskState): SessionControl {
   const home = task.sessionControl?.home ?? nativeHome(task.agent);
   const transcript = locateSession(task.agent, task.sessionId!, task.worktreePath!, home);
   const data = readTranscript(transcript);
-  verifySession(records(data), task);
+  records(data); // Checkpoint only complete, parseable history before skipping it on return.
+  verifySession(data, task);
   return { owner: "local", home, transcript, cursor: data.length, prefixHash: hash(data) };
 }
 
-export function synchronizeSession(task: TaskState): { control: SessionControl; events: AgentEvent[] } {
+export function synchronizeSession(task: TaskState, { preview = false } = {}): { control: SessionControl; events: AgentEvent[] } {
   const control = task.sessionControl!;
   const expected = locateSession(task.agent, task.sessionId!, task.worktreePath!, control.home);
   if (expected !== control.transcript) throw new Error("Native transcript location changed");
-  const data = readTranscript(expected);
+  const data = readTranscript(expected, preview);
   if (data.length < control.cursor || hash(data.subarray(0, control.cursor)) !== control.prefixHash) throw new Error("Native transcript changed before the synchronization cursor");
-  verifySession(records(data), task);
+  const rows = records(data.subarray(control.cursor));
+  // An in-progress first record can wait; later polls parse only appended events.
+  if (preview && data.length === 0) return { control, events: [] };
+  verifySession(data, task);
   const events: AgentEvent[] = [];
-  for (const row of records(data.subarray(control.cursor))) {
+  for (const row of rows) {
     const ts = Number.isFinite(Date.parse(row.timestamp)) ? Date.parse(row.timestamp) : Date.now();
     const emit = (kind: AgentEvent["kind"], payload: unknown) => events.push({ taskId: task.taskId, agent: task.agent, sessionId: task.sessionId, kind, payload, ts });
     // Codex response_item is canonical; event_msg repeats the same prose.
@@ -128,6 +147,8 @@ export function synchronizeSession(task: TaskState): { control: SessionControl; 
       if (block.type === "tool_result") emit("tool_result", { content: block.content, tool_use_id: block.tool_use_id });
     }
   }
-  return { control: { ...control, owner: "palmagent", cursor: data.length, prefixHash: hash(data), waitPid: undefined, waitIdentity: undefined, error: undefined }, events };
+  const next: SessionControl = { ...control, cursor: data.length, prefixHash: hash(data), error: undefined };
+  if (!preview) { next.owner = "palmagent"; delete next.waitPid; delete next.waitIdentity; }
+  return { control: next, events };
 }
 export const emptyTranscriptHash = hash(Buffer.alloc(0));

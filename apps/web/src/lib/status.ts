@@ -1,4 +1,4 @@
-import type { TaskStatus } from "@palmagent/shared";
+import type { SessionControl, TaskStatus } from "@palmagent/shared";
 
 // Single source of truth for human-readable task-status copy. The raw TaskStatus
 // enum (awaiting_input, idle, …) is an internal contract and must NEVER reach the
@@ -8,7 +8,11 @@ import type { TaskStatus } from "@palmagent/shared";
 // Short badge label — sits in a tinted pill next to a task title.
 //   idle is the "turn finished, your move" state; idle + interrupted means the
 //   turn was stopped/recovered (resumable), surfaced as the word "Stopped".
-export function statusLabel(status: TaskStatus, interrupted?: boolean): string {
+export function statusLabel(status: TaskStatus, interrupted?: boolean, control?: SessionControl): string {
+  if (control && control.owner !== "palmagent") {
+    if (control.error) return "Sync issue";
+    return control.owner === "returning" ? "Live preview" : "Local shell";
+  }
   switch (status) {
     case "awaiting_input":
       return "Needs answer";
@@ -30,8 +34,10 @@ export function statusLabel(status: TaskStatus, interrupted?: boolean): string {
 }
 
 // Inbox section header — a calmer, fuller phrasing than the badge.
-export function statusSection(status: TaskStatus): string {
+export function statusSection(status: TaskStatus | "local"): string {
   switch (status) {
+    case "local":
+      return "Local sessions";
     case "awaiting_input":
       return "Needs your answer";
     case "awaiting_approval":

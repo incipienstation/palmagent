@@ -134,7 +134,8 @@ export interface TaskState {
 }
 
 // Native transcripts stay with the provider. The cursor is a checked byte
-// boundary, committed atomically with imported events. Ownership survives restart.
+// boundary, committed atomically with imported events. Returning sessions can be
+// viewed read-only while their local writer runs. Ownership survives restart.
 export interface SessionControl {
   owner: "palmagent" | "local" | "returning";
   home: string;

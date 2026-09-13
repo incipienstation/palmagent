@@ -12,7 +12,7 @@ import { compatibleAgentCli } from "@palmagent/shared";
 import { Db } from "../src/db.js";
 import { Hub } from "../src/hub.js";
 import { InProcessBackend } from "../src/inproc-backend.js";
-import { emptyTranscriptHash, locateSession, processIdentity, resumeCommand, synchronizeSession } from "../src/native-session.js";
+import { checkpointSession, emptyTranscriptHash, locateSession, processIdentity, resumeCommand, synchronizeSession } from "../src/native-session.js";
 import { extractOutputImages } from "../src/output-images.js";
 import { TaskService } from "../src/service.js";
 import { localSessionRequest, sessionSocket, startSessionControl } from "../src/session-control.js";
@@ -101,7 +101,7 @@ test("structured image extraction bounds raster payloads and strips unsupported 
   assert.equal(extractOutputImages(Array.from({ length: 10 }, () => ({ type: "image", mimeType: "image/png", data: png }))).images.length, 4);
 });
 
-test("handoff persists ownership; socket dispatch waits for the native writer then imports exactly once across restart", { skip: process.platform !== "linux" }, async (t) => {
+test("handoff persists ownership; socket dispatch previews a live writer and transfers exactly once across restart", { skip: process.platform !== "linux" }, async (t) => {
   const f = setup(t);
   const originalHome = process.env.CODEX_HOME;
   process.env.CODEX_HOME = f.home;
@@ -133,7 +133,10 @@ test("handoff persists ownership; socket dispatch waits for the native writer th
   assert.equal(service.listTasks().length, 1);
   appendFileSync(f.transcript, line(message("codex", "user", "Shell prompt")) + line(message("codex", "assistant", "Shell answer")));
   service.reconcileLocalSessions();
-  assert.equal(db.eventsAfterSeq(f.task.taskId, 0).length, 0, "no import while the writer is alive");
+  assert.equal(db.eventsAfterSeq(f.task.taskId, 0).length, 2, "saved messages are visible while the writer is alive");
+  assert.equal(service.getTask(f.task.taskId).sessionControl?.owner, "returning");
+  service.reconcileLocalSessions();
+  assert.equal(db.eventsAfterSeq(f.task.taskId, 0).length, 2, "unchanged previews do not duplicate events");
   await closeControl(socket); // a restart also stops the old reconciler
   service = makeService(); await service.init();
   assert.throws(() => service.followup(f.task.taskId, "blocked"), /local shell/);
@@ -232,4 +235,48 @@ test("the dispatch CLI detects its native parent and queues a transfer through t
   writer.kill(); await once(writer, "exit");
   service.reconcileLocalSessions();
   assert.equal(task.sessionControl?.owner, "palmagent");
+});
+
+for (const agent of ["claude", "codex"] as const) test(`${agent} live preview imports complete records without taking ownership`, (t) => {
+  const f = setup(t, agent);
+  f.task.sessionControl!.waitPid = 123;
+  f.task.sessionControl!.waitIdentity = "fixture-writer";
+  const first = line(message(agent, "assistant", "Saved locally"));
+  const next = Buffer.from(line(message(agent, "assistant", "아직 작성 중")));
+  // Split inside a multibyte character: byte cursors must wait for the entire record.
+  const cut = next.indexOf(Buffer.from("아")) + 1;
+  appendFileSync(f.transcript, first);
+  appendFileSync(f.transcript, next.subarray(0, cut));
+  const preview = synchronizeSession(f.task, { preview: true });
+  assert.equal(preview.control.owner, "returning");
+  assert.equal(preview.control.waitPid, 123);
+  assert.equal(preview.control.waitIdentity, "fixture-writer");
+  assert.deepEqual(preview.events.map((e) => e.payload), [{ text: "Saved locally" }]);
+  f.task.sessionControl = preview.control;
+  assert.equal(synchronizeSession(f.task, { preview: true }).events.length, 0);
+  assert.throws(() => synchronizeSession(f.task), /unfinished/);
+  appendFileSync(f.transcript, next.subarray(cut));
+  const finished = synchronizeSession(f.task);
+  assert.equal(finished.control.owner, "palmagent");
+  assert.equal(finished.control.waitPid, undefined);
+  assert.deepEqual(finished.events.map((e) => e.payload), [{ text: "아직 작성 중" }]);
+  f.task.sessionControl = finished.control;
+  assert.equal(synchronizeSession(f.task).events.length, 0);
+});
+
+test("live preview waits for its first complete record and refuses rewrites or malformed completed records", (t) => {
+  const f = setup(t);
+  const meta = readFileSync(f.transcript);
+  writeFileSync(f.transcript, meta.subarray(0, 10));
+  assert.equal(synchronizeSession(f.task, { preview: true }).control.cursor, 0);
+  writeFileSync(f.transcript, meta);
+  const first = synchronizeSession(f.task, { preview: true });
+  f.task.sessionControl = first.control;
+  appendFileSync(f.transcript, 'not-json\n');
+  assert.throws(() => checkpointSession(f.task));
+  assert.throws(() => synchronizeSession(f.task, { preview: true }));
+  writeFileSync(f.transcript, meta);
+  assert.equal(synchronizeSession(f.task, { preview: true }).events.length, 0);
+  writeFileSync(f.transcript, '\n');
+  assert.throws(() => synchronizeSession(f.task, { preview: true }), /before the synchronization cursor/);
 });

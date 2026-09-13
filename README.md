@@ -97,17 +97,19 @@ Run it on the same host under the service account. The native CLI controls its o
 interactive permission prompts. Open only one local writer for a session.
 
 To send an active local session to Palmagent, use the **dispatch** plugin skill.
-It registers the exact native session and waits for that CLI process to close.
-The task remains unavailable for follow-up until new transcript messages have been
-imported. Both directions retain the native session ID and working directory;
+It registers the exact native session and shows saved messages as a read-only preview
+while the CLI stays open. Keep working locally, or close that CLI to continue in Palmagent.
+The task remains unavailable for follow-up until that CLI exits and the final
+transcript synchronizes. Both directions retain the native session ID and working directory;
 Palmagent stores normalized display events and a checked synchronization cursor.
 It never copies credentials or rewrites the provider's transcript. Returning tasks
 keep their Palmagent permission/model choices; newly imported tasks use Palmagent's
 provider defaults. Select the next turn's settings in the task composer.
 
 Transfers currently require Linux, a shared local provider home, and a native JSONL
-transcript of at most 64 MiB. Missing, rewritten, incomplete, or identity-mismatched
-transcripts leave the transfer pending with an error. No turn starts automatically
+transcript of at most 64 MiB. Preview waits for unfinished records to be saved.
+Missing, rewritten, identity-mismatched, or still-incomplete transcripts after CLI exit
+leave the transfer pending with an error. No turn starts automatically
 when a transfer completes. Raw native commands cannot prevent another independently
 started CLI from opening the same session.
 

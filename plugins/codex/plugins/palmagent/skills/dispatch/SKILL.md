@@ -1,14 +1,14 @@
 ---
 name: dispatch
-description: Send the current local Claude Code or Codex session to an existing Palmagent instance, or return a session previously handed off to a shell. Use when the user asks to continue this conversation in Palmagent.
+description: Send the current local Claude Code or Codex session to an existing Palmagent instance, show it read-only while working locally, or return a session previously handed off to a shell. Use when the user asks to continue this conversation in Palmagent.
 ---
 
 # Continue this session in Palmagent
 
 Use the installed `palmagent session dispatch` command on the Palmagent host under
-its service account. It registers a pending transfer; Palmagent takes control only
-after this native CLI exits and its transcript synchronizes. The user's dispatch
-request authorizes registration. Do not end or kill the current CLI automatically.
+its service account. It immediately registers a read-only preview of saved messages;
+Palmagent takes execution control only after this native CLI exits and its transcript
+synchronizes. The user's dispatch request authorizes registration. Do not end or kill the current CLI automatically.
 
 1. Read the [shared CLI bootstrap guidance](../.shared/bootstrap.md) for finding the
    matching installed CLI. Check `palmagent compatibility` for the provider CLI ranges.
@@ -30,10 +30,12 @@ request authorizes registration. Do not end or kill the current CLI automaticall
    only when the exact active native CLI PID is known. For a non-default instance,
    pass `--data-dir "<instance-state-directory>"` using its known installation binding.
    Local and service provider homes must match; do not copy credentials to fix a mismatch.
-4. Report the returned task ID and that transfer is pending. Ask the user to close
-   this local CLI normally, then open that task in Palmagent. Do not continue work in
-   this session after registering dispatch. A pending result is not completed transfer;
-   Palmagent enables follow-up only after process exit and successful synchronization.
+4. Report the returned task ID and distinguish viewing from execution. The user can open
+   the task immediately to view saved messages and continue working locally; closing the CLI
+   is not required for viewing. If they want to continue execution in Palmagent, ask them
+   to close this local CLI normally. Do not continue local work after they choose that
+   handoff. A preview is not completed transfer: Palmagent enables follow-up only after
+   process exit and successful synchronization.
 
 A failed identity, directory, or transcript check leaves local ownership in place.
 Keep the reported error and diagnose it within the requested scope. Do not edit

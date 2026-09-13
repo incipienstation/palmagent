@@ -26,11 +26,11 @@ export function SessionHandoff({ task }: { task: TaskState }) {
     catch { toast({ title: "Select and copy the command below", variant: "destructive" }); }
   }
   return <Sheet>
-    <SheetTrigger asChild><Button variant="outline" size="sm"><Terminal data-icon="inline-start" />{returning ? "Returning from shell" : local ? "Local shell" : "Resume in shell"}</Button></SheetTrigger>
+    <SheetTrigger asChild><Button variant="outline" size="sm"><Terminal data-icon="inline-start" />{returning ? "Continue in Palmagent" : local ? "Local shell" : "Resume in shell"}</Button></SheetTrigger>
     <SheetContent className="max-h-[80dvh] overflow-y-auto">
-      <SheetHeader><SheetTitle>Resume in your shell</SheetTitle><SheetDescription>Use a shell on the Palmagent host under the same account. The command opens this native session in its working directory.</SheetDescription></SheetHeader>
+      <SheetHeader><SheetTitle>{returning ? "Continue in Palmagent" : "Resume in your shell"}</SheetTitle><SheetDescription>{returning ? "Saved messages are visible here while your local CLI keeps control. Close that CLI normally to enable follow-up after synchronization." : "Use a shell on the Palmagent host under the same account. The command opens this native session in its working directory."}</SheetDescription></SheetHeader>
       <div className="flex flex-col gap-3 p-4">
-        {returning ? <Alert>{task.sessionControl?.error ?? "Waiting for the local CLI to close. Palmagent will import new messages before enabling follow-up."}</Alert> : <>
+        {returning ? <Alert>{task.sessionControl?.error ?? "You can keep the local CLI open for read-only viewing. To continue here, close it and wait for synchronization to finish."}</Alert> : <>
           <p className="text-sm text-muted-foreground">Release this session before opening it locally. Palmagent follow-up stays paused until you use the dispatch skill in that CLI and close it. Open only one local writer.</p>
           <Button disabled={busy || !["idle", "failed"].includes(task.status)} onClick={prepare}>{local ? "Show resume command" : "Release to shell"}</Button>
           {!["idle", "failed"].includes(task.status) && <p className="text-sm">Stop the active turn and wait for it to finish first.</p>}

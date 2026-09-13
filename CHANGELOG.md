@@ -6,12 +6,23 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- View saved messages from dispatched local sessions while the CLI stays open. Follow-up
+  becomes available after the local CLI closes and the final transcript synchronizes.
+
+### Fixed
+
+- Show local sessions as read-only previews instead of completed tasks, with clear
+  instructions for continuing in Palmagent and visible synchronization errors.
+
 ## 0.1.0-alpha.6
 
 ### Fixed
 
 - Open sessions at the latest message without visibly scrolling through replayed history.
   Live updates still follow the bottom unless you scroll up to read earlier messages.
+
 
 ## 0.1.0-alpha.5
 

@@ -32,5 +32,5 @@ export async function sessionCommand(argv: string[]): Promise<void> {
   const socketDir = !values["data-dir"] && process.env.PALMAGENT_SESSION_SOCKET_DIR
     ? resolve(process.env.PALMAGENT_SESSION_SOCKET_DIR) : dirname(loadConfig({ dataDir }).dbPath);
   const result = await localSessionRequest(socketDir, { agent, sessionId, cwd: resolve(values.cwd ?? process.cwd()), home: resolve(home), waitPid: values["wait-pid"] ? Number(values["wait-pid"]) : findAgentParent(agent) });
-  console.log(`Session queued as ${result.task.taskId}. Close this local agent CLI to finish transfer. Palmagent will synchronize its transcript before enabling follow-up.`);
+  console.log(`Session queued as ${result.task.taskId}. Palmagent can now show this session read-only as its transcript is saved. Keep working here, or close this local agent CLI to enable follow-up in Palmagent.`);
 }
