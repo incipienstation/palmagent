@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.8
+
 ### Changed
 
 - Compact and Default keep session output focused with folded activity, short progress previews,
