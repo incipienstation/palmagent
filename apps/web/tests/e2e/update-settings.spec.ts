@@ -191,12 +191,13 @@ test("Settings checks the registry and requests the displayed update without ena
   expect(actions).toContainEqual({ action: "install", version: "0.1.0-alpha.5" });
 });
 
-test("a changed server version keeps the app open and requires a matching screen refresh", async ({ page }) => {
+test("a changed server keeps the screen open when worker registration is blocked", async ({ page }) => {
   await page.route("**/api/settings/updates", (route) => route.fulfill({
     json: updateSettings, headers: { "x-palmagent-version": "0.1.0-alpha.999" },
   }));
   await page.goto("/");
-  await expect(page.getByText("Refresh to continue with the updated server.")).toBeVisible();
+  await expect(page.getByText("Update paused", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Dismiss update", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
 });

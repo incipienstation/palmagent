@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { readUpdateSnapshot, useUpdateState } from "../update-state";
+import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { Archive, Info, Square, Trash2 } from "lucide-react";
 
@@ -68,13 +69,20 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // e.g. after a steer persists a new one — instead of resetting to "default"
   // each turn. A change applies to the next turn (a steer interrupts the running
   // turn to adopt it — Claude — or queues it — Codex).
-  const [model, setModel] = useState(task?.model ?? DEFAULT_OPTION);
-  const [effort, setEffort] = useState(task?.effort ?? DEFAULT_OPTION);
+  const keepRestoredSelectors = useRef(readUpdateSnapshot(`task:${taskId}:model`) !== undefined);
+  const selectorVersion = useRef<string>();
+  const [model, setModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
+  const [effort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
   // Permission has no DEFAULT_OPTION (always a concrete value); clamp the task's
   // stored value to a valid option for its agent (a legacy value shows the agent
   // default in the picker). A change applies to the next turn, like model/effort.
-  const [permission, setPermission] = useState<string>("");
+  const [permission, setPermission] = useUpdateState<string>(`task:${taskId}:permission`, "");
   useEffect(() => {
+    if (!task) return;
+    const version = JSON.stringify([taskId, task.model, task.effort, task.permission, task.agent]);
+    if (version === selectorVersion.current) return;
+    selectorVersion.current = version;
+    if (keepRestoredSelectors.current) { keepRestoredSelectors.current = false; return; }
     setModel(task?.model ?? DEFAULT_OPTION);
     setEffort(task?.effort ?? DEFAULT_OPTION);
     const agent = task?.agent;
@@ -239,6 +247,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
+              checkpointKey={`${taskId}:${task.pendingInput.requestId}`}
               questions={task.pendingInput.questions}
               busy={busy}
               onSubmit={(answers, skip) =>

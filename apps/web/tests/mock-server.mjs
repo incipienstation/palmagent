@@ -21,6 +21,14 @@ import { repos, tasks, events, usage, routines, routineRuns, updateSettings } fr
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const DIST = join(__dirname, "..", "dist");
 const PORT = Number(process.env.PORT ?? 4317);
+// The standalone service-worker test simulates an available package and a slow
+// install response. It never contacts an updater or an actual agent process.
+if (process.env.PWA_UPDATE_TARGET) {
+  updateSettings.settings.discovery.targetVersion = process.env.PWA_UPDATE_TARGET;
+  events["t-run"] = Array.from({ length: 440 }, (_, index) => index % 2
+    ? { kind: "tool_result", payload: { output: `Transition tool ${index + 1}` } }
+    : { kind: "assistant_text", payload: { text: `Transition message ${index + 1}\n\n${"Conversation paragraph. ".repeat(8)}` } });
+}
 
 if (!existsSync(join(DIST, "index.html"))) {
   console.error(`[mock-server] no build at ${DIST}. Run \`pnpm --filter @palmagent/web build\` first (the test:e2e script does this).`);
@@ -243,6 +251,17 @@ const server = createServer(async (req, res) => {
       return json(res, 404, { error: `unmocked GET ${pathname}` });
     }
     // ---- writes: echo back a plausible task/result so the UI can proceed ----
+    if (m === "POST" && pathname === "/api/settings/updates" && process.env.PWA_UPDATE_TARGET) {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const action = JSON.parse(body);
+      if (action.action === "install") {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        updateSettings.settings.pending = { id: "mock-install", channel: "preview",
+          currentVersion: updateSettings.currentVersion, targetVersion: action.version, automatic: false };
+      }
+      return json(res, 200, updateSettings);
+    }
     if (m === "PATCH" && pathname.startsWith("/api/tasks/")) {
       const task = tasks.find((t) => t.taskId === decodeURIComponent(pathname.slice("/api/tasks/".length)));
       if (!task) return json(res, 404, { error: "no such task" });

@@ -137,6 +137,14 @@ lock. It survives a web-server restart and never chooses a different release
 because the npm tag moved. Native file events notify connected Settings screens
 of request/result changes without status polling.
 
+After deployment, each visible browser tab waits for a fully installed service
+worker and a quiet moment, checkpoints its local state, and reloads automatically.
+Manual **Update** uses this same completion path without another confirmation.
+Browser submissions, image preparation, passkey prompts, and text composition
+block the transition. A failed checkpoint keeps the page open for recovery.
+Browser event streams briefly reconnect around worker activation; no agent
+lifecycle action is sent. Hidden and offline tabs wait until they return.
+
 Automatic updates retain plugins and stay within the current package's `x.x.x`.
 They defer a new compatibility line, including any new Stable patch release, to
 the update skill. Unattended advancement therefore applies to prereleases within
@@ -166,10 +174,8 @@ No package or database is automatically restored. Inspect actual package/runtime
 identity after failure and plan any downgrade with database compatibility in mind.
 
 Disabling prevents future attempts without killing an update mid-install. Service
-removal stops and removes the timer while preserving user preferences; reinstall
-or setup restores a previously enabled timer only after service health succeeds.
-These source capabilities do not enable a timer or deploy an update on a host
-merely because their PR is merged.
+removal removes legacy timers while preserving user preferences. These source
+capabilities do not deploy an update on a host merely because their PR is merged.
 
 Published versions are immutable. Never overwrite or reuse a version. If a
 release is bad, move the dist-tag back to the last good version, deprecate the

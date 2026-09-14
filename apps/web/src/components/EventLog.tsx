@@ -1,3 +1,4 @@
+import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
 import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type MutableRefObject } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import {
@@ -12,7 +13,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
 import { Button } from "@/components/ui/button";
 
 import { ScrollBar } from "@/components/ui/scroll-area";
@@ -289,6 +290,14 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   toggleActivity: (activity: Activity, open: boolean) => void; following: MutableRefObject<boolean>;
 } & HistoryControls) {
   const virtuoso = useRef<VirtuosoHandle>(null);
+  const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
+  useUpdateSnapshot(`scroll:${location.hash}`, () => {
+    let state: StateSnapshot | undefined;
+    virtuoso.current?.getState((value) => { state = value; });
+    return state ? { state, following: following.current, first: indexing.current.first } : undefined;
+  });
+  useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, []);
+
   const anchor = useRef<{ key: string; offset: number }>();
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
@@ -329,7 +338,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     observer.observe(el);
     return () => observer.disconnect();
   }, [followBottom]);
-  const indexing = useRef({ rows, first: 1_000_000_000 });
+  const indexing = useRef({ rows, first: saved.current?.first ?? 1_000_000_000 });
   const previous = indexing.current;
   if (rows !== previous.rows) {
     if (rows[0].seq < previous.rows[0].seq) {
@@ -368,7 +377,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     style={{ height: "100%" }}
     data={rows}
     firstItemIndex={firstItemIndex}
-    initialTopMostItemIndex={{ index: "LAST", align: "end" }}
+    {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}
     totalListHeightChanged={followBottom}
     itemsRendered={captureAnchor}
@@ -402,9 +411,14 @@ export function EventLog({ log, live, prompt, loading = false, ...history }: {
   // Expansion state survives virtual row unmounting. Activity tracks member keys
   // because a late phase marker can change a group's leading key.
   const following = useRef(true);
-  const [toggled, setToggled] = useState<Set<number>>(() => new Set());
-  const [openActivity, setOpenActivity] = useState<Set<number>>(() => new Set());
-  useEffect(() => { setToggled(new Set()); setOpenActivity(new Set()); following.current = true; }, [mode]);
+  const [toggled, setToggled] = useUpdateState<Set<number>>(`transcript:${location.hash}:toggled`, () => new Set());
+  const [openActivity, setOpenActivity] = useUpdateState<Set<number>>(`transcript:${location.hash}:open`, () => new Set());
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    if (previousMode.current === mode) return;
+    previousMode.current = mode;
+    setToggled(new Set()); setOpenActivity(new Set()); following.current = true;
+  }, [mode]);
   const toggle = useCallback((key: number) => {
     following.current = false;
     setToggled((prev) => {

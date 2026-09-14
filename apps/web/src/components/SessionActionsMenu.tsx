@@ -1,3 +1,4 @@
+import { useUpdateState } from "../update-state";
 import type { TaskState } from "@palmagent/shared";
 import { RenameTaskSchema } from "@palmagent/shared/requests";
 import { MoreVertical, Pencil } from "lucide-react";
@@ -22,7 +23,7 @@ export function SessionActionsMenu({ task, children, label = "Task actions", dis
   const trigger = useRef<HTMLButtonElement>(null);
   const openingEditor = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [initialTitle, setInitialTitle] = useState<string | null>(null);
+  const [initialTitle, setInitialTitle] = useUpdateState<string | null>(`rename:${task.taskId}:open`, null);
   return (
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -73,7 +74,7 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
   const id = useId();
   const form = useRef<HTMLFormElement>(null);
   const saving = useRef(false);
-  const [title, setTitle] = useState(initialTitle);
+  const [title, setTitle] = useUpdateState(`rename:${taskId}:title`, initialTitle);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [viewport, setViewport] = useState<{ top: number; maxHeight: number }>();

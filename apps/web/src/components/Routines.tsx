@@ -1,3 +1,4 @@
+import { useUpdateState } from "../update-state";
 import { useEffect, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
 import { CalendarClock, ChevronRight, MoreVertical, Play, Plus, Trash2, X } from "lucide-react";
@@ -249,23 +250,23 @@ export function RoutinesView() {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useUpdateState(`routine:showForm`, false);
 
   // create-form state
-  const [repoId, setRepoId] = useState("");
-  const [agent, setAgent] = useState<AgentKind>("claude");
+  const [repoId, setRepoId] = useUpdateState(`routine:repoId`, "");
+  const [agent, setAgent] = useUpdateState<AgentKind>(`routine:agent`, "claude");
   // Model/effort/permission are remembered PER AGENT across form opens, on keys
   // separate from the dispatch form's — a routine's unattended settings are a
   // distinct intent from an ad-hoc dispatch, so they don't cross-contaminate.
   const [permission, setPermission] = usePersistedMapEntry<Permission>("pref:routine-permission", agent, DEFAULT_PERMISSION[agent]);
   const [model, setModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
   const [effort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
-  const [preset, setPreset] = useState<RoutinePreset>("daily");
-  const [hour, setHour] = useState(9);
-  const [dayOfWeek, setDayOfWeek] = useState(1);
-  const [cron, setCron] = useState("0 9 * * *"); // only used when preset === "custom"
-  const [title, setTitle] = useState("");
-  const [prompt, setPrompt] = useState("");
+  const [preset, setPreset] = useUpdateState<RoutinePreset>(`routine:preset`, "daily");
+  const [hour, setHour] = useUpdateState(`routine:hour`, 9);
+  const [dayOfWeek, setDayOfWeek] = useUpdateState(`routine:dayOfWeek`, 1);
+  const [cron, setCron] = useUpdateState(`routine:cron`, "0 9 * * *"); // only used when preset === "custom"
+  const [title, setTitle] = useUpdateState(`routine:title`, "");
+  const [prompt, setPrompt] = useUpdateState(`routine:prompt`, "");
 
   async function reload() {
     try {

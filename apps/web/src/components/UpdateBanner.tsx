@@ -1,44 +1,17 @@
-import { RefreshCw, X } from "lucide-react";
-
+import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { applyUpdate, dismissUpdate, useServerChanged, usePwaApplying } from "../pwa";
+import { retryUpdate, usePwaApplying, usePwaFailure } from "../pwa";
 
-// In-flow bottom banner (mobile thumb-zone): a new version was deployed. Tapping
-// Refresh activates the waiting service worker and reloads onto it; dismiss hides
-// it until the next deploy. Rendered as the last child of AppShell so it pushes
-// content up rather than covering the task compose bar.
 export function UpdateBanner() {
   const applying = usePwaApplying();
-  const serverChanged = useServerChanged();
-
-  function handleApply() {
-    applyUpdate();
-  }
-
-  return (
-    <div
-      role="status"
-      // Plane-2 chrome (translucent + blur), in normal flow at the bottom of the
-      // shell so it pushes content up rather than covering the compose bar.
-      className="flex shrink-0 items-center gap-3 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(12px+var(--safe-bottom))] backdrop-blur-md"
-    >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent">
-        <RefreshCw className={cn("size-4 text-blue", applying && "animate-spin")} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-strong">Update available</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {applying ? "Applying update…" : serverChanged ? "Refresh to continue with the updated server." : "A new version was just deployed."}
-        </p>
-      </div>
-      <Button size="sm" onClick={handleApply} disabled={applying}>
-        {applying ? <RefreshCw className="size-3.5 animate-spin" /> : null}
-        {applying ? "Updating…" : "Refresh"}
-      </Button>
-      {!serverChanged && <Button variant="ghost" size="icon-sm" aria-label="Dismiss update" onClick={dismissUpdate} disabled={applying}>
-        <X className="size-4" />
-      </Button>}
+  const failed = usePwaFailure();
+  return <div role="status" className="flex shrink-0 items-center gap-3 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(12px+var(--safe-bottom))]">
+    <RefreshCw className={cn("size-5 text-blue", applying && "animate-spin")} />
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-semibold text-strong">{failed ? "Update paused" : "Updating Palmagent…"}</p>
+      <p className="text-xs text-muted-foreground">{failed ? "Your screen is still open. We could not safely finish the update." : "Your session keeps running. This screen will update automatically."}</p>
     </div>
-  );
+    {failed && <Button size="sm" onClick={retryUpdate}>Retry</Button>}
+  </div>;
 }

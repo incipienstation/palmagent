@@ -1,3 +1,4 @@
+import { onStreamPause, streamsPaused } from "../stream-transition";
 import { probeAuth } from "../api";
 
 export type ConnState = "connecting" | "open" | "reconnecting";
@@ -23,7 +24,7 @@ export function connectSse(
   let stopped = false;
 
   const open = () => {
-    if (stopped) return;
+    if (stopped || streamsPaused()) return;
     es?.close();
     onConn("connecting");
     const lastId = getLastId();
@@ -50,12 +51,17 @@ export function connectSse(
     if (document.visibilityState === "visible") open();
   };
 
+  const offPause = onStreamPause((paused) => {
+    if (paused) { es?.close(); onConn("reconnecting"); }
+    else open();
+  });
   open();
   document.addEventListener("visibilitychange", onForeground);
   window.addEventListener("online", open);
 
   return () => {
     stopped = true;
+    offPause();
     es?.close();
     document.removeEventListener("visibilitychange", onForeground);
     window.removeEventListener("online", open);

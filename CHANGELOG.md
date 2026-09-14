@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Finish web updates automatically without a separate Refresh step, preserving
+  each tab's drafts, attachments, open forms, and conversation position. Screen
+  changes wait for submissions and text composition to finish; a failed save
+  keeps the current screen open. Running Codex and Claude sessions continue.
+
 ## 0.1.0-alpha.13
 
 ### Fixed

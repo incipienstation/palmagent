@@ -1,3 +1,4 @@
+import { useUpdateBlocker } from "../update-state";
 import { useState } from "react";
 import { startRegistration } from "@simplewebauthn/browser";
 import { CheckCircle2, KeyRound } from "lucide-react";
@@ -23,6 +24,7 @@ function deviceLabel(): string {
 // device and (on success) logs it in. The token is single-use and short-lived.
 export function Enroll({ token, onAuthenticated }: { token: string; onAuthenticated: () => void }) {
   const [busy, setBusy] = useState(false);
+  useUpdateBlocker(busy);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 

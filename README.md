@@ -156,17 +156,20 @@ verify an idle maintenance window before replacing packages or activating servic
 stops safely. Let work finish and retry. Local CLI sessions remain independently
 owned, and a web restart reconnects to surviving runner-owned sessions.
 
-After the server changes version, the app checks for its new service worker and
-asks you to refresh. An outdated app cannot submit changes to a different server
-version. This guards the browser/server transition; it does not add package or
-SQLite rollback.
+After the server changes version, the app prepares the new screen and switches
+at a quiet moment automatically. Drafts, attachments, open forms, and conversation
+position are preserved per tab. An in-flight submission or text composition delays
+the switch. **Update** also completes without a second refresh click, even with
+automatic installation disabled. If saving the screen fails, the existing page
+stays open with a retry option. An outdated app cannot submit changes to a different
+server version. This guards the browser/server transition; it does not add package
+or SQLite rollback.
 
 These preferences are shared with the CLI and both operator plugins. Saving a
 channel does not immediately install a release or downgrade the current version.
 Changing settings requires a signed-in session and a package installation whose
 owner has non-interactive service-management access. Source builds show their
-status without offering host update controls. The web app's **Refresh** banner
-separately loads web assets after a deployment.
+status without offering host update controls.
 
 ## Development
 

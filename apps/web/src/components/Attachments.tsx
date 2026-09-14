@@ -1,3 +1,4 @@
+import { beginBrowserWork, useUpdateState } from "../update-state";
 import { useCallback, useRef, useState, type ClipboardEvent } from "react";
 import type { ImageAttachment } from "@palmagent/shared";
 import { ImagePlus, Loader2, X } from "lucide-react";
@@ -17,11 +18,12 @@ const WIRE_WARN_BYTES = 900_000;
 // Shared image-attachment state for a compose box: paste handler (the main
 // path — screenshots land on the clipboard), file picker fallback, previews.
 export function useImageAttachments(onError: (msg: string) => void) {
-  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [images, setImages] = useUpdateState<ImageAttachment[]>(`images:${location.hash}`, []);
   const [preparing, setPreparing] = useState(false);
 
   const addFiles = useCallback(
     async (files: File[]) => {
+      const finish = beginBrowserWork();
       setPreparing(true);
       try {
         const prepared: ImageAttachment[] = [];
@@ -38,6 +40,7 @@ export function useImageAttachments(onError: (msg: string) => void) {
         onError(e instanceof Error ? e.message : String(e));
       } finally {
         setPreparing(false);
+        finish();
       }
     },
     [onError],

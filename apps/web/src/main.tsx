@@ -7,7 +7,8 @@ import { setupBackGuard } from "./backGuard";
 import { Toaster } from "./components/ui/toaster";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { initViewportHeight } from "./viewport";
-import "./pwa"; // registers the service worker (prompt-to-update flow; see pwa.ts)
+import { startPwaUpdates } from "./pwa";
+import { restoreScreenPosition, restoreUpdateState } from "./update-state";
 import "./index.css";
 
 // Mirror window.innerHeight into --app-height before first paint so the h-app
@@ -23,15 +24,24 @@ setupBackGuard();
 // inline bootstrap in index.html applies the initial theme before first paint).
 // Toaster + TooltipProvider are mounted app-wide (above AuthGate) so transient
 // feedback and tooltips work on every route, including the login/enroll gate.
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <ThemeProvider>
-      <OutputModeProvider>
-        <TooltipProvider>
-          <App />
-          <Toaster />
-        </TooltipProvider>
-      </OutputModeProvider>
-    </ThemeProvider>
-  </StrictMode>,
-);
+async function boot() {
+  await restoreUpdateState();
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <ThemeProvider>
+        <OutputModeProvider>
+          <TooltipProvider>
+            <App />
+            <Toaster />
+          </TooltipProvider>
+        </OutputModeProvider>
+      </ThemeProvider>
+    </StrictMode>,
+  );
+
+  restoreScreenPosition();
+  startPwaUpdates();
+}
+void boot().catch(() => {
+  document.getElementById("root")!.textContent = "Could not restore your draft. Reload to retry.";
+});

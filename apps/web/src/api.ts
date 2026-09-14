@@ -2,6 +2,7 @@
 // @palmagent/shared — the wire contract is shared with the backend, so
 // we never redefine it here. SSE (read) lives in the stream hooks; this file is
 // the control plane (REST) only.
+import { beginBrowserWork } from "./update-state";
 import { clientVersion, observeServerVersion } from "./pwa";
 import type {
   AccountLimits,
@@ -60,23 +61,26 @@ export function setOnUnauthorized(fn: (() => void) | null): void {
 }
 
 async function request<T>(method: string, path: string, body?: unknown, opts?: { authProbe?: boolean; signal?: AbortSignal }): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    signal: opts?.signal,
-    headers: { "x-palmagent-version": clientVersion, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  observeServerVersion(res.headers.get("x-palmagent-version"));
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) {
-    if (res.status === 401 && !opts?.authProbe) onUnauthorized?.();
-    // 413 usually comes from the nginx proxy (HTML body, no JSON error).
-    if (res.status === 413 && typeof json.error !== "string") {
-      throw new ApiError(413, "Request too large for the proxy — shrink/remove images (or raise nginx client_max_body_size).");
+  const finish = method !== "GET" ? beginBrowserWork() : undefined;
+  try {
+    const res = await fetch(path, {
+      method,
+      signal: opts?.signal,
+      headers: { "x-palmagent-version": clientVersion, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    observeServerVersion(res.headers.get("x-palmagent-version"));
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      if (res.status === 401 && !opts?.authProbe) onUnauthorized?.();
+      // 413 usually comes from the nginx proxy (HTML body, no JSON error).
+      if (res.status === 413 && typeof json.error !== "string") {
+        throw new ApiError(413, "Request too large for the proxy — shrink/remove images (or raise nginx client_max_body_size).");
+      }
+      throw new ApiError(res.status, typeof json.error === "string" ? json.error : res.statusText);
     }
-    throw new ApiError(res.status, typeof json.error === "string" ? json.error : res.statusText);
-  }
-  return json as T;
+    return json as T;
+  } finally { finish?.(); }
 }
 
 export const api = {

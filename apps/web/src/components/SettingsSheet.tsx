@@ -1,3 +1,4 @@
+import { useUpdateState } from "../update-state";
 import { type ReactNode, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
@@ -44,7 +45,7 @@ async function signOut() {
 export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: ConnState }) {
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useUpdateState(`settings:open`, false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>{children}</SheetTrigger>
