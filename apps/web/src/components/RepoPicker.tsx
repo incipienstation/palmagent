@@ -1,3 +1,4 @@
+import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DiscoveredRepo, FsListResponse, Repo, ValidateRepoPathResponse } from "@palmagent/shared";
 import { ArrowUp, ChevronLeft, Folder, FolderSearch, GitBranch, Keyboard, RefreshCw, X } from "lucide-react";
@@ -105,16 +106,17 @@ function Row(props: {
 }
 
 export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Props) {
-  const [mode, setMode] = useState<Mode>("search");
-  const [query, setQuery] = useState("");
+  const restoring = useRef(open && readUpdateSnapshot("picker:mode") !== undefined);
+  const [mode, setMode] = useUpdateState<Mode>(`picker:mode`, "search");
+  const [query, setQuery] = useUpdateState(`picker:query`, "");
   const [discovered, setDiscovered] = useState<DiscoveredRepo[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [browse, setBrowse] = useState<FsListResponse | null>(null);
-  const [manualPath, setManualPath] = useState("");
-  const [validation, setValidation] = useState<ValidateRepoPathResponse | null>(null);
+  const [browse, setBrowse] = useUpdateState<FsListResponse | null>("picker:browse", null);
+  const [manualPath, setManualPath] = useUpdateState(`picker:manualPath`, "");
+  const [validation, setValidation] = useUpdateState<ValidateRepoPathResponse | null>("picker:validation", null);
   const [validating, setValidating] = useState(false);
   // branch is unset for a plain folder (no git) — registered/run in place.
-  const [picked, setPicked] = useState<{ path: string; name: string; branch?: string } | null>(null);
+  const [picked, setPicked] = useUpdateState<{ path: string; name: string; branch?: string } | null>(`picker:picked`, null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const debounceRef = useRef<number | undefined>(undefined);
@@ -125,12 +127,11 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   // (stale-while-revalidate — the drawer must answer before the network does).
   useEffect(() => {
     if (!open) return;
-    setMode("search");
-    setQuery("");
-    setPicked(null);
-    setValidation(null);
-    setManualPath("");
-    setError("");
+    if (!restoring.current) {
+      setMode("search"); setQuery(""); setPicked(null);
+      setValidation(null); setManualPath(""); setError("");
+    }
+    restoring.current = false;
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as { repos?: DiscoveredRepo[] } | null;
       if (cached?.repos) setDiscovered(cached.repos);

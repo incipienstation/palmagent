@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useUpdateState } from "../update-state";
 import type { Dispatch, SetStateAction } from "react";
 
-// Persist a text field to localStorage so any reload — the deploy-update
-// Refresh, an accidental navigation, opening the app from a push notification —
-// never drops in-progress typing. Writes immediately (no debounce) so the final
-// keystroke survives a reload that lands right after it; the strings are tiny so
-// the synchronous write is cheap.
+// Keep ordinary navigation drafts in localStorage. Controlled update transitions
+// additionally checkpoint each tab's current state before replacing its screen.
+// Storage errors never block typing; a failed update checkpoint keeps the page open.
 export function useDraft(key: string, initial = ""): [string, Dispatch<SetStateAction<string>>] {
-  const [value, setValue] = useState<string>(() => readDraft(key) ?? initial);
+  const [value, setValue] = useUpdateState<string>(key, () => readDraft(key) ?? initial);
   useEffect(() => {
     try {
       if (value) localStorage.setItem(key, value);
@@ -43,7 +42,7 @@ export function clearDraft(...keys: string[]): void {
 // a sticky preference — it is NOT cleared on submit. Defaults to `initial` until
 // the user changes it once.
 export function usePersistedFlag(key: string, initial = false): [boolean, Dispatch<SetStateAction<boolean>>] {
-  const [value, setValue] = useState<boolean>(() => {
+  const [value, setValue] = useUpdateState<boolean>(key, () => {
     const raw = readDraft(key);
     return raw === null ? initial : raw === "1";
   });
@@ -68,7 +67,7 @@ export function usePersistedString<T extends string>(
   key: string,
   initial: T,
 ): [T, Dispatch<SetStateAction<T>>] {
-  const [value, setValue] = useState<T>(() => (readDraft(key) as T | null) ?? initial);
+  const [value, setValue] = useUpdateState<T>(key, () => (readDraft(key) as T | null) ?? initial);
   useEffect(() => {
     try {
       localStorage.setItem(key, value);
@@ -92,7 +91,7 @@ export function usePersistedMapEntry<T extends string | boolean>(
   sub: string,
   fallback: T,
 ): [T, (next: T) => void] {
-  const [map, setMap] = useState<Record<string, T>>(() => readMap<T>(key));
+  const [map, setMap] = useUpdateState<Record<string, T>>(key, () => readMap<T>(key));
   useEffect(() => {
     try {
       localStorage.setItem(key, JSON.stringify(map));

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Standalone smoke-test: UpdateBanner Refresh button with a REAL service worker.
+ * Standalone smoke-test: automatic screen transitions with a REAL service worker.
  * The regular Playwright harness can't cover this because it uses a mock backend
  * with no real SW lifecycle (install → wait → skip → reload).
  *
@@ -10,6 +10,7 @@
  *   node apps/web/scripts/test-sw-update.mjs
  */
 
+import assert from "node:assert/strict";
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
@@ -47,7 +48,7 @@ process.on("uncaughtException", (e) => {
 function startMockServer() {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [join(WEB_DIR, "tests/mock-server.mjs")], {
-      env: { ...process.env, PORT: String(PORT) },
+      env: { ...process.env, PORT: String(PORT), PWA_UPDATE_TARGET: "0.1.0-alpha.5" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout.on("data", (d) => {
@@ -98,11 +99,24 @@ async function run() {
     // ---- Phase 1: fresh context, SW installs and activates on first load ----
     console.log("\n[test] Phase 1 — first load, wait for SW to activate...");
     const ctx = await browser.newContext({ baseURL: BASE });
+    ctx.setDefaultTimeout(15_000);
 
     // Forward browser console so we can see workbox logs
+    await ctx.addInitScript(() => {
+      const original = ServiceWorker.prototype.postMessage;
+      ServiceWorker.prototype.postMessage = function(message, ...args) {
+        console.log("[test] worker message", message.type, this.state);
+        return original.call(this, message, ...args);
+      };
+    });
     const page = await ctx.newPage();
     page.on("console", (m) => {
       console.log(`  [browser:${m.type()}] ${m.text()}`);
+    });
+
+    const mutations = [];
+    page.on("request", (request) => {
+      if (!["GET", "HEAD"].includes(request.method())) mutations.push({ url: request.url(), body: request.postDataJSON() });
     });
 
     await page.goto("/");
@@ -123,41 +137,156 @@ async function run() {
       ready: true,
     }));
     console.log("[test] SW state:", swState);
+    assert.equal(await page.getByText("Updating Palmagent…", { exact: true }).count(), 0, "first installation is not an update");
     if (!swState.controller) throw new Error("SW is not controlling the page after install");
 
-    // ---- Phase 2: mutate sw.js → trigger update → wait for banner ----
-    console.log("\n[test] Phase 2 — trigger SW update (mutate sw.js + registration.update())...");
+    // Two tabs have different drafts; activation in one must preserve both.
+    await page.goto("/#/new");
+    await page.getByLabel("Prompt").fill("Keep this unsent draft");
+    await page.getByPlaceholder("short label").fill("Draft title");
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
+    await page.locator('input[type="file"]').setInputFiles({ name: "draft.png", mimeType: "image/png", buffer: png });
+    await page.getByAltText("attachment 1").waitFor();
+    const second = await ctx.newPage();
+    await second.goto("/#/new");
+    await second.getByLabel("Prompt").fill("Independent second-tab draft");
+    await second.evaluate(() => document.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
 
-    // Append a comment so the byte content changes → browser detects a new SW
-    await appendFile(SW_PATH, "\n// test-update-marker\n");
-    console.log("[test] sw.js mutated");
-
-    // Force the browser to check for an update
+    await page.bringToFront();
+    await page.getByLabel("Prompt").focus();
+    await page.getByLabel("Prompt").evaluate((el) => el.setSelectionRange(4, 9));
+    const reload = page.waitForEvent("load", { timeout: 20_000 });
+    let secondLoads = 0;
+    second.on("load", () => secondLoads++);
+    await appendFile(SW_PATH, "\n// automatic-update-one\n");
     await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
-    console.log("[test] registration.update() called");
+    await reload.catch(async (error) => {
+      console.log("[test] transition state", await page.evaluate(async () => ({ visibility: document.visibilityState,
+        banner: document.querySelector('[role="status"]')?.textContent,
+        waiting: (await navigator.serviceWorker.getRegistration())?.waiting?.state,
+        marker: sessionStorage.getItem("palmagent:screen-checkpoint") })));
+      throw error;
+    });
+    await page.getByAltText("attachment 1").waitFor();
+    assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
+    assert.equal(await page.getByPlaceholder("short label").inputValue(), "Draft title");
+    await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+    assert.deepEqual(await page.getByLabel("Prompt").evaluate((el) => [el.selectionStart, el.selectionEnd]), [4, 9]);
+    assert(page.url().endsWith("/#/new"));
+    assert.equal(secondLoads, 0, "another tab must not reload during text composition");
+    await second.bringToFront();
+    const secondReload = second.waitForEvent("load", { timeout: 20_000 });
+    await second.evaluate(() => document.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+    await secondReload;
+    await second.getByLabel("Prompt").waitFor();
+    assert.equal(await second.getByLabel("Prompt").inputValue(), "Independent second-tab draft");
+    assert.equal(secondLoads, 1);
+    console.log("[test] automatic transition preserves drafts, attachments, and independent tabs");
 
-    // Wait for the UpdateBanner to appear (workbox fires 'waiting' when new SW is installed+waiting)
-    console.log("[test] waiting for UpdateBanner (timeout 30 s)...");
-    await page.waitForSelector("text=Update available", { timeout: 30_000 });
-    console.log("[test] ✅ UpdateBanner visible!");
+    await page.bringToFront();
+    // A checkpoint failure must preserve the page; retry after the browser can
+    // save again. No periodic update check or force-reload fallback is involved.
+    await page.evaluate(() => {
+      window.__originalOpen = indexedDB.open.bind(indexedDB);
+      indexedDB.open = () => { throw new Error("Simulated storage failure"); };
+    });
+    let loads = 0;
+    page.on("load", () => loads++);
+    await appendFile(SW_PATH, "\n// automatic-update-two\n");
+    // Prevent the other tab from activating while this tab is testing failure.
+    await second.close();
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
+    await page.getByText("Update paused", { exact: true }).waitFor({ timeout: 20_000 });
+    assert.equal(loads, 0);
+    assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
+    const recovered = page.waitForEvent("load", { timeout: 20_000 });
+    await page.evaluate(() => { indexedDB.open = window.__originalOpen; window.dispatchEvent(new Event("online")); });
+    await recovered;
+    await page.getByAltText("attachment 1").waitFor();
+    assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
+    assert.equal(loads, 1, "recovery completes with one automatic reload");
+    await page.waitForTimeout(1800);
+    assert.equal(loads, 1, "the same update must not cause a reload loop");
+    console.log("[test] storage failures preserve work and event-driven recovery completes automatically");
 
-    // Verify loading state on click
-    const refreshBtn = page.getByRole("button", { name: /^Refresh$/ });
-    await refreshBtn.waitFor({ state: "visible", timeout: 5_000 });
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("option", { name: "Browse folders…" }).click();
+    await page.getByRole("button", { name: "Choose outer-repo as repository" }).click();
+    await page.getByText("✓ git repo · branch main").waitFor();
+    const pickerReload = page.waitForEvent("load", { timeout: 20_000 });
+    await appendFile(SW_PATH, "\n// automatic-update-picker\n");
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
+    await pickerReload;
+    await page.getByRole("heading", { name: "Add a repo", exact: true }).waitFor();
+    await page.getByText("✓ git repo · branch main").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Register", exact: true }).count(), 1);
+    console.log("[test] repository selection survives without registering it automatically");
 
-    // ---- Phase 3: click Refresh → expect page reload ----
-    console.log("\n[test] Phase 3 — click Refresh, expect page reload...");
-    const reloadPromise = page.waitForEvent("load", { timeout: 8_000 });
-    await refreshBtn.click();
+    // Keep an earlier conversation page and its reading position through an
+    // offline delay and transition. Stream reconnection must use its cursor.
+    await page.evaluate(() => { localStorage.setItem("pref:output-mode", "verbose"); });
+    await page.goto("/#/task/t-run");
+    await page.reload();
+    const transcript = page.locator('[aria-label="Session transcript"]');
+    await page.getByText("tool_result: Transition tool 440", { exact: true }).waitFor();
+    const olderPage = page.waitForResponse((response) => response.url().includes("/history?before=241"));
+    await transcript.evaluate((el) => { el.scrollTop = 0; });
+    await olderPage;
+    await page.waitForTimeout(400);
+    await transcript.evaluate((el) => { el.scrollTop = 350; });
+    await page.waitForTimeout(400);
+    const position = await transcript.evaluate((el) => el.scrollTop);
+    assert(position > 100);
+    const draft = page.getByPlaceholder("Steer the running turn… (paste images here)");
+    await draft.fill("Do not submit this conversation draft");
+    const reconnects = [];
+    page.on("request", (request) => { if (request.url().includes("/api/stream?task=t-run")) reconnects.push(request.url()); });
+    const beforeConversation = loads;
+    await page.evaluate(() => document.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    await appendFile(SW_PATH, "\n// automatic-update-history\n");
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
+    await page.waitForFunction(() => navigator.serviceWorker.getRegistration().then((r) => Boolean(r?.waiting)));
+    await ctx.setOffline(true);
+    await page.evaluate(() => document.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+    await page.waitForTimeout(1100);
+    assert.equal(loads, beforeConversation, "offline screens must not transition");
+    const conversationReload = page.waitForEvent("load", { timeout: 20_000 });
+    await ctx.setOffline(false);
+    await conversationReload;
+    await draft.waitFor();
+    assert.equal(await draft.inputValue(), "Do not submit this conversation draft");
+    await page.waitForFunction((position) => {
+      const el = document.querySelector('[aria-label="Session transcript"]');
+      return el && Math.abs(el.scrollTop - position) <= 2;
+    }, position).catch(async (error) => {
+      console.log("[test] conversation position", { expected: position, actual: await transcript.evaluate((el) => el.scrollTop), reconnects });
+      throw error;
+    });
+    assert(reconnects.some((url) => url.includes("lastEventId=440")), "restored history resumes its durable stream cursor");
+    console.log("[test] earlier history, conversation position, and drafts survive offline recovery");
 
-    // Verify button went into loading state
-    const updatingBtn = page.getByRole("button", { name: /Updating/ });
-    // (non-blocking: race between reload and this check)
-    const loadingVisible = await updatingBtn.isVisible().catch(() => false);
-    console.log("[test] loading state visible:", loadingVisible);
-
-    await reloadPromise;
-    console.log("[test] ✅ Page reloaded!");
+    // Manual installation also finishes automatically, with automatic updates
+    // disabled. A pending write must settle before its page is replaced.
+    await page.evaluate(() => { location.hash = "/"; });
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const automatic = page.getByRole("switch", { name: "Automatic updates" });
+    assert.equal(await automatic.isChecked(), false);
+    const submitted = page.waitForRequest((request) => request.url().endsWith("/api/settings/updates") && request.postDataJSON()?.action === "install");
+    await page.getByRole("button", { name: "Update", exact: true }).click();
+    await submitted;
+    const beforeInstall = loads;
+    await appendFile(SW_PATH, "\n// automatic-update-three\n");
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
+    await page.waitForTimeout(1100);
+    assert.equal(loads, beforeInstall, "an in-flight install response blocks the screen transition");
+    await page.waitForEvent("load", { timeout: 20_000 });
+    await page.getByRole("heading", { name: "Updates", exact: true }).waitFor();
+    assert.equal(await automatic.isChecked(), false);
+    assert.equal(await page.getByRole("button", { name: "Refresh", exact: true }).count(), 0);
+    assert.equal(mutations.filter((request) => request.body?.action === "install").length, 1);
+    assert(!mutations.some((request) => /\/api\/tasks(?:\/|$)/.test(new URL(request.url).pathname)), "screen transitions must not send agent lifecycle actions");
+    assert.equal(loads, beforeInstall + 1);
+    console.log("[test] one Update click waits for its response, restores Settings, and sends no agent actions");
 
     await ctx.close();
     passed = true;
@@ -168,7 +297,7 @@ async function run() {
   }
 
   if (passed) {
-    console.log("\n✅ PASS: UpdateBanner Refresh button correctly triggers page reload.");
+    console.log("\n✅ PASS: Automatic PWA transitions preserve browser state without a confirmation click.");
     process.exit(0);
   } else {
     console.error("\n❌ FAIL");

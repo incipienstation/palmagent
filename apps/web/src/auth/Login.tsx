@@ -1,3 +1,4 @@
+import { useUpdateBlocker } from "../update-state";
 import { useState } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Bot, Fingerprint } from "lucide-react";
@@ -12,6 +13,7 @@ import { AuthScreen, authErrorMessage } from "./AuthScreen";
 // single tap (+ biometric) authenticates — no username, no password.
 export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [busy, setBusy] = useState(false);
+  useUpdateBlocker(busy);
   const [error, setError] = useState<string | null>(null);
 
   async function signIn() {

@@ -1,3 +1,4 @@
+import { useUpdateState } from "../update-state";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type { AgentKind, Permission, Repo } from "@palmagent/shared";
 import { Loader2, Plus, Send } from "lucide-react";
@@ -73,7 +74,7 @@ export function DispatchView() {
   // Persisted so a deploy refresh (or accidental reload) never drops typing.
   const [title, setTitle] = useDraft("draft:dispatch-title");
   const [prompt, setPrompt] = useDraft("draft:dispatch-prompt");
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useUpdateState(`dispatch:picker`, false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const att = useImageAttachments(setError);

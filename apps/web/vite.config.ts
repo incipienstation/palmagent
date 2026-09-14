@@ -47,11 +47,10 @@ export default defineConfig({
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.ts",
-      // "prompt", not "autoUpdate": a deploy must NOT silently reload the page
-      // (that wipes an in-progress dispatch/steer draft). The new SW installs
-      // and waits; src/pwa.ts surfaces it as an in-app UpdateBanner and only
-      // activates + reloads when the user taps Refresh.
+      // The page checkpoints drafts before sending SKIP_WAITING. Registration
+      // stays page-owned so no generated listener can reload a tab prematurely.
       registerType: "prompt",
+      injectRegister: false,
       includeAssets: [
         "favicon.svg",
         "apple-touch-icon.png",

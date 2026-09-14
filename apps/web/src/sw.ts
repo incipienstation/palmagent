@@ -13,12 +13,9 @@ import { BRANDING, type PushPayload } from "@palmagent/shared";
 
 declare let self: ServiceWorkerGlobalScope;
 
-// Prompt-to-update flow (registerType: "prompt"): a freshly deployed SW installs
-// and WAITS. It activates only when the page posts SKIP_WAITING — i.e. when the
-// user taps Refresh in the UpdateBanner — so a surprise reload never wipes an
-// in-progress draft. clientsClaim() then lets the activated SW take control so
-// the reload lands on the new version. The page-side controllerchange listener
-// in pwa.ts triggers the actual reload.
+// The page automatically sends SKIP_WAITING after checkpointing its state.
+// Every tab handles controllerchange independently, preserving its own draft
+// before reloading; activating a worker never controls agent execution.
 self.addEventListener("message", (event) => {
   if ((event.data as { type?: string } | undefined)?.type === "SKIP_WAITING") {
     void self.skipWaiting();
@@ -35,9 +32,8 @@ cleanupOutdatedCaches();
 // a login screen in place, so there is no external login page to route around.
 registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { denylist: [/^\/api/] }));
 
-// SSE must stream straight to the network — caching an open event-stream
-// would hang the request, so never let Workbox touch it.
-registerRoute(({ url }) => url.pathname.startsWith("/api/stream"), new NetworkOnly());
+// Leave SSE fetches unhandled. Even NetworkOnly ties an open stream to the
+// active worker and can keep a waiting worker from completing activation.
 
 // Installation settings and the running version must never fall back to a stale
 // offline snapshot, including when reconciling a save whose response was lost.
@@ -50,7 +46,7 @@ registerRoute(({ url }) => /^\/api\/tasks\/[^/]+\/account-limits$/.test(url.path
 // REST: network-first so control/read calls are always fresh online, with a
 // short-lived cache as an offline courtesy.
 registerRoute(
-  ({ url }) => url.pathname.startsWith("/api/"),
+  ({ url }) => url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/stream"),
   new NetworkFirst({
     cacheName: "api",
     networkTimeoutSeconds: 10,

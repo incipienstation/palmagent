@@ -1,3 +1,4 @@
+import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, AgentEventKind, AgentKind, AssistantTextPayload, SseFrame, TaskState } from "@palmagent/shared";
 import { api } from "../api";
@@ -35,31 +36,37 @@ function append(items: LogItem[], event: AgentEvent, seq: number) {
 }
 
 export function useTaskStream(taskId: string): TaskStream {
-  const [log, setLog] = useState<LogItem[]>([]);
+  const restored = useRef(readUpdateSnapshot<{ items: LogItem[]; lastSeq: number; before: number | null; task?: TaskState }>(`history:${taskId}`));
+  const checkpoint = useRef(restored.current);
+  useUpdateSnapshot(`history:${taskId}`, () => checkpoint.current);
+  const [log, setLog] = useState<LogItem[]>(restored.current?.items ?? []);
   const [conn, setConn] = useState<ConnState>("connecting");
-  const [task, setTask] = useState<TaskState>();
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [hasEarlier, setHasEarlier] = useState(false);
+  const [task, setTask] = useState<TaskState | undefined>(restored.current?.task);
+  const [loadingHistory, setLoadingHistory] = useState(!restored.current);
+  const [hasEarlier, setHasEarlier] = useState(restored.current?.before != null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   const load = useRef<() => void>(() => {});
   const loadEarlier = useCallback(() => load.current(), []);
 
   useEffect(() => {
-    setLog([]); setTask(undefined);
-    setLoadingHistory(true); setHasEarlier(false); setLoadingEarlier(false); setHistoryError(undefined);
-    let items: LogItem[] = [];
-    let lastSeq = 0;
-    let receivedSnapshot = false;
+    const saved = restored.current;
+    setLog(saved?.items ?? []); setTask(saved?.task);
+    let currentTask = saved?.task;
+    setLoadingHistory(!saved); setHasEarlier(saved?.before != null); setLoadingEarlier(false); setHistoryError(undefined);
+    let items: LogItem[] = saved ? [...saved.items] : [];
+    let lastSeq = saved?.lastSeq ?? 0;
+    let receivedSnapshot = Boolean(saved);
     let replayThrough = 0;
-    let ready = false;
-    let before: number | null = null;
+    let ready = Boolean(saved);
+    let before: number | null = saved?.before ?? null;
     let animation = 0;
     let disposed = false;
     let request: AbortController | undefined;
 
     const publish = () => {
       animation = 0;
+      checkpoint.current = { items: [...items], lastSeq, before, task: currentTask };
       setLog([...items]);
       setHasEarlier(before !== null);
       setLoadingHistory(false);
@@ -99,7 +106,10 @@ export function useTaskStream(taskId: string): TaskStream {
         try { frame = JSON.parse(message.data) as SseFrame; } catch { return; }
         if (frame.type === "tasks") {
           const mine = frame.tasks.find((entry) => entry.taskId === taskId);
-          if (mine) setTask(mine);
+          if (mine) {
+            currentTask = mine; setTask(mine);
+            if (checkpoint.current) checkpoint.current = { ...checkpoint.current, task: mine };
+          }
           if (!receivedSnapshot && frame.history) {
             lastSeq = frame.history.after;
             before = frame.history.before;

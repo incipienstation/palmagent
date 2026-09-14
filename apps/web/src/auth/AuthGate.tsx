@@ -1,3 +1,4 @@
+import { useUpdateBlocker } from "../update-state";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { api, setOnUnauthorized } from "../api";
@@ -14,6 +15,7 @@ type Phase = "loading" | "authed" | "unauthed";
 export function AuthGate({ children }: { children: ReactNode }) {
   const route = useRoute();
   const [phase, setPhase] = useState<Phase>("loading");
+  useUpdateBlocker(phase === "loading");
 
   useEffect(() => {
     setOnUnauthorized(() => setPhase("unauthed"));

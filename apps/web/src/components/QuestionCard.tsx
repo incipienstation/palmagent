@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useUpdateState } from "../update-state";
+import { useLayoutEffect, useRef } from "react";
 import type { AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import { Check, CircleHelp } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
@@ -19,20 +20,25 @@ import { cn } from "@/lib/utils";
 // "Send answer" submits all questions at once; "Skip" declines.
 export function QuestionCard({
   questions,
+  checkpointKey,
   busy,
   onSubmit,
 }: {
   questions: AskQuestion[];
+  checkpointKey: string;
   busy: boolean;
   onSubmit: (answers: QuestionAnswer[], skip: boolean) => void;
 }) {
   // One selection array + note per question, indexed positionally.
-  const [selected, setSelected] = useState<string[][]>(() => questions.map(() => []));
-  const [notes, setNotes] = useState<string[]>(() => questions.map(() => ""));
+  const [selected, setSelected] = useUpdateState<string[][]>(`question:${checkpointKey}:selected`, () => questions.map(() => []));
+  const [notes, setNotes] = useUpdateState<string[]>(`question:${checkpointKey}:notes`, () => questions.map(() => ""));
   // The currently-centered slide, derived from the horizontal scroll position.
   const trackRef = useRef<HTMLDivElement>(null);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useUpdateState(`question:${checkpointKey}:page`, 0);
   const paged = questions.length > 1;
+  useLayoutEffect(() => {
+    if (trackRef.current) trackRef.current.scrollLeft = page * trackRef.current.clientWidth;
+  }, []);
 
   function onScroll() {
     const el = trackRef.current;
