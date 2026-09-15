@@ -68,7 +68,8 @@ self.addEventListener("push", (event: PushEvent) => {
     self.registration.showNotification(payload.title, {
       body: payload.body,
       icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      // Android uses the alpha silhouette here; an app-icon background becomes a solid square.
+      badge: "/notification-badge.png",
       tag: payload.taskId ?? BRANDING.packageName, // collapse repeat updates per task
       data: { url: payload.url ?? "/" },
     }),

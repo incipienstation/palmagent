@@ -57,6 +57,7 @@ export default defineConfig({
         "icon-192.png",
         "icon-512.png",
         "icon-512-maskable.png",
+        "notification-badge.png",
       ],
       manifest: {
         name: APP_NAME,
