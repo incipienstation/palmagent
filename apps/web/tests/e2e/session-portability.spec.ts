@@ -108,7 +108,7 @@ test("live preview is readable before handoff and enables input only when owners
   await expect(page.getByText("Saved locally and visible before closing the CLI.", { exact: true })).toBeVisible();
   await expect(page.getByText("Done", { exact: true })).toBeHidden();
   await expect(page.getByPlaceholder("Read-only while controlled in your local CLI.")).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
   await assertViewportLocked(page);
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeInViewport();
   await expect(page).toHaveScreenshot("session-live-preview.png");

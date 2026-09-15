@@ -1,7 +1,10 @@
+import { SendControl } from "./SendControl";
+import { MessageQueue as QueuePanel } from "./MessageQueue";
+import type { MessageQueue, PendingMessage } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Info, Square, Trash2 } from "lucide-react";
+import { Archive, Check, Info, Square, Trash2, X } from "lucide-react";
 
 import {
   AlertDialog,
@@ -27,7 +30,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toaster";
 import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, EFFORTS, MODELS, PERMISSIONS } from "../api";
-import { useDraft } from "../hooks/useDraft";
+import { useDraft, usePersistedString } from "../hooks/useDraft";
 import { useTaskStream } from "../hooks/useTaskStream";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
@@ -67,8 +70,8 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // The compose selectors mirror the task's live model/effort (DEFAULT_OPTION =
   // the agent's own default). They re-sync whenever the task's setting changes —
   // e.g. after a steer persists a new one — instead of resetting to "default"
-  // each turn. A change applies to the next turn (a steer interrupts the running
-  // turn to adopt it — Claude — or queues it — Codex).
+  // each turn. Changes are captured by queued messages or the next idle Send;
+  // an active Send keeps the current run settings.
   const keepRestoredSelectors = useRef(readUpdateSnapshot(`task:${taskId}:model`) !== undefined);
   const selectorVersion = useRef<string>();
   const [model, setModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
@@ -93,7 +96,39 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     }
   }, [taskId, task?.model, task?.effort, task?.permission, task?.agent]);
   const [busy, setBusy] = useState(false);
-  const att = useImageAttachments((msg) => toast({ title: msg, variant: "destructive" }));
+  const normalAtt = useImageAttachments((msg) => toast({ title: msg, variant: "destructive" }));
+  const editAtt = useImageAttachments((msg) => toast({ title: msg, variant: "destructive" }), `queue-edit-images:${taskId}`);
+  const [deliveryMode, setDeliveryMode] = usePersistedString<"send" | "queue">(`delivery:${taskId}`, "send");
+  const [edit, setEdit] = useUpdateState<{ id: string; version: number; token: string; expired?: boolean } | null>(`queue-edit:${taskId}`, null);
+  const [editText, setEditText] = useDraft(`draft:queue-edit:${taskId}`);
+  const [submitted, setSubmitted] = useUpdateState<{ fingerprint: string; id: string } | null>(`message-request:${taskId}`, null);
+  const [queueOverride, setQueueOverride] = useState<MessageQueue>();
+  const remoteQueue = task?.messageQueue;
+  const queue = queueOverride && queueOverride.revision > (remoteQueue?.revision ?? -1) ? queueOverride : remoteQueue;
+  const att = edit ? editAtt : normalAtt;
+  useEffect(() => {
+    if (!edit || edit.expired) return;
+    const renew = () => { void api.messageAction(taskId, edit.id, { action: "renew", token: edit.token }).then(setQueueOverride).catch(() => setEdit(current => current ? { ...current, expired: true } : current)); };
+    renew(); const timer = setInterval(renew, 20_000);
+    return () => clearInterval(timer);
+  }, [taskId, edit?.id, edit?.token, edit?.expired]);
+  async function startEdit(message: PendingMessage) {
+    const token = crypto.randomUUID();
+    await act(async () => {
+      const q = await api.messageAction(taskId, message.id, { action: "edit", version: message.version, token });
+      setQueueOverride(q); setEdit({ id: message.id, version: message.version, token });
+      setEditText(message.text); editAtt.setImages(message.images ?? []);
+    });
+  }
+  async function endEdit(save: boolean) {
+    if (!edit) return;
+    await act(async () => {
+      if (save || !edit.expired) setQueueOverride(await api.messageAction(taskId, edit.id, save
+        ? { action: "save", token: edit.token, version: edit.version, text: editText, images: editAtt.images }
+        : { action: "release", token: edit.token }));
+      setEdit(null); editAtt.clear(); if (save) setEditText("");
+    });
+  }
 
   const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
   const status = task?.status;
@@ -107,13 +142,14 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // back instead of the dead composer stacking under the panel and burying the log.
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
-  const composeMode: "steer" | "followup" | null = localOwner ? null : running
+  const composeMode: "steer" | "followup" | null = localOwner || status === "archived" || status === "cancelled" ? null : running
     ? "steer"
-    : status === "idle" || status === "failed"
+    : status === "idle" || status === "failed" || deliveryMode === "queue"
       ? "followup"
       : null;
 
   async function send() {
+    if (edit) { await endEdit(true); return; }
     const text = compose.trim() || (att.images.length ? "See the attached image(s)." : "");
     if (!text || !composeMode) return;
     const images = att.images.length ? att.images : undefined;
@@ -133,26 +169,13 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     };
     setBusy(true);
     try {
-      if (composeMode === "steer") {
-        const r = await api.steer(taskId, { text, images, ...override });
-        if (r.injected) {
-          toast({ title: "Injected mid-turn", description: "The agent was interrupted.", variant: "success" });
-        } else if (r.restarted) {
-          toast({
-            title: "Interrupted — resuming",
-            description: "Resuming the turn with the new model/effort.",
-            variant: "default",
-          });
-        } else {
-          toast({
-            title: "Queued as the next turn",
-            description: "No mid-turn steer for this agent.",
-            variant: "info",
-          });
-        }
-      } else {
-        await api.followup(taskId, { prompt: text, images, ...override });
-      }
+      const request = { mode: deliveryMode, text, images, expectedRunId: queue?.runId ?? null,
+        ...(running && deliveryMode === "send" ? {} : { settings: override }) };
+      const fingerprint = JSON.stringify(request);
+      const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
+      setSubmitted({ fingerprint, id });
+      setQueueOverride(await api.submitMessage(taskId, { ...request, clientMessageId: id }));
+      setSubmitted(null); setDeliveryMode("send");
       setCompose("");
       // Don't reset the selectors — they re-sync from the task's (possibly new)
       // model/effort via the effect above.
@@ -283,34 +306,44 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             </div>
           )}
 
+          {queue && <QueuePanel queue={queue} disabled={busy || localOwner || !!edit}
+            onEdit={m => void startEdit(m)}
+            onSend={m => void act(async () => setQueueOverride(await api.messageAction(taskId, m.id, { action: "send", version: m.version, expectedRunId: queue.runId })))}
+            onDelete={m => void act(async () => setQueueOverride(await api.messageAction(taskId, m.id, { action: "delete", version: m.version })))}
+            onResume={() => void act(async () => setQueueOverride(await api.resumeQueue(taskId)))} />}
+
           {/* Composer + helper collapse entirely while a question is pending
               (answering) — see the `answering` note above. The approval buttons
               live outside this branch (awaiting_approval and awaiting_input are
               mutually exclusive states, so they never both render). */}
-          {!answering && (
+          {(!answering || !!edit) && (
             <>
           {/* Composer well — the textarea and its inline controls bar (model/effort
               pills + the action button) live in one rounded box that highlights as a
               whole on focus, the shadcn chat-composer idiom. Replaces the old
               short-textarea-beside-a-button layout that clipped its placeholder. */}
           <div className="flex flex-col gap-2 rounded-xl border border-input bg-background p-2 transition-colors focus-within:border-blue">
+            {edit && <div className="flex items-center gap-2">
+              <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
+              <Button variant="ghost" size="icon" className="ml-auto" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>
+            </div>}
             <Textarea
               className="max-h-40 min-h-[3.25rem] resize-none border-0 bg-transparent px-1.5 py-1 focus-visible:border-0"
-              value={compose}
-              onChange={(e) => setCompose(e.target.value)}
+              value={edit ? editText : compose}
+              onChange={(e) => edit ? setEditText(e.target.value) : setCompose(e.target.value)}
               onPaste={att.onPaste}
               placeholder={
                 localOwner
                   ? "Read-only while controlled in your local CLI."
                   : composeMode === "steer"
-                  ? "Steer the running turn… (paste images here)"
+                  ? "Message the agent… (paste images here)"
                   : composeMode === "followup"
                     ? "Send a follow-up turn… (paste images here)"
                     : status === "queued"
                       ? "Waiting for a slot…"
                       : "No further input for this task."
               }
-              disabled={!composeMode || busy}
+              disabled={(!composeMode && !edit) || busy}
               rows={2}
             />
             {/* The three per-agent controls (model/effort/permission) ride a single
@@ -318,7 +351,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
                 they overflow rather than wrapping up above the Send button. The Send
                 button stays pinned on the right, outside the scroll rail. */}
             <div className="flex items-center gap-2">
-              {composeMode && task && (
+              {composeMode && task && !edit && !(running && deliveryMode === "send") && (
                 <ScrollArea className="min-w-0 flex-1 whitespace-nowrap">
                   <div className="flex w-max items-center gap-2 pb-2">
                     <Select value={model} onValueChange={(v) => v && setModel(v)} disabled={busy}>
@@ -370,17 +403,15 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
                   <ScrollBar orientation="horizontal" />
                 </ScrollArea>
               )}
-              <Button
-                className="ml-auto shrink-0"
-                disabled={!composeMode || busy || att.preparing || (!compose.trim() && att.images.length === 0)}
-                onClick={send}
-              >
-                {composeMode === "steer" ? "Steer" : "Send"}
-              </Button>
+              {edit ? <Button size="icon" className="ml-auto" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || !editText.trim()} onClick={() => void endEdit(true)}><Check /></Button>
+                : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()}
+                    disabled={localOwner || busy || status === "archived" || status === "cancelled"}
+                    sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0)} />}
+
             </div>
           </div>
 
-          {composeMode && (
+          {(composeMode || edit) && (
             <AttachmentTray
               images={att.images}
               preparing={att.preparing}
@@ -391,13 +422,10 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           )}
 
           <div className="text-[12.5px] text-faint">
-            {composeMode === "steer"
-              ? "Steer interrupts the current turn (Claude) or queues for the next (Codex)."
-              : composeMode === "followup"
-                ? "Resumes the session as a new turn."
-                : status === "queued"
-                  ? "Task is queued for a concurrency slot."
-                  : " "}
+            {edit ? "Saving keeps the message's place in the queue." : localOwner ? " " : deliveryMode === "queue"
+              ? "This message will wait for its turn."
+              : "Hold Send to choose Queue."}
+
           </div>
             </>
           )}

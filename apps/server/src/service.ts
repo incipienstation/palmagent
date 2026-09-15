@@ -1,3 +1,5 @@
+import { MessageController } from "./message-controller.js";
+import type { SubmitMessage, MessageAction } from "@palmagent/shared";
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
@@ -48,7 +50,7 @@ export class TaskService {
   }
 
   private shuttingDown = false;
-  beginShutdown(): void { this.shuttingDown = true; }
+  beginShutdown(): void { this.shuttingDown = true; this.messages.close(); }
 
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
   private sessionMismatch = new Set<string>();
@@ -64,6 +66,8 @@ export class TaskService {
   // (it takes `this` as its sink). Absent when PR integration is not configured.
   private github?: GithubService;
 
+  readonly messages: MessageController;
+
   constructor(
     private readonly db: Db,
     private readonly hub: Hub,
@@ -72,7 +76,44 @@ export class TaskService {
     private readonly worktrees: WorktreeManager,
     private readonly push?: PushService,
     private readonly maintenance: () => boolean = () => false,
-  ) {}
+  ) {
+    this.messages = new MessageController(db, {
+      assertWritable: (id) => {
+        this.assertTaskAdmission();
+        const task = this.getTask(id);
+        this.assertSessionOwnership(task);
+        if (["cancelled", "archived"].includes(task.status)) throw conflict("This task is closed.");
+      },
+      canStart: (id) => {
+        const task = this.cache.get(id);
+        return !this.shuttingDown && !this.updating && !!task
+          && (!task.sessionControl || task.sessionControl.owner === "palmagent")
+          && ["idle", "failed"].includes(task.status) && !this.supervisor.has(id);
+      },
+      settings: (id) => {
+        const task = this.getTask(id);
+        return { model: task.model ?? "", effort: task.effort ?? "", permission: task.permission };
+      },
+      start: (id, message) => {
+        const task = this.getTask(id);
+        this.applySettings(task, message.settings?.model, message.settings?.effort, message.settings?.permission);
+        this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.images?.length });
+        void this.runTurn(task, message.text, task.sessionId, message.images, message.id);
+      },
+      steer: async (id, message) => {
+        const task = this.getTask(id), handle = this.supervisor.get(id);
+        if (task.status !== "running" || this.stopping.has(id) || !handle?.send) return "rejected";
+        this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.images?.length });
+        return handle.send(message.text, message.images, message.id);
+      },
+      changed: () => this.broadcastTasks(),
+    });
+  }
+
+  submitMessage(id: string, req: SubmitMessage) { return this.messages.submit(id, { ...req, images: sanitizeImages(req.images) }); }
+  messageAction(id: string, messageId: string, req: MessageAction) {
+    return this.messages.action(id, messageId, req.action === "save" ? { ...req, images: sanitizeImages(req.images) } : req);
+  }
 
   get updating(): boolean { return this.maintenance(); }
 
@@ -127,6 +168,7 @@ export class TaskService {
     if (recovered.length) {
       console.log(`[recovery] reset ${recovered.length} in-flight task(s) to idle(interrupted)`);
     }
+    for (const id of this.db.messageTaskIds()) this.messages.recover(id, keep.has(id));
     this.broadcastTasks();
   }
 
@@ -181,12 +223,17 @@ export class TaskService {
 
   // ---- tasks (read) ----
   listTasks(status?: TaskStatus): TaskState[] {
-    const all = [...this.cache.values()].sort((a, b) => a.createdAt - b.createdAt);
+    const all = [...this.cache.values()].map(t => this.withMessageQueue(t)).sort((a, b) => a.createdAt - b.createdAt);
     return status ? all.filter((t) => t.status === status) : all;
   }
   getTask(id: string): TaskState {
     const t = this.cache.get(id);
     if (!t) throw notFound(`no such task: ${id}`);
+    return this.withMessageQueue(t);
+  }
+  private withMessageQueue(t: TaskState): TaskState {
+    const queue = this.messages.snapshot(t.taskId);
+    if (queue.revision > 0) t.messageQueue = queue;
     return t;
   }
 
@@ -216,6 +263,7 @@ export class TaskService {
     if (!task.sessionId) throw conflict("This task has no native session yet");
     let control: TaskState["sessionControl"];
     try { control = checkpointSession(task); } catch (error) { throw conflict(error instanceof Error ? error.message : "Native session is unavailable"); }
+    this.messages.pause(id);
     this.db.setSessionControl(id, control);
     task.sessionControl = control;
     this.broadcastTasks();
@@ -480,6 +528,7 @@ export class TaskService {
     if (task.status === "cancelled" || task.status === "archived") {
       throw conflict(`cannot stop a ${task.status} task`);
     }
+    this.messages.pause(id);
     const handle = this.supervisor.get(id);
     if (handle) {
       this.pendingSteer.delete(id); // stop wins over a queued codex steer
@@ -495,6 +544,7 @@ export class TaskService {
       // Like crash-while-queued, the un-run prompt is not auto-executed later.
       this.transition(task, "idle", { interrupted: true });
       this.emitSynthetic(task, { subtype: "stop", note: "dequeued before start" });
+      this.messages.stopWaiting(id);
     }
     return task; // idle/failed: nothing to stop (idempotent)
   }
@@ -503,6 +553,7 @@ export class TaskService {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
     if (task.status === "cancelled" || task.status === "archived") return task; // idempotent
+    this.messages.pause(id);
     this.pendingSteer.delete(id);
     const handle = this.supervisor.get(id);
     this.transition(task, "cancelled");
@@ -519,27 +570,29 @@ export class TaskService {
     this.assertSessionOwnership(task);
     if (task.status === "archived") return task; // idempotent
     if (this.supervisor.has(id)) throw conflict("cancel the active turn before archiving");
+    this.messages.pause(id);
     this.transition(task, "archived");
     this.cleanupWorktree(task);
     return task;
   }
 
   // ---- turn execution ----
-  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[]): Promise<void> {
+  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string): Promise<void> {
+    const runId = this.messages.beginRun(task.taskId, messageId);
     if (!this.supervisor.tryAcquire()) {
       this.transition(task, "queued"); // over the concurrency cap — wait for a slot
       await this.supervisor.acquire();
       // The wait is the only interleave point: bail if the task was cancelled,
       // archived, or stopped (→ idle) while queued.
-      if (this.shuttingDown || task.status !== "queued") {
+      if (this.shuttingDown || task.status !== "queued" || this.messages.state(task.taskId).runId !== runId) {
         this.supervisor.release(task.taskId);
         return;
       }
     }
-    this.startTurnNow(task, prompt, resumeId, images);
+    this.startTurnNow(task, prompt, resumeId, images, messageId);
   }
 
-  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[]): void {
+  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string): void {
     if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
     const runner = getRunner(task.agent);
     this.sessionMismatch.delete(task.taskId);
@@ -549,10 +602,12 @@ export class TaskService {
     this.db.setTaskRawSeq(task.taskId, 0);
     this.transition(task, "running", { interrupted: false });
     let handle: RunHandle;
+    this.messages.startingRuntime(task.taskId);
     try {
       handle = runner.start(
         {
           taskId: task.taskId,
+          messageId, interactive: true,
           cwd: task.worktreePath!, // stable for the task's whole life
           prompt,
           images,
@@ -571,6 +626,7 @@ export class TaskService {
       this.supervisor.release(task.taskId);
       this.emitSynthetic(task, { subtype: "error", message: `failed to start turn: ${String(e)}` });
       this.transition(task, "failed");
+      this.messages.finish(task.taskId, true);
       return;
     }
     this.supervisor.register(task.taskId, handle);
@@ -590,6 +646,8 @@ export class TaskService {
       {
         taskId: task.taskId,
         cwd: task.worktreePath!,
+        messageId: this.messages.state(task.taskId).initialMessageId,
+        interactive: this.messages.state(task.taskId).protocol === "interactive",
         prompt: "", // unused on reattach — the live turn already got its prompt
         resumeId: task.sessionId,
         permission: task.permission,
@@ -650,6 +708,11 @@ export class TaskService {
     // Rebuild terminal bookkeeping above, but never repeat persisted effects
     // such as questions, notifications, event inserts, or SSE broadcasts.
     if (rawSeq !== undefined && rawSeq <= (this.turnBaseline.get(task.taskId) ?? 0)) return;
+
+    if (event.kind === "status") {
+      const p = event.payload as { subtype?: string; messageId?: string };
+      if (p.subtype === "message_delivered" && p.messageId) this.messages.delivered(task.taskId, p.messageId);
+    }
 
     if (event.kind === "approval_request" && task.status === "running") {
       this.transition(task, "awaiting_approval");
@@ -721,6 +784,7 @@ export class TaskService {
       // aborted result / SIGINT exit must not count as an error). No steer
       // chaining, no push — the user did this themselves.
       this.transition(task, "idle", { interrupted: true });
+      this.messages.finish(task.taskId, true);
       return;
     }
     // Decide off the TERMINAL signal: if a result arrived, trust its is_error
@@ -732,7 +796,9 @@ export class TaskService {
       (ts.abnormalExit || (ts.sawResult ? ts.lastResultError : ts.errored));
     this.transition(task, failed ? "failed" : "idle");
 
-    // Codex steer fallback: text queued mid-turn runs now as the next turn.
+    this.messages.finish(task.taskId, failed, false);
+
+    // Legacy-client compatibility: old steers drain separately from the explicit queue.
     const pending = this.pendingSteer.get(task.taskId);
     const chains = !failed && !!pending && pending.length > 0;
     if (chains && pending) {
@@ -744,9 +810,10 @@ export class TaskService {
         pending.flatMap((p) => p.images),
       );
     }
+    if (!chains && !failed) this.messages.pump(task.taskId);
     // Notify the phone only when the task actually settles (not when a queued
     // steer immediately chains into the next turn).
-    if (!chains) {
+    if (!chains && !this.messages.state(task.taskId).runId) {
       this.notifyPush(
         task,
         failed ? "failed" : "finished",

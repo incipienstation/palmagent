@@ -1,3 +1,4 @@
+import { SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
 import { Hono, type Context } from "hono";
 import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { body, parse } from "../input.js";
@@ -26,6 +27,9 @@ export function taskRoutes({ service, db }: HttpDependencies) {
   });
   app.delete("/:id", (c) => c.json({ task: service.archive(id(c)) }));
   app.post("/:id/handoff", (c) => c.json(service.handoff(id(c))));
+  app.post("/:id/messages", async (c) => c.json(service.submitMessage(id(c), await body(c, SubmitMessageSchema)), 202));
+  app.post("/:id/messages/:messageId", async (c) => c.json(service.messageAction(id(c), c.req.param("messageId"), await body(c, MessageActionSchema))));
+  app.post("/:id/queue/resume", async (c) => { await body(c, EmptyBodySchema); return c.json(service.messages.resume(id(c))); });
   app.post("/:id/followup", async (c) => {
     const input = await body(c, FollowupSchema);
     return c.json({ task: service.followup(id(c), input.prompt, input.images, input.model, input.effort, input.permission) }, 202);

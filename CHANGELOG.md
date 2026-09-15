@@ -11,6 +11,16 @@ An entry does not mean a version has been published.
 - Android notification status-bar icons now use the Palmagent logo silhouette
   instead of appearing as a solid white square.
 
+### Changed
+
+- Use one Send button for both agents: hold it to select Send or Queue, with
+  haptic feedback on supported browsers. Hold a queued prompt to edit it, send
+  it now, or remove it. Editing preserves its place and the ordinary draft.
+- Queued messages survive server restarts and run individually in order. Stop
+  and failures pause the queue without deleting prompts; unconfirmed delivery
+  is held for review instead of being automatically repeated. Codex now uses
+  App Server for messages sent during an active run.
+
 ## 0.1.0-alpha.16
 
 ### Fixed

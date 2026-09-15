@@ -1,3 +1,4 @@
+import type { MessageState } from "./message-controller.js";
 import Database from "better-sqlite3";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
 import { dirname } from "node:path";
@@ -107,6 +108,21 @@ export class Db {
     this.writePrEvidence(taskId, tracker, [...prs.values()], prs.size > previousCount ? Date.now() : undefined);
   }
 
+  get isOpen() { return this.db.open; }
+
+  readMessageState(id: string): MessageState | undefined {
+    const row = this.db.prepare("SELECT state FROM task_message_state WHERE task_id = ?").get(id) as { state: string } | undefined;
+    return row ? JSON.parse(row.state) : undefined;
+  }
+  messageTaskIds(): string[] {
+    return (this.db.prepare("SELECT task_id FROM task_message_state").all() as { task_id: string }[]).map(r => r.task_id);
+  }
+  writeMessageState(id: string, state: MessageState) {
+    this.db.transaction(() => {
+      this.db.prepare("INSERT INTO task_message_state (task_id, state) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET state = excluded.state").run(id, JSON.stringify(state));
+    })();
+  }
+
   private migrate() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS repos (
@@ -133,6 +149,10 @@ export class Db {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         last_activity_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS task_message_state (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+        state TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

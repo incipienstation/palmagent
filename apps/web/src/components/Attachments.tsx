@@ -17,8 +17,8 @@ const WIRE_WARN_BYTES = 900_000;
 
 // Shared image-attachment state for a compose box: paste handler (the main
 // path — screenshots land on the clipboard), file picker fallback, previews.
-export function useImageAttachments(onError: (msg: string) => void) {
-  const [images, setImages] = useUpdateState<ImageAttachment[]>(`images:${location.hash}`, []);
+export function useImageAttachments(onError: (msg: string) => void, key = `images:${location.hash}`) {
+  const [images, setImages] = useUpdateState<ImageAttachment[]>(key, []);
   const [preparing, setPreparing] = useState(false);
 
   const addFiles = useCallback(
@@ -61,7 +61,7 @@ export function useImageAttachments(onError: (msg: string) => void) {
   const remove = useCallback((i: number) => setImages((cur) => cur.filter((_, j) => j !== i)), []);
   const clear = useCallback(() => setImages([]), []);
 
-  return { images, preparing, addFiles, onPaste, remove, clear };
+  return { images, preparing, addFiles, onPaste, remove, clear, setImages };
 }
 
 export function AttachmentTray({

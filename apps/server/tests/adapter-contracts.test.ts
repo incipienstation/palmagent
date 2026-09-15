@@ -641,3 +641,68 @@ test("Codex and Claude PR creation evidence follows their normalized call/result
     await handle.done;
   }
 });
+
+test("Codex interactive adapter acknowledges Send, uses the active turn, and reconstructs replay without resending", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const runner = new CodexRunner();
+  const args = startArgs({ interactive: true, messageId: "initial" });
+  const handle = runner.start(args, e => events.push(e), backend);
+  assert.equal(backend.specs[0].argv[0], "app-server");
+  backend.proc.emit({ id: "initialize", result: {} });
+  backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  const sent = handle.send!("change direction", undefined, "message-1");
+  const request = writtenJson(backend.proc).at(-1);
+  assert.equal(request.method, "turn/steer");
+  assert.equal(request.params.expectedTurnId, "turn-1");
+  let resolved = false; void sent.then(() => { resolved = true; });
+  await Promise.resolve(); assert.equal(resolved, false, "stdin writes are not delivery acknowledgements");
+  backend.proc.emit({ id: "message:message-1", result: { turnId: "turn-1" } });
+  assert.equal(await sent, "delivered");
+  backend.proc.emit({ method: "item/agentMessage/delta", params: { threadId: "thread-1", itemId: "answer", delta: "Public answer" } });
+  backend.proc.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } } });
+  assert.equal(await handle.send!("too late", undefined, "late"), "rejected");
+  backend.proc.exit(0); await handle.done;
+  assert.equal(events.filter(e => e.kind === "assistant_text").length, 1);
+
+  const replay = new FakeBackend();
+  const recovered = runner.start({ ...args, reattach: true }, () => {}, replay);
+  replay.proc.emit({ id: "initialize", result: {} });
+  replay.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  replay.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  assert.equal(replay.proc.writes.length, 0);
+  assert.equal(recovered.interrupt(), true);
+  assert.equal(writtenJson(replay.proc).at(-1).method, "turn/interrupt");
+  replay.proc.exit(0); await recovered.done;
+});
+
+test("Claude interactive Send waits for interruption and echoed input; Stop wins before delivery", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new ClaudeRunner().start(startArgs({ interactive: true }), e => events.push(e), backend);
+  const sent = handle.send!("new instruction", undefined, "message-1");
+  assert.equal(writtenJson(backend.proc).at(-1).request.subtype, "interrupt");
+  await delay(280);
+  assert.equal(writtenJson(backend.proc).at(-1).type, "control_request", "a fixed timer must not deliver the prompt");
+  backend.proc.emit({ type: "result", is_error: true });
+  assert.equal(writtenJson(backend.proc).at(-1).uuid, "message-1");
+  backend.proc.emit({ type: "user", uuid: "message-1", message: { role: "user", content: [{ type: "text", text: "new instruction" }] } });
+  assert.equal(await sent, "delivered");
+  const cancelled = handle.send!("must not arrive", undefined, "message-2");
+  handle.interrupt(); assert.equal(await cancelled, "rejected");
+  backend.proc.emit({ type: "result", is_error: true });
+  assert.equal(writtenJson(backend.proc).some(m => m.uuid === "message-2"), false);
+  backend.proc.exit(0); await handle.done;
+});
+
+test("Codex App Server retains successful PR creation evidence", async () => {
+  const { PrEvidence } = await import("../src/pr-evidence.js");
+  const tracker = new PrEvidence(), found: string[] = [], backend = new FakeBackend();
+  const handle = new CodexRunner().start(startArgs({ interactive: true }), e => found.push(...tracker.accept({ ...e, agent: "codex" })), backend);
+  backend.proc.emit({ id: "initialize", result: {} });
+  backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  backend.proc.emit({ method: "item/started", params: { threadId: "thread-1", item: { id: "create", type: "commandExecution", command: "gh pr create --title Example --body Example" } } });
+  backend.proc.emit({ method: "item/completed", params: { threadId: "thread-1", item: { id: "create", type: "commandExecution", exitCode: 0, aggregatedOutput: "https://github.com/acme/sample-app/pull/42" } } });
+  assert.deepEqual(found, ["https://github.com/acme/sample-app/pull/42"]);
+  backend.proc.exit(0); await handle.done;
+});
