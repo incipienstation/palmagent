@@ -76,6 +76,7 @@ export class ClaudeRunner implements AgentRunner {
     // the control channel; non-question requests are denied below. The launch
     // matrix is centralized so dispatch and resume cannot drift independently.
     const argv = buildClaudeArgv({ permission, model, effort, resumeId });
+    if (args.interactive) argv.push("--replay-user-messages");
 
     let sessionId: string | undefined = resumeId;
 
@@ -93,6 +94,12 @@ export class ClaudeRunner implements AgentRunner {
       return { steer: () => false, interrupt: () => false, approve: () => false, answer: () => false, cancel: () => {}, done: Promise.resolve() };
     }
 
+    let delivery: { id: string; text: string; images?: ImageAttachment[]; sent: boolean;
+      resolve: (s: "delivered" | "rejected" | "unknown") => void; timer: ReturnType<typeof setTimeout> } | undefined;
+    const settleDelivery = (status: "delivered" | "rejected" | "unknown") => {
+      if (!delivery) return;
+      clearTimeout(delivery.timer); delivery.resolve(status); delivery = undefined; steerInFlight = false;
+    };
     let messageId: string | undefined;
     let steerInFlight = false;
     let steerTimer: NodeJS.Timeout | undefined;
@@ -113,8 +120,8 @@ export class ClaudeRunner implements AgentRunner {
     };
     // Images ride the same stream-json channel as Anthropic-API image blocks
     // (verified: the CLI forwards them to the model — works mid-turn too).
-    const sendUser = (text: string, imgs?: ImageAttachment[]) => {
-      writeLine(buildClaudeUserMessage(text, imgs));
+    const sendUser = (text: string, imgs?: ImageAttachment[], id?: string) => {
+      writeLine({ ...buildClaudeUserMessage(text, imgs), ...(id ? { uuid: id } : {}) });
     };
 
     const scheduleClose = (restoring = false) => {
@@ -179,6 +186,10 @@ export class ClaudeRunner implements AgentRunner {
           break;
         }
         case "user": {
+          if (typeof ev.uuid === "string" && (ev.uuid === args.messageId || ev.uuid === delivery?.id || args.interactive && ev.message?.role === "user" && ev.message?.content?.some((b: any) => b.type === "text"))) {
+            e({ taskId, kind: "status", sessionId, payload: { subtype: "message_delivered", messageId: ev.uuid } });
+            if (delivery?.id === ev.uuid) settleDelivery("delivered");
+          }
           // tool results fed back into the conversation
           for (const block of ev.message?.content ?? []) {
             if (block.type === "tool_result") {
@@ -192,6 +203,10 @@ export class ClaudeRunner implements AgentRunner {
           e({ taskId, kind: "result", sessionId,
             payload: { subtype: ev.subtype, is_error: ev.is_error, result: ev.result,
               num_turns: ev.num_turns, duration_ms: ev.duration_ms, total_cost_usd: ev.total_cost_usd } });
+          if (delivery && !delivery.sent) {
+            delivery.sent = true;
+            sendUser(delivery.text, delivery.images, delivery.id);
+          }
           // Turn finished. Let the process go idle unless a steer is mid-injection.
           if (!steerInFlight) scheduleClose(!!replayed);
           break;
@@ -235,15 +250,25 @@ export class ClaudeRunner implements AgentRunner {
     const done = new Promise<void>((resolve) => {
       proc.onExit((code) => {
         cancelClose();
+        settleDelivery("unknown");
         emit({ taskId, kind: "status", sessionId, payload: { subtype: "process_exit", code } });
         resolve();
       });
     });
 
     // Kick off the turn — unless reattaching, where the live turn already got it.
-    if (!reattach) sendUser(prompt, images);
+    if (!reattach) sendUser(prompt, images, args.messageId);
 
     return {
+      send: (text, images, id) => {
+        if (!proc.stdinWritable() || delivery || closeTimer || !args.interactive) return Promise.resolve("rejected");
+        steerInFlight = true; cancelClose();
+        return new Promise(resolve => {
+          const timer = setTimeout(() => { settleDelivery("unknown"); scheduleClose(); }, 15_000); timer.unref();
+          delivery = { id, text, images, sent: false, resolve, timer };
+          writeLine({ type: "control_request", request_id: `send_${id}`, request: { subtype: "interrupt" } });
+        });
+      },
       // True mid-turn steer: interrupt the active turn, then send the new instruction.
       steer: (text: string, imgs?: ImageAttachment[]) => {
         if (!proc.stdinWritable()) return false;
@@ -265,6 +290,7 @@ export class ClaudeRunner implements AgentRunner {
       interrupt: () => {
         if (!proc.stdinWritable()) return false;
         if (steerTimer) clearTimeout(steerTimer);
+        settleDelivery(delivery?.sent ? "unknown" : "rejected");
         steerInFlight = false;
         writeLine({ type: "control_request", request_id: `int_${++intReq}`, request: { subtype: "interrupt" } });
         scheduleClose();

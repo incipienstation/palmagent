@@ -383,3 +383,51 @@ test("Claude: pending question survives graceful restart and answered question s
   c.mark("question", ".release");
   await c.waitTask(task.taskId, (task) => task.status === "idle");
 });
+
+for (const agent of ["claude", "codex"]) test(`${agent}: explicit Send, durable editable Queue and Stop share one contract`, options, async t => {
+  const c = await harness(t);
+  const task = await c.create(agent, "initial");
+  const messagePath = `tasks/${task.taskId}/messages`;
+  const queued = await c.api(messagePath, { clientMessageId: crypto.randomUUID(), mode: "queue", expectedRunId: task.messageQueue.runId,
+    text: JSON.stringify({ key: "queued-original", mode: "auto" }) });
+  const m = queued.messages[0], token = crypto.randomUUID();
+  await c.api(`${messagePath}/${m.id}`, { action: "edit", version: m.version, token });
+  // Stop preserves both the queue and the edit hold.
+  await c.api(`tasks/${task.taskId}/stop`, {});
+  await c.waitTask(task.taskId, t => t.status === "idle");
+  await c.restart();
+  const saved = await c.api(`${messagePath}/${m.id}`, { action: "save", version: m.version, token,
+    text: JSON.stringify({ key: "queued-edited", mode: "auto" }) });
+  assert.equal(saved.paused, true);
+  assert.equal(saved.messages[0].id, m.id);
+  assert(!existsSync(c.marker("queued-original", ".ready")));
+  await c.api(`tasks/${task.taskId}/queue/resume`, {});
+  await c.ready("queued-edited");
+  const final = await c.waitTask(task.taskId, t => t.status === "idle" && !t.messageQueue.messages.length);
+  assert.equal(final.sessionId, task.sessionId);
+
+  await c.api(`tasks/${task.taskId}/followup`, { prompt: JSON.stringify({ key: "active-send", mode: "hold" }) });
+  await c.ready("active-send");
+  const running = await c.task(task.taskId);
+  const id = crypto.randomUUID();
+  await c.api(messagePath, { clientMessageId: id, mode: "send", expectedRunId: running.messageQueue.runId,
+    text: JSON.stringify({ key: "sent-now", mode: "auto" }) });
+  await c.waitTask(task.taskId, t => !t.messageQueue.messages.some(m => m.id === id));
+  assert(c.rows(task.taskId).some(row => JSON.parse(row.payload_json).messageId === id));
+  if (agent === "codex") c.mark("active-send", ".release");
+  await c.waitTask(task.taskId, t => t.status === "idle");
+});
+
+test("legacy steer and explicit queue serialize their next runs", options, async t => {
+  const c = await harness(t);
+  const task = await c.create("codex", "mixed-initial");
+  await c.api(`tasks/${task.taskId}/messages`, { clientMessageId: crypto.randomUUID(), mode: "queue",
+    expectedRunId: task.messageQueue.runId, text: JSON.stringify({ key: "mixed-queued", mode: "auto" }) });
+  await c.api(`tasks/${task.taskId}/steer`, { text: JSON.stringify({ key: "mixed-legacy", mode: "hold" }) });
+  c.mark("mixed-initial", ".release");
+  await c.ready("mixed-legacy");
+  assert(!existsSync(c.marker("mixed-queued", ".ready")), "the explicit queue must wait for the legacy run");
+  c.mark("mixed-legacy", ".release");
+  await c.ready("mixed-queued");
+  await c.waitTask(task.taskId, t => t.status === "idle" && !t.messageQueue.messages.length);
+});

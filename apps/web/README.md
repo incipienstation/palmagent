@@ -74,7 +74,8 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    change its session name without opening it.
 3. **Task detail + steer** (`#/task/:id`) — scoped `GET /api/stream?task=:id`;
    virtualized event log (assistant token deltas coalesced, tool calls/results, result)
-   with follow-up, steer (surfaces *injected* mid-turn vs *queued* next-turn),
+   with a single Send button (hold, right-click, or press Arrow Down for the Send/Queue toggle),
+   an editable persistent queue,
    stop (interrupt the turn, task stays resumable), cancel, and archive.
 4. **Account limits** — session footers show remaining account allowance and reset
    countdowns, including while idle or previewing a local session. When available,
@@ -149,3 +150,20 @@ root (requires the Playwright Chromium installation above). Review the image and
 `pnpm web:verify`. The notification test checks the built asset's silhouette, offline
 availability, and real service-worker push options; Android status-bar rendering still
 needs a device check with a new notification after the updated worker activates.
+
+## Message controls
+
+Tap Send to deliver the draft to the current run, or start a run when idle.
+Hold Send to open the Send/Queue toggle. Selecting a mode does not submit; tap
+again to send. Queue applies to the current draft and resets after submission.
+Hold a queued message for Edit prompt, Send now, and Remove from queue. Editing
+uses the composer while preserving the ordinary text and attachment draft.
+The editor renews a server hold; after a disconnected editor's hold expires,
+the saved prompt can run and stale edits cannot overwrite it.
+
+Long press opens controls after 450 ms; scrolling and pointer cancellation
+cancel it. Right-click and Arrow Down expose the same actions. Supported
+browsers vibrate briefly when a menu opens or the delivery mode changes;
+visual feedback remains available when vibration is unavailable.
+
+See [message delivery and recovery](../../docs/MESSAGES.md) for server behavior.

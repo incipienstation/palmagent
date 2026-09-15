@@ -112,6 +112,7 @@ export function makePrRef(url: string): PrRef | null {
 // `sessionId` off the CLI's local transcript (no external session store).
 export interface TaskState {
   taskId: string;
+  messageQueue?: import("./messages.js").MessageQueue;
   repoId: string;
   agent: AgentKind;
   title?: string;

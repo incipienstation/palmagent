@@ -9,7 +9,8 @@ const resumeIndex = argv.indexOf("--resume");
 const resume = agent === "claude"
   ? (resumeIndex < 0 ? undefined : argv[resumeIndex + 1])
   : (argv[1] === "resume" ? argv[2] : undefined);
-const session = resume || `session-${process.pid}`;
+let session = resume || `session-${process.pid}`;
+const interactive = agent === "codex" && argv[0] === "app-server";
 let spec;
 let ended = false;
 let pinged = false;
@@ -21,14 +22,14 @@ const mark = (suffix, data = "") => {
   fs.writeFileSync(temporary, data);
   fs.renameSync(temporary, marker(suffix));
 };
-const text = (value) => emit(agent === "claude"
+const text = (value) => emit(interactive ? { method: "item/agentMessage/delta", params: { threadId: session, itemId: "answer", delta: value } } : agent === "claude"
   ? { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: value } } }
   : { type: "item.completed", item: { type: "agent_message", text: value } });
 
 function result() {
   if (ended) return;
   ended = true;
-  emit(agent === "claude"
+  emit(interactive ? { method: "turn/completed", params: { threadId: session, turn: { id: "turn-1", status: spec.failed ? "failed" : "completed" } } } : agent === "claude"
     ? { type: "result", subtype: spec.failed ? "error_during_execution" : "success", is_error: !!spec.failed }
     : spec.failed
       ? { type: "turn.failed", error: { message: "synthetic failure" } }
@@ -40,8 +41,9 @@ function result() {
 }
 
 function start(prompt) {
+  ended = false; pinged = false;
   spec = JSON.parse(prompt);
-  emit(agent === "claude"
+  emit(interactive ? { method: "turn/started", params: { threadId: session, turn: { id: "turn-1" } } } : agent === "claude"
     ? { type: "system", subtype: "init", session_id: session }
     : { type: "thread.started", thread_id: session });
   text(spec.key + ":before");
@@ -76,13 +78,24 @@ function start(prompt) {
   if (spec.mode === "auto" || spec.mode === "terminal-hold") result();
 }
 
-if (agent === "codex") {
+if (interactive) {
+  const input = readline.createInterface({ input: process.stdin });
+  input.on("line", line => {
+    const msg = JSON.parse(line);
+    if (msg.method === "initialize") emit({ id: msg.id, result: {} });
+    if (msg.method === "thread/start" || msg.method === "thread/resume") { session = msg.params.threadId || session; emit({ id: msg.id, result: { thread: { id: session } } }); }
+    if (msg.method === "turn/start") { emit({ id: msg.id, result: { turn: { id: "turn-1" } } }); start(msg.params.input[0].text); }
+    if (msg.method === "turn/steer") { emit({ id: msg.id, result: { turnId: "turn-1" } }); text(msg.params.input[0].text); }
+    if (msg.method === "turn/interrupt") { mark(".interrupted"); emit({ id: msg.id, result: {} }); result(); }
+  });
+  input.on("close", () => { if (spec?.mode !== "terminal-hold") process.exit(spec ? exitCode() : 0); });
+} else if (agent === "codex") {
   start(argv[1] === "resume" ? argv[3] : argv[1]);
 } else {
   const input = readline.createInterface({ input: process.stdin });
   input.on("line", (line) => {
     const msg = JSON.parse(line);
-    if (msg.type === "user") start(msg.message.content.find((c) => c.type === "text").text);
+    if (msg.type === "user") { if (argv.includes("--replay-user-messages")) emit(msg); start(msg.message.content.find((c) => c.type === "text").text); }
     if (msg.type === "control_request" && msg.request?.subtype === "interrupt") {
       mark(".interrupted");
       result();

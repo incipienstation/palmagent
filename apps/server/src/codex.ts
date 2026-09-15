@@ -1,3 +1,4 @@
+import { startCodexInteractive } from "./codex-interactive.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -92,6 +93,7 @@ export class CodexRunner implements AgentRunner {
   readonly agent = "codex" as const;
 
   start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
+    if (args.interactive) return startCodexInteractive(args, emit, backend);
     const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach } = args;
     let sessionId: string | undefined = resumeId;
 
