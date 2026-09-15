@@ -1,9 +1,10 @@
 import { beginBrowserWork, useUpdateState } from "../update-state";
 import { useCallback, useRef, useState, type ClipboardEvent } from "react";
 import type { ImageAttachment } from "@palmagent/shared";
-import { ImagePlus, Loader2, X } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
   attachmentPreviewUrl,
   attachmentsWireSize,
@@ -64,70 +65,50 @@ export function useImageAttachments(onError: (msg: string) => void, key = `image
   return { images, preparing, addFiles, onPaste, remove, clear, setImages };
 }
 
-export function AttachmentTray({
-  images,
-  disabled,
-  preparing,
-  onAdd,
-  onRemove,
-}: {
-  images: ImageAttachment[];
-  disabled?: boolean;
-  preparing?: boolean;
+export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd }: {
+  open: boolean; onOpenChange: (open: boolean) => void; disabled?: boolean; preparing?: boolean;
   onAdd: (files: File[]) => void;
-  onRemove: (i: number) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const oversize = attachmentsWireSize(images) > WIRE_WARN_BYTES;
-  return (
-    <div className="mt-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {images.map((img, i) => (
-          <span className="relative inline-flex" key={i}>
-            <img
-              className="size-14 rounded-lg border border-input object-cover"
-              src={attachmentPreviewUrl(img)}
-              alt={`attachment ${i + 1}`}
-            />
-            <button
-              type="button"
-              className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-input bg-accent text-foreground"
-              aria-label={`Remove image ${i + 1}`}
-              onClick={() => onRemove(i)}
-            >
-              <X className="size-3" />
-            </button>
-          </span>
-        ))}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="border-dashed font-normal text-muted-foreground"
-          disabled={disabled || preparing}
-          onClick={() => fileRef.current?.click()}
-        >
-          {preparing ? <Loader2 className="animate-spin" /> : <ImagePlus />}
-          image
+  const photos = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length) onAdd(files);
+  };
+  return <>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" size="icon-lg" className="shrink-0"
+          aria-label={preparing ? "Preparing images" : "Add attachments"} disabled={disabled}>
+          {preparing ? <Loader2 className="animate-spin" /> : <Plus />}
         </Button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = ""; // re-selecting the same file must fire again
-            if (files.length) onAdd(files);
-          }}
-        />
-      </div>
-      {oversize && (
-        <div className="mt-1.5 text-xs text-amber">
-          Large attachments may be rejected by the proxy's upload limit.
-        </div>
-      )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" collisionPadding={12} className="w-56 max-w-[calc(100vw-24px)] rounded-3xl p-2"><DropdownMenuGroup>
+        <DropdownMenuItem size="lg" onSelect={() => camera.current?.click()}>
+          <Camera /> Camera
+        </DropdownMenuItem>
+        <DropdownMenuItem size="lg" onSelect={() => photos.current?.click()}>
+          <ImagePlus /> Photos
+        </DropdownMenuItem>
+      </DropdownMenuGroup></DropdownMenuContent>
+    </DropdownMenu>
+    <input ref={photos} aria-label="Attach photos" type="file" accept="image/*" multiple hidden disabled={disabled} onChange={pick} />
+    <input ref={camera} aria-label="Take a photo" type="file" accept="image/*" capture="environment" hidden disabled={disabled} onChange={pick} />
+  </>;
+}
+
+export function AttachmentTray({ images, disabled, onRemove }: {
+  images: ImageAttachment[]; disabled?: boolean; onRemove: (i: number) => void;
+}) {
+  return <div className="min-w-0 w-full">
+    <div className="flex gap-2 overflow-x-auto py-1">
+      {images.map((img, i) => <span className="relative inline-flex shrink-0 pr-2 pt-2" key={i}>
+        <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />
+        <Button type="button" variant="secondary" size="icon-lg" className="absolute top-0 right-0"
+          aria-label={`Remove image ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
+      </span>)}
     </div>
-  );
+    {attachmentsWireSize(images) > WIRE_WARN_BYTES && <p className="py-1 text-xs text-amber">Large attachments may be rejected by the proxy's upload limit.</p>}
+  </div>;
 }

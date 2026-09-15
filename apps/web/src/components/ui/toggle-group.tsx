@@ -23,14 +23,16 @@ function ToggleGroup({
 
 function ToggleGroupItem({
   className,
+  variant = "segmented",
   children,
   ...props
-}: React.ComponentProps<typeof ToggleGroupPrimitive.Item>) {
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> & { variant?: "segmented" | "list" }) {
   return (
     <ToggleGroupPrimitive.Item
       data-slot="toggle-group-item"
       className={cn(
         "flex h-11 flex-1 items-center justify-center border-l border-input bg-background px-1.5 text-[13px] text-muted-foreground outline-none transition-colors first:border-l-0 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40 data-[state=on]:bg-accent data-[state=on]:font-semibold data-[state=on]:text-strong",
+        variant === "list" && "h-auto min-h-12 flex-none justify-between gap-3 border-t border-l-0 px-4 py-3 text-left text-base first:border-t-0",
         className,
       )}
       {...props}

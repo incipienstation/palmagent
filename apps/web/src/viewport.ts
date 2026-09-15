@@ -19,7 +19,14 @@
 let raf = 0;
 
 function apply() {
-  document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
+  // Safari keeps the layout viewport tall when the keyboard opens. Use the
+  // visible height at normal zoom so the in-flow composer sits above it. Ignore
+  // pinch zoom: shrinking/reflowing the app while magnifying is disruptive.
+  const viewport = window.visualViewport;
+  const height = viewport && viewport.scale === 1 ? Math.min(window.innerHeight, viewport.height) : window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${height}px`);
+  const keyboardInset = viewport && viewport.scale === 1 ? Math.max(0, window.innerHeight - height - viewport.offsetTop) : 0;
+  document.documentElement.style.setProperty("--keyboard-inset", `${keyboardInset}px`);
 }
 
 // iOS can report a stale innerHeight on the first tick after a reload/orientation
@@ -37,4 +44,5 @@ export function initViewportHeight(): void {
   // bfcache restore (back/forward) re-shows the page without re-running modules.
   window.addEventListener("pageshow", schedule);
   window.visualViewport?.addEventListener("resize", schedule);
+  window.visualViewport?.addEventListener("scroll", schedule);
 }

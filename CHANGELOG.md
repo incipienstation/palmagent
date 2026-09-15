@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Start tasks and send follow-ups from a compact mobile composer that expands
+  when focused. Add photos or use the camera from the + menu, and adjust the
+  agent, model, effort, and permissions in a single Configure sheet. Drafts,
+  per-agent preferences, image attachments, and queued-message editing remain
+  preserved across updates.
+
 ## 0.1.0-alpha.17
 
 ### Fixed

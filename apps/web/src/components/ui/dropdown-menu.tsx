@@ -53,10 +53,12 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  size = "default",
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean;
   variant?: "default" | "destructive";
+  size?: "default" | "lg";
 }) {
   return (
     <DropdownMenuPrimitive.Item
@@ -66,6 +68,7 @@ function DropdownMenuItem({
       className={cn(
         // ≥40px rows — thumb-sized.
         "relative flex min-h-10 cursor-default items-center gap-2.5 rounded-md px-3 text-[15px] outline-none select-none data-[highlighted]:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        size === "lg" && "min-h-14 gap-3 rounded-2xl [&_svg:not([class*='size-'])]:size-5",
         inset && "pl-8",
         variant === "destructive" && "text-destructive [&_svg]:text-destructive",
         className,

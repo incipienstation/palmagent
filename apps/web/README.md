@@ -67,8 +67,10 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
 
 ## Features
 
-1. **Dispatch** (`#/new`) — pick/register a repo, choose agent + permission,
-   send a prompt → `POST /api/tasks`.
+1. **Dispatch** (`#/new`) — pick/register a repo and type in the bottom composer.
+   Focusing it reveals the model/effort summary; tap it to configure the agent,
+   model, effort, permission, worktree isolation, and optional title. The + menu
+   offers Camera and Photos. Send creates the task via `POST /api/tasks`.
 2. **Inbox** (`#/`) — ONE `GET /api/stream`; every task rendered live from the
    `tasks` snapshot frames, grouped by status. Use a row's **⋮ → Rename** to
    change its session name without opening it.
@@ -152,6 +154,11 @@ availability, and real service-worker push options; Android status-bar rendering
 needs a device check with a new notification after the updated worker activates.
 
 ## Message controls
+
+The composer stays compact until focused or holding a draft. Text and image
+previews expand above the action row, with long drafts scrolling inside the input.
+Model and effort open Configure for idle Send and queued messages; an active Send
+uses the running turn's settings. Camera and Photos use the existing image limits.
 
 Tap Send to deliver the draft to the current run, or start a run when idle.
 Hold Send to open the Send/Queue toggle. Selecting a mode does not submit; tap
