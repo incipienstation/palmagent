@@ -201,3 +201,16 @@ test("a changed server keeps the screen open when worker registration is blocked
   await expect(page.getByRole("button", { name: "Dismiss update", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
 });
+
+test("automatic independent updates show progress without asking for an Update click", async ({ page }) => {
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  state.settings!.autoUpdate = true;
+  state.settings!.independentExecutions = true;
+  state.settings!.discovery!.targetVersion = "0.1.0-alpha.5";
+  state.settings!.pending = { id: "ddc3ac21-a723-4c89-b0ab-a21a4cdd9b4d", channel: "preview", currentVersion: "0.1.0-alpha.4", targetVersion: "0.1.0-alpha.5", automatic: true };
+  await page.route("**/api/settings/updates", (route) => route.fulfill({ json: state }));
+  await openSettings(page);
+  await expect(page.getByText("Preparing update to 0.1.0-alpha.5. Your agent runs continue.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Update( scheduled)?$/ })).toHaveCount(0);
+  await expect(page.getByText(/after active tasks finish/)).toHaveCount(0);
+});

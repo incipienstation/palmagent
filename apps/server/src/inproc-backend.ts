@@ -64,14 +64,22 @@ export class ChildProcHandle implements ProcHandle {
       const text = d.toString().trim();
       if (text) for (const cb of this.stderrCbs) cb(text);
     });
-    child.on("exit", (code) => {
-      this.splitter.flush(); // surface any partial trailing line before exit
-      for (const cb of this.exitCbs) cb(code);
+    let drainDeadline: NodeJS.Timeout | undefined;
+    let failed = false;
+    child.on("exit", () => {
+      // Exit can precede the final stdout data. Give inherited descendant pipes
+      // a bounded drain window, while normal EOF completes immediately.
+      drainDeadline = setTimeout(() => {
+        child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy();
+      }, 2000);
+      drainDeadline.unref();
     });
-    child.on("error", () => {
-      // Surface a spawn/runtime error as a non-zero exit so the turn settles.
-      for (const cb of this.exitCbs) cb(-1);
+    child.on("close", (code) => {
+      if (drainDeadline) clearTimeout(drainDeadline);
+      this.splitter.flush();
+      for (const cb of this.exitCbs) cb(failed ? -1 : code);
     });
+    child.on("error", () => { failed = true; });
   }
 
   onLine(cb: (seq: number, line: string) => void): void {

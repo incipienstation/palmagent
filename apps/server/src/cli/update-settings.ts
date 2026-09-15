@@ -21,6 +21,7 @@ export function readUpdateSettings(cfg: InstallConfig): NonNullable<UpdateSettin
   return {
     channel: preferences.channel,
     autoUpdate: preferences.autoUpdate ?? false,
+    independentExecutions: Boolean(cfg.executionNode),
     ...access,
     lastUpdate: readUpdateReceipt(cfg.dataDir) ?? null,
   };
@@ -99,11 +100,13 @@ export function runUpdateSettingsCommand(args: string[], checkAvailability = che
       const pending = readUpdateAccess(cfg.dataDir).pending;
       if (pending && !validUpdateRequest(cfg, pending)) clearUpdateRequest(cfg, pending.id);
       else if (pending && !updatePaused(cfg)) {
-        const db = new Database(cfg.dbPath, { readonly: true, fileMustExist: true });
-        let idle = false;
-        try { idle = (db.prepare("SELECT count(*) AS count FROM tasks WHERE status IN ('running','awaiting_approval','awaiting_input','queued')").get() as { count: number }).count === 0; }
-        finally { db.close(); }
-        if (idle) {
+        let ready = Boolean(cfg.executionNode);
+        if (!ready) {
+          const db = new Database(cfg.dbPath, { readonly: true, fileMustExist: true });
+          try { ready = (db.prepare("SELECT count(*) AS count FROM tasks WHERE status IN ('running','awaiting_approval','awaiting_input','queued')").get() as { count: number }).count === 0; }
+          finally { db.close(); }
+        }
+        if (ready) {
           prepareUpdateService(cfg);
           // The executor also takes this lock; release before asking systemd to start it.
           unlock?.(); unlock = undefined;

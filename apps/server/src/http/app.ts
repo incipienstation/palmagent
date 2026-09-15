@@ -48,7 +48,7 @@ export function createApp(deps: HttpDependencies) {
     await next();
   });
   app.use("/api/*", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "request body too large" }, 413) }));
-  app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, ...(deps.build ? { build: deps.build } : {}) }));
+  app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol, ...(deps.build ? { build: deps.build } : {}) }));
   app.route("/api/auth", authRoutes(deps));
   app.get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }));
   app.get("/api/usage", (c) => c.json({ usage: service.usage() }));

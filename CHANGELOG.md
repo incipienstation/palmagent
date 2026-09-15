@@ -6,6 +6,20 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Package installations give each agent invocation its own execution service and
+  retain the package and Node runtime it started with. Compatible automatic
+  updates replace the web application while running and waiting agents continue;
+  output and pending input survive the reconnect without starting another agent.
+- Automatic updates install eligible releases discovered on app access without
+  an additional Update or Refresh click. Failed application activation attempts
+  to restore the previous web release and pauses retries for review.
+- The first upgrade from a legacy runner still waits for its work to finish;
+  subsequent independent executions no longer block application updates. Source
+  installations retain their idle guard, and unreachable configured runners fail
+  closed instead of falling back to web-owned processes.
+
 ## 0.1.0-alpha.18
 
 ### Changed
@@ -15,6 +29,7 @@ An entry does not mean a version has been published.
   agent, model, effort, and permissions in a single Configure sheet. Drafts,
   per-agent preferences, image attachments, and queued-message editing remain
   preserved across updates.
+
 
 ## 0.1.0-alpha.17
 

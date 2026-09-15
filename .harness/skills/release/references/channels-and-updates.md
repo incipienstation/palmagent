@@ -65,8 +65,9 @@ repeated argument for readability.
   npm. A real pull resolves and validates one exact version before installing it.
 
 Registry errors and missing tags fail without switching channels. An update's explicit
-channel override is saved only after health succeeds; package or restart failure is not
-rolled back automatically. Returning to an older version requires a separate database-aware rollback.
+channel override is saved only after health succeeds. Independent application
+activation attempts to restore its previous retained release after failure; legacy
+package replacement has no automatic rollback. No database rollback occurs.
 
 ### CLI and operator plugin compatibility
 
@@ -102,9 +103,9 @@ The package is one update unit containing the CLI, server, PWA, and runner. The
    published Git tag, retaining the previous ref/scope for recovery. It verifies
    actual installed manifests before proceeding. A catalog refresh is insufficient.
 3. `update --pull --to <planned-version> --plugin-manifest <verified-path>` checks
-   target compatibility before replacing the package. The active npm prefix must
-   own the installed package. It invokes the installed target CLI directly and
-  verifies that `/api/health` reports the intended package version.
+   target compatibility before activation. Independent installations stage a new
+   npm prefix and retain existing artifacts. Legacy replacement verifies ownership
+   of the global prefix. Activation checks the exact `/api/health` version.
 
 Legacy plugins can still call `update --pull` without manifest arguments within
 the current `x.x.x`; crossing that line requires the manifest-based flow. This
@@ -132,8 +133,8 @@ package activation and update-setting changes.
 checks can request eligible updates when enabled; changing channel only checks
 availability and cancels a request in the former channel. Active-task completion
 resumes a pending request. The one-shot systemd executor reads that durable request
-and rechecks authorization, channel, compatibility, and idle state under the host
-lock. It survives a web-server restart and never chooses a different release
+and rechecks authorization, channel, compatibility, and execution isolation under
+the host lock (legacy installations also require idle). It survives a web-server restart and never chooses a different release
 because the npm tag moved. Native file events notify connected Settings screens
 of request/result changes without status polling.
 
@@ -151,18 +152,19 @@ the update skill. Unattended advancement therefore applies to prereleases within
 one version line under the current compatibility promise. Before package mutation,
 the updater opens a maintenance window that temporarily rejects new task starts
 and follow-ups and defers routine dispatch. The server acknowledges the window;
-the updater then checks SQLite and the runner for active, queued, or waiting work.
-Manual CLI package replacement, direct activation, and source-update `setup`
-require the same barrier;
-`--force` cannot bypass session protection. The activation child must verify its
-live updater parent's maintenance ownership before reusing that barrier. Unknown
-activity defers the operation rather than restarting a potentially busy runner.
-A deferred manual recovery preserves any existing failure hold.
-Busy or unverifiable state defers the update and releases the window. This avoids
-an idle-check/start race and also protects an in-process fallback backend. A
-crashed updater does not leave admissions disabled: maintenance ownership includes
-the process start identity and boot identity, so PID reuse is not mistaken for a
-live update. Servers without maintenance support defer updates until activity can be verified.
+independent installations then verify the execution protocol and retained release
+contracts, including application API and product storage compatibility. Each
+invocation retains its package tree, pinned Node runtime, provider adapter, and
+service cgroup. Activation restarts only the web service. Active, queued, and
+waiting independent invocations do not block application updates.
+
+Legacy installations instead check SQLite and the runner for active work before
+the first migration. Manual legacy replacement, direct activation, and source
+`setup` retain this barrier; `--force` cannot bypass it. No live process is adopted
+into a new host or silently resumed. Unknown legacy activity defers the operation.
+Maintenance ownership includes process start and boot identity so a crashed
+updater does not leave admissions disabled. Source development may explicitly use
+an in-process backend; failure to reach a configured daemon no longer selects it.
 
 A shared OS lock serializes package updates, install/setup, service removal, and
 update preference and request changes for the user configuration home. `update-result.json` in the
@@ -170,8 +172,11 @@ installation data directory records the previous/target versions and result. An
 installation/activation failure or interrupted attempt pauses automatic retries;
 `doctor` and `auto-update status` expose the hold. A successful manual update or
 repair clears it. An exact same-version retry can repair a recorded failed attempt.
-No package or database is automatically restored. Inspect actual package/runtime
-identity after failure and plan any downgrade with database compatibility in mind.
+Independent activation records its previous and target configuration and attempts
+to restore the previous application on failure. The activation receipt records
+whether health was restored or operator recovery is required. Execution hosts
+are never restarted as rollback. Retain all artifacts and inspect live identity;
+legacy package replacement and databases are not automatically restored.
 
 Disabling prevents future attempts without killing an update mid-install. Service
 removal removes legacy timers while preserving user preferences. These source

@@ -4,6 +4,7 @@
 //
 // Bundled to `<pkg>/cli.js` (esbuild, scripts/build-pkg.ts) and exposed as the
 // package `bin`. server.js, runner-daemon.js, and web/ sit beside it.
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
@@ -13,7 +14,7 @@ import { sessionCommand } from "./session.js";
 import { ensurePrivateDirectory } from "../private-files.js";
 import { getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
 import { compatiblePlugin } from "./release-policy.js";
-import { resolveDataDir } from "./config.js";
+import { loadConfig, resolveDataDir } from "./config.js";
 import { userConfigPath } from "./user-config.js";
 import { readUpdateAccess } from "./update-access.js";
 import { acquireUpdateLock } from "./update-state.js";
@@ -139,7 +140,7 @@ Common options:
   --pull               update: fetch the selected npm release channel (package installs only)
   --plan               update: resolve the exact target and plugin actions as JSON; change nothing
   --plugin-manifest <p> update: installed plugin.json path; repeat for each participating plugin
-  --automatic          update --pull: saved opt-in, same compatibility line, idle tasks only
+  --automatic          update --pull: saved opt-in and compatible releases; existing executions continue
   --channel <name>     stable (default for new installs) or preview; remembered for updates
   --to <version>       update --pull: select an exact version; downgrades are rejected
   --plugin-version <v> compatibility: require the same x.x.x, including prereleases
@@ -151,6 +152,17 @@ Common options:
 }
 
 async function main(): Promise<void> {
+  if (process.env.PALMAGENT_CLI_FORWARDED !== "1") {
+    let installed;
+    try { installed = loadConfig({ dataDir: parseFlags(process.argv.slice(2)).get("data-dir"), requireInstalled: true }); } catch { /* No installed application. */ }
+    if (installed?.executionNode && installed.pkgDir && installed.pkgDir !== PKG_DIR) {
+      const result = spawnSync(installed.executionNode, [join(installed.pkgDir, "cli.js"), ...process.argv.slice(2)], {
+        stdio: "inherit", env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" },
+      });
+      process.exitCode = result.status ?? 1;
+      return;
+    }
+  }
   const [cmd, ...rest] = process.argv.slice(2);
   if (rest.includes("--help") || rest.includes("-h")) {
     printHelp();

@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { AuthService } from "./auth.js";
 import { config, validateConfig } from "./config.js";
 import { Db } from "./db.js";
+import { ExecutionBackend } from "./execution/client.js";
 import { DaemonBackend } from "./daemon-client.js";
 import { GithubService } from "./github.js";
 import { Hub } from "./hub.js";
@@ -15,6 +16,10 @@ import { WorktreeManager } from "./worktree.js";
 import { isUpdateMaintenance } from "./update-maintenance.js";
 
 async function selectBackend(): Promise<RunnerBackend> {
+  if (config.executionRelease) {
+    if (!config.executionNode) throw new Error("An immutable execution runtime is required");
+    return new ExecutionBackend(join(config.dataDir, "executions"), config.executionRelease, config.executionNode, config.concurrency);
+  }
   if (config.runnerSocket) {
     const daemon = new DaemonBackend(config.runnerSocket);
     if (await daemon.init()) {
@@ -22,7 +27,7 @@ async function selectBackend(): Promise<RunnerBackend> {
       return daemon;
     }
     daemon.close();
-    console.warn(`[runner] daemon at ${config.runnerSocket} unreachable — falling back to in-process (no deploy survival)`);
+    throw new Error("Configured runner is unavailable; refusing to start agent processes in the web service");
   }
   return new InProcessBackend();
 }

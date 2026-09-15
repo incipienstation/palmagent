@@ -19,6 +19,7 @@ import { BRANDING, type UpdateChannel } from "@palmagent/shared";
 import {
   ensurePrivateDirectory,
   ensurePrivateFile,
+  writePrivateFileAtomic,
 } from "../private-files.js";
 
 /** How the services are launched. */
@@ -37,6 +38,8 @@ export interface InstallConfig {
   dbPath: string;
   /** package mode: directory holding the bundled server.js/runner-daemon.js/cli.js. */
   pkgDir?: string;
+  /** Retained Node runtime; presence enables independent execution hosts. */
+  executionNode?: string;
   /** source mode: the git checkout root. */
   repoDir?: string;
   /** systemd WorkingDirectory. */
@@ -135,6 +138,7 @@ const InstallEnv = z
     DISPATCH_CONCURRENCY: Concurrency.default(DEFAULTS.concurrency),
     DATA_DIR: z.string().min(1).optional(),
     RUNNER_SOCKET: z.string().min(1).optional(),
+    EXECUTION_NODE: z.string().min(1).optional(),
     DISPATCHER_DB: z.string().min(1).optional(),
     WORKING_DIR: z.string().min(1).optional(),
     EXEC_PATH: z.string().min(1).optional(),
@@ -334,6 +338,7 @@ export function loadConfig(
     group: e.RUN_GROUP ?? safeGroup(user) ?? user,
     dataDir,
     runnerSocket: e.RUNNER_SOCKET ?? join(dataDir, "runner.sock"),
+    executionNode: e.EXECUTION_NODE,
     dbPath,
     pkgDir,
     repoDir,
@@ -376,6 +381,7 @@ export function saveConfig(cfg: InstallConfig): string {
     `WORKING_DIR=${cfg.workingDir}`,
     `EXEC_PATH=${cfg.execPath}`,
     cfg.pkgDir ? `PKG_DIR=${cfg.pkgDir}` : "",
+    cfg.executionNode ? `EXECUTION_NODE=${cfg.executionNode}` : "",
     cfg.repoDir ? `REPO_DIR=${cfg.repoDir}` : "",
     cfg.repoRoots ? `REPO_ROOTS=${cfg.repoRoots}` : "",
     cfg.claudeConfigDir ? `CLAUDE_CONFIG_DIR=${cfg.claudeConfigDir}` : "",
@@ -390,7 +396,7 @@ export function saveConfig(cfg: InstallConfig): string {
     "",
   ].filter((l) => l !== "");
   const file = installEnvPath(cfg.dataDir);
-  writeFileSync(file, lines.join("\n") + "\n", { mode: 0o600 });
+  writePrivateFileAtomic(file, lines.join("\n") + "\n");
   ensurePrivateFile(file);
   return file;
 }

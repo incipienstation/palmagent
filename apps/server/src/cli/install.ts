@@ -5,6 +5,9 @@
 //
 // These commands are the packaged install/update path. Source mode supports a
 // checked-out maintainer build, but public self-update is package-only.
+import { writePrivateFileAtomic } from "../private-files.js";
+import { assertExecutionsFinished, retainInstalledRelease, stageRelease, verifyActiveExecutionCompatibility } from "./execution-release.js";
+import { installExecutionUnits } from "./execution-units.js";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -180,6 +183,7 @@ export async function gatherConfig(
     throw new Error("this is a Preview build; opt in with --channel preview or install a published Stable release");
   }
 
+  if (base.executionNode && rt.mode !== "package") throw new Error("An independent package installation cannot be switched to a source runtime through setup");
   const cfg: InstallConfig = {
     ...base,
     releaseChannel: selectedChannel,
@@ -209,6 +213,13 @@ function applyUnits(
   flags: Flags,
 ): { runnerChanged: boolean } {
   const units = renderUnits(cfg);
+  if (cfg.executionNode) {
+    if (flags.dryRun) { log.plain(units.web.text); return { runnerChanged: false }; }
+    installExecutionUnits(cfg);
+    if (!sudoWriteFile(join(SYSTEMD_DIR, units.web.name), units.web.text)) throw new Error("Could not install application service");
+    if (!sudo(["systemctl", "daemon-reload"]).ok || !sudo(["systemctl", "enable", units.web.name]).ok) throw new Error("Could not activate independent application units");
+    return { runnerChanged: false };
+  }
   const webPath = join(SYSTEMD_DIR, units.web.name);
   const runnerPath = join(SYSTEMD_DIR, units.runner.name);
 
@@ -493,7 +504,7 @@ function startServices(cfg: InstallConfig): void {
   if (units.runner.name !== runnerUnitName() || units.web.name !== webUnitName()) {
     throw new Error("rendered unit names do not match the installed Palmagent units");
   }
-  restartRunner(cfg);
+  if (!cfg.executionNode) restartRunner(cfg);
   restartWeb();
 }
 
@@ -545,6 +556,7 @@ export async function install(flags: Flags): Promise<number> {
     return 1;
 
   if (!flags.dryRun) {
+    retainInstalledRelease(cfg);
     persistUserChannel(cfg, flags);
     const saved = saveConfig(cfg);
     log.ok(`wrote ${saved}`);
@@ -605,7 +617,7 @@ async function applySetup(cfg: InstallConfig, flags: Flags): Promise<number> {
   const { runnerChanged } = applyUnits(cfg, flags);
   applyNginx(cfg, flags);
   if (!flags.dryRun) {
-    if (runnerChanged || artifactChanged) {
+    if (!cfg.executionNode && (runnerChanged || artifactChanged)) {
       log.warn(
         `runner ${runnerChanged ? "unit" : "artifact"} changed — restarting the idle runner`,
       );
@@ -730,6 +742,14 @@ export async function update(flags: Flags): Promise<number> {
       log.ok(`package ${plan.currentVersion} is already current and healthy; compatible plugins are retained`);
       return 0;
     }
+    if (cfg.executionNode) {
+      try { return await updateIndependentRelease(cfg, plan.targetVersion, flags, record); }
+      catch (error) {
+        record("failed", "candidate-preparation-failed");
+        log.err(error instanceof Error ? error.message : "Candidate preparation failed");
+        return 1;
+      }
+    }
     // Do not accidentally install to another npm prefix and only discover that
     // mismatch after replacing an unrelated global package.
     const root = run("npm", ["root", "-g"], { timeout: 10_000 });
@@ -799,6 +819,64 @@ export async function update(flags: Flags): Promise<number> {
   }
 }
 
+async function verifyIndependentActivation(cfg: InstallConfig): Promise<boolean> {
+  verifyActiveExecutionCompatibility(cfg);
+  const response = await fetch(`http://${cfg.host}:${cfg.port}/api/health`, { signal: AbortSignal.timeout(5000) });
+  const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number };
+  if (!response.ok || !health.ok || !health.updateMaintenance || health.executionProtocol !== 1) throw new Error("Cannot verify independent application activation");
+  return true;
+}
+
+async function updateIndependentRelease(cfg: InstallConfig, version: string, flags: Flags,
+  record: (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => void): Promise<number> {
+  if (!canSudoNonInteractive()) throw new Error("Updates require non-interactive service-management access");
+  record("applying", "candidate-preparation");
+  const candidate = stageRelease(cfg, version);
+  const actual = run(candidate.executionNode!, [join(candidate.pkgDir!, "cli.js"), "--version"], {
+    env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 10_000,
+  });
+  if (!actual.ok || actual.stdout.trim() !== version) throw new Error("Candidate CLI identity check failed");
+  const endMaintenance = beginUpdateMaintenance(cfg.dbPath);
+  let changed = false;
+  try {
+    await verifyIndependentActivation(cfg);
+    const settings = getUserConfig({ dataDir: cfg.dataDir });
+    if ((flags.automatic && !settings.autoUpdate) || ((flags.automatic || flags.request) && settings.channel !== candidate.releaseChannel)) {
+      record("deferred", "settings-changed"); return 0;
+    }
+    verifyActiveExecutionCompatibility(candidate);
+    record("applying", "application-activation");
+    // The previous immutable release remains available for recovery. Execution
+    // hosts retain their own references and are never restarted here.
+    writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: "applying" }) + "\n");
+    changed = true;
+    applyUnits(candidate, flags);
+    saveConfig(candidate);
+    restartWeb();
+    if (!await healthcheck(candidate, version)) throw new Error("Candidate application health check failed");
+    if (settings.autoUpdate) configureAutoUpdate(candidate, true);
+    const pluginPaths = flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []);
+    if (readPluginVersions(pluginPaths).some((plugin) => !compatiblePlugin(version, plugin.version))) throw new Error("An operator plugin changed during activation");
+    persistUserChannel(candidate, flags);
+    record("succeeded", "application-and-executions-verified");
+    writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: "succeeded" }) + "\n");
+    return 0;
+  } catch (error) {
+    if (changed) {
+      let restored = false;
+      try {
+        applyUnits(cfg, flags); saveConfig(cfg); restartWeb();
+        restored = await healthcheck(cfg, installedVersion(cfg.pkgDir));
+        if (restored && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
+      } catch { /* Retain both releases for explicit recovery. */ }
+      writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: restored ? "restored" : "recovery-required" }) + "\n");
+    }
+    record("failed", "application-activation-failed");
+    log.err(error instanceof Error ? error.message : "Application activation failed");
+    return 1;
+  } finally { endMaintenance(); }
+}
+
 async function applyInstalledUpdate(cfg: InstallConfig, flags: Flags): Promise<number> {
   const expectedVersion = flags.get("expected-version");
   if (expectedVersion && (process.env[POST_UPGRADE_ENV] !== "1" || installedVersion(cfg.pkgDir) !== expectedVersion)) throw new Error("invalid update activation target");
@@ -821,7 +899,7 @@ async function withIdleActivation(cfg: InstallConfig, flags: Flags, activate: ()
       unlock = acquireUpdateLock(dirname(userConfigPath()));
       endMaintenance = beginUpdateMaintenance(cfg.dbPath);
     }
-    if (!await verifyUpdateIdle(cfg)) {
+    if (!(cfg.executionNode ? await verifyIndependentActivation(cfg) : await verifyUpdateIdle(cfg))) {
       log.warn("tasks are active; service activation deferred without interrupting sessions");
       return 1;
     }
@@ -834,13 +912,14 @@ async function withIdleActivation(cfg: InstallConfig, flags: Flags, activate: ()
 async function activateInstalledUpdate(cfg: InstallConfig, flags: Flags, expectedVersion?: string): Promise<number> {
   // Re-render units; restart the runner only when its unit or artifact changed
   // after the guarded update has verified that no turns can be interrupted.
+  if (!flags.dryRun) retainInstalledRelease(cfg);
   ensureTlsCertificate(cfg, flags);
   const artifactChanged = runnerArtifactChanged(cfg);
   const { runnerChanged } = applyUnits(cfg, flags);
   applyNginx(cfg, flags);
   if (flags.dryRun) return 0;
 
-  if (runnerChanged || artifactChanged) {
+  if (!cfg.executionNode && (runnerChanged || artifactChanged)) {
     log.warn(
       `runner ${runnerChanged ? "unit" : "artifact"} changed — restarting the idle runner`,
     );
@@ -854,6 +933,7 @@ async function activateInstalledUpdate(cfg: InstallConfig, flags: Flags, expecte
     retireAutoUpdateTimer();
     persistUserChannel(cfg, flags);
     saveConfig(cfg);
+    if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
   }
   log[ok ? "ok" : "err"](ok ? `updated + healthy` : "not healthy after update");
   return ok ? 0 : 1;
@@ -884,45 +964,54 @@ export async function uninstall(flags: Flags): Promise<number> {
   )
     return 1;
 
-  // Preserve a legacy channel before service data can be removed.
-  initUserConfig({ dataDir: cfg.dataDir });
-  removeAutoUpdateTimer();
-  for (const name of [units.web.name, units.runner.name]) {
-    sudo(["systemctl", "disable", "--now", name]);
-    sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
-  }
-  sudo(["systemctl", "daemon-reload"]);
-  const ng = renderNginx(cfg);
-  sudo([
-    "rm",
-    "-f",
-    join(NGINX_SITES_ENABLED, ng.vhost.name),
-    join(NGINX_SITES_AVAIL, ng.vhost.name),
-    join(NGINX_CONFD, ng.vhost.name),
-    join(NGINX_CONFD, ng.zones.name),
-  ]);
-  if (which("nginx")) sudo(["systemctl", "reload", "nginx"]);
-  log.ok("services + nginx vhost removed");
-
-  if (flags.purge) {
-    const approved =
-      flags.nonInteractive ||
-      (await confirm(
-        `DELETE all data at ${cfg.dataDir} (DB, push subscribers, VAPID keys — irreversible)?`,
-        false,
-      ));
-    if (approved) {
-      const removed = sudo(["rm", "-rf", cfg.dataDir]);
-      if (!removed.ok)
-        throw new Error(`failed to purge ${cfg.dataDir}:\n${removed.stderr}`);
-      log.ok(`purged ${cfg.dataDir}`);
-    } else {
-      log.info(`data preserved at ${cfg.dataDir}`);
+  const endExecutionMaintenance = cfg.executionNode ? beginUpdateMaintenance(cfg.dbPath) : undefined;
+  try {
+    if (cfg.executionNode) await verifyIndependentActivation(cfg);
+    assertExecutionsFinished(cfg);
+    // Preserve a legacy channel before service data can be removed.
+    initUserConfig({ dataDir: cfg.dataDir });
+    removeAutoUpdateTimer();
+    for (const name of [units.web.name, units.runner.name]) {
+      sudo(["systemctl", "disable", "--now", name]);
+      sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
     }
-  } else {
-    log.info(`data preserved at ${cfg.dataDir} (use --purge to delete)`);
-  }
-  return 0;
+    if (cfg.executionNode) {
+      for (const path of [join(SYSTEMD_DIR, "palmagent-execution@.service"), join(SYSTEMD_DIR, "palmagent-executions.slice"),
+        "/etc/sudoers.d/palmagent-executions", "/usr/local/libexec/palmagent-execution-start"]) sudo(["rm", "-f", path]);
+    }
+    sudo(["systemctl", "daemon-reload"]);
+    const ng = renderNginx(cfg);
+    sudo([
+      "rm",
+      "-f",
+      join(NGINX_SITES_ENABLED, ng.vhost.name),
+      join(NGINX_SITES_AVAIL, ng.vhost.name),
+      join(NGINX_CONFD, ng.vhost.name),
+      join(NGINX_CONFD, ng.zones.name),
+    ]);
+    if (which("nginx")) sudo(["systemctl", "reload", "nginx"]);
+    log.ok("services + nginx vhost removed");
+
+    if (flags.purge) {
+      const approved =
+        flags.nonInteractive ||
+        (await confirm(
+          `DELETE all data at ${cfg.dataDir} (DB, push subscribers, VAPID keys — irreversible)?`,
+          false,
+        ));
+      if (approved) {
+        const removed = sudo(["rm", "-rf", cfg.dataDir]);
+        if (!removed.ok)
+          throw new Error(`failed to purge ${cfg.dataDir}:\n${removed.stderr}`);
+        log.ok(`purged ${cfg.dataDir}`);
+      } else {
+        log.info(`data preserved at ${cfg.dataDir}`);
+      }
+    } else {
+      log.info(`data preserved at ${cfg.dataDir} (use --purge to delete)`);
+    }
+    return 0;
+  } finally { endExecutionMaintenance?.(); }
 }
 
 /** `passkey` — mint a fresh enroll link against an existing install. */
