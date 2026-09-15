@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,7 @@ async function waitForHealth(url, timeout = 10_000) {
 
 // ---- test -------------------------------------------------------------
 async function run() {
+  execFileSync(process.execPath, ["--test", fileURLToPath(new URL("./test-pwa-state.mjs", import.meta.url))], { stdio: "inherit" });
   // Preserve original sw.js before any mutation
   originalSw = await readFile(SW_PATH, "utf8");
 
@@ -137,6 +138,15 @@ async function run() {
       ready: true,
     }));
     console.log("[test] SW state:", swState);
+    const workerVersion = await page.evaluate(() => new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => reject(new Error("Worker version response timed out")), 3000);
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer); channel.port1.close(); resolve(event.data.version);
+      };
+      navigator.serviceWorker.controller.postMessage({ type: "PALMAGENT_VERSION" }, [channel.port2]);
+    }));
+    assert.equal(workerVersion, JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8")).version);
     assert.equal(await page.getByText("Updating Palmagent…", { exact: true }).count(), 0, "first installation is not an update");
     if (!swState.controller) throw new Error("SW is not controlling the page after install");
 

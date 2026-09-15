@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Screen updates recover when a mobile tab misses service-worker activation.
+  Version reconciliation clears stale update banners, and stalled transitions
+  show a recoverable failure instead of waiting indefinitely. Drafts and running
+  agent sessions remain preserved.
+
 ## 0.1.0-alpha.19
 
 ### Changed
