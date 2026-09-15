@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.17
+
 ### Fixed
 
 - Android notification status-bar icons now use the Palmagent logo silhouette
