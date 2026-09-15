@@ -137,3 +137,15 @@ metadata retain their prose; the client does not guess which text is safe to fol
 `public/icon-*.png`, `apple-touch-icon.png`, and `favicon.svg` are reviewed
 Palmagent source assets. Keep the maskable icon's glyph inside the adaptive-icon
 safe zone.
+
+`public/notification-badge.png` is the separate 96×96 notification status-bar
+asset: white logo strokes on a transparent background. Android masks its alpha
+channel, so never use a filled app icon as the notification `badge`. The notification
+body continues to use the color app icon. Both assets are precached by the service worker.
+
+After changing the logo in `favicon.svg`, regenerate the badge from its foreground
+geometry with `node apps/web/scripts/generate-notification-badge.mjs` from the repository
+root (requires the Playwright Chromium installation above). Review the image and run
+`pnpm web:verify`. The notification test checks the built asset's silhouette, offline
+availability, and real service-worker push options; Android status-bar rendering still
+needs a device check with a new notification after the updated worker activates.
