@@ -144,7 +144,7 @@ export function synchronizeSession(task: TaskState, { preview = false } = {}): {
     for (const img of output.images) emit("output_image", img);
     for (const block of output.payload as RecordValue[]) {
       if (block.type === "tool_use") emit("tool_call", { name: block.name, input: block.input, id: block.id });
-      if (block.type === "tool_result") emit("tool_result", { content: block.content, tool_use_id: block.tool_use_id });
+      if (block.type === "tool_result") emit("tool_result", { content: block.content, tool_use_id: block.tool_use_id, is_error: block.is_error });
     }
   }
   const next: SessionControl = { ...control, cursor: data.length, prefixHash: hash(data), error: undefined };

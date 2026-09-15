@@ -280,3 +280,20 @@ test("live preview waits for its first complete record and refuses rewrites or m
   writeFileSync(f.transcript, '\n');
   assert.throws(() => synchronizeSession(f.task, { preview: true }), /before the synchronization cursor/);
 });
+
+test("Claude transcript import retains PR creation failures as well as successful results", async (t) => {
+  const { PrEvidence } = await import("../src/pr-evidence.js");
+  const f = setup(t, "claude");
+  const url = "https://github.com/acme/sample-app/pull/42";
+  const rows = [
+    { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "failed", name: "Bash", input: { command: "gh pr create" } }] } },
+    { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "failed", is_error: true, content: url }] } },
+    { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "created", name: "Bash", input: { command: "gh pr create" } }] } },
+    { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "created", is_error: false, content: url }] } },
+  ];
+  appendFileSync(f.transcript, rows.map(line).join(""));
+  const events = synchronizeSession(f.task).events;
+  const tracker = new PrEvidence();
+  assert.deepEqual(events.slice(0, 2).flatMap((e) => tracker.accept(e)), []);
+  assert.deepEqual(events.slice(2).flatMap((e) => tracker.accept(e)), [url]);
+});

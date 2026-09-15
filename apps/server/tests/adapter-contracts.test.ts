@@ -615,3 +615,29 @@ test("Codex preserves supplied message phases and stable tool identities without
   backend.proc.exit(0);
   await handle.done;
 });
+
+test("Codex and Claude PR creation evidence follows their normalized call/result contracts", async () => {
+  const { PrEvidence } = await import("../src/pr-evidence.js");
+  const url = "https://github.com/acme/sample-app/pull/42";
+  for (const agent of ["codex", "claude"] as const) {
+    const backend = new FakeBackend();
+    const tracker = new PrEvidence();
+    const found: string[] = [];
+    const runner = agent === "codex" ? new CodexRunner() : new ClaudeRunner();
+    const handle = runner.start(startArgs(), (raw) => found.push(...tracker.accept({ ...raw, agent })), backend);
+    if (agent === "codex") {
+      backend.proc.emit({ type: "item.started", item: { type: "command_execution", id: "create", command: "gh pr create", status: "in_progress", aggregated_output: "", exit_code: null } });
+      backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "read", command: "cat fixture.ts", status: "completed", aggregated_output: url, exit_code: 0 } });
+      assert.deepEqual(found, []);
+      backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "create", command: "gh pr create", status: "completed", aggregated_output: url, exit_code: 0 } });
+    } else {
+      backend.proc.emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "create", name: "Bash", input: { command: "gh pr create" } }, { type: "tool_use", id: "read", name: "Read", input: { file_path: "fixture.ts" } }] } });
+      backend.proc.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read", content: url }] } });
+      assert.deepEqual(found, []);
+      backend.proc.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "create", content: url }] } });
+    }
+    assert.deepEqual(found, [url]);
+    backend.proc.exit(0);
+    await handle.done;
+  }
+});
