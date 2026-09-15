@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Final stage of Palmagent's plan → start → verify → ship loop. Automatically squash-merge verified task pull requests into develop and clean up the completed task's verified worktree and local branch. Use when finishing a task or completing post-merge cleanup.
+description: Final stage of Palmagent's plan → start → verify → ship loop. Automatically squash-merge verified task pull requests into develop, safely update local develop, and clean up the completed task's verified worktree and local branch. Use when finishing a task or completing post-merge cleanup.
 ---
 
 # Ship
@@ -26,7 +26,25 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
    Other `main` merges require explicit approval. Stable tagging/publication wait for the final
    candidate approval. Visibility and host deployment remain separate.
 5. Keep the worktree while the PR is open or implementation/review is still active. After merge,
-   complete the cleanup below and report anything retained with its reason.
+   complete the local develop update and cleanup below, reporting any skipped action with its reason.
+
+## Post-merge local develop update
+
+After confirming the PR is merged into `develop`, run `git fetch origin develop`. Identify the
+primary checkout with `git worktree list --porcelain` and update it only when it already has
+`develop` checked out, has no tracked or untracked changes or Git operation in progress, and
+no other active session or process depends on its current files. Do not switch branches or
+update other tasks' worktrees to perform this step.
+
+Confirm local `develop` is an ancestor of the fetched `origin/develop` (or already equal), then
+run `git -C <primary-checkout> merge --ff-only origin/develop`. Do not stash, reset, rebase,
+create a merge commit, or discard files to make the update succeed. If fetching fails or any
+condition is unmet, preserve the checkout and report the reason; continue independently safe
+task cleanup below.
+
+Verify local `develop` equals the fetched `origin/develop` and includes the PR's merge commit.
+Report the final local SHA and whether the update succeeded, was already current, or was
+skipped. This updates `develop` only; `main` and feature branches are outside this step.
 
 ## Post-merge worktree cleanup
 

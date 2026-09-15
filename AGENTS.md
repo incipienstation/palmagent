@@ -96,6 +96,9 @@ Never hand-edit generated skill or reference copies. Platform manifests and Code
 - Completion also includes removing that task's worktree and local branch after the
   [ship cleanup checks](.harness/skills/ship/SKILL.md#post-merge-worktree-cleanup) pass, unless
   the user requests retention. Preserve resources that fail those checks.
+- After merging into `develop`, also complete the
+  [local develop update](.harness/skills/ship/SKILL.md#post-merge-local-develop-update).
+  Report its result and final local commit, including the reason for any skipped update.
 - Product changes merged into `develop` are eligible for automatic Preview versioning, tagging,
   and publication under the release policy. Repository visibility and host deployment remain
   independent approvals.
