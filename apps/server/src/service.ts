@@ -4,7 +4,7 @@ import { basename, dirname, resolve } from "node:path";
 import type {
   DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
-import { DEFAULT_PERMISSION, makePrRef } from "@palmagent/shared";
+import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { checkpointSession, emptyTranscriptHash, locateSession, nativeHome, processIdentity, resumeCommand, synchronizeSession } from "./native-session.js";
 import { extractOutputImages } from "./output-images.js";
 import { AccountLimitReader } from "./account-limits.js";
@@ -264,6 +264,7 @@ export class TaskService {
         if (preview && synced.control.cursor === control.cursor && !control.error) continue;
         const updated = { ...task, sessionControl: synced.control };
         const rows = this.db.importSessionEvents(updated, synced.events);
+        this.refreshPrs(task);
         task.sessionControl = synced.control;
         if (rows.length) task.lastActivityAt = Date.now();
         for (const row of rows) this.hub.emitEvent(row);
@@ -669,29 +670,24 @@ export class TaskService {
       }
     }
 
-    // Full-auto: the agent opens its own PRs. Collect every distinct PR URL that
-    // shows up anywhere in this task's stream (a session can open several) so the
-    // inbox can surface them all. New PRs start at their pre-fetch defaults
-    // (open/unknown); github.ts fills in lifecycle + checks out of band.
-    if (PR_EVENT_KINDS.has(event.kind)) {
-      const fresh = findPrUrls(event.payload).filter((u) => !task.prs?.some((p) => p.url === u));
-      const refs = fresh.map(makePrRef).filter((r): r is PrRef => r !== null);
-      if (refs.length) {
-        task.prs = [...(task.prs ?? []), ...refs];
-        task.prUrl = task.prs[0]?.url;
-        task.updatedAt = now;
-        this.db.setTaskPrs(task.taskId, task.prs, now);
-        this.broadcastTasks();
-        this.github?.onNewPrs(task.taskId); // fetch lifecycle/checks promptly
-      }
-    }
-
     // Commit all images from this source line with the event and replay cursor.
     // A restart cannot preserve the cursor while dropping an image from that line.
     const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: image }))];
     const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq);
+    if (event.kind === "tool_result") this.refreshPrs(task);
     task.lastActivityAt = now;
     for (const row of rows) this.hub.emitEvent(row);
+  }
+
+  private refreshPrs(task: TaskState): void {
+    const saved = this.db.getTask(task.taskId);
+    const prs = saved?.prs;
+    if (JSON.stringify(prs) === JSON.stringify(task.prs)) return;
+    task.prs = prs;
+    task.updatedAt = saved?.updatedAt ?? task.updatedAt;
+    task.prUrl = prs?.[0]?.url;
+    this.broadcastTasks();
+    this.github?.onNewPrs(task.taskId);
   }
 
   private finishTurn(task: TaskState): void {
@@ -791,13 +787,10 @@ export class TaskService {
 
   private emitSynthetic(task: TaskState, payload: unknown): void {
     const now = Date.now();
-    const { id, seq } = this.db.insertEvent(task.taskId, "status", payload, now);
-    this.db.touchTask(task.taskId, now);
-    this.hub.emitEvent({
-      id,
-      seq,
-      event: { taskId: task.taskId, agent: task.agent, kind: "status", sessionId: task.sessionId, payload, ts: now },
-    });
+    const rows = this.db.appendAgentEvents(task.taskId, [
+      { taskId: task.taskId, agent: task.agent, kind: "status", sessionId: task.sessionId, payload, ts: now },
+    ]);
+    for (const row of rows) this.hub.emitEvent(row);
   }
 
   private cleanupWorktree(task: TaskState): void {
@@ -842,21 +835,6 @@ function sanitizeImages(raw: unknown): ImageAttachment[] | undefined {
     }
     return { mediaType, data };
   });
-}
-
-// Event kinds that can plausibly carry a PR URL the agent printed/created.
-const PR_EVENT_KINDS = new Set(["assistant_text", "tool_result", "tool_call", "result"]);
-const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
-
-// Every distinct PR URL anywhere in a (stringified) event payload, first-seen order.
-function findPrUrls(payload: unknown): string[] {
-  try {
-    const seen = new Set<string>();
-    for (const m of JSON.stringify(payload).matchAll(PR_URL_RE)) seen.add(m[0]);
-    return [...seen];
-  } catch {
-    return [];
-  }
 }
 
 // A short push-body for an AskUserQuestion: the first question's text (or count).

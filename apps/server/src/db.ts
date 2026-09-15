@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
 import { dirname } from "node:path";
 import type {
   AgentEvent, AgentKind, AgentUsage, Permission, PrRef, PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, TaskState, TaskStatus,
@@ -55,11 +56,55 @@ export class Db {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.migrate();
+    this.initializePrEvidence();
     this.insertEventStmt = this.db.prepare(
       `INSERT INTO events (task_id, seq, kind, payload_json, ts)
        VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE task_id = ?), ?, ?, ?)`,
     );
     this.getSeqStmt = this.db.prepare(`SELECT seq FROM events WHERE id = ?`);
+  }
+
+  // PRs are a projection of creation evidence, committed with the event log.
+  // A missing state row means an old task needs rebuilding. Preserve the log
+  // and fetched metadata, but never grandfather an unproven URL into the list.
+  private initializePrEvidence(): void {
+    this.db.exec(`CREATE TABLE IF NOT EXISTS task_pr_evidence (
+      task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+      state_json TEXT NOT NULL
+    )`);
+    const tasks = this.db.prepare(`SELECT t.* FROM tasks t LEFT JOIN task_pr_evidence p ON p.task_id = t.id
+      WHERE p.task_id IS NULL`).all() as TaskRow[];
+    for (const task of tasks) this.db.transaction(() => {
+      const tracker = new PrEvidence();
+      const previous = new Map((parsePrs(task) ?? []).map((pr) => [pr.url, pr]));
+      const confirmed = new Map<string, PrRef>();
+      const rows = this.db.prepare(`SELECT kind, payload_json FROM events WHERE task_id = ? ORDER BY seq`).iterate(task.id);
+      for (const row of rows as Iterable<{ kind: AgentEvent["kind"]; payload_json: string }>) {
+        for (const url of tracker.accept({ kind: row.kind, payload: JSON.parse(row.payload_json), agent: task.agent as AgentKind })) {
+          confirmed.set(url, previous.get(url) ?? makePrRef(url)!);
+        }
+      }
+      this.writePrEvidence(task.id, tracker, [...confirmed.values()]);
+    })();
+  }
+
+  private writePrEvidence(taskId: string, tracker: PrEvidence, prs: PrRef[], now?: number): void {
+    this.db.prepare(`INSERT INTO task_pr_evidence (task_id, state_json) VALUES (?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET state_json = excluded.state_json`)
+      .run(taskId, JSON.stringify(tracker.snapshot()));
+    this.db.prepare("UPDATE tasks SET pr_urls = ?, pr_url = ?, updated_at = COALESCE(?, updated_at) WHERE id = ?")
+      .run(JSON.stringify(prs), prs[0]?.url ?? null, now ?? null, taskId);
+  }
+
+  private projectPrEvents(taskId: string, events: AgentEvent[]): void {
+    const row = this.db.prepare("SELECT state_json FROM task_pr_evidence WHERE task_id = ?").get(taskId) as { state_json: string } | undefined;
+    const tracker = new PrEvidence(row ? JSON.parse(row.state_json) as PrEvidenceState : undefined);
+    const urls = events.flatMap((event) => tracker.accept(event));
+    if (row && !urls.length && row.state_json === JSON.stringify(tracker.snapshot())) return;
+    const prs = new Map((this.getTask(taskId)?.prs ?? []).map((pr) => [pr.url, pr]));
+    const previousCount = prs.size;
+    for (const url of urls) if (!prs.has(url)) prs.set(url, makePrRef(url)!);
+    this.writePrEvidence(taskId, tracker, [...prs.values()], prs.size > previousCount ? Date.now() : undefined);
   }
 
   private migrate() {
@@ -272,6 +317,7 @@ export class Db {
   appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[] {
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));
+      this.projectPrEvents(taskId, events);
       if (rawSeq !== undefined) this.setTaskRawSeq(taskId, rawSeq);
       this.touchTask(taskId, Date.now());
       return rows;
@@ -280,6 +326,7 @@ export class Db {
   importSessionEvents(task: TaskState, events: AgentEvent[]): EventRow[] {
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
+      this.projectPrEvents(task.taskId, events);
       this.setSessionControl(task.taskId, task.sessionControl);
       if (events.length) this.touchTask(task.taskId, Date.now());
       return rows;

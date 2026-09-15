@@ -6,6 +6,15 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Task PR lists now require a successful `gh pr create` command and its returned
+  PR URL. Links in file contents, test fixtures, searches, and ordinary messages
+  no longer appear as PRs opened by the task. On upgrade, existing lists are
+  rebuilt from retained creation events; entries without that evidence are
+  removed from the list while conversation history is preserved. Unsupported
+  shell scripts and other PR creation tools are not inferred from printed links.
+
 ## 0.1.0-alpha.15
 
 ### Fixed
