@@ -51,7 +51,7 @@ process.exit(args.join(' ') === 'is-active --quiet palmagent-runner.service' ? 0
 const fs = require('node:fs');
 const path = require('node:path');
 fs.appendFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'calls.jsonl'), JSON.stringify(process.argv.slice(2)) + '\\n');
-if (process.argv[2] === 'view') console.log(JSON.stringify(process.env.TEST_UPDATE_TARGET || '0.1.0-alpha.3'));
+if (process.argv[2] === 'view') console.log(JSON.stringify((process.argv[3] === 'palmagent@next' && process.env.TEST_UPDATE_TAG_TARGET) || process.env.TEST_UPDATE_TARGET || '0.1.0-alpha.3'));
 else if (process.argv[2] === 'root') console.log(process.env.TEST_UPDATE_ROOT);
 else if (process.argv[2] === 'install' && process.env.TEST_UPDATE_INSTALL === 'success') {
   const pkg = path.join(process.env.TEST_UPDATE_ROOT, 'palmagent');
@@ -304,7 +304,7 @@ test("a manual app update preserves busy work and resumes the pinned release wit
   checkUpdateAccess(f.cfg, true);
   requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
-  const flags = { ...f.flags, request, get: (key: string) => key === "to" ? request.targetVersion : f.flags.get(key) };
+  const flags = { ...f.flags, request };
   assert.equal(await update(flags), 0);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "tasks-active");
   assert.deepEqual(readUpdateAccess(f.cfg.dataDir).pending, request);
@@ -320,6 +320,69 @@ test("a manual app update preserves busy work and resumes the pinned release wit
   assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
   assert.equal(getUserConfig().autoUpdate, undefined);
   assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0-alpha.3"]);
+});
+
+test("automatic request CLI defers active sessions and then installs its queued exact version", async (t) => {
+  const f = fixture(t);
+  const idle = await idleFixture(t, f);
+  setUserAutoUpdate(true);
+  checkUpdateAccess(f.cfg, true);
+  requestUpdateAccess(f.cfg, true);
+  const request = readUpdateAccess(f.cfg.dataDir).pending!;
+  assert.equal(request.automatic, true);
+  process.env.TEST_UPDATE_TAG_TARGET = "0.1.0-alpha.4";
+  const execute = async () => {
+    const script = `
+      globalThis.fetch = async () => Response.json({ ok: true, updateMaintenance: true });
+      process.argv = [process.execPath, 'fixture', 'update-request', '--data-dir', process.env.TEST_ACTIVATION_DATA];
+      await import(${JSON.stringify(new URL("../src/cli/index.ts", import.meta.url).href)});
+    `;
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+      env: { ...process.env, TEST_ACTIVATION_DATA: f.cfg.dataDir }, stdio: "pipe", timeout: 10_000,
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk; });
+    child.stderr.on("data", (chunk) => { output += chunk; });
+    const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+    assert.equal(code, 0, output);
+    assert.equal(isUpdateMaintenance(f.cfg.dbPath), false);
+  };
+  const assertDeferred = () => {
+    assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "tasks-active");
+    assert.deepEqual(readUpdateAccess(f.cfg.dataDir).pending, request);
+    assert(!f.readCalls().some((args) => args[0] === "install"));
+    const hostCalls = readFileSync(join(f.root, "host.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert(hostCalls.every((args) => args.join(" ") === "-n true"), "only a read-only privilege probe is allowed before idle verification");
+  };
+  idle.db.exec("INSERT INTO tasks VALUES ('running')");
+  await execute();
+  assertDeferred();
+  idle.db.exec("DELETE FROM tasks");
+  idle.turns.push("live-codex", "live-claude");
+  await execute();
+  assertDeferred();
+  assert.deepEqual(idle.messages, [{ t: "hello" }], "activity checks never control agent sessions");
+  idle.turns.length = 0;
+  process.env.TEST_UPDATE_INSTALL = "success";
+  process.env.TEST_UPDATE_HEALTH = request.targetVersion;
+  await execute();
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, "succeeded");
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.targetVersion, request.targetVersion);
+  assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+  assert.equal(getUserConfig().autoUpdate, true);
+  assert.deepEqual(f.readCalls().filter((args) => args[0] === "view").map((args) => args[1]),
+    ["palmagent@next", ...Array(3).fill("palmagent@0.1.0-alpha.3")]);
+  assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0-alpha.3"]);
+});
+
+test("public automatic updates still reject explicit version and channel overrides", async (t) => {
+  const f = fixture(t);
+  setUserAutoUpdate(true);
+  for (const [key, value] of [["to", "0.1.0-alpha.3"], ["channel", "preview"]]) {
+    await assert.rejects(update({ ...f.flags, automatic: true,
+      get: (flag) => flag === key ? value : f.flags.get(flag) }), /follows only the saved channel/);
+  }
+  assert.deepEqual(f.readCalls(), []);
 });
 
 test("migration disables and removes only the legacy recurring timer", (t) => {

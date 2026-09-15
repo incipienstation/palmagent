@@ -663,7 +663,10 @@ export async function update(flags: Flags): Promise<number> {
   cfg.releaseChannel = flags.get("channel") !== undefined
     ? setUserChannel(flags.get("channel")!, { dryRun: true }).channel
     : getUserConfig({ dataDir: cfg.dataDir }).channel;
-  const requestedVersion = flags.get("to");
+  const explicitVersion = flags.get("to");
+  // Durable requests pin the version discovered on the saved channel; they are
+  // not public --to overrides. Request validity is rechecked under the host lock.
+  const requestedVersion = flags.request?.targetVersion ?? explicitVersion;
   if (requestedVersion !== undefined) {
     if ((!flags.pull && !flags.plan) || cfg.mode !== "package") {
       throw new Error("--to requires update --pull on a package installation");
@@ -681,7 +684,7 @@ export async function update(flags: Flags): Promise<number> {
     console.log(JSON.stringify(resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion)));
     return 0;
   }
-  if (flags.automatic && (!flags.pull || requestedVersion || flags.get("channel"))) throw new Error("--automatic requires --pull and follows only the saved channel");
+  if (flags.automatic && (!flags.pull || explicitVersion || flags.get("channel"))) throw new Error("--automatic requires --pull and follows only the saved channel");
   log.step(`${BRANDING.productName} update`);
   log.info(`Update channel: ${cfg.releaseChannel === "stable" ? "Stable" : "Preview"} (${channelTag(cfg.releaseChannel)})`);
   if (!flags.pull) return applyInstalledUpdate(cfg, flags);
