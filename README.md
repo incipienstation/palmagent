@@ -32,7 +32,7 @@ an owner-only Unix socket. Shared request schemas live in
 request objects. Runtime startup and shutdown are separate from app construction.
 The runner daemon keeps its existing NDJSON protocol and survives web-server restarts.
 The [session lifecycle redesign](docs/SESSION-LIFECYCLE.md) specifies the planned
-separation of application updates from agent execution, including migration and
+separation of application updates from agent execution, including the legacy migration and
 acceptance gates; it is not yet implemented.
 
 The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
@@ -135,7 +135,8 @@ app, and runner ship together; compatible operator plugins can stay installed.
 Ask **“Turn on automatic updates”** to install eligible updates discovered when
 you open or return to the app. Automatic updates are off by default and follow
 your saved Stable/Preview channel. They stay within the current `x.x.x` version
-line, keep plugins, and defer while tasks are running, queued, or waiting for you.
+line and keep plugins. On independent-execution installations, running, queued,
+or waiting tasks continue through application updates.
 A version that needs a plugin change waits for a plugin-assisted update.
 With the current compatibility rule, a new Stable patch also needs that flow;
 automatic advancement currently applies to prereleases within the same version line.
@@ -148,16 +149,21 @@ a successful manual recovery. See the [update policy](.harness/skills/release/re
 In the web app, open **Settings → Updates** to see the running server version,
 choose Stable or Preview, toggle automatic updates, and inspect the last check.
 The app checks on connection and foreground return, reusing checks made within
-15 minutes. **Check again** checks immediately; **Update** schedules the displayed
-version and waits for active tasks to finish. Automatic updates use the same flow
-when enabled. There is no recurring update timer. Existing timers are retired
+15 minutes. **Check again** checks immediately. With automatic updates enabled,
+an eligible release installs and the screen switches automatically. When disabled,
+**Update** schedules the displayed version. There is no recurring update timer. Existing timers are retired
 when the updated package is activated.
 
-Updates never interrupt running Codex or Claude sessions. Manual CLI updates and source-update `setup` also
-verify an idle maintenance window before replacing packages or activating services;
-`--force` does not bypass this check. If activity cannot be verified, the update
-stops safely. Let work finish and retry. Local CLI sessions remain independently
-owned, and a web restart reconnects to surviving runner-owned sessions.
+Each Palmagent invocation owns a separate execution service, provider connection,
+and retained package/runtime. Updates stage a new package, verify compatibility,
+and replace the web service while existing processes continue. The browser may
+briefly reconnect; this does not restart or resume an agent. Local CLI sessions
+remain externally owned. Retained artifacts are not automatically deleted.
+
+The first upgrade from a legacy runner installation still waits for its active
+work to finish before enabling this architecture. Source installations retain
+their idle guard. `--force` never bypasses these protections. Unknown execution
+state or an incompatible runtime/storage contract blocks activation.
 
 After the server changes version, the app prepares the new screen and switches
 at a quiet moment automatically. Drafts, attachments, open forms, and conversation

@@ -48,6 +48,7 @@ export const UpdateSettingsStateSchema = z.object({
   settings: z.object({
     channel: UpdateChannelSchema,
     autoUpdate: z.boolean(),
+    independentExecutions: z.boolean().optional(),
     discovery: UpdateDiscoverySchema.nullable(),
     pending: UpdateRequestSchema.nullable(),
     lastUpdate: UpdateReceiptSchema.nullable(),

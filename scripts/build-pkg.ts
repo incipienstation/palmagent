@@ -97,6 +97,11 @@ async function main(): Promise<void> {
     banner: { js: "#!/usr/bin/env node" },
   });
 
+  for (const entry of ["execution-host", "execution-launcher"]) {
+    await build({ ...common, entryPoints: [join(SERVER, `src/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
+  }
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1 }) + "\n");
+
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
     throw new Error(
@@ -153,6 +158,9 @@ async function main(): Promise<void> {
       "cli.js",
       "server.js",
       "runner-daemon.js",
+      "execution-host.js",
+      "execution-launcher.js",
+      "runtime-contract.json",
       "build-info.json",
       "web",
       "README.md",

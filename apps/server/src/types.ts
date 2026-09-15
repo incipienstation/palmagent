@@ -83,6 +83,10 @@ export interface ProcHandle {
 }
 
 export interface RunnerBackend {
+  readonly independent?: boolean;
+  saveControl?(taskId: string, state: ExecutionControlState): void;
+  loadControl?(taskId: string): ExecutionControlState | undefined;
+  agentRunner?(agent: AgentKind): AgentRunner;
   // Disconnect this client / stop locally owned children; never stop daemon-owned turns.
   close?(): void | Promise<void>;
   // Optional connect step (DaemonBackend dials the socket). Resolves false if the
@@ -95,3 +99,5 @@ export interface RunnerBackend {
   // Tell the backend the turn is fully consumed so it can drop its replay buffer.
   release?(turnId: string): void;
 }
+
+export interface ExecutionControlState { stopping: boolean; steerRestart: boolean; pendingSteer: Array<{ text: string; images: ImageAttachment[] }> }

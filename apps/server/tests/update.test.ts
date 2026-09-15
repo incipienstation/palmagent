@@ -3,16 +3,17 @@ import { createServer } from "node:net";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { checkUpdateAccess, readUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../src/cli/update-access.js";
 import { planUpdate, readPluginVersions, resolveUpdatePlan } from "../src/cli/update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "../src/cli/update-state.js";
 import { autoUpdateService, startRequestedUpdate, retireAutoUpdateTimer, renderAutoUpdateUnits } from "../src/cli/auto-update.js";
-import { DEFAULT_CAPS, saveConfig, type InstallConfig } from "../src/cli/config.js";
+import { DEFAULT_CAPS, loadConfig, saveConfig, type InstallConfig } from "../src/cli/config.js";
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../src/cli/user-config.js";
 import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath } from "../src/update-maintenance.js";
+import { ExecutionStore } from "../src/execution/store.js";
 import { update, setup, type Flags } from "../src/cli/install.js";
 
 function fixture(t: TestContext) {
@@ -548,3 +549,59 @@ for (const command of ["update", "setup"]) {
     assert.throws(() => readFileSync(join(f.root, "host.jsonl")), { code: "ENOENT" });
   });
 }
+
+
+for (const outcome of ["success", "contract", "rollback"]) test(`automatic independent application activation: ${outcome}`, async (t) => {
+  const f = fixture(t);
+  process.env.TEST_INDEPENDENT_OUTCOME = outcome;
+  writeFileSync(join(f.root, "bin", "sleep"), `#!${process.execPath}\n`, { mode: 0o700 });
+  f.cfg.executionNode = process.execPath;
+  f.cfg.user = userInfo().username;
+  for (const file of ["execution-host.js", "execution-launcher.js", "server.js", "cli.js"]) writeFileSync(join(f.cfg.pkgDir!, file), "// Retained fixture artifact\n");
+  writeFileSync(join(f.cfg.pkgDir!, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1 }));
+  saveConfig(f.cfg);
+  setUserAutoUpdate(true);
+  const executions = new ExecutionStore(join(f.cfg.dataDir, "executions"));
+  t.after(() => executions.close());
+  const active = executions.reserve({ taskId: "active", agent: "claude", cwd: f.root, prompt: "Fixture" }, f.cfg.pkgDir!, process.execPath);
+  executions.admit(1); executions.claim(active.id);
+  const db = new Database(f.cfg.dbPath);
+  db.exec("CREATE TABLE tasks (status TEXT); INSERT INTO tasks VALUES ('running'),('awaiting_input')");
+  t.after(() => db.close());
+  t.mock.method(globalThis, "fetch", async () => {
+    assert(isUpdateMaintenance(f.cfg.dbPath));
+    return Response.json({ ok: true, updateMaintenance: true, executionProtocol: 1 });
+  });
+  writeFileSync(join(f.root, "bin", "npm"), `#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path');
+const args = process.argv.slice(2);
+fs.appendFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'calls.jsonl'), JSON.stringify(args) + '\\n');
+if (args[0] === 'view') console.log(JSON.stringify('0.1.0-alpha.3'));
+else if (args[0] === 'install' && args.includes('--prefix')) {
+  const pkg = path.join(args[args.indexOf('--prefix') + 1], 'node_modules', 'palmagent');
+  fs.mkdirSync(pkg, { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
+  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1 }));
+  fs.writeFileSync(path.join(pkg, 'cli.js'), "console.log('0.1.0-alpha.3');");
+  for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
+} else process.exit(1);
+`, { mode: 0o700 });
+  checkUpdateAccess(f.cfg, true); requestUpdateAccess(f.cfg, true);
+  const request = readUpdateAccess(f.cfg.dataDir).pending!;
+  process.env.TEST_UPDATE_HEALTH = outcome === "rollback" ? "0.1.0-alpha.2" : request.targetVersion;
+  assert.equal(await update({ ...f.flags, automatic: true, request }), outcome === "success" ? 0 : 1);
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, outcome === "success" ? "succeeded" : "failed");
+  if (outcome !== "success") {
+    assert.equal(loadConfig({ dataDir: f.cfg.dataDir }).pkgDir, f.cfg.pkgDir);
+    if (outcome === "rollback") assert.equal(JSON.parse(readFileSync(join(f.cfg.dataDir, "application-activation.json"), "utf8")).status, "restored");
+  }
+  assert.equal(executions.get(active.id).state, "running");
+  assert.equal(executions.get(active.id).release, f.cfg.pkgDir);
+  assert.equal(readFileSync(join(f.cfg.pkgDir!, "execution-host.js"), "utf8"), "// Retained fixture artifact\n");
+  const commands = readFileSync(join(f.root, "host.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
+  assert.equal(commands.some((args) => args.join(" ").includes("restart palmagent.service")), outcome !== "contract");
+  assert(!commands.some((args) => args.join(" ").includes("restart palmagent-runner.service")));
+  assert(!commands.some((args) => args.includes("stop")));
+  assert(!f.readCalls().some((args) => args.includes("-g")), "no global package tree is replaced");
+  if (outcome === "success") assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+});

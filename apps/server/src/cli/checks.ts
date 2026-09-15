@@ -6,6 +6,7 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BRANDING, AGENT_CLI_COMPATIBILITY, compatibleAgentCli } from "@palmagent/shared";
 import type { InstallConfig } from "./config.js";
+import { verifyActiveExecutionCompatibility } from "./execution-release.js";
 import { runnerUnitName, webUnitName } from "./units.js";
 import { log, run, sudo, which } from "./sh.js";
 
@@ -147,27 +148,38 @@ export function doctor(cfg: InstallConfig): Check[] {
           fix: `sudo systemctl status ${web}; journalctl -u ${web} -n 50`,
         },
   );
-  checks.push(
-    unitActive(runner)
-      ? { name: `unit ${runner}`, level: "ok", detail: "active" }
-      : {
-          name: `unit ${runner}`,
-          level: "fail",
-          detail: "not active",
-          fix: `sudo systemctl status ${runner}; journalctl -u ${runner} -n 50`,
-        },
-  );
+  if (cfg.executionNode) {
+    try {
+      verifyActiveExecutionCompatibility(cfg);
+      const loaded = run("systemctl", ["show", "palmagent-execution@.service", "--property=LoadState", "--value"]);
+      if (!loaded.ok || loaded.stdout.trim() !== "loaded") throw new Error("Execution service template is unavailable");
+      checks.push({ name: "independent executions", level: "ok", detail: "retained artifacts and execution contract verified" });
+    } catch (error) {
+      checks.push({ name: "independent executions", level: "fail", detail: error instanceof Error ? error.message : "Execution verification failed" });
+    }
+  } else {
+    checks.push(
+      unitActive(runner)
+        ? { name: `unit ${runner}`, level: "ok", detail: "active" }
+        : {
+            name: `unit ${runner}`,
+            level: "fail",
+            detail: "not active",
+            fix: `sudo systemctl status ${runner}; journalctl -u ${runner} -n 50`,
+          },
+    );
 
-  // runner socket
-  checks.push(
-    existsSync(cfg.runnerSocket)
-      ? { name: "runner socket", level: "ok", detail: cfg.runnerSocket }
-      : {
-          name: "runner socket",
-          level: "warn",
-          detail: `${cfg.runnerSocket} missing (web falls back to in-process)`,
-        },
-  );
+    // runner socket
+    checks.push(
+      existsSync(cfg.runnerSocket)
+        ? { name: "runner socket", level: "ok", detail: cfg.runnerSocket }
+        : {
+            name: "runner socket",
+            level: "warn",
+            detail: `${cfg.runnerSocket} missing (configured web startup will fail)`,
+          },
+    );
+  }
 
   // Agent providers: one valid login is sufficient; unavailable providers stay visible.
   checks.push(...checkAgents(cfg.claudeConfigDir));

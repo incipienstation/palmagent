@@ -1,4 +1,6 @@
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, openSync, closeSync, fsyncSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 
 /** Persistent Palmagent state contains bearer sessions and must be user-private. */
 export function ensurePrivateDirectory(path: string): void {
@@ -15,4 +17,19 @@ export function ensurePrivateParent(path: string): void {
 /** Tighten an existing or newly-created state file to owner read/write only. */
 export function ensurePrivateFile(path: string): void {
   chmodSync(path, 0o600);
+}
+
+/** Commit one private record without exposing a truncated activation decision. */
+export function writePrivateFileAtomic(path: string, content: string): void {
+  ensurePrivateParent(dirname(path));
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  const fd = openSync(temporary, "wx", 0o600);
+  try { writeFileSync(fd, content); fsyncSync(fd); } finally { closeSync(fd); }
+  try {
+    renameSync(temporary, path);
+    const directory = openSync(dirname(path), "r");
+    try { fsyncSync(directory); } finally { closeSync(directory); }
+  } finally {
+    try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
 }

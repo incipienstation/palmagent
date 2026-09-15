@@ -72,7 +72,7 @@ export function renderUnits(
   const header = opts.header ?? defaultHeader(cfg);
   const webName = opts.webUnitName ?? webUnitName();
   const runnerName = opts.runnerUnitName ?? runnerUnitName();
-  const nodeBin = opts.nodeBin ?? process.execPath;
+  const nodeBin = opts.nodeBin ?? cfg.executionNode ?? process.execPath;
   const exec = execStarts(cfg, nodeBin);
   const c = cfg.caps;
 
@@ -109,8 +109,7 @@ export function renderUnits(
     header,
     "[Unit]",
     `Description=${cfg.rpName} (${cfg.domain}) — web/SSE server`,
-    `After=network.target ${runnerName}`,
-    `Wants=${runnerName}`,
+    ...(cfg.executionNode ? ["After=network.target"] : [`After=network.target ${runnerName}`, `Wants=${runnerName}`]),
     "",
     "[Service]",
     `User=${cfg.user}`,
@@ -123,7 +122,7 @@ export function renderUnits(
     `Environment=DISPATCHER_DB=${cfg.dbPath}`,
     `Environment=${quoteSystemd(`DISPATCHER_DATA_DIR=${cfg.dataDir}`)}`,
     `Environment=${quoteSystemd(`PALMAGENT_HOME=${opts.settingsHome ?? dirname(userConfigPath())}`)}`,
-    `Environment=RUNNER_SOCKET=${cfg.runnerSocket}`,
+    ...(cfg.executionNode ? [`Environment=${quoteSystemd(`EXECUTION_RELEASE=${cfg.pkgDir}`)}`, `Environment=${quoteSystemd(`EXECUTION_NODE=${cfg.executionNode}`)}`] : [`Environment=RUNNER_SOCKET=${cfg.runnerSocket}`]),
     "Environment=DISABLE_AUTOUPDATER=1",
     // Web Push contact, only when configured (unset ⇒ push disabled — no default).
     ...(cfg.pushSubject ? [`Environment=PUSH_SUBJECT=${cfg.pushSubject}`] : []),

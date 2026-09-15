@@ -62,7 +62,7 @@ export function UpdateSettings() {
         <Field orientation="horizontal" data-disabled={disabled}>
           <FieldContent className="gap-1">
             <FieldLabel htmlFor={automaticId}>Automatic updates</FieldLabel>
-            <FieldDescription className="text-xs">Checks when you open the app and updates after active tasks finish.</FieldDescription>
+            <FieldDescription className="text-xs">{settings.independentExecutions ? "Checks when you open the app and updates automatically. Agent runs continue." : "Checks when you open the app and updates after active tasks finish."}</FieldDescription>
           </FieldContent>
           <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled}
             onCheckedChange={(autoUpdate) => void change({ autoUpdate })} />
@@ -84,8 +84,8 @@ export function UpdateSettings() {
             : newer ? <p>Version {discovery.targetVersion} is available.</p>
             : discovery ? <p>You are up to date.</p> : <p>No update checks yet.</p>}
           {newer && !discovery?.eligible && <Alert>This release needs a matching operator plugin. Use the update plugin to continue.</Alert>}
-          {pending && !paused && <p>Update to {pending.targetVersion} is scheduled. It will start after active tasks finish.</p>}
-          {last && (paused || (!pending && last.status === "deferred")) && <p>{updateMessage(last)}</p>}
+          {pending && !paused && <p>{settings.independentExecutions ? `Preparing update to ${pending.targetVersion}. Your agent runs continue.` : `Update to ${pending.targetVersion} is scheduled. It will start after active tasks finish.`}</p>}
+          {last && (paused || last.status === "deferred") && <p>{updateMessage(last)}</p>}
           {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
         </div>
       </FieldGroup>}
@@ -93,7 +93,7 @@ export function UpdateSettings() {
         <span className="text-xs text-muted-foreground" role="status">{saving ? "Saving…" : busy && status ? "Refreshing…" : ""}</span>
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="ghost" size="sm" disabled={busy} onClick={() => void reload()}>Check again</Button>
-          {newer && discovery?.eligible && <Button size="sm" disabled={disabled || Boolean(pending) || paused}
+          {newer && discovery?.eligible && !settings?.autoUpdate && <Button size="sm" disabled={disabled || Boolean(pending) || paused}
             onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
         </div>
       </div>

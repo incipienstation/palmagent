@@ -59,6 +59,8 @@ const Env = z
     GITHUB_TOKEN: z.string().min(1).optional(),
     // Optional features — unset ⇒ off / CLI default.
     RUNNER_SOCKET: z.string().min(1).optional(),
+    EXECUTION_RELEASE: z.string().min(1).optional(),
+    EXECUTION_NODE: z.string().min(1).optional(),
     CLAUDE_MODEL: z.string().min(1).optional(),
     CODEX_MODEL: z.string().min(1).optional(),
     CLAUDE_EFFORT: z.string().min(1).optional(),
@@ -135,6 +137,8 @@ export const config = {
     .map((p) => resolve(expandHome(p))),
   // Runner daemon socket. Unset ⇒ spawn CLIs in-process.
   runnerSocket: env.RUNNER_SOCKET,
+  executionRelease: env.EXECUTION_RELEASE,
+  executionNode: env.EXECUTION_NODE,
   // GitHub token for PR status (github.ts). Unset ⇒ try `gh auth token`.
   githubToken: env.GITHUB_TOKEN,
 

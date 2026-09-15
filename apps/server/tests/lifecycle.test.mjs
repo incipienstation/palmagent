@@ -57,6 +57,14 @@ async function harness(t, daemon = true) {
   let db;
   t.after(async () => {
     await Promise.all(children.map(kill));
+    const executionsPath = join(dir, "state/executions/executions.sqlite");
+    if (existsSync(executionsPath)) {
+      const executions = new Database(executionsPath, { readonly: true });
+      for (const { pid } of executions.prepare("SELECT pid FROM executions WHERE pid IS NOT NULL").all()) {
+        try { process.kill(-pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+      }
+      executions.close();
+    }
     db?.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -82,7 +90,20 @@ async function harness(t, daemon = true) {
     PROBE_CONTROL: join(dir, "control"),
     DISPATCH_CONCURRENCY: "2",
   };
-  if (daemon) env.RUNNER_SOCKET = join(dir, "runner.sock");
+  if (daemon === "independent") {
+    env.EXECUTION_RELEASE = serverDir;
+    env.EXECUTION_NODE = process.execPath;
+    env.PALMAGENT_EXECUTION_CONCURRENCY = "2";
+    // Test-only launcher: start a sibling process group, never inherit the web's
+    // group. Production uses the separately owned systemd execution unit.
+    writeFileSync(join(dir, "bin", "sudo"), `#!${process.execPath}
+const { spawn } = require("node:child_process");
+const { openSync } = require("node:fs");
+const log = openSync(${JSON.stringify(join(dir, "execution.log"))}, "a");
+spawn(process.execPath, ["--import", "tsx", ${JSON.stringify(join(serverDir, "src/execution-host.ts"))}, ${JSON.stringify(join(dir, "state/executions"))}, process.argv.at(-1)], { cwd: ${JSON.stringify(serverDir)}, env: process.env, detached: true, stdio: ["ignore", log, log] }).unref();
+`, { mode: 0o700 });
+  }
+  if (daemon === true) env.RUNNER_SOCKET = join(dir, "runner.sock");
   const git = (args) => execFileSync("git", args, { cwd: join(dir, "repo"), env, stdio: "pipe" });
   git(["init", "-b", "main"]);
   git(["-c", "user.name=Validation", "-c", "user.email=validation",
@@ -141,7 +162,7 @@ async function harness(t, daemon = true) {
     await c.ready(key);
     return c.waitTask(task.taskId, (task) => !!task.sessionId);
   };
-  if (daemon) {
+  if (daemon === true) {
     c.runner = c.start("runner-daemon");
     await until("runner socket", () => existsSync(env.RUNNER_SOCKET));
   }
@@ -384,8 +405,8 @@ test("Claude: pending question survives graceful restart and answered question s
   await c.waitTask(task.taskId, (task) => task.status === "idle");
 });
 
-for (const agent of ["claude", "codex"]) test(`${agent}: explicit Send, durable editable Queue and Stop share one contract`, options, async t => {
-  const c = await harness(t);
+for (const backend of [true, "independent"]) for (const agent of ["claude", "codex"]) test(`${agent}: explicit Send, durable editable Queue and Stop share one contract (${backend})`, options, async t => {
+  const c = await harness(t, backend);
   const task = await c.create(agent, "initial");
   const messagePath = `tasks/${task.taskId}/messages`;
   const queued = await c.api(messagePath, { clientMessageId: crypto.randomUUID(), mode: "queue", expectedRunId: task.messageQueue.runId,
@@ -430,4 +451,56 @@ test("legacy steer and explicit queue serialize their next runs", options, async
   c.mark("mixed-legacy", ".release");
   await c.ready("mixed-queued");
   await c.waitTask(task.taskId, t => t.status === "idle" && !t.messageQueue.messages.length);
+});
+
+for (const agent of ["claude", "codex"]) test(`${agent}: independent host survives web replacement, pending input and offline completion`, options, async t => {
+  const c = await harness(t, "independent");
+  assert.equal((await c.api("health")).executionProtocol, 1);
+  const task = await c.create(agent, "independent", agent === "claude" ? "answered-hold" : "hold");
+  const original = await c.ready("independent");
+  if (agent === "claude") await c.waitTask(task.taskId, t => t.status === "awaiting_input");
+  await c.restart(true);
+  process.kill(original.pid, 0);
+  assert.deepEqual(await c.ready("independent"), original);
+  assert.equal((await c.task(task.taskId)).sessionId, task.sessionId);
+  if (agent === "claude") {
+    assert.equal((await c.task(task.taskId)).pendingInput.requestId, "q1");
+    await c.api(`tasks/${task.taskId}/answer`, { requestId: "q1", answers: [{ question: "Continue?", selected: ["Yes"] }] });
+    await until("original process receives answer", () => existsSync(c.marker("independent", ".answer")));
+  }
+  await kill(c.web);
+  c.mark("independent", ".release");
+  await until("provider finishes while view is absent", () => existsSync(c.marker("independent", ".terminal")));
+  await c.webStart();
+  const final = await c.waitTask(task.taskId, t => t.status === "idle");
+  assert.equal(final.sessionId, task.sessionId);
+  assert.equal(final.interrupted, false);
+  assert.equal(final.pendingInput, undefined);
+  for (const text of ["independent:before", "independent:after"]) {
+    assert.equal(c.rows(task.taskId).filter(row => row.kind === "assistant_text" && JSON.parse(row.payload_json).text === text).length, 1);
+  }
+  assert.equal(c.rows(task.taskId).filter(row => row.kind === "result").length, 1);
+});
+
+test("independent admission survives web absence and queued Stop prevents a provider launch", options, async t => {
+  const c = await harness(t, "independent");
+  const first = await c.create("codex", "slot-one");
+  const second = await c.create("claude", "slot-two");
+  const createQueued = async key => {
+    const { task } = await c.api("tasks", { repoId: c.repo.id, agent: "codex", isolate: true, prompt: JSON.stringify({ key, mode: "hold" }) });
+    return c.waitTask(task.taskId, task => task.status === "queued");
+  };
+  const cancelled = await createQueued("never-start");
+  await c.api(`tasks/${cancelled.taskId}/stop`, {});
+  await c.waitTask(cancelled.taskId, task => task.status === "idle" && task.interrupted);
+  const queued = await createQueued("next-slot");
+  await kill(c.web);
+  c.mark("slot-one", ".release");
+  await c.ready("next-slot");
+  assert(!existsSync(c.marker("never-start", ".ready")));
+  await c.webStart();
+  await c.waitTask(first.taskId, task => task.status === "idle");
+  await c.waitTask(queued.taskId, task => task.status === "running");
+  for (const key of ["slot-two", "next-slot"]) c.mark(key, ".release");
+  for (const task of [second, queued]) await c.waitTask(task.taskId, task => task.status === "idle");
 });

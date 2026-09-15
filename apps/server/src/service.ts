@@ -115,6 +115,8 @@ export class TaskService {
     return this.messages.action(id, messageId, req.action === "save" ? { ...req, images: sanitizeImages(req.images) } : req);
   }
 
+  get executionProtocol(): number | undefined { return this.backend.independent ? 1 : undefined; }
+
   get updating(): boolean { return this.maintenance(); }
 
   private assertTaskAdmission(): void {
@@ -127,27 +129,38 @@ export class TaskService {
   // in-process backend nothing is ever live → every in-flight task resets,
   // exactly the pre-daemon behavior.
   async init(): Promise<void> {
-    for (const t of this.db.listTasks()) this.cache.set(t.taskId, t);
+    for (const t of this.db.listTasks()) {
+      this.cache.set(t.taskId, t);
+      const control = this.backend.loadControl?.(t.taskId);
+      if (control?.stopping) this.stopping.add(t.taskId);
+      if (control?.steerRestart) this.steerRestart.add(t.taskId);
+      if (control?.pendingSteer.length) this.pendingSteer.set(t.taskId, control.pendingSteer);
+    }
 
     const inFlight = new Set(this.db.inFlightTaskIds());
     let live: string[] = [];
-    if (inFlight.size) {
+    if (inFlight.size || this.backend.independent) {
       try {
-        live = (await this.backend.listLive()).filter((id) => inFlight.has(id));
-      } catch {
+        live = (await this.backend.listLive()).filter((id) => inFlight.has(id) || (this.backend.independent && this.cache.get(id)?.status === "cancelled"));
+      } catch (error) {
+        if (this.backend.independent) throw error;
         live = [];
       }
+    }
+    if (this.backend.independent && [...inFlight].some(id => !live.includes(id))) {
+      throw new Error("An in-flight task has no execution identity; refusing automatic recovery");
     }
     const reattached: string[] = [];
     for (const id of live) {
       const t = this.cache.get(id);
       // Only resume-capable turns (running/awaiting) reattach; a queued task
       // never captured a session, so let it fall through to reset.
-      if (t && (t.status === "running" || t.status === "awaiting_approval" || t.status === "awaiting_input")) {
+      if (t && (t.status === "running" || t.status === "awaiting_approval" || t.status === "awaiting_input" || (this.backend.independent && (t.status === "queued" || t.status === "cancelled")))) {
         try {
           this.reattachTurn(t);
           reattached.push(id);
-        } catch {
+        } catch (error) {
+          if (this.backend.independent) throw error;
           /* fall through to reset below */
         }
       }
@@ -163,7 +176,7 @@ export class TaskService {
       }
     }
     if (reattached.length) {
-      console.log(`[recovery] reattached ${reattached.length} live turn(s) from the runner daemon`);
+      console.log(`[recovery] reattached ${reattached.length} live turn(s) from the execution backend`);
     }
     if (recovered.length) {
       console.log(`[recovery] reset ${recovered.length} in-flight task(s) to idle(interrupted)`);
@@ -456,12 +469,12 @@ export class TaskService {
       if (settingsChanged) {
         const q = this.pendingSteer.get(id) ?? [];
         q.push({ text, images: images ?? [] });
-        this.pendingSteer.set(id, q);
+        this.pendingSteer.set(id, q); this.persistControl(id);
         // Claude can interrupt now so the new settings take effect immediately;
         // Codex can't, so the queued steer chains when the current turn ends.
-        this.steerRestart.add(id);
+        this.steerRestart.add(id); this.persistControl(id);
         const restarted = handle.interrupt();
-        if (!restarted) this.steerRestart.delete(id);
+        if (!restarted) { this.steerRestart.delete(id); this.persistControl(id); }
         this.emitSynthetic(task, {
           subtype: "steer", injected: false, queued: true, restarted, text,
           model: task.model, effort: task.effort, permission: task.permission, images: nImages || undefined,
@@ -475,7 +488,7 @@ export class TaskService {
       }
       const q = this.pendingSteer.get(id) ?? [];
       q.push({ text, images: images ?? [] });
-      this.pendingSteer.set(id, q);
+      this.pendingSteer.set(id, q); this.persistControl(id);
       this.emitSynthetic(task, { subtype: "steer", injected: false, queued: true, text, images: nImages || undefined });
       return { injected: false, queued: true };
     }
@@ -531,8 +544,8 @@ export class TaskService {
     this.messages.pause(id);
     const handle = this.supervisor.get(id);
     if (handle) {
-      this.pendingSteer.delete(id); // stop wins over a queued codex steer
-      this.stopping.add(id);
+      this.pendingSteer.delete(id); this.persistControl(id); // stop wins over a queued codex steer
+      this.stopping.add(id); this.persistControl(id);
       this.emitSynthetic(task, { subtype: "stop", note: "turn interrupt requested" });
       // Claude: graceful control_request interrupt. Codex: no channel → SIGINT
       // (rollouts persist incrementally, so SIGINT-then-resume works).
@@ -554,7 +567,7 @@ export class TaskService {
     this.assertSessionOwnership(task);
     if (task.status === "cancelled" || task.status === "archived") return task; // idempotent
     this.messages.pause(id);
-    this.pendingSteer.delete(id);
+    this.pendingSteer.delete(id); this.persistControl(id);
     const handle = this.supervisor.get(id);
     this.transition(task, "cancelled");
     if (handle) {
@@ -579,7 +592,7 @@ export class TaskService {
   // ---- turn execution ----
   private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string): Promise<void> {
     const runId = this.messages.beginRun(task.taskId, messageId);
-    if (!this.supervisor.tryAcquire()) {
+    if (!this.backend.independent && !this.supervisor.tryAcquire()) {
       this.transition(task, "queued"); // over the concurrency cap — wait for a slot
       await this.supervisor.acquire();
       // The wait is the only interleave point: bail if the task was cancelled,
@@ -594,7 +607,7 @@ export class TaskService {
 
   private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string): void {
     if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
-    const runner = getRunner(task.agent);
+    const runner = this.backend.agentRunner?.(task.agent) ?? getRunner(task.agent);
     this.sessionMismatch.delete(task.taskId);
     this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
     // A brand-new turn starts a fresh stdout stream: baseline 0, nothing replayed.
@@ -638,7 +651,7 @@ export class TaskService {
   // prompt); the service replays through onRaw but suppresses already-persisted
   // events via the baseline. The turn keeps its slot (reclaim) and stays running.
   private reattachTurn(task: TaskState): void {
-    const runner = getRunner(task.agent);
+    const runner = this.backend.agentRunner?.(task.agent) ?? getRunner(task.agent);
     this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
     const baseline = this.db.getTaskRawSeq(task.taskId);
     this.turnBaseline.set(task.taskId, baseline);
@@ -678,7 +691,7 @@ export class TaskService {
       this.sessionMismatch.add(task.taskId);
       const state = this.turnState.get(task.taskId);
       if (state) { state.errored = true; state.abnormalExit = true; }
-      this.pendingSteer.delete(task.taskId);
+      this.pendingSteer.delete(task.taskId); this.persistControl(task.taskId);
       raw = { taskId: task.taskId, sessionId: task.sessionId, kind: "error", payload: { message: "The CLI returned a different session identity. The turn was stopped; the original session is retained." } };
       queueMicrotask(() => this.supervisor.get(task.taskId)?.cancel());
     }
@@ -714,6 +727,11 @@ export class TaskService {
       if (p.subtype === "message_delivered" && p.messageId) this.messages.delivered(task.taskId, p.messageId);
     }
 
+    if (this.backend.independent && task.status !== "cancelled" && event.kind === "status") {
+      const subtype = (event.payload as { subtype?: string }).subtype;
+      if (subtype === "execution_queued") this.transition(task, "queued");
+      if (subtype === "execution_started") this.transition(task, "running");
+    }
     if (event.kind === "approval_request" && task.status === "running") {
       this.transition(task, "awaiting_approval");
       this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
@@ -773,6 +791,7 @@ export class TaskService {
     // queued steer can resume with the new flags — its aborted result is not a
     // real failure (which would suppress the chain below).
     const steerRestart = this.steerRestart.delete(task.taskId);
+    this.persistControl(task.taskId);
 
     if (task.status === "cancelled") {
       this.cleanupWorktree(task);
@@ -802,7 +821,7 @@ export class TaskService {
     const pending = this.pendingSteer.get(task.taskId);
     const chains = !failed && !!pending && pending.length > 0;
     if (chains && pending) {
-      this.pendingSteer.delete(task.taskId);
+      this.pendingSteer.delete(task.taskId); this.persistControl(task.taskId);
       void this.runTurn(
         task,
         pending.map((p) => p.text).join("\n"),
@@ -820,6 +839,10 @@ export class TaskService {
         failed ? "The turn errored — open to inspect." : task.prUrl ? `Done. PR: ${task.prUrl}` : "Turn finished — task is idle.",
       );
     }
+  }
+
+  private persistControl(taskId: string) {
+    this.backend.saveControl?.(taskId, { stopping: this.stopping.has(taskId), steerRestart: this.steerRestart.has(taskId), pendingSteer: this.pendingSteer.get(taskId) ?? [] });
   }
 
   // ---- helpers ----
