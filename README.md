@@ -31,6 +31,9 @@ an owner-only Unix socket. Shared request schemas live in
 `@palmagent/shared/requests`; services receive validated values without HTTP
 request objects. Runtime startup and shutdown are separate from app construction.
 The runner daemon keeps its existing NDJSON protocol and survives web-server restarts.
+The [session lifecycle redesign](docs/SESSION-LIFECYCLE.md) specifies the planned
+separation of application updates from agent execution, including migration and
+acceptance gates; it is not yet implemented.
 
 The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
 public environment; Palmagent rejects plaintext authentication origins and non-loopback binds.
