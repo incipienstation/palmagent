@@ -73,7 +73,10 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    offers Camera and Photos. Send creates the task via `POST /api/tasks`.
 2. **Inbox** (`#/`) — ONE `GET /api/stream`; every task rendered live from the
    `tasks` snapshot frames, grouped by status. Use a row's **⋮ → Rename** to
-   change its session name without opening it.
+   change its session name without opening it. Use **Spaces** to filter by a single
+   project, folder, or worktree, or choose **All spaces**. The mobile sheet and
+   desktop sidebar search names and full paths; worktrees expand separately and
+   appear automatically in search results. The selected filter survives reloads.
 3. **Task detail + steer** (`#/task/:id`) — scoped `GET /api/stream?task=:id`;
    virtualized event log (assistant token deltas coalesced, tool calls/results, result)
    with a single Send button (hold, right-click, or press Arrow Down for the Send/Queue toggle),
