@@ -23,14 +23,16 @@ test.describe("dispatch form", () => {
   });
 
   test("remembers the selected Codex model and submits its exact identifier", async ({ page }) => {
+    await page.getByLabel("Prompt").tap();
+    await page.getByRole("button", { name: "Configure model and effort" }).click();
     await page.getByRole("radio", { name: "codex", exact: true }).click();
-    await page.getByRole("combobox").filter({ hasText: /^default$/ }).first().click();
-    await page.getByRole("option", { name: "gpt-6-astra", exact: true }).click();
+    await page.getByRole("radio", { name: "gpt-6-astra", exact: true }).click();
     await page.getByRole("radio", { name: "claude", exact: true }).click();
-    await expect(page.getByRole("combobox").filter({ hasText: "gpt-6-astra" })).toHaveCount(0);
+    await expect(page.getByRole("radio", { name: "gpt-6-astra", exact: true })).toHaveCount(0);
     await page.getByRole("radio", { name: "codex", exact: true }).click();
-    await expect(page.getByRole("combobox").filter({ hasText: "gpt-6-astra" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "gpt-6-astra", exact: true })).toBeVisible();
     await assertViewportLocked(page);
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await page.getByLabel("Prompt").fill("Review the sample project.");
     const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/tasks");
     await page.getByRole("button", { name: "Dispatch", exact: true }).click();
@@ -42,13 +44,19 @@ test.describe("dispatch form", () => {
   // plain folder, which always runs in place.
   test("shows the worktree-isolation toggle only for git repos", async ({ page }) => {
     // First repo (auto-selected) is the git repo → toggle present, default off.
+    await page.getByLabel("Prompt").tap();
+    await page.getByRole("button", { name: "Configure model and effort" }).click();
     const toggle = page.getByRole("switch", { name: "Isolated worktree" });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
 
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     // Switch to the plain folder → the whole Isolation section disappears.
     await page.getByRole("combobox").filter({ hasText: "sample-app" }).click();
     await page.getByRole("option", { name: /notes/ }).click();
+    await expect(page.getByRole("combobox", { name: "Working directory" })).toBeFocused();
+    await page.getByLabel("Prompt").tap();
+    await page.getByRole("button", { name: "Configure model and effort" }).click();
     await expect(page.getByRole("switch", { name: "Isolated worktree" })).toHaveCount(0);
   });
 });

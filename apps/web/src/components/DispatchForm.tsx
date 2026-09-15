@@ -1,57 +1,32 @@
 import { useUpdateState } from "../update-state";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo } from "@palmagent/shared";
-import { Loader2, Plus, Send } from "lucide-react";
-import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
+import { Plus } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ScrollBar } from "@/components/ui/scroll-area";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, EFFORTS, MODELS, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { clearDraft, useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
-import { AttachmentTray, useImageAttachments } from "./Attachments";
+import { useImageAttachments } from "./Attachments";
+import { Composer } from "./Composer";
 import { RepoPicker } from "./RepoPicker";
-
-const AGENTS: AgentKind[] = ["claude", "codex"];
 
 function errMsg(e: unknown): string {
   return e instanceof ApiError || e instanceof Error ? e.message : String(e);
-}
-
-// Section eyebrow — 11px/600 tracking-wide uppercase (§3.1). Labels each
-// section card so the dense form reads as grouped fields, not one wall.
-function Eyebrow({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-1 text-[11px] leading-none font-semibold tracking-wide text-faint uppercase">
-      {children}
-    </div>
-  );
-}
-
-// One grouped block: eyebrow + a plane-1 Card holding its control(s).
-function Section({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <Eyebrow>{label}</Eyebrow>
-      <Card className="p-3.5">{children}</Card>
-    </div>
-  );
 }
 
 export function DispatchView() {
@@ -136,201 +111,43 @@ export function DispatchView() {
     <AppShell>
       <AppBar title="Dispatch" back />
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={dispatch}>
-        {/* Scrollable fields, migrated to the Radix ScrollArea primitive (matching
-            EventLog/PullToRefresh — the primitive directly, not the ui wrapper, to
-            dodge the horizontal-overflow regression: overflow-hidden on Root + a
-            styled ScrollBar). index.css forces the Radix content wrapper to
-            display:block, so we give it a definite height ([&>div]:h-full) — that
-            lets the inner column's min-h-full resolve and the prompt keep growing to
-            fill a tall screen (#41) while still scrolling when content overflows.
-            pb-6 keeps the last field off the sticky footer instead of butting against
-            it (the original gripe). */}
-        <ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
-          <ScrollAreaPrimitive.Viewport className="h-full w-full [&>div]:h-full">
-            <div className="flex min-h-full flex-col gap-5 px-4 pt-4 pb-6">
-              {error && <Alert variant="destructive">{error}</Alert>}
-
-              <Section label="Repo">
-                <div className="flex gap-2.5">
-                  {/* The "" guard matters: when value and items land in the same render,
-                      Radix's hidden form-bridge <select> fires a change with a stale ""
-                      before the new options register — letting it through wipes the
-                      auto-selection. ("" never means anything here anyway.) */}
-                  <Select value={repoId} onValueChange={(v) => v && setRepoId(v)} disabled={repos.length === 0}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue
-                        placeholder={repos.length === 0 ? "no repos registered" : "select a repo"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {repos.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.name}{" "}
-                          <span className="text-muted-foreground">
-                            ({r.vcs === "none" ? "folder" : r.defaultBaseRef})
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="shrink-0"
-                    onClick={() => setPickerOpen(true)}
-                  >
-                    <Plus /> Add
-                  </Button>
-                </div>
-              </Section>
-
-              <Section label="Agent">
-                {/* Model + effort + permission are remembered per agent (the
-                    usePersistedMapEntry trio above), so switching only changes the
-                    agent — each agent's own last choices come back with it. */}
-                <ToggleGroup
-                  type="single"
-                  value={agent}
-                  onValueChange={(v) => v && setAgent(v as AgentKind)}
-                >
-                  {AGENTS.map((a) => (
-                    <ToggleGroupItem key={a} value={a}>
-                      {a}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </Section>
-
-              <Section label="Permission">
-                {/* Per-agent vocabulary — see PERMISSIONS. A Select (not a toggle
-                    row) so the longer per-agent values + descriptions never overflow
-                    the 360px viewport; the trigger shows only the short label. */}
-                <Select value={permission} onValueChange={(v) => v && setPermission(v)}>
-                  <SelectTrigger aria-label="Permission">
-                    <SelectValue />
+        <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto px-4 pb-5">
+          <div className="flex flex-col gap-3 py-4">
+            <p className="text-lg font-medium text-strong">What should we work on?</p>
+            <Field>
+              <FieldLabel htmlFor="dispatch-repo">Working directory</FieldLabel>
+              <div className="flex min-w-0 gap-2">
+                <Select value={repoId} onValueChange={(v) => v && setRepoId(v)} disabled={repos.length === 0 || busy}>
+                  <SelectTrigger id="dispatch-repo" className="min-w-0 flex-1 rounded-full">
+                    <SelectValue placeholder={repos.length === 0 ? "No repos registered" : "Select a repo"} />
                   </SelectTrigger>
-                  <SelectContent className="max-w-[min(20rem,calc(100vw-1.25rem))]">
-                    {PERMISSIONS[agent].map((p) => (
-                      <SelectItem key={p.value} value={p.value} textValue={p.label} description={p.description}>
-                        <span className={p.danger ? "text-destructive" : undefined}>{p.label}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectContent><SelectGroup>{repos.map((r) => <SelectItem key={r.id} value={r.id}>
+                    {r.name} <span className="text-muted-foreground">({r.vcs === "none" ? "folder" : r.defaultBaseRef})</span>
+                  </SelectItem>)}</SelectGroup></SelectContent>
                 </Select>
-              </Section>
-
-              <Section label="Model & effort">
-                <div className="flex gap-2.5">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label>Model</Label>
-                    <Select value={model} onValueChange={(v) => v && setModel(v)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MODELS[agent].map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label>Effort</Label>
-                    <Select value={effort} onValueChange={(v) => v && setEffort(v)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EFFORTS[agent].map((eo) => (
-                          <SelectItem key={eo.value} value={eo.value}>
-                            {eo.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </Section>
-
-              {isGit && (
-                <Section label="Isolation">
-                  <label className="flex min-h-[44px] items-center justify-between gap-3">
-                    <span className="flex min-w-0 flex-col">
-                      <span className="text-[15px] text-foreground">Isolated worktree</span>
-                      <span className="text-[12.5px] text-muted-foreground">
-                        Run in a per-task branch + worktree. Off = run directly in the repo.
-                      </span>
-                    </span>
-                    <Switch
-                      checked={isolate}
-                      onCheckedChange={setIsolate}
-                      aria-label="Isolated worktree"
-                    />
-                  </label>
-                </Section>
-              )}
-
-              <Section label="Title">
-                <div className="space-y-1.5">
-                  <Label htmlFor="dispatch-title">Title (optional)</Label>
-                  <Input
-                    id="dispatch-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="short label"
-                  />
-                </div>
-              </Section>
-
-              {/* Prompt grows to fill the scroll area so there's no dead space on a
-                  tall screen (#41), while keeping the redesign's eyebrow + Card
-                  grouping. min-h-0 lets it shrink (and the body scroll) when the
-                  keyboard squeezes the viewport. */}
-              <div className="flex min-h-0 flex-1 flex-col space-y-2">
-                <Eyebrow>Prompt</Eyebrow>
-                {/* The Textarea IS the box (its own border) and grows to fill via
-                    flex-1 — no wrapping Card. A Card wrapper collapsed to ~30px when
-                    the keyboard squeezed the scroll container while the textarea's
-                    min-height overflowed it, leaving a thin pill + dead gap (#46
-                    follow-up). min-h-0 lets it shrink with the viewport; the
-                    textarea's own min-h keeps it usable, and it scrolls when squeezed. */}
-                <Textarea
-                  id="dispatch-prompt"
-                  aria-label="Prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onPaste={att.onPaste}
-                  className="min-h-[7rem] flex-1 resize-none"
-                  placeholder="What should the agent do? (paste images here)"
-                />
-                <AttachmentTray
-                  images={att.images}
-                  preparing={att.preparing}
-                  disabled={busy}
-                  onAdd={(f) => void att.addFiles(f)}
-                  onRemove={att.remove}
-                />
+                <Button type="button" variant="secondary" className="shrink-0 rounded-full" disabled={busy} onClick={() => setPickerOpen(true)}><Plus data-icon="inline-start" /> Add</Button>
               </div>
-            </div>
-          </ScrollAreaPrimitive.Viewport>
-          <ScrollBar />
-        </ScrollAreaPrimitive.Root>
-
-        {/* Sticky plane-2 submit footer — translucent blur, keyboard-safe, never squished */}
-        <div className="shrink-0 border-t border-border bg-background/85 px-4 pt-3 pb-[calc(16px+var(--safe-bottom))] backdrop-blur-md">
-          <Button type="submit" size="lg" className="w-full" disabled={busy || att.preparing}>
-            {busy ? (
-              <>
-                <Loader2 className="animate-spin" /> Dispatching…
-              </>
-            ) : (
-              <>
-                Dispatch <Send className="size-4" />
-              </>
-            )}
-          </Button>
+            </Field>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 px-3 pb-[calc(12px+var(--safe-bottom))]">
+          {error && <Alert variant="destructive">{error}</Alert>}
+          <Composer id="dispatch-prompt" label="Prompt" value={prompt} onChange={setPrompt}
+            placeholder="Work with Palmagent" action="Dispatch" busy={busy}
+            attachments={att} description="Your choices are remembered for this agent."
+            settings={{ agent, onAgentChange: setAgent, model, onModelChange: setModel,
+              effort, onEffortChange: setEffort, permission, onPermissionChange: setPermission,
+              children: <>
+                {isGit && <Field orientation="horizontal">
+                  <FieldContent><FieldLabel htmlFor="dispatch-isolation">Isolated worktree</FieldLabel>
+                    <FieldDescription>Run in a separate branch and worktree.</FieldDescription></FieldContent>
+                  <Switch id="dispatch-isolation" checked={isolate} onCheckedChange={setIsolate} aria-label="Isolated worktree" />
+                </Field>}
+                <Field><FieldLabel htmlFor="dispatch-title">Title (optional)</FieldLabel>
+                  <Input id="dispatch-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="short label" />
+                </Field>
+              </>,
+            }} />
         </div>
       </form>
       <RepoPicker

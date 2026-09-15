@@ -143,9 +143,11 @@ async function run() {
     // Two tabs have different drafts; activation in one must preserve both.
     await page.goto("/#/new");
     await page.getByLabel("Prompt").fill("Keep this unsent draft");
+    await page.getByRole("button", { name: "Configure model and effort" }).click();
     await page.getByPlaceholder("short label").fill("Draft title");
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
-    await page.locator('input[type="file"]').setInputFiles({ name: "draft.png", mimeType: "image/png", buffer: png });
+    await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "draft.png", mimeType: "image/png", buffer: png });
     await page.getByAltText("attachment 1").waitFor();
     const second = await ctx.newPage();
     await second.goto("/#/new");
@@ -169,7 +171,7 @@ async function run() {
     });
     await page.getByAltText("attachment 1").waitFor();
     assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
-    assert.equal(await page.getByPlaceholder("short label").inputValue(), "Draft title");
+    assert.equal(await page.evaluate(() => localStorage.getItem("draft:dispatch-title")), "Draft title");
     await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
     assert.deepEqual(await page.getByLabel("Prompt").evaluate((el) => [el.selectionStart, el.selectionEnd]), [4, 9]);
     assert(page.url().endsWith("/#/new"));
@@ -209,6 +211,20 @@ async function run() {
     assert.equal(loads, 1, "the same update must not cause a reload loop");
     console.log("[test] storage failures preserve work and event-driven recovery completes automatically");
 
+    await page.getByRole("button", { name: "Configure model and effort" }).click();
+    await page.getByRole("radio", { name: "opus", exact: true }).click();
+    await page.getByPlaceholder("short label").fill("Restored configuration");
+    const configurationReload = page.waitForEvent("load", { timeout: 20_000 });
+    await appendFile(SW_PATH, "\n// automatic-update-configuration\n");
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
+    await configurationReload;
+    await page.getByRole("heading", { name: "Configure", exact: true }).waitFor();
+    assert.equal(await page.getByPlaceholder("short label").inputValue(), "Restored configuration");
+    assert.equal(await page.getByRole("radio", { name: "opus", exact: true }).getAttribute("aria-checked"), "true");
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
+    console.log("[test] open composer configuration survives an automatic update");
+
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("option", { name: "Browse folders…" }).click();
     await page.getByRole("button", { name: "Choose outer-repo as repository" }).click();
@@ -237,7 +253,7 @@ async function run() {
     await page.waitForTimeout(400);
     const position = await transcript.evaluate((el) => el.scrollTop);
     assert(position > 100);
-    const draft = page.getByPlaceholder("Message the agent… (paste images here)");
+    const draft = page.getByPlaceholder("Message the agent…");
     await draft.fill("Do not submit this conversation draft");
     const reconnects = [];
     page.on("request", (request) => { if (request.url().includes("/api/stream?task=t-run")) reconnects.push(request.url()); });

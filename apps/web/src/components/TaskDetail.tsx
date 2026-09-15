@@ -18,23 +18,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, EFFORTS, MODELS, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
 import { useDraft, usePersistedString } from "../hooks/useDraft";
 import { useTaskStream } from "../hooks/useTaskStream";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
-import { AttachmentTray, useImageAttachments } from "./Attachments";
+import { useImageAttachments } from "./Attachments";
+import { Composer } from "./Composer";
 import { AgentTag, StatusBadge } from "./chips";
 import { PrChip } from "./PrChip";
 import { EventLog } from "./EventLog";
@@ -266,7 +258,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
-        <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-card/85 px-4 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+        <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-background/85 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
@@ -312,123 +304,22 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             onDelete={m => void act(async () => setQueueOverride(await api.messageAction(taskId, m.id, { action: "delete", version: m.version })))}
             onResume={() => void act(async () => setQueueOverride(await api.resumeQueue(taskId)))} />}
 
-          {/* Composer + helper collapse entirely while a question is pending
-              (answering) — see the `answering` note above. The approval buttons
-              live outside this branch (awaiting_approval and awaiting_input are
-              mutually exclusive states, so they never both render). */}
-          {(!answering || !!edit) && (
-            <>
-          {/* Composer well — the textarea and its inline controls bar (model/effort
-              pills + the action button) live in one rounded box that highlights as a
-              whole on focus, the shadcn chat-composer idiom. Replaces the old
-              short-textarea-beside-a-button layout that clipped its placeholder. */}
-          <div className="flex flex-col gap-2 rounded-xl border border-input bg-background p-2 transition-colors focus-within:border-blue">
-            {edit && <div className="flex items-center gap-2">
+          {(!answering || !!edit) && task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
+            id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
+            onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
+            placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
+            action="Send now" showSettings={!edit && !(running && deliveryMode === "send")}
+            header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
-              <Button variant="ghost" size="icon" className="ml-auto" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>
+              <Button type="button" variant="ghost" size="icon-lg" className="ml-auto shrink-0" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>
             </div>}
-            <Textarea
-              className="max-h-40 min-h-[3.25rem] resize-none border-0 bg-transparent px-1.5 py-1 focus-visible:border-0"
-              value={edit ? editText : compose}
-              onChange={(e) => edit ? setEditText(e.target.value) : setCompose(e.target.value)}
-              onPaste={att.onPaste}
-              placeholder={
-                localOwner
-                  ? "Read-only while controlled in your local CLI."
-                  : composeMode === "steer"
-                  ? "Message the agent… (paste images here)"
-                  : composeMode === "followup"
-                    ? "Send a follow-up turn… (paste images here)"
-                    : status === "queued"
-                      ? "Waiting for a slot…"
-                      : "No further input for this task."
-              }
-              disabled={(!composeMode && !edit) || busy}
-              rows={2}
-            />
-            {/* The three per-agent controls (model/effort/permission) ride a single
-                line that scrolls horizontally inside its own rail — on a narrow phone
-                they overflow rather than wrapping up above the Send button. The Send
-                button stays pinned on the right, outside the scroll rail. */}
-            <div className="flex items-center gap-2">
-              {composeMode && task && !edit && !(running && deliveryMode === "send") && (
-                <ScrollArea className="min-w-0 flex-1 whitespace-nowrap">
-                  <div className="flex w-max items-center gap-2 pb-2">
-                    <Select value={model} onValueChange={(v) => v && setModel(v)} disabled={busy}>
-                      <SelectTrigger
-                        className="h-9 w-auto min-w-0 gap-1.5 bg-card px-2.5 text-[13px]"
-                        aria-label="Model for the next turn"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MODELS[task.agent].map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={effort} onValueChange={(v) => v && setEffort(v)} disabled={busy}>
-                      <SelectTrigger
-                        className="h-9 w-auto min-w-0 gap-1.5 bg-card px-2.5 text-[13px]"
-                        aria-label="Reasoning effort for the next turn"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EFFORTS[task.agent].map((eo) => (
-                          <SelectItem key={eo.value} value={eo.value}>
-                            {eo.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={permission} onValueChange={(v) => v && setPermission(v)} disabled={busy}>
-                      <SelectTrigger
-                        className="h-9 w-auto min-w-0 gap-1.5 bg-card px-2.5 text-[13px]"
-                        aria-label="Permission for the next turn"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="max-w-[min(20rem,calc(100vw-1.25rem))]">
-                        {PERMISSIONS[task.agent].map((p) => (
-                          <SelectItem key={p.value} value={p.value} textValue={p.label} description={p.description}>
-                            <span className={p.danger ? "text-destructive" : undefined}>{p.label}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
-              )}
-              {edit ? <Button size="icon" className="ml-auto" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || !editText.trim()} onClick={() => void endEdit(true)}><Check /></Button>
-                : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()}
-                    disabled={localOwner || busy || status === "archived" || status === "cancelled"}
-                    sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0)} />}
-
-            </div>
-          </div>
-
-          {(composeMode || edit) && (
-            <AttachmentTray
-              images={att.images}
-              preparing={att.preparing}
-              disabled={busy}
-              onAdd={(f) => void att.addFiles(f)}
-              onRemove={att.remove}
-            />
-          )}
-
-          <div className="text-[12.5px] text-faint">
-            {edit ? "Saving keeps the message's place in the queue." : localOwner ? " " : deliveryMode === "queue"
-              ? "This message will wait for its turn."
-              : "Hold Send to choose Queue."}
-
-          </div>
-            </>
-          )}
+            controls={edit
+              ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || !editText.trim()} onClick={() => void endEdit(true)}><Check /></Button>
+              : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
+                  sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0)} />}
+            description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
+            settings={{ agent: task.agent, model, onModelChange: setModel, effort, onEffortChange: setEffort,
+              permission, onPermissionChange: setPermission }} />}
         </div>
       </div>
     </AppShell>

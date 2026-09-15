@@ -61,7 +61,7 @@ for (const owner of ["local", "returning"] as const) test(`${owner} ownership di
     `id: 1\ndata: ${JSON.stringify({ type: "event", event: { taskId: source.taskId, agent: source.agent, kind: "output_image", ts: 0, payload: { mediaType: "image/png", data: png } } })}\n\n`,
   }));
   await page.goto("/#/task/t-idle-rich");
-  await expect(page.getByRole("textbox")).toBeDisabled();
+  await expect(page.getByRole("textbox")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Session output" })).toBeVisible();
   await expect.poll(() => page.getByRole("img", { name: "Session output" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
   await expect(page.getByRole("button", { name: owner === "local" ? "Local shell" : "Continue in Palmagent" })).toBeVisible();
@@ -107,15 +107,16 @@ test("live preview is readable before handoff and enables input only when owners
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByText("Saved locally and visible before closing the CLI.", { exact: true })).toBeVisible();
   await expect(page.getByText("Done", { exact: true })).toBeHidden();
-  await expect(page.getByPlaceholder("Read-only while controlled in your local CLI.")).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
+  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toHaveCount(0);
+
   await assertViewportLocked(page);
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeInViewport();
   await expect(page).toHaveScreenshot("session-live-preview.png");
   owner = "palmagent";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText("Live preview", { exact: true })).toBeHidden();
-  await expect(page.getByPlaceholder("Send a follow-up turn… (paste images here)")).toBeEnabled();
+  await expect(page.getByPlaceholder("Send a follow-up turn…")).toBeEnabled();
   await expect(page.getByText("Saved locally and visible before closing the CLI.", { exact: true })).toHaveCount(1);
 });
 
@@ -129,7 +130,7 @@ test("a preview synchronization error retains visible history and explains why i
   await expect(page.getByText("Previously synchronized message", { exact: true })).toBeVisible();
   await expect(page.getByText("Sync issue", { exact: true })).toBeVisible();
   await expect(page.getByText(task.sessionControl.error, { exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox")).toBeDisabled();
+  await expect(page.getByRole("textbox")).toHaveCount(0);
   await page.getByRole("button", { name: "Continue in Palmagent", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText(task.sessionControl.error);
   await expect(page.getByRole("button", { name: "Release to shell" })).toBeHidden();
