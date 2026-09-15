@@ -830,6 +830,7 @@ async function verifyIndependentActivation(cfg: InstallConfig): Promise<boolean>
 async function updateIndependentRelease(cfg: InstallConfig, version: string, flags: Flags,
   record: (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => void): Promise<number> {
   if (!canSudoNonInteractive()) throw new Error("Updates require non-interactive service-management access");
+  record("applying", "candidate-preparation");
   const candidate = stageRelease(cfg, version);
   const actual = run(candidate.executionNode!, [join(candidate.pkgDir!, "cli.js"), "--version"], {
     env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 10_000,

@@ -1,3 +1,6 @@
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import { ChildProcHandle, InProcessBackend } from "../src/inproc-backend.js";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
@@ -125,4 +128,27 @@ test("fresh sessions may share a directory, but an established provider session 
   assert.throws(() => store.reserve({ ...request("duplicate"), resumeId: "provider-session" }, "/opt/releases/two", process.execPath));
   store.finish(first.id);
   assert(store.reserve({ ...request("later"), resumeId: "provider-session" }, "/opt/releases/two", process.execPath));
+});
+
+test("provider completion waits for final pipe data after process exit", () => {
+  const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough() });
+  const handle = new ChildProcHandle("drain", child as unknown as ConstructorParameters<typeof ChildProcHandle>[1]);
+  const observed: string[] = [];
+  handle.onLine((_seq, line) => observed.push(line));
+  handle.onExit(code => observed.push(`exit:${code}`));
+  child.stdout.write("first\n");
+  child.emit("exit", 0);
+  child.stdout.write("last");
+  assert.deepEqual(observed, ["first"]);
+  child.emit("close", 0);
+  assert.deepEqual(observed, ["first", "last", "exit:0"]);
+});
+
+test("a failed provider spawn completes exactly once", async t => {
+  const backend = new InProcessBackend();
+  t.after(() => backend.close());
+  const handle = backend.start({ turnId: "missing", command: "/nonexistent/palmagent-test-provider", argv: [], cwd: tmpdir() });
+  const exits: Array<number | null> = [];
+  await new Promise<void>(resolve => handle.onExit(code => { exits.push(code); resolve(); }));
+  assert.deepEqual(exits, [-1]);
 });

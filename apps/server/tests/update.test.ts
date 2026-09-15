@@ -578,6 +578,8 @@ const args = process.argv.slice(2);
 fs.appendFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'calls.jsonl'), JSON.stringify(args) + '\\n');
 if (args[0] === 'view') console.log(JSON.stringify('0.1.0-alpha.3'));
 else if (args[0] === 'install' && args.includes('--prefix')) {
+  const receipt = JSON.parse(fs.readFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'state', 'update-result.json'), 'utf8'));
+  if (receipt.status !== 'applying' || receipt.reason !== 'candidate-preparation') process.exit(98);
   const pkg = path.join(args[args.indexOf('--prefix') + 1], 'node_modules', 'palmagent');
   fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
