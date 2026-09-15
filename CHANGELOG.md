@@ -13,6 +13,12 @@ An entry does not mean a version has been published.
   show a recoverable failure instead of waiting indefinitely. Drafts and running
   agent sessions remain preserved.
 
+### Changed
+
+- Switch task spaces from a searchable mobile sheet or desktop sidebar. Short
+  names, readable paths, and task counts make locations easier to identify;
+  worktrees collapse into their own section, and long paths stay within the screen.
+
 ## 0.1.0-alpha.19
 
 ### Changed

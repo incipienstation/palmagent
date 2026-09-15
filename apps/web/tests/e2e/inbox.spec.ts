@@ -34,7 +34,7 @@ test.describe("inbox", () => {
         const fab = document.querySelector('button[aria-label="Dispatch new task"]')!;
         // The pb wrapper is the parent of the status <section>s (robust against
         // the extra display:table div Radix injects inside the scroll viewport).
-        const content = document.querySelector("section")!.parentElement!;
+        const content = document.querySelector('[data-testid="inbox-content"] > section')!.parentElement!;
         return {
           fabBottom: parseFloat(getComputedStyle(fab).bottom),
           contentPb: parseFloat(getComputedStyle(content).paddingBottom),
@@ -54,7 +54,7 @@ test.describe("inbox", () => {
   test("pull-to-refresh triggers a page reload when no SW update is pending", async ({ page }) => {
     // Simulate pull-to-refresh: drag down from the top of the scroll pane
     // past THRESHOLD (64px at DAMP=0.5 → 128px of finger travel).
-    const scrollArea = page.locator(".overscroll-contain").first();
+    const scrollArea = page.locator('.overscroll-contain:has([data-testid="inbox-content"])');
     const box = await scrollArea.boundingBox();
     if (!box) throw new Error("scroll area not found");
     const x = box.x + box.width / 2;
@@ -65,7 +65,7 @@ test.describe("inbox", () => {
     const navPromise = page.waitForEvent("load", { timeout: 3000 });
     await page.evaluate(
       ([sx, sy, ey]) => {
-        const el = document.querySelector(".overscroll-contain")!;
+        const el = document.querySelector('.overscroll-contain:has([data-testid="inbox-content"])')!;
         const dispatch = (type: string, cy: number) => {
           el.dispatchEvent(
             new TouchEvent(type, {

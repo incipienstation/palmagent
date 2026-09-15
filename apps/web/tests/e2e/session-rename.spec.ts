@@ -88,9 +88,13 @@ test("rename dialog fits mobile keyboard space and has a visual baseline", async
   await expect(page).toHaveScreenshot("session-rename.png");
   await page.setViewportSize({ width: 360, height: 400 });
   const dialog = page.getByRole("dialog");
+  // The visual viewport updates on the next animation frame after resize.
+  await expect.poll(async () => {
+    const bounds = await dialog.boundingBox();
+    return bounds ? bounds.y + bounds.height : Infinity;
+  }).toBeLessThanOrEqual(400);
   const bounds = await dialog.boundingBox();
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(400);
   await expect(page.getByRole("textbox", { name: "Session name" })).toBeInViewport();
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
   await assertViewportLocked(page);

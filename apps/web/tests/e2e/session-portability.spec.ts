@@ -11,24 +11,26 @@ const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwM
 test("mobile directory selection filters tasks and survives reload", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Wire the web QA harness")).toBeVisible();
-  await page.getByRole("combobox", { name: "Working directory" }).click();
-  await page.getByRole("option", { name: /t-idle-rich/ }).click();
+  await page.getByRole("button", { name: /^Switch space:/ }).click();
+  await page.getByRole("button", { name: /^Worktrees/ }).click();
+  await page.getByRole("button", { name: /t-idle-rich/ }).click();
   await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   await expect(page.getByText("Interrupted across a deploy")).toBeHidden();
   await assertViewportLocked(page);
   await page.reload();
   await expect(page.getByText("Wire the web QA harness")).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Working directory" })).toContainText("t-idle-rich");
-  await page.getByRole("combobox", { name: "Working directory" }).click();
-  await page.getByRole("option", { name: /All directories/ }).click();
+  await expect(page.getByRole("button", { name: /^Switch space:/ })).toContainText("t-idle-rich");
+  await page.getByRole("button", { name: /^Switch space:/ }).click();
+  await page.getByRole("button", { name: /All spaces/ }).click();
   await expect(page.getByText("Interrupted across a deploy")).toBeVisible();
 });
 
 test("desktop directory navigation identifies each cwd without overflowing", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
-  const nav = page.getByRole("navigation", { name: "Working directories" });
+  const nav = page.getByRole("navigation", { name: "Spaces" });
   await expect(nav).toBeVisible();
+  await nav.getByRole("button", { name: /^Worktrees/ }).click();
   await nav.getByRole("button", { name: /t-idle-rich/ }).click();
   await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   await expect(page.getByText("Interrupted across a deploy")).toBeHidden();

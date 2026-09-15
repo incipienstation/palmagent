@@ -332,7 +332,7 @@ export function InboxView({
         <PullToRefresh className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
           {/* The pb wrapper tracks the tab bar + banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
-          <div className="pb-[calc(var(--tabbar-h,0px)+var(--banner-h,0px)+88px)]">
+          <div data-testid="inbox-content" className="pb-[calc(var(--tabbar-h,0px)+var(--banner-h,0px)+88px)]">
             {loading ? (
               <LoadingRows />
             ) : isEmpty ? (
