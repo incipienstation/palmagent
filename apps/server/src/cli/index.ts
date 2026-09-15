@@ -169,7 +169,7 @@ async function main(): Promise<void> {
     process.env.PALMAGENT_NON_INTERACTIVE = "1";
     process.exitCode = await update({ dryRun: false, nonInteractive: true, force: false, purge: false,
       pull: true, automatic: request.automatic, request,
-      get: (key) => key === "data-dir" ? values["data-dir"] : key === "to" ? request.targetVersion : undefined });
+      get: (key) => key === "data-dir" ? values["data-dir"] : undefined });
     return;
   }
   const flags = parseFlags(rest);

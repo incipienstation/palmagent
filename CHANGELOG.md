@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Allow queued automatic updates to install their exact discovered version after
+  active tasks and agent runs finish. The updater no longer rejects its own
+  version pin as a manual override. Installations affected by this bug need one
+  plugin-assisted update to receive the fix.
+
 ## 0.1.0-alpha.14
 
 ### Changed
