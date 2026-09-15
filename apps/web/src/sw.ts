@@ -12,11 +12,15 @@ import { ExpirationPlugin } from "workbox-expiration";
 import { BRANDING, type PushPayload } from "@palmagent/shared";
 
 declare let self: ServiceWorkerGlobalScope;
+declare const __PALMAGENT_WEB_VERSION__: string;
 
 // The page automatically sends SKIP_WAITING after checkpointing its state.
 // Every tab handles controllerchange independently, preserving its own draft
 // before reloading; activating a worker never controls agent execution.
 self.addEventListener("message", (event) => {
+  if ((event.data as { type?: string } | undefined)?.type === "PALMAGENT_VERSION") {
+    event.ports[0]?.postMessage({ version: __PALMAGENT_WEB_VERSION__ });
+  }
   if ((event.data as { type?: string } | undefined)?.type === "SKIP_WAITING") {
     void self.skipWaiting();
   }
