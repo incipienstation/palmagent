@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.19
+
 ### Changed
 
 - Package installations give each agent invocation its own execution service and
