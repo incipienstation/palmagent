@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { cpSync, copyFileSync, existsSync, readFileSync, renameSync, chmodSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { accessSync, constants, statSync, cpSync, copyFileSync, existsSync, readFileSync, renameSync, chmodSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import type { InstallConfig } from "./config.js";
 import { ensurePrivateDirectory } from "../private-files.js";
 import { run } from "./sh.js";
@@ -42,7 +42,13 @@ export function stageRelease(cfg: InstallConfig, version: string): InstallConfig
   ensurePrivateDirectory(directory);
   // npm verifies the registry tarball integrity and assembles native dependencies
   // in a new prefix. Never mutate a release referenced by an existing execution.
-  const result = run("npm", ["install", "--prefix", directory, "--omit=dev", "--no-audit", "--no-fund", `palmagent@${version}`], { timeout: 20 * 60_000, env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ""}` } });
+  // Resolve npm before pinning Node on PATH: otherwise selecting Node may also
+  // select a different npm installation (and bypass an operator's wrapper).
+  const npm = (process.env.PATH ?? "").split(delimiter).map(directory => resolve(directory, "npm")).find(path => {
+    try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; }
+  });
+  if (!npm) throw new Error("npm is unavailable on the installation PATH");
+  const result = run(npm, ["install", "--prefix", directory, "--omit=dev", "--no-audit", "--no-fund", `palmagent@${version}`], { timeout: 20 * 60_000, env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ""}` } });
   if (!result.ok) throw new Error("Could not stage the requested release");
   const pkgDir = join(directory, "node_modules", "palmagent");
   if (JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version !== version) throw new Error("Staged package version differs from the requested release");

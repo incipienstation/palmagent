@@ -586,6 +586,14 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
 } else process.exit(1);
 `, { mode: 0o700 });
+  // Model toolchains that put npm beside Node. Selecting the retained Node must
+  // not replace the npm executable already selected on the installation PATH.
+  const runtimeBin = join(f.root, "other-toolchain"); mkdirSync(runtimeBin);
+  const originalNode = process.execPath;
+  symlinkSync(originalNode, join(runtimeBin, "node"));
+  writeFileSync(join(runtimeBin, "npm"), `#!${originalNode}\nprocess.exit(99);\n`, { mode: 0o700 });
+  process.execPath = join(runtimeBin, "node");
+  t.after(() => { process.execPath = originalNode; });
   checkUpdateAccess(f.cfg, true); requestUpdateAccess(f.cfg, true);
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
   process.env.TEST_UPDATE_HEALTH = outcome === "rollback" ? "0.1.0-alpha.2" : request.targetVersion;
