@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.23
+
 ### Fixed
 
 - On touchscreens, releasing a long press keeps the Send/Queue selector and
