@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.24
+
 ### Fixed
 
 - Touch long-press menus preserve composer focus so opening Send/Queue or queued-message
