@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- On touchscreens, releasing a long press keeps the Send/Queue selector and
+  queued-message actions open so an option can be selected without sending the draft.
+
 ## 0.1.0-alpha.22
 
 ### Changed

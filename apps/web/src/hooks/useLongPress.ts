@@ -33,6 +33,10 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
       const o = origin.current;
       if (o && Math.hypot(e.clientX - o.x, e.clientY - o.y) > 10) cancel();
     },
+    // Touch release synthesizes mousedown after the overlay has taken focus.
+    // Refocusing the anchor here counts as outside focus and dismisses it before
+    // the user can choose. Suppress that default alongside the consumed click.
+    onMouseDown: (e: MouseEvent<HTMLButtonElement>) => { if (suppress.current) e.preventDefault(); },
     onPointerUp: () => { origin.current = undefined; clear(); },
     onPointerCancel: cancel,
     onPointerLeave: cancel,
