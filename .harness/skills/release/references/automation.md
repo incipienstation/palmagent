@@ -116,6 +116,12 @@ The controller reports a held run's URL and waits up to 20 minutes for approval 
 the built-in token fallback is not fully unattended. Branch protections remain in force. If
 `develop` advances, it reprepares its own metadata branch with a lease and waits for the new head's CI.
 It does not force-push `develop`, bypass review requirements, or merge unrelated PRs.
+After updating its own preparation branch, the controller allows up to five one-second polls
+for the PR API to replace the known previous head with the pushed head. It never validates or
+merges against that stale response; unknown heads, changed PR branches, or a reverted head stop it.
+GitHub reads retry transient connection failures and HTTP 429/500/502/503/504 up to three times
+with one-, two-, and four-second delays and a 60-second timeout per read. Writes, permission
+failures, malformed responses, and integrity mismatches are not retried by this transport layer.
 
 After the preparation merge, the controller creates the annotated Preview tag and dispatches
 `npm-publish.yml` with the exact commit. This builds the candidate, publishes through `npm-next`,

@@ -179,3 +179,74 @@ test('root build entrypoint changes remain product inputs even though test alias
   const head = f.commit();
   assert.deepEqual(productChanges(f.root, f.source, head), ['package.json']);
 });
+
+test('a lease-updated preparation waits for its known previous PR head before checking CI or merging', async () => {
+  const source = 'a'.repeat(40), head = 'b'.repeat(40), previous = 'c'.repeat(40), merged = 'd'.repeat(40);
+  const branch = 'feature/preview-0.1.0-alpha.2';
+  const pr = { number: 1, head: { ref: branch } };
+  let reads = 0, sleeps = 0, validations = 0, didMerge = false;
+  const api = (_repo, path, options) => {
+    if (path === 'pulls/1') return {
+      ...pr, head: { ref: branch, sha: ++reads <= 2 ? previous : head }, base: { ref: 'develop' },
+      state: 'open', draft: false, mergeable: true, merged: didMerge, merge_commit_sha: merged,
+    };
+    assert.equal(sleeps, 2, 'no CI or merge calls while the PR reports the previous head');
+    if (path === 'git/ref/heads/develop') return { object: { sha: source } };
+    if (path === 'actions/runs/42') return { repository: { full_name: repository }, path: '.github/workflows/ci.yml', event: 'pull_request',
+      head_branch: branch, head_sha: head, status: 'completed', conclusion: 'success' };
+    assert.equal(path, 'pulls/1/merge');
+    assert.equal(options.body.sha, head);
+    didMerge = true;
+  };
+  const result = await mergePreparation('', repository, pr, head, source, {
+    previousHead: previous, api,
+    sleep: async (ms) => { assert.equal(ms, 1000); assert(!didMerge); sleeps++; },
+    validation: async (_repo, current, expected) => { assert.equal(current.head.sha, head); assert.equal(expected, head); validations++; return 42; },
+    pages: () => [{ name: 'validate', head_sha: head, status: 'completed', conclusion: 'success' }],
+  });
+  assert.equal(result, merged);
+  assert.equal(validations, 1);
+  assert.equal(sleeps, 2);
+});
+
+test('PR propagation allowance is bounded and rejects unknown heads, changed refs, closed PRs and drafts', async () => {
+  const source = 'a'.repeat(40), head = 'b'.repeat(40), previous = 'c'.repeat(40);
+  const pr = { number: 1, head: { ref: 'feature/preview-0.1.0-alpha.2' } };
+  const current = { ...pr, head: { ...pr.head, sha: previous }, base: { ref: 'develop' }, state: 'open', draft: false };
+  for (const [value, allowedWaits] of [
+    [current, 5],
+    [{ ...current, head: { ...pr.head, sha: 'd'.repeat(40) } }, 0],
+    [{ ...current, head: { ref: 'other-branch', sha: previous } }, 0],
+    [{ ...current, base: { ref: 'main' } }, 0],
+    [{ ...current, state: 'closed' }, 0],
+    [{ ...current, draft: true }, 0],
+    [{ ...current, merged: true }, 0],
+  ]) {
+    let sleeps = 0;
+    await assert.rejects(mergePreparation('', repository, pr, head, source, {
+      previousHead: previous,
+      api: (_repo, path) => { assert.equal(path, 'pulls/1'); return value; },
+      sleep: async () => { sleeps++; },
+      validation: async () => assert.fail('must not validate stale or unknown heads'),
+    }), /identity changed/);
+    assert.equal(sleeps, allowedWaits);
+  }
+});
+
+test('a PR reverting after the expected head was observed does not regain the propagation allowance', async () => {
+  const source = 'a'.repeat(40), head = 'b'.repeat(40), previous = 'c'.repeat(40);
+  const branch = 'feature/preview-0.1.0-alpha.2', pr = { number: 1, head: { ref: branch } };
+  let reads = 0, sleeps = 0;
+  await assert.rejects(mergePreparation('', repository, pr, head, source, {
+    previousHead: previous,
+    api: (_repo, path) => {
+      if (path === 'pulls/1') return { ...pr, head: { ref: branch, sha: ++reads === 1 ? head : previous }, base: { ref: 'develop' }, state: 'open' };
+      if (path === 'git/ref/heads/develop') return { object: { sha: source } };
+      assert.equal(path, 'actions/runs/42');
+      return { repository: { full_name: repository }, path: '.github/workflows/ci.yml', event: 'pull_request', head_branch: branch, head_sha: head, status: 'in_progress' };
+    },
+    validation: async () => 42,
+    sleep: async (ms) => { assert.equal(ms, 15000); sleeps++; },
+  }), /identity changed/);
+  assert.equal(sleeps, 1);
+});

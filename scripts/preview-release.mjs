@@ -136,12 +136,25 @@ export function assertPreparationRun(run, repository, branch, expectedHead) {
   'Preparation CI identity differs from the selected PR');
 }
 
-export async function mergePreparation(cwd, repository, pr, expectedHead, source, { api = github, pages = githubPages, sleep = delay, validation = preparationValidation } = {}) {
-  let runId, approvalReported = false;
+export async function mergePreparation(cwd, repository, pr, expectedHead, source, { api = github, pages = githubPages, sleep = delay, validation = preparationValidation, previousHead } = {}) {
+  let runId, approvalReported = false, observedHead = false, propagationRetries = 0;
   const deadline = Date.now() + 20 * 60 * 1000;
   while (Date.now() < deadline) {
     const current = api(repository, `pulls/${pr.number}`);
-    assert(current.head.sha === expectedHead && current.base.ref === 'develop', 'Preparation PR identity changed');
+    assert(current.base.ref === 'develop' && (!pr.head?.ref || current.head.ref === pr.head.ref), 'Preparation PR identity changed');
+    if (current.head.sha !== expectedHead) {
+      // After our lease-protected push, GitHub's PR API can briefly report the
+      // previous head. Wait only for that known head, before ever trusting the new
+      // one. Unknown changes, reversions after observation, and persistent lag fail closed.
+      if (!observedHead && previousHead && current.head.sha === previousHead && !current.merged
+        && current.state === 'open' && !current.draft && propagationRetries < 5) {
+        propagationRetries++;
+        await sleep(1000);
+        continue;
+      }
+      throw new Error('Preparation PR identity changed');
+    }
+    observedHead = true;
     if (current.merged) return current.merge_commit_sha;
     assert(current.state === 'open' && !current.draft, 'Preparation PR was closed or held as a draft');
     const head = api(repository, 'git/ref/heads/develop').object.sha;
@@ -215,7 +228,7 @@ async function prepare(cwd, repository, baseline, registry, tags, bot) {
     const body = `Prepare Preview ${version} from ${source}. This PR changes only product versions and release notes. Required CI and develop protections apply.\n\n<!-- palmagent-preview:${JSON.stringify({ source, version })} -->\n`;
     pr = pr ? github(repository, `pulls/${pr.number}`, { method: 'PATCH', body: { body } })
       : github(repository, 'pulls', { method: 'POST', body: { title: `chore(release): prepare ${version}`, head: branch, base: 'develop', body } });
-    const merged = await mergePreparation(cwd, repository, pr, head, source);
+    const merged = await mergePreparation(cwd, repository, pr, head, source, { previousHead: oldHead });
     if (merged) {
       git(cwd, 'fetch', 'origin', 'develop');
       assert(git(cwd, 'rev-parse', `${merged}^{tree}`) === git(cwd, 'rev-parse', `${head}^{tree}`), 'Merged preparation differs from its verified tree');
