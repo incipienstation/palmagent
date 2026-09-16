@@ -1,12 +1,39 @@
 import { execFileSync } from 'node:child_process';
 
-export function github(repository, path, { method = 'GET', body, binary = false } = {}) {
+const retryDelays = [1000, 2000, 4000];
+const pause = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+
+function transientReadFailure(error) {
+  const stderr = error.stderr?.toString() ?? '';
+  const status = /\(HTTP (\d{3})\)/.exec(stderr)?.[1];
+  if (status) return ['429', '500', '502', '503', '504'].includes(status);
+  return ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN'].includes(error.code)
+    || /connection reset by peer|connection refused|i\/o timeout|TLS handshake timeout|unexpected EOF|temporary failure in name resolution|network is unreachable/i.test(stderr);
+}
+
+export function github(repository, path, { method = 'GET', body, binary = false } = {}, {
+  execute = execFileSync, sleep = pause, warn = console.warn,
+} = {}) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Invalid GitHub repository');
   const args = ['api', `repos/${repository}/${path}`, '--method', method];
   if (binary) args.push('-H', 'Accept: application/octet-stream');
   if (body !== undefined) args.push('--input', '-');
-  const result = execFileSync('gh', args, { input: body === undefined ? undefined : JSON.stringify(body),
-    encoding: binary ? undefined : 'utf8', maxBuffer: 128 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
+  let result;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      result = execute('gh', args, { input: body === undefined ? undefined : JSON.stringify(body),
+        encoding: binary ? undefined : 'utf8', maxBuffer: 128 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'],
+        ...(method === 'GET' ? { timeout: 60000, killSignal: 'SIGKILL' } : {}) });
+      break;
+    } catch (error) {
+      // Mutations may have succeeded even when their response was lost. Only
+      // repeat reads, and never turn authorization or validation failures into retries.
+      if (method !== 'GET' || attempt >= retryDelays.length || !transientReadFailure(error)) throw error;
+      warn(`Transient GitHub read failure; retrying (${attempt + 2}/${retryDelays.length + 1}).`);
+      sleep(retryDelays[attempt]);
+    }
+  }
+  // Malformed JSON is evidence to inspect, not a transport failure to retry.
   return binary ? result : result.trim() ? JSON.parse(result) : null;
 }
 
