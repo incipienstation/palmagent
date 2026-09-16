@@ -18,6 +18,7 @@ import { TaskService } from "../src/service.js";
 import { ProcessSupervisor } from "../src/supervisor.js";
 import { WorktreeManager } from "../src/worktree.js";
 import { createApp, MAX_BODY_BYTES } from "../src/http/app.js";
+import { SettingsStore } from "../src/settings.js";
 import { startSessionControl, sessionSocket } from "../src/session-control.js";
 import type { HttpDependencies } from "../src/http/types.js";
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
@@ -30,7 +31,8 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDepend
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: "https://localhost", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings);
   const shutdown = new AbortController();
-  const app = createApp({ db, hub, service, auth, config: settings, shutdown: shutdown.signal,
+  const repoSettings = new SettingsStore(join(dir, "state"), settings.repoRoots);
+  const app = createApp({ db, hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
     push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service), ...extra });
   const cleanup: Array<() => Promise<void>> = [];
   t.after(async () => {
@@ -42,7 +44,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDepend
     server.closeAllConnections();
     if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   });
-  return { dir, db, hub, service, auth, settings, shutdown, app, closeListener };
+  return { dir, db, hub, service, auth, settings, repoSettings, shutdown, app, closeListener };
 }
 
 // Use the real Node adapter: cookies, streamed bodies and HEAD can differ from
@@ -146,6 +148,47 @@ test("update settings require authentication, validate one bounded preference, a
   assert.equal(changes, 5);
 });
 
+test("Space settings authenticate writes and share live discovery, browse, and reset with the CLI store", async (t) => {
+  const f = fixture(t);
+  const path = "/api/settings/repos";
+  const now = Date.now();
+  f.db.createSession("repo-settings-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=repo-settings-session`, "content-type": "application/json" };
+  const get = async (url: string) => {
+    const response = await f.app.request(url, { headers });
+    assert.equal(response.status, 200);
+    return response.json() as Promise<any>;
+  };
+  const patch = (body: unknown) => f.app.request(path, { method: "PATCH", headers, body: JSON.stringify(body) });
+  assert.equal((await f.app.request(path)).status, 401);
+  assert.equal((await f.app.request(path, { method: "PATCH", body: '{"action":"reset"}' })).status, 401);
+  assert.equal((await f.app.request(path, { headers })).headers.get("cache-control"), "no-store");
+  assert.equal((await f.app.request(path, { method: "PATCH", headers: { ...headers, origin: "https://other.example" }, body: '{"action":"reset"}' })).status, 403);
+  for (const body of [{}, { action: "reset", extra: true }, { action: "set", paths: "bad" },
+    { action: "set", paths: ["relative"] }, { action: "set", paths: [join(f.dir, "missing")] }]) {
+    assert.equal((await patch(body)).status, 400);
+  }
+  const root = join(f.dir, "search");
+  const repo = join(root, "project");
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  f.db.insertRepo({ id: "registered", name: "existing", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: now });
+  assert.equal((await patch({ action: "set", paths: [root] })).status, 200);
+  const cliStore = new SettingsStore(f.repoSettings.dataDir, f.settings.repoRoots);
+  assert.deepEqual(cliStore.get().repoRoots, [root]);
+  assert.deepEqual((await get("/api/repos/discover")).repos.map((r: { path: string }) => r.path), [repo]);
+  assert.equal((await get("/api/fs/list")).path, root);
+  cliStore.change({ action: "set", paths: [] });
+  assert.deepEqual((await get(path)).repoRoots, []);
+  assert.deepEqual((await get("/api/repos/discover")).repos, []);
+  assert.equal((await get("/api/repos")).repos.length, 1, "registered spaces remain");
+  assert.equal((await patch({ action: "reset" })).status, 200);
+  assert.deepEqual(cliStore.get().repoRoots, [f.dir]);
+  assert.equal((await get("/api/fs/list")).path, f.dir);
+  const dev = fixture(t, false);
+  assert.equal((await (await dev.app.request(path)).json() as { writable: boolean }).writable, false);
+  assert.equal((await dev.app.request(path, { method: "PATCH", body: '{"action":"reset"}' })).status, 403);
+});
+
 test("account limits use the task's provider home without starting a turn and are not browser-cacheable", async (t) => {
   const f = fixture(t, false);
   const home = join(f.dir, "selected-account");
@@ -224,7 +267,7 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(f.dir, "web/assets/app-hash.js"), "// asset");
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
-  const app = createApp({ db: f.db, hub: f.hub, service: f.service, auth: f.auth, config: f.settings,
+  const app = createApp({ db: f.db, hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
     push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service) });
   for (const path of ["/", "/sw.js", "/deep/link", "/assets/missing.js"]) {
     const response = await app.request(path);

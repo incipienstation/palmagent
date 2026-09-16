@@ -1,6 +1,6 @@
 ---
 name: settings
-description: Use when a user wants to view or change Palmagent preferences, choose Stable or Preview, or enable, disable, or check automatic updates. Manages shared preferences and access-triggered updates; an immediate update is a separate request.
+description: Use when a user wants to view or change Palmagent preferences or Space search paths, choose Stable or Preview, or enable, disable, or check automatic updates. Manages shared preferences and access-triggered updates; an immediate update is a separate request.
 ---
 
 # Palmagent user settings
@@ -8,7 +8,7 @@ description: Use when a user wants to view or change Palmagent preferences, choo
 The user interacts with this plugin. Handle configuration and internal CLI calls
 on their behalf; do not ask them to edit a file or run a command.
 
-Settings live at `~/.palmagent/config.json`, shared by the Claude Code and Codex
+Channel and update preferences live at `~/.palmagent/config.json`, shared by the Claude Code and Codex
 Palmagent plugins. `PALMAGENT_HOME`, when set by the host, overrides that directory.
 The file stays outside plugin/package caches and service data, and must survive
 updates, plugin reinstalls, and service removal.
@@ -88,9 +88,33 @@ and activates independently of running execution hosts. Legacy installations
 wait for active tasks to finish; completion resumes their pending requests. Changing channel
 cancels the old request and checks the new channel without immediately installing.
 
+## Space search paths
+
+For repository discovery, use the public `settings` CLI as the installation owner.
+Keep the server's custom `--data-dir`; these settings belong to that installation,
+in `<data-dir>/settings.json`, and are shared with **Settings → Space search paths**.
+Check `<cli> settings --help` before use on older installations.
+
+```bash
+<cli> settings get repo-roots --json
+<cli> settings add repo-roots /srv/repos
+<cli> settings remove repo-roots /srv/repos
+<cli> settings set repo-roots /mnt/projects
+<cli> settings reset repo-roots
+```
+
+Use only the requested action. `set` replaces the full list; with no paths it
+disables automatic discovery while keeping registered spaces. `reset` restores
+the installation's `REPO_ROOTS` defaults. Added paths must be readable directories
+and use absolute paths or quoted `~/...`. Changes apply on the next search
+without a restart. `--dry-run` validates and previews without writing;
+`--json` reports effective paths, defaults, and source. For manual servers,
+use the same data directory and `REPO_ROOTS` environment as the server.
+Never rewrite the settings file directly.
+
 ## Errors
 
 On a nonzero exit, stop and explain the failure. Invalid JSON, unsupported schema
 versions, and invalid channels must not be replaced with defaults. Use the internal
-config API for changes; never rewrite the entire file from a conversation snapshot,
+config API for channel preferences and the settings CLI for search paths; never rewrite the entire file from a conversation snapshot,
 remove unknown settings, or copy user configuration into the plugin distribution.

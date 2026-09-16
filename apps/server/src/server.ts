@@ -10,6 +10,7 @@ import { createApp } from "./http/app.js";
 import { createRuntime } from "./runtime.js";
 import { startSessionControl } from "./session-control.js";
 import { createUpdateSettingsService } from "./update-settings.js";
+import { SettingsStore } from "./settings.js";
 
 declare const __PALMAGENT_BUILD__: { version: string; sourceCommit: string; dirty: boolean };
 const build = typeof __PALMAGENT_BUILD__ === "undefined" ? undefined : __PALMAGENT_BUILD__;
@@ -26,7 +27,8 @@ const updateWatcher = build ? watch(runtime.config.dataDir, (_event, filename) =
   if (filename === updateAccessFile || filename === "update-result.json") runtime.hub.emitUpdates();
 }) : undefined;
 updateWatcher?.on("error", () => { updateWatcher.close(); });
-const app = createApp({ ...runtime, build, updates, shutdown: shutdown.signal });
+const settings = new SettingsStore(runtime.config.dataDir, runtime.config.repoRoots);
+const app = createApp({ ...runtime, settings, build, updates, shutdown: shutdown.signal });
 const server = createServer(getRequestListener(app.fetch));
 let local: Server | undefined;
 let closing: Promise<void> | undefined;

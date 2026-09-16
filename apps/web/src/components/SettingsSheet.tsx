@@ -29,6 +29,7 @@ import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
 import { PushToggle } from "./PushToggle";
 import { UpdateSettings } from "./UpdateSettings";
+import { RepoSettings } from "./RepoSettings";
 
 async function signOut() {
   try {
@@ -55,7 +56,7 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
           <SheetDescription className="sr-only">App preferences and account</SheetDescription>
         </SheetHeader>
 
-        <div data-slot="settings-scroll" className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-4 pb-2">
+        <div data-slot="settings-scroll" className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-4 pb-2 *:shrink-0">
           {/* Appearance — the theme toggle's home. */}
           <SettingRow label="Appearance">
             <ToggleGroup
@@ -123,6 +124,8 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
           )}
 
           {open && <UpdateSettings />}
+          <Separator />
+          {open && <RepoSettings />}
           <Separator />
 
           {/* Account — sign out, behind an AlertDialog confirm. */}

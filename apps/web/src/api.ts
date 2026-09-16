@@ -34,6 +34,8 @@ import type {
   UpdateSettingsChange,
   UpdateSettingsStatus,
   ValidateRepoPathResponse,
+  RepoSettingsChange,
+  RepoSettingsStatus,
 } from "@palmagent/shared";
 import type {
   AuthenticationResponseJSON,
@@ -85,6 +87,10 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
 }
 
 export const api = {
+  repoSettings: {
+    get: () => request<RepoSettingsStatus>("GET", "/api/settings/repos"),
+    change: (change: RepoSettingsChange) => request<RepoSettingsStatus>("PATCH", "/api/settings/repos", change),
+  },
   submitMessage: (id: string, req: SubmitMessage) => request<MessageQueue>("POST", `/api/tasks/${encodeURIComponent(id)}/messages`, req),
   messageAction: (id: string, messageId: string, req: MessageAction) => request<MessageQueue>("POST", `/api/tasks/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, req),
   resumeQueue: (id: string) => request<MessageQueue>("POST", `/api/tasks/${encodeURIComponent(id)}/queue/resume`, {}),

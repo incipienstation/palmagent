@@ -24,6 +24,11 @@ test("settings show the running version, save shared preferences, and remain usa
   });
   await openSettings(page);
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
+  await expect.poll(() => page.evaluate(() => {
+    const appearance = document.querySelector('[aria-label="System theme"]')!.getBoundingClientRect();
+    const detail = document.querySelector('[aria-label="Compact output"]')!.getBoundingClientRect();
+    return appearance.bottom <= detail.top;
+  })).toBe(true);
   await expect(page).toHaveScreenshot("update-settings.png");
   const automatic = page.getByRole("switch", { name: "Automatic updates" });
   await expect(automatic).not.toBeChecked();
@@ -128,19 +133,20 @@ test.describe("update settings with the real service worker", () => {
     await page.goto("/");
     await page.evaluate(() => navigator.serviceWorker.ready);
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-    await page.evaluate(async () => {
+    const paths = ["/api/settings/updates", "/api/settings/repos", "/api/repos/discover", "/api/repos/validate?path=/projects", "/api/fs/list"];
+    await page.evaluate(async (paths) => {
       const cache = await caches.open("api");
-      await cache.put("/api/settings/updates", new Response(JSON.stringify({ currentVersion: "9.9.9", availability: "available" }), {
+      for (const path of paths) await cache.put(path, new Response(JSON.stringify({ currentVersion: "9.9.9", availability: "available" }), {
         headers: { "content-type": "application/json" },
       }));
-    });
+    }, paths);
     const online = await page.evaluate(async () => (await fetch("/api/settings/updates")).json());
     expect(online.currentVersion).toBe("0.1.0-alpha.4");
     await context.setOffline(true);
-    const offline = await page.evaluate(async () => {
-      try { return await (await fetch("/api/settings/updates")).json(); } catch { return null; }
-    });
-    expect(offline).toBeNull();
+    const offline = await page.evaluate(async (paths) => Promise.all(paths.map(async (path) => {
+      try { return await (await fetch(path)).json(); } catch { return null; }
+    })), paths);
+    expect(offline).toEqual(paths.map(() => null));
   });
 });
 
