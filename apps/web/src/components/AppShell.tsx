@@ -71,6 +71,7 @@ export function AppShell({
 //   - Extra trailing controls still go in `children` (rendered before the gear).
 export function AppBar({
   title,
+  titleControl,
   back,
   settings,
   conn,
@@ -78,6 +79,8 @@ export function AppBar({
   children,
 }: {
   title: string;
+  /** Optional accessible title trigger for focused-screen details. */
+  titleControl?: ReactNode;
   back?: boolean;
   /** Render the gear (right) that opens the Settings sheet — root screens only. */
   settings?: boolean;
@@ -109,8 +112,8 @@ export function AppBar({
       )}
       <h1 className="flex min-w-0 flex-1 items-center gap-2 truncate text-[17px] font-semibold text-strong">
         {brand && <BrandMark className="size-[22px] shrink-0 text-primary" />}
-        <span className="min-w-0 truncate">{title}</span>
-        {conn && <LiveDot conn={conn} />}
+        {titleControl ?? <span className="min-w-0 truncate">{title}</span>}
+        {conn && <LiveDot conn={conn} compact={Boolean(titleControl)} />}
       </h1>
       {children}
       {settings && (
@@ -147,12 +150,12 @@ function BrandMark({ className }: { className?: string }) {
 // `reconnecting` surfaces, as an amber pulse dot + short label, so a connection
 // problem is the single thing that ever draws the eye here. The all-states
 // labeled form still lives in ConnPill (the Settings → Connection row).
-function LiveDot({ conn }: { conn: ConnState }) {
+function LiveDot({ conn, compact = false }: { conn: ConnState; compact?: boolean }) {
   if (conn !== "reconnecting") return null;
   return (
-    <span role="status" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber">
+    <span role="status" title="Reconnecting…" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber">
       <span aria-hidden className="size-2 shrink-0 animate-pulse rounded-full bg-amber" />
-      Reconnecting…
+      <span className={compact ? "sr-only" : undefined}>Reconnecting…</span>
     </span>
   );
 }

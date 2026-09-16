@@ -4,7 +4,7 @@ import type { MessageQueue, PendingMessage } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Check, Info, Square, Trash2, X } from "lucide-react";
+import { Archive, Check, ChevronDown, Square, Trash2, X } from "lucide-react";
 
 import {
   AlertDialog,
@@ -24,11 +24,11 @@ import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "
 import { useDraft, usePersistedString } from "../hooks/useDraft";
 import { useTaskStream } from "../hooks/useTaskStream";
 import { navigate } from "../router";
-import { AppBar, AppShell } from "./AppShell";
+import { AppBar, AppShell, ConnPill } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
 import { Composer } from "./Composer";
 import { AgentTag, StatusBadge } from "./chips";
-import { PrChip } from "./PrChip";
+import { PrList } from "./PrChip";
 import { EventLog } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
 import { SessionHandoff } from "./SessionHandoff";
@@ -36,7 +36,6 @@ import { Alert } from "./ui/alert";
 import { SessionActionsMenu } from "./SessionActionsMenu";
 import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
-import { useOutputMode } from "../OutputModeProvider";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
 function errMsg(e: unknown): string {
@@ -50,7 +49,6 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 }
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
-  const { mode } = useOutputMode();
   const { log, conn, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
@@ -198,59 +196,42 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
   return (
     <AppShell>
-      <AppBar title={heading} back conn={conn}>
-        {task && (
-          <TaskActionsMenu
-            task={task}
-            busy={busy}
-            canStop={canStop}
-            canCancel={canCancel}
-            canArchive={canArchive}
-            onStop={() => act(() => api.stop(taskId))}
-            onCancel={() => act(() => api.cancel(taskId))}
-            onArchive={() => act(() => api.archive(taskId), () => navigate("/"))}
-          />
-        )}
-      </AppBar>
+      <Sheet>
+        <AppBar title={heading} back conn={conn} titleControl={
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="title" aria-label={heading} aria-description="Open session details" title="Session details">
+              <span className="truncate">{heading}</span><ChevronDown data-icon="inline-end" />
+            </Button>
+          </SheetTrigger>
+        }>
+          {task && <>
+            <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
+            <TaskActionsMenu task={task} busy={busy} canStop={canStop} canCancel={canCancel} canArchive={canArchive}
+              onStop={() => act(() => api.stop(taskId))}
+              onCancel={() => act(() => api.cancel(taskId))}
+              onArchive={() => act(() => api.archive(taskId), () => navigate("/"))} />
+          </>}
+        </AppBar>
+        <SheetContent className="max-h-[85dvh]">
+          <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription className="break-words">{heading}</SheetDescription></SheetHeader>
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-2 text-sm [overflow-wrap:anywhere]">
+            {task && <div className="flex flex-wrap items-center gap-2"><AgentTag agent={task.agent} /><StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} /><ConnPill conn={conn} /></div>}
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+              {task?.worktreePath && <><dt>Directory</dt><dd>{task.worktreePath}</dd></>}
+              {task?.branch && <><dt>Branch</dt><dd>{task.branch}</dd></>}
+              {task?.model && <><dt>Model</dt><dd>{task.model}</dd></>}
+              {task?.effort && <><dt>Effort</dt><dd>{task.effort}</dd></>}
+              {task && <><dt>Permission</dt><dd>{permLabel(task.agent, task.permission)}</dd></>}
+              {task?.sessionId && <><dt>Session</dt><dd>{task.sessionId}</dd></>}
+            </dl>
+            {!!task?.prs?.length && <section aria-label="Pull requests"><h3 className="text-sm font-semibold">Pull requests</h3><PrList prs={task.prs} /></section>}
+            {task?.sessionId && <><Separator /><SessionHandoff task={task} /></>}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Keep primary context in one row; configuration lives
-            in Session details. Verbose retains the full metadata strip. */}
-        <div className="flex items-center gap-x-2 px-4 py-1">
-          <div className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap text-[12.5px] text-faint [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-            {task && <AgentTag agent={task.agent} />}
-            {task && <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
-            {mode !== "verbose" && <PrChip prs={task?.prs} />}
-            {mode !== "compact" && task?.branch && <span className="font-mono text-muted-foreground">{task.branch}</span>}
-            {mode === "verbose" && task?.model && <span>{task.model}</span>}
-            {mode === "verbose" && task?.effort && <span>effort {task.effort}</span>}
-            {mode === "verbose" && task && <span>{permLabel(task.agent, task.permission)}</span>}
-            {mode === "verbose" && task?.sessionId && (
-              <span className="font-mono text-muted-foreground">sid {task.sessionId.slice(0, 8)}</span>
-            )}
-            {mode === "verbose" && <PrChip prs={task?.prs} />}
-          </div>
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-11 shrink-0" aria-label="Session details"><Info data-icon="inline-start" /></Button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription>Session configuration and identity.</SheetDescription></SheetHeader>
-              <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto px-4 text-sm [overflow-wrap:anywhere]">
-                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
-                  {task?.branch && <><dt>Branch</dt><dd>{task.branch}</dd></>}
-                  {task?.model && <><dt>Model</dt><dd>{task.model}</dd></>}
-                  {task?.effort && <><dt>Effort</dt><dd>{task.effort}</dd></>}
-                  {task && <><dt>Permission</dt><dd>{permLabel(task.agent, task.permission)}</dd></>}
-                  {task?.sessionId && <><dt>Session</dt><dd>{task.sessionId}</dd></>}
-                </dl>
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
-        {task?.sessionId && <div className="px-4 pb-2"><SessionHandoff task={task} /></div>}
-        {localOwner && <Alert className="mx-4 mb-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
-        <Separator />
+        {localOwner && <Alert className="mx-3 my-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
 
         <EventLog log={log} live={running} loading={loadingHistory}
           prompt={loadingHistory || hasEarlier ? undefined : task?.prompt}

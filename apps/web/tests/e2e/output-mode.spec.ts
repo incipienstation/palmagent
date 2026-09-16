@@ -31,7 +31,7 @@ test("compact keeps account limits visible and configuration in session details"
   await expect(page.getByRole("button", { name: /Latest usage/ })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Task usage" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Account limits" }).getByText("72% left", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Session details", exact: true }).click();
+  await page.getByTitle("Session details", { exact: true }).click();
   const detail = page.getByRole("dialog");
   await expect(detail.getByText("Permission", { exact: true })).toBeVisible();
   await expect(detail.getByText("Model", { exact: true })).toBeVisible();

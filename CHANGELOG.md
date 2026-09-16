@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Task screens keep the title and status in one compact header. Tap the title
+  for session configuration, pull requests, and shell handoff. Account allowance
+  and reset countdowns now use aligned columns above the composer.
+
 ## 0.1.0-alpha.21
 
 ### Added

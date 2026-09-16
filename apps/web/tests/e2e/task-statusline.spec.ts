@@ -118,3 +118,27 @@ test.describe("account limits with the real service worker", () => {
     expect(offline).toBeNull();
   });
 });
+
+for (const width of [320, 360, 390]) {
+  test(`allowance columns align and details stays touchable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 780 });
+    const line = await show(page, claude);
+    const x = async (text: string) => (await line.getByText(text, { exact: true }).boundingBox())!.x;
+    await expect(line.getByText("72% left", { exact: true })).toBeVisible();
+    expect(await x("5h")).toBe(await x("Weekly"));
+    expect(await x("72% left")).toBe(await x("38% left"));
+    expect(await x("Resets in 1h 40m")).toBe(await x("Resets in 3d"));
+    const action = await line.getByRole("button", { name: "Account limit details" }).boundingBox();
+    expect(action!.width).toBeGreaterThanOrEqual(44);
+    expect(action!.height).toBeGreaterThanOrEqual(44);
+    await assertViewportLocked(page);
+    await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: {
+      ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 95, resetsAt: now - 1000 },
+    } }));
+    await page.clock.fastForward(30000);
+    await expect(line.getByText("Remaining unknown")).toBeVisible();
+    await expect(line.getByText("Awaiting refresh")).toBeVisible();
+    expect(await line.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await assertViewportLocked(page);
+  });
+}
