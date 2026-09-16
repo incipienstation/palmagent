@@ -21,7 +21,11 @@ export function SendControl({ mode, onMode, onSend, disabled, sendDisabled }: {
         {mode === "send" ? <ArrowUp /> : <ListPlus />}
       </Button>
     </PopoverAnchor>
-    <PopoverContent onCloseAutoFocus={event => { event.preventDefault(); button.current?.focus(); }} side="top" align="end" className="w-64 p-2" aria-label="Message delivery">
+    <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} onCloseAutoFocus={event => {
+      event.preventDefault();
+      // Exit animation can finish after the user has returned to their draft.
+      if (!(document.activeElement instanceof HTMLTextAreaElement)) button.current?.focus();
+    }} side="top" align="end" className="w-64 p-2" aria-label="Message delivery">
       <ToggleGroup type="single" value={mode} aria-label="Message delivery mode" onValueChange={value => {
         if (value !== "send" && value !== "queue") return;
         if (value !== mode) { haptic("select"); onMode(value); }

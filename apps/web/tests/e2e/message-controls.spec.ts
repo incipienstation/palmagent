@@ -134,9 +134,53 @@ test("touch release keeps queued-message actions open and editing preserves the 
   await touchHold(page, page.getByRole("button", { name: /Queued message 1:/ }));
   const edit = page.getByRole("button", { name: "Edit prompt", exact: true });
   await expect(edit).toBeVisible();
+  await expect(page.getByRole("textbox")).toBeFocused();
   expect(calls.filter(call => call.mode)).toHaveLength(1);
   await edit.tap();
   await expect(page.getByRole("textbox")).toHaveValue("Queued from the phone");
   await page.getByRole("button", { name: "Cancel editing" }).tap();
   await expect(page.getByRole("textbox")).toHaveValue("Ordinary mobile draft");
+});
+
+for (const draft of ["", "Keep the keyboard open"]) {
+  test(`touch menu keeps input focus with ${draft ? "a draft" : "an empty composer"} and a keyboard-sized viewport`, async ({ page }) => {
+    const { calls } = await setup(page);
+    await page.setViewportSize({ width: 360, height: 430 });
+    const input = page.getByRole("textbox");
+    await input.fill(draft);
+    // Desktop Chromium has no software keyboard. Model its blur -> viewport
+    // expansion: staging retargeted the release's mousedown outside the anchor.
+    await page.exposeFunction("dismissTestKeyboard", () => page.setViewportSize({ width: 360, height: 780 }));
+    await input.evaluate(el => el.addEventListener("blur", () => { void (window as any).dismissTestKeyboard(); }, { once: true }));
+    await input.focus();
+    await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
+    await expect(page.getByRole("radiogroup", { name: "Message delivery mode" })).toBeVisible();
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue(draft);
+    expect(calls).toHaveLength(0);
+    await page.getByRole("radio", { name: "Queue", exact: true }).tap();
+    const queue = page.getByRole("button", { name: "Add to queue" });
+    await expect(queue).toBeVisible();
+    // Switching from touch to keyboard must still move focus into the options.
+    await expect(page.getByRole("radiogroup", { name: "Message delivery mode" })).toBeHidden();
+    await queue.focus();
+    await queue.press("ArrowDown");
+    await expect(page.getByRole("radio", { name: "Queue", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    expect(calls).toHaveLength(0);
+  });
+}
+
+test("finishing the mode menu exit does not steal focus from a resumed draft", async ({ page }) => {
+  const { calls } = await setup(page);
+  const control = page.getByRole("button", { name: "Send now", exact: true });
+  await control.focus();
+  await control.press("ArrowDown");
+  await page.getByRole("radio", { name: "Queue", exact: true }).tap();
+  const input = page.getByRole("textbox");
+  await input.fill("Continue typing while the menu closes");
+  await page.waitForTimeout(300);
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("Continue typing while the menu closes");
+  expect(calls).toHaveLength(0);
 });

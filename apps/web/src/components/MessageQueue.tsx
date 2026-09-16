@@ -21,7 +21,7 @@ function QueueItem({ message, index, disabled, onEdit, onSend, onDelete }: {
         <span className="ml-auto shrink-0">{editing ? "Editing" : message.status === "queued" ? "" : message.status}</span>
       </Button>
     </PopoverAnchor>
-    <PopoverContent side="top" align="start" className="max-h-80 overflow-y-auto p-2" aria-label="Queued message">
+    <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} side="top" align="start" className="max-h-80 overflow-y-auto p-2" aria-label="Queued message">
       {panel === "detail" ? <p className="whitespace-pre-wrap break-words p-2">{message.text}</p> : <div className="flex flex-col gap-1">
         <Button variant="ghost" disabled={message.status !== "queued" || editing} onClick={() => { setPanel(null); onEdit(); }}>Edit prompt</Button>
         <Button variant="ghost" disabled={message.status !== "queued" || editing} onClick={() => { setPanel(null); onSend(); }}>Send now</Button>
