@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Touch long-press menus preserve composer focus so opening Send/Queue or queued-message
+  actions does not dismiss the keyboard and close the menu before an option can be selected.
+  Closing the mode menu also preserves focus when typing resumes during its exit animation.
+
 ## 0.1.0-alpha.23
 
 ### Fixed

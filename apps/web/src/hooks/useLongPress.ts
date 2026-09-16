@@ -10,6 +10,7 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const origin = useRef<{ x: number; y: number; pointer: number }>();
   const suppress = useRef(false);
+  const touch = useRef(false);
   const [pressing, setPressing] = useState(false);
   const latest = useRef({ open, click, disabled }); latest.current = { open, click, disabled };
   const clear = () => { clearTimeout(timer.current); timer.current = undefined; setPressing(false); };
@@ -23,8 +24,14 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
     return () => { window.removeEventListener("pointerdown", otherPointer, true); clearTimeout(timer.current); window.removeEventListener("scroll", cancel, true); window.removeEventListener("blur", cancel); };
   }, []);
   useEffect(() => { if (disabled) cancel(); }, [disabled]);
-  return { pressing, handlers: {
+  return { pressing, onOpenAutoFocus: (event: Event) => {
+    // Autofocus blurs the composer and dismisses the phone keyboard mid-hold.
+    // The viewport then moves the anchor away from the finger; compatibility
+    // mouse events land outside it and dismiss the menu on release.
+    if (touch.current) event.preventDefault();
+  }, handlers: {
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+      touch.current = e.pointerType === "touch";
       if (disabled || e.button !== 0 || !e.isPrimary) { cancel(); return; }
       suppress.current = false; origin.current = { x: e.clientX, y: e.clientY, pointer: e.pointerId }; setPressing(true);
       timer.current = setTimeout(() => { suppress.current = true; reveal(); }, 450);
@@ -42,9 +49,11 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
     onPointerLeave: cancel,
     onContextMenu: (e: MouseEvent<HTMLButtonElement>) => { e.preventDefault(); if (!suppress.current) { suppress.current = true; reveal(); } },
     onKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => {
+      touch.current = false;
       if (e.key === "ArrowDown" || e.key === "ContextMenu" || e.key === "F10" && e.shiftKey) { e.preventDefault(); reveal(); }
     },
     onClick: (e: MouseEvent<HTMLButtonElement>) => {
+      if (e.detail === 0) touch.current = false;
       if (suppress.current && e.detail !== 0) { e.preventDefault(); suppress.current = false; return; }
       if (!latest.current.disabled) latest.current.click();
     },
