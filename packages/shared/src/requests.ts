@@ -1,5 +1,6 @@
 import { z } from "zod";
 export { UpdateSettingsChangeSchema } from "./updates.js";
+export { RepoRootsSchema, RepoSettingsChangeSchema } from "./settings.js";
 
 // Runtime input contracts. Unknown fields are discarded; optional settings keep
 // omission distinct from an empty string (which resets a task's override).

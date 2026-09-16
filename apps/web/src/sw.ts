@@ -41,7 +41,9 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { deny
 
 // Installation settings and the running version must never fall back to a stale
 // offline snapshot, including when reconciling a save whose response was lost.
-registerRoute(({ url }) => url.pathname === "/api/settings/updates", new NetworkOnly());
+registerRoute(({ url }) => url.pathname.startsWith("/api/settings/"), new NetworkOnly());
+// Search and browsing must respect settings changed by another device or the CLI.
+registerRoute(({ url }) => ["/api/repos/discover", "/api/repos/validate", "/api/fs/list"].includes(url.pathname), new NetworkOnly());
 
 // Quotas must never fall back to another login's cached allowance or make a
 // failed refresh look healthy. Server-side caching owns the refresh interval.

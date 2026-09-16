@@ -24,8 +24,6 @@ import { api, ApiError } from "../api";
 // reached by tap navigation (Browse), and manual path entry is the last
 // resort — pre-validated live, with "did you mean" chips on failure.
 
-const CACHE_KEY = "repoPicker.discover.v1";
-
 type Mode = "search" | "browse" | "manual";
 
 interface Props {
@@ -123,8 +121,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
   const registeredByPath = useMemo(() => new Map(repos.map((r) => [r.path, r])), [repos]);
 
-  // Open: reset, render the cached scan instantly, revalidate in the background
-  // (stale-while-revalidate — the drawer must answer before the network does).
+  // Search roots can change from another device or the CLI. Always fetch the
+  // current scan rather than offering persisted results from old settings.
   useEffect(() => {
     if (!open) return;
     if (!restoring.current) {
@@ -132,12 +130,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
       setValidation(null); setManualPath(""); setError("");
     }
     restoring.current = false;
-    try {
-      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as { repos?: DiscoveredRepo[] } | null;
-      if (cached?.repos) setDiscovered(cached.repos);
-    } catch {
-      /* stale/corrupt cache — scan will replace it */
-    }
+    setDiscovered([]);
     void refresh(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -147,7 +140,6 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
     try {
       const out = await api.discoverRepos(force);
       setDiscovered(out.repos);
-      localStorage.setItem(CACHE_KEY, JSON.stringify(out));
     } catch (e) {
       setError(errMsg(e));
     } finally {

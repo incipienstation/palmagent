@@ -78,7 +78,7 @@ The CLI commands below are internal plugin operations.
 | Skill | CLI command | Purpose |
 | --- | --- | --- |
 | `dispatch` | `palmagent session dispatch` | Continue the current local agent session in Palmagent |
-| `settings` | `palmagent config`, `palmagent auto-update` | Manage shared preferences and access-triggered updates |
+| `settings` | `palmagent settings`, `palmagent config`, `palmagent auto-update` | Manage Space search paths, shared preferences, and access-triggered updates |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |
 | `setup` | `palmagent setup` | Reconfigure an existing installation |
 | `doctor` | `palmagent doctor` | Diagnose service and host integration problems |
@@ -86,6 +86,44 @@ The CLI commands below are internal plugin operations.
 
 Skill bodies are authored once under `skills/` and synchronized to both plugin trees with
 `node scripts/sync-skills.mjs`.
+
+## Space search paths
+
+In **Settings → Space search paths**, add or remove folders where Palmagent
+should find Git repositories. These are folders on the server, shared across
+devices. Changes take effect on the next search without a restart.
+
+The installation owner can manage the same setting locally:
+
+```bash
+palmagent settings get
+palmagent settings get repo-roots --json
+palmagent settings add repo-roots /srv/repos /mnt/projects
+palmagent settings remove repo-roots /srv/repos
+palmagent settings set repo-roots /mnt/projects --dry-run
+palmagent settings set repo-roots
+palmagent settings reset repo-roots
+```
+
+Use `--data-dir <path>` for the server's custom installation directory.
+`set` replaces the complete list; with no paths it disables automatic discovery
+without removing registered spaces. `reset` restores `REPO_ROOTS` from
+`install.env`, or the server environment for a manual installation. An unset
+default disables discovery. Saved settings take precedence over those defaults.
+For a manually launched server, run the CLI with the same data directory and
+`REPO_ROOTS` environment when inspecting or restoring defaults.
+
+All write commands support `--dry-run`, and `--json` returns effective
+`repoRoots`, `defaults`, and `source`. Added paths must be readable directories;
+use absolute paths or quote `~/...` to expand the current server owner's home.
+Changes are stored privately in `<data-dir>/settings.json`. Run the CLI as the
+same user as the server. The web controls require sign-in; they do not change
+service configuration or require service-management privileges.
+
+Automatic discovery searches up to four directory levels below each root and
+skips hidden folders and nested repositories. Manual Space registration can
+still use other paths; folder browsing includes the server user's home and the
+configured roots.
 
 ## Sessions and working directories
 

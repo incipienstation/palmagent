@@ -27,7 +27,7 @@ let cache: { key: string; at: number; repos: ScannedRepo[] } | undefined;
 // Scan results are cached briefly; `repoId` annotation happens per request (in
 // annotate()) so registration changes show up without waiting out the TTL.
 export function discoverRepos(roots: string[], force = false): { repos: ScannedRepo[]; scannedAt: number } {
-  const key = roots.join(":");
+  const key = JSON.stringify(roots);
   if (!force && cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS) {
     return { repos: cache.repos, scannedAt: cache.at };
   }

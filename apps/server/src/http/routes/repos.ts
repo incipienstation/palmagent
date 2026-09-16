@@ -4,14 +4,19 @@ import { annotate, defaultBrowseRoot, discoverRepos, listDirectory, validateRepo
 import { body, parse } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 
-export function repoRoutes({ service, config }: HttpDependencies) {
+export function repoRoutes({ service, settings }: HttpDependencies) {
   const app = new Hono();
   app.get("/repos/discover", (c) => {
-    const out = discoverRepos(config.repoRoots, parse(DiscoverQuerySchema, c.req.query()).refresh === "1");
-    return c.json({ repos: annotate(out.repos, service.listRepos()), roots: config.repoRoots, scannedAt: out.scannedAt });
+    const roots = settings.get().repoRoots;
+    const out = discoverRepos(roots, parse(DiscoverQuerySchema, c.req.query()).refresh === "1");
+    c.header("Cache-Control", "no-store");
+    return c.json({ repos: annotate(out.repos, service.listRepos()), roots, scannedAt: out.scannedAt });
   });
-  app.get("/repos/validate", (c) => c.json(validateRepoPath(parse(PathQuerySchema, c.req.query()).path ?? "", config.repoRoots, service.listRepos())));
-  app.get("/fs/list", (c) => c.json(listDirectory(parse(PathQuerySchema, c.req.query()).path || defaultBrowseRoot(config.repoRoots), config.repoRoots)));
+  app.get("/repos/validate", (c) => c.json(validateRepoPath(parse(PathQuerySchema, c.req.query()).path ?? "", settings.get().repoRoots, service.listRepos())));
+  app.get("/fs/list", (c) => {
+    const roots = settings.get().repoRoots;
+    return c.json(listDirectory(parse(PathQuerySchema, c.req.query()).path || defaultBrowseRoot(roots), roots));
+  });
   app.get("/repos", (c) => c.json({ repos: service.listRepos() }));
   app.post("/repos", async (c) => c.json({ repo: service.createRepo(await body(c, CreateRepoSchema)) }, 201));
   app.delete("/repos/:id", (c) => c.json({ repo: service.deleteRepo(parse(IdParamsSchema, c.req.param()).id) }));

@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Manage Space search folders from Settings or `palmagent settings`. Search
+  paths are shared across devices, survive restarts, and apply without restarting
+  the server. Clear the list to stop automatic discovery or restore installation
+  defaults; registered spaces stay available.
+
 ## 0.1.0-alpha.20
 
 ### Fixed

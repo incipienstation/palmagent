@@ -191,6 +191,9 @@ const server = createServer(async (req, res) => {
         return json(res, 200, { authenticated: true, required: false, credentialCount: 1 });
       if (pathname === "/api/health") return json(res, 200, { ok: true });
       if (pathname === "/api/settings/updates") return json(res, 200, updateSettings);
+      if (pathname === "/api/settings/repos") return json(res, 200, {
+        repoRoots: ["/projects"], defaults: ["/projects"], source: "installation", writable: true,
+      });
       if (pathname === "/api/repos") return json(res, 200, { repos });
       if (pathname === "/api/repos/discover")
         return json(res, 200, { repos: [], roots: ["/projects"], scannedAt: 0 });

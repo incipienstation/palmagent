@@ -155,7 +155,7 @@ export async function gatherConfig(
     (flags.nonInteractive
       ? base.repoRoots
       : await ask(
-          "Repo scan roots (colon-separated, blank = ~/code)",
+          "Repo scan roots (colon-separated, blank = automatic search off)",
           base.repoRoots,
         ));
   const claudeConfigDir =

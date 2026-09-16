@@ -6,8 +6,10 @@ import type { PushService } from "../push.js";
 import type { RoutineService } from "../routines.js";
 import type { TaskService } from "../service.js";
 import type { UpdateSettingsService } from "../update-settings.js";
+import type { SettingsStore } from "../settings.js";
 
 export interface HttpDependencies {
+  settings: SettingsStore;
   db: Db;
   hub: Hub;
   service: TaskService;

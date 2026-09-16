@@ -127,6 +127,9 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     try {
       // A reparented child may briefly remain as a zombie until init reaps it.
       assert.match(readFileSync(`/proc/${descendant}/stat`, "utf8"), /\) Z /);
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    } catch (error) {
+      // Reaping during the procfs read can return ESRCH as well as ENOENT.
+      if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    }
   }
 });
