@@ -85,3 +85,58 @@ test("movement cancels long press and does not send; context menu works without 
   await expect(control).toBeFocused();
   expect(calls).toHaveLength(0);
 });
+
+// Mouse hold does not reproduce a phone's compatibility mousedown after touchend.
+async function touchHold(page: Page, button: Locator) {
+  const box = (await button.boundingBox())!;
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+    await page.waitForTimeout(520);
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    // Allow focus-out dismissal and exit animation to run before checking stability.
+    await page.waitForTimeout(200);
+  } finally { await session.detach(); }
+}
+
+test("touch release keeps Send/Queue open for either selection without sending", async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.getByRole("textbox").fill("Keep this mobile draft");
+  const delivery = page.getByRole("radiogroup", { name: "Message delivery mode" });
+  await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
+  await expect(delivery).toBeVisible();
+  expect(calls).toHaveLength(0);
+  await page.getByRole("radio", { name: "Queue", exact: true }).tap();
+  await expect(delivery).toBeHidden();
+  await touchHold(page, page.getByRole("button", { name: "Add to queue", exact: true }));
+  await expect(delivery).toBeVisible();
+  await page.getByRole("radio", { name: "Send now", exact: true }).tap();
+  await expect(page.getByRole("textbox")).toHaveValue("Keep this mobile draft");
+  expect(calls).toHaveLength(0);
+  await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
+  await expect(delivery).toBeVisible();
+  await page.touchscreen.tap(12, 100);
+  await expect(delivery).toBeHidden();
+  expect(calls).toHaveLength(0);
+  await page.getByRole("button", { name: "Send now", exact: true }).tap();
+  await expect.poll(() => calls.length).toBe(1);
+  expect(calls[0].mode).toBe("send");
+});
+
+test("touch release keeps queued-message actions open and editing preserves the ordinary draft", async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.getByRole("textbox").fill("Queued from the phone");
+  const control = page.getByRole("button", { name: "Send now", exact: true });
+  await control.focus(); await control.press("ArrowDown");
+  await page.getByRole("radio", { name: "Queue", exact: true }).tap();
+  await page.getByRole("button", { name: "Add to queue" }).tap();
+  await page.getByRole("textbox").fill("Ordinary mobile draft");
+  await touchHold(page, page.getByRole("button", { name: /Queued message 1:/ }));
+  const edit = page.getByRole("button", { name: "Edit prompt", exact: true });
+  await expect(edit).toBeVisible();
+  expect(calls.filter(call => call.mode)).toHaveLength(1);
+  await edit.tap();
+  await expect(page.getByRole("textbox")).toHaveValue("Queued from the phone");
+  await page.getByRole("button", { name: "Cancel editing" }).tap();
+  await expect(page.getByRole("textbox")).toHaveValue("Ordinary mobile draft");
+});
