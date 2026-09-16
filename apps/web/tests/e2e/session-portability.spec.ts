@@ -46,13 +46,14 @@ test("handoff only releases on explicit action and offers a selectable native co
     return route.fulfill({ json: { task: source, command } });
   });
   await page.goto("/#/task/t-idle-rich");
-  await page.getByRole("button", { name: "Resume in shell" }).click();
+  await page.getByTitle("Session details", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Resume in your shell" })).toBeVisible();
   expect(releases).toBe(0);
   await page.getByRole("button", { name: "Release to shell" }).click();
   await expect(page.locator("code").filter({ hasText: command })).toBeVisible();
   expect(releases).toBe(1);
   await expect(page.getByRole("button", { name: "Copy resume command" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Copy resume command" })).toBeInViewport();
   await assertViewportLocked(page);
   await expect(page).toHaveScreenshot("session-handoff.png");
 });
@@ -66,7 +67,7 @@ for (const owner of ["local", "returning"] as const) test(`${owner} ownership di
   await expect(page.getByRole("textbox")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Session output" })).toBeVisible();
   await expect.poll(() => page.getByRole("img", { name: "Session output" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
-  await expect(page.getByRole("button", { name: owner === "local" ? "Local shell" : "Continue in Palmagent" })).toBeVisible();
+  await expect(page.locator("header").getByText(owner === "local" ? "Local shell" : "Live preview", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Task actions" }).click();
   await expect(page.getByRole("menuitem", { name: "Rename" })).toBeEnabled();
   await expect(page.getByRole("menuitem", { name: "Archive" })).toBeDisabled();
@@ -84,7 +85,7 @@ test("a returned session requires a new release before showing its old shell com
     return route.fulfill({ json: { task: current(), command: "claude --resume sess-idle-0003" } });
   });
   await page.goto("/#/task/t-idle-rich");
-  await page.getByRole("button", { name: "Resume in shell" }).click();
+  await page.getByTitle("Session details", { exact: true }).click();
   await page.getByRole("button", { name: "Release to shell" }).click();
   await expect(page.getByRole("button", { name: "Copy resume command" })).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
@@ -133,7 +134,7 @@ test("a preview synchronization error retains visible history and explains why i
   await expect(page.getByText("Sync issue", { exact: true })).toBeVisible();
   await expect(page.getByText(task.sessionControl.error, { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox")).toHaveCount(0);
-  await page.getByRole("button", { name: "Continue in Palmagent", exact: true }).click();
+  await page.getByTitle("Session details", { exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText(task.sessionControl.error);
   await expect(page.getByRole("button", { name: "Release to shell" })).toBeHidden();
 });

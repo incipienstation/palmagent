@@ -100,35 +100,42 @@ function PrSheet({ prs, open, onOpenChange }: { prs: PrRef[]; open: boolean; onO
           <SheetTitle>Pull requests</SheetTitle>
           <SheetDescription>{prs.length} opened in this task</SheetDescription>
         </SheetHeader>
-        <ul className="flex max-h-[60vh] flex-col overflow-y-auto px-2 pb-1">
-          {prs.map((pr) => {
-            const tone = prTone(pr);
-            return (
-              <li key={pr.url}>
-                <a
-                  href={pr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors active:bg-accent"
-                >
-                  <span aria-hidden className={cn("mt-[5px] size-2 shrink-0 rounded-full", tone.dot)} />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline gap-1.5">
-                      <span className="shrink-0 text-[13px] font-semibold text-strong">#{pr.number}</span>
-                      <span className="truncate text-[14px] text-foreground">{pr.title ?? pr.repo}</span>
-                    </span>
-                    <span className={cn("mt-0.5 block truncate text-[12px]", tone.text)}>
-                      {tone.label}
-                      {pr.branch ? ` · ${pr.branch}` : ""}
-                    </span>
-                  </span>
-                  <ArrowUpRight aria-hidden className="mt-0.5 size-4 shrink-0 text-faint" />
-                </a>
-              </li>
-            );
-          })}
-        </ul>
+        <PrList prs={prs} />
       </SheetContent>
     </Sheet>
+  );
+}
+
+// Shared with Session details so task links do not open a second sheet.
+export function PrList({ prs }: { prs: PrRef[] }) {
+  return (
+    <ul className="flex max-h-[60vh] flex-col overflow-y-auto px-2 pb-1">
+      {prs.map((pr) => {
+        const tone = prTone(pr);
+        return (
+          <li key={pr.url}>
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors active:bg-accent"
+            >
+              <span aria-hidden className={cn("mt-[5px] size-2 shrink-0 rounded-full", tone.dot)} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-1.5">
+                  <span className="shrink-0 text-[13px] font-semibold text-strong">#{pr.number}</span>
+                  <span className="truncate text-[14px] text-foreground">{pr.title ?? pr.repo}</span>
+                </span>
+                <span className={cn("mt-0.5 block truncate text-[12px]", tone.text)}>
+                  {tone.label}
+                  {pr.branch ? ` · ${pr.branch}` : ""}
+                </span>
+              </span>
+              <ArrowUpRight aria-hidden className="mt-0.5 size-4 shrink-0 text-faint" />
+            </a>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

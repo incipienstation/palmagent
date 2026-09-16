@@ -81,9 +81,11 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
    virtualized event log (assistant token deltas coalesced, tool calls/results, result)
    with a single Send button (hold, right-click, or press Arrow Down for the Send/Queue toggle),
    an editable persistent queue,
-   stop (interrupt the turn, task stays resumable), cancel, and archive.
+   stop (interrupt the turn, task stays resumable), cancel, and archive. Tap the
+   header title for session configuration, pull requests, and shell handoff;
+   the task status and local-control notices remain visible in the conversation.
 4. **Account limits** — session footers show remaining account allowance and reset
-   countdowns, including while idle or previewing a local session. When available,
+   countdowns in aligned columns, including while idle or previewing a local session. When available,
    Claude shows 5-hour, weekly, and model-specific windows; Codex keeps its named quota buckets
    and reported window lengths. Details show additional windows and available
    credits/extra usage. These are shared account limits, not session token totals.
@@ -101,7 +103,7 @@ order intact.
 
 ## Output detail
 
-Settings → Detail controls the session transcript and surrounding metadata:
+Settings → Detail controls the session transcript:
 
 - **Compact** collects background work per turn and previews only the latest known progress
   while running. Configuration is available in Session details.

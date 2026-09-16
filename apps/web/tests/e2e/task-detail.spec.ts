@@ -35,9 +35,9 @@ test.describe("task detail", () => {
     await expect(page).toHaveScreenshot("task-detail.png");
   });
 
-  test("the PR chip opens a bottom sheet listing every PR the task opened", async ({ page }) => {
-    // t-idle-rich opened 3 PRs → the meta shows an "N PRs" chip, not a single link.
-    await page.getByRole("button", { name: "3 pull requests" }).click();
+  test("the title opens session details listing every PR the task opened", async ({ page }) => {
+    // Task links share the details sheet with configuration and handoff.
+    await page.getByTitle("Session details", { exact: true }).click();
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeVisible();
     // Every PR is listed by number + title, each linking out to GitHub.
     await expect(page.getByText("Mock SSE+REST server for tests")).toBeVisible();
@@ -49,13 +49,14 @@ test.describe("task detail", () => {
     await expect(page).toHaveScreenshot("pr-sheet.png");
   });
 
-  test("tapping the scrim dismisses the PR sheet (vaul dismiss not swallowed by a wrapper)", async ({ page }) => {
-    await page.getByRole("button", { name: "3 pull requests" }).click();
+  test("tapping the scrim dismisses session details and returns focus to the title", async ({ page }) => {
+    await page.getByTitle("Session details", { exact: true }).click();
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeVisible();
     // Tap the overlay above the sheet — must close it (regression: a stop-propagation
     // wrapper around the sheet used to swallow vaul's overlay-dismiss click).
-    await page.locator('[data-slot="sheet-overlay"]').click({ position: { x: 180, y: 120 } });
+    await page.locator('[data-slot="sheet-overlay"]').click({ position: { x: 180, y: 80 } });
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeHidden();
+    await expect(page.getByTitle("Session details", { exact: true })).toBeFocused();
   });
 
   test("renders assistant markdown (heading, GFM table, list) — and the table never widens the pane", async ({

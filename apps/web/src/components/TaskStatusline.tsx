@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import type { AccountLimits, AgentKind, CodexLimitBucket, LimitWindow } from "@palmagent/shared";
 import { api } from "../api";
 import { Badge } from "./ui/badge";
@@ -24,12 +25,12 @@ function windowName(minutes: number | null, fallback: string): string {
 function WindowLine({ name, limit, now, stale }: { name: string; limit: LimitWindow; now: number; stale: boolean }) {
   const expired = limit.resetsAt !== null && limit.resetsAt <= now;
   const remaining = limit.usedPercent === null ? null : Math.max(0, 100 - limit.usedPercent);
-  return <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-    <span>{name}</span>
-    <Badge variant={!stale && !expired && remaining !== null && remaining <= 10 ? "destructive" : "secondary"}>
+  return <div className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-x-2 text-xs tabular-nums">
+    <span className="min-w-0 break-words">{name}</span>
+    <Badge className="max-w-full whitespace-normal" variant={!stale && !expired && remaining !== null && remaining <= 10 ? "destructive" : "secondary"}>
       {expired ? "Awaiting refresh" : remaining === null ? "Remaining unknown" : `${Number(remaining.toFixed(1))}% left`}
     </Badge>
-    {limit.resetsAt !== null && <span className="text-muted-foreground" title={new Date(limit.resetsAt).toLocaleString()}>
+    {limit.resetsAt !== null && <span className="min-w-0 text-muted-foreground" title={new Date(limit.resetsAt).toLocaleString()}>
       {expired ? "Reset time passed" : `Resets in ${duration(limit.resetsAt - now)}`}
     </span>}
   </div>;
@@ -48,8 +49,8 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
     {report.state === "error" ? "Account limits temporarily unavailable" : "This account does not report subscription limits"}
   </span>;
   const primary = report.agent === "codex" ? report.buckets[0] : undefined;
-  return <div className="flex min-w-0 items-start justify-between gap-2">
-    <div className="flex min-w-0 flex-col gap-1">
+  return <div className="flex min-w-0 items-center gap-1">
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
       {stale && <span className="text-xs text-muted-foreground">Outdated account limits</span>}
       {report.agent === "claude" ? <>
         {report.fiveHour && <WindowLine name="5h" limit={report.fiveHour} now={now} stale={stale} />}
@@ -62,7 +63,7 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
       </>}
     </div>
     <Sheet>
-      <SheetTrigger asChild><Button variant="ghost" size="sm" aria-label="Account limit details">Details</Button></SheetTrigger>
+      <SheetTrigger asChild><Button variant="ghost" size="icon-lg" className="shrink-0" aria-label="Account limit details"><Info data-icon="inline-start" /></Button></SheetTrigger>
       <SheetContent className="max-h-[80dvh] overflow-y-auto">
         <SheetHeader>
           <SheetTitle>{report.agent === "claude" ? "Claude" : "Codex"} account limits</SheetTitle>
