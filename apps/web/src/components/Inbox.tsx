@@ -1,10 +1,12 @@
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { Inbox as InboxIcon, Plus } from "lucide-react";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { ChevronDown, Inbox as InboxIcon, Plus, Search, X } from "lucide-react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { useUpdateState } from "../update-state";
 import { taskTitle } from "@/lib/task-title";
 import { statusSection } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -26,8 +28,7 @@ import { SessionActionsMenu } from "./SessionActionsMenu";
 const ReposContext = createContext<Map<string, Repo>>(new Map());
 
 // Attention-ordered grouping. Every status the backend can emit is represented
-// AND every group header is always rendered (empty ones collapse to a faint
-// "—"), so nothing silently disappears from the inbox.
+// Empty groups stay out of the way; every non-empty state remains reachable.
 type InboxStatus = TaskStatus | "local";
 const GROUP_ORDER: InboxStatus[] = [
   "awaiting_input",
@@ -61,17 +62,11 @@ const ATTENTION_RAIL: Partial<Record<TaskStatus, string>> = {
   awaiting_approval: "border-l-amber bg-status-approval-bg",
 };
 
-// Quiet footnote tier: the machine knobs (model, effort, permission), the PR
-// link, and the time. The project lives in the eyebrow (RepoChip) and the agent
-// tag in the context row, so neither is repeated here; the raw `agent/<taskId>`
-// branch is gone — the RepoChip's isolation glyph carries that signal instead.
+// Show results and recency here; model, effort, and permissions live in Session details.
 function TaskMeta({ task, showTime }: { task: TaskState; showTime?: boolean }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-faint">
       {task.sessionControl && task.sessionControl.owner !== "palmagent" && <Badge variant="secondary">{task.sessionControl.owner === "local" ? "Local shell" : "Returning"}</Badge>}
-      {task.model && <span>{task.model}</span>}
-      {task.effort && <span>effort {task.effort}</span>}
-      <span>{task.permission}</span>
       {/* Full-auto: the agent opens its own PR(s); one links out, several open a sheet. */}
       <PrChip prs={task.prs} />
       {showTime && <span className="ml-auto shrink-0">{relTime(task.lastActivityAt)}</span>}
@@ -212,47 +207,33 @@ function PriorityRow({ task }: { task: TaskState }) {
   );
 }
 
-// One status group, "quiet" style: no section hairline — whitespace + a small
-// uppercase eyebrow (LABEL · count) do the grouping, so the section rule never
-// competes with the per-row hairlines inside a populated group. Empty groups no
-// longer fence off an empty band: they collapse to a single faint "LABEL —" line
-// (no divider, tight top space) so every status label is still present and
-// nothing silently disappears.
-function StatusGroup({ status, tasks }: { status: InboxStatus; tasks: TaskState[] }) {
+// Completed tasks can be folded while live work remains visible. Search always
+// reveals matching rows, including completed tasks.
+function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks: TaskState[]; searching: boolean }) {
   const label = statusSection(status);
-
-  if (tasks.length === 0) {
-    return (
-      <div className="flex items-center gap-1.5 px-4 pt-4 text-[11px] font-semibold tracking-wide text-faint/55 uppercase first:pt-3">
-        <h2>{label}</h2>
-        <span aria-hidden className="text-faint/35">
-          —
-        </span>
-      </div>
-    );
-  }
-
+  const [expanded, setExpanded] = useState(true);
+  const rowsId = useId();
+  if (tasks.length === 0) return null;
+  const collapsible = status === "idle" && !searching;
   const priority = status === "awaiting_input" || status === "awaiting_approval";
   return (
-    <section className="px-4 pt-7 first:pt-3">
-      <div className="flex items-center gap-1.5 pb-2 text-[11px] font-semibold tracking-wide text-faint uppercase">
-        <h2>{label}</h2>
-        <span aria-hidden className="text-faint/40">
-          ·
-        </span>
-        <span className="text-faint/70 tabular-nums">{tasks.length}</span>
+    <section className="px-4 pt-5 first:pt-3">
+      {collapsible ? <h2>
+        <Button variant="ghost" className="w-full justify-start px-0 text-[11px] font-semibold tracking-wide text-faint uppercase" aria-expanded={expanded} aria-controls={rowsId}
+          onClick={() => setExpanded(value => !value)}>
+          {label}<span aria-hidden="true" className="text-muted-foreground">· {tasks.length}</span>
+          <ChevronDown aria-hidden="true" className={cn("ml-auto", expanded && "rotate-180")} />
+        </Button>
+      </h2> : <div className="flex items-center gap-1.5 pb-2 text-[11px] font-semibold tracking-wide text-faint uppercase">
+        <h2>{label}</h2><span aria-hidden="true">· {tasks.length}</span>
+      </div>}
+      <div id={rowsId} hidden={collapsible && !expanded}>
+        {priority ? tasks.map(t => <PriorityRow key={t.taskId} task={t} />) : (
+          <div className="-mx-4 [&>div:last-child]:border-b-0">
+            {tasks.map(t => <TaskRow key={t.taskId} task={t} />)}
+          </div>
+        )}
       </div>
-      {priority ? (
-        tasks.map((t) => <PriorityRow key={t.taskId} task={t} />)
-      ) : (
-        // Dense rows extend to the screen gutter so the hairline runs edge-to-edge;
-        // the last row drops its divider so the group closes cleanly into whitespace.
-        <div className="-mx-4 [&>button:last-child]:border-b-0">
-          {tasks.map((t) => (
-            <TaskRow key={t.taskId} task={t} />
-          ))}
-        </div>
-      )}
     </section>
   );
 }
@@ -261,9 +242,9 @@ function StatusGroup({ status, tasks }: { status: InboxStatus; tasks: TaskState[
 // harness renders loaded state, so these never appear in visual snapshots).
 function LoadingRows() {
   return (
-    <section className="px-4 pt-3">
+    <section className="px-4 pt-3" aria-label="Loading tasks" aria-busy="true">
       <div className="flex items-center gap-2 pb-2 text-[11px] font-semibold tracking-wide text-faint uppercase">
-        <span>Loading</span>
+        <span role="status">Loading tasks…</span>
       </div>
       <div className="-mx-4">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -288,8 +269,6 @@ export function InboxView({
 }: {
   tasks: TaskState[];
   conn: ConnState;
-  /** Reserved for an explicit loading signal; the live stream starts empty so
-      App doesn't currently pass it (empty = the EmptyState, not skeletons). */
   loading?: boolean;
 }) {
   // Project (repo) lookup for the cards. The task snapshot carries only repoId;
@@ -307,7 +286,12 @@ export function InboxView({
 
   const [selected, setSelected] = useState(() => { try { return localStorage.getItem("working-directory") ?? "all"; } catch { return "all"; } });
   const selectDirectory = (path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } };
-  const filtered = selected === "all" ? tasks : tasks.filter((task) => taskDirectory(task, repos) === selected);
+  const [query, setQuery] = useUpdateState("inbox:query", "");
+  const searchInput = useRef<HTMLInputElement>(null);
+  const search = query.trim().toLocaleLowerCase();
+  const scoped = selected === "all" ? tasks : tasks.filter(task => taskDirectory(task, repos) === selected);
+  const filtered = search ? scoped.filter(task => `${taskTitle(task)} ${task.prompt}`.toLocaleLowerCase().includes(search)) : scoped;
+  const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
   const byStatus = new Map<InboxStatus, TaskState[]>();
   for (const t of filtered) {
     const group = t.sessionControl && t.sessionControl.owner !== "palmagent" ? "local" : t.status;
@@ -328,23 +312,31 @@ export function InboxView({
       <AppShell attention={attention} wide>
         <AppBar title="Tasks" brand conn={conn} settings />
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} />
+        <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} loading={loading} />
         <PullToRefresh className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
           {/* The pb wrapper tracks the tab bar + banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
           <div data-testid="inbox-content" className="pb-[calc(var(--tabbar-h,0px)+var(--banner-h,0px)+88px)]">
+            {!loading && <div className="px-4 pt-2 pb-1">
+              <div className="flex gap-2">
+                <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks…" value={query}
+                  autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={event => setQuery(event.target.value)} />
+                {query && <Button variant="ghost" size="icon-lg" aria-label="Clear task search" onClick={clearSearch}><X /></Button>}
+              </div>
+              {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
+            </div>}
             {loading ? (
               <LoadingRows />
             ) : isEmpty ? (
               <EmptyState
-                icon={InboxIcon}
-                title={selected === "all" ? "No tasks yet" : "No tasks in this directory"}
-                subtitle="Send your first task to an agent and track it here."
-                action={{ label: "Dispatch a task", onClick: () => navigate("/new") }}
+                icon={search ? Search : InboxIcon}
+                title={search ? "No matching tasks" : selected === "all" ? "No tasks yet" : "No tasks in this directory"}
+                subtitle={search ? "Try another title or part of a prompt in this space." : "Send your first task to an agent and track it here."}
+                action={search ? { label: "Clear search", onClick: clearSearch } : { label: "Dispatch a task", onClick: () => navigate("/new") }}
               />
             ) : (
-              GROUP_ORDER.filter((status) => status !== "local" || byStatus.has(status)).map((status) => (
-                <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} />
+              GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
+                <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} searching={!!search} />
               ))
             )}
           </div>

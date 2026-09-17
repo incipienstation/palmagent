@@ -92,8 +92,8 @@ export function UpdateSettings() {
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground" role="status">{saving ? "Saving…" : busy && status ? "Refreshing…" : ""}</span>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => void reload()}>Check again</Button>
-          {newer && discovery?.eligible && !settings?.autoUpdate && <Button size="sm" disabled={disabled || Boolean(pending) || paused}
+          <Button variant="ghost" disabled={busy} onClick={() => void reload()}>Check again</Button>
+          {newer && discovery?.eligible && !settings?.autoUpdate && <Button disabled={disabled || Boolean(pending) || paused}
             onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
         </div>
       </div>

@@ -9,6 +9,7 @@ export type { ConnState };
 export interface Inbox {
   tasks: TaskState[];
   conn: ConnState;
+  loading: boolean;
 }
 
 // The inbox needs only fresh task snapshots, including after mobile reconnects.
@@ -16,6 +17,7 @@ export interface Inbox {
 export function useInbox(): Inbox {
   const [tasks, setTasks] = useState<TaskState[]>([]);
   const [conn, setConn] = useState<ConnState>("connecting");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     return connectSse(
@@ -30,6 +32,7 @@ export function useInbox(): Inbox {
         if (frame.type === "tasks") {
           observeServerVersion(frame.version);
           setTasks(frame.tasks);
+          setLoading(false);
         }
         if (frame.type === "updates") updatesChanged();
       },
@@ -38,5 +41,5 @@ export function useInbox(): Inbox {
     );
   }, []);
 
-  return { tasks, conn };
+  return { tasks, conn, loading };
 }

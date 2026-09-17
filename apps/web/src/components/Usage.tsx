@@ -3,9 +3,9 @@ import type { AgentUsage } from "@palmagent/shared";
 import { BarChart3 } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "@/components/ui/toaster";
 import { api, ApiError } from "../api";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag } from "./chips";
@@ -119,26 +119,34 @@ function UsageCardSkeleton() {
 export function UsageView() {
   const [usage, setUsage] = useState<AgentUsage[] | null>(null);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [pending, setPending] = useState(true);
 
   useEffect(() => {
+    let active = true;
+    setPending(true);
+    setError("");
     api
       .getUsage()
-      .then(setUsage)
+      .then((data) => { if (active) setUsage(data); })
       .catch((e) => {
-        const msg = errMsg(e);
-        setError(msg);
-        toast({ title: "Couldn't load usage", description: msg, variant: "destructive" });
-      });
-  }, []);
+        if (active) setError(errMsg(e));
+      })
+      .finally(() => { if (active) setPending(false); });
+    return () => { active = false; };
+  }, [attempt]);
 
-  const loading = usage === null && !error;
+  const loading = usage === null && pending;
   const isEmpty = usage !== null && usage.length === 0;
 
   return (
     <AppShell>
       <AppBar title="Usage" brand settings />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--tabbar-h)+var(--banner-h)+24px)]">
-        {error && <Alert variant="destructive">{error}</Alert>}
+        {error && <Alert variant="destructive" className="flex flex-col gap-2">
+          <p>Couldn't load usage. {error}</p>
+          <Button variant="outline" disabled={pending} onClick={() => { setPending(true); setAttempt(value => value + 1); }}>Retry usage</Button>
+        </Alert>}
 
         {loading && (
           <>

@@ -104,7 +104,12 @@ test("viewport resizing follows the bottom without moving a reader in older hist
   await expectBottom(page);
   await page.setViewportSize({ width: 360, height: 650 });
   await expectBottom(page);
-  await viewport(page).evaluate((el) => { el.scrollTop = 100; });
+  // scrollTop changes immediately, but the browser dispatches scroll later.
+  // Wait for that event before simulating the subsequent keyboard resize.
+  await viewport(page).evaluate((el) => new Promise<void>((resolve) => {
+    el.addEventListener("scroll", () => resolve(), { once: true });
+    el.scrollTop = 100;
+  }));
   await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
   await page.setViewportSize({ width: 360, height: 600 });
   await event(page, "t-idle-rich", 2, "A new streamed line\n\n");

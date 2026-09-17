@@ -184,3 +184,31 @@ test("finishing the mode menu exit does not steal focus from a resumed draft", a
   await expect(input).toHaveValue("Continue typing while the menu closes");
   expect(calls).toHaveLength(0);
 });
+
+for (const ancestor of [false, true]) {
+  test(`scrolling ${ancestor ? "an ancestor cancels" : "a sibling preserves"} a composer long press`, async ({ page }) => {
+    const { calls } = await setup(page);
+    await page.getByRole("textbox").fill("Preserve this draft during scrolling");
+    const control = page.getByRole("button", { name: "Send now", exact: true });
+    const box = (await control.boundingBox())!;
+    const session = await page.context().newCDPSession(page);
+    try {
+      await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+      await page.waitForTimeout(150);
+      // Dispatch on the real containing shell or a separate transcript panel:
+      // only scrolling that can move the held button should cancel its timer.
+      await control.evaluate((element, ancestor) => {
+        const target = ancestor ? element.parentElement! : document.querySelector('[data-virtuoso-scroller]')!;
+        target.dispatchEvent(new Event("scroll"));
+      }, ancestor);
+      await page.waitForTimeout(400);
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await page.waitForTimeout(250);
+      const menu = page.getByRole("radiogroup", { name: "Message delivery mode" });
+      if (ancestor) await expect(menu).toBeHidden();
+      else await expect(menu).toBeVisible();
+      expect(calls).toHaveLength(0);
+      await expect(page.getByRole("textbox")).toHaveValue("Preserve this draft during scrolling");
+    } finally { await session.detach(); }
+  });
+}

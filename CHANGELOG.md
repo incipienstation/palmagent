@@ -6,6 +6,21 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Search tasks by title or prompt within a Space, hide empty status sections, and
+  collapse completed tasks. Task rows keep secondary configuration in Session details.
+- Settings separates General, Spaces, and Updates into tabs. Navigation, history,
+  settings actions, and toast dismissal have larger touch targets.
+
+### Fixed
+
+- The inbox shows a loading state until its first task snapshot arrives, without
+  displaying a false empty list or zero task count.
+- Scrolling transcripts no longer cancels a long press on the fixed composer.
+- Routine history and Usage show read failures with retry actions instead of
+  presenting failed history requests as an empty result.
+
 ## 0.1.0-alpha.24
 
 ### Fixed

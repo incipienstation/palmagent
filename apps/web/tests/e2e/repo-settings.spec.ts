@@ -7,6 +7,7 @@ test.use({ serviceWorkers: "block" });
 async function openSettings(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Spaces", exact: true }).click();
   const section = page.getByRole("region", { name: "Space search paths" });
   await section.getByRole("textbox").scrollIntoViewIfNeeded();
   return section;
@@ -32,7 +33,7 @@ test("search settings add and remove paths, disable discovery, and restore insta
   await expect(section.getByText(longPath, { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 320, height: 568 });
   await section.getByRole("button", { name: "Remove " + longPath, exact: true }).scrollIntoViewIfNeeded();
-  expect(await page.locator('[data-slot="settings-scroll"]').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  expect(await page.locator('[data-slot="settings-scroll"]:visible').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   await assertViewportLocked(page);
   await page.screenshot({ path: test.info().outputPath("repo-settings-mobile.png") });
   await section.getByRole("button", { name: "Remove /projects", exact: true }).click();
@@ -45,6 +46,7 @@ test("search settings add and remove paths, disable discovery, and restore insta
     { action: "remove", paths: [longPath] }, { action: "reset" }]);
   await page.reload();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Spaces", exact: true }).click();
   await section.getByRole("textbox").scrollIntoViewIfNeeded();
   await expect(section.getByText("/projects", { exact: true })).toBeVisible();
 });

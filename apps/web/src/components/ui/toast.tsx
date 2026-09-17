@@ -29,7 +29,7 @@ function ToastViewport({
 
 // Plane-2 elevation; each variant adds a colored left rail.
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-start gap-2.5 overflow-hidden rounded-xl border border-border bg-popover/95 p-3 pr-9 text-popover-foreground shadow-md backdrop-blur-md data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-2 data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:translate-x-0 data-[swipe=cancel]:transition-transform data-[swipe=end]:animate-out data-[swipe=end]:fade-out-80",
+  "group pointer-events-auto relative flex w-full items-start gap-2.5 overflow-hidden rounded-xl border border-border bg-popover/95 p-3 pr-12 text-popover-foreground shadow-md backdrop-blur-md data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-2 data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:translate-x-0 data-[swipe=cancel]:transition-transform data-[swipe=end]:animate-out data-[swipe=end]:fade-out-80",
   {
     variants: {
       variant: {
@@ -90,7 +90,7 @@ function Toast({
         )}
       </div>
       <ToastPrimitive.Close
-        className="absolute top-2.5 right-2.5 rounded-md p-0.5 text-faint opacity-70 outline-none transition-opacity active:opacity-100"
+        className="absolute top-0 right-0 flex size-11 items-center justify-center rounded-md text-faint opacity-70 outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring active:opacity-100"
         aria-label="Dismiss"
       >
         <X className="size-3.5" />

@@ -9,6 +9,7 @@ test.use({ serviceWorkers: "block" });
 async function openSettings(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Updates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
 }
 
@@ -24,11 +25,6 @@ test("settings show the running version, save shared preferences, and remain usa
   });
   await openSettings(page);
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
-  await expect.poll(() => page.evaluate(() => {
-    const appearance = document.querySelector('[aria-label="System theme"]')!.getBoundingClientRect();
-    const detail = document.querySelector('[aria-label="Compact output"]')!.getBoundingClientRect();
-    return appearance.bottom <= detail.top;
-  })).toBe(true);
   await expect(page).toHaveScreenshot("update-settings.png");
   const automatic = page.getByRole("switch", { name: "Automatic updates" });
   await expect(automatic).not.toBeChecked();
@@ -40,10 +36,12 @@ test("settings show the running version, save shared preferences, and remain usa
   expect(changes).toEqual([{ autoUpdate: true }, { channel: "stable" }]);
   await page.reload();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Updates", exact: true }).click();
   await expect(automatic).toBeChecked();
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
   await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeChecked();
   await assertViewportLocked(page);
+  await page.getByRole("tab", { name: "General", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
   await assertViewportLocked(page);
@@ -95,7 +93,7 @@ test("unavailable management keeps the current version visible and explains the 
   await page.setViewportSize({ width: 320, height: 568 });
   await page.getByRole("button", { name: "Check again", exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeVisible();
-  expect(await page.locator('[data-slot="settings-scroll"]').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  expect(await page.locator('[data-slot="settings-scroll"]:visible').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
   await assertViewportLocked(page);
 });
 
