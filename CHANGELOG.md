@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.26
+
 ### Fixed
 
 - Long streamed replies keep the composer responsive, and collapsing tool output
