@@ -10,8 +10,15 @@ An entry does not mean a version has been published.
 
 - Keep the Send/Queue menu open when input focus changes during a mobile long
   press, including from the collapsed composer.
-- Keep a tool-output row visible when collapsing it, instead of jumping back
-  into earlier transcript messages.
+
+## 0.1.0-alpha.26
+
+### Fixed
+
+- Long streamed replies keep the composer responsive, and collapsing tool output
+  keeps the conversation at the row being read.
+- Task snapshots reuse unchanged rows. Returning from a task restores the inbox's
+  search, collapsed groups, and scroll position for each Space and search.
 
 ## 0.1.0-alpha.25
 

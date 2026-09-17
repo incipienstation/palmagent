@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 
 import { ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+
+const positions = new Map<string, number>();
 
 const THRESHOLD = 64; // px of pull (after damping) needed to trigger a refresh
 const MAX = 96; // max visual pull
@@ -18,10 +20,12 @@ const DAMP = 0.5; // resistance: finger travel → visual travel
 // is needed to suppress the browser's own scroll/bounce while we own the pull).
 export function PullToRefresh({
   onRefresh,
+  scrollKey,
   className,
   children,
 }: {
   onRefresh: () => void;
+  scrollKey?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -31,6 +35,21 @@ export function PullToRefresh({
   const onRefreshRef = useRef(onRefresh);
   onRefreshRef.current = onRefresh;
   const [refreshing, setRefreshing] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !scrollKey) return;
+    let top = positions.get(scrollKey) ?? 0;
+    el.scrollTop = top;
+    const remember = () => { top = el.scrollTop; };
+    el.addEventListener("scroll", remember, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", remember);
+      positions.delete(scrollKey);
+      positions.set(scrollKey, top);
+      if (positions.size > 50) positions.delete(positions.keys().next().value!);
+    };
+  }, [scrollKey]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -122,7 +141,7 @@ export function PullToRefresh({
 
   return (
     <ScrollAreaPrimitive.Root className={cn("relative overflow-hidden", className)}>
-      <ScrollAreaPrimitive.Viewport ref={scrollRef} className="h-full w-full overscroll-contain">
+      <ScrollAreaPrimitive.Viewport ref={scrollRef} style={{ overflowAnchor: "none" }} className="h-full w-full overscroll-contain">
         <div ref={contentRef}>
           {/* Spinner sits one row above the content (negative margin) so it's
               hidden until a pull translates the content down into view. */}

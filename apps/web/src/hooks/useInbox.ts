@@ -1,3 +1,4 @@
+import { reconcileTasks } from "../task-snapshot";
 import { updatesChanged } from "../update-events";
 import { observeServerVersion } from "../pwa";
 import { useEffect, useState } from "react";
@@ -31,7 +32,8 @@ export function useInbox(): Inbox {
         }
         if (frame.type === "tasks") {
           observeServerVersion(frame.version);
-          setTasks(frame.tasks);
+          const incoming = frame.tasks;
+          setTasks(previous => reconcileTasks(previous, incoming));
           setLoading(false);
         }
         if (frame.type === "updates") updatesChanged();
