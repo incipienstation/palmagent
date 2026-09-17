@@ -65,6 +65,7 @@ export function AppNavigation({ tasks, conn, children }: {
           <Button variant="ghost" size="icon-lg" aria-label="Close navigation" onClick={() => setOpen(false)}><PanelLeftClose /></Button>
         </div>
         <DrawerDescription className="sr-only">Navigate your tasks, spaces, and settings.</DrawerDescription>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <nav aria-label="Main navigation" className="shrink-0 space-y-1 px-3 pb-4">
           {destinations.map(({ label, icon: Icon, active, onClick, attention: needsAttention }) => <Button key={label}
             variant={active ? "secondary" : "ghost"} className="h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium"
@@ -75,7 +76,7 @@ export function AppNavigation({ tasks, conn, children }: {
           </Button>)}
         </nav>
         <div className="mx-5 border-t border-border" />
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4">
+        <div className="px-3 py-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
           {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
           {recent.map(task => <Button key={task.taskId} variant="ghost"
@@ -84,6 +85,7 @@ export function AppNavigation({ tasks, conn, children }: {
             onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
             <span className="truncate">{taskTitle(task)}</span>
           </Button>)}
+        </div>
         </div>
         <div className="flex shrink-0 items-center gap-3 px-5 pt-3 pb-[calc(16px+var(--safe-bottom))]">
           <Button className="rounded-full px-5" onClick={() => go("/new")}><SquarePen />New task</Button>

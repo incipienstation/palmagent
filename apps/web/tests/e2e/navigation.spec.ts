@@ -60,3 +60,25 @@ for (const width of [320, 390, 430]) {
     await expect(menu).toBeFocused();
   });
 }
+
+for (const height of [320, 360]) {
+  test(`drawer actions remain reachable in a ${height}px landscape viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: 640, height });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    const dialog = page.getByRole("dialog");
+    for (const name of ["Close navigation", "New task", "Settings"]) {
+      const button = dialog.getByRole("button", { name, exact: true });
+      const bounds = (await button.boundingBox())!;
+      expect(bounds.y).toBeGreaterThanOrEqual(0);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+    }
+    await dialog.getByRole("button", { name: "Usage", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
+    await assertViewportLocked(page);
+  });
+}
