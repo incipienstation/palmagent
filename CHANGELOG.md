@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Account limits above the composer use a compact, tappable summary. Reset times
+  and model-specific allowances are available in the detail sheet; low allowances
+  keep their reset countdown visible.
+- App icons and the palm logo use monochrome colors to match the neutral interface.
+
 ## 0.1.0-alpha.27
 
 ### Changed

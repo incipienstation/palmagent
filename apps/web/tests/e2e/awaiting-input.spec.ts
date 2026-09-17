@@ -80,7 +80,7 @@ test.describe("awaiting input (AskUserQuestion)", () => {
     // account report finish loading. Capture the fully populated screen.
     const transcript = page.locator('[aria-label="Session transcript"]');
     await expect(transcript.getByText("Which sections should it include?", { exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Account limits" }).getByText("72% left", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Account limits" }).getByText("72%", { exact: true })).toBeVisible();
     await expect.poll(() => transcript.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(2);
     await expect(page).toHaveScreenshot("awaiting-input.png");
   });
