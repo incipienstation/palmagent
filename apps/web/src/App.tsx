@@ -1,3 +1,4 @@
+import { AppNavigation } from "./components/AppNavigation";
 import { taskTitle } from "./lib/task-title";
 import { useAccessUpdates } from "./hooks/useAccessUpdates";
 import { AuthGate } from "./auth/AuthGate";
@@ -35,13 +36,12 @@ function AppInner() {
             : "Tasks";
   useDocumentTitle(pageTitle);
 
-  if (route.name === "new") return <DispatchView />;
-  if (route.name === "routines") return <RoutinesView />;
-  if (route.name === "usage") return <UsageView />;
-  if (route.name === "task") {
-    return <TaskDetailView key={route.id} taskId={route.id} task={tasks.find((t) => t.taskId === route.id)} />;
-  }
-  return <InboxView tasks={tasks} conn={conn} loading={loading} />;
+  const view = route.name === "new" ? <DispatchView />
+    : route.name === "routines" ? <RoutinesView />
+    : route.name === "usage" ? <UsageView />
+    : route.name === "task" ? <TaskDetailView key={route.id} taskId={route.id} task={active} />
+    : <InboxView tasks={tasks} conn={conn} loading={loading} />;
+  return <AppNavigation tasks={tasks} conn={conn}>{view}</AppNavigation>;
 }
 
 export function App() {

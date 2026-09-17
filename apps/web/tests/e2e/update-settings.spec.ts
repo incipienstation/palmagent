@@ -8,6 +8,7 @@ test.use({ serviceWorkers: "block" });
 
 async function openSettings(page: Page) {
   await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Updates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
@@ -35,6 +36,7 @@ test("settings show the running version, save shared preferences, and remain usa
   await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeChecked();
   expect(changes).toEqual([{ autoUpdate: true }, { channel: "stable" }]);
   await page.reload();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Updates", exact: true }).click();
   await expect(automatic).toBeChecked();

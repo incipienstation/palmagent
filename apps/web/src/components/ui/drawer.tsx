@@ -37,20 +37,22 @@ function DrawerOverlay({
 function DrawerContent({
   className,
   children,
+  side = "bottom",
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left" }) {
   return (
     <DrawerPortal>
       <DrawerOverlay />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mx-auto flex h-auto w-full max-w-[720px] flex-col rounded-t-2xl border border-b-0 border-input bg-card",
+          "fixed z-50 flex flex-col bg-card",
+          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : "inset-x-0 bottom-0 mx-auto h-auto w-full max-w-[720px] rounded-t-3xl border border-b-0 border-input",
           className,
         )}
         {...props}
       >
-        <div className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />
+        {side === "bottom" && <div className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />}
         {children}
       </DrawerPrimitive.Content>
     </DrawerPortal>

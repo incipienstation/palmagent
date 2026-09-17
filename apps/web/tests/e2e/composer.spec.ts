@@ -25,7 +25,7 @@ for (const width of [360, 390]) test(`mobile composer states at ${width}px`, asy
   await expect(prompt).toBeFocused();
   await onScreen(page.getByRole("button", { name: "Configure model and effort" }));
   if (width === 360) await expect(page).toHaveScreenshot("composer-focused.png");
-  await page.getByRole("heading", { name: "Dispatch", exact: true }).tap();
+  await page.getByRole("heading", { name: "New task", exact: true }).tap();
   await expect(composer).toHaveAttribute("data-expanded", "false");
 
   // A reduced viewport represents the space left by a software keyboard.
@@ -43,7 +43,7 @@ for (const width of [360, 390]) test(`mobile composer states at ${width}px`, asy
   if (width === 360) await expect(page).toHaveScreenshot("composer-configure-keyboard.png");
   await page.getByRole("button", { name: "Done", exact: true }).tap();
   await prompt.fill("Keep this draft\n".repeat(20));
-  await page.getByRole("heading", { name: "Dispatch", exact: true }).tap();
+  await page.getByRole("heading", { name: "New task", exact: true }).tap();
   await expect(composer).toHaveAttribute("data-expanded", "true");
   expect((await prompt.boundingBox())!.height).toBeLessThanOrEqual(144);
   await onScreen(page.getByRole("button", { name: "Dispatch", exact: true }));

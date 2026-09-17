@@ -141,8 +141,8 @@ export function UsageView() {
 
   return (
     <AppShell>
-      <AppBar title="Usage" brand settings />
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--tabbar-h)+var(--banner-h)+24px)]">
+      <AppBar title="Usage" />
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
         {error && <Alert variant="destructive" className="flex flex-col gap-2">
           <p>Couldn't load usage. {error}</p>
           <Button variant="outline" disabled={pending} onClick={() => { setPending(true); setAttempt(value => value + 1); }}>Retry usage</Button>

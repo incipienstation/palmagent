@@ -6,6 +6,7 @@ test.use({ serviceWorkers: "block" });
 
 async function openSettings(page: Page) {
   await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Spaces", exact: true }).click();
   const section = page.getByRole("region", { name: "Space search paths" });
@@ -45,6 +46,7 @@ test("search settings add and remove paths, disable discovery, and restore insta
   expect(changes).toEqual([{ action: "add", paths: [longPath] }, { action: "remove", paths: ["/projects"] },
     { action: "remove", paths: [longPath] }, { action: "reset" }]);
   await page.reload();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Spaces", exact: true }).click();
   await section.getByRole("textbox").scrollIntoViewIfNeeded();

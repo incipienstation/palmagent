@@ -2,12 +2,8 @@
 //
 // On iOS an installed PWA can, after a *reload*, resolve `100dvh`/`100vh` LARGER
 // than the on-screen viewport for a beat. The app shell is an `h-dvh` flex column
-// with the bottom TabBar as its last in-flow child, so the over-measured column
-// pushes the TabBar below the fold — and because index.css locks the document
-// (`overflow:hidden`), there's nothing to scroll to bring it back, so it stays
-// gone until a navigation/resize recomputes the layout. (The fixed FAB is
-// unaffected — it's positioned off the real viewport, which is why a refresh
-// leaves the FAB but drops the tab bar.)
+// whose bottom controls can be pushed below the fold. Because index.css locks
+// document scrolling, users cannot scroll those controls back into view.
 //
 // `window.innerHeight` reports the actual layout-viewport height, so we mirror it
 // into `--app-height` and the shells use `var(--app-height, 100dvh)`: the JS value

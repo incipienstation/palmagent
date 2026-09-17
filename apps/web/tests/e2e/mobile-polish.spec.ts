@@ -65,6 +65,7 @@ test("Usage and routine history recover from read failures without false empty r
 test("Settings tabs preserve a folder draft and fit a narrow phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   const settings = page.getByRole("button", { name: "Settings", exact: true });
   const box = (await settings.boundingBox())!;
   expect(box.width).toBeGreaterThanOrEqual(44);

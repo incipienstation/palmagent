@@ -9,8 +9,8 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 export type Theme = "light" | "dark" | "system";
 
 const STORAGE_KEY = "theme";
-const DARK_BG = "#0d1117";
-const LIGHT_BG = "#fbfcfd";
+const DARK_BG = "#101010";
+const LIGHT_BG = "#ffffff";
 
 function prefersDark(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;

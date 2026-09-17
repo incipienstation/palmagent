@@ -1,9 +1,8 @@
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, Plus, Search, X } from "lucide-react";
+import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useUpdateState } from "../update-state";
@@ -57,17 +56,10 @@ function relTime(ms: number): string {
   return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-// Per-status left-rail + faint tinted bg for the priority (awaiting_*) rows.
-// Rail color: question-active (input) / amber (approval), per the design spec.
-const ATTENTION_RAIL: Partial<Record<TaskStatus, string>> = {
-  awaiting_input: "border-l-question-active bg-status-input-bg",
-  awaiting_approval: "border-l-amber bg-status-approval-bg",
-};
-
 // Show results and recency here; model, effort, and permissions live in Session details.
 function TaskMeta({ task, showTime }: { task: TaskState; showTime?: boolean }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-faint">
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
       {task.sessionControl && task.sessionControl.owner !== "palmagent" && <Badge variant="secondary">{task.sessionControl.owner === "local" ? "Local shell" : "Returning"}</Badge>}
       {/* Full-auto: the agent opens its own PR(s); one links out, several open a sheet. */}
       <PrChip prs={task.prs} />
@@ -91,14 +83,13 @@ function previewOf(t: TaskState): string | null {
   return rest || null;
 }
 
-// Eyebrow row: the project (left, scannable anchor) and the status + agent
-// badges (right). This is the card's "where + what state" line, above the title.
+// Secondary context stays below the title: project, state, and agent.
 function CardContextLine({ task }: { task: TaskState }) {
   const repos = useContext(ReposContext);
   return (
-    <div className="flex items-center gap-2 pr-10">
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 pr-8">
       <RepoChip repo={repos.get(task.repoId)} isolated={!!task.branch} />
-      <span className="ml-auto flex shrink-0 items-center gap-1.5">
+      <span className="flex shrink-0 items-center gap-2">
         <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
         <AgentTag agent={task.agent} />
       </span>
@@ -106,17 +97,11 @@ function CardContextLine({ task }: { task: TaskState }) {
   );
 }
 
-// The headline: a live dot for running turns + the task title (up to two lines,
-// so a long title-from-prompt reads in full instead of being cut mid-thought).
-// The dot pulses — green now means "this task is running" exclusively (the
-// header no longer shows a green connected-dot), and the pulse reads as "alive".
+// Titles lead each row; state remains available in the context line.
 function CardHeadline({ task }: { task: TaskState }) {
   return (
-    <div className="mt-1 flex items-start gap-2 pr-10">
-      {task.status === "running" && (
-        <span aria-hidden className="mt-[6px] size-2 shrink-0 animate-pulse rounded-full bg-live" />
-      )}
-      <span className="min-w-0 flex-1 line-clamp-2 text-[15px] leading-5 font-semibold text-strong [overflow-wrap:anywhere]">
+    <div className="flex items-start gap-2 pr-10">
+      <span className="min-w-0 flex-1 line-clamp-2 text-base leading-6 font-medium text-strong [overflow-wrap:anywhere]">
         {taskTitle(task)}
       </span>
     </div>
@@ -133,74 +118,24 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
   navigate(`/task/${encodeURIComponent(taskId)}`);
 }
 
-// Dense default row: a full-width tappable button with a hairline divider. A
-// project eyebrow (+ status/agent badges) sits on top, then the title headline,
-// then a deduped prompt snippet (omitted when it would echo the title), then the
-// quiet meta line and a relative timestamp.
+// One calm row treatment for every state, with an inline question preview.
 const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
-  const preview = previewOf(task);
+  const question = task.pendingInput?.questions[0];
+  const preview = task.status === "awaiting_input" && question ? question.question : previewOf(task);
   return (
-    <div className="relative border-b border-border">
+    <div className="relative">
       <button
-        className="block w-full px-4 py-2.5 text-left transition-colors active:bg-accent"
+        className="block w-full px-4 py-3.5 text-left transition-colors active:bg-accent"
         onClick={(e) => navIfInRow(e, task.taskId)}
       >
-        <CardContextLine task={task} />
         <CardHeadline task={task} />
+        <CardContextLine task={task} />
         {preview && (
-          <div className="mt-1 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground [overflow-wrap:anywhere]">
+          <div className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
             {preview}
           </div>
         )}
         <TaskMeta task={task} showTime />
-      </button>
-      <div className="absolute top-2 right-1">
-        <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} />
-      </div>
-    </div>
-  );
-});
-
-// Priority row (awaiting_input / awaiting_approval): a tinted attention Card with
-// the inline question teaser so it can be triaged without opening the task. The
-// Card is a <div>, so it is wrapped in a full-width <button> for the tap target.
-const PriorityRow = memo(function PriorityRow({ task }: { task: TaskState }) {
-  const q = task.pendingInput?.questions[0];
-  const preview = previewOf(task);
-  return (
-    <div className="relative mb-2.5">
-      <button
-        className="block w-full text-left"
-        onClick={(e) => navIfInRow(e, task.taskId)}
-      >
-        <Card
-          variant="attention"
-          className={cn(
-            "px-3.5 py-3 transition-colors active:bg-accent",
-            ATTENTION_RAIL[task.status],
-          )}
-        >
-          <CardContextLine task={task} />
-          <CardHeadline task={task} />
-          {task.status === "awaiting_input" && q ? (
-            <div className="mt-2 rounded-lg border border-question-border bg-question-bg px-2.5 py-2">
-              <div className="text-[11px] font-semibold tracking-wide text-question-fg uppercase">
-                🙋 {q.header || "The agent has a question"}
-              </div>
-              <div className="mt-0.5 line-clamp-2 text-[13px] text-strong [overflow-wrap:anywhere]">
-                {q.question}
-              </div>
-              <div className="mt-1 text-[11px] text-question-fg">Tap to answer →</div>
-            </div>
-          ) : (
-            preview && (
-              <div className="mt-1 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground [overflow-wrap:anywhere]">
-                {preview}
-              </div>
-            )
-          )}
-          <TaskMeta task={task} showTime />
-        </Card>
       </button>
       <div className="absolute top-2 right-1">
         <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} />
@@ -217,11 +152,10 @@ function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks:
   const rowsId = useId();
   if (tasks.length === 0) return null;
   const collapsible = status === "idle" && !searching;
-  const priority = status === "awaiting_input" || status === "awaiting_approval";
   return (
     <section className="px-4 pt-5 first:pt-3">
       {collapsible ? <h2>
-        <Button variant="ghost" className="w-full justify-start px-0 text-[11px] font-semibold tracking-wide text-faint uppercase" aria-expanded={expanded} aria-controls={rowsId}
+        <Button variant="ghost" className="w-full justify-start px-0 text-xs font-medium text-muted-foreground" aria-expanded={expanded} aria-controls={rowsId}
           onClick={() => {
             if (expanded) collapsedGroups.add(status); else collapsedGroups.delete(status);
             setExpanded(!expanded);
@@ -229,15 +163,13 @@ function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks:
           {label}<span aria-hidden="true" className="text-muted-foreground">· {tasks.length}</span>
           <ChevronDown aria-hidden="true" className={cn("ml-auto", expanded && "rotate-180")} />
         </Button>
-      </h2> : <div className="flex items-center gap-1.5 pb-2 text-[11px] font-semibold tracking-wide text-faint uppercase">
+      </h2> : <div className="flex items-center gap-1.5 pb-2 text-xs font-medium text-muted-foreground">
         <h2>{label}</h2><span aria-hidden="true">· {tasks.length}</span>
       </div>}
       <div id={rowsId} hidden={collapsible && !expanded}>
-        {priority ? tasks.map(t => <PriorityRow key={t.taskId} task={t} />) : (
-          <div className="-mx-4 [&>div:last-child]:border-b-0">
-            {tasks.map(t => <TaskRow key={t.taskId} task={t} />)}
-          </div>
-        )}
+        <div className="-mx-4">
+          {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
+        </div>
       </div>
     </section>
   );
@@ -248,7 +180,7 @@ function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks:
 function LoadingRows() {
   return (
     <section className="px-4 pt-3" aria-label="Loading tasks" aria-busy="true">
-      <div className="flex items-center gap-2 pb-2 text-[11px] font-semibold tracking-wide text-faint uppercase">
+      <div className="flex items-center gap-2 pb-2 text-xs font-medium text-muted-foreground">
         <span role="status">Loading tasks…</span>
       </div>
       <div className="-mx-4">
@@ -308,21 +240,18 @@ export const InboxView = memo(function InboxView({
   // Most-recent first within each group.
   for (const arr of byStatus.values()) arr.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 
-  const attention = tasks.some(
-    (t) => t.status === "awaiting_input" || t.status === "awaiting_approval",
-  );
   const isEmpty = !loading && filtered.length === 0;
 
   return (
     <ReposContext.Provider value={repos}>
-      <AppShell attention={attention} wide>
-        <AppBar title="Tasks" brand conn={conn} settings />
+      <AppShell wide>
+        <AppBar title="Tasks" conn={conn} />
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} loading={loading} />
         <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${selected}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
-          {/* The pb wrapper tracks the tab bar + banner + FAB clearance; it is the
+          {/* The pb wrapper tracks the banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
-          <div data-testid="inbox-content" className="pb-[calc(var(--tabbar-h,0px)+var(--banner-h,0px)+88px)]">
+          <div data-testid="inbox-content" className="pb-[calc(var(--banner-h,0px)+var(--safe-bottom)+88px)]">
             {!loading && <div className="px-4 pt-2 pb-1">
               <div className="flex gap-2">
                 <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks…" value={query}
@@ -349,12 +278,12 @@ export const InboxView = memo(function InboxView({
         </PullToRefresh>
         </div>
         <Button
-          size="icon"
-          className="fixed right-[max(16px,calc((100vw-1100px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--tabbar-h,0px)+var(--banner-h,0px))] z-20 size-14 rounded-full shadow-[0_10px_28px_-6px_rgba(0,137,123,0.40),0_3px_10px_-4px_rgba(0,0,0,0.18)] transition-[bottom,transform,box-shadow,background-color] duration-200 active:translate-y-0.5 active:shadow-[0_4px_12px_-6px_rgba(0,137,123,0.34),0_2px_6px_-4px_rgba(0,0,0,0.16)] dark:shadow-[0_12px_34px_-6px_rgba(20,184,166,0.50),0_4px_14px_-4px_rgba(0,0,0,0.55)] dark:active:shadow-[0_6px_18px_-6px_rgba(20,184,166,0.40),0_2px_8px_-4px_rgba(0,0,0,0.5)]"
+          className="fixed right-[max(16px,calc((100vw-1100px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--banner-h,0px))] z-20 h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
           aria-label="Dispatch new task"
           onClick={() => navigate("/new")}
         >
-          <Plus className="size-7" />
+          <SquarePen className="size-5" />
+          New task
         </Button>
       </AppShell>
     </ReposContext.Provider>

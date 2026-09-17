@@ -9,58 +9,43 @@
    the OS preference. Keying both off `.dark` makes the manual theme toggle authoritative. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─────────────────────────────────────────────────────────────────────────
-   Dual-theme design tokens ("Quiet Triage").
-
-   Strategy (Tailwind v4): LIGHT is the `:root` default; DARK overrides every
-   token under a `.dark` class on <html> (toggled by ThemeProvider + the inline
-   no-flash bootstrap in index.html). BOTH themes define EVERY token — no partial
-   cascade — so every component reads a token, never a literal hex.
-
-   Dark stays close to the historical GitHub-dark palette so the committed visual
-   snapshots regenerate cleanly; light is a cool neutral slate. `color-scheme`
-   flips per theme. All app-accent / status / question / log tokens are bridged
-   into the `@theme inline` block below so utilities like `bg-card`,
-   `text-strong`, `bg-status-running-bg`, `text-question-fg` Just Work.
-   ───────────────────────────────────────────────────────────────────────── */
+/* Neutral surfaces keep attention on conversations. Both themes define the
+   same tokens; semantic status colors remain reserved for state indicators. */
 :root {
   color-scheme: light;
 
   /* shadcn core */
-  --background: #fbfcfd;
-  --foreground: #1c2128;
-  --card: #ffffff;
-  --card-foreground: #1c2128;
+  --background: #ffffff;
+  --foreground: #242424;
+  --card: #f5f5f5;
+  --card-foreground: #242424;
   --popover: #ffffff;
-  --popover-foreground: #1c2128;
-  /* Palmagent brand accent = warm teal (palm-themed). Only the *primary* action
-     color is teal; --color-green / --color-live keep their green semantics
-     (success / online) so codex chips, success checks and the live dot read green. */
-  --primary: #00897b;
+  --popover-foreground: #242424;
+  --primary: #242424;
   --primary-foreground: #ffffff;
-  --secondary: #f2f4f7;
-  --secondary-foreground: #1c2128;
-  --muted: #f2f4f7;
-  --muted-foreground: #5a6473;
-  --accent: #eef1f5;
-  --accent-foreground: #1c2128;
+  --secondary: #eeeeee;
+  --secondary-foreground: #242424;
+  --muted: #f5f5f5;
+  --muted-foreground: #666666;
+  --accent: #eeeeee;
+  --accent-foreground: #242424;
   --destructive: #cf222e;
   --destructive-foreground: #ffffff;
-  --border: #e2e6eb;
-  --input: #d4d9e0;
-  --ring: #0969da;
-  --radius: 0.625rem; /* 10px — GitHub-crisp */
+  --border: #e8e8e8;
+  --input: #d5d5d5;
+  --ring: #737373;
+  --radius: 0.875rem;
 
   /* app-accent palette */
-  --color-strong: #0b1117;
-  --color-faint: #8a929e;
+  --color-strong: #171717;
+  --color-faint: #737373;
   --color-blue: #0969da;
   --color-amber: #9a6700;
   --color-green: #1a7f37;
   --color-purple: #8250df;
   --color-live: #1a7f37;
   --color-tool-call: #9a6700;
-  --color-primary-active: #00a896; /* teal — primary button border + pressed bg */
+  --color-primary-active: #404040;
 
   /* per-status pills (low-chroma tinted; -bg / -fg pairs) */
   --status-queued-bg: #fff8e6;
@@ -81,11 +66,11 @@
   --status-archived-fg: #8a929e;
 
   /* question / awaiting-input cluster */
-  --question-bg: #f6f2ff;
-  --question-border: #d9caff;
-  --question-fg: #6639b6;
-  --question-active: #8250df;
-  --question-active-bg: #ede4fd;
+  --question-bg: #f5f5f5;
+  --question-border: #dedede;
+  --question-fg: #404040;
+  --question-active: #525252;
+  --question-active-bg: #e8e8e8;
 
   /* destructive button surface (driven from tokens, not literals) */
   --destructive-bg: #fee2e2;
@@ -102,37 +87,36 @@
   color-scheme: dark;
 
   /* shadcn core */
-  --background: #0d1117;
-  --foreground: #c9d1d9;
-  --card: #161b22;
-  --card-foreground: #e6edf3;
-  --popover: #1c2230;
-  --popover-foreground: #e6edf3;
-  /* Palmagent brand accent = warm teal (palm-themed); brighter on dark for pop. */
-  --primary: #14b8a6;
-  --primary-foreground: #ffffff;
-  --secondary: #21262d;
-  --secondary-foreground: #c9d1d9;
-  --muted: #1c2230;
-  --muted-foreground: #8b949e;
-  --accent: #1c2230;
-  --accent-foreground: #e6edf3;
+  --background: #101010;
+  --foreground: #ececec;
+  --card: #202020;
+  --card-foreground: #ececec;
+  --popover: #262626;
+  --popover-foreground: #ececec;
+  --primary: #ececec;
+  --primary-foreground: #171717;
+  --secondary: #2a2a2a;
+  --secondary-foreground: #ececec;
+  --muted: #202020;
+  --muted-foreground: #a3a3a3;
+  --accent: #303030;
+  --accent-foreground: #ececec;
   --destructive: #f85149;
   --destructive-foreground: #ffffff;
-  --border: #21262d;
-  --input: #30363d;
-  --ring: #58a6ff;
+  --border: #303030;
+  --input: #404040;
+  --ring: #a3a3a3;
 
   /* app-accent palette */
-  --color-strong: #e6edf3;
-  --color-faint: #6e7681;
+  --color-strong: #f5f5f5;
+  --color-faint: #999999;
   --color-blue: #58a6ff;
   --color-amber: #e3b341;
   --color-green: #56d364;
   --color-purple: #d2a8ff;
   --color-live: #2ea043;
   --color-tool-call: #d29922;
-  --color-primary-active: #2dd4bf; /* teal — primary button border + pressed bg */
+  --color-primary-active: #d4d4d4;
 
   /* per-status pills */
   --status-queued-bg: #2d2a1f;
@@ -153,11 +137,11 @@
   --status-archived-fg: #6e7681;
 
   /* question / awaiting-input cluster */
-  --question-bg: #241a36;
-  --question-border: #5b3fa0;
-  --question-fg: #c4a3ff;
-  --question-active: #a37bff;
-  --question-active-bg: #5b3fa04d; /* #5b3fa0 @ 30% */
+  --question-bg: #202020;
+  --question-border: #404040;
+  --question-fg: #e5e5e5;
+  --question-active: #a3a3a3;
+  --question-active-bg: #363636;
 
   /* destructive button surface */
   --destructive-bg: #3d1518;
@@ -253,8 +237,7 @@
 /* Full-viewport shell height. `--app-height` is window.innerHeight, mirrored in
    by viewport.ts; the `100dvh` fallback covers the pre-JS first paint / JS-off.
    Using the JS-measured height dodges the iOS standalone-PWA dvh over-measurement
-   that, after a reload, pushes the bottom TabBar (the shell's last in-flow child)
-   below the scroll-locked document. Used by AppShell / AuthScreen / AuthGate. */
+   that, after a reload, pushes bottom controls below the scroll-locked document. Used by AppShell / AuthScreen / AuthGate. */
 @utility h-app {
   height: var(--app-height, 100dvh);
 }

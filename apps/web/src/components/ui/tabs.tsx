@@ -3,8 +3,7 @@ import { Tabs as TabsPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
-// Radix Tabs, vendored for completeness. NOTE: the bottom navigation is the
-// bespoke TabBar.tsx, NOT this primitive — do not use Radix Tabs for nav.
+// Radix Tabs switch sections within a view. AppNavigation owns route changes.
 function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Root>) {
   return <TabsPrimitive.Root data-slot="tabs" className={cn("flex flex-col gap-2", className)} {...props} />;
 }

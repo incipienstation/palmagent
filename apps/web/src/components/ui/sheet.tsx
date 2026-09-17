@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 // Bottom sheet — a thin semantic wrapper over vaul's Drawer (same infra as
 // drawer.tsx: drag-to-dismiss, scrim, body scroll-lock). Used by SettingsSheet.
-// `rounded-t-2xl` + grab handle + safe-area bottom padding.
+// `rounded-t-3xl` + grab handle + safe-area bottom padding.
 function Sheet(props: React.ComponentProps<typeof DrawerPrimitive.Root>) {
   return <DrawerPrimitive.Root data-slot="sheet" {...props} />;
 }
@@ -42,9 +42,9 @@ function SheetContent({
       <SheetOverlay />
       <DrawerPrimitive.Content
         data-slot="sheet-content"
-        // Plane-2 floating chrome: translucent surface + blur + hairline border.
+        // A consistent surface for supporting controls.
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mx-auto flex h-auto w-full max-w-[720px] flex-col rounded-t-2xl border border-b-0 border-border bg-card/95 pb-[calc(16px+var(--safe-bottom))] backdrop-blur-md",
+          "fixed inset-x-0 bottom-0 z-50 mx-auto flex h-auto w-full max-w-[720px] flex-col rounded-t-3xl border border-b-0 border-border bg-card pb-[calc(16px+var(--safe-bottom))] backdrop-blur-md",
           className,
         )}
         {...props}
