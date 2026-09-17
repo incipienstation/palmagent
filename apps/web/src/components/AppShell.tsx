@@ -106,7 +106,7 @@ export function AppBar({
     // Content stays below it via the same pt padding; 0px and inert without an inset.
     <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background/85 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']">
       {back && (
-        <Button variant="ghost" size="icon-sm" className="-ml-1.5 text-blue" onClick={goBack} aria-label="Back">
+        <Button variant="ghost" size="icon-lg" className="-ml-1.5 text-blue" onClick={goBack} aria-label="Back">
           <ChevronLeft className="size-6" />
         </Button>
       )}
@@ -118,7 +118,7 @@ export function AppBar({
       {children}
       {settings && (
         <SettingsSheet conn={conn}>
-          <Button variant="ghost" size="icon-sm" className="text-faint" aria-label="Settings">
+          <Button variant="ghost" size="icon-lg" className="text-faint" aria-label="Settings">
             <Settings className="size-5" />
           </Button>
         </SettingsSheet>

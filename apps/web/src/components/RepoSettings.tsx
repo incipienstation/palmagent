@@ -73,7 +73,7 @@ export function RepoSettings() {
         {status.repoRoots.length > 0 && <ul className="flex flex-col gap-2">
           {status.repoRoots.map((root) => <li key={root} className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 flex-1 break-all font-mono text-xs">{root}</span>
-            <Button variant="ghost" size="icon" disabled={disabled} aria-label={`Remove ${root}`}
+            <Button variant="ghost" size="icon-lg" disabled={disabled} aria-label={`Remove ${root}`}
               onClick={() => void request({ action: "remove", paths: [root] })}><X /></Button>
           </li>)}
         </ul>}
@@ -90,8 +90,8 @@ export function RepoSettings() {
         </form>
       </>}
       <div className="flex flex-wrap gap-2">
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => void request()}>Refresh paths</Button>
-        {status?.source === "saved" && <Button variant="ghost" size="sm" disabled={disabled}
+        <Button variant="ghost" disabled={busy} onClick={() => void request()}>Refresh paths</Button>
+        {status?.source === "saved" && <Button variant="ghost" disabled={disabled}
           onClick={() => void request({ action: "reset" })}>Use installation defaults</Button>}
       </div>
       <p role="status" className="text-xs text-muted-foreground">{busy && status ? "Saving or refreshing…" : notice}</p>

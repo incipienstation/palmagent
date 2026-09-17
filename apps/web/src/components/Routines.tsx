@@ -113,16 +113,27 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
 }) {
   const [history, setHistory] = useState<RoutineRun[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  async function loadHistory() {
+    if (historyLoading) return;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      setHistory(await api.routineRuns(r.id));
+    } catch (e) {
+      setHistoryError(errMsg(e));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   async function toggleHistory() {
     const next = !showHistory;
     setShowHistory(next);
     if (next && history === null) {
-      try {
-        setHistory(await api.routineRuns(r.id));
-      } catch {
-        setHistory([]); // best-effort; an empty list reads as "nothing yet"
-      }
+      await loadHistory();
     }
   }
 
@@ -155,18 +166,23 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
             <span className="text-[12.5px] text-faint">last {fmtTime(r.lastRunAt)}</span>
           )}
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => void toggleHistory()}
-          className="mt-2.5 text-[12.5px] font-medium text-primary"
+          aria-expanded={showHistory}
+          className="mt-1 -ml-3"
         >
           {showHistory ? "Hide history" : "History"}
-        </button>
+        </Button>
         {showHistory && (
-          <div className="mt-2 space-y-1.5 border-t border-border pt-2.5">
-            {history === null ? (
-              <span className="text-[12.5px] text-faint">Loading…</span>
-            ) : history.length === 0 ? (
+          <div className="mt-2 flex flex-col gap-1.5 border-t border-border pt-2.5" aria-busy={historyLoading}>
+            {historyError && <Alert variant="destructive" className="flex flex-col gap-2">
+              <p>Couldn't load history. {historyError}</p>
+              <Button variant="outline" disabled={historyLoading} onClick={() => void loadHistory()}>Retry history</Button>
+            </Alert>}
+            {historyLoading && <span role="status" className="text-[12.5px] text-faint">Loading history…</span>}
+            {history !== null && (history.length === 0 ? (
               <span className="text-[12.5px] text-faint">No runs yet.</span>
             ) : (
               history.map((run) => (
@@ -175,7 +191,7 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
                   type="button"
                   disabled={!run.taskId}
                   onClick={() => run.taskId && navigate(`/task/${encodeURIComponent(run.taskId)}`)}
-                  className="flex w-full items-center gap-2 text-left text-[12.5px] disabled:cursor-default"
+                  className="flex min-h-11 w-full items-center gap-2 text-left text-[12.5px] disabled:cursor-default"
                 >
                   <span
                     className={
@@ -188,7 +204,7 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
                   {run.taskId && <ChevronRight className="size-3.5 shrink-0 text-faint" />}
                 </button>
               ))
-            )}
+            ))}
           </div>
         )}
       </CardContent>

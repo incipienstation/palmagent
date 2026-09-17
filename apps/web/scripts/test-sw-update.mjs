@@ -295,6 +295,7 @@ async function run() {
     // disabled. A pending write must settle before its page is replaced.
     await page.evaluate(() => { location.hash = "/"; });
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("tab", { name: "Updates", exact: true }).click();
     const automatic = page.getByRole("switch", { name: "Automatic updates" });
     assert.equal(await automatic.isChecked(), false);
     const submitted = page.waitForRequest((request) => request.url().endsWith("/api/settings/updates") && request.postDataJSON()?.action === "install");

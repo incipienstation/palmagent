@@ -15,7 +15,7 @@ function AppInner() {
   // The single inbox stream lives for the whole app session, independent of the
   // current view, so the task list stays live everywhere (and we never open more
   // than one /api/stream). The task detail opens its own scoped stream on top.
-  const { tasks, conn } = useInbox();
+  const { tasks, conn, loading } = useInbox();
   useAccessUpdates(conn);
 
   // Per-route browser/OS title (page-first + brand suffix). Centralized here so
@@ -41,7 +41,7 @@ function AppInner() {
   if (route.name === "task") {
     return <TaskDetailView key={route.id} taskId={route.id} task={tasks.find((t) => t.taskId === route.id)} />;
   }
-  return <InboxView tasks={tasks} conn={conn} />;
+  return <InboxView tasks={tasks} conn={conn} loading={loading} />;
 }
 
 export function App() {

@@ -108,11 +108,14 @@ function SpaceList({ spaces, total, selected, onSelect }: {
   </>;
 }
 
-export function WorkingDirectories({ tasks, repos, selected, onSelect }: {
-  tasks: TaskState[]; repos: Map<string, Repo>; selected: string; onSelect: (path: string) => void;
+export function WorkingDirectories({ tasks, repos, selected, onSelect, loading = false }: {
+  tasks: TaskState[]; repos: Map<string, Repo>; selected: string; onSelect: (path: string) => void; loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  if (loading) return <div className="shrink-0 px-4 py-2 md:w-64">
+    <Button variant="outline" disabled className="w-full justify-start">Loading spaces…</Button>
+  </div>;
   const spaces = spacesFor(tasks, repos, selected);
   const current = spaces.find((space) => space.path === selected);
   const Icon = selected === "all" ? Layers : current?.worktree ? GitBranch : Folder;

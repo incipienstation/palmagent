@@ -1,5 +1,5 @@
 import { useUpdateState } from "../update-state";
-import { type ReactNode, useState } from "react";
+import { type ReactNode } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
 import {
@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -47,16 +48,25 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
   const [open, setOpen] = useUpdateState(`settings:open`, false);
+  const [section, setSection] = useUpdateState("settings:section", "general");
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>{children}</SheetTrigger>
-      <SheetContent className="max-h-[90dvh]">
+      <SheetContent className="h-[min(560px,90dvh)] max-h-[90dvh]">
         <SheetHeader>
           <SheetTitle>Settings</SheetTitle>
           <SheetDescription className="sr-only">App preferences and account</SheetDescription>
         </SheetHeader>
 
-        <div data-slot="settings-scroll" className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-4 pb-2 *:shrink-0">
+        <Tabs value={section} onValueChange={setSection} className="min-h-0 flex-1 gap-3">
+          <div className="shrink-0 px-4">
+            <TabsList aria-label="Settings sections">
+              <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="spaces">Spaces</TabsTrigger>
+              <TabsTrigger value="updates">Updates</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent forceMount hidden={section !== "general"} value="general" data-slot="settings-scroll" className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
           {/* Appearance — the theme toggle's home. */}
           <SettingRow label="Appearance">
             <ToggleGroup
@@ -123,11 +133,6 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
             </>
           )}
 
-          {open && <UpdateSettings />}
-          <Separator />
-          {open && <RepoSettings />}
-          <Separator />
-
           {/* Account — sign out, behind an AlertDialog confirm. */}
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -152,7 +157,14 @@ export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: 
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        </div>
+          </TabsContent>
+          <TabsContent forceMount hidden={section !== "spaces"} value="spaces" data-slot="settings-scroll" className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
+            {open && <RepoSettings />}
+          </TabsContent>
+          <TabsContent forceMount hidden={section !== "updates"} value="updates" data-slot="settings-scroll" className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
+            {open && <UpdateSettings />}
+          </TabsContent>
+        </Tabs>
       </SheetContent>
     </Sheet>
   );
