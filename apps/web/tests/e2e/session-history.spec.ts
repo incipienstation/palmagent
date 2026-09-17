@@ -110,9 +110,18 @@ test("scrolling away and back preserves a tool row's collapsed override", async 
   const full = "Expanded tool output\n".repeat(80) + "Expansion survived remount";
   await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 2001, kind: "tool_result", payload: { output: full } } }, 2001);
   const row = page.locator('[data-message-key="2001"]');
+  // Wait for the tall row to finish measuring; the collapse must preserve its
+  // position even when it is the only row mounted at the bottom.
+  await expectBottom(page);
+  await page.waitForTimeout(800);
   // Verbose starts expanded. Retain a non-default override across unmounting.
   await row.getByRole("button").click();
   await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
+  await expect.poll(async () => {
+    const box = await row.boundingBox();
+    const pane = await viewport(page).boundingBox();
+    return !!box && !!pane && box.y >= pane.y - 1 && box.y + box.height <= pane.y + pane.height + 1;
+  }).toBe(true);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight / 2; });
   await expect(row).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });

@@ -1,6 +1,6 @@
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
 import { ChevronDown, Inbox as InboxIcon, Plus, Search, X } from "lucide-react";
-import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +30,8 @@ const ReposContext = createContext<Map<string, Repo>>(new Map());
 // Attention-ordered grouping. Every status the backend can emit is represented
 // Empty groups stay out of the way; every non-empty state remains reachable.
 type InboxStatus = TaskStatus | "local";
+let lastQuery = "";
+const collapsedGroups = new Set<InboxStatus>();
 const GROUP_ORDER: InboxStatus[] = [
   "awaiting_input",
   "awaiting_approval",
@@ -135,7 +137,7 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
 // project eyebrow (+ status/agent badges) sits on top, then the title headline,
 // then a deduped prompt snippet (omitted when it would echo the title), then the
 // quiet meta line and a relative timestamp.
-function TaskRow({ task }: { task: TaskState }) {
+const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
   const preview = previewOf(task);
   return (
     <div className="relative border-b border-border">
@@ -157,12 +159,12 @@ function TaskRow({ task }: { task: TaskState }) {
       </div>
     </div>
   );
-}
+});
 
 // Priority row (awaiting_input / awaiting_approval): a tinted attention Card with
 // the inline question teaser so it can be triaged without opening the task. The
 // Card is a <div>, so it is wrapped in a full-width <button> for the tap target.
-function PriorityRow({ task }: { task: TaskState }) {
+const PriorityRow = memo(function PriorityRow({ task }: { task: TaskState }) {
   const q = task.pendingInput?.questions[0];
   const preview = previewOf(task);
   return (
@@ -205,13 +207,13 @@ function PriorityRow({ task }: { task: TaskState }) {
       </div>
     </div>
   );
-}
+});
 
 // Completed tasks can be folded while live work remains visible. Search always
 // reveals matching rows, including completed tasks.
 function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks: TaskState[]; searching: boolean }) {
   const label = statusSection(status);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(() => !collapsedGroups.has(status));
   const rowsId = useId();
   if (tasks.length === 0) return null;
   const collapsible = status === "idle" && !searching;
@@ -220,7 +222,10 @@ function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks:
     <section className="px-4 pt-5 first:pt-3">
       {collapsible ? <h2>
         <Button variant="ghost" className="w-full justify-start px-0 text-[11px] font-semibold tracking-wide text-faint uppercase" aria-expanded={expanded} aria-controls={rowsId}
-          onClick={() => setExpanded(value => !value)}>
+          onClick={() => {
+            if (expanded) collapsedGroups.add(status); else collapsedGroups.delete(status);
+            setExpanded(!expanded);
+          }}>
           {label}<span aria-hidden="true" className="text-muted-foreground">· {tasks.length}</span>
           <ChevronDown aria-hidden="true" className={cn("ml-auto", expanded && "rotate-180")} />
         </Button>
@@ -262,7 +267,7 @@ function LoadingRows() {
   );
 }
 
-export function InboxView({
+export const InboxView = memo(function InboxView({
   tasks,
   conn,
   loading,
@@ -285,8 +290,9 @@ export function InboxView({
   }, [tasks, repos, refresh]);
 
   const [selected, setSelected] = useState(() => { try { return localStorage.getItem("working-directory") ?? "all"; } catch { return "all"; } });
-  const selectDirectory = (path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } };
-  const [query, setQuery] = useUpdateState("inbox:query", "");
+  const selectDirectory = useCallback((path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } }, []);
+  const [query, setQuery] = useUpdateState("inbox:query", lastQuery);
+  useEffect(() => { lastQuery = query; }, [query]);
   const searchInput = useRef<HTMLInputElement>(null);
   const search = query.trim().toLocaleLowerCase();
   const scoped = selected === "all" ? tasks : tasks.filter(task => taskDirectory(task, repos) === selected);
@@ -313,7 +319,7 @@ export function InboxView({
         <AppBar title="Tasks" brand conn={conn} settings />
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} loading={loading} />
-        <PullToRefresh className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${selected}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
           {/* The pb wrapper tracks the tab bar + banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
           <div data-testid="inbox-content" className="pb-[calc(var(--tabbar-h,0px)+var(--banner-h,0px)+88px)]">
@@ -353,4 +359,4 @@ export function InboxView({
       </AppShell>
     </ReposContext.Provider>
   );
-}
+});

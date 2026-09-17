@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
@@ -29,7 +30,12 @@ if (apiTargetUrl.protocol !== "https:" && !(apiTargetUrl.protocol === "http:" &&
 export default defineConfig({
   define: { __PALMAGENT_WEB_VERSION__: JSON.stringify(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version) },
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // The browser export uses document.createElement. Use the equivalent
+      // entity-table decoder in both dev and build, including Markdown workers.
+      "decode-named-character-reference": createRequire(import.meta.url).resolve("decode-named-character-reference"),
+    },
   },
   plugins: [
     react(),
