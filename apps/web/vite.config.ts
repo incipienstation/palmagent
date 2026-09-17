@@ -78,7 +78,7 @@ export default defineConfig({
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          // Dedicated maskable: full-bleed teal, glyph pulled into the safe zone so
+          // Dedicated maskable: full-bleed charcoal, glyph pulled into the safe zone so
           // Android's adaptive-icon crop never clips the mark.
           { src: "icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],

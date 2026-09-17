@@ -229,6 +229,11 @@ pnpm install
 pnpm dev
 ```
 
+The palm geometry and app-icon colors live in `apps/web/public/favicon.svg`.
+After editing it, run `pnpm --filter @palmagent/web icons:generate` to regenerate
+the PNG icons and transparent, theme-aware `logo.svg` using the Playwright Chromium
+installed for the web tests.
+
 For PWA development, run `pnpm web:dev` in another terminal. See the
 [web development guide](apps/web/README.md) for local ports and UI checks.
 
