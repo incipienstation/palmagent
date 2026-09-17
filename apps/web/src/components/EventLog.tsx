@@ -299,6 +299,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, []);
 
   const anchor = useRef<{ key: string; offset: number }>();
+  const disclosureAnchor = useRef<{ top: number; offset: number; row: HTMLElement; height: number }>();
+  const disclosureFrame = useRef(0);
+  const disclosureResize = useRef<ResizeObserver>();
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
@@ -319,6 +322,43 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     following.current = el.scrollHeight - el.clientHeight - el.scrollTop < 80;
     captureAnchor();
   }, [captureAnchor]);
+  const toggleMessage = useCallback((key: number) => {
+    const el = viewport.current;
+    const row = el?.querySelector<HTMLElement>(`[data-message-key="${key}"]`);
+    if (el && row) {
+      // A long row may start above the viewport when clicked. Keep its collapsed
+      // control visible instead of preserving an offset into removed content.
+      const rect = row.getBoundingClientRect();
+      const offset = Math.max(0, rect.top - el.getBoundingClientRect().top);
+      const saved = { top: el.scrollTop + rect.top - el.getBoundingClientRect().top - offset,
+        offset, row, height: rect.height };
+      disclosureAnchor.current = saved;
+      disclosureResize.current?.disconnect();
+      // Virtuoso applies item-content changes after the parent's layout effect.
+      // Wait for the row itself, then correct once after its measured update.
+      disclosureResize.current = new ResizeObserver(() => {
+        if (row.getBoundingClientRect().height === saved.height) return;
+        disclosureResize.current?.disconnect();
+        disclosureFrame.current = requestAnimationFrame(() => {
+          if (disclosureAnchor.current !== saved) return;
+          disclosureAnchor.current = undefined;
+          el.scrollTop = row.isConnected
+            ? el.scrollTop + row.getBoundingClientRect().top - el.getBoundingClientRect().top - saved.offset
+            : saved.top;
+        });
+      });
+      disclosureResize.current.observe(row);
+    }
+    toggle(key);
+  }, [toggle]);
+  useEffect(() => {
+    const cancel = () => { cancelAnimationFrame(disclosureFrame.current); disclosureResize.current?.disconnect(); disclosureAnchor.current = undefined; };
+    window.addEventListener("pointerdown", cancel, { passive: true, capture: true });
+    window.addEventListener("wheel", cancel, { passive: true, capture: true });
+    window.addEventListener("keydown", cancel, true);
+    window.addEventListener("resize", cancel);
+    return () => { cancel(); window.removeEventListener("pointerdown", cancel, true); window.removeEventListener("wheel", cancel, true); window.removeEventListener("keydown", cancel, true); window.removeEventListener("resize", cancel); };
+  }, []);
   // Check the reading position when the frame runs, not when a resize was
   // scheduled: a delayed size update must not pull a reader back to the bottom.
   const followBottom = useCallback(() => {
@@ -398,7 +438,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
           {!row.open && row.activity.preview && <div data-progress-preview className={cn("text-[13px] break-words [overflow-wrap:anywhere]", mode === "compact" ? "line-clamp-1" : "line-clamp-2")}>{row.activity.preview}</div>}
         </div> : <div data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
           <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
-            expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggle} onImageLoad={followBottom} />
+            expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggleMessage} onImageLoad={followBottom} />
         </div>}
     </div>}
   />;

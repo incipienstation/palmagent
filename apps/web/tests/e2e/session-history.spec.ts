@@ -113,7 +113,9 @@ test("scrolling away and back preserves a tool row's collapsed override", async 
   // Verbose starts expanded. Retain a non-default override across unmounting.
   await row.getByRole("button").click();
   await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
-  await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight / 2; });
+  await expect(row.getByRole("button")).toBeInViewport();
+  await viewport(page).hover();
+  await page.mouse.wheel(0, -3000);
   await expect(row).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
