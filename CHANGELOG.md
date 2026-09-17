@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Long streamed replies keep the composer responsive, and collapsing tool output
+  keeps the conversation at the row being read.
+- Task snapshots reuse unchanged rows. Returning from a task restores the inbox's
+  search, collapsed groups, and scroll position for each Space and search.
+
 ## 0.1.0-alpha.25
 
 ### Changed

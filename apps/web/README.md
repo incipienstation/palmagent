@@ -134,7 +134,10 @@ metadata retain their prose; the client does not guess which text is safe to fol
   Markdown is never split at a page boundary. React Virtuoso renders nearby rows
   in the Radix scroll area;
   row expansion survives scrolling out of view, and live events publish once per
-  animation frame. The inbox requests `snapshots=1` to omit unused event bodies.
+  animation frame. Active and long Markdown messages parse in a worker and reuse unchanged
+  rendered blocks; worker failures retain readable plain text. Task snapshots reuse
+  unchanged rows, and the inbox retains its search and reading position across navigation.
+  The inbox requests `snapshots=1` to omit unused event bodies.
 - **Service worker:** app shell is precached (cache-first) with a navigation
   fallback so the shell loads offline; `/api/*` is network-first **except**
   `/api/stream`, which is `NetworkOnly` (an open event-stream must never be

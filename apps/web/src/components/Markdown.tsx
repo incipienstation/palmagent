@@ -1,6 +1,9 @@
-import { memo, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { jsx, jsxs } from "react/jsx-runtime";
+import { toJsxRuntime } from "hast-util-to-jsx-runtime";
+import { cachedMarkdown, markdownParser } from "../markdown-worker";
 
 import { cn } from "@/lib/utils";
 
@@ -11,7 +14,7 @@ import { cn } from "@/lib/utils";
 // is a design token (text-strong/-blue, bg-muted, border-border) so light + dark
 // both Just Work, matching the surrounding event log. Defined at module scope so
 // the object identity is stable across renders (keeps the memo below effective).
-const COMPONENTS: Components = {
+const COMPONENTS = {
   h1: ({ children }) => <h1 className="mt-3 mb-1.5 text-[17px] font-semibold text-strong">{children}</h1>,
   h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[16px] font-semibold text-strong">{children}</h2>,
   h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-[15px] font-semibold text-strong">{children}</h3>,
@@ -62,36 +65,37 @@ const COMPONENTS: Components = {
     <th className="border border-border bg-muted/50 px-2 py-1 text-left font-semibold text-strong">{children}</th>
   ),
   td: ({ children }) => <td className="border border-border px-2 py-1 align-top">{children}</td>,
-};
+} satisfies Components;
 
-// Render assistant markdown. `memo` skips re-parsing when the text is unchanged
-// (the log re-renders on every streamed delta of OTHER items too). First/last
-// child margins are collapsed so the block aligns flush in the event log.
-//
-// `trailing` is the streaming caret. It must sit INSIDE this wrapper (not as a
-// sibling of it) and trail the prose: react-markdown emits the final block as a
-// block-level `<p>`, so we inline that last paragraph (`p:nth-last-child(2)` — the
-// caret is the actual last child) and the caret flows on the same line, the way
-// the old plain-text caret did. A non-paragraph final block (table/list mid-stream)
-// stays block and the caret drops below it — an acceptable transient.
-export const Markdown = memo(function Markdown({
-  children,
-  trailing,
-}: {
-  children: string;
-  trailing?: ReactNode;
+// Small static messages remain synchronous. Active or long messages retain their last parsed
+// view while the worker processes newer text; unchanged blocks skip JSX and DOM work.
+const ParsedBlock = memo(function ParsedBlock({ source }: { source: string }) {
+  return toJsxRuntime(JSON.parse(source), {
+    Fragment, jsx, jsxs, components: COMPONENTS, ignoreInvalidStyle: true, passKeys: true, passNode: true,
+  });
+});
+function LongMarkdown({ text }: { text: string }) {
+  const [blocks, setBlocks] = useState<string[] | null | undefined>(() => cachedMarkdown(text));
+  const parser = useRef<ReturnType<typeof markdownParser>>();
+  useEffect(() => {
+    parser.current = markdownParser(setBlocks);
+    return () => { parser.current?.dispose(); parser.current = undefined; };
+  }, []);
+  useEffect(() => { parser.current?.parse(text); }, [text]);
+  if (blocks === null) return <span className="whitespace-pre-wrap">{text}</span>;
+  if (!blocks) return <span className="text-muted-foreground" role="status">Rendering message…</span>;
+  return <>{blocks.map((source, index) => <ParsedBlock key={index} source={source} />)}</>;
+}
+
+export const Markdown = memo(function Markdown({ children, trailing }: {
+  children: string; trailing?: ReactNode;
 }) {
-  return (
-    <div
-      className={cn(
-        "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        trailing && "[&>p:nth-last-child(2)]:mb-0 [&>p:nth-last-child(2)]:inline",
-      )}
-    >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
-        {children}
-      </ReactMarkdown>
-      {trailing}
-    </div>
-  );
+  return <div className={cn(
+    "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+    trailing && "[&>p:nth-last-child(2)]:mb-0 [&>p:nth-last-child(2)]:inline",
+  )}>
+    {trailing || children.length > 4000 ? <LongMarkdown text={children} /> :
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>{children}</ReactMarkdown>}
+    {trailing}
+  </div>;
 });

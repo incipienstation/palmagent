@@ -316,6 +316,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     if (row) anchor.current = { key: row.dataset.rowKey!, offset: row.getBoundingClientRect().top - bounds.top };
   }, []);
   const onScrollPosition = useCallback((el: HTMLElement) => {
+    if (restoring.current) return;
     following.current = el.scrollHeight - el.clientHeight - el.scrollTop < 80;
     captureAnchor();
   }, [captureAnchor]);
@@ -370,6 +371,36 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     });
     return () => { cancelAnimationFrame(frame); restoring.current = false; };
   }, [firstKey]);
+  // A disclosure changes measured height without prepending data. Keep the
+  // interacted row in view while Virtuoso refines its estimates, including when
+  // the expanded row was taller than the entire viewport.
+  const disclosure = useRef<{ key: string; offset: number }>();
+  const rememberDisclosure = useCallback((key: string) => {
+    const el = viewport.current;
+    const row = el?.querySelector<HTMLElement>(`[data-row-key="${key}"]`);
+    if (!el || !row) return;
+    disclosure.current = { key, offset: Math.max(0, row.getBoundingClientRect().top - el.getBoundingClientRect().top) };
+    restoring.current = true;
+  }, []);
+  const toggleRow = useCallback((key: number) => {
+    const el = viewport.current;
+    const row = el?.querySelector<HTMLElement>(`[data-message-key="${key}"]`);
+    if (row?.dataset.rowKey && row.querySelector('[aria-expanded="true"]')) rememberDisclosure(row.dataset.rowKey);
+    toggle(key);
+  }, [rememberDisclosure, toggle]);
+  useLayoutEffect(() => {
+    const saved = disclosure.current;
+    if (!saved) return;
+    const index = rows.findIndex(row => row.key === saved.key);
+    if (index < 0) { disclosure.current = undefined; restoring.current = false; return; }
+    const frame = requestAnimationFrame(() => {
+      virtuoso.current?.scrollIntoView({ index, align: "start",
+        calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: -saved.offset }),
+        done: () => { disclosure.current = undefined; restoring.current = false; },
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rows, toggled]);
   useLayoutEffect(followBottom, [rows, followBottom]);
   return <Virtuoso<TranscriptRow, HistoryControls>
     ref={virtuoso}
@@ -391,14 +422,14 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       {row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "activity" ?
         <div data-activity className={cn("min-w-0 font-sans text-muted-foreground", !row.open && "mb-2")}>
           <Button variant="ghost" className="group w-full justify-start px-0" title={activityLabel(row.activity, mode)}
-            aria-expanded={row.open} onClick={() => toggleActivity(row.activity, !row.open)}>
+            aria-expanded={row.open} onClick={() => { if (row.open) rememberDisclosure(row.key); toggleActivity(row.activity, !row.open); }}>
             <ChevronRight data-icon="inline-start" className={row.open ? "rotate-90" : undefined} />
             <span className="truncate">{activityLabel(row.activity, mode)}</span>
           </Button>
           {!row.open && row.activity.preview && <div data-progress-preview className={cn("text-[13px] break-words [overflow-wrap:anywhere]", mode === "compact" ? "line-clamp-1" : "line-clamp-2")}>{row.activity.preview}</div>}
         </div> : <div data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
           <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
-            expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggle} onImageLoad={followBottom} />
+            expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggleRow} onImageLoad={followBottom} />
         </div>}
     </div>}
   />;
