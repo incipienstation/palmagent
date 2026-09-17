@@ -17,7 +17,12 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
   const cancel = () => { if (origin.current) suppress.current = true; origin.current = undefined; clear(); };
   const reveal = () => { clear(); if (!latest.current.disabled) { haptic("open"); latest.current.open(); } };
   useEffect(() => {
-    const otherPointer = (event: globalThis.PointerEvent) => { if (origin.current && event.pointerId !== origin.current.pointer) cancel(); };
+    // A later interaction must regain ordinary outside-focus dismissal.
+    const otherPointer = (event: globalThis.PointerEvent) => {
+      if (origin.current && event.pointerId !== origin.current.pointer) cancel();
+      else if (!origin.current) touch.current = false;
+    };
+    const keyboard = () => { touch.current = false; };
     const scroll = (event: Event) => {
       const element = origin.current?.element;
       // A streaming transcript is a sibling of the fixed composer. Its scroll
@@ -25,9 +30,10 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
       if (element && (event.target === window || event.target instanceof Node && event.target.contains(element))) cancel();
     };
     window.addEventListener("pointerdown", otherPointer, true);
+    window.addEventListener("keydown", keyboard, true);
     window.addEventListener("scroll", scroll, true);
     window.addEventListener("blur", cancel);
-    return () => { window.removeEventListener("pointerdown", otherPointer, true); clearTimeout(timer.current); window.removeEventListener("scroll", scroll, true); window.removeEventListener("blur", cancel); };
+    return () => { window.removeEventListener("pointerdown", otherPointer, true); window.removeEventListener("keydown", keyboard, true); clearTimeout(timer.current); window.removeEventListener("scroll", scroll, true); window.removeEventListener("blur", cancel); };
   }, []);
   useEffect(() => { if (disabled) cancel(); }, [disabled]);
   return { pressing, onOpenAutoFocus: (event: Event) => {
@@ -35,10 +41,18 @@ export function useLongPress(open: () => void, click: () => void, disabled = fal
     // The viewport then moves the anchor away from the finger; compatibility
     // mouse events land outside it and dismiss the menu on release.
     if (touch.current) event.preventDefault();
+  }, onFocusOutside: (event: Event) => {
+    // Focus can move as a phone reflows the composer during the consumed hold.
+    // That is still the opening gesture, not a request to dismiss its menu.
+    if (touch.current && suppress.current) event.preventDefault();
   }, handlers: {
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       touch.current = e.pointerType === "touch";
       if (disabled || e.button !== 0 || !e.isPrimary) { cancel(); return; }
+      // Cancel compatibility mouse defaults at their source. A release can be
+      // retargeted after mobile reflow, outside this button's mousedown handler.
+      // Pointer-event cancellation leaves the ordinary tap's click available.
+      if (touch.current) e.preventDefault();
       suppress.current = false; origin.current = { x: e.clientX, y: e.clientY, pointer: e.pointerId, element: e.currentTarget }; setPressing(true);
       timer.current = setTimeout(() => { suppress.current = true; reveal(); }, 450);
     },

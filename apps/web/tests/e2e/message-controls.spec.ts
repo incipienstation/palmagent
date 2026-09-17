@@ -99,6 +99,52 @@ async function touchHold(page: Page, button: Locator) {
   } finally { await session.detach(); }
 }
 
+for (const focusDuringHold of [false, true]) {
+  test(`collapsed composer hold ${focusDuringHold ? "survives input focus and keyboard reflow" : "keeps Send and Queue selectable"}`, async ({ page }) => {
+    const { calls } = await setup(page);
+    const input = page.getByRole("textbox");
+    const composer = page.getByRole("group", { name: "Message composer", exact: true });
+    const menu = page.getByRole("radiogroup", { name: "Message delivery mode" });
+    await expect(composer).toHaveAttribute("data-expanded", "false");
+    await expect(input).not.toBeFocused();
+    const box = (await page.getByRole("button", { name: "Send now", exact: true }).boundingBox())!;
+    const session = await page.context().newCDPSession(page);
+    try {
+      await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+      await expect(menu).toBeVisible();
+      if (focusDuringHold) {
+        // Model the reported phone sequence: input focus and software-keyboard
+        // reflow after opening, without a new tap. Desktop Chromium has no IME.
+        await input.focus();
+        await page.setViewportSize({ width: 360, height: 430 });
+        await page.waitForTimeout(300);
+        await expect(menu).toBeVisible();
+      }
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await page.waitForTimeout(300);
+      await expect(menu).toBeVisible();
+      if (!focusDuringHold) {
+        await expect(input).not.toBeFocused();
+        await expect(composer).toHaveAttribute("data-expanded", "false");
+      }
+      await page.getByRole("radio", { name: "Queue", exact: true }).tap();
+      await expect(menu).toBeHidden();
+      await touchHold(page, page.getByRole("button", { name: "Add to queue", exact: true }));
+      await expect(menu).toBeVisible();
+      await page.getByRole("radio", { name: "Send now", exact: true }).tap();
+      await expect(menu).toBeHidden();
+      expect(calls).toHaveLength(0);
+      expect(await page.evaluate(() => (window as any).vibrations)).toEqual([12, 6, 12, 6]);
+      // A new deliberate input tap still dismisses the menu and focuses input.
+      await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
+      await expect(menu).toBeVisible();
+      await input.tap({ position: { x: 8, y: 10 } });
+      await expect(menu).toBeHidden();
+      await expect(input).toBeFocused();
+    } finally { await session.detach(); }
+  });
+}
+
 test("touch release keeps Send/Queue open for either selection without sending", async ({ page }) => {
   const { calls } = await setup(page);
   await page.getByRole("textbox").fill("Keep this mobile draft");

@@ -21,7 +21,7 @@ export function SendControl({ mode, onMode, onSend, disabled, sendDisabled }: {
         {mode === "send" ? <ArrowUp /> : <ListPlus />}
       </Button>
     </PopoverAnchor>
-    <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} onCloseAutoFocus={event => {
+    <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} onFocusOutside={press.onFocusOutside} onCloseAutoFocus={event => {
       event.preventDefault();
       // Exit animation can finish after the user has returned to their draft.
       if (!(document.activeElement instanceof HTMLTextAreaElement)) button.current?.focus();

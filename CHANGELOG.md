@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Keep the Send/Queue menu open when input focus changes during a mobile long
+  press, including from the collapsed composer.
+
 ## 0.1.0-alpha.26
 
 ### Fixed
