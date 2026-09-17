@@ -200,12 +200,14 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         <AppBar title={heading} back conn={conn} titleControl={
           <SheetTrigger asChild>
             <Button variant="ghost" size="title" aria-label={heading} aria-description="Open session details" title="Session details">
-              <span className="truncate">{heading}</span><ChevronDown data-icon="inline-end" />
+              <span className="flex min-w-0 flex-col items-start gap-0.5">
+                <span className="flex w-full min-w-0 items-center gap-1"><span className="truncate">{heading}</span><ChevronDown className="size-3.5 shrink-0" /></span>
+                {task && <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
+              </span>
             </Button>
           </SheetTrigger>
         }>
           {task && <>
-            <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
             <TaskActionsMenu task={task} busy={busy} canStop={canStop} canCancel={canCancel} canArchive={canArchive}
               onStop={() => act(() => api.stop(taskId))}
               onCancel={() => act(() => api.cancel(taskId))}
@@ -239,7 +241,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
-        <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-background/85 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+        <div className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard

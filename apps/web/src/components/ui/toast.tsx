@@ -20,7 +20,7 @@ function ToastViewport({
         className,
       )}
       style={{
-        bottom: "calc(var(--tabbar-h, 0px) + var(--banner-h, 0px) + 12px + var(--safe-bottom))",
+        bottom: "calc(var(--banner-h, 0px) + 12px + var(--safe-bottom))",
       }}
       {...props}
     />

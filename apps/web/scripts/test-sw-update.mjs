@@ -294,6 +294,7 @@ async function run() {
     // Manual installation also finishes automatically, with automatic updates
     // disabled. A pending write must settle before its page is replaced.
     await page.evaluate(() => { location.hash = "/"; });
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("tab", { name: "Updates", exact: true }).click();
     const automatic = page.getByRole("switch", { name: "Automatic updates" });

@@ -4,7 +4,7 @@ import { assertViewportLocked } from "./_helpers";
 test.describe("dispatch form", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/#/new");
-    await expect(page.getByRole("heading", { name: "Dispatch" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await expect(page.getByLabel("Prompt")).toBeVisible();
   });
 

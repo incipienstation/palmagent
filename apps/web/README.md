@@ -67,6 +67,10 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
 
 ## Features
 
+Open the navigation menu for Tasks, Spaces, Routines, Usage, recent tasks, and
+Settings. New task stays available at the bottom of the drawer and task list.
+Focused screens retain Back; the task title opens session details.
+
 1. **Dispatch** (`#/new`) — pick/register a repo and type in the bottom composer.
    Focusing it reveals the model/effort summary; tap it to configure the agent,
    model, effort, permission, worktree isolation, and optional title. The + menu

@@ -1,6 +1,7 @@
 import type { Repo, TaskState } from "@palmagent/shared";
 import { Check, ChevronDown, Folder, GitBranch, Layers, Search, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
+import { useAppNavigation } from "./AppNavigation";
 import { EmptyState } from "./EmptyState";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -111,7 +112,10 @@ function SpaceList({ spaces, total, selected, onSelect }: {
 export function WorkingDirectories({ tasks, repos, selected, onSelect, loading = false }: {
   tasks: TaskState[]; repos: Map<string, Repo>; selected: string; onSelect: (path: string) => void; loading?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const navigation = useAppNavigation();
+  const open = navigation?.spacesOpen ?? localOpen;
+  const setOpen = navigation?.setSpacesOpen ?? setLocalOpen;
   const closeRef = useRef<HTMLButtonElement>(null);
   if (loading) return <div className="shrink-0 px-4 py-2 md:w-64">
     <Button variant="outline" disabled className="w-full justify-start">Loading spaces…</Button>
@@ -124,7 +128,7 @@ export function WorkingDirectories({ tasks, repos, selected, onSelect, loading =
     <div className="min-w-0 px-4 py-2 md:hidden">
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>
-          <Button variant="outline" aria-label={`Switch space: ${name}`} className="w-full min-w-0 justify-start px-3">
+          <Button variant="ghost" aria-label={`Switch space: ${name}`} className="w-full min-w-0 justify-start rounded-xl px-3 text-muted-foreground">
             <Icon data-icon="inline-start" />
             <span className="min-w-0 flex-1 truncate text-left">{name}</span>
             <Badge variant="secondary">{selected === "all" ? tasks.length : current?.count ?? 0}</Badge>

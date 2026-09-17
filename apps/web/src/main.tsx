@@ -13,7 +13,7 @@ import "./index.css";
 
 // Mirror window.innerHeight into --app-height before first paint so the h-app
 // shells size to the real viewport — dodges the iOS standalone-PWA dvh
-// over-measurement that drops the bottom TabBar on reload (see viewport.ts).
+// over-measurement that hides bottom controls on reload (see viewport.ts).
 initViewportHeight();
 
 // Standalone-only: guard the system Back button at the app root so a stray tap

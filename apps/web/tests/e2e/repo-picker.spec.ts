@@ -3,7 +3,7 @@ import { assertViewportLocked } from "./_helpers";
 
 async function openFolderBrowser(page: import("@playwright/test").Page) {
   await page.goto("/#/new");
-  await expect(page.getByRole("heading", { name: "Dispatch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add a repo" })).toBeVisible();
   await page.getByRole("option", { name: "Browse folders…" }).click();

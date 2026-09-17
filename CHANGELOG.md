@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Mobile navigation moves into a drawer with recent tasks, Spaces, Routines,
+  Usage, and Settings. Task rows lead with the title and keep state indicators compact.
+- Neutral light and dark surfaces, softer message bubbles, and consistent composer
+  and sheet styling keep conversations and the next action in focus.
+
 ### Fixed
 
 - Keep the Send/Queue menu open when input focus changes during a mobile long

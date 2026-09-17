@@ -1,5 +1,5 @@
+import type { ReactNode } from "react";
 import { useUpdateState } from "../update-state";
-import { type ReactNode } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
 import {
@@ -21,7 +21,6 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "../api";
@@ -41,18 +40,19 @@ async function signOut() {
   }
 }
 
-// The single overflow surface for the root screens: collapses the 4 old Inbox
-// header buttons + ConnPill into one gear. Opened from AppBar's gear button
-// (passed as `children`, used as the SheetTrigger).
-export function SettingsSheet({ children, conn }: { children: ReactNode; conn?: ConnState }) {
+// App preferences are opened from navigation; sections retain their drafts.
+export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
+  conn?: ConnState;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus: (event: Event) => void;
+}) {
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
-  const [open, setOpen] = useUpdateState(`settings:open`, false);
   const [section, setSection] = useUpdateState("settings:section", "general");
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{children}</SheetTrigger>
-      <SheetContent className="h-[min(560px,90dvh)] max-h-[90dvh]">
+    <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
+      <SheetContent className="h-[min(560px,90dvh)] max-h-[90dvh]" onCloseAutoFocus={onCloseAutoFocus}>
         <SheetHeader>
           <SheetTitle>Settings</SheetTitle>
           <SheetDescription className="sr-only">App preferences and account</SheetDescription>

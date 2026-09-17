@@ -109,7 +109,7 @@ export function DispatchView() {
 
   return (
     <AppShell>
-      <AppBar title="Dispatch" back />
+      <AppBar title="New task" back />
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={dispatch}>
         <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto px-4 pb-5">
           <div className="flex flex-col gap-3 py-4">

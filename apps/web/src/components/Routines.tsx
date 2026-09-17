@@ -349,8 +349,8 @@ export function RoutinesView() {
 
   return (
     <AppShell>
-      <AppBar title="Routines" brand settings />
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--tabbar-h)+var(--banner-h)+24px)]">
+      <AppBar title="Routines" />
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
         {error && <Alert variant="destructive">{error}</Alert>}
 
         {loading && (
