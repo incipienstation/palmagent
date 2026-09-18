@@ -261,9 +261,21 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
     const target = sentinel.current;
     const root = target?.closest("[data-radix-scroll-area-viewport]");
     if (!target || !root || !hasEarlier || loadingEarlier || historyError) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) loadEarlier?.();
-    }, { root, rootMargin: "240px 0px 0px" });
+    let observer: IntersectionObserver | undefined;
+    let margin = 0;
+    const observe = () => {
+      // Keep several screens of runway for the request and row measurement.
+      // The floor also gives short keyboard/landscape viewports time to load.
+      const nextMargin = Math.max(1200, root.clientHeight * 3);
+      if (nextMargin === margin) return;
+      margin = nextMargin;
+      observer?.disconnect();
+      observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadEarlier?.();
+      }, { root, rootMargin: `${margin}px 0px 0px` });
+      observer.observe(target);
+    };
+    const resize = new ResizeObserver(observe);
     // Virtuoso hides its list until the initial scroll target is reached. That
     // can take several measurement frames; don't mistake it for a short page.
     // Recheck after each page even without a scroll event, since compact mode
@@ -272,11 +284,14 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
       const list = root.querySelector<HTMLElement>("[data-transcript-items]");
       if (list && getComputedStyle(list).visibility === "hidden") {
         frame = requestAnimationFrame(observeWhenReady);
-      } else observer.observe(target);
+      } else {
+        observe();
+        resize.observe(root);
+      }
     };
     // Give a prepended page's anchor adjustment time to run before observing.
     let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(observeWhenReady); });
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+    return () => { cancelAnimationFrame(frame); resize.disconnect(); observer?.disconnect(); };
   }, [hasEarlier, loadingEarlier, historyError, loadEarlier]);
   if (!context?.hasEarlier && !context?.showBeginning) return <div className="h-3" />;
   return <div ref={sentinel} className="flex flex-col gap-1 px-4 py-3 font-sans">
@@ -317,11 +332,11 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
 } & HistoryControls) {
   const virtuoso = useRef<VirtuosoHandle>(null);
-  const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
+  const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number; hadEarlier?: boolean }>(`scroll:${location.hash}`));
   useUpdateSnapshot(`scroll:${location.hash}`, () => {
     let state: StateSnapshot | undefined;
     virtuoso.current?.getState((value) => { state = value; });
-    return state ? { state, following: following.current, first: indexing.current.first } : undefined;
+    return state ? { state, following: following.current, first: indexing.current.first, hadEarlier: hadEarlier.current } : undefined;
   });
   useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, []);
 
@@ -329,7 +344,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
-  const hadEarlier = useRef(!!history.hasEarlier);
+  // Retain the beginning header after an update even if prefetch loaded every
+  // page. Dropping it changes measured height and shifts the restored position.
+  const hadEarlier = useRef(!!history.hasEarlier || !!saved.current?.hadEarlier);
   hadEarlier.current ||= !!history.hasEarlier;
   const captureAnchor = useCallback(() => {
     const el = viewport.current;

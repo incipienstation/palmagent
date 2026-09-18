@@ -281,3 +281,72 @@ test("returning to a conversation keeps messages and resumes only missed events"
   await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();
   await expect(page.locator('[data-message-key="2000"]')).toHaveCount(1);
 });
+
+for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+  test(`early loading keeps continuous scrolling away from the unloaded edge at ${size.width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize(size);
+    let requested = 0;
+    await page.route("**/history?before=1801", async (route) => {
+      requested++;
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      await route.fulfill({ json: { events: rows(1601, 1800), before: 1601 } });
+    });
+    await recent(page);
+    const metrics = await viewport(page).evaluate(async (el) => {
+      el.scrollTop = el.clientHeight * 2.5;
+      // Settle the test's initial jump before simulating a continuous drag.
+      for (let frame = 0; frame < 4; frame++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      }
+      const longTasks: number[] = [];
+      const observer = new PerformanceObserver((list) => {
+        longTasks.push(...list.getEntries().map((entry) => entry.duration));
+      });
+      observer.observe({ type: "longtask" });
+      const started = performance.now();
+      let previous = started;
+      let edgeFrames = 0;
+      let maxFrameGap = 0;
+      while (performance.now() - started < 3000) {
+        // Let this frame's resize measurements and layout corrections finish.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+        const now = performance.now();
+        const elapsed = now - previous;
+        maxFrameGap = Math.max(maxFrameGap, elapsed);
+        previous = now;
+        // One viewport per second: a continuous upward drag through the page boundary.
+        el.scrollTop -= el.clientHeight * elapsed / 1000;
+        if (el.scrollTop <= 1) edgeFrames++;
+      }
+      longTasks.push(...observer.takeRecords().map((entry) => entry.duration));
+      observer.disconnect();
+      return { edgeFrames, maxFrameGap, longTasks };
+    });
+    await testInfo.attach("scroll-metrics", { body: JSON.stringify(metrics), contentType: "application/json" });
+    expect(requested).toBe(1);
+    expect(metrics.edgeFrames).toBe(0);
+    // The drag crossed into the older page without waiting at its boundary.
+    await expect.poll(() => viewport(page).evaluate((el) => {
+      const pane = el.getBoundingClientRect();
+      return Array.from(el.querySelectorAll<HTMLElement>("[data-message-key]"))
+        .some((row) => Number(row.dataset.messageKey) < 1801 && row.getBoundingClientRect().bottom > pane.top && row.getBoundingClientRect().top < pane.bottom);
+    })).toBe(true);
+    await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+  });
+}
+
+test("early loading adapts to a resized viewport without another scroll gesture", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 520 });
+  let requested = 0;
+  await page.route("**/history?before=1801", async (route) => {
+    requested++;
+    await route.fulfill({ json: { events: rows(1601, 1800), before: 1601 } });
+  });
+  await recent(page);
+  await viewport(page).evaluate((el) => { el.scrollTop = 1700; });
+  await page.waitForTimeout(150);
+  expect(requested).toBe(0);
+  await page.setViewportSize({ width: 360, height: 1000 });
+  await expect.poll(() => requested).toBe(1);
+  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(2000);
+});

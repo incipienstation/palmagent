@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Conversation history starts loading several screens before you reach older
+  messages, reducing pauses while scrolling on slower connections. The loading
+  distance adapts to viewport and keyboard size while keeping your place.
+
 ## 0.1.0-alpha.36
 
 ### Changed

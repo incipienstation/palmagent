@@ -259,7 +259,12 @@ async function run() {
     await transcript.evaluate((el) => { el.scrollTop = 0; });
     await olderPage;
     await page.waitForTimeout(400);
+    const oldestPage = page.waitForResponse((response) => response.url().includes("/history?before=41"));
     await transcript.evaluate((el) => { el.scrollTop = 350; });
+    await oldestPage;
+    // Early loading can exhaust history before the reader reaches its edge.
+    // The beginning header must survive the update with the measured position.
+    await page.getByText("Beginning of conversation", { exact: true }).waitFor({ state: "attached" });
     await page.waitForTimeout(400);
     const position = await transcript.evaluate((el) => el.scrollTop);
     assert(position > 100);
@@ -281,6 +286,7 @@ async function run() {
     await conversationReload;
     await draft.waitFor();
     assert.equal(await draft.inputValue(), "Do not submit this conversation draft");
+    await page.getByText("Beginning of conversation", { exact: true }).waitFor({ state: "attached" });
     await page.waitForFunction((position) => {
       const el = document.querySelector('[aria-label="Session transcript"]');
       return el && Math.abs(el.scrollTop - position) <= 2;
