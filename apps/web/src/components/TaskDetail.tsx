@@ -63,7 +63,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // each turn. Changes are captured by queued messages or the next idle Send;
   // an active Send keeps the current run settings.
   const keepRestoredSelectors = useRef(readUpdateSnapshot(`task:${taskId}:model`) !== undefined);
-  const selectorVersion = useRef<string>();
+  const selectorVersion = useRef<string>(undefined);
   const [savedModel, saveModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
   const [savedEffort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
   const model = selectableModel(task?.agent ?? "codex", savedModel);
