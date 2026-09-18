@@ -1,3 +1,4 @@
+import { invalidateClientReads } from "./read-cache";
 import type { AgentKind } from "@palmagent/shared";
 import { createApi } from "./api-client";
 import { beginBrowserWork } from "./update-state";
@@ -22,7 +23,7 @@ export const api = createApi({
 export async function probeAuth(): Promise<void> {
   try {
     const me = await api.auth.me();
-    if (me.required && !me.authenticated) onUnauthorized?.();
+    if (me.required && !me.authenticated) { invalidateClientReads(true); onUnauthorized?.(); }
   } catch {
     /* network hiccup — not an auth problem */
   }

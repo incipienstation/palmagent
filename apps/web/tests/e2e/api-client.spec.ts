@@ -55,3 +55,40 @@ test("browser RPC keeps auth probes local and releases writes after every failur
   await assert.rejects(api.cancel("fixture"), SyntaxError);
   assert.equal(active, 0);
 });
+
+test("typed reads deduplicate, invalidate on writes and reject responses from a prior session", async () => {
+  const { readCache, invalidateClientReads } = await import("../../src/read-cache");
+  invalidateClientReads(true);
+  let reads = 0;
+  let writeFails = false;
+  let delayed: (() => void) | undefined;
+  let delay = false;
+  const api = createApi({
+    version: () => "fixture", observeServerVersion: () => {},
+    beginBrowserWork: () => () => {}, onUnauthorized: () => {},
+  }, async (_input, init) => {
+    assert.equal(init?.cache, "no-store");
+    if (init?.method !== "GET") return Response.json({}, { status: writeFails ? 500 : 200 });
+    reads++;
+    if (delay) await new Promise<void>(resolve => { delayed = resolve; });
+    return Response.json({ repos: [{ id: String(reads) }] });
+  });
+  await Promise.all([api.listRepos(), api.listRepos()]);
+  assert.equal(reads, 1);
+  await api.listRepos(); assert.equal(reads, 1);
+  await api.createRepo({ path: "/fixture" });
+  await api.listRepos(); assert.equal(reads, 2);
+  writeFails = true;
+  await assert.rejects(api.createRepo({ path: "/fixture" }));
+  await api.listRepos(); assert.equal(reads, 3);
+  writeFails = false; delay = true;
+  const previous = api.listRepos(true);
+  await Promise.resolve(); await Promise.resolve();
+  assert.ok(delayed);
+  await api.auth.logout();
+  const rejected = assert.rejects(previous, { status: 401 });
+  delayed(); await rejected;
+  delay = false;
+  await api.listRepos(); assert.equal(reads, 5);
+  invalidateClientReads(true);
+});
