@@ -45,9 +45,9 @@ for (const theme of ["dark", "light"]) test(`short ${theme} toast fits its text 
   // Snapshot the transient component itself; its position relative to the live
   // conversation is checked above without coupling this to transcript rendering.
   await expect(currentToast(page)).toHaveAttribute("data-mounted", "true");
-  await expect(currentToast(page)).toHaveScreenshot(`compact-toast-${theme}.png`, {
-    style: "#root { visibility: hidden; }",
-  });
+  const screenshotStyle = await page.addStyleTag({ content: "#root { visibility: hidden; }" });
+  await expect(currentToast(page)).toHaveScreenshot(`compact-toast-${theme}.png`);
+  await screenshotStyle.evaluate(element => element.remove());
   await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 4000 });
 });
 
