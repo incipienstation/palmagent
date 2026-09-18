@@ -146,3 +146,20 @@ test("Enter and IME composition keep writing without submitting", async ({ page 
   await expect(prompt).toHaveValue("한글\n");
   expect(sends).toBe(0);
 });
+
+test("Codex follow-up sends supported effort overrides and resets after changing models", async ({ page }) => {
+  await page.goto("/#/task/t-idle-tokens");
+  await page.route("**/api/tasks/t-idle-tokens/messages", (r) => r.fulfill({ json: { revision: 1, paused: false, runId: null, messages: [] } }));
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Continue with more reasoning");
+  await page.getByRole("button", { name: "Configure model and effort" }).click();
+  const effort = page.getByRole("combobox", { name: "Effort", exact: true });
+  await page.getByRole("radio", { name: "gpt-6-astra", exact: true }).click();
+  await effort.click();
+  await page.getByRole("option", { name: "ultra", exact: true }).click();
+  await page.getByRole("radio", { name: "gpt-5.5", exact: true }).click();
+  await expect(effort).toHaveText("default");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  const request = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith("/messages"));
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  expect((await request).postDataJSON().settings).toEqual({ effort: "" });
+});

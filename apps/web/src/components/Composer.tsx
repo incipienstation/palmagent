@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, Check, ChevronDown, Loader2 } from "lucide-react";
 import type { AgentKind } from "@palmagent/shared";
-import { DEFAULT_OPTION, EFFORTS, MODELS, PERMISSIONS } from "../api";
+import { DEFAULT_OPTION, effortsForModel, MODELS, PERMISSIONS } from "../api";
 import { useUpdateState } from "../update-state";
 import { cn } from "@/lib/utils";
 import { AttachmentMenu, AttachmentTray, type useImageAttachments } from "./Attachments";
@@ -51,7 +51,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
       <FieldLabel htmlFor="composer-effort">Effort</FieldLabel>
       <Select value={s.effort} onValueChange={(v) => v && s.onEffortChange(v)}>
         <SelectTrigger id="composer-effort" className="w-auto min-w-32 rounded-full"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectGroup>{EFFORTS[s.agent].map((e) => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}</SelectGroup></SelectContent>
+        <SelectContent><SelectGroup>{effortsForModel(s.agent, s.model).map((e) => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}</SelectGroup></SelectContent>
       </Select>
     </Field>
     <Field>
@@ -111,7 +111,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const model = settings.model === DEFAULT_OPTION
     ? (settings.agent === "claude" ? "Claude" : "Codex")
     : MODELS[settings.agent].find((m) => m.value === settings.model)?.label ?? settings.model;
-  const effort = settings.effort === DEFAULT_OPTION ? "" : EFFORTS[settings.agent].find((e) => e.value === settings.effort)?.label ?? settings.effort;
+  const effort = settings.effort === DEFAULT_OPTION ? "" : effortsForModel(settings.agent, settings.model).find((e) => e.value === settings.effort)?.label ?? settings.effort;
 
   return <InputGroup aria-label="Message composer" data-expanded={expanded}
     className={cn("p-1", expanded ? "rounded-3xl" : "rounded-full")}
