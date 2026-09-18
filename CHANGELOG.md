@@ -6,6 +6,17 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Codex effort choices now follow the selected model, including Extra High, Max,
+  and Ultra where supported. Unsupported saved efforts fall back to default in
+  new tasks, follow-ups, and routines.
+
+### Removed
+
+- Retired GPT-5.4 and GPT-5.4 mini options are removed from model selectors.
+  Saved form selections for these models fall back to default; task history is preserved.
+
 ## 0.1.0-alpha.28
 
 ### Changed

@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort, PERMISSIONS } from "../api";
 import { useDraft, usePersistedString } from "../hooks/useDraft";
 import { useTaskStream } from "../hooks/useTaskStream";
 import { navigate } from "../router";
@@ -64,8 +64,14 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // an active Send keeps the current run settings.
   const keepRestoredSelectors = useRef(readUpdateSnapshot(`task:${taskId}:model`) !== undefined);
   const selectorVersion = useRef<string>();
-  const [model, setModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
-  const [effort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
+  const [savedModel, saveModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
+  const [savedEffort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
+  const model = selectableModel(task?.agent ?? "codex", savedModel);
+  const effort = selectableEffort(task?.agent ?? "codex", model, savedEffort);
+  function setModel(value: string) {
+    saveModel(value);
+    setEffort(selectableEffort(task?.agent ?? "codex", value, effort));
+  }
   // Permission has no DEFAULT_OPTION (always a concrete value); clamp the task's
   // stored value to a valid option for its agent (a legacy value shows the agent
   // default in the picker). A change applies to the next turn, like model/effort.
@@ -76,7 +82,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     if (version === selectorVersion.current) return;
     selectorVersion.current = version;
     if (keepRestoredSelectors.current) { keepRestoredSelectors.current = false; return; }
-    setModel(task?.model ?? DEFAULT_OPTION);
+    saveModel(task?.model ?? DEFAULT_OPTION);
     setEffort(task?.effort ?? DEFAULT_OPTION);
     const agent = task?.agent;
     const perm = task?.permission;

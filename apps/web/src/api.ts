@@ -227,13 +227,8 @@ export async function probeAuth(): Promise<void> {
 export { PERMISSIONS, DEFAULT_PERMISSION } from "@palmagent/shared";
 export type { PermissionOption } from "@palmagent/shared";
 
-// Model + reasoning-effort options surfaced in the dispatch/routine forms, per
-// agent. DEFAULT_OPTION = leave it to the server/CLI (the field is omitted from
-// the request). Verified flag sets: claude `--model` aliases + `--effort`
-// (low|medium|high|xhigh|max); codex `-c model=…` + `-c model_reasoning_effort=…`
-// (minimal|low|medium|high). Codex model availability depends on the signed-in
-// account/API key and client version; GPT-5.4 and GPT-5.4 mini are retained only
-// as legacy/API-key options after their 2026-08-31 ChatGPT-sign-in retirement.
+// Model choices for dispatch, follow-ups, and routines. Default delegates to the
+// server/CLI. Codex availability depends on the account and installed client.
 export const DEFAULT_OPTION = "default";
 
 export const MODELS: Record<AgentKind, { value: string; label: string }[]> = {
@@ -252,8 +247,6 @@ export const MODELS: Record<AgentKind, { value: string; label: string }[]> = {
     { value: "gpt-5.6-luna", label: "gpt-5.6-luna" },
     { value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark" },
     { value: "gpt-5.5", label: "gpt-5.5" },
-    { value: "gpt-5.4", label: "gpt-5.4 (legacy/API)" },
-    { value: "gpt-5.4-mini", label: "gpt-5.4-mini (legacy/API)" },
   ],
 };
 
@@ -268,9 +261,35 @@ export const EFFORTS: Record<AgentKind, { value: string; label: string }[]> = {
   ],
   codex: [
     { value: DEFAULT_OPTION, label: "default" },
-    { value: "minimal", label: "minimal" },
     { value: "low", label: "low" },
     { value: "medium", label: "medium" },
     { value: "high", label: "high" },
+    { value: "xhigh", label: "xhigh" },
   ],
 };
+
+// Verified against Codex CLI 0.154.0's model catalog (2026-09-18).
+// https://learn.chatgpt.com/docs/models describes Max and Ultra semantics.
+// The gpt-5.6 alias targets Sol: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+// Default/unknown models use common efforts because the CLI resolves their model.
+const CODEX_EXTENDED_EFFORTS: Record<string, string[]> = {
+  "gpt-6-astra": ["max", "ultra"],
+  "gpt-5.6": ["max", "ultra"],
+  "gpt-5.6-sol": ["max", "ultra"],
+  "gpt-5.6-terra": ["max", "ultra"],
+  "gpt-5.6-luna": ["max"],
+};
+
+export function effortsForModel(agent: AgentKind, model: string) {
+  return agent === "codex"
+    ? [...EFFORTS.codex, ...(CODEX_EXTENDED_EFFORTS[model] ?? []).map((value) => ({ value, label: value }))]
+    : EFFORTS.claude;
+}
+
+export function selectableModel(agent: AgentKind, model: string): string {
+  return agent === "codex" && (model === "gpt-5.4" || model === "gpt-5.4-mini") ? DEFAULT_OPTION : model;
+}
+
+export function selectableEffort(agent: AgentKind, model: string, effort: string): string {
+  return effortsForModel(agent, model).some((option) => option.value === effort) ? effort : DEFAULT_OPTION;
+}

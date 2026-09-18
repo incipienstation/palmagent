@@ -39,7 +39,7 @@ test.describe("routines", () => {
     await expect(page).toHaveScreenshot("routines.png");
   });
 
-  test("legacy model labels do not change the identifier submitted for a routine", async ({ page }) => {
+  test("routine model efforts exclude legacy models and submit the selected effort", async ({ page }) => {
     await page.route("**/api/routines", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       await route.fulfill({ json: { routine: { id: "r-created" } } });
@@ -47,12 +47,39 @@ test.describe("routines", () => {
     await page.getByRole("button", { name: "New routine" }).click();
     const form = page.locator("form");
     await form.getByRole("radio", { name: "codex", exact: true }).click();
-    await form.getByRole("combobox").filter({ hasText: /^default$/ }).first().click();
-    await page.getByRole("option", { name: "gpt-5.4-mini (legacy/API)", exact: true }).click();
+    await form.getByRole("combobox", { name: "Model", exact: true }).click();
+    await expect(page.getByRole("option", { name: /gpt-5\.4/ })).toHaveCount(0);
+    await page.getByRole("option", { name: "gpt-5.6-luna", exact: true }).click();
+    await form.getByRole("combobox", { name: "Effort", exact: true }).click();
+    await expect(page.getByRole("option", { name: "ultra", exact: true })).toHaveCount(0);
+    await page.getByRole("option", { name: "max", exact: true }).click();
     await assertViewportLocked(page);
     await form.locator("textarea").fill("Review the sample project on schedule.");
     const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/routines");
     await form.getByRole("button", { name: "Create routine", exact: true }).click();
-    expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-5.4-mini" });
+    expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-5.6-luna", effort: "max" });
   });
+});
+
+test("stale routine preferences cannot submit a retired model or unsupported effort", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("pref:routine-model", JSON.stringify({ codex: "gpt-5.4-mini" }));
+    localStorage.setItem("pref:routine-effort", JSON.stringify({ codex: "minimal" }));
+  });
+  await page.goto("/#/routines");
+  await page.route("**/api/routines", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fulfill({ json: { routine: { id: "r-created" } } });
+  });
+  await page.getByRole("button", { name: "New routine" }).click();
+  const form = page.locator("form");
+  await form.getByRole("radio", { name: "codex", exact: true }).click();
+  await expect(form.getByRole("combobox", { name: "Model", exact: true })).toHaveText("default");
+  await expect(form.getByRole("combobox", { name: "Effort", exact: true })).toHaveText("default");
+  await form.locator("textarea").fill("Use current defaults");
+  const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/routines");
+  await form.getByRole("button", { name: "Create routine", exact: true }).click();
+  const payload = (await request).postDataJSON();
+  expect(payload.model).toBeUndefined();
+  expect(payload.effort).toBeUndefined();
 });

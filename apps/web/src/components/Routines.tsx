@@ -38,7 +38,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, EFFORTS, MODELS, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort, effortsForModel, MODELS, PERMISSIONS } from "../api";
 import { usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
@@ -275,8 +275,14 @@ export function RoutinesView() {
   // separate from the dispatch form's — a routine's unattended settings are a
   // distinct intent from an ad-hoc dispatch, so they don't cross-contaminate.
   const [permission, setPermission] = usePersistedMapEntry<Permission>("pref:routine-permission", agent, DEFAULT_PERMISSION[agent]);
-  const [model, setModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
-  const [effort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
+  const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
+  const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
+  const model = selectableModel(agent, savedModel);
+  const effort = selectableEffort(agent, model, savedEffort);
+  function setModel(value: string) {
+    saveModel(value);
+    setEffort(selectableEffort(agent, value, effort));
+  }
   const [preset, setPreset] = useUpdateState<RoutinePreset>(`routine:preset`, "daily");
   const [hour, setHour] = useUpdateState(`routine:hour`, 9);
   const [dayOfWeek, setDayOfWeek] = useUpdateState(`routine:dayOfWeek`, 1);
@@ -462,9 +468,9 @@ export function RoutinesView() {
 
               <div className="flex gap-2.5">
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <Label>Model</Label>
+                  <Label htmlFor="routine-model">Model</Label>
                   <Select value={model} onValueChange={(v) => v && setModel(v)}>
-                    <SelectTrigger>
+                    <SelectTrigger id="routine-model">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -477,13 +483,13 @@ export function RoutinesView() {
                   </Select>
                 </div>
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <Label>Effort</Label>
+                  <Label htmlFor="routine-effort">Effort</Label>
                   <Select value={effort} onValueChange={(v) => v && setEffort(v)}>
-                    <SelectTrigger>
+                    <SelectTrigger id="routine-effort">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {EFFORTS[agent].map((eo) => (
+                      {effortsForModel(agent, model).map((eo) => (
                         <SelectItem key={eo.value} value={eo.value}>
                           {eo.label}
                         </SelectItem>
