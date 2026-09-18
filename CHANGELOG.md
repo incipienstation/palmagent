@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.30
+
 ### Changed
 
 - Earlier conversation messages load automatically as you scroll up, including
