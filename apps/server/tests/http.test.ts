@@ -129,6 +129,9 @@ test("update settings require authentication, validate one bounded preference, a
   assert.equal(state.settings?.channel, "preview");
   assert.equal(state.settings?.autoUpdate, true);
   const dev = fixture(t, false, { updates });
+  for (const method of ["PATCH", "POST"]) {
+    assert.equal((await dev.app.request(path, { method, body: "{" })).status, 403, "admission precedes body parsing");
+  }
   assert.equal((await (await dev.app.request(path)).json() as UpdateSettingsStatus).availability, "authentication-required");
   assert.equal((await dev.app.request(path, { method: "PATCH", body: '{"autoUpdate":false}' })).status, 403);
   assert.equal(changes, 2);

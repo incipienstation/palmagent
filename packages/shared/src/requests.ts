@@ -45,6 +45,7 @@ export const StreamQuerySchema = z.object({
 export const PathQuerySchema = z.object({ path: text.optional() });
 export const DiscoverQuerySchema = z.object({ refresh: z.enum(["0", "1"]).optional() });
 export const IdParamsSchema = z.object({ id: required });
+export const MessageParamsSchema = IdParamsSchema.extend({ messageId: required });
 export const EmptyBodySchema = z.object({});
 export const RegisterOptionsSchema = z.object({ token: text.optional() });
 

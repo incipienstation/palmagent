@@ -29,7 +29,13 @@ The HTTP layer uses Hono on Node.js. The browser API, passkey authentication,
 SSE, and PWA files share one app; local session dispatch uses a separate app on
 an owner-only Unix socket. Shared request schemas live in
 `@palmagent/shared/requests`; services receive validated values without HTTP
-request objects. Runtime startup and shutdown are separate from app construction.
+request objects. Routes retain Hono's inferred types and expose validated input
+through `c.req.valid()`. The browser uses `hc` with `@palmagent/shared/http`;
+server typechecking verifies that the shared REST contract and actual routes agree
+on paths, methods, inputs, response bodies, and success statuses. Keep both sides
+updated when changing an endpoint. The JSON middleware preserves empty-body and
+missing-Content-Type compatibility for existing clients.
+Runtime startup and shutdown are separate from app construction.
 The runner daemon keeps its existing NDJSON protocol and survives web-server restarts.
 The [session lifecycle redesign](docs/SESSION-LIFECYCLE.md) specifies the planned
 separation of application updates from agent execution, including the legacy migration and

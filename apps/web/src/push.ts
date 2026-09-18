@@ -1,4 +1,4 @@
-import type { PushKeyResponse } from "@palmagent/shared";
+import { api } from "./api";
 
 // Client side of Web Push. Subscribe via the registered service worker,
 // then hand the subscription to the backend, which stores it and pushes on
@@ -32,20 +32,17 @@ export async function enablePush(): Promise<PushStatus> {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
 
-  const { publicKey } = (await (await fetch("/api/push/key")).json()) as PushKeyResponse;
+  const { publicKey } = await api.push.key();
   const reg = await sw();
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey),
   });
-  const res = await fetch("/api/push/subscribe", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ subscription: sub.toJSON() }),
-  });
-  if (!res.ok) {
+  try {
+    await api.push.subscribe({ ...sub.toJSON(), endpoint: sub.endpoint });
+  } catch (error) {
     await sub.unsubscribe();
-    throw new Error(`subscribe failed: ${res.status}`);
+    throw error;
   }
   return "on";
 }
@@ -56,11 +53,7 @@ export async function disablePush(): Promise<PushStatus> {
   const sub = await reg.pushManager.getSubscription();
   if (sub) {
     // Best-effort server cleanup; the server also prunes dead endpoints on send.
-    void fetch("/api/push/unsubscribe", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ endpoint: sub.endpoint }),
-    }).catch(() => {});
+    void api.push.unsubscribe(sub.endpoint).catch(() => {});
     await sub.unsubscribe();
   }
   return "off";
