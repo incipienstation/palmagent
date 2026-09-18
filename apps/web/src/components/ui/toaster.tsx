@@ -1,88 +1,72 @@
-import * as React from "react";
+import { createPortal } from "react-dom";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
+import * as DismissableLayer from "@radix-ui/react-dismissable-layer";
+import { Toaster as Sonner, toast as notify } from "sonner";
 
-import { Toast, ToastProvider, ToastViewport, type ToastVariant } from "@/components/ui/toast";
-
-// Imperative toast store (module-level, so any screen can call `toast({...})`
-// without prop-drilling — mirrors sonner's API but built on Radix Toast).
-// The single <Toaster/> in AppShell subscribes and renders the open toasts.
+import { useTheme } from "../../ThemeProvider";
+import { updateToastClearance } from "../../hooks/useToastObstacle";
 
 export type ToastOptions = {
-  title?: React.ReactNode;
-  description?: React.ReactNode;
-  variant?: ToastVariant;
-  /** ms before auto-dismiss; default 4000. */
+  title?: ReactNode;
+  description?: ReactNode;
+  variant?: "default" | "success" | "info" | "destructive";
   duration?: number;
 };
 
-type ToastRecord = ToastOptions & { id: number; open: boolean };
-
-const MAX = 3;
-const DEFAULT_DURATION = 4000;
-
 let counter = 0;
-let records: ToastRecord[] = [];
-const listeners = new Set<(records: ToastRecord[]) => void>();
+let current: number | undefined;
 
-function emit() {
-  for (const l of listeners) l(records);
-}
-
-/** Show a toast. Returns the toast id (so callers can dismiss it early). */
-export function toast(options: ToastOptions): number {
+/** Keep transient feedback to one message; callers can still dismiss by id. */
+export function toast({ title, description, variant, duration }: ToastOptions): number {
+  updateToastClearance();
+  if (current !== undefined) notify.dismiss(current);
   const id = ++counter;
-  records = [...records, { ...options, id, open: true }].slice(-MAX);
-  emit();
+  current = id;
+  notify(title ?? description, {
+    id,
+    description: title ? description : undefined,
+    duration: duration ?? (variant === "destructive" ? 6000 : 2500),
+    testId: "toast",
+  });
   return id;
 }
 
-/** Programmatically dismiss a toast (begins the close animation). */
 export function dismissToast(id: number) {
-  records = records.map((r) => (r.id === id ? { ...r, open: false } : r));
-  emit();
+  notify.dismiss(id);
 }
 
-function removeToast(id: number) {
-  records = records.filter((r) => r.id !== id);
-  emit();
-}
-
-/** Hook form of the toast API for screens that prefer it. */
 export function useToast() {
   return { toast, dismiss: dismissToast };
 }
 
-export function Toaster() {
-  const [items, setItems] = React.useState<ToastRecord[]>(records);
+const bottom = "max(calc(24px + var(--safe-bottom)), var(--toast-obstacle-bottom, 0px), calc(var(--keyboard-inset, 0px) + 24px))";
 
-  React.useEffect(() => {
-    const listener = (next: ToastRecord[]) => setItems(next);
-    listeners.add(listener);
-    setItems(records);
+export function Toaster() {
+  const { resolved } = useTheme();
+  const region = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    updateToastClearance();
+    const element = region.current;
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && current !== undefined) notify.dismiss(current);
+    };
+    element?.addEventListener("keydown", dismissOnEscape);
+    window.addEventListener("resize", updateToastClearance);
+    window.visualViewport?.addEventListener("resize", updateToastClearance);
+    window.visualViewport?.addEventListener("scroll", updateToastClearance);
     return () => {
-      listeners.delete(listener);
+      element?.removeEventListener("keydown", dismissOnEscape);
+      window.removeEventListener("resize", updateToastClearance);
+      window.visualViewport?.removeEventListener("resize", updateToastClearance);
+      window.visualViewport?.removeEventListener("scroll", updateToastClearance);
     };
   }, []);
 
-  return (
-    <ToastProvider swipeDirection="down" duration={DEFAULT_DURATION}>
-      {items.map((t) => (
-        <Toast
-          key={t.id}
-          variant={t.variant}
-          title={t.title}
-          description={t.description}
-          duration={t.duration ?? DEFAULT_DURATION}
-          open={t.open}
-          onOpenChange={(open) => {
-            if (!open) dismissToast(t.id);
-          }}
-          // Radix fires this after the close animation completes.
-          onAnimationEnd={() => {
-            if (!t.open) removeToast(t.id);
-          }}
-        />
-      ))}
-      <ToastViewport />
-    </ToastProvider>
-  );
+  // Keep the live region outside the app root. Otherwise modal aria hiding
+  // keeps that root exposed, including route views mounted during drawer exit.
+  return createPortal(<DismissableLayer.Branch asChild><Sonner ref={region} theme={resolved} position="bottom-center" visibleToasts={1}
+    closeButton={false} swipeDirections={["bottom"]}
+    offset={{ bottom }} mobileOffset={{ bottom }}
+    style={{ width: "min(400px, calc(100vw - 32px))", left: "50%", right: "auto", transform: "translateX(-50%)", pointerEvents: "none" }}
+    toastOptions={{ unstyled: true, className: "compact-toast" }} /></DismissableLayer.Branch>, document.body);
 }

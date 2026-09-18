@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@palmagent/shared": "workspace:*",
+    "@radix-ui/react-dismissable-layer": "^1.1.19",
     "@radix-ui/react-label": "^2.1.9",
     "@radix-ui/react-select": "^2.3.0",
     "@radix-ui/react-slot": "^1.2.5",
@@ -35,6 +36,7 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "unified": "^11.0.5",
     "vaul": "^1.1.2"

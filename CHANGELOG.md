@@ -11,6 +11,8 @@ An entry does not mean a version has been published.
 - Earlier conversation messages load automatically as you scroll up, including
   when compact mode hides a page's events. Your reading position stays in place;
   a retry button appears only if loading fails.
+- Toasts use compact, text-sized pills above bottom controls, with one message at
+  a time and touch-following swipe dismissal. Longer errors wrap within the screen.
 
 ## 0.1.0-alpha.29
 

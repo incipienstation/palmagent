@@ -278,3 +278,46 @@
     display: block !important;
   }
 }
+
+/* Text-sized feedback. Centering uses translate independently of Sonner's
+   transform so touch swipes follow the finger without losing alignment. */
+[data-sonner-toaster] [data-sonner-toast].compact-toast {
+  width: max-content;
+  max-width: 100%;
+  left: 50%;
+  right: auto;
+  translate: -50% 0;
+  pointer-events: auto;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.08);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  text-align: center;
+}
+
+[data-sonner-toaster] [data-sonner-toast].compact-toast [data-title] {
+  font-weight: 400;
+}
+
+[data-sonner-toaster] [data-sonner-toast].compact-toast [data-description] {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].compact-toast[data-removed="true"] {
+  pointer-events: none;
+}
+
+/* A short fade/slide keeps even a multiline message above the controls while
+   entering. Sonner still owns the larger movement of an intentional swipe. */
+[data-sonner-toaster] .compact-toast[data-mounted="false"],
+[data-sonner-toaster] .compact-toast[data-removed="true"][data-swipe-out="false"] {
+  --y: translateY(8px);
+}

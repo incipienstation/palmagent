@@ -1,3 +1,4 @@
+import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
 import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
@@ -208,6 +209,7 @@ export const InboxView = memo(function InboxView({
   conn: ConnState;
   loading?: boolean;
 }) {
+  const toastObstacle = useToastObstacle();
   // Project (repo) lookup for the cards. The task snapshot carries only repoId;
   // we join the human-friendly name client-side. If a task references a repo we
   // don't have yet (registered since the last fetch), refetch once — `tried`
@@ -279,6 +281,7 @@ export const InboxView = memo(function InboxView({
         </div>
         <Button
           className="fixed right-[max(16px,calc((100vw-1100px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--banner-h,0px))] z-20 h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
+          ref={toastObstacle}
           aria-label="Dispatch new task"
           onClick={() => navigate("/new")}
         >

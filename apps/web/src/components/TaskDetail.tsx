@@ -1,3 +1,4 @@
+import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
 import { MessageQueue as QueuePanel } from "./MessageQueue";
 import type { MessageQueue, PendingMessage } from "@palmagent/shared";
@@ -49,6 +50,7 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 }
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
+  const toastObstacle = useToastObstacle();
   const { log, conn, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
@@ -247,7 +249,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
-        <div className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+        <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
