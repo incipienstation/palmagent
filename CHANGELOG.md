@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.29
+
 ### Fixed
 
 - Codex effort choices now follow the selected model, including Extra High, Max,
