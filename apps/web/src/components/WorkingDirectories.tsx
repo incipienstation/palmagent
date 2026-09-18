@@ -45,7 +45,7 @@ function SpaceRow({ space, selected, onSelect }: {
   const Icon = space.worktree ? GitBranch : Folder;
   return (
     <Button
-      variant={selected === space.path ? "secondary" : "ghost"}
+      variant={selected === space.path ? "selected" : "ghost"}
       className="h-auto min-h-14 w-full min-w-0 justify-start px-3 py-2.5"
       title={space.path}
       aria-current={selected === space.path ? "page" : undefined}
@@ -81,7 +81,7 @@ function SpaceList({ spaces, total, selected, onSelect }: {
     <div className="flex shrink-0 flex-col gap-3 px-3 pb-3">
       <Input type="search" aria-label="Search spaces" placeholder="Search names or paths…" value={query}
         onChange={(event) => setQuery(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-      <Button variant={selected === "all" ? "secondary" : "ghost"} className="w-full justify-start px-3" onClick={() => onSelect("all")} aria-current={selected === "all" ? "page" : undefined}>
+      <Button variant={selected === "all" ? "selected" : "ghost"} className="w-full justify-start px-3" onClick={() => onSelect("all")} aria-current={selected === "all" ? "page" : undefined}>
         <Layers data-icon="inline-start" />
         <span className="min-w-0 flex-1 text-left">All spaces</span>
         <Badge variant="secondary" aria-label={`${total} tasks`}>{total}</Badge>

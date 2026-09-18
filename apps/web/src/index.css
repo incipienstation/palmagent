@@ -9,7 +9,9 @@
    the OS preference. Keying both off `.dark` makes the manual theme toggle authoritative. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Neutral surfaces keep attention on conversations. Both themes define the
+/* Brand values come from brand.json via the Vite HTML transform.
+   Components consume semantic tokens, never palette values.
+   Neutral surfaces keep attention on conversations. Both themes define the
    same tokens; semantic status colors remain reserved for state indicators. */
 :root {
   color-scheme: light;
@@ -21,19 +23,19 @@
   --card-foreground: #242424;
   --popover: #ffffff;
   --popover-foreground: #242424;
-  --primary: #242424;
-  --primary-foreground: #ffffff;
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-foreground);
   --secondary: #eeeeee;
   --secondary-foreground: #242424;
   --muted: #f5f5f5;
   --muted-foreground: #666666;
-  --accent: #eeeeee;
-  --accent-foreground: #242424;
+  --accent: var(--brand-accent);
+  --accent-foreground: var(--brand-accent-foreground);
   --destructive: #cf222e;
   --destructive-foreground: #ffffff;
   --border: #e8e8e8;
   --input: #d5d5d5;
-  --ring: #737373;
+  --ring: var(--brand-primary);
   --radius: 0.875rem;
 
   /* app-accent palette */
@@ -45,7 +47,7 @@
   --color-purple: #8250df;
   --color-live: #1a7f37;
   --color-tool-call: #9a6700;
-  --color-primary-active: #404040;
+  --color-primary-active: var(--brand-primary-active);
 
   /* per-status pills (low-chroma tinted; -bg / -fg pairs) */
   --status-queued-bg: #fff8e6;
@@ -69,8 +71,8 @@
   --question-bg: #f5f5f5;
   --question-border: #dedede;
   --question-fg: #404040;
-  --question-active: #525252;
-  --question-active-bg: #e8e8e8;
+  --question-active: var(--brand-primary);
+  --question-active-bg: var(--brand-accent);
 
   /* destructive button surface (driven from tokens, not literals) */
   --destructive-bg: #fee2e2;
@@ -93,19 +95,19 @@
   --card-foreground: #ececec;
   --popover: #262626;
   --popover-foreground: #ececec;
-  --primary: #ececec;
-  --primary-foreground: #171717;
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-foreground);
   --secondary: #2a2a2a;
   --secondary-foreground: #ececec;
   --muted: #202020;
   --muted-foreground: #a3a3a3;
-  --accent: #303030;
-  --accent-foreground: #ececec;
+  --accent: var(--brand-accent);
+  --accent-foreground: var(--brand-accent-foreground);
   --destructive: #f85149;
   --destructive-foreground: #ffffff;
   --border: #303030;
   --input: #404040;
-  --ring: #a3a3a3;
+  --ring: var(--brand-primary);
 
   /* app-accent palette */
   --color-strong: #f5f5f5;
@@ -116,7 +118,7 @@
   --color-purple: #d2a8ff;
   --color-live: #2ea043;
   --color-tool-call: #d29922;
-  --color-primary-active: #d4d4d4;
+  --color-primary-active: var(--brand-primary-active);
 
   /* per-status pills */
   --status-queued-bg: #2d2a1f;
@@ -140,8 +142,8 @@
   --question-bg: #202020;
   --question-border: #404040;
   --question-fg: #e5e5e5;
-  --question-active: #a3a3a3;
-  --question-active-bg: #363636;
+  --question-active: var(--brand-primary);
+  --question-active-bg: var(--brand-accent);
 
   /* destructive button surface */
   --destructive-bg: #3d1518;

@@ -94,7 +94,7 @@ function SelectItem({
     >
       <span className="absolute right-3 flex size-4 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <Check className="size-4 text-blue" />
+          <Check className="size-4 text-primary" />
         </SelectPrimitive.ItemIndicator>
       </span>
       {description ? (

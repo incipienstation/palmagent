@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import brand from "./src/brand.json";
 
 // App-facing name for the browser tab + PWA manifest. Mirrors BRANDING.displayName
 // (packages/shared/src/branding.ts) — it is NOT imported here because Vite loads
@@ -43,8 +44,20 @@ export default defineConfig({
     {
       // Single-source the product name into index.html (browser tab + iOS
       // home-screen title) from BRANDING, so the brand lives in one place.
-      name: "html-app-name",
-      transformIndexHtml: (html: string) => html.replaceAll("__APP_NAME__", APP_NAME),
+      name: "html-brand",
+      // Render before the bootstrap and first paint; CSS, browser chrome and
+      // standalone assets all consume the same palette without runtime fetching.
+      transformIndexHtml: {
+        order: "pre",
+        handler: (html: string) => html
+        .replaceAll("__APP_NAME__", APP_NAME)
+        .replaceAll("__BRAND_LIGHT_CHROME__", brand.light.chrome)
+        .replaceAll("__BRAND_DARK_CHROME__", brand.dark.chrome)
+        .replace("__BRAND_STYLES__", Object.entries(brand).map(([theme, tokens]) =>
+          `${theme === "light" ? ":root" : ".dark"} { ${Object.entries(tokens)
+            .map(([name, value]) => `--brand-${name}: ${value};`).join(" ")} }`,
+        ).join("\n")),
+      },
     },
     VitePWA({
       // A custom SW (src/sw.ts) replaces generateSW — Web Push handlers
@@ -73,12 +86,12 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        background_color: "#101010",
-        theme_color: "#101010",
+        background_color: brand.light.chrome,
+        theme_color: brand.light.chrome,
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          // Dedicated maskable: full-bleed charcoal, glyph pulled into the safe zone so
+          // Dedicated maskable: full-bleed brand color, glyph pulled into the safe zone so
           // Android's adaptive-icon crop never clips the mark.
           { src: "icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],

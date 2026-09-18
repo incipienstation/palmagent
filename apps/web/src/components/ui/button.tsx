@@ -12,11 +12,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground border border-primary-active active:bg-primary-active",
+        selected: "bg-accent text-accent-foreground border border-transparent active:bg-primary/15",
         secondary: "bg-card text-foreground border border-input font-medium active:bg-accent",
         destructive: "bg-destructive-bg text-destructive border border-destructive-border active:bg-destructive/15",
         outline: "border border-input bg-transparent text-foreground active:bg-accent",
         ghost: "text-foreground active:bg-accent",
-        link: "text-blue underline-offset-4 hover:underline",
+        link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         default: "h-11 px-4",
