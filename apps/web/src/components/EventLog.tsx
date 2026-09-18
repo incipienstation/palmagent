@@ -1,5 +1,5 @@
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
-import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type MutableRefObject } from "react";
+import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import {
   AlertTriangle,
@@ -314,7 +314,7 @@ const rowKey = (_index: number, item: TranscriptRow) => item.key;
 function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivity, following, ...history }: {
   rows: TranscriptRow[]; liveKey?: number; mode: OutputMode;
   toggled: Set<number>; toggle: (key: number) => void;
-  toggleActivity: (activity: Activity, open: boolean) => void; following: MutableRefObject<boolean>;
+  toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
 } & HistoryControls) {
   const virtuoso = useRef<VirtuosoHandle>(null);
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
@@ -325,7 +325,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   });
   useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, []);
 
-  const anchor = useRef<{ key: string; offset: number }>();
+  const anchor = useRef<{ key: string; offset: number }>(undefined);
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
@@ -401,7 +401,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   // A disclosure changes measured height without prepending data. Keep the
   // interacted row in view while Virtuoso refines its estimates, including when
   // the expanded row was taller than the entire viewport.
-  const disclosure = useRef<{ key: string; offset: number }>();
+  const disclosure = useRef<{ key: string; offset: number }>(undefined);
   const rememberDisclosure = useCallback((key: string) => {
     const el = viewport.current;
     const row = el?.querySelector<HTMLElement>(`[data-row-key="${key}"]`);

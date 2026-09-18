@@ -76,7 +76,7 @@ const ParsedBlock = memo(function ParsedBlock({ source }: { source: string }) {
 });
 function LongMarkdown({ text }: { text: string }) {
   const [blocks, setBlocks] = useState<string[] | null | undefined>(() => cachedMarkdown(text));
-  const parser = useRef<ReturnType<typeof markdownParser>>();
+  const parser = useRef<ReturnType<typeof markdownParser>>(undefined);
   useEffect(() => {
     parser.current = markdownParser(setBlocks);
     return () => { parser.current?.dispose(); parser.current = undefined; };
