@@ -42,7 +42,12 @@ for (const theme of ["dark", "light"]) test(`short ${theme} toast fits its text 
   expect(box.height).toBeLessThanOrEqual(48);
   expect(box.x + box.width / 2).toBeCloseTo(180, 0);
   await expect(currentToast(page).locator('svg, button')).toHaveCount(0);
-  await expect(page).toHaveScreenshot(`compact-toast-${theme}.png`);
+  // Snapshot the transient component itself; its position relative to the live
+  // conversation is checked above without coupling this to transcript rendering.
+  await expect(currentToast(page)).toHaveAttribute("data-mounted", "true");
+  await expect(currentToast(page)).toHaveScreenshot(`compact-toast-${theme}.png`, {
+    style: "#root { visibility: hidden; }",
+  });
   await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 4000 });
 });
 
