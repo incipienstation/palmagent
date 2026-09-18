@@ -10,6 +10,12 @@ the affected server or PWA tests; shared contracts exercise both. Classification
 uses the complete PR diff, so a documentation follow-up does not hide earlier
 code changes. Unknown paths or unavailable change history select the full gate.
 
+Release preparation PRs also use the metadata gate when their complete diff changes only
+the root and two plugin manifest versions plus optional release notes. CI reads both committed
+trees and requires synchronized valid versions with every other manifest field unchanged.
+Dependency, script, file-mode, runtime, or other changes retain the ordinary checks. The final
+release candidate still runs the full source and packed-install verification.
+
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
 trusted PRs, but do not upload a staging artifact. Same-repository checks require
