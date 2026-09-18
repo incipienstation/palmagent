@@ -13,6 +13,8 @@ try {
     // Keep only the foreground group; the rounded background must stay transparent.
     const foreground = logo.querySelector(":scope > g");
     if (!foreground) throw new Error("favicon.svg must contain a foreground group");
+    // Android uses the alpha mask, independent of the app icon palette.
+    foreground.setAttribute("fill", "#ffffff");
     logo.replaceChildren(foreground);
     logo.setAttribute("width", "96");
     logo.setAttribute("height", "96");

@@ -53,7 +53,7 @@ export function AppBar({
   const navigation = useAppNavigation();
   const menu = navigation && <Button variant="ghost" size="icon-lg" className="shrink-0 rounded-full" aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
   return (
-    // Paint the safe-area strip solid to match the OS theme color.
+    // Paint the safe-area strip solid behind the translucent header.
     <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/95 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']">
       {!back && menu}
       {back && (

@@ -7,7 +7,7 @@ export function UpdateBanner() {
   const applying = usePwaApplying();
   const failed = usePwaFailure();
   return <div role="status" className="flex shrink-0 items-center gap-3 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(12px+var(--safe-bottom))]">
-    <RefreshCw className={cn("size-5 text-blue", applying && "animate-spin")} />
+    <RefreshCw className={cn("size-5 text-primary", applying && "animate-spin")} />
     <div className="min-w-0 flex-1">
       <p className="text-sm font-semibold text-strong">{failed ? "Update paused" : "Updating Palmagent…"}</p>
       <p className="text-xs text-muted-foreground">{failed ? "Your screen is still open. We could not safely finish the update." : "Your session keeps running. This screen will update automatically."}</p>

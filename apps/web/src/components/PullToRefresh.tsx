@@ -147,7 +147,7 @@ export function PullToRefresh({
               hidden until a pull translates the content down into view. */}
           <div ref={spinnerRef} className="-mt-12 flex h-12 items-center justify-center opacity-0" aria-hidden>
             <span className="flex size-8 items-center justify-center rounded-full border border-border bg-card/95 shadow-sm backdrop-blur-md">
-              <RefreshCw className={cn("size-4 text-blue", refreshing && "animate-spin")} />
+              <RefreshCw className={cn("size-4 text-primary", refreshing && "animate-spin")} />
             </span>
           </div>
           {children}

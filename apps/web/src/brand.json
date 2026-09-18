@@ -1,0 +1,18 @@
+{
+  "light": {
+    "primary": "#0f766e",
+    "primary-foreground": "#ffffff",
+    "primary-active": "#115e59",
+    "accent": "#e6f5f2",
+    "accent-foreground": "#115e59",
+    "chrome": "#0f766e"
+  },
+  "dark": {
+    "primary": "#5eead4",
+    "primary-foreground": "#042f2e",
+    "primary-active": "#99f6e4",
+    "accent": "#123b37",
+    "accent-foreground": "#99f6e4",
+    "chrome": "#134e4a"
+  }
+}

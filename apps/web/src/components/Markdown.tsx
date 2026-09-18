@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 // markdown (GFM: headings/bold/lists/code/tables). We do NOT enable raw HTML:
 // react-markdown escapes it by default, so `<Chart>`/`List<T>` show literally
 // and a stray `<script>` can never run — XSS-safe with no sanitizer. Every color
-// is a design token (text-strong/-blue, bg-muted, border-border) so light + dark
+// is a design token (text-strong/-primary, bg-muted, border-border) so light + dark
 // both Just Work, matching the surrounding event log. Defined at module scope so
 // the object identity is stable across renders (keeps the memo below effective).
 const COMPONENTS = {
@@ -29,7 +29,7 @@ const COMPONENTS = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-blue underline underline-offset-2 [overflow-wrap:anywhere]"
+      className="text-primary underline underline-offset-2 [overflow-wrap:anywhere]"
     >
       {children}
     </a>

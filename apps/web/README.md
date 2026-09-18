@@ -147,6 +147,23 @@ metadata retain their prose; the client does not guess which text is safe to fol
   `/api/stream`, which is `NetworkOnly` (an open event-stream must never be
   cached). See `vite.config.ts`.
 
+## Brand palette
+
+`src/brand.json` owns the Palm Teal palette for light and dark mode. Change its
+semantic color pairs to replace the brand: `primary` / `primary-foreground` for
+filled actions, `primary-active` for pressed actions, `accent` / `accent-foreground`
+for selection and hover, and `chrome` for browser and installed-app chrome.
+Vite injects these as `--brand-*` variables before first paint; `src/index.css`
+maps them to the UI's semantic tokens. Theme changes and the PWA manifest read
+that same palette. Keep neutral surfaces and status colors independent.
+
+After editing the palette or `src/assets/palm.svg`, run
+`pnpm --filter @palmagent/web icons:generate` to refresh the favicon, adaptive
+logo, and PNG app icons. Review both themes, run `pnpm web:verify`, and update
+intentional screenshot changes. Components use semantic utilities such as
+`bg-primary`, `text-primary`, and the Button `selected` variant; do not embed
+brand hex values or color-family utility classes in components.
+
 ## Icons
 
 `public/icon-*.png`, `apple-touch-icon.png`, and `favicon.svg` are reviewed
@@ -158,7 +175,7 @@ asset: white logo strokes on a transparent background. Android masks its alpha
 channel, so never use a filled app icon as the notification `badge`. The notification
 body continues to use the color app icon. Both assets are precached by the service worker.
 
-After changing the logo in `favicon.svg`, regenerate the badge from its foreground
+After changing the logo geometry and regenerating app icons, regenerate the badge from its foreground
 geometry with `node apps/web/scripts/generate-notification-badge.mjs` from the repository
 root (requires the Playwright Chromium installation above). Review the image and run
 `pnpm web:verify`. The notification test checks the built asset's silhouette, offline

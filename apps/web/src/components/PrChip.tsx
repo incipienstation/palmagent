@@ -53,7 +53,7 @@ export function PrChip({ prs }: { prs?: PrRef[] }) {
     const pr = prs[0];
     return (
       <a
-        className="inline-flex items-center gap-1 font-semibold text-blue hover:underline"
+        className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
         href={pr.url}
         target="_blank"
         rel="noreferrer"
@@ -71,7 +71,7 @@ export function PrChip({ prs }: { prs?: PrRef[] }) {
         role="button"
         tabIndex={0}
         aria-label={`${prs.length} pull requests`}
-        className="inline-flex cursor-pointer items-center gap-1 font-semibold text-blue hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 font-semibold text-primary hover:underline"
         // Open the sheet without letting the tap reach an enclosing tappable row.
         onClick={(e) => {
           e.stopPropagation();

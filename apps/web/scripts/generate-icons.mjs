@@ -2,18 +2,25 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
-// favicon.svg owns the palm geometry and app-icon colors. Render derived assets
-// with the same Chromium used by web tests: pnpm --filter @palmagent/web icons:generate.
+import brand from '../src/brand.json' with { type: 'json' };
+
+// Geometry and palette are authored once; every public brand asset is generated.
 const publicDir = new URL('../public/', import.meta.url);
-const favicon = await readFile(new URL('favicon.svg', publicDir), 'utf8');
-const background = favicon.match(/<rect[^>]*width="64"[^>]*\/>/)?.[0];
-const mark = favicon.match(/<g[\s\S]*<\/g>/)?.[0];
-if (!background || !mark) throw new Error('Expected the favicon background and palm group');
+const source = await readFile(new URL('../src/assets/palm.svg', import.meta.url), 'utf8');
+const geometry = source.match(/<g[\s\S]*<\/g>/)?.[0];
+if (!geometry) throw new Error('Expected the palm foreground group');
+const mark = geometry.replace('currentColor', brand.light['primary-foreground']);
+const background = `<rect width="64" height="64" rx="14" fill="${brand.light.primary}"/>`;
 const fullBleed = background.replace(' rx="14"', '');
-const logo = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PalmAgent">
-  <style>:root { color: #202020; } @media (prefers-color-scheme: dark) { :root { color: #f5f5f5; } }</style>
-  ${mark.replace('fill="#ffffff"', 'fill="currentColor"')}
+const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PalmAgent">
+  ${background}
+  ${mark}
 </svg>\n`;
+const logo = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PalmAgent">
+  <style>:root { color: ${brand.light.primary}; } @media (prefers-color-scheme: dark) { :root { color: ${brand.dark.primary}; } }</style>
+  ${geometry}
+</svg>\n`;
+await writeFile(new URL('favicon.svg', publicDir), favicon);
 await writeFile(new URL('logo.svg', publicDir), logo);
 const browser = await chromium.launch();
 try {
@@ -32,4 +39,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log('Generated monochrome logo and app icons from favicon.svg');
+console.log('Generated logo and app icons from palm.svg and brand.json');
