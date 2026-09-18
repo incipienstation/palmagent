@@ -238,7 +238,8 @@ held workflows with the bot token or copy a maintainer credential into Actions.
 
 Inspect Actions runs, tags, drafts, release assets, and npm before retrying. An interrupted upload
 or failed post-upload verification can leave the immutable npm version published. After a successful
-upload, verification retries missing version metadata at five-second intervals, up to 12 retries.
+upload, verification retries missing version metadata at five-second intervals, up to 60 retries (five minutes). Release metadata reads use a unique validation URL to avoid
+cached pre-upload responses; upstream propagation can still take several minutes.
 A reported integrity mismatch or registry lookup error stops immediately. Retry with the same source and `candidate_run`;
 identical registry bytes skip npm upload, and the job verifies the channel before exposing the
 Release. Automatic Preview searches earlier recovery runs for the original producer artifact.

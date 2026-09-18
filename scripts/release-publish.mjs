@@ -50,7 +50,7 @@ export async function publishPackage(identity, { run, registryVersion, env, slee
   let published = await registryVersion(identity.version);
   // A successful upload can precede visibility through the registry's read endpoints.
   // Retry absence only: reported integrity conflicts and lookup errors remain fatal.
-  for (let attempt = 0; !published && attempt < 12; attempt++) {
+  for (let attempt = 0; !published && attempt < 60; attempt++) {
     await sleep(5000);
     published = await registryVersion(identity.version);
   }
