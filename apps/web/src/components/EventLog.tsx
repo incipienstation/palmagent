@@ -255,12 +255,37 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
 });
 
 function HistoryHeader({ context }: { context?: HistoryControls }) {
+  const sentinel = useRef<HTMLDivElement>(null);
+  const { hasEarlier, loadingEarlier, historyError, loadEarlier } = context ?? {};
+  useEffect(() => {
+    const target = sentinel.current;
+    const root = target?.closest("[data-radix-scroll-area-viewport]");
+    if (!target || !root || !hasEarlier || loadingEarlier || historyError) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadEarlier?.();
+    }, { root, rootMargin: "240px 0px 0px" });
+    // Virtuoso hides its list until the initial scroll target is reached. That
+    // can take several measurement frames; don't mistake it for a short page.
+    // Recheck after each page even without a scroll event, since compact mode
+    // can hide all of a page's events.
+    const observeWhenReady = () => {
+      const list = root.querySelector<HTMLElement>("[data-transcript-items]");
+      if (list && getComputedStyle(list).visibility === "hidden") {
+        frame = requestAnimationFrame(observeWhenReady);
+      } else observer.observe(target);
+    };
+    // Give a prepended page's anchor adjustment time to run before observing.
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(observeWhenReady); });
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [hasEarlier, loadingEarlier, historyError, loadEarlier]);
   if (!context?.hasEarlier && !context?.showBeginning) return <div className="h-3" />;
-  return <div className="flex flex-col gap-1 px-4 pt-3 pb-3 font-sans">
-    {context.historyError && <span role="alert" className="text-destructive">{context.historyError}</span>}
-    <Button variant="ghost" disabled={context.loadingEarlier || context.showBeginning} onClick={context.loadEarlier}>
-      {context.showBeginning ? "Beginning of conversation" : context.loadingEarlier ? "Loading earlier messages…" : context.historyError ? "Retry loading earlier messages" : "Load earlier messages"}
-    </Button>
+  return <div ref={sentinel} className="flex flex-col gap-1 px-4 py-3 font-sans">
+    {historyError ? <>
+      <span role="alert" className="text-destructive">{historyError}</span>
+      <Button variant="ghost" onClick={loadEarlier}>Retry loading earlier messages</Button>
+    </> : <div role="status" className="h-6 text-center text-xs leading-6 text-muted-foreground">
+      {context.showBeginning ? "Beginning of conversation" : loadingEarlier ? "Loading earlier messages…" : null}
+    </div>}
   </div>;
 }
 // Let Virtuoso own scroll coordinates while Radix supplies the viewport and
@@ -273,13 +298,15 @@ const TranscriptScroller = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElem
         const el = event.currentTarget;
         context.onScrollPosition?.(el);
         onScroll?.(event);
-        if (event.currentTarget.scrollTop < 80 && context?.hasEarlier && !context.loadingEarlier && !context.historyError) {
-          context.loadEarlier?.();
-        }
       }} />;
   },
 );
-const VIRTUAL_COMPONENTS = { Scroller: TranscriptScroller, Header: HistoryHeader, Footer: () => <div className="h-2" /> };
+const TranscriptList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { context: HistoryControls }>(
+  function TranscriptList({ context: _context, ...props }, ref) {
+    return <div {...props} ref={ref} data-transcript-items />;
+  },
+);
+const VIRTUAL_COMPONENTS = { Scroller: TranscriptScroller, List: TranscriptList, Header: HistoryHeader, Footer: () => <div className="h-2" /> };
 const rowKey = (_index: number, item: TranscriptRow) => item.key;
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic

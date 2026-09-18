@@ -6,7 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Earlier conversation messages load automatically as you scroll up, including
+  when compact mode hides a page's events. Your reading position stays in place;
+  a retry button appears only if loading fails.
+
 ## 0.1.0-alpha.29
+
 
 ### Fixed
 
