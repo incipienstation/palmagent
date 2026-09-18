@@ -11,6 +11,12 @@ An entry does not mean a version has been published.
 - Toasts use compact, text-sized pills above bottom controls, with one message at
   a time and touch-following swipe dismissal. Longer errors wrap within the screen.
 
+## 0.1.0-alpha.32
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/b088a735f0646e0aa31fb58989cb92a0f2c7a836...95c336c00a15a9bd9e2ed15dd00b780c08c9c574) for details.
+
 ## 0.1.0-alpha.31
 
 ### Fixed
