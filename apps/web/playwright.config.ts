@@ -36,9 +36,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  // One worker keeps the shared (read-only) mock server and screenshot timing
-  // deterministic; the suite is small and fast, so parallelism buys little.
-  workers: 1,
+  // Each test owns its browser context; the shared mock backend is read-only.
+  // Keep concurrency bounded so mobile screenshots remain stable on CI runners.
+  workers: 2,
   reporter: [["list"]],
   // Galaxy S25 fixes the viewport (360×780), DPR, touch and UA so renders are
   // reproducible run to run (see galaxyS25 above).
