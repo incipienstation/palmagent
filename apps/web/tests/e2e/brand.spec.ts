@@ -38,14 +38,14 @@ for (const theme of ["light", "dark"] as const) {
     await expect(selected).toHaveCSS("background-color", rgb(brand[theme].accent));
     await expectReadable(selected);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
-    const tab = page.getByRole("tab", { name: "General", exact: true });
-    await expect(tab).toHaveCSS("color", rgb(brand[theme]["accent-foreground"]));
-    await expectReadable(tab);
+    const selection = page.getByRole("radio", { name: "Default output", exact: true });
+    await expect(selection).toHaveCSS("color", rgb(brand[theme]["accent-foreground"]));
+    await expectReadable(selection);
     await expect(page).toHaveScreenshot(`brand-settings-${theme}.png`);
     const next = theme === "light" ? "dark" : "light";
     await page.getByRole("radio", { name: `${next === "light" ? "Light" : "Dark"} theme` }).click();
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", brand[next].chrome);
-    await expect(tab).toHaveCSS("background-color", rgb(brand[next].accent));
+    await expect(selection).toHaveCSS("background-color", rgb(brand[next].accent));
     await page.reload();
     // The query override still wins on reload.
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", brand[theme].chrome);

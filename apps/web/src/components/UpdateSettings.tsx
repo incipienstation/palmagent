@@ -46,7 +46,7 @@ export function UpdateSettings() {
 
   return (
     <section aria-label="Updates" className="flex flex-col gap-3 py-3">
-      <h3 className="text-sm font-semibold text-strong">Updates</h3>
+      <p className="text-xs text-muted-foreground">Keep Palmagent up to date across your devices.</p>
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="text-muted-foreground">{stale && status ? "Last seen version" : "Current version"}</span>
         {status ? <span className="break-all text-right font-medium text-foreground" data-testid="current-version">
