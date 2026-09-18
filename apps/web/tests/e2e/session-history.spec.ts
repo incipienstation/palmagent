@@ -64,7 +64,7 @@ test("recent history and thousands of live events keep mounted rows bounded", as
   expect(olderRequests).toBe(0);
 });
 
-test("prepending an older page preserves the visible message through simultaneous live output", async ({ page }) => {
+test("prepending an older page preserves the visible message through simultaneous live output", async ({ page }, testInfo) => {
   let release!: () => void;
   let requested = 0;
   const pending = new Promise<void>((resolve) => { release = resolve; });
@@ -79,9 +79,11 @@ test("prepending an older page preserves the visible message through simultaneou
   const anchor = page.locator('[data-message-key="1801"]');
   await expect(anchor).toBeVisible();
   const top = (await anchor.boundingBox())!.y;
+  await expect(page.getByRole("status").filter({ hasText: "Loading earlier messages…" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("history-loading.png") });
   await deliver(page, rows(2001, 2020));
   release();
-  await expect(page.getByRole("button", { name: "Loading earlier messages…" })).toHaveCount(0);
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
   await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
   expect(await viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   await expect(page.getByText("tool_result: Tool 2020", { exact: true })).toHaveCount(0);
@@ -99,6 +101,10 @@ test("a failed older page is retryable without replacing current history", async
   await viewport(page).evaluate((el) => { el.scrollTop = 0; });
   await expect(page.getByRole("alert")).toHaveText("History temporarily unavailable");
   await expect(page.getByText("History message 1801", { exact: true })).toBeVisible();
+  await viewport(page).evaluate((el) => { el.scrollTop = 100; });
+  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await page.waitForTimeout(200);
+  expect(attempts).toBe(1);
   await page.getByRole("button", { name: "Retry loading earlier messages" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect.poll(() => attempts).toBe(2);
@@ -155,21 +161,30 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
   const anchor = page.locator('[data-message-key="201"]');
   const top = (await anchor.boundingBox())!.y;
   release();
-  await expect(page.getByRole("button", { name: "Beginning of conversation" })).toBeDisabled();
+  await expect(page.getByRole("status").filter({ hasText: "Beginning of conversation" })).toHaveCount(1);
   await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
 });
 
-test("compact mode can load older messages when the recent page contains only hidden status events", async ({ page }) => {
+test("compact mode automatically skips consecutive pages of hidden status events", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
-  await page.route("**/history?before=201", (route) => route.fulfill({ json: { events: rows(1, 200), before: null } }));
+  const cursors: string[] = [];
+  await page.route("**/history?*", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("before")!;
+    cursors.push(cursor);
+    return route.fulfill({ json: cursor === "201" ? {
+      events: rows(101, 200).map(({ seq, event }) => ({ seq, event: {
+        ...event, kind: "status", payload: { subtype: "reasoning" },
+      } })), before: 101,
+    } : { events: rows(1, 100), before: null } });
+  });
   await open(page, taskId);
   await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 202, history: { after: 200, before: 201 } });
   for (const seq of [201, 202]) await send(page, taskId, { type: "event", event: {
     taskId, agent: "codex", ts: seq, kind: "status", payload: { subtype: "reasoning" },
   } }, seq);
-  await expect(page.getByText("No messages in this view.")).toBeVisible();
-  await page.getByRole("button", { name: "Load earlier messages" }).click();
-  await expect(page.getByText("History message 199", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load earlier messages", exact: true })).toHaveCount(0);
+  await expect(page.getByText("History message 99", { exact: true })).toBeVisible();
+  expect(cursors).toEqual(["201", "101"]);
 });
 
 test("expanded activity virtualizes its individual tool records and retains disclosure state", async ({ page }) => {
@@ -213,8 +228,39 @@ for (const mode of ["compact", "default"]) {
     const top = (await anchor.boundingBox())!.y;
     await deliver(page, rows(2001, 2020));
     release();
-    await expect(page.getByRole("button", { name: "Loading earlier messages…" })).toHaveCount(0);
+    await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
     await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
     expect(await viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   });
 }
+
+test("near-top scrolling prefetches the next page before reaching the edge", async ({ page }) => {
+  let requested = 0;
+  await page.route("**/history?before=1801", async (route) => {
+    requested++;
+    await route.fulfill({ json: { events: rows(1601, 1800), before: 1601 } });
+  });
+  await recent(page);
+  await expect(page.getByRole("button", { name: "Load earlier messages", exact: true })).toHaveCount(0);
+  await viewport(page).evaluate((el) => { el.scrollTop = 200; });
+  await expect.poll(() => requested).toBe(1);
+  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
+});
+
+test("short history fills the viewport automatically and stops at the beginning", async ({ page }, testInfo) => {
+  const cursors: string[] = [];
+  await page.route("**/history?*", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("before")!;
+    cursors.push(cursor);
+    return route.fulfill({ json: cursor === "5" ? { events: rows(3, 4), before: 3 } :
+      { events: rows(1, 2), before: null } });
+  });
+  await open(page, taskId);
+  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 6, history: { after: 4, before: 5 } });
+  await deliver(page, rows(5, 6));
+  await expect(page.getByRole("status").filter({ hasText: "Beginning of conversation" })).toHaveCount(1);
+  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await expect(page.getByText("History message 1", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("history-beginning.png") });
+  expect(cursors).toEqual(["5", "3"]);
+});
