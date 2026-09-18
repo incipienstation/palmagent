@@ -1,10 +1,10 @@
 import type { SseTasksFrame } from "@palmagent/shared";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { StreamQuerySchema } from "@palmagent/shared/requests";
+import type { StreamQuerySchema } from "@palmagent/shared/requests";
 import type { EventRow } from "../db.js";
 import { HttpError } from "../service.js";
-import { parse } from "./input.js";
+import type { z } from "zod";
 import type { HttpDependencies } from "./types.js";
 
 // Bound pending live output while a client is replaying or reading slowly.
@@ -12,8 +12,7 @@ import type { HttpDependencies } from "./types.js";
 const MAX_PENDING_BYTES = 64 * 1024 * 1024;
 const MAX_PENDING_FRAMES = 1024;
 
-export function sessionStream(c: Context, { db, hub, service, config, shutdown, build }: HttpDependencies) {
-  const query = parse(StreamQuerySchema, c.req.query());
+export function sessionStream(c: Context, { db, hub, service, config, shutdown, build }: HttpDependencies, query: z.output<typeof StreamQuerySchema>) {
   const taskId = query.task || undefined;
   if (taskId) service.getTask(taskId);
   const cursorText = c.req.header("last-event-id") ?? query.lastEventId;

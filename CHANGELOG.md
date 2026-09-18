@@ -6,6 +6,16 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.31
+
+### Fixed
+
+- Local session dispatch now distinguishes invalid requests, conflicts, and maintenance
+  failures; unexpected errors are logged without exposing internal details to the CLI.
+- Preserve response headers supplied by HTTP middleware, including retry instructions.
+
+## 0.1.0-alpha.30
+
 ### Changed
 
 - Earlier conversation messages load automatically as you scroll up, including
