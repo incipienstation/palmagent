@@ -7,8 +7,8 @@ export function haptic(kind: "open" | "select") {
 // Long press opens controls; its synthetic click must never submit. Movement,
 // ancestor scrolling, pointer cancellation, a second finger, and unmount cancel it.
 export function useLongPress(open: () => void, click: () => void, disabled = false) {
-  const timer = useRef<ReturnType<typeof setTimeout>>();
-  const origin = useRef<{ x: number; y: number; pointer: number; element: HTMLButtonElement }>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const origin = useRef<{ x: number; y: number; pointer: number; element: HTMLButtonElement }>(undefined);
   const suppress = useRef(false);
   const touch = useRef(false);
   const [pressing, setPressing] = useState(false);
