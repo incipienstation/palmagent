@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AnswerRequest } from "@palmagent/shared";
+import type { AnswerRequest, QuestionRequest } from "@palmagent/shared";
 import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../src/claude.js";
 import { buildCodexArgv, CodexRunner } from "../src/codex.js";
 import { InProcessBackend } from "../src/inproc-backend.js";
@@ -691,6 +691,52 @@ test("Claude interactive Send waits for interruption and echoed input; Stop wins
   handle.interrupt(); assert.equal(await cancelled, "rejected");
   backend.proc.emit({ type: "result", is_error: true });
   assert.equal(writtenJson(backend.proc).some(m => m.uuid === "message-2"), false);
+  backend.proc.exit(0); await handle.done;
+});
+
+for (const rpcId of [17, "17"]) test(`Codex questions retain ${typeof rpcId} RPC ids and distinct question ids`, async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new CodexRunner().start(startArgs({ interactive: true }), e => events.push(e), backend);
+  backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  const before = backend.proc.writes.length;
+  backend.proc.emit({ id: rpcId, method: "item/tool/requestUserInput", params: { questions: [
+    { id: "first", header: "First", question: "Choose", options: [{ label: "Yes", description: "Proceed" }] },
+    { id: "second", header: "Second", question: "Choose", options: null },
+  ] } });
+  assert.equal(backend.proc.writes.length, before, "questions must not be auto-answered");
+  const pending = events.find(e => e.kind === "question")!.payload as QuestionRequest;
+  assert.equal(pending.requestId, JSON.stringify(rpcId));
+  assert.deepEqual(pending.questions[1].options, []);
+  assert.equal(await handle.answer({ requestId: pending.requestId, answers: [{ question: "Choose", selected: ["Yes"] }] }), false);
+  const request = { requestId: pending.requestId, answers: [
+    { questionId: "first", question: "Choose", selected: ["Yes"] },
+    { questionId: "second", question: "Choose", selected: [], notes: "Custom answer" },
+  ] };
+  const write = backend.proc.writeStdin.bind(backend.proc);
+  backend.proc.writeStdin = () => false;
+  assert.equal(await handle.answer(request), false);
+  backend.proc.writeStdin = write;
+  assert.equal(await handle.answer(request), true, "a failed write keeps the pending request");
+  assert.deepEqual(writtenJson(backend.proc).at(-1), { jsonrpc: "2.0", id: rpcId,
+    result: { answers: { first: { answers: ["Yes"] }, second: { answers: ["Custom answer"] } } } });
+  assert.equal(await handle.answer(request), false, "answers cannot be sent twice");
+  backend.proc.exit(0); await handle.done;
+});
+
+test("Codex restores only the pending question, supports Skip, and clears resolved requests", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const pendingInput: QuestionRequest = { requestId: '"current"', questions: [{ id: "choice", question: "Continue?", options: [] }] };
+  const handle = new CodexRunner().start(startArgs({ interactive: true, reattach: true, resumeFromSeq: 2, pendingInput }), e => events.push(e), backend);
+  for (const id of ["old", "current"]) backend.proc.emit({ id, method: "item/tool/requestUserInput", params: { questions: pendingInput.questions } });
+  assert.equal(backend.proc.writes.length, 0);
+  assert.equal(events.length, 0);
+  assert.equal(await handle.answer({ requestId: '"old"', answers: [] }), false);
+  assert.equal(await handle.answer({ requestId: pendingInput.requestId, answers: [] }), true);
+  assert.deepEqual(writtenJson(backend.proc).at(-1), { jsonrpc: "2.0", id: "current", result: { answers: {} } });
+  backend.proc.emit({ id: "next", method: "item/tool/requestUserInput", params: { questions: pendingInput.questions } });
+  backend.proc.emit({ method: "serverRequest/resolved", params: { requestId: "next" } });
+  assert.equal(await handle.answer({ requestId: '"next"', answers: [] }), false);
+  assert.equal((events.at(-1)?.payload as { subtype: string }).subtype, "input_resolved");
   backend.proc.exit(0); await handle.done;
 });
 

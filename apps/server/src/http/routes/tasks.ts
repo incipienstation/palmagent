@@ -42,7 +42,7 @@ export function taskRoutes({ service, db }: HttpDependencies) {
       const input = c.req.valid("json");
       return c.json({ task: service.approve(c.req.valid("param").id, input.decision, input.scope) }, 200);
     })
-    .post("/:id/answer", params(IdParamsSchema), jsonBody(AnswerSchema), (c) => c.json({ task: service.answer(c.req.valid("param").id, c.req.valid("json")) }, 200))
+    .post("/:id/answer", params(IdParamsSchema), jsonBody(AnswerSchema), async (c) => c.json({ task: await service.answer(c.req.valid("param").id, c.req.valid("json")) }, 200))
     .post("/:id/stop", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json({ task: service.stop(c.req.valid("param").id) }, 200))
     .post("/:id/cancel", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json({ task: service.cancel(c.req.valid("param").id) }, 200));
 }

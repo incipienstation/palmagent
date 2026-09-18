@@ -107,6 +107,9 @@ export class ExecutionStore {
       this.db.prepare("INSERT INTO events VALUES (?,?,?)").run(id, seq, JSON.stringify(event));
       this.db.prepare("UPDATE executions SET lastSeq=? WHERE id=?").run(seq, id);
       if (event.kind === "question") this.db.prepare("UPDATE executions SET question=? WHERE id=?").run(JSON.stringify(event.payload), id);
+      if (event.kind === "status" && (event.payload as { subtype?: string }).subtype === "input_resolved") {
+        this.clearQuestion(id, (event.payload as { requestId: string }).requestId);
+      }
       return seq;
     }).immediate();
   }
@@ -142,7 +145,12 @@ export class ExecutionStore {
       if (input.kind === "answer") {
         const question = row.question ? JSON.parse(row.question) as { requestId: string } : undefined;
         if (question?.requestId !== input.answer.requestId) return "rejected";
-        this.db.prepare("UPDATE executions SET question=NULL WHERE id=?").run(execution);
+        // Keep the question until delivery. An uncertain earlier write must
+        // never be resent; a definite rejection permits an explicit new attempt.
+        const pending = this.db.prepare(`SELECT 1 FROM commands WHERE execution=?
+          AND json_extract(body,'$.kind')='answer' AND json_extract(body,'$.answer.requestId')=?
+          AND result!='rejected' LIMIT 1`).get(execution, input.answer.requestId);
+        if (pending) return "rejected";
       }
       this.db.prepare("INSERT INTO commands(execution,id,body,result) VALUES (?,?,?,'accepted')").run(execution, id, body);
       return "accepted";
@@ -160,6 +168,20 @@ export class ExecutionStore {
     }).immediate();
   }
   settle(execution: string, id: string, result: ExecutionCommandResult) {
-    this.db.prepare("UPDATE commands SET result=? WHERE execution=? AND id=?").run(result, execution, id);
+    this.db.transaction(() => {
+      const command = this.command(execution, id);
+      if (!command || command.result !== "accepted") return;
+      this.db.prepare("UPDATE commands SET result=? WHERE execution=? AND id=?").run(result, execution, id);
+      if (command.body.kind === "answer" && result === "delivered") {
+        const { answer } = command.body;
+        this.clearQuestion(execution, answer.requestId);
+        this.append(execution, { taskId: this.get(execution).taskId, kind: "status",
+          payload: { subtype: "answer", ...answer } });
+      }
+    }).immediate();
+  }
+  private clearQuestion(execution: string, requestId: string) {
+    this.db.prepare("UPDATE executions SET question=NULL WHERE id=? AND json_extract(question,'$.requestId')=?")
+      .run(execution, requestId);
   }
 }

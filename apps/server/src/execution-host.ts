@@ -58,7 +58,7 @@ async function drain() {
         switch (body.kind) {
           case "send": result = await handle.send?.(body.text, body.images, body.messageId) ?? "rejected"; break;
           case "steer": accepted = handle.steer(body.text, body.images); break;
-          case "answer": accepted = handle.answer(body.answer); break;
+          case "answer": accepted = await handle.answer(body.answer); break;
           case "approve": accepted = handle.approve(body.decision, body.scope); break;
           case "interrupt": accepted = handle.interrupt(); if (!accepted) { handle.cancel(); accepted = true; } break;
           case "cancel": handle.cancel(); accepted = true; break;
