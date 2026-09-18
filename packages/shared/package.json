@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./requests": "./src/requests.ts",
     "./updates": "./src/updates.ts",
-    "./executions": "./src/executions.ts"
+    "./executions": "./src/executions.ts",
+    "./http": "./src/http.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -17,6 +18,8 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "zod": "^3.25.76"
+    "hono": "^4.13.7",
+    "zod": "^3.25.76",
+    "@simplewebauthn/browser": "^13.3.0"
   }
 }

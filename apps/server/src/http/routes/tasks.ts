@@ -1,49 +1,48 @@
 import { SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
-import { Hono, type Context } from "hono";
-import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
-import { body, parse } from "../input.js";
+import { Hono } from "hono";
+import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { jsonBody, query, params } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 
 export function taskRoutes({ service, db }: HttpDependencies) {
   const app = new Hono();
-  const id = (c: Context) => parse(IdParamsSchema, c.req.param()).id;
-  app.get("/", (c) => c.json({ tasks: service.listTasks(parse(TaskQuerySchema, c.req.query()).status) }));
-  app.post("/", async (c) => c.json({ task: service.createTask(await body(c, CreateTaskSchema)) }, 201));
-  app.get("/:id", (c) => c.json({ task: service.getTask(id(c)) }));
-  app.get("/:id/account-limits", async (c) => {
-    c.header("Cache-Control", "no-store");
-    return c.json(await service.accountLimits(id(c)));
-  });
-  app.patch("/:id", async (c) => {
-    const input = await body(c, RenameTaskSchema);
-    return c.json({ task: service.rename(id(c), input.title) });
-  });
-  app.get("/:id/history", (c) => {
-    const taskId = id(c);
-    service.getTask(taskId);
-    const { before } = parse(HistoryQuerySchema, c.req.query());
-    c.header("cache-control", "no-store");
-    return c.json(db.historyPage(taskId, before));
-  });
-  app.delete("/:id", (c) => c.json({ task: service.archive(id(c)) }));
-  app.post("/:id/handoff", (c) => c.json(service.handoff(id(c))));
-  app.post("/:id/messages", async (c) => c.json(service.submitMessage(id(c), await body(c, SubmitMessageSchema)), 202));
-  app.post("/:id/messages/:messageId", async (c) => c.json(service.messageAction(id(c), c.req.param("messageId"), await body(c, MessageActionSchema))));
-  app.post("/:id/queue/resume", async (c) => { await body(c, EmptyBodySchema); return c.json(service.messages.resume(id(c))); });
-  app.post("/:id/followup", async (c) => {
-    const input = await body(c, FollowupSchema);
-    return c.json({ task: service.followup(id(c), input.prompt, input.images, input.model, input.effort, input.permission) }, 202);
-  });
-  app.post("/:id/steer", async (c) => {
-    const input = await body(c, SteerSchema);
-    return c.json(service.steer(id(c), input.text, input.images, input.model, input.effort, input.permission));
-  });
-  app.post("/:id/approve", async (c) => {
-    const input = await body(c, ApproveSchema);
-    return c.json({ task: service.approve(id(c), input.decision, input.scope) });
-  });
-  app.post("/:id/answer", async (c) => c.json({ task: service.answer(id(c), await body(c, AnswerSchema)) }));
-  app.post("/:id/stop", async (c) => { await body(c, EmptyBodySchema); return c.json({ task: service.stop(id(c)) }); });
-  app.post("/:id/cancel", async (c) => { await body(c, EmptyBodySchema); return c.json({ task: service.cancel(id(c)) }); });
-  return app;
+  return app
+    .get("/", query(TaskQuerySchema), (c) => c.json({ tasks: service.listTasks(c.req.valid("query").status) }, 200))
+    .post("/", jsonBody(CreateTaskSchema), (c) => c.json({ task: service.createTask(c.req.valid("json")) }, 201))
+    .get("/:id", params(IdParamsSchema), (c) => c.json({ task: service.getTask(c.req.valid("param").id) }, 200))
+    .get("/:id/account-limits", params(IdParamsSchema), async (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json(await service.accountLimits(c.req.valid("param").id), 200);
+    })
+    .patch("/:id", params(IdParamsSchema), jsonBody(RenameTaskSchema), (c) => {
+      const input = c.req.valid("json");
+      return c.json({ task: service.rename(c.req.valid("param").id, input.title) }, 200);
+    })
+    .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), (c) => {
+      const taskId = c.req.valid("param").id;
+      service.getTask(taskId);
+      const { before } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(db.historyPage(taskId, before), 200);
+    })
+    .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
+    .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))
+    .post("/:id/messages", params(IdParamsSchema), jsonBody(SubmitMessageSchema), (c) => c.json(service.submitMessage(c.req.valid("param").id, c.req.valid("json")), 202))
+    .post("/:id/messages/:messageId", params(MessageParamsSchema), jsonBody(MessageActionSchema), (c) => c.json(service.messageAction(c.req.valid("param").id, c.req.valid("param").messageId, c.req.valid("json")), 200))
+    .post("/:id/queue/resume", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json(service.messages.resume(c.req.valid("param").id), 200))
+    .post("/:id/followup", params(IdParamsSchema), jsonBody(FollowupSchema), (c) => {
+      const input = c.req.valid("json");
+      return c.json({ task: service.followup(c.req.valid("param").id, input.prompt, input.images, input.model, input.effort, input.permission) }, 202);
+    })
+    .post("/:id/steer", params(IdParamsSchema), jsonBody(SteerSchema), (c) => {
+      const input = c.req.valid("json");
+      return c.json(service.steer(c.req.valid("param").id, input.text, input.images, input.model, input.effort, input.permission), 200);
+    })
+    .post("/:id/approve", params(IdParamsSchema), jsonBody(ApproveSchema), (c) => {
+      const input = c.req.valid("json");
+      return c.json({ task: service.approve(c.req.valid("param").id, input.decision, input.scope) }, 200);
+    })
+    .post("/:id/answer", params(IdParamsSchema), jsonBody(AnswerSchema), (c) => c.json({ task: service.answer(c.req.valid("param").id, c.req.valid("json")) }, 200))
+    .post("/:id/stop", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json({ task: service.stop(c.req.valid("param").id) }, 200))
+    .post("/:id/cancel", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json({ task: service.cancel(c.req.valid("param").id) }, 200));
 }

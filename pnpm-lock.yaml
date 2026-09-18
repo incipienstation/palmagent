@@ -96,6 +96,9 @@ importers:
       hast-util-to-jsx-runtime:
         specifier: ^2.3.6
         version: 2.3.6
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.7
       lucide-react:
         specifier: ^1.17.0
         version: 1.31.0(react@18.3.1)
@@ -190,6 +193,12 @@ importers:
 
   packages/shared:
     dependencies:
+      '@simplewebauthn/browser':
+        specifier: ^13.3.0
+        version: 13.3.0
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.7
       zod:
         specifier: ^3.25.76
         version: 3.25.76

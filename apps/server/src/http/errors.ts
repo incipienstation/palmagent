@@ -5,6 +5,11 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { HttpError } from "../service.js";
 
 export const handleError: ErrorHandler = (error, c) => {
+  // A framework exception may carry a complete response, including protocol headers.
+  if (error instanceof HTTPException && error.res) {
+    const response = error.getResponse();
+    return c.newResponse(response.body, response);
+  }
   const expected = error instanceof MessageConflict || error instanceof HttpError || error instanceof HTTPException;
   const status = expected ? error.status : 500;
   if (!expected) console.error("HTTP request failed", error);
