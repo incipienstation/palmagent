@@ -11,6 +11,10 @@ Run the scoped local verifier from the repository root:
 node scripts/verify-local.mjs
 ```
 
+Activate the exact Node version in `.nvmrc` first (for nvm: `nvm install && nvm use`).
+CI uses the same pin. Execution rejects a different Node version before checks start;
+`--plan` remains available without changing the active runtime.
+
 Use `--plan` to show the selected checks without running them. The command refreshes
 `origin/develop` before classifying; use `--base origin/main` for a different target or
 `--base <full-commit-sha>` for an explicitly pinned base. A plan still refreshes named refs.

@@ -1,8 +1,16 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, mkdtempSync, openSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { changedPaths, classifyChanges } from './ci-scope.mjs';
+
+export function requireVerificationNode(cwd, version = process.versions.node) {
+  const expected = readFileSync(join(cwd, '.nvmrc'), 'utf8').trim();
+  if (!/^\d+\.\d+\.\d+$/.test(expected)) throw new Error('.nvmrc must pin an exact Node version.');
+  if (version !== expected) {
+    throw new Error(`Verification requires Node ${expected}; running ${version}. Activate .nvmrc (nvm install && nvm use) before retrying.`);
+  }
+}
 
 // Refresh named bases; immutable commit arguments deliberately select that exact base.
 // Unavailable refs, fetch failures, or incomplete history can never select fewer checks.

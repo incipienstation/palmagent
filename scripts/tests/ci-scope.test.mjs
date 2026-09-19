@@ -31,6 +31,18 @@ test('server, web, and shared changes select their runtime surfaces', () => {
   assert.deepEqual(classifyChanges(['README.md', 'apps/web/src/app.tsx']), { ...none, code: true, web: true });
 });
 
+test('reviewed tooling tests select tooling without hiding other changed consumers', () => {
+  for (const path of ['scripts/tests/release-finalize.test.mjs', 'scripts/tests/package-fixture.mjs']) {
+    assert.deepEqual(classifyChanges([path]), { ...none, code: true });
+    assert.deepEqual(classifyChanges([path, 'apps/web/src/app.tsx']), { ...none, code: true, web: true });
+    assert.deepEqual(classifyChanges(['apps/server/src/server.ts', path]), { ...none, code: true, server: true });
+    assert.deepEqual(classifyChanges([path, 'scripts/release-finalize.mjs']), all);
+  }
+  for (const path of ['scripts/tests/new.test.mjs', 'scripts/tests/new-fixture.mjs', '.nvmrc']) {
+    assert.deepEqual(classifyChanges([path]), all);
+  }
+});
+
 test('packaging, dependency, workflow, and unknown changes cannot take the static shortcut', () => {
   for (const path of ['package.json', 'pnpm-lock.yaml', 'apps/server/package.json',
     'apps/web/package.json', 'scripts/build-pkg.ts', 'scripts/pkg-smoke.mjs',

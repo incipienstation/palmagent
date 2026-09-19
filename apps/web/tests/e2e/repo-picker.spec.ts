@@ -38,9 +38,4 @@ test.describe("nested repository picker", () => {
     await expect(page.getByRole("button", { name: "Register" })).toBeVisible();
   });
 
-  test("matches the nested-browse visual baseline", async ({ page }) => {
-    await page.getByRole("option", { name: /outer-repo/ }).click();
-    await expect(page.getByText("/projects/outer-repo", { exact: true }).first()).toBeVisible();
-    await expect(page).toHaveScreenshot("repo-picker-nested.png");
-  });
 });

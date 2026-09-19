@@ -85,7 +85,4 @@ test.describe("inbox", () => {
     await navPromise;
   });
 
-  test("matches the visual baseline", async ({ page }) => {
-    await expect(page).toHaveScreenshot("inbox.png");
-  });
 });

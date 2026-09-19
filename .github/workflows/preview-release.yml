@@ -28,7 +28,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: tooling/.nvmrc
       - name: Check out the latest develop source
         uses: actions/checkout@v4
         with:

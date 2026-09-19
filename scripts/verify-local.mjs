@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { localScope, runVerification, verificationSteps } from './lib/local-verification.mjs';
+import { localScope, requireVerificationNode, runVerification, verificationSteps } from './lib/local-verification.mjs';
 
 const cwd = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let base = 'origin/develop', planOnly = false, timeoutMs;
@@ -14,6 +14,10 @@ for (let i = 0; i < args.length; i++) {
     console.error('Usage: node scripts/verify-local.mjs [--plan] [--base remote/branch|commit] [--timeout-seconds 1..86400]');
     process.exit(2);
   }
+}
+if (!planOnly) {
+  try { requireVerificationNode(cwd); }
+  catch (error) { console.error(error.message); process.exit(1); }
 }
 const result = localScope(cwd, base);
 if (result.reason) console.log(result.reason);
