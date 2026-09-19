@@ -4,6 +4,8 @@ import remarkGfm from "remark-gfm";
 import { jsx, jsxs } from "react/jsx-runtime";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cachedMarkdown, markdownParser } from "../markdown-worker";
+import { markdownUrlTransform } from "../image-source";
+import { ImageLinkContext, ImagePreview } from "./ImagePreview";
 
 import { cn } from "@/lib/utils";
 
@@ -15,6 +17,7 @@ import { cn } from "@/lib/utils";
 // both Just Work, matching the surrounding event log. Defined at module scope so
 // the object identity is stable across renders (keeps the memo below effective).
 const COMPONENTS = {
+  img: ({ src, alt, title }) => <ImagePreview src={src} alt={alt} title={title} />,
   h1: ({ children }) => <h1 className="mt-3 mb-1.5 text-[17px] font-semibold text-strong">{children}</h1>,
   h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[16px] font-semibold text-strong">{children}</h2>,
   h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-[15px] font-semibold text-strong">{children}</h3>,
@@ -25,14 +28,16 @@ const COMPONENTS = {
   strong: ({ children }) => <strong className="font-semibold text-strong">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-primary underline underline-offset-2 [overflow-wrap:anywhere]"
-    >
-      {children}
-    </a>
+    <ImageLinkContext.Provider value={true}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary underline underline-offset-2 [overflow-wrap:anywhere]"
+      >
+        {children}
+      </a>
+    </ImageLinkContext.Provider>
   ),
   ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
@@ -95,7 +100,7 @@ export const Markdown = memo(function Markdown({ children, trailing }: {
     trailing && "[&>p:nth-last-child(2)]:mb-0 [&>p:nth-last-child(2)]:inline",
   )}>
     {trailing || children.length > 4000 ? <LongMarkdown text={children} /> :
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>{children}</ReactMarkdown>}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={COMPONENTS}>{children}</ReactMarkdown>}
     {trailing}
   </div>;
 });

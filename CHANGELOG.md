@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Render images in agent replies with previews that fit the screen and open larger when tapped.
+  Markdown supports web URLs and local PNG, JPEG, GIF, or WebP files up to 5 MB inside the task's
+  working directory; unavailable images show a readable fallback and retry control.
+
 ## 0.1.0-alpha.37
 
 ### Changed

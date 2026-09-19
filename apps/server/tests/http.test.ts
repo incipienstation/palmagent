@@ -448,3 +448,46 @@ test("snapshot-only inbox streams omit historical and live event bodies", async 
   assert.ok(!next.includes('"type":"event"'));
   await reader.cancel();
 });
+
+test("task images require a session and serve only bounded raster files inside the task directory", async (t) => {
+  const f = fixture(t);
+  const cwd = join(f.dir, "task");
+  mkdirSync(cwd);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64");
+  writeFileSync(join(cwd, "preview #1.png"), png);
+  writeFileSync(join(f.dir, "outside.png"), png);
+  writeFileSync(join(cwd, "pretend.png"), "<svg onload='alert(1)'></svg>");
+  writeFileSync(join(cwd, "large.png"), Buffer.alloc(5 * 1024 * 1024 + 1));
+  symlinkSync(join(f.dir, "outside.png"), join(cwd, "escape.png"));
+  symlinkSync(f.dir, join(cwd, "outside-dir"));
+  symlinkSync(join(cwd, "preview #1.png"), join(cwd, "inside.png"));
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "images", repoId: "r", agent: "codex", prompt: "fixture", worktreePath: cwd,
+    permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  const now = Date.now();
+  f.db.createSession("image-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=image-session` };
+  const url = (path: string) => `/api/tasks/images/image?${new URLSearchParams({ path })}`;
+  assert.equal((await f.app.request(url("preview #1.png"))).status, 401);
+  for (const path of ["preview #1.png", "inside.png", join(cwd, "preview #1.png")]) {
+    const response = await f.app.request(url(path), { headers });
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get("content-type"), "image/png");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("cross-origin-resource-policy"), "same-origin");
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
+  }
+  for (const path of ["../outside.png", join(f.dir, "outside.png"), "escape.png", "outside-dir/outside.png", "missing.png", ".", "https://example.invalid/image.png"]) {
+    assert.equal((await f.app.request(url(path), { headers })).status, 404, path);
+  }
+  assert.equal((await f.app.request(url("pretend.png"), { headers })).status, 415);
+  assert.equal((await f.app.request(url("large.png"), { headers })).status, 413);
+  for (const query of ["", "?path=", "?path=%00", `?path=${"a".repeat(4097)}`]) {
+    assert.equal((await f.app.request(`/api/tasks/images/image${query}`, { headers })).status, 400);
+  }
+  assert.equal((await f.app.request("/api/tasks/missing/image?path=preview.png", { headers })).status, 404);
+  await f.app.request("/api/auth/logout", { method: "POST", headers });
+  assert.equal((await f.app.request(url("preview #1.png"), { headers })).status, 401);
+});

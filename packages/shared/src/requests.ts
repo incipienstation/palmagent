@@ -38,6 +38,7 @@ export const TaskStatusSchema = z.enum(["queued", "running", "awaiting_approval"
 export const TaskQuerySchema = z.object({ status: TaskStatusSchema.optional() });
 const cursor = z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 export const HistoryQuerySchema = z.object({ before: cursor });
+export const TaskImageQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
 export const StreamQuerySchema = z.object({
   task: text.optional(), lastEventId: text.optional(),
   tail: z.literal("1").optional(), snapshots: z.literal("1").optional(),
