@@ -8,6 +8,7 @@ import { hashFile } from '../lib/package-artifact.mjs';
 import { publishPackage, validatePublication, validatePublicationEnvironment } from '../release-publish.mjs';
 import { checkTag, prepareBundle } from '../release-tag.mjs';
 import { packageFixture } from './package-fixture.mjs';
+import { releaseTiming } from '../lib/release-timing.mjs';
 
 const env = { GITHUB_ACTIONS: 'true', ACTIONS_ID_TOKEN_REQUEST_URL: 'oidc', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'test-only', NPM_PUBLISH_ENABLED: 'true' };
 test('prerelease publication needs no second reviewer; stable publication still fails closed', () => {
@@ -82,11 +83,16 @@ test('a multi-minute registry propagation delay completes in one publication att
   const identity = { path, version: '0.1.0-alpha.1', channel: 'next' };
   const published = { dist: { integrity: `sha512-${hashFile(path, 'sha512', 'base64')}` } };
   let elapsed = 0, uploads = 0;
+  const timings = [];
   assert.equal(await publishPackage(identity, {
-    env, run: () => { uploads++; }, sleep: async (ms) => { elapsed += ms; },
+    env, measure: releaseTiming({ now: () => elapsed, report: value => timings.push(JSON.parse(value)) }),
+    run: () => { uploads++; }, sleep: async (ms) => { elapsed += ms; },
     registryVersion: async () => elapsed >= 165_000 ? published : null,
   }), 'published');
   assert.equal(elapsed, 165_000);
+  assert.deepEqual(timings.find(event => event.phase === 'registry-visibility' && event.status === 'success'),
+    { phase: 'registry-visibility', status: 'success', durationMs: 165_000 });
+  assert.equal(timings.find(event => event.phase === 'npm-upload' && event.status === 'success').durationMs, 0);
   assert.equal(uploads, 1);
 });
 

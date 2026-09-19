@@ -7,6 +7,7 @@ import { finalizeRelease, ensureReleaseTag, ensureReleaseAssets } from '../relea
 import { prepareCandidate } from '../release-candidate.mjs';
 import { packageFixture } from './package-fixture.mjs';
 import { releaseFixture } from './release-fixture.mjs';
+import { releaseTiming } from '../lib/release-timing.mjs';
 
 for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate first, then tag, publish exact bytes, and expose Release last; retry is immutable`, async (t) => {
   const f = releaseFixture(t, version), directory = join(f.root, 'bundle');
@@ -15,11 +16,12 @@ for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate fir
   const env = { GITHUB_ACTIONS: 'true', ACTIONS_ID_TOKEN_REQUEST_URL: 'oidc', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'test-only', NPM_PUBLISH_ENABLED: 'true',
     RELEASE_COMMIT: f.source, CANDIDATE_RUN_ID: '42', GH_REPO: 'example/palmagent', EXPECTED_ARTIFACT_SHA256: candidate.sha256,
     RELEASE_ENVIRONMENT: `npm-${candidate.channel}` };
-  const bytes = readFileSync(pkg.path), calls = [], assets = new Map();
+  const bytes = readFileSync(pkg.path), calls = [], assets = new Map(), timings = [];
   let tagObject, release, published = false, reviewers = false, failAfterNpm = false;
   const metadata = () => ({ versions: published ? { [version]: { dist: { integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}` } } } : {},
     'dist-tags': published ? { [candidate.channel]: version } : {} });
   const adapters = {
+    measure: releaseTiming({ report: value => timings.push(JSON.parse(value)) }),
     metadata: async () => metadata(), tarball: async () => bytes, skipFetch: true,
     checkTag: (value, object) => ({ tag: value.tag, tagObject: object, commit: value.commit, version, channel: value.channel, branch: value.branch }),
     releases: () => release ? [release] : [],
@@ -41,12 +43,19 @@ for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate fir
   reviewers = true; failAfterNpm = true;
   await assert.rejects(finalizeRelease(f.root, directory, env, adapters), /connection lost/);
   assert.equal(release.draft, true); assert.equal(published, true); assert(!calls.includes('public'));
+  assert(timings.some(event => event.phase === 'npm-upload' && event.status === 'failed'));
+  assert(!timings.some(event => event.phase === 'registry-visibility'));
+  timings.length = 0;
   failAfterNpm = false;
   const result = await finalizeRelease(f.root, directory, env, adapters);
   assert.equal(result.publication, 'already-published');
   assert.equal(calls.filter((call) => call === 'npm').length, 1);
   assert.equal(calls.filter((call) => call === 'tag').length, 1);
   assert.equal(calls.at(-1), 'public');
+  assert(!timings.some(event => event.phase === 'npm-upload'));
+  assert.deepEqual(timings.filter(event => event.status === 'success').map(event => event.phase),
+    ['candidate-validation', 'registry-preflight', 'release-tag', 'release-assets',
+      'registry-existing-version', 'published-integrity', 'release-publication']);
   const before = calls.slice(); await finalizeRelease(f.root, directory, env, adapters); assert.deepEqual(calls, before);
   assets.set('SHA256SUMS', Buffer.from('changed'));
   await assert.rejects(finalizeRelease(f.root, directory, env, adapters), /asset differs/);

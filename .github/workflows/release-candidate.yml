@@ -102,7 +102,7 @@ jobs:
         if: steps.artifact.outputs.reuse != 'true'
         working-directory: source
         run: |
-          pnpm verify
+          node ../tooling/scripts/verify-candidate.mjs .
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/release
