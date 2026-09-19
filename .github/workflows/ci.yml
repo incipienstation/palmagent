@@ -110,7 +110,7 @@ jobs:
         if: needs.scope.outputs.web == 'true'
         run: pnpm --filter @palmagent/web exec playwright test --shard=${{ matrix.shard }}/2
       - name: Verify service-worker updates once
-        if: needs.scope.outputs.web == 'true' && matrix.shard == 2
+        if: needs.scope.outputs.web == 'true' && matrix.shard == 1
         run: node apps/web/scripts/test-sw-update.mjs
       - name: Verify packed candidate
         if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository && (needs.scope.outputs.web != 'true' || matrix.shard == 2)

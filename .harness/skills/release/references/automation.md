@@ -19,8 +19,9 @@ release candidate still runs the full source and packed-install verification.
 After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
 The required `validate` job aggregates their results and rejects any failure or cancellation.
 Static and version-only changes skip the runtime jobs. PWA tests use two shards on separate
-runners, preserving the sequential stateful test group. Each runner builds once; the second
-shard also runs service-worker and selected package checks against its build. Packaging-only
+runners, preserving the sequential stateful test group. Each runner builds once; the first
+shard also runs service-worker checks, while the second runs selected package checks against
+its own build. Packaging-only
 scope uses one runner without browser tests. All selected lanes, including both PWA shards,
 must succeed; an unexpectedly skipped lane fails validation. Parallel jobs repeat setup and
 use more runner time to shorten the critical path. Release candidates still run the full
@@ -56,7 +57,13 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 
 1. Check out workflow tools separately from the exact 40-character product commit.
 2. Verify the version, release notes, and `develop` ancestry for Preview or `main` for Stable.
-3. Install frozen dependencies and run `pnpm verify` with the private `LEAK_DENYLIST` required.
+3. Install frozen dependencies and run the full source gate with the private `LEAK_DENYLIST`
+   required. Workflow-owned `scripts/verify-candidate.mjs` runs metadata first, then type/tooling,
+   server, and unsharded PWA checks concurrently on the same runner. Every lane must finish
+   successfully before packaging; failure or interruption cancels sibling processes. Dependencies
+   install once and only the PWA lane builds the web output. Unrecognized source `verify` commands
+   or lifecycle hooks fall back to that source's sequential `pnpm verify`, preserving older and
+   future source gates without silently dropping checks.
 4. Assemble once from the PWA built in that run, validate the publishable package, pack it,
    install that exact tarball in a scratch project, and boot it.
 5. Record `candidate.json`, `SHA256SUMS`, and `RELEASE_NOTES.md` alongside the tarball in
@@ -78,6 +85,13 @@ gh workflow run release-candidate.yml --ref develop -f commit='<full-source-sha>
 Use `main` for Stable when the updated workflow is available there. Source and workflow revisions
 are distinct: the current `develop` workflow can also verify a Stable source already on `main`.
 A candidate build alone does not imply staging acceptance or publication.
+
+Publication records structured phase timings in the Actions log and a table in the job summary.
+Candidate validation, registry preflight, tag/assets, npm upload, registry visibility, published
+integrity, and public Release creation are measured separately. Failed phases retain their
+elapsed time; timings contain no command arguments or error payloads. Timing output failures
+cannot change the publication outcome or trigger another upload. Registry polling limits,
+immutable-byte verification, and the Stable approval boundary are unchanged.
 
 ## Stable App preparation
 
