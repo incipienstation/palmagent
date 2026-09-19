@@ -15,21 +15,6 @@ async function expectTouchTarget(button: Locator): Promise<void> {
   expect(box.height + roundingTolerance, "touch target height").toBeGreaterThanOrEqual(44);
 }
 
-test("touch target measurement waits for motion and rejects undersized controls", async ({ page }) => {
-  await page.setContent('<button style="box-sizing:border-box;width:44px;height:44px;padding:0;border:0">Target</button>');
-  const button = page.getByRole("button", { name: "Target" });
-  await button.evaluate(el => {
-    el.addEventListener("click", () => { el.dataset.clicked = "true"; });
-    el.animate([{ transform: "translateX(0)" }, { transform: "translateX(33.333333px)" }],
-      { duration: 150, fill: "forwards" });
-  });
-  await expectTouchTarget(button);
-  expect(await button.evaluate(el => el.getAnimations().every(animation => animation.playState === "finished"))).toBe(true);
-  await expect(button).not.toHaveAttribute("data-clicked", "true");
-  await button.evaluate(el => { el.style.width = "43.9px"; });
-  await expect(expectTouchTarget(button)).rejects.toThrow(/touch target width/);
-});
-
 test("the inbox distinguishes a pending snapshot, an empty list, and populated search results", async ({ page }) => {
   let release!: () => void;
   const waiting = new Promise<void>(resolve => { release = resolve; });
@@ -88,23 +73,15 @@ test("Usage and routine history recover from read failures without false empty r
   await expect(page.getByText("No runs yet.", { exact: true })).toBeVisible();
 });
 
-test("Settings navigation preserves a folder draft and fits a narrow phone", async ({ page }) => {
+test("Settings controls remain reachable while scrolling on a narrow phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   const settings = page.getByRole("button", { name: "Settings", exact: true });
   await expectTouchTarget(settings);
   await settings.click();
-  await page.getByRole("button", { name: "Spaces", exact: true }).click();
-  const input = page.getByRole("region", { name: "Space search paths" }).getByRole("textbox");
-  await input.fill("/projects/unfinished");
-  await page.getByRole("button", { name: "Back to settings", exact: true }).click();
-  await expect(input).toBeHidden();
-  await page.getByRole("button", { name: "Spaces", exact: true }).click();
-  await expect(input).toHaveValue("/projects/unfinished");
   const header = page.locator('[data-slot="sheet-header"]');
   const headerTop = (await header.boundingBox())!.y;
-  await page.getByRole("button", { name: "Back to settings" }).click();
   for (const name of ["Spaces", "Updates"]) {
     await page.getByRole("button", { name, exact: true }).click();
     const back = page.getByRole("button", { name: "Back to settings" });

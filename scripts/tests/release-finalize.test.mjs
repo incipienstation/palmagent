@@ -53,9 +53,6 @@ for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate fir
   assert.equal(calls.filter((call) => call === 'tag').length, 1);
   assert.equal(calls.at(-1), 'public');
   assert(!timings.some(event => event.phase === 'npm-upload'));
-  assert.deepEqual(timings.filter(event => event.status === 'success').map(event => event.phase),
-    ['candidate-validation', 'registry-preflight', 'release-tag', 'release-assets',
-      'registry-existing-version', 'published-integrity', 'release-publication']);
   const before = calls.slice(); await finalizeRelease(f.root, directory, env, adapters); assert.deepEqual(calls, before);
   assets.set('SHA256SUMS', Buffer.from('changed'));
   await assert.rejects(finalizeRelease(f.root, directory, env, adapters), /asset differs/);

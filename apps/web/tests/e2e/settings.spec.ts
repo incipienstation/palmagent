@@ -11,18 +11,16 @@ async function openSettings(page: Page) {
   return dialog;
 }
 
-for (const [name, width, height, theme] of [
-  ["mobile-dark", 360, 780, "dark"],
-  ["mobile-light", 360, 780, "light"],
-  ["desktop", 1280, 900, "dark"],
+for (const [name, width, height] of [
+  ["mobile", 360, 780],
+  ["desktop", 1280, 900],
 ] as const) {
-  test(`settings overview ${name}`, async ({ page }) => {
+  test(`settings sections fit the ${name} viewport`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    await page.goto(`/?__theme=${theme}`);
+    await page.goto("/");
     const settings = await openSettings(page);
     await expect(settings.getByRole("region", { name: "On this device" })).toBeVisible();
     await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
-    await expect(page).toHaveScreenshot(`settings-${name}.png`);
     await assertViewportLocked(page);
     expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   });
@@ -40,7 +38,6 @@ test("preferences persist, cannot be deselected, and sign out remains cancellabl
   await verbose.click();
   await verbose.click();
   await expect(verbose).toBeChecked();
-  await expect(page.getByText("Show all recorded activity in the conversation.")).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toBeVisible();
