@@ -27,10 +27,13 @@ export async function getPushStatus(): Promise<PushStatus> {
   }
 }
 
-export async function enablePush(): Promise<PushStatus> {
+export async function enablePush(onPermissionGranted?: () => void): Promise<PushStatus> {
   if (!pushSupported()) return "unsupported";
-  const permission = await Notification.requestPermission();
+  const permission = Notification.permission === "granted"
+    ? "granted"
+    : await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
+  onPermissionGranted?.();
 
   const { publicKey } = await api.push.key();
   const reg = await sw();
