@@ -18,8 +18,13 @@ release candidate still runs the full source and packed-install verification.
 
 After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
 The required `validate` job aggregates their results and rejects any failure or cancellation.
-Static and version-only changes skip the runtime jobs; package checks reuse the PWA build
-within the web job. Parallel jobs use more runner time to shorten the critical path.
+Static and version-only changes skip the runtime jobs. PWA tests use two shards on separate
+runners, preserving the sequential stateful test group. Each runner builds once; the second
+shard also runs service-worker and selected package checks against its build. Packaging-only
+scope uses one runner without browser tests. All selected lanes, including both PWA shards,
+must succeed; an unexpectedly skipped lane fails validation. Parallel jobs repeat setup and
+use more runner time to shorten the critical path. Release candidates still run the full
+unsharded source gate below.
 
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
