@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Push notifications switch on immediately after permission is granted, with an
+  enabling indicator until registration finishes and recovery guidance if it fails.
+
 ## 0.1.0-alpha.39
 
 ### Fixed
