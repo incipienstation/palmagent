@@ -62,13 +62,17 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
   for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/stream", "/api/unknown"]) {
-    assert.equal((await fetch(base + path)).status, 401);
+    const denied = await fetch(base + path);
+    assert.equal(denied.status, 401);
+    assert.equal(denied.headers.get("cache-control"), "no-store");
   }
   assert.equal((await fetch(base + "/api/auth/enroll-token", { method: "POST" })).status, 401);
   for (const cookie of [`${f.settings.cookieName}=expired-session`, `${f.settings.cookieName}=%ZZ`]) {
     assert.equal((await fetch(base + "/api/tasks", { headers: { cookie } })).status, 401);
   }
-  assert.equal((await fetch(base + "/api/tasks", { headers })).status, 200);
+  const list = await fetch(base + "/api/tasks", { headers });
+  assert.equal(list.status, 200);
+  assert.equal(list.headers.get("cache-control"), "no-store");
   assert.equal((await fetch(base + "/api/tasks/missing/account-limits", { headers })).status, 404);
   assert.equal((await fetch(base + "/api/tasks/", { headers })).status, 404);
   assert.equal((await fetch(base + "/api/stream", { method: "HEAD", headers })).status, 404);
@@ -83,6 +87,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   assert.equal(tooLarge.status, 413);
   const options = await fetch(base + "/api/auth/login/options", { method: "POST" });
   assert.equal(options.status, 200);
+  assert.equal(options.headers.get("cache-control"), "no-store");
   assert.match(options.headers.get("set-cookie")!, /wa_chal=.*HttpOnly.*Secure.*SameSite=Lax/i);
   const logout = await fetch(base + "/api/auth/logout", { method: "POST", headers });
   assert.match(logout.headers.get("set-cookie")!, /Max-Age=0/i);

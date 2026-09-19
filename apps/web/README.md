@@ -152,10 +152,39 @@ metadata retain their prose; the client does not guess which text is safe to fol
   rendered blocks; worker failures retain readable plain text. Task snapshots reuse
   unchanged rows, and the inbox retains its search and reading position across navigation.
   The inbox requests `snapshots=1` to omit unused event bodies.
-- **Service worker:** app shell is precached (cache-first) with a navigation
-  fallback so the shell loads offline; `/api/*` is network-first **except**
-  `/api/stream`, which is `NetworkOnly` (an open event-stream must never be
-  cached). See `vite.config.ts`.
+- **Client caching:** repositories and routines reuse successful reads in memory for
+  30 seconds; usage and routine runs for 10 seconds. Concurrent reads share a
+  request. Mutations invalidate before and after the request, including failed
+  requests with uncertain outcomes; other tabs receive invalidation signals.
+  Foreground and online transitions expire REST reads and refresh mounted views. Task snapshots invalidate
+  usage and run history. Authentication, settings, discovery, filesystem checks,
+  live task state, and account limits always reach the network.
+- **Conversation navigation:** the last five visited transcripts are retained in
+  memory for up to five minutes, within a 4 MB serialized-size budget. Returning
+  shows the retained messages and resumes SSE after the last received sequence,
+  preserving loaded older pages. Oversized transcripts reload the recent tail.
+  Authentication changes clear response and transcript caches.
+- **Service worker:** only the app shell is precached, with an offline navigation
+  fallback. API responses are never persisted or served as offline successes;
+  an offline first load cannot authenticate. Upgrading removes the legacy API
+  cache. HTTP API responses use `no-store`; fingerprinted assets remain immutable.
+
+## Cache policy coverage
+
+| Surface | Policy |
+| --- | --- |
+| Hashed JS, CSS, Markdown worker, icons | Workbox precache; hashed HTTP assets immutable |
+| HTML, service worker, manifest | HTTP revalidation; worker update bypasses HTTP cache |
+| Auth, push enrollment, task controls, settings | Network; API HTTP responses use no-store |
+| Task list and active transcript | SSE snapshots and sequence-based replay; no service-worker interception |
+| Earlier history pages | Retained with the bounded transcript; failed or aborted loads are retried |
+| Repositories, routines, usage, run history | Short memory reuse and concurrent request deduplication |
+| Discovery, path validation, filesystem browse | Network so external settings and filesystem changes remain authoritative |
+| Account limits | Network in the client; provider-scoped server cache owns freshness |
+| Markdown rendering | Existing bounded content-keyed worker cache |
+| Theme, output mode, form drafts, selected space | Local preferences, not server response caches |
+| Update checkpoints | Existing per-tab IndexedDB handoff, consumed after reload |
+| Reading position | Existing bounded page-local navigation state |
 
 ## Brand palette
 

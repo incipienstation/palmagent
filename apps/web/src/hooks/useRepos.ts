@@ -1,3 +1,4 @@
+import { useForegroundRefresh } from "./useForegroundRefresh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Repo } from "@palmagent/shared";
 import { api } from "../api";
@@ -11,15 +12,16 @@ import { api } from "../api";
 // Fetched once on mount; `refresh()` re-pulls on demand (the inbox calls it when
 // a task references a repo we haven't seen yet — e.g. one registered since the
 // last fetch — so a freshly-dispatched task's chip self-heals).
-export function useRepos(): { repos: Map<string, Repo>; refresh: () => void } {
+export function useRepos(): { repos: Map<string, Repo>; refresh: () => void; loading: boolean } {
   const [repos, setRepos] = useState<Map<string, Repo>>(() => new Map());
   const inFlight = useRef(false);
+  const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(() => {
+  const fetchRepos = useCallback((force = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     void api
-      .listRepos()
+      .listRepos(force)
       .then((list) => setRepos(new Map(list.map((r) => [r.id, r]))))
       .catch(() => {
         /* transient (offline/proxy blip) — keep the last good map; a later
@@ -27,10 +29,13 @@ export function useRepos(): { repos: Map<string, Repo>; refresh: () => void } {
       })
       .finally(() => {
         inFlight.current = false;
+        setLoading(false);
       });
   }, []);
 
-  useEffect(refresh, [refresh]);
+  const refresh = useCallback(() => fetchRepos(true), [fetchRepos]);
+  useEffect(() => fetchRepos(), [fetchRepos]);
+  useForegroundRefresh(() => fetchRepos());
 
-  return { repos, refresh };
+  return { repos, refresh, loading };
 }

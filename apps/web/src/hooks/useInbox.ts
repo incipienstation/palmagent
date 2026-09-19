@@ -1,7 +1,8 @@
+import { readCache } from "../read-cache";
 import { reconcileTasks } from "../task-snapshot";
 import { updatesChanged } from "../update-events";
 import { observeServerVersion } from "../pwa";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SseFrame, TaskState } from "@palmagent/shared";
 import { connectSse, type ConnState } from "./sse";
 
@@ -17,6 +18,7 @@ export interface Inbox {
 // Event replay is reserved for the selected session's scoped stream.
 export function useInbox(): Inbox {
   const [tasks, setTasks] = useState<TaskState[]>([]);
+  const snapshot = useRef<TaskState[]>([]);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +35,10 @@ export function useInbox(): Inbox {
         if (frame.type === "tasks") {
           observeServerVersion(frame.version);
           const incoming = frame.tasks;
-          setTasks(previous => reconcileTasks(previous, incoming));
+          const next = reconcileTasks(snapshot.current, incoming);
+          if (next !== snapshot.current) readCache.invalidate(key => key === "/api/usage" || key.endsWith("/runs"));
+          snapshot.current = next;
+          setTasks(next);
           setLoading(false);
         }
         if (frame.type === "updates") updatesChanged();

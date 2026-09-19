@@ -5,6 +5,7 @@ import type { HttpDependencies } from "./types.js";
 
 export function versionHeader({ build }: HttpDependencies): MiddlewareHandler {
   return async (c, next) => {
+    if (c.req.path.startsWith("/api/")) c.header("Cache-Control", "no-store");
     if (build && c.req.path.startsWith("/api/")) c.header("X-Palmagent-Version", build.version);
     await next();
   };

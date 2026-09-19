@@ -1,3 +1,4 @@
+import { useForegroundRefresh } from "../hooks/useForegroundRefresh";
 import { useEffect, useState } from "react";
 import type { AgentUsage } from "@palmagent/shared";
 import { BarChart3 } from "lucide-react";
@@ -135,6 +136,8 @@ export function UsageView() {
       .finally(() => { if (active) setPending(false); });
     return () => { active = false; };
   }, [attempt]);
+
+  useForegroundRefresh(() => setAttempt(value => value + 1));
 
   const loading = usage === null && pending;
   const isEmpty = usage !== null && usage.length === 0;
