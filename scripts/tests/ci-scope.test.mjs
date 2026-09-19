@@ -11,9 +11,17 @@ const none = { code: false, server: false, web: false, package: false };
 
 test('documentation and repository/operator skills need no dependency or runtime work', () => {
   assert.deepEqual(classifyChanges(['AGENTS.md', 'CLAUDE.md', 'README.md', 'CHANGELOG.md',
+    'apps/web/README.md', 'apps/server/README.md', 'packages/shared/README.md',
     'docs/RELEASING.md', '.harness/skills/ship/SKILL.md', '.agents/skills/ship',
     '.claude/skills/ship', 'skills/doctor/SKILL.md', 'plugins/claude/skills/doctor/SKILL.md',
     'plugins/codex/README.md', 'plugins/claude/.claude-plugin/plugin.json']), none);
+});
+
+test('package READMEs do not hide code or make arbitrary Markdown static', () => {
+  assert.deepEqual(classifyChanges(['apps/web/README.md', 'apps/server/src/server.ts']),
+    { ...none, code: true, server: true });
+  assert.deepEqual(classifyChanges(['apps/web/src/prompt.md']), { ...none, code: true, web: true });
+  assert.deepEqual(classifyChanges(['packages/new/README.md']), all);
 });
 
 test('server, web, and shared changes select their runtime surfaces', () => {

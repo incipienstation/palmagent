@@ -6,6 +6,7 @@ const full = () => ({ code: true, server: true, web: true, package: true });
 
 // Only known documentation and skill surfaces may bypass runtime checks.
 const isStatic = (path) => /^(?:AGENTS|CLAUDE|README|CHANGELOG)\.md$/.test(path)
+  || /^(?:apps\/(?:server|web)|packages\/shared)\/README\.md$/.test(path)
   || /^(?:docs|skills|plugins|\.harness\/skills)\/.+\.md$/.test(path)
   || /^\.(?:agents|claude)\/skills\/[a-z0-9-]+(?:\/SKILL\.md)?$/.test(path)
   || ['.claude-plugin/marketplace.json', 'plugins/claude/.claude-plugin/plugin.json',

@@ -5,58 +5,36 @@ description: Third stage of Palmagent's plan → start → verify → ship loop.
 
 # Verify
 
-Run the metadata checks for every change, from the repository root:
+Run the scoped local verifier from the repository root:
 
 ```bash
-pnpm plugins:check
-pnpm release:check
-git diff --check
+node scripts/verify-local.mjs
 ```
 
-Select additional checks with the existing [CI classifier](../../../scripts/lib/ci-scope.mjs).
-Use the complete task diff from the merge base with the current target branch, including staged,
-unstaged, and relevant untracked files, and both sides of renames. Never classify only the last
-commit. This read-only example targets `develop`; substitute the actual PR base when different:
+Use `--plan` to show the selected checks without running them. The command refreshes
+`origin/develop` before classifying; use `--base origin/main` for a different target or
+`--base <full-commit-sha>` for an explicitly pinned base. A plan still refreshes named refs.
+It never stages, commits, opens PRs, merges, or publishes.
 
-```sh
-node --input-type=module <<'JS'
-import { execFileSync } from 'node:child_process';
-import { classifyChanges } from './scripts/lib/ci-scope.mjs';
-const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-let paths;
-try {
-  const base = git('merge-base', 'origin/develop', 'HEAD').trim();
-  paths = [...new Set([
-    ...git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD', '--').split('\0'),
-    ...git('diff', '--cached', '--name-only', '--no-renames', '-z', '--').split('\0'),
-    ...git('diff', '--name-only', '--no-renames', '-z', '--').split('\0'),
-    ...git('ls-files', '--others', '--exclude-standard', '-z').split('\0'),
-  ].filter(Boolean))];
-} catch { /* Missing history selects every lane. */ }
-console.log(JSON.stringify(classifyChanges(paths)));
-JS
-```
+The verifier uses the [CI classifier](../../../scripts/lib/ci-scope.mjs) on the complete task
+diff, including committed, staged, unstaged, renamed, and untracked files. Known documentation
+changes select metadata checks. Code selects type/tooling and affected runtime checks; unknown
+scope or unavailable history selects every lane. Selected checks run once, with one PWA build
+shared by browser and package checks. Logs stay in a private temporary directory; the command
+reports each result and stops at the first failure. Inspect relevant log excerpts to diagnose it.
 
-Fetch the target branch before classification; if its current state or scope cannot be established,
-use the full gate. Follow the selected lanes in [ci.yml](../../../.github/workflows/ci.yml):
+Install dependencies with `pnpm install --frozen-lockfile` before code checks and install Playwright
+Chromium before browser checks. Packed checks require the private `LEAK_DENYLIST`; when it is
+missing, the verifier runs the selected source checks, then stops before packaging with a nonzero
+exit. Report the source results and incomplete package verification, and require the trusted PR's
+packed checks to pass before delivery. Do not substitute an empty or invented denylist.
 
-| Scope flag | Local checks, in addition to metadata |
-| --- | --- |
-| All false | No runtime checks for documentation and skill-only changes |
-| `code` | `pnpm typecheck` and `pnpm pkg:check` |
-| `server` | `pnpm server:contracts` and `pnpm server:smoke` |
-| `web` | `pnpm web:verify` |
-| `package` | The CI web job's packed-candidate checks, including its denylist requirements; build the PWA first and reuse that build |
-
-When every flag is true, run `pnpm verify` plus the selected packed-candidate checks. Dependencies,
-tooling, workflows, unknown paths, and unavailable history retain this full gate. Release candidates
-retain full source and packed-install verification under the
+Release candidates retain full source and packed-install verification under the
 [CI and candidate policy](../release/references/automation.md#candidate-automation).
+Add focused behavioral checks when the change needs evidence beyond the selected lanes.
+Reuse successful checks only for unchanged inputs and environment; repeat affected checks after
+fixes, new changes, or invalidated evidence. Required CI still runs on the current PR head.
 
-Add focused behavioral or browser checks when the change needs evidence beyond the selected lanes.
-Reuse successful checks for unchanged inputs and environment; repeat affected checks after fixes,
-new changes, or invalidated evidence. Required CI still runs on the current PR head. Keep verbose
-logs outside the repository and report outcomes; inspect bounded failure excerpts when needed.
 Notes:
 
 - If an operator plugin skill is out of sync, run `node scripts/sync-skills.mjs` (without `--check`)
@@ -65,4 +43,7 @@ Notes:
 - If the **leak guard** flags a match it prints `file:line` only (values are redacted on purpose).
   Open those lines locally and remove or generalize the content.
 
-Green → chain into [ship](../ship/SKILL.md). Red → fix and re-run; never proceed red.
+For a verification-only request, report results and stop. Continue to [ship](../ship/SKILL.md)
+only when completing an already authorized implementation task, honoring draft, PR-only, or
+merge-hold instructions. Failed checks block delivery; fix within the authorized scope and rerun
+affected checks, or report the failure when remediation was not requested.
