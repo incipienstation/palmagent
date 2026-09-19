@@ -231,8 +231,9 @@ for (const mode of ["compact", "default"]) {
     await deliver(page, rows(2001, 2020));
     release();
     await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+    // Loading can settle before Virtuoso commits the prepended page.
+    await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
     await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
-    expect(await viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   });
 }
 
