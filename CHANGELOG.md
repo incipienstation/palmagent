@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.40
+
 ### Changed
 
 - Push notifications switch on immediately after permission is granted, with an
