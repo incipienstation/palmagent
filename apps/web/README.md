@@ -138,9 +138,13 @@ Settings → Output detail controls the session transcript:
 Account allowance and reset countdowns stay visible in every mode. Account Details shows
 the additional provider-specific quota windows.
 
-Activity expands to the full recorded output. Questions, approval requests, failures, final
-answers, and images stay visible. Older messages and providers without explicit progress/final
-metadata retain their prose; the client does not guess which text is safe to fold.
+Activity expands to the full recorded output. In Compact and Default, individual tool failures
+stay inside Activity with a failure count in its summary. Run errors have one expandable
+notice per run; earlier errors use neutral styling after a follow-up or a successful terminal
+result. This preserves the diagnostic record without claiming that every cause was resolved.
+Questions, approval requests, final answers, and images stay visible. Older messages and
+providers without explicit progress/final metadata retain their prose; the client does not
+guess which text is safe to fold.
 
 ## How it talks to the backend
 

@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Keep repeated tool failures inside expandable Activity details in Compact and
+  Default views. Run errors appear once per run, with earlier errors clearly
+  marked after a follow-up and the full diagnostic record still available.
+
 ## 0.1.0-alpha.38
 
 ### Added
@@ -21,12 +27,6 @@ An entry does not mean a version has been published.
 - Conversation history starts loading several screens before you reach older
   messages, reducing pauses while scrolling on slower connections. The loading
   distance adapts to viewport and keyboard size while keeping your place.
-
-### Fixed
-
-- Keep repeated tool failures inside expandable Activity details in Compact and
-  Default views. Run errors appear once per run, with earlier errors clearly
-  marked after a follow-up and the full diagnostic record still available.
 
 ## 0.1.0-alpha.36
 
