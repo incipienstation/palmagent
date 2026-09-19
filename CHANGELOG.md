@@ -11,6 +11,12 @@ An entry does not mean a version has been published.
 - Keep input questions visible until answer delivery is confirmed, including after
   reconnecting, and show Codex questions with selectable or written answers.
 
+### Changed
+
+- Settings groups device preferences separately from installation controls, with visible
+  appearance and output choices, dedicated Spaces and Updates screens, and fixed Back
+  and Close actions. Folder drafts are preserved while moving between screens.
+
 ## 0.1.0-alpha.33
 
 ### Changed

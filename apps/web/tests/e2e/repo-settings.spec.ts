@@ -8,7 +8,7 @@ async function openSettings(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("tab", { name: "Spaces", exact: true }).click();
+  await page.getByRole("button", { name: "Spaces", exact: true }).click();
   const section = page.getByRole("region", { name: "Space search paths" });
   await section.getByRole("textbox").scrollIntoViewIfNeeded();
   return section;
@@ -48,7 +48,7 @@ test("search settings add and remove paths, disable discovery, and restore insta
   await page.reload();
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("tab", { name: "Spaces", exact: true }).click();
+  await page.getByRole("button", { name: "Spaces", exact: true }).click();
   await section.getByRole("textbox").scrollIntoViewIfNeeded();
   await expect(section.getByText("/projects", { exact: true })).toBeVisible();
 });

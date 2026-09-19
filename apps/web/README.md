@@ -107,7 +107,11 @@ order intact.
 
 ## Output detail
 
-Settings → Detail controls the session transcript:
+Settings groups device preferences separately from installation settings. Appearance and
+output detail change directly in the overview; Spaces and Updates open their own screens.
+Back returns to the overview without losing a folder draft.
+
+Settings → Output detail controls the session transcript:
 
 - **Compact** collects background work per turn and previews only the latest known progress
   while running. Configuration is available in Session details.

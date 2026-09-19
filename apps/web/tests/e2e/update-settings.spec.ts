@@ -10,7 +10,7 @@ async function openSettings(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("tab", { name: "Updates", exact: true }).click();
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
 }
 
@@ -38,12 +38,12 @@ test("settings show the running version, save shared preferences, and remain usa
   await page.reload();
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("tab", { name: "Updates", exact: true }).click();
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
   await expect(automatic).toBeChecked();
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
   await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeChecked();
   await assertViewportLocked(page);
-  await page.getByRole("tab", { name: "General", exact: true }).click();
+  await page.getByRole("button", { name: "Back to settings", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
   await assertViewportLocked(page);
