@@ -6,6 +6,21 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Preferences, routine switches, session names, search paths, and queue edits respond
+  immediately. Rapid preference changes are combined; failures restore confirmed state
+  with a toast. Pending changes survive closing and reopening their screens.
+- Messages and new tasks, routines, and repositories show progress as soon as submitted.
+  Failed messages retain their drafts; queue conflicts reconcile with the server.
+  Deletions disappear immediately while processing and return if they fail.
+
+### Fixed
+
+- Prevent duplicate actions while requests are pending and explain progress for task
+  controls, shell handoff, and updates. A failed sign-out keeps the screen open with
+  an error instead of reloading as though it succeeded.
+
 ## 0.1.0-alpha.42
 
 ### Changed

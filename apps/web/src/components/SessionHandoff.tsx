@@ -1,3 +1,4 @@
+import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { Copy, Terminal } from "lucide-react";
@@ -8,7 +9,7 @@ import { toast } from "./ui/toaster";
 
 export function SessionHandoff({ task }: { task: TaskState }) {
   const [command, setCommand] = useState("");
-  const [busy, setBusy] = useState(false);
+  const busy = Boolean(useTaskActivity(task.taskId).label);
   const commandRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (command) commandRef.current?.scrollIntoView({ block: "nearest" });
@@ -19,10 +20,11 @@ export function SessionHandoff({ task }: { task: TaskState }) {
     if (task.sessionControl?.owner !== "local") setCommand("");
   }, [task.taskId, task.sessionControl?.owner]);
   async function prepare() {
-    setBusy(true);
+    const finish = beginTaskAction(task.taskId, "Preparing shell handoff…");
+    if (!finish) return;
     try { const result = await api.handoff(task.taskId); setCommand(result.command); }
     catch (error) { toast({ title: error instanceof Error ? error.message : "Handoff failed", variant: "destructive" }); }
-    finally { setBusy(false); }
+    finally { finish(); }
   }
   async function copy() {
     try { await navigator.clipboard.writeText(command); toast({ title: "Copied.", variant: "success" }); }
@@ -34,7 +36,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
       <div className="flex flex-col gap-3">
         {returning ? <Alert>{task.sessionControl?.error ?? "You can keep the local CLI open for read-only viewing. To continue here, close it and wait for synchronization to finish."}</Alert> : <>
           <p className="text-sm text-muted-foreground">Release this session before opening it locally. Palmagent follow-up stays paused until you use the dispatch skill in that CLI and close it. Open only one local writer.</p>
-          <Button disabled={busy || !["idle", "failed"].includes(task.status)} onClick={prepare}>{local ? "Show resume command" : "Release to shell"}</Button>
+          <Button disabled={busy || !["idle", "failed"].includes(task.status)} onClick={prepare}>{busy ? "Preparing resume command…" : local ? "Show resume command" : "Release to shell"}</Button>
           {!["idle", "failed"].includes(task.status) && <p className="text-sm">Stop the active turn and wait for it to finish first.</p>}
           {command && <div ref={commandRef} className="flex flex-col gap-3"><pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-all"><code>{command}</code></pre><Button variant="outline" onClick={copy}><Copy data-icon="inline-start" />Copy resume command</Button></div>}
         </>}

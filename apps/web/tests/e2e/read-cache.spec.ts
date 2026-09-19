@@ -84,7 +84,7 @@ test("real service worker removes legacy API data and only serves the shell offl
 
 test.describe("routine cache invalidation", () => {
   test.use({ serviceWorkers: "block" });
-  test("mutations refresh lists and open history; reopening reuses only fresh history", async ({ page }) => {
+  test("mutation responses update the list and refresh open history; foreground reads are fresh", async ({ page }) => {
     await page.clock.setFixedTime(new Date());
     const list = structuredClone(routines);
     let listReads = 0, historyReads = 0;
@@ -111,10 +111,12 @@ test.describe("routine cache invalidation", () => {
     expect(historyReads).toBe(1);
     const previous = listReads;
     await page.getByRole("switch", { name: "Enabled" }).first().click();
-    await expect.poll(() => listReads).toBe(previous + 1);
     await expect.poll(() => historyReads).toBe(2);
+    await expect(page.getByRole("switch", { name: "Enabled" }).first()).not.toBeChecked();
+    expect(listReads).toBe(previous);
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect.poll(() => historyReads).toBe(3);
+    await expect.poll(() => listReads).toBe(previous + 1);
   });
 });
 

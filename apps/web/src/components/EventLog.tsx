@@ -63,7 +63,7 @@ const KIND_ICON: Partial<Record<AgentEventKind, ComponentType<LucideProps>>> = {
   question: CircleHelp,
 };
 
-function UserBubble({ text, meta }: { text: string; meta?: string }) {
+export function UserBubble({ text, meta }: { text: string; meta?: string }) {
   // Right-aligned soft chat bubble — the human side of the transcript.
   return (
     <div className="mb-3 flex flex-col items-end">

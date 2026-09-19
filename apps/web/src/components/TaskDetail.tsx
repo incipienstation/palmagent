@@ -1,7 +1,11 @@
+import { useActionState } from "../action-state";
+import { cacheSession } from "../read-cache";
+import { acceptMessageQueue, clearQueuePreview, finishWhenStopped, beginTaskAction, useTaskActivity, type QueuePreview } from "../task-activity";
+import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
 import { MessageQueue as QueuePanel } from "./MessageQueue";
-import type { MessageQueue, PendingMessage } from "@palmagent/shared";
+import type { MessageQueue, PendingMessage, SubmitMessage } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
@@ -30,7 +34,7 @@ import { useImageAttachments } from "./Attachments";
 import { Composer } from "./Composer";
 import { AgentTag, StatusBadge } from "./chips";
 import { PrList } from "./PrChip";
-import { EventLog } from "./EventLog";
+import { EventLog, UserBubble } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
 import { SessionHandoff } from "./SessionHandoff";
 import { Alert } from "./ui/alert";
@@ -93,39 +97,54 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       setPermission(valid ? (perm as string) : DEFAULT_PERMISSION[agent]);
     }
   }, [taskId, task?.model, task?.effort, task?.permission, task?.agent]);
-  const [busy, setBusy] = useState(false);
+  const activity = useTaskActivity(taskId);
+  const busy = Boolean(activity.label);
   const normalAtt = useImageAttachments((msg) => toast({ title: msg, variant: "destructive" }));
   const editAtt = useImageAttachments((msg) => toast({ title: msg, variant: "destructive" }), `queue-edit-images:${taskId}`);
   const [deliveryMode, setDeliveryMode] = usePersistedString<"send" | "queue">(`delivery:${taskId}`, "send");
-  const [edit, setEdit] = useUpdateState<{ id: string; version: number; token: string; expired?: boolean } | null>(`queue-edit:${taskId}`, null);
+  const [edit, setEdit] = useActionState<{ id: string; version: number; token: string; expired?: boolean } | null>(`queue-edit:${taskId}`, null);
   const [editText, setEditText] = useDraft(`draft:queue-edit:${taskId}`);
-  const [submitted, setSubmitted] = useUpdateState<{ fingerprint: string; id: string } | null>(`message-request:${taskId}`, null);
-  const [queueOverride, setQueueOverride] = useState<MessageQueue>();
+  const [submitted, setSubmitted] = useActionState<{ fingerprint: string; id: string; request: Omit<SubmitMessage, "clientMessageId"> } | null>(`message-request:${taskId}`, null);
+  const queueOverride = activity.queue;
+  const setQueueOverride = (value: MessageQueue) => acceptMessageQueue(taskId, value);
   const remoteQueue = task?.messageQueue;
-  const queue = queueOverride && queueOverride.revision > (remoteQueue?.revision ?? -1) ? queueOverride : remoteQueue;
+  const confirmedQueue = queueOverride && queueOverride.revision > (remoteQueue?.revision ?? -1) ? queueOverride : remoteQueue;
+  const queue = activity.preview?.apply(confirmedQueue ?? { revision: 0, paused: false, runId: null, messages: [] }) ?? confirmedQueue;
+  const pendingSend = queue?.messages.find(m => m.id === activity.preview?.id && m.version === 0 && m.mode === "send");
+  const displayedQueue = pendingSend && queue ? { ...queue, messages: queue.messages.filter(m => m !== pendingSend) } : queue;
   const att = edit ? editAtt : normalAtt;
   useEffect(() => {
     if (!edit || edit.expired) return;
     const renew = () => { void api.messageAction(taskId, edit.id, { action: "renew", token: edit.token }).then(setQueueOverride).catch(() => setEdit(current => current ? { ...current, expired: true } : current)); };
+    if (busy) return;
     renew(); const timer = setInterval(renew, 20_000);
     return () => clearInterval(timer);
-  }, [taskId, edit?.id, edit?.token, edit?.expired]);
+  }, [taskId, edit?.id, edit?.token, edit?.expired, busy]);
   async function startEdit(message: PendingMessage) {
     const token = crypto.randomUUID();
-    await act(async () => {
+    await act("Preparing edit…", async () => {
       const q = await api.messageAction(taskId, message.id, { action: "edit", version: message.version, token });
       setQueueOverride(q); setEdit({ id: message.id, version: message.version, token });
       setEditText(message.text); editAtt.setImages(message.images ?? []);
     });
   }
   async function endEdit(save: boolean) {
-    if (!edit) return;
-    await act(async () => {
-      if (save || !edit.expired) setQueueOverride(await api.messageAction(taskId, edit.id, save
-        ? { action: "save", token: edit.token, version: edit.version, text: editText, images: editAtt.images }
-        : { action: "release", token: edit.token }));
-      setEdit(null); editAtt.clear(); if (save) setEditText("");
-    });
+    if (!edit || busy || (save && (edit.expired || !editText.trim()))) return;
+    const draft = edit;
+    const text = editText;
+    const images = editAtt.images;
+    await act(save ? "Saving message…" : "Releasing edit…", async () => {
+      // The lease remains represented by the pending action until release is
+      // acknowledged. Keep the draft and restore the editor on failure.
+      setEdit(null);
+      try {
+        if (save || !draft.expired) setQueueOverride(await api.messageAction(taskId, draft.id, save
+          ? { action: "save", token: draft.token, version: draft.version, text, images }
+          : { action: "release", token: draft.token }));
+        editAtt.clear(); if (save) setEditText("");
+      } catch (error) { setEdit({ ...draft, expired: true }); throw error; }
+    }, undefined, { id: draft.id, label: save ? "Saving…" : "Releasing edit…", apply: q => ({ ...q, messages: q.messages.map(m => m.id === draft.id
+      ? { ...m, ...(save ? { text, images } : {}), editingUntil: undefined } : m) }) });
   }
 
   const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
@@ -165,36 +184,65 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       ...(effort !== curEffort ? { effort: effort === DEFAULT_OPTION ? "" : effort } : {}),
       ...(permission !== curPermission ? { permission } : {}),
     };
-    setBusy(true);
-    try {
-      const request = { mode: deliveryMode, text, images, expectedRunId: queue?.runId ?? null,
-        ...(running && deliveryMode === "send" ? {} : { settings: override }) };
-      const fingerprint = JSON.stringify(request);
-      const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
-      setSubmitted({ fingerprint, id });
-      setQueueOverride(await api.submitMessage(taskId, { ...request, clientMessageId: id }));
-      setSubmitted(null); setDeliveryMode("send");
-      setCompose("");
-      // Don't reset the selectors — they re-sync from the task's (possibly new)
-      // model/effort via the effect above.
-      att.clear();
-    } catch (e) {
-      toast({ title: errMsg(e), variant: "destructive" });
-    } finally {
-      setBusy(false);
-    }
+    const request = { mode: deliveryMode, text, images, expectedRunId: confirmedQueue?.runId ?? null,
+      ...(running && deliveryMode === "send" ? {} : { settings: override }) };
+    const fingerprint = JSON.stringify({ mode: deliveryMode, text, images, model, effort, permission });
+    const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
+    const submission = submitted?.fingerprint === fingerprint ? submitted.request : request;
+    const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, images, status: deliveryMode === "queue" ? "queued" : "sending" };
+    const originalDraft = compose;
+    await act(deliveryMode === "queue" ? "Adding to queue…" : "Sending message…", async () => {
+      setSubmitted({ fingerprint, id, request: submission });
+      setCompose(""); att.clear();
+      try {
+        setQueueOverride(await api.submitMessage(taskId, { ...submission, clientMessageId: id }));
+        setSubmitted(null); setDeliveryMode("send");
+      } catch (error) {
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500) setSubmitted(null);
+        setCompose(originalDraft); att.setImages(images ?? []);
+        throw error;
+      }
+    }, undefined, { id, label: deliveryMode === "queue" ? "Adding…" : "Sending…", apply: q => q.messages.some(m => m.id === id) ? q : { ...q, messages: [...q.messages, preview] } });
   }
 
-  async function act(fn: () => Promise<unknown>, after?: () => void) {
-    setBusy(true);
+  async function act(label: string, fn: () => Promise<unknown>, after?: () => void, preview?: QueuePreview) {
+    const generation = cacheSession();
+    const finish = beginTaskAction(taskId, label, preview);
+    if (!finish) return;
     try {
       await fn();
-      after?.();
+      if (generation === cacheSession()) after?.();
     } catch (e) {
+      if (generation !== cacheSession()) return;
+      clearQueuePreview(taskId);
       toast({ title: errMsg(e), variant: "destructive" });
-    } finally {
-      setBusy(false);
-    }
+      // Re-read after version/lease conflicts or lost responses. Never replay a
+      // send, or resurrect a queue entry already delivered by another client.
+      if (preview || label === "Preparing edit…") {
+        try { const actual = await api.getTask(taskId); if (actual.messageQueue) setQueueOverride(actual.messageQueue); }
+        catch { /* The stream will reconcile when connectivity returns. */ }
+      }
+    } finally { finish(); }
+  }
+
+  async function queueAction(message: PendingMessage, action: "send" | "delete") {
+    await act(action === "send" ? "Sending queued message…" : "Removing message…", async () => {
+      setQueueOverride(await api.messageAction(taskId, message.id, action === "send"
+        ? { action, version: message.version, expectedRunId: confirmedQueue?.runId ?? null }
+        : { action, version: message.version }));
+    }, undefined, { id: message.id, label: "Sending…", apply: q => ({ ...q, messages: action === "delete"
+      ? q.messages.filter(m => m.id !== message.id)
+      : q.messages.map(m => m.id === message.id ? { ...m, status: "sending" } : m) }) });
+  }
+
+  async function stopTurn() {
+    const finish = beginTaskAction(taskId, "Stopping turn…");
+    if (!finish) return;
+    try {
+      const actual = await api.stop(taskId);
+      if (["queued", "running", "awaiting_input", "awaiting_approval"].includes(actual.status)) finishWhenStopped(taskId, finish, confirmedQueue?.runId);
+      else finish();
+    } catch (error) { toast({ title: errMsg(error), variant: "destructive" }); finish(); }
   }
 
   const heading = task ? taskTitle(task) : taskId;
@@ -217,9 +265,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         }>
           {task && <>
             <TaskActionsMenu task={task} busy={busy} canStop={canStop} canCancel={canCancel} canArchive={canArchive}
-              onStop={() => act(() => api.stop(taskId))}
-              onCancel={() => act(() => api.cancel(taskId))}
-              onArchive={() => act(() => api.archive(taskId), () => navigate("/"))} />
+              onStop={() => void stopTurn()}
+              onCancel={() => act("Cancelling task…", () => api.cancel(taskId))}
+              onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
           </>}
         </AppBar>
         <SheetContent className="max-h-[85dvh]">
@@ -250,6 +298,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
         <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+          {activity.label && <p role="status" className="text-xs text-muted-foreground">{activity.label}</p>}
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
@@ -259,6 +308,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               busy={busy}
               onSubmit={(answers, skip) =>
                 act(
+                  skip ? "Skipping question…" : "Sending answer…",
                   () =>
                     api.answer(taskId, {
                       requestId: task.pendingInput!.requestId,
@@ -275,7 +325,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               <Button
                 className="flex-1"
                 disabled={busy}
-                onClick={() => act(() => api.approve(taskId, { decision: "approve" }))}
+                onClick={() => act("Approving…", () => api.approve(taskId, { decision: "approve" }))}
               >
                 Approve
               </Button>
@@ -283,18 +333,19 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
                 variant="destructive"
                 className="flex-1"
                 disabled={busy}
-                onClick={() => act(() => api.approve(taskId, { decision: "deny" }))}
+                onClick={() => act("Denying…", () => api.approve(taskId, { decision: "deny" }))}
               >
                 Deny
               </Button>
             </div>
           )}
 
-          {queue && <QueuePanel queue={queue} disabled={busy || localOwner || !!edit}
+          {pendingSend && <div role="status" aria-label="Pending message" className="max-h-36 overflow-y-auto"><UserBubble text={pendingSend.text} meta={`Sending…${pendingSend.images?.length ? ` · ${pendingSend.images.length} image(s)` : ""}`} /></div>}
+          {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit}
             onEdit={m => void startEdit(m)}
-            onSend={m => void act(async () => setQueueOverride(await api.messageAction(taskId, m.id, { action: "send", version: m.version, expectedRunId: queue.runId })))}
-            onDelete={m => void act(async () => setQueueOverride(await api.messageAction(taskId, m.id, { action: "delete", version: m.version })))}
-            onResume={() => void act(async () => setQueueOverride(await api.resumeQueue(taskId)))} />}
+            onSend={m => void queueAction(m, "send")}
+            onDelete={m => void queueAction(m, "delete")}
+            onResume={() => void act("Resuming queue…", async () => setQueueOverride(await api.resumeQueue(taskId)))} />}
 
           {(!answering || !!edit) && task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
             id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
@@ -342,24 +393,25 @@ function TaskActionsMenu({
   onCancel: () => void;
   onArchive: () => void;
 }) {
+  const mutationPending = useTaskMutations().get(task.taskId)?.pending;
   const [confirm, setConfirm] = useState<"cancel" | "archive" | null>(null);
 
   return (
     <>
       <SessionActionsMenu task={task} disabled={busy}>
-        <DropdownMenuItem disabled={!canStop} onSelect={onStop}>
+        <DropdownMenuItem disabled={!canStop || mutationPending} onSelect={onStop}>
           <Square className="text-faint" />
           Stop
         </DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
-          disabled={!canCancel}
+          disabled={!canCancel || mutationPending}
           onSelect={() => setConfirm("cancel")}
         >
           <Trash2 />
           Cancel
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={!canArchive} onSelect={() => setConfirm("archive")}>
+        <DropdownMenuItem disabled={!canArchive || mutationPending} onSelect={() => setConfirm("archive")}>
           <Archive className="text-faint" />
           Archive
         </DropdownMenuItem>

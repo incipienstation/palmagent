@@ -34,7 +34,7 @@ test("settings show the running version, save shared preferences, and remain usa
   await expect(automatic).toBeEnabled();
   await page.getByRole("radio", { name: "Stable", exact: true }).click();
   await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeChecked();
-  expect(changes).toEqual([{ autoUpdate: true }, { channel: "stable" }]);
+  await expect.poll(() => changes).toEqual(expect.arrayContaining([{ autoUpdate: true }, { channel: "stable" }]));
   await page.reload();
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -69,7 +69,7 @@ test("a failed save reconciles the actual setting rather than showing a false ro
   expect(reads).toBeGreaterThanOrEqual(2);
 });
 
-test("pending saves disable both controls and do not change the displayed running version", async ({ page }) => {
+test("pending saves update preferences immediately, keep controls responsive, and preserve the running version", async ({ page }) => {
   let finish: (() => void) | undefined;
   const waiting = new Promise<void>((resolve) => { finish = resolve; });
   await page.route("**/api/settings/updates", async (route) => {
@@ -79,8 +79,9 @@ test("pending saves disable both controls and do not change the displayed runnin
   await openSettings(page);
   const automatic = page.getByRole("switch", { name: "Automatic updates" });
   await automatic.click();
-  await expect(automatic).toBeDisabled();
-  await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeDisabled();
+  await expect(automatic).toBeChecked();
+  await expect(automatic).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeEnabled();
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
   finish!();
   await expect(automatic).toBeEnabled();

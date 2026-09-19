@@ -1,3 +1,5 @@
+import { observeTaskActivity } from "../task-activity";
+import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { readCache } from "../read-cache";
 import { reconcileTasks } from "../task-snapshot";
 import { updatesChanged } from "../update-events";
@@ -17,6 +19,7 @@ export interface Inbox {
 // The inbox needs only fresh task snapshots, including after mobile reconnects.
 // Event replay is reserved for the selected session's scoped stream.
 export function useInbox(): Inbox {
+  const mutations = useTaskMutations();
   const [tasks, setTasks] = useState<TaskState[]>([]);
   const snapshot = useRef<TaskState[]>([]);
   const [conn, setConn] = useState<ConnState>("connecting");
@@ -35,6 +38,7 @@ export function useInbox(): Inbox {
         if (frame.type === "tasks") {
           observeServerVersion(frame.version);
           const incoming = frame.tasks;
+          incoming.forEach(task => { observeTaskMutation(task); observeTaskActivity(task); });
           const next = reconcileTasks(snapshot.current, incoming);
           if (next !== snapshot.current) readCache.invalidate(key => key === "/api/usage" || key.endsWith("/runs"));
           snapshot.current = next;
@@ -48,5 +52,5 @@ export function useInbox(): Inbox {
     );
   }, []);
 
-  return { tasks, conn, loading };
+  return { tasks: tasks.filter(task => !mutations.get(task.taskId)?.hidden).map(task => projectTask(task, mutations)!), conn, loading };
 }

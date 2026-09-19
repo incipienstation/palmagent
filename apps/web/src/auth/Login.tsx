@@ -1,5 +1,5 @@
 import { useUpdateBlocker } from "../update-state";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Bot, Fingerprint } from "lucide-react";
 
@@ -12,11 +12,14 @@ import { AuthScreen, authErrorMessage } from "./AuthScreen";
 // Passkey sign-in. The browser offers any discoverable passkey for this RP, so a
 // single tap (+ biometric) authenticates — no username, no password.
 export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   useUpdateBlocker(busy);
   const [error, setError] = useState<string | null>(null);
 
   async function signIn() {
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -26,6 +29,7 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
       onAuthenticated();
     } catch (e) {
       setError(authErrorMessage(e));
+      pending.current = false;
       setBusy(false);
     }
   }
@@ -40,7 +44,7 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
         <Fingerprint className="size-5" />
         {busy ? "Waiting for passkey…" : "Sign in with passkey"}
       </Button>
-      {error && <p className="text-center text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-center text-sm text-destructive">{error}</p>}
     </AuthScreen>
   );
 }

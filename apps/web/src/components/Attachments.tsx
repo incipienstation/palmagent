@@ -1,5 +1,6 @@
-import { beginBrowserWork, useUpdateState } from "../update-state";
-import { useCallback, useRef, useState, type ClipboardEvent } from "react";
+import { useActionState } from "../action-state";
+import { beginBrowserWork } from "../update-state";
+import { useCallback, useRef, type ClipboardEvent } from "react";
 import type { ImageAttachment } from "@palmagent/shared";
 import { Camera, ImagePlus, Loader2, Plus, X } from "lucide-react";
 
@@ -19,8 +20,8 @@ const WIRE_WARN_BYTES = 900_000;
 // Shared image-attachment state for a compose box: paste handler (the main
 // path — screenshots land on the clipboard), file picker fallback, previews.
 export function useImageAttachments(onError: (msg: string) => void, key = `images:${location.hash}`) {
-  const [images, setImages] = useUpdateState<ImageAttachment[]>(key, []);
-  const [preparing, setPreparing] = useState(false);
+  const [images, setImages] = useActionState<ImageAttachment[]>(key, []);
+  const [preparing, setPreparing] = useActionState(`${key}:preparing`, false);
 
   const addFiles = useCallback(
     async (files: File[]) => {
@@ -44,7 +45,7 @@ export function useImageAttachments(onError: (msg: string) => void, key = `image
         finish();
       }
     },
-    [onError],
+    [onError, setImages, setPreparing],
   );
 
   // Attach pasted images; plain text pastes fall through untouched.
@@ -59,8 +60,8 @@ export function useImageAttachments(onError: (msg: string) => void, key = `image
     [addFiles],
   );
 
-  const remove = useCallback((i: number) => setImages((cur) => cur.filter((_, j) => j !== i)), []);
-  const clear = useCallback(() => setImages([]), []);
+  const remove = useCallback((i: number) => setImages((cur) => cur.filter((_, j) => j !== i)), [setImages]);
+  const clear = useCallback(() => setImages([]), [setImages]);
 
   return { images, preparing, addFiles, onPaste, remove, clear, setImages };
 }
