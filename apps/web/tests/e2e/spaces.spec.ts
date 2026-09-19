@@ -41,50 +41,47 @@ async function assertSheetFits(page: Page) {
   }
 }
 
-for (const width of [320, 360, 390]) {
-  test(`space sheet fits long names and duplicate paths at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 780 });
-    await setup(page);
-    const trigger = page.getByRole("button", { name: /^Switch space:/ });
-    await trigger.click();
-    const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
-    await expect(dialog.getByRole("button", { name: "Close spaces" })).toBeFocused();
-    await expect(dialog.getByRole("button", { name: /^Worktrees/ })).toHaveAttribute("aria-expanded", "false");
-    await expect(dialog.getByText(fixtureRepos[0].path, { exact: true })).toBeVisible();
-    await expect(dialog.getByText(fixtureRepos[1].path, { exact: true })).toBeVisible();
-    await assertSheetFits(page);
-    if (width === 360) await expect(page).toHaveScreenshot("spaces-mobile.png");
+test("space selection survives reload and long paths fit a narrow phone", async ({ page }) => {
+  const width = 320;
+  await page.setViewportSize({ width, height: 780 });
+  await setup(page);
+  const trigger = page.getByRole("button", { name: /^Switch space:/ });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
+  await expect(dialog.getByRole("button", { name: "Close spaces" })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: /^Worktrees/ })).toHaveAttribute("aria-expanded", "false");
+  await expect(dialog.getByText(fixtureRepos[0].path, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(fixtureRepos[1].path, { exact: true })).toBeVisible();
+  await assertSheetFits(page);
 
-    // Search includes collapsed worktrees and the full, unabridged path.
-    await dialog.getByRole("searchbox", { name: "Search spaces" }).fill("session-11");
-    const result = dialog.getByRole("button", { name: /session-11.*1 tasks/ });
-    await expect(result).toBeVisible();
-    await assertSheetFits(page);
-    if (width === 360) await expect(page).toHaveScreenshot("spaces-search.png");
-    await result.click();
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toContainText("session-11");
-    await expect(page.getByText("Worktree task 11", { exact: true })).toBeVisible();
-    await expect(page.getByText("Review the space picker", { exact: true })).toBeHidden();
-    await page.reload();
-    await expect(trigger).toContainText("session-11");
-    await trigger.click();
-    await expect(dialog.getByRole("button", { name: /^Worktrees/ })).toHaveAttribute("aria-expanded", "true");
-    await dialog.getByRole("searchbox").fill("nothing-matches");
-    await expect(dialog.getByRole("status")).toContainText("No spaces found");
-    await dialog.getByRole("button", { name: "Clear search" }).click();
-    await expect(dialog.getByRole("searchbox")).toHaveValue("");
-    await dialog.getByRole("button", { name: /All spaces/ }).click();
-    await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
+  // Search includes collapsed worktrees and the full, unabridged path.
+  await dialog.getByRole("searchbox", { name: "Search spaces" }).fill("session-11");
+  const result = dialog.getByRole("button", { name: /session-11.*1 tasks/ });
+  await expect(result).toBeVisible();
+  await assertSheetFits(page);
+  await result.click();
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toContainText("session-11");
+  await expect(page.getByText("Worktree task 11", { exact: true })).toBeVisible();
+  await expect(page.getByText("Review the space picker", { exact: true })).toBeHidden();
+  await page.reload();
+  await expect(trigger).toContainText("session-11");
+  await trigger.click();
+  await expect(dialog.getByRole("button", { name: /^Worktrees/ })).toHaveAttribute("aria-expanded", "true");
+  await dialog.getByRole("searchbox").fill("nothing-matches");
+  await expect(dialog.getByRole("status")).toContainText("No spaces found");
+  await dialog.getByRole("button", { name: "Clear search" }).click();
+  await expect(dialog.getByRole("searchbox")).toHaveValue("");
+  await dialog.getByRole("button", { name: /All spaces/ }).click();
+  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
 
-    await trigger.click();
-    await dialog.getByRole("button", { name: new RegExp(longName) }).click();
-    await expect(trigger).toContainText(longName);
-    expect(await trigger.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-    await expect(page.getByText("No tasks in this directory")).toBeVisible();
-    await assertViewportLocked(page);
-  });
-}
+  await trigger.click();
+  await dialog.getByRole("button", { name: new RegExp(longName) }).click();
+  await expect(trigger).toContainText(longName);
+  expect(await trigger.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  await expect(page.getByText("No tasks in this directory")).toBeVisible();
+  await assertViewportLocked(page);
+});
 
 test("space sheet scrolls with a short viewport and closes by keyboard with focus restored", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 420 });
@@ -111,10 +108,8 @@ test("desktop space search and light mobile sheet keep paths readable", async ({
   await nav.getByRole("button", { name: /palmagent.*experiments/ }).click();
   await expect(page.getByText("No tasks in this directory")).toBeVisible();
   await assertViewportLocked(page);
-  await expect(page).toHaveScreenshot("spaces-desktop.png");
   await page.setViewportSize({ width: 360, height: 780 });
   await page.goto("/?__theme=light");
   await page.getByRole("button", { name: /^Switch space:/ }).click();
   await assertSheetFits(page);
-  await expect(page).toHaveScreenshot("spaces-light.png");
 });

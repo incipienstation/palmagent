@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
-import { localScope, runVerification, verificationSteps } from '../lib/local-verification.mjs';
+import { localScope, requireVerificationNode, runVerification, verificationSteps } from '../lib/local-verification.mjs';
 
 const full = { code: true, server: true, web: true, package: true };
 const none = { code: false, server: false, web: false, package: false };
@@ -25,6 +25,15 @@ function fixture(t, cleanup = () => {}) {
   git('add', '.'); git('commit', '-m', 'base');
   return { cwd, git, write, base: git('rev-parse', 'HEAD') };
 }
+
+test('verification requires the exact repository Node version', t => {
+  const { cwd, write } = fixture(t);
+  write('.nvmrc', '24.21.0\n');
+  requireVerificationNode(cwd, '24.21.0');
+  assert.throws(() => requireVerificationNode(cwd, '24.14.0'), /requires Node 24.21.0; running 24.14.0/);
+  write('.nvmrc', '24\n');
+  assert.throws(() => requireVerificationNode(cwd, '24.21.0'), /exact Node version/);
+});
 
 test('local scope includes earlier commits, staged reversals, untracked files, and renames', t => {
   const { cwd, git, write, base } = fixture(t);
@@ -197,9 +206,10 @@ for (const [signal, expected] of [['SIGINT', 130], ['SIGTERM', 143], ['timeout',
       const { cwd, write } = treeFixture(t);
       // Use the actual CLI signal wiring with a hermetic plan, avoiding network and real checks.
       write('scripts/verify-local.mjs', readFileSync(resolve('scripts/verify-local.mjs'), 'utf8'));
+      write('.nvmrc', `${process.versions.node}\n`);
       const step = { id: 'hung', command: process.execPath, args: ['-e', hangingTree] };
       write('scripts/lib/local-verification.mjs', `
-        export { runVerification } from ${JSON.stringify(pathToFileURL(resolve('scripts/lib/local-verification.mjs')).href)};
+        export { runVerification, requireVerificationNode } from ${JSON.stringify(pathToFileURL(resolve('scripts/lib/local-verification.mjs')).href)};
         export const localScope = () => ({ scope: {} });
         export const verificationSteps = () => [${JSON.stringify(step)}];
       `);

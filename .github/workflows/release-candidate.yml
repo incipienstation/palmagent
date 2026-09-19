@@ -59,7 +59,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: tooling/.nvmrc
       - name: Select immutable candidate storage
         id: artifact
         run: node tooling/scripts/release-candidate.mjs artifact
@@ -89,7 +89,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.artifact.outputs.reuse != 'true'
         with:
-          node-version: '24'
+          node-version-file: tooling/.nvmrc
           cache: pnpm
           cache-dependency-path: source/pnpm-lock.yaml
       - name: Install candidate dependencies and Chromium

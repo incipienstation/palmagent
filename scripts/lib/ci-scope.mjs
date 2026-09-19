@@ -4,6 +4,18 @@ import { versionPolicy } from './release-version.mjs';
 
 const full = () => ({ code: true, server: true, web: true, package: true });
 
+// pkg:check covers these tests and fixtures; none are runtime inputs. Keep
+// new/unknown tooling paths on the full gate until their consumers are reviewed.
+const toolingTests = new Set([
+  'ci-results.test.mjs', 'ci-scope.test.mjs', 'deploy-staging.test.mjs',
+  'local-verification.test.mjs', 'package-artifact.test.mjs', 'package-fixture.mjs',
+  'pkg-smoke.test.mjs', 'preview-release.test.mjs', 'release-candidate.test.mjs',
+  'release-finalize.test.mjs', 'release-fixture.mjs', 'release-github.test.mjs',
+  'release-publish.test.mjs', 'release-tag.test.mjs', 'release-timing.test.mjs',
+  'release-version.test.mjs', 'repository-skills.test.mjs', 'stable-prepare.test.mjs',
+  'staging-candidate.test.mjs', 'sync-skills.test.mjs', 'verify-candidate.test.mjs',
+].map(name => `scripts/tests/${name}`));
+
 // Only known documentation and skill surfaces may bypass runtime checks.
 const isStatic = (path) => /^(?:AGENTS|CLAUDE|README|CHANGELOG)\.md$/.test(path)
   || /^(?:apps\/(?:server|web)|packages\/shared)\/README\.md$/.test(path)
@@ -20,6 +32,7 @@ export function classifyChanges(paths, eventName = 'pull_request') {
     if (isStatic(path)) continue;
     if (/(?:^|\/)(?:package\.json|pnpm-lock\.yaml)$/.test(path)) return full();
     scope.code = true;
+    if (toolingTests.has(path)) continue;
     if (path.startsWith('apps/server/')) {
       scope.server = true;
       if (path.startsWith('apps/server/src/cli/')) scope.package = true;

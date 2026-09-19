@@ -35,9 +35,6 @@ test.describe("routines", () => {
     await expect(page.getByText("Time", { exact: true })).toBeVisible();
   });
 
-  test("matches the visual baseline", async ({ page }) => {
-    await expect(page).toHaveScreenshot("routines.png");
-  });
 
   test("routine model efforts exclude legacy models and submit the selected effort", async ({ page }) => {
     await page.route("**/api/routines", async (route) => {

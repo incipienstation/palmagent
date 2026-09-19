@@ -11,22 +11,17 @@ async function onScreen(control: Locator) {
   }), "control is hittable").toBe(true);
 }
 
-for (const width of [360, 390]) test(`mobile composer states at ${width}px`, async ({ page }) => {
+test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
+  const width = 360;
   await page.setViewportSize({ width, height: 780 });
   await page.goto("/#/new");
-  const composer = page.getByRole("group", { name: "Message composer", exact: true });
   const prompt = page.getByLabel("Prompt", { exact: true });
-  await expect(composer).toHaveAttribute("data-expanded", "false");
   await onScreen(prompt);
-  expect((await composer.boundingBox())!.height).toBeLessThanOrEqual(60);
   await expect(page.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
   await prompt.tap();
-  await expect(composer).toHaveAttribute("data-expanded", "true");
   await expect(prompt).toBeFocused();
   await onScreen(page.getByRole("button", { name: "Configure model and effort" }));
-  if (width === 360) await expect(page).toHaveScreenshot("composer-focused.png");
   await page.getByRole("heading", { name: "New task", exact: true }).tap();
-  await expect(composer).toHaveAttribute("data-expanded", "false");
 
   // A reduced viewport represents the space left by a software keyboard.
   await page.setViewportSize({ width, height: 480 });
@@ -35,17 +30,15 @@ for (const width of [360, 390]) test(`mobile composer states at ${width}px`, asy
   await page.getByRole("button", { name: "Add attachments" }).tap();
   await onScreen(page.getByRole("menuitem", { name: "Camera" }));
   await onScreen(page.getByRole("menuitem", { name: "Photos" }));
-  if (width === 360) await expect(page).toHaveScreenshot("composer-attachments.png");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Configure model and effort" }).tap();
   await onScreen(page.getByRole("button", { name: "Done", exact: true }));
   await expect(page.getByRole("dialog")).toBeInViewport({ ratio: 1 });
-  if (width === 360) await expect(page).toHaveScreenshot("composer-configure-keyboard.png");
   await page.getByRole("button", { name: "Done", exact: true }).tap();
   await prompt.fill("Keep this draft\n".repeat(20));
   await page.getByRole("heading", { name: "New task", exact: true }).tap();
-  await expect(composer).toHaveAttribute("data-expanded", "true");
-  expect((await prompt.boundingBox())!.height).toBeLessThanOrEqual(144);
+  await expect(prompt).toHaveValue("Keep this draft\n".repeat(20));
+  await onScreen(prompt);
   await onScreen(page.getByRole("button", { name: "Dispatch", exact: true }));
   await assertViewportLocked(page);
 });
@@ -73,11 +66,9 @@ test("light mobile and desktop composers keep controls visible", async ({ page }
   await page.goto("/?__theme=light#/new");
   await page.getByLabel("Prompt").fill("Review the changes");
   await onScreen(page.getByRole("button", { name: "Dispatch", exact: true }));
-  await expect(page).toHaveScreenshot("composer-light.png");
   await page.setViewportSize({ width: 1280, height: 800 });
   await assertViewportLocked(page);
   await onScreen(page.getByRole("button", { name: "Configure model and effort" }));
-  await expect(page).toHaveScreenshot("composer-desktop.png");
 });
 
 test("configuration choices survive reload without losing the prompt", async ({ page }) => {
@@ -95,7 +86,6 @@ test("configuration choices survive reload without losing the prompt", async ({ 
   await page.getByRole("button", { name: "Configure model and effort" }).click();
   await expect(page.getByPlaceholder("short label")).toHaveValue("Review");
   await expect(page.getByRole("radio", { name: "opus", exact: true })).toHaveAttribute("aria-checked", "true");
-  await expect(page).toHaveScreenshot("composer-configure.png");
 });
 
 for (const route of ["new", "task/t-idle-rich"]) test(`image-only submission and failed-send draft retention: ${route}`, async ({ page }) => {

@@ -226,11 +226,13 @@ status without offering host update controls.
 
 ## Development
 
-Requirements: Node.js 22 or newer and pnpm 11.5.2 (pinned by `packageManager`).
-
-Install dependencies and start the server:
+Development and CI use the exact Node.js version in [`.nvmrc`](.nvmrc) and
+pnpm 11.5.2 (pinned by `packageManager`). Activate that Node version with your
+version manager before installing dependencies. With nvm, install and start the server:
 
 ```bash
+nvm install
+nvm use
 pnpm install
 pnpm dev
 ```
@@ -255,6 +257,9 @@ and runs the selected metadata, tooling, server, web, and package checks once. K
 README changes need only metadata checks. Use `--plan` to preview the checks (it still refreshes
 the base), or `--base origin/main` to target another branch. An explicit full commit SHA pins
 the base instead of fetching. Unknown scope or unavailable history selects all checks.
+Reviewed tooling-test-only changes run metadata and type/tooling checks; mixed changes
+retain every affected runtime lane. The verifier rejects a Node version that differs
+from `.nvmrc` before starting work; `--plan` remains available without switching versions.
 
 Code checks need dependencies installed with `pnpm install --frozen-lockfile`; browser checks
 also need `pnpm --filter @palmagent/web exec playwright install chromium`. Detailed logs are

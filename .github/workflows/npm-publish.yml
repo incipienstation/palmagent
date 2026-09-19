@@ -86,7 +86,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: tooling/.nvmrc
           registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@v4
         with:
@@ -120,9 +120,17 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Read the Node pin from this workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: tooling
+          sparse-checkout: .nvmrc
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: tooling/.nvmrc
       - name: Download the reviewed release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -154,9 +162,17 @@ jobs:
           ref: ${{ needs.legacy-inspect.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Read the Node pin from this workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: tooling
+          sparse-checkout: .nvmrc
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: tooling/.nvmrc
           registry-url: https://registry.npmjs.org
       - name: Install the OIDC-capable npm CLI
         run: npm install --global npm@11.11.1 --ignore-scripts

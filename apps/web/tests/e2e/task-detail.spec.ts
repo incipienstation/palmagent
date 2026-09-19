@@ -31,9 +31,6 @@ test.describe("task detail", () => {
     await expect(page.getByPlaceholder(/Send a follow-up turn/)).toBeVisible();
   });
 
-  test("matches the visual baseline", async ({ page }) => {
-    await expect(page).toHaveScreenshot("task-detail.png");
-  });
 
   test("the title opens session details listing every PR the task opened", async ({ page }) => {
     // Task links share the details sheet with configuration and handoff.

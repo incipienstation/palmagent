@@ -9,6 +9,13 @@ no dependency installation or runtime tests. Code PRs add type/tooling checks an
 the affected server or PWA tests; shared contracts exercise both. Classification
 uses the complete PR diff, so a documentation follow-up does not hide earlier
 code changes. Unknown paths or unavailable change history select the full gate.
+Reviewed files under `scripts/tests/` select type/tooling checks without server,
+PWA, or packed-install checks. Their tests still run through `pkg:check`; mixed
+changes retain all affected lanes, and new test/helper paths default to the full gate.
+
+All workflows use the exact Node version in the workflow checkout's `.nvmrc`, shared
+with local verification. Candidate and legacy source checkouts may predate this file;
+the workflow revision supplies the pin independently of the reviewed artifact/source.
 
 Release preparation PRs also use the metadata gate when their complete diff changes only
 the root and two plugin manifest versions plus optional release notes. CI reads both committed
