@@ -22,6 +22,11 @@ changes select metadata checks. Code selects type/tooling and affected runtime c
 scope or unavailable history selects every lane. Selected checks run once, with one PWA build
 shared by browser and package checks. Logs stay in a private temporary directory; the command
 reports each result and stops at the first failure. Inspect relevant log excerpts to diagnose it.
+Steps time out after 10 minutes (15 for browser checks); `--timeout-seconds <seconds>` overrides
+the limit for a slow machine. Timeout returns 124; SIGINT/SIGTERM cancel the active check and
+return 130/143. On POSIX, cancellation targets its process group; Windows uses `taskkill /T`.
+Cancellation allows two seconds for graceful exit before forced termination.
+The runner disables the Nx daemon so verification does not leave its background server behind.
 
 Install dependencies with `pnpm install --frozen-lockfile` before code checks and install Playwright
 Chromium before browser checks. Packed checks require the private `LEAK_DENYLIST`; when it is

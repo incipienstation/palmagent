@@ -260,6 +260,10 @@ Code checks need dependencies installed with `pnpm install --frozen-lockfile`; b
 also need `pnpm --filter @palmagent/web exec playwright install chromium`. Detailed logs are
 written outside the repository, with a short result per check and a nonzero exit on failure.
 The command never commits or ships changes.
+Each step has a 10-minute limit (15 minutes for browser checks), configurable with
+`--timeout-seconds <seconds>`. A timeout exits with 124; Ctrl-C or SIGTERM cancels the active
+check and exits with 130 or 143 respectively. Cancellation targets the check's process group
+on POSIX (`taskkill /T` on Windows), with two seconds before forced termination.
 
 Packed verification requires the private `LEAK_DENYLIST`. Without it, the command runs selected
 source checks, then stops before packaging with a nonzero exit and reports incomplete verification.
