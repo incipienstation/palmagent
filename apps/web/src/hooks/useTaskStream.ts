@@ -1,3 +1,5 @@
+import { observeTaskActivity } from "../task-activity";
+import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { cacheSession } from "../read-cache";
 import { historyCache, type HistorySnapshot } from "../history-cache";
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
@@ -110,6 +112,7 @@ export function useTaskStream(taskId: string): TaskStream {
         if (frame.type === "tasks") {
           const mine = frame.tasks.find((entry) => entry.taskId === taskId);
           if (mine) {
+            observeTaskMutation(mine); observeTaskActivity(mine);
             currentTask = mine; setTask(mine);
             if (checkpoint.current) checkpoint.current = { ...checkpoint.current, task: mine };
           }
@@ -148,5 +151,6 @@ export function useTaskStream(taskId: string): TaskStream {
     };
   }, [taskId]);
 
-  return { log, conn, task, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier };
+  const mutations = useTaskMutations();
+  return { log, conn, task: projectTask(task, mutations), loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier };
 }

@@ -1,3 +1,4 @@
+import { useActionState, forgetActionState } from "../action-state";
 import { useEffect } from "react";
 import { useUpdateState } from "../update-state";
 import type { Dispatch, SetStateAction } from "react";
@@ -6,7 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 // additionally checkpoint each tab's current state before replacing its screen.
 // Storage errors never block typing; a failed update checkpoint keeps the page open.
 export function useDraft(key: string, initial = ""): [string, Dispatch<SetStateAction<string>>] {
-  const [value, setValue] = useUpdateState<string>(key, () => readDraft(key) ?? initial);
+  const [value, setValue] = useActionState<string>(key, () => readDraft(key) ?? initial);
   useEffect(() => {
     try {
       if (value) localStorage.setItem(key, value);
@@ -15,7 +16,11 @@ export function useDraft(key: string, initial = ""): [string, Dispatch<SetStateA
       /* storage disabled/full — drafts are best-effort, never block typing */
     }
   }, [key, value]);
-  return [value, setValue];
+  return [value, next => setValue(previous => {
+    const result = typeof next === "function" ? next(previous) : next;
+    try { if (result) localStorage.setItem(key, result); else localStorage.removeItem(key); } catch { /* best effort */ }
+    return result;
+  })];
 }
 
 function readDraft(key: string): string | null {
@@ -34,6 +39,7 @@ export function clearDraft(...keys: string[]): void {
     } catch {
       /* ignore — best-effort */
     }
+    forgetActionState(key);
   }
 }
 

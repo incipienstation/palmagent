@@ -1,5 +1,5 @@
 import { useUpdateBlocker } from "../update-state";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { startRegistration } from "@simplewebauthn/browser";
 import { CheckCircle2, KeyRound } from "lucide-react";
 
@@ -23,12 +23,15 @@ function deviceLabel(): string {
 // Reached via a host-CLI-minted #/enroll/<token> link. Creates a passkey on THIS
 // device and (on success) logs it in. The token is single-use and short-lived.
 export function Enroll({ token, onAuthenticated }: { token: string; onAuthenticated: () => void }) {
+  const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   useUpdateBlocker(busy);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   async function register() {
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -39,6 +42,7 @@ export function Enroll({ token, onAuthenticated }: { token: string; onAuthentica
       onAuthenticated();
     } catch (e) {
       setError(authErrorMessage(e));
+      pending.current = false;
       setBusy(false);
     }
   }
@@ -67,7 +71,7 @@ export function Enroll({ token, onAuthenticated }: { token: string; onAuthentica
         <KeyRound className="size-5" />
         {busy ? "Creating passkey…" : "Register this device"}
       </Button>
-      {error && <p className="text-center text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-center text-sm text-destructive">{error}</p>}
       <p className="mt-4 text-center text-xs text-faint">
         Enrollment links are single-use and expire after 15 minutes.
       </p>

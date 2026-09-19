@@ -1,3 +1,4 @@
+import { routines } from "../fixtures.mjs";
 import { test, expect } from "@playwright/test";
 import { assertViewportLocked } from "./_helpers";
 
@@ -39,7 +40,7 @@ test.describe("routines", () => {
   test("routine model efforts exclude legacy models and submit the selected effort", async ({ page }) => {
     await page.route("**/api/routines", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
-      await route.fulfill({ json: { routine: { id: "r-created" } } });
+      await route.fulfill({ json: { routine: { ...routines[0], id: "r-created", ...route.request().postDataJSON() } } });
     });
     await page.getByRole("button", { name: "New routine" }).click();
     const form = page.locator("form");
@@ -66,7 +67,7 @@ test("stale routine preferences cannot submit a retired model or unsupported eff
   await page.goto("/#/routines");
   await page.route("**/api/routines", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
-    await route.fulfill({ json: { routine: { id: "r-created" } } });
+    await route.fulfill({ json: { routine: { ...routines[0], id: "r-created", ...route.request().postDataJSON() } } });
   });
   await page.getByRole("button", { name: "New routine" }).click();
   const form = page.locator("form");

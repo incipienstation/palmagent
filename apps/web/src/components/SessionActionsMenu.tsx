@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { taskTitle } from "@/lib/task-title";
-import { api } from "../api";
+import { mutateTask, useTaskMutations, getRenameDraft, clearRenameDraft } from "../task-mutations";
 
 // Both list and detail use the same editor; optional children are the detail's
 // existing lifecycle actions. Keep the menu and dialog as sibling overlays.
@@ -20,6 +20,7 @@ export function SessionActionsMenu({ task, children, label = "Task actions", dis
   label?: string;
   disabled?: boolean;
 }) {
+  const mutations = useTaskMutations();
   const trigger = useRef<HTMLButtonElement>(null);
   const openingEditor = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,7 +42,7 @@ export function SessionActionsMenu({ task, children, label = "Task actions", dis
           }
         }}>
           <DropdownMenuGroup>
-            <DropdownMenuItem onSelect={() => {
+            <DropdownMenuItem disabled={mutations.get(task.taskId)?.pending} onSelect={() => {
               openingEditor.current = true;
               setInitialTitle(taskTitle(task));
             }}>
@@ -74,13 +75,11 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
   const id = useId();
   const form = useRef<HTMLFormElement>(null);
   const saving = useRef(false);
-  const [title, setTitle] = useUpdateState(`rename:${taskId}:title`, initialTitle);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [title, setTitle] = useUpdateState(`rename:${taskId}:title`, getRenameDraft(taskId) ?? initialTitle);
   const [viewport, setViewport] = useState<{ top: number; maxHeight: number }>();
   const parsed = RenameTaskSchema.safeParse({ title });
   const valid = parsed.success && parsed.data.title !== initialTitle.trim();
-  const fieldError = error || (!parsed.success && title.trim() ? parsed.error.issues[0]?.message : undefined);
+  const fieldError = (!parsed.success && title.trim() ? parsed.error.issues[0]?.message : undefined);
 
   useEffect(() => {
     const visual = window.visualViewport;
@@ -99,21 +98,14 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
   async function save() {
     if (!parsed.success || !valid || saving.current) return;
     saving.current = true;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await api.renameTask(taskId, parsed.data);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't rename this session. Try again.");
-    } finally {
-      saving.current = false;
-      setBusy(false);
-    }
+    onClose();
+    // Keep the draft until acknowledgement so a failed rename can be retried.
+    await mutateTask(taskId, parsed.data);
   }
 
+  const cancel = () => { clearRenameDraft(taskId); onClose(); };
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !saving.current) onClose(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open && !saving.current) cancel(); }}>
       <DialogContent
         showClose={false}
         aria-describedby={undefined}
@@ -136,10 +128,9 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
                 id={id}
                 name="title"
                 value={title}
-                disabled={busy}
                 aria-invalid={!!fieldError || undefined}
                 aria-describedby={fieldError ? `${id}-error` : undefined}
-                onChange={(event) => { setTitle(event.target.value); setError(undefined); }}
+                onChange={(event) => setTitle(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();
                 }}
@@ -148,8 +139,8 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
             </Field>
           </FieldGroup>
           <DialogFooter className="flex-row justify-end">
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy || !valid}>{busy ? "Saving…" : "Save"}</Button>
+            <Button type="button" variant="outline" onClick={cancel}>Cancel</Button>
+            <Button type="submit" disabled={!valid}>Save</Button>
           </DialogFooter>
         </form>
       </DialogContent>

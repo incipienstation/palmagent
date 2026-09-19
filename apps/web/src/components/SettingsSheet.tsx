@@ -1,3 +1,4 @@
+import { useSignOut } from "../auth/useSignOut";
 import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, Monitor, Moon, Sun, X } from "lucide-react";
 import {
@@ -10,7 +11,6 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
-import { api } from "../api";
 import type { ConnState } from "../hooks/useInbox";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
@@ -18,14 +18,6 @@ import { useUpdateState } from "../update-state";
 import { PushToggle } from "./PushToggle";
 import { UpdateSettings } from "./UpdateSettings";
 import { RepoSettings } from "./RepoSettings";
-
-async function signOut() {
-  try {
-    await api.auth.logout();
-  } finally {
-    window.location.reload();
-  }
-}
 
 const themeLabels: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
 const modeLabels: Record<OutputMode, string> = { compact: "Compact", default: "Default", verbose: "Verbose" };
@@ -42,6 +34,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   onOpenChange: (open: boolean) => void;
   onCloseAutoFocus: (event: Event) => void;
 }) {
+  const { signingOut, signOut } = useSignOut();
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
   const [section, setSection] = useUpdateState("settings:section", "general");
@@ -144,7 +137,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start px-1 font-medium text-destructive hover:bg-destructive/5">Sign out</Button>
+                <Button disabled={signingOut} variant="ghost" className="w-full justify-start px-1 font-medium text-destructive hover:bg-destructive/5">{signingOut ? "Signing out…" : "Sign out"}</Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
@@ -152,7 +145,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   <AlertDialogDescription>You'll need your passkey to sign back in on this device.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogAction onClick={signOut}>Sign out</AlertDialogAction>
+                  <AlertDialogAction disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
                   <AlertDialogCancel>Stay</AlertDialogCancel>
                 </AlertDialogFooter>
               </AlertDialogContent>

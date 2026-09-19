@@ -32,11 +32,11 @@ function updateMessage(result: UpdateReceipt): string {
 }
 
 export function UpdateSettings() {
-  const { status, busy, saving, stale, error, reload, install, change } = useUpdateSettings();
+  const { status, busy, saving, stale, error, action, reload, install, change } = useUpdateSettings();
   const automaticId = useId();
   const channelId = useId();
   const settings = status?.settings;
-  const disabled = busy || status?.availability !== "available" || !settings;
+  const disabled = Boolean(action) || stale || status?.availability !== "available" || !settings;
   const last = settings?.lastUpdate;
   const discovery = settings?.discovery;
   const pending = settings?.pending;
@@ -64,12 +64,12 @@ export function UpdateSettings() {
             <FieldLabel htmlFor={automaticId}>Automatic updates</FieldLabel>
             <FieldDescription className="text-xs">{settings.independentExecutions ? "Checks when you open the app and updates automatically. Agent runs continue." : "Checks when you open the app and updates after active tasks finish."}</FieldDescription>
           </FieldContent>
-          <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled}
+          <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled} aria-busy={saving}
             onCheckedChange={(autoUpdate) => void change({ autoUpdate })} />
         </Field>
         <Field orientation="horizontal" data-disabled={disabled} className="flex-wrap">
           <FieldLabel id={channelId}>Release channel</FieldLabel>
-          <ToggleGroup type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled}
+          <ToggleGroup type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled} aria-busy={saving}
             onValueChange={(channel) => { if (channel === "stable" || channel === "preview") void change({ channel }); }}>
             <ToggleGroupItem value="stable" className="px-3">Stable</ToggleGroupItem>
             <ToggleGroupItem value="preview" className="px-3">Preview</ToggleGroupItem>
@@ -90,10 +90,10 @@ export function UpdateSettings() {
         </div>
       </FieldGroup>}
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground" role="status">{saving ? "Saving…" : busy && status ? "Refreshing…" : ""}</span>
+        <span className="text-xs text-muted-foreground" role="status">{saving ? "Saving…" : action === "install" ? "Requesting update…" : busy && status ? "Checking for updates…" : ""}</span>
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="ghost" disabled={busy} onClick={() => void reload()}>Check again</Button>
-          {newer && discovery?.eligible && !settings?.autoUpdate && <Button disabled={disabled || Boolean(pending) || paused}
+          {newer && discovery?.eligible && !settings?.autoUpdate && <Button disabled={disabled || busy || Boolean(pending) || paused}
             onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
         </div>
       </div>

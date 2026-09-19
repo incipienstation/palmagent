@@ -1,3 +1,4 @@
+import { useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
 import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X } from "lucide-react";
@@ -209,6 +210,8 @@ export const InboxView = memo(function InboxView({
   conn: ConnState;
   loading?: boolean;
 }) {
+  const mutations = useTaskMutations();
+  const archiving = [...mutations.values()].some(change => change.hidden && change.pending);
   const toastObstacle = useToastObstacle();
   // Project (repo) lookup for the cards. The task snapshot carries only repoId;
   // we join the human-friendly name client-side. If a task references a repo we
@@ -249,6 +252,7 @@ export const InboxView = memo(function InboxView({
     <ReposContext.Provider value={repos}>
       <AppShell wide>
         <AppBar title="Tasks" conn={conn} />
+        {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} loading={loading} />
         <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${selected}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>

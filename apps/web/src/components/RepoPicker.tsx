@@ -1,3 +1,5 @@
+import { registerRepo, removeRepo as removeRegisteredRepo, useRepoMutations } from "../repo-mutations";
+import { toast } from "./ui/toaster";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DiscoveredRepo, FsListResponse, Repo, ValidateRepoPathResponse } from "@palmagent/shared";
@@ -115,7 +117,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const [validating, setValidating] = useState(false);
   // branch is unset for a plain folder (no git) — registered/run in place.
   const [picked, setPicked] = useUpdateState<{ path: string; name: string; branch?: string } | null>(`picker:picked`, null);
-  const [busy, setBusy] = useState(false);
+  const mutations = useRepoMutations();
+  const busy = mutations.registering.size > 0;
   const [error, setError] = useState("");
   const debounceRef = useRef<number | undefined>(undefined);
 
@@ -200,27 +203,23 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   }
 
   async function register() {
-    if (!picked) return;
-    setBusy(true);
+    if (!picked || busy) return;
     setError("");
     try {
-      onRegistered(await api.createRepo({ path: picked.path }));
+      const repo = await registerRepo(picked.path);
+      if (repo) onRegistered(repo);
     } catch (e) {
       setError(errMsg(e));
-    } finally {
-      setBusy(false);
+      toast({ title: "Couldn't register repository", description: errMsg(e), variant: "destructive" });
     }
   }
 
   async function removeRepo(repo: Repo) {
+    if (mutations.removing.has(repo.id)) return;
     if (!window.confirm(`Remove "${repo.name}" from the dispatcher?`)) return;
     setError("");
-    try {
-      await api.deleteRepo(repo.id);
-      onChanged();
-    } catch (e) {
-      setError(errMsg(e));
-    }
+    await removeRegisteredRepo(repo);
+    onChanged();
   }
 
   return (
@@ -276,6 +275,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
           role="listbox"
           aria-label="Repositories"
         >
+          {mutations.removing.size > 0 && <p role="status" className="px-3.5 py-2 text-sm text-muted-foreground">Removing repository…</p>}
+          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-3.5 py-2 text-sm text-muted-foreground">{tilde(path)} · Registering…</p>)}
           {error && (
             <Alert variant="destructive" className="mx-3.5 my-2.5 w-auto">
               {error}
@@ -286,6 +287,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
             <>
               {results.map((r) => {
                 const reg = registeredByPath.get(r.path);
+                if (reg && mutations.removed.has(reg.id)) return null;
                 return (
                   <Row
                     key={r.path}
@@ -297,7 +299,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                       </>
                     }
                     sub={tilde(r.path)}
-                    disabled={!!reg}
+                    disabled={!!reg || busy}
                     selected={picked?.path === r.path}
                     onPress={() => {
                       setError("");

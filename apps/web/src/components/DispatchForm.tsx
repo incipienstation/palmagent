@@ -1,3 +1,5 @@
+import { beginTaskAction, useTaskActivity } from "../task-activity";
+import { useRepoMutations } from "../repo-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { useUpdateState } from "../update-state";
 import { useEffect, useState, type FormEvent } from "react";
@@ -32,7 +34,9 @@ function errMsg(e: unknown): string {
 
 export function DispatchView() {
   const toastObstacle = useToastObstacle();
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const [registeredRepos, setRepos] = useState<Repo[]>([]);
+  const repoMutations = useRepoMutations();
+  const repos = registeredRepos.filter(repo => !repoMutations.removed.has(repo.id));
   // Everything except title + prompt is a sticky preference: the form re-opens
   // with the last-used choice rather than resetting each time (loadRepos still
   // validates a stale repo id).
@@ -58,7 +62,8 @@ export function DispatchView() {
   const [title, setTitle] = useDraft("draft:dispatch-title");
   const [prompt, setPrompt] = useDraft("draft:dispatch-prompt");
   const [pickerOpen, setPickerOpen] = useUpdateState(`dispatch:picker`, false);
-  const [busy, setBusy] = useState(false);
+  const activity = useTaskActivity("dispatch");
+  const busy = Boolean(activity.label);
   const [error, setError] = useState("");
   const att = useImageAttachments(setError);
   // Worktree isolation only applies to git repos — a plain folder always runs in
@@ -87,9 +92,10 @@ export function DispatchView() {
   async function dispatch(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (!repoId) return setError("Register and select a repo first.");
+    if (!repos.some(repo => repo.id === repoId)) return setError("Register and select a repo first.");
     if (!prompt.trim() && att.images.length === 0) return setError("Enter a prompt.");
-    setBusy(true);
+    const finish = beginTaskAction("dispatch", title.trim() || prompt.trim() || "New task");
+    if (!finish) return;
     try {
       const task = await api.createTask({
         repoId,
@@ -103,6 +109,7 @@ export function DispatchView() {
         ...(att.images.length ? { images: att.images } : {}),
       });
       clearDraft("draft:dispatch-title", "draft:dispatch-prompt");
+      att.clear();
       toast({ title: "Dispatched", variant: "success" });
       // Replace the dispatch form in history so Back returns to the inbox, not /new.
       navigate(`/task/${encodeURIComponent(task.taskId)}`, { replace: true });
@@ -110,9 +117,8 @@ export function DispatchView() {
       // Transient REST failure → toast (the form stays put so the user can retry
       // without re-typing). Inline Alert is reserved for the pre-flight
       // validation guards above.
-      toast({ title: "Couldn't dispatch", description: errMsg(e), variant: "destructive" });
-      setBusy(false);
-    }
+      toast({ title: "Couldn't dispatch", description: e instanceof ApiError && e.status < 500 ? errMsg(e) : `${errMsg(e)} Check Tasks before retrying; creation could not be confirmed.`, variant: "destructive" });
+    } finally { finish(); }
   }
 
   return (
@@ -120,6 +126,7 @@ export function DispatchView() {
       <AppBar title="New task" back />
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={dispatch}>
         <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto px-4 pb-5">
+          {busy && <div role="status" className="rounded-xl border border-border p-4"><p className="line-clamp-2 font-medium">{activity.label}</p><p className="text-sm text-muted-foreground">Creating task…</p></div>}
           <div className="flex flex-col gap-3 py-4">
             <p className="text-lg font-medium text-strong">What should we work on?</p>
             <Field>
@@ -149,10 +156,10 @@ export function DispatchView() {
                 {isGit && <Field orientation="horizontal">
                   <FieldContent><FieldLabel htmlFor="dispatch-isolation">Isolated worktree</FieldLabel>
                     <FieldDescription>Run in a separate branch and worktree.</FieldDescription></FieldContent>
-                  <Switch id="dispatch-isolation" checked={isolate} onCheckedChange={setIsolate} aria-label="Isolated worktree" />
+                  <Switch id="dispatch-isolation" disabled={busy} checked={isolate} onCheckedChange={setIsolate} aria-label="Isolated worktree" />
                 </Field>}
                 <Field><FieldLabel htmlFor="dispatch-title">Title (optional)</FieldLabel>
-                  <Input id="dispatch-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="short label" />
+                  <Input disabled={busy} id="dispatch-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="short label" />
                 </Field>
               </>,
             }} />
@@ -160,7 +167,7 @@ export function DispatchView() {
       </form>
       <RepoPicker
         open={pickerOpen}
-        repos={repos}
+        repos={registeredRepos}
         onClose={() => setPickerOpen(false)}
         onRegistered={(repo) => {
           setPickerOpen(false);

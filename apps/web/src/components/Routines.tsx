@@ -1,5 +1,6 @@
+import { reloadRoutines, useRoutines } from "../hooks/useRoutines";
 import { useForegroundRefresh } from "../hooks/useForegroundRefresh";
-import { useUpdateState } from "../update-state";
+import { useActionState } from "../action-state";
 import { useEffect, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
 import { CalendarClock, ChevronRight, MoreVertical, Play, Plus, Trash2, X } from "lucide-react";
@@ -40,7 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
 import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort, effortsForModel, MODELS, PERMISSIONS } from "../api";
-import { usePersistedMapEntry } from "../hooks/useDraft";
+import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag } from "./chips";
@@ -105,9 +106,11 @@ function fmtNext(ms?: number): string {
   return fmtTime(ms);
 }
 
-function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
+function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
   r: Routine;
   busy: boolean;
+  saving: boolean;
+  stale: boolean;
   onToggle: () => void;
   onRun: () => void;
   onDelete: () => void;
@@ -142,8 +145,9 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
           </span>
           <Switch
             checked={r.enabled}
+            aria-busy={saving}
             onCheckedChange={onToggle}
-            disabled={busy}
+            disabled={busy || stale}
             aria-label="Enabled"
           />
         </div>
@@ -156,7 +160,7 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
             <span className="text-[12.5px] text-faint">{scheduleLabel(r)}</span>
           )}
           {r.preset !== "manual" && (
-            <span className="text-[12.5px] text-faint">next {fmtNext(r.nextRunAt)}</span>
+            <span className="text-[12.5px] text-faint">{saving ? "Saving schedule…" : stale ? "Refresh to check schedule" : `next ${fmtNext(r.nextRunAt)}`}</span>
           )}
           {r.lastRunAt && (
             <span className="text-[12.5px] text-faint">last {fmtTime(r.lastRunAt)}</span>
@@ -208,10 +212,10 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
         <Button
           variant="secondary"
           className="flex-1"
-          disabled={busy}
+          disabled={busy || saving || stale}
           onClick={onRun}
         >
-          <Play className="size-4" /> Run now
+          <Play className="size-4" /> {busy ? "Requesting run…" : "Run now"}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -243,7 +247,7 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogAction disabled={busy} onClick={onDelete}>
+                  <AlertDialogAction disabled={busy || saving} onClick={onDelete}>
                     Delete routine
                   </AlertDialogAction>
                   <AlertDialogCancel>Keep</AlertDialogCancel>
@@ -258,15 +262,15 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
 }
 
 export function RoutinesView() {
-  const [routines, setRoutines] = useState<Routine[] | null>(null);
+  const { routines, actions, saving, stale, creating, error: mutationError, toggle, run, remove, create: createRoutine } = useRoutines();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [showForm, setShowForm] = useUpdateState(`routine:showForm`, false);
+  const busy = creating !== null;
+  const [showForm, setShowForm] = useActionState(`routine:showForm`, false);
 
   // create-form state
-  const [repoId, setRepoId] = useUpdateState(`routine:repoId`, "");
-  const [agent, setAgent] = useUpdateState<AgentKind>(`routine:agent`, "claude");
+  const [repoId, setRepoId] = useActionState(`routine:repoId`, "");
+  const [agent, setAgent] = useActionState<AgentKind>(`routine:agent`, "claude");
   // Model/effort/permission are remembered PER AGENT across form opens, on keys
   // separate from the dispatch form's — a routine's unattended settings are a
   // distinct intent from an ad-hoc dispatch, so they don't cross-contaminate.
@@ -279,17 +283,16 @@ export function RoutinesView() {
     saveModel(value);
     setEffort(selectableEffort(agent, value, effort));
   }
-  const [preset, setPreset] = useUpdateState<RoutinePreset>(`routine:preset`, "daily");
-  const [hour, setHour] = useUpdateState(`routine:hour`, 9);
-  const [dayOfWeek, setDayOfWeek] = useUpdateState(`routine:dayOfWeek`, 1);
-  const [cron, setCron] = useUpdateState(`routine:cron`, "0 9 * * *"); // only used when preset === "custom"
-  const [title, setTitle] = useUpdateState(`routine:title`, "");
-  const [prompt, setPrompt] = useUpdateState(`routine:prompt`, "");
+  const [preset, setPreset] = useActionState<RoutinePreset>(`routine:preset`, "daily");
+  const [hour, setHour] = useActionState(`routine:hour`, 9);
+  const [dayOfWeek, setDayOfWeek] = useActionState(`routine:dayOfWeek`, 1);
+  const [cron, setCron] = useActionState(`routine:cron`, "0 9 * * *"); // only used when preset === "custom"
+  const [title, setTitle] = useDraft(`routine:title`);
+  const [prompt, setPrompt] = useDraft(`routine:prompt`);
 
   async function reload() {
     try {
-      const [rts, rps] = await Promise.all([api.listRoutines(), api.listRepos()]);
-      setRoutines(rts);
+      const [, rps] = await Promise.all([reloadRoutines(), api.listRepos()]);
       setRepos(rps);
       setRepoId((cur) => (cur && rps.some((r) => r.id === cur) ? cur : (rps[0]?.id ?? "")));
     } catch (e) {
@@ -304,28 +307,13 @@ export function RoutinesView() {
 
   useForegroundRefresh(() => { void reload(); });
 
-  async function act(fn: () => Promise<unknown>) {
-    setBusy(true);
-    setError("");
-    try {
-      await fn();
-      await reload();
-    } catch (e) {
-      const msg = errMsg(e);
-      setError(msg);
-      toast({ title: "Something went wrong", description: msg, variant: "destructive" });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function create(e: FormEvent) {
     e.preventDefault();
+    if (busy) return;
     if (!repoId) return setError("Register a repo first (from the dispatch form).");
     if (!prompt.trim()) return setError("Enter a prompt.");
     const hasTime = preset === "daily" || preset === "weekly" || preset === "weekdays";
-    await act(async () => {
-      await api.createRoutine({
+    const created = await createRoutine({
         repoId,
         agent,
         prompt: prompt.trim(),
@@ -338,14 +326,16 @@ export function RoutinesView() {
         ...(effort !== DEFAULT_OPTION ? { effort } : {}),
         ...(title.trim() ? { title: title.trim() } : {}),
       });
+    if (created) {
       // Clear the one-shot fields only — model/effort/permission persist per
       // agent so the next routine re-opens with the same settings.
+      clearDraft("routine:title", "routine:prompt");
       setPrompt("");
       setTitle("");
       setPreset("daily");
       setShowForm(false);
       toast({ title: "Routine created", variant: "success" });
-    });
+    }
   }
 
   const loading = routines === null;
@@ -355,7 +345,9 @@ export function RoutinesView() {
     <AppShell>
       <AppBar title="Routines" />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
-        {error && <Alert variant="destructive">{error}</Alert>}
+        {(error || mutationError) && <Alert variant="destructive">{error || mutationError}</Alert>}
+        {creating !== null && <Card role="status" className="p-4"><p className="truncate font-medium">{creating}</p><p className="text-sm text-muted-foreground">Creating routine…</p></Card>}
+        {[...actions].some(([, action]) => action === "delete") && <p role="status" className="text-sm text-muted-foreground">Deleting routine…</p>}
 
         {loading && (
           <>
@@ -377,16 +369,16 @@ export function RoutinesView() {
           <RoutineCard
             key={r.id}
             r={r}
-            busy={busy}
-            onToggle={() => void act(() => api.updateRoutine(r.id, { enabled: !r.enabled }))}
-            onRun={() => void act(() => api.runRoutine(r.id))}
-            onDelete={() => void act(() => api.deleteRoutine(r.id))}
+            busy={actions.has(r.id)} saving={saving.has(r.id)} stale={stale.has(r.id)}
+            onToggle={() => toggle(r)}
+            onRun={() => void run(r.id)}
+            onDelete={() => void remove(r.id)}
           />
         ))}
 
         {showForm ? (
           <Card>
-            <form className="flex flex-col gap-5 p-4" onSubmit={create}>
+            <form className="flex flex-col gap-5 p-4" onSubmit={create}><fieldset disabled={busy} className="flex min-w-0 flex-col gap-5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold tracking-wide text-faint uppercase">
                   New routine
@@ -396,7 +388,7 @@ export function RoutinesView() {
                   variant="ghost"
                   size="icon-sm"
                   className="-mr-1.5 text-faint"
-                  onClick={() => setShowForm(false)}
+                  disabled={busy} onClick={() => setShowForm(false)}
                   aria-label="Close"
                 >
                   <X className="size-5" />
@@ -595,7 +587,7 @@ export function RoutinesView() {
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? "…" : "Create routine"}
               </Button>
-            </form>
+            </fieldset></form>
           </Card>
         ) : (
           // Only the EmptyState CTA shows when there are no routines yet, so
