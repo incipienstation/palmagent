@@ -84,8 +84,10 @@ test("prepending an older page preserves the visible message through simultaneou
   await deliver(page, rows(2001, 2020));
   release();
   await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+  // The loading indicator can disappear before Virtuoso commits the prepend.
+  // Wait for its scroll adjustment before comparing the preserved anchor.
+  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
-  expect(await viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   await expect(page.getByText("tool_result: Tool 2020", { exact: true })).toHaveCount(0);
   expect(requested).toBe(1);
 });

@@ -62,9 +62,11 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
   the diff.
 - The repository's `pnpm verify` gate runs this suite and the service-worker
   update smoke before a PWA change can be delivered.
-- Tests run in two concurrent groups, each with one worker and its own mock server.
-  This keeps rename requests and cleanup from changing another group's fixtures.
-  The servers use `E2E_PORT` (default `4317`) and the following port. Group assignment
+- Read-only tests share a mock server and use up to two workers. Rename tests run
+  sequentially on a separate server, so their requests and cleanup cannot change
+  other tests' fixtures. Add any other suites that mutate backend fixtures to
+  `statefulSpecs` in `playwright.config.ts`. The servers use `E2E_PORT` (default
+  `4317`) and the following port; the global worker limit is two. Project assignment
   does not change snapshot paths.
 - Baselines are generated on Linux (`*-linux.png`); regenerate on the same OS the
   gate runs on (this host / CI).

@@ -1,5 +1,4 @@
 import { defineConfig } from "@playwright/test";
-import { readdirSync } from "node:fs";
 
 // Galaxy S25 (model SM-S931B): 1080×2340 physical @ DPR 3 → 360×780 CSS, Android
 // 15. Playwright ships no built-in S25 descriptor, so pin the device explicitly.
@@ -31,24 +30,22 @@ const galaxyS25 = {
 
 const PORT = Number(process.env.E2E_PORT ?? 4317);
 const baseURL = `http://localhost:${PORT}`;
-const specs = readdirSync(new URL("./tests/e2e/", import.meta.url), { recursive: true })
-  .filter((file) => /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(file)).sort();
+const statefulSpecs = ["**/session-rename.spec.ts"];
 const groups = [0, 1];
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  // Rename tests mutate the mock backend. Give each concurrent group its own
-  // server, and run that group's tests sequentially, including cleanup hooks.
+  // Mutating tests own a separate server and run sequentially, including cleanup.
+  // Read-only tests can use both workers as soon as the stateful suite finishes.
   workers: 2,
-  projects: groups.map((group) => ({
-    name: `group-${group + 1}`,
-    workers: 1,
-    testMatch: specs.filter((_, index) => index % groups.length === group).map((file) => `**/${file}`),
-    use: { baseURL: `http://localhost:${PORT + group}` },
-  })),
+  projects: [
+    { name: "stateful", workers: 1, fullyParallel: false, testMatch: statefulSpecs,
+      use: { baseURL: `http://localhost:${PORT + 1}` } },
+    { name: "parallel", testIgnore: statefulSpecs, use: { baseURL } },
+  ],
   // Group assignment is scheduling only; preserve the existing visual baselines.
   snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{-platform}{ext}",
   reporter: [["list"]],
