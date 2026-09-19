@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- After the first browser permission prompt, notification switches respond immediately
+  to each click. Rapid changes are combined, the last selection wins, and failed
+  changes restore the subscription state with a toast, even after Settings closes.
+
 ## 0.1.0-alpha.40
 
 ### Changed

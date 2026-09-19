@@ -27,13 +27,11 @@ export async function getPushStatus(): Promise<PushStatus> {
   }
 }
 
-export async function enablePush(onPermissionGranted?: () => void): Promise<PushStatus> {
+// Permission prompts belong to the click handler, never the debounced operation.
+export async function enablePush(): Promise<PushStatus> {
   if (!pushSupported()) return "unsupported";
-  const permission = Notification.permission === "granted"
-    ? "granted"
-    : await Notification.requestPermission();
+  const permission = Notification.permission;
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
-  onPermissionGranted?.();
 
   const { publicKey } = await api.push.key();
   const reg = await sw();
@@ -55,9 +53,16 @@ export async function disablePush(): Promise<PushStatus> {
   const reg = await sw();
   const sub = await reg.pushManager.getSubscription();
   if (sub) {
-    // Best-effort server cleanup; the server also prunes dead endpoints on send.
-    void api.push.unsubscribe(sub.endpoint).catch(() => {});
-    await sub.unsubscribe();
+    // Finish cleanup before a queued re-enable can register the same endpoint.
+    await api.push.unsubscribe(sub.endpoint);
+    try {
+      const removed = await sub.unsubscribe();
+      if (!removed && await reg.pushManager.getSubscription()) throw new Error("Push subscription is still active");
+    } catch (error) {
+      // Keep the prior registration when the browser refuses to unsubscribe.
+      await api.push.subscribe({ ...sub.toJSON(), endpoint: sub.endpoint }).catch(() => {});
+      throw error;
+    }
   }
   return "off";
 }
