@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.43
+
 ### Changed
 
 - Preferences, routine switches, session names, search paths, and queue edits respond
