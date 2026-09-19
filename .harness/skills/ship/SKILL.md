@@ -16,7 +16,9 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
    or an explicit merge hold. Confirm the PR base and head immediately before merging; use
    `gh pr merge <pr-number> --squash --match-head-commit <verified-head-sha> --author-email <public-noreply-email>`.
    GitHub can otherwise select the account's default email for the squash author. Verify the
-   merged commit's author/committer addresses too. If the head or base
+   merged commit's author/committer addresses too. While waiting, use a CLI watch or bounded polling
+   with concise status output; inspect job logs when checks fail. Reuse collected evidence while
+   its inputs remain unchanged, and retain the final base/head check above. If the head or base
    changes, update and reverify as needed. Resolve task-owned conflicts before merging; never
    bypass failing checks, unresolved reviews, or branch protections with `--admin`.
 4. Report the merged commit and validation evidence. Follow the

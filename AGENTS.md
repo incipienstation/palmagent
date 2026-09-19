@@ -4,11 +4,20 @@ Guidance for coding agents maintaining the Palmagent repository.
 
 ## Context discipline
 
-Read this file and the relevant canonical skills from the current checkout at task start,
-after switching checkouts, and before citing a repository rule as a reason to pause. Reconcile
-older injected instruction snapshots with current files, Git history, and the user's latest
-explicit decisions. Carry forward authorization for the same scope; ask only about a remaining
-ambiguity or an action outside that scope. A stale snapshot alone is not a new approval gate.
+At task start, establish the current contents of this file and only the skills needed for the
+request. Reuse instructions already read in this session when their working-file contents are
+unchanged. After switching checkouts or before citing a rule as a reason to pause, compare the
+relevant files with the versions already read (including uncommitted edits); read changed or
+previously unread sections. If that comparison is unavailable or prior context is missing, read
+the current files. Reconcile older snapshots with current files, Git history when needed, and
+the user's latest decisions. Carry forward authorization for the same scope; ask only about
+remaining ambiguity or an action outside it. A stale snapshot alone is not a new approval gate.
+
+Questions, investigations, reviews, and plan-only requests end with findings or a proposal.
+Enter the implementation workflow when changes are requested or already authorized; a follow-up
+question during implementation does not cancel that authorization. Read linked references only
+when they affect the current decision. Use targeted searches and bounded output; keep full test
+logs outside the repository and inspect relevant failures instead of repeatedly printing them.
 
 Keep instructions focused on context needed to act correctly; link to canonical guidance instead
 of duplicating it. Use [garden](.harness/skills/garden/SKILL.md) to audit and propose context cleanup.
@@ -154,7 +163,9 @@ described in the [release automation reference](.harness/skills/release/referenc
 
 CI runs only on PRs and always reports `validate`, with expensive checks selected by the complete
 change scope.
-For documentation and skill-only edits, local `pnpm plugins:check`, `pnpm release:check`, and
-`git diff --check` are sufficient. Follow the [CI and candidate policy](.harness/skills/release/references/automation.md#candidate-automation)
-for code checks and manual staging packages. Build the PWA before using `web:verify:built` or
+Use [verify](.harness/skills/verify/SKILL.md) to select local checks from the complete task diff
+with the existing CI classifier. Documentation and skill-only edits need only the metadata checks;
+unknown scope retains the full gate. Release candidates retain full source and packed-install
+verification under the [CI and candidate policy](.harness/skills/release/references/automation.md#candidate-automation).
+Build the PWA before using `web:verify:built` or
 `pkg:assemble`; those commands deliberately reuse existing output within the same verified run.
