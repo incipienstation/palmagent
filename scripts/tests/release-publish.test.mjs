@@ -62,7 +62,7 @@ test('post-upload verification tolerates delayed visibility without republishing
   assert.equal(uploads, 1); assert.equal(waits, 2);
   reads = uploads = waits = 0;
   await assert.rejects(publishPackage(identity, { ...adapters, registryVersion: async () => { reads++; return null; } }), /not visible after upload/);
-  assert.equal(uploads, 1); assert.equal(waits, 12); assert.equal(reads, 14);
+  assert.equal(uploads, 1); assert.equal(waits, 60); assert.equal(reads, 62);
   reads = uploads = waits = 0;
   await assert.rejects(publishPackage(identity, { ...adapters,
     registryVersion: async () => ++reads === 1 ? null : { dist: { integrity: 'different' } },
@@ -73,6 +73,21 @@ test('post-upload verification tolerates delayed visibility without republishing
     registryVersion: async () => { if (++reads === 1) return null; throw new Error('registry unavailable'); },
   }), /registry unavailable/);
   assert.equal(uploads, 1); assert.equal(waits, 0);
+});
+
+test('a multi-minute registry propagation delay completes in one publication attempt', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'palmagent-propagation-'));
+  t.after(() => rmSync(root, { recursive: true }));
+  const path = join(root, 'package.tgz'); writeFileSync(path, 'reviewed bytes');
+  const identity = { path, version: '0.1.0-alpha.1', channel: 'next' };
+  const published = { dist: { integrity: `sha512-${hashFile(path, 'sha512', 'base64')}` } };
+  let elapsed = 0, uploads = 0;
+  assert.equal(await publishPackage(identity, {
+    env, run: () => { uploads++; }, sleep: async (ms) => { elapsed += ms; },
+    registryVersion: async () => elapsed >= 165_000 ? published : null,
+  }), 'published');
+  assert.equal(elapsed, 165_000);
+  assert.equal(uploads, 1);
 });
 
 for (const version of ['0.1.0-alpha.1', '0.1.0-beta.1', '0.1.0-rc.1', '0.1.0']) {

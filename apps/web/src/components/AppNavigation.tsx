@@ -68,18 +68,18 @@ export function AppNavigation({ tasks, conn, children }: {
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <nav aria-label="Main navigation" className="shrink-0 space-y-1 px-3 pb-4">
           {destinations.map(({ label, icon: Icon, active, onClick, attention: needsAttention }) => <Button key={label}
-            variant={active ? "secondary" : "ghost"} className="h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium"
+            variant={active ? "selected" : "ghost"} className="h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium"
             aria-label={label} aria-description={needsAttention ? "Tasks need attention" : undefined} aria-current={active ? "page" : undefined} onClick={onClick}>
             <Icon className="size-5" /><span className="flex-1 text-left">{label}</span>
             {needsAttention && <span className="size-2 rounded-full bg-amber" aria-label="Tasks need attention" />}
-            {active && <Check className="size-4 text-muted-foreground" />}
+            {active && <Check className="size-4" />}
           </Button>)}
         </nav>
         <div className="mx-5 border-t border-border" />
         <div className="px-3 py-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
           {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
-          {recent.map(task => <Button key={task.taskId} variant="ghost"
+          {recent.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
             className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
             aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
             onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>

@@ -62,7 +62,7 @@ test("Usage and routine history recover from read failures without false empty r
   await expect(page.getByText("No runs yet.", { exact: true })).toBeVisible();
 });
 
-test("Settings tabs preserve a folder draft and fit a narrow phone", async ({ page }) => {
+test("Settings navigation preserves a folder draft and fits a narrow phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
@@ -71,21 +71,26 @@ test("Settings tabs preserve a folder draft and fit a narrow phone", async ({ pa
   expect(box.width).toBeGreaterThanOrEqual(44);
   expect(box.height).toBeGreaterThanOrEqual(44);
   await settings.click();
-  await page.getByRole("tab", { name: "Spaces", exact: true }).click();
+  await page.getByRole("button", { name: "Spaces", exact: true }).click();
   const input = page.getByRole("region", { name: "Space search paths" }).getByRole("textbox");
   await input.fill("/projects/unfinished");
-  await page.getByRole("tab", { name: "General", exact: true }).click();
+  await page.getByRole("button", { name: "Back to settings", exact: true }).click();
   await expect(input).toBeHidden();
-  await page.getByRole("tab", { name: "Spaces", exact: true }).click();
+  await page.getByRole("button", { name: "Spaces", exact: true }).click();
   await expect(input).toHaveValue("/projects/unfinished");
-  const tabTop = (await page.getByRole("tab", { name: "General", exact: true }).boundingBox())!.y;
-  for (const name of ["General", "Spaces", "Updates"]) {
-    const tab = page.getByRole("tab", { name, exact: true });
-    await tab.click();
-    expect((await tab.boundingBox())!.y).toBeCloseTo(tabTop, 0);
-    expect((await tab.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const header = page.locator('[data-slot="sheet-header"]');
+  const headerTop = (await header.boundingBox())!.y;
+  await page.getByRole("button", { name: "Back to settings" }).click();
+  for (const name of ["Spaces", "Updates"]) {
+    await page.getByRole("button", { name, exact: true }).click();
+    const back = page.getByRole("button", { name: "Back to settings" });
+    expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await expect(page.locator('[data-slot="settings-scroll"]:visible')).toHaveCount(1);
+    await page.locator('[data-slot="settings-scroll"]:visible').evaluate(el => { el.scrollTop = el.scrollHeight; });
+    expect((await header.boundingBox())!.y).toBeCloseTo(headerTop, 0);
     await assertViewportLocked(page);
+    await back.click();
+    await expect(page.getByRole("button", { name, exact: true })).toBeFocused();
   }
 });
 

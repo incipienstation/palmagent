@@ -11,11 +11,32 @@ An entry does not mean a version has been published.
 - Toasts use compact, text-sized pills above bottom controls, with one message at
   a time and touch-following swipe dismissal. Longer errors wrap within the screen.
 
+## 0.1.0-alpha.34
+
+### Fixed
+
+- Keep input questions visible until answer delivery is confirmed, including after
+  reconnecting, and show Codex questions with selectable or written answers.
+
+### Changed
+
+- Settings groups device preferences separately from installation controls, with visible
+  appearance and output choices, dedicated Spaces and Updates screens, and fixed Back
+  and Close actions. Folder drafts are preserved while moving between screens.
+
+## 0.1.0-alpha.33
+
+### Changed
+
+- Palm Teal is now the primary brand color across actions, selection states, links,
+  app icons, and browser chrome, with coordinated light and dark palettes.
+
 ## 0.1.0-alpha.32
 
 ### Changed
 
 - Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/b088a735f0646e0aa31fb58989cb92a0f2c7a836...95c336c00a15a9bd9e2ed15dd00b780c08c9c574) for details.
+
 
 ## 0.1.0-alpha.31
 

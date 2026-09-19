@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { disablePush, enablePush, getPushStatus, type PushStatus } from "../push";
 
@@ -7,7 +8,7 @@ import { disablePush, enablePush, getPushStatus, type PushStatus } from "../push
 // header pill is gone). Full-width Switch row; same on/off/blocked/unsupported
 // semantics as before. Hidden when the platform can't push (e.g. vite dev — no
 // SW — or an iOS Safari tab; iOS needs home-screen install).
-export function PushToggle() {
+export function PushToggle({ className }: { className?: string }) {
   const [status, setStatus] = useState<PushStatus>("unsupported");
   const [busy, setBusy] = useState(false);
 
@@ -33,9 +34,9 @@ export function PushToggle() {
   }
 
   return (
-    <label className="flex min-h-[44px] items-center justify-between gap-3 py-2">
+    <label className={cn("flex min-h-[44px] items-center justify-between gap-3 py-2", className)}>
       <span className="flex min-w-0 flex-col">
-        <span className="text-[15px] text-foreground">Push notifications</span>
+        <span className="text-sm font-medium text-foreground">Push notifications</span>
         {blocked && (
           <span className="text-[12.5px] text-muted-foreground">Blocked in browser settings</span>
         )}

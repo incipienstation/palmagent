@@ -1,9 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { github } from '../lib/release-github.mjs';
+import { github, registryMetadata } from '../lib/release-github.mjs';
 
 const repository = 'example/palmagent';
 const failure = (stderr, code) => Object.assign(new Error('gh failed'), { stderr: Buffer.from(stderr), code });
+
+test('registry validation bypasses cached metadata without hiding lookup failures', async () => {
+  const urls = [];
+  const metadata = { versions: {}, 'dist-tags': {} };
+  const request = async (url, options) => {
+    urls.push(url);
+    const parsed = new URL(url);
+    assert.equal(parsed.origin, 'https://registry.npmjs.org');
+    assert.equal(parsed.pathname, '/palmagent');
+    assert(parsed.searchParams.get('validation'));
+    assert.equal(options.cache, 'no-store');
+    return { ok: true, json: async () => metadata };
+  };
+  assert.deepEqual(await registryMetadata(request), metadata);
+  assert.deepEqual(await registryMetadata(request), metadata);
+  assert.notEqual(urls[0], urls[1]);
+  assert.deepEqual(await registryMetadata(async () => ({ status: 404 })), metadata);
+  await assert.rejects(registryMetadata(async () => ({ status: 503, ok: false })), /lookup failed/);
+  await assert.rejects(registryMetadata(async () => ({ ok: true, json: async () => ({}) })), /Malformed/);
+});
 
 test('release asset reads retry connection resets with bounded backoff and preserve binary bytes', () => {
   const bytes = Buffer.from([0, 255, 1, 128]);

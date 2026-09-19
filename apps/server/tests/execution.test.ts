@@ -73,7 +73,7 @@ for (const agent of ["claude", "codex"] as const) {
     };
     const create = (release: string) => { const client = new ExecutionBackend(store.directory, release, process.execPath, 2, launch); clients.push(client); return client; };
     const first = create("/opt/releases/one");
-    const args = { taskId: "task", cwd: join(root, "repo"), prompt: JSON.stringify({ key: agent, mode: agent === "claude" ? "answered-hold" : "hold" }), interactive: true };
+    const args = { taskId: "task", cwd: join(root, "repo"), prompt: JSON.stringify({ key: agent, mode: "answered-hold" }), interactive: true };
     const events: RawEvent[] = [];
     first.agentRunner(agent).start(args, (event) => events.push(event), first);
     const marker = (suffix: string) => join(root, "control", agent + suffix);
@@ -93,10 +93,8 @@ for (const agent of ["claude", "codex"] as const) {
     assert.equal(store.latest("task")!.release, "/opt/releases/one");
     assert.equal(children.length, 1, "reconnection must not start a replacement process");
     assert.deepEqual(JSON.parse(readFileSync(marker(".ready"), "utf8")), original);
-    if (agent === "claude") {
-      assert(handle.answer({ requestId: "q1", answers: [{ question: "Continue?", selected: ["Yes"] }] }));
-      await until(() => existsSync(marker(".answer")), "answer reaches the original stdin");
-    }
+    assert(await handle.answer({ requestId: agent === "claude" ? "q1" : '"q1"', answers: [{ question: "Continue?", selected: ["Yes"] }] }));
+    await until(() => existsSync(marker(".answer")), "answer reaches the original stdin");
     writeFileSync(marker(".release"), "");
     await handle.done;
     assert(replay.some((event) => JSON.stringify(event).includes(`${agent}:after`)), logs);

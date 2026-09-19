@@ -253,6 +253,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
+              key={`${taskId}:${task.pendingInput.requestId}`}
               checkpointKey={`${taskId}:${task.pendingInput.requestId}`}
               questions={task.pendingInput.questions}
               busy={busy}

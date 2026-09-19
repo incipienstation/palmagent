@@ -85,6 +85,9 @@ class ExecutionHandle implements RunHandle {
     for (const [id, waiter] of this.waiters) {
       const receipt = this.store.command(current.id, id);
       if (receipt && receipt.result !== "accepted") {
+        // A delivered answer and its state event commit together. Project the
+        // event before resolving HTTP, even if it arrived during this read.
+        if (this.cursor < this.store.get(current.id).lastSeq) { setImmediate(() => this.reconcile()); return; }
         clearTimeout(waiter.timer); this.waiters.delete(id); waiter.resolve(receipt.result);
       }
     }
@@ -95,18 +98,20 @@ class ExecutionHandle implements RunHandle {
     if (this.ended) return "rejected";
     return this.store.enqueue(this.record.id, id, body);
   }
-  send = async (text: string, images: StartArgs["images"], messageId: string): Promise<"delivered" | "rejected" | "unknown"> => {
-    const result = this.command({ kind: "send", text, images, messageId }, messageId);
+  private async deliveredCommand(body: ExecutionCommand, id: string): Promise<"delivered" | "rejected" | "unknown"> {
+    const result = this.command(body, id);
     if (result !== "accepted") return result;
     return new Promise((resolve) => {
-      const timer = setTimeout(() => { this.waiters.delete(messageId); resolve("unknown"); }, 15_000);
-      this.waiters.set(messageId, { resolve, timer });
+      const timer = setTimeout(() => { this.waiters.delete(id); resolve("unknown"); }, 15_000);
+      this.waiters.set(id, { resolve, timer });
     });
-  };
+  }
+  send = (text: string, images: StartArgs["images"], messageId: string) => this.deliveredCommand({ kind: "send", text, images, messageId }, messageId);
   steer = (text: string, images?: StartArgs["images"]) => this.record.args.agent === "claude" && this.command({ kind: "steer", text, images }) !== "rejected";
   interrupt = () => this.record.args.agent === "claude" && this.command({ kind: "interrupt" }) !== "rejected";
   approve = (decision: string, scope?: string) => this.command({ kind: "approve", decision, scope }) !== "rejected";
-  answer: RunHandle["answer"] = (answer) => this.command({ kind: "answer", answer }, `answer:${answer.requestId}`) !== "rejected";
+  answer: RunHandle["answer"] = async (answer) =>
+    await this.deliveredCommand({ kind: "answer", answer }, `answer:${answer.requestId}:${randomUUID()}`) === "delivered";
   cancel = () => {
     if (!this.store.cancelBeforeStart(this.record.id)) this.command({ kind: "cancel" });
   };

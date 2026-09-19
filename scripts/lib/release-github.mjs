@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 
 const retryDelays = [1000, 2000, 4000];
 const pause = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
@@ -49,7 +50,11 @@ export function githubPages(repository, path, field) {
 }
 
 export async function registryMetadata(request = fetch) {
-  const response = await request('https://registry.npmjs.org/palmagent', { signal: AbortSignal.timeout(30000) });
+  // Publication decisions must not reuse a cached pre-upload packument. A unique
+  // read URL also avoids extending negative visibility during bounded polling.
+  const response = await request(`https://registry.npmjs.org/palmagent?validation=${randomUUID()}`, {
+    signal: AbortSignal.timeout(30000), cache: 'no-store',
+  });
   if (response.status === 404) return { versions: {}, 'dist-tags': {} };
   if (!response.ok) throw new Error('npm metadata lookup failed');
   const result = await response.json();

@@ -232,7 +232,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="-ml-1.5 text-blue"
+                className="-ml-1.5 text-primary"
                 aria-label="Back to repo list"
                 onClick={() => setMode("search")}
               >
@@ -419,7 +419,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="rounded-full font-mono font-normal text-blue"
+                      className="rounded-full font-mono font-normal text-primary"
                       onClick={() => {
                         setManualPath(s);
                         void pickPath(s);

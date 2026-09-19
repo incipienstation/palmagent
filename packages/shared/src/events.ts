@@ -39,6 +39,7 @@ export interface AskQuestionOption {
   description?: string; // optional one-line explanation shown under the label
 }
 export interface AskQuestion {
+  id?: string; // provider question identity; text alone may not be unique
   question: string; // the question text (also the answer key the CLI expects)
   header?: string; // short category label (e.g. "Indentation")
   multiSelect?: boolean; // true => the user may pick more than one option

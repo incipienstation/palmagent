@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import brand from "./brand.json";
 
 // Light / dark theme system. The actual `.dark`-on-<html> + theme-color-meta is
 // FIRST applied by the no-flash inline bootstrap in index.html (before first
@@ -9,8 +10,6 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 export type Theme = "light" | "dark" | "system";
 
 const STORAGE_KEY = "theme";
-const DARK_BG = "#101010";
-const LIGHT_BG = "#ffffff";
 
 function prefersDark(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -39,7 +38,7 @@ function applyTheme(theme: Theme): void {
   const isDark = resolveIsDark(theme);
   document.documentElement.classList.toggle("dark", isDark);
   const meta = document.getElementById("theme-color-meta");
-  if (meta) meta.setAttribute("content", isDark ? DARK_BG : LIGHT_BG);
+  if (meta) meta.setAttribute("content", isDark ? brand.dark.chrome : brand.light.chrome);
 }
 
 type ThemeContextValue = {

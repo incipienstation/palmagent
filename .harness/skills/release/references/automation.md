@@ -10,6 +10,17 @@ the affected server or PWA tests; shared contracts exercise both. Classification
 uses the complete PR diff, so a documentation follow-up does not hide earlier
 code changes. Unknown paths or unavailable change history select the full gate.
 
+Release preparation PRs also use the metadata gate when their complete diff changes only
+the root and two plugin manifest versions plus optional release notes. CI reads both committed
+trees and requires synchronized valid versions with every other manifest field unchanged.
+Dependency, script, file-mode, runtime, or other changes retain the ordinary checks. The final
+release candidate still runs the full source and packed-install verification.
+
+After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
+The required `validate` job aggregates their results and rejects any failure or cancellation.
+Static and version-only changes skip the runtime jobs; package checks reuse the PWA build
+within the web job. Parallel jobs use more runner time to shorten the critical path.
+
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
 trusted PRs, but do not upload a staging artifact. Same-repository checks require
@@ -232,7 +243,8 @@ held workflows with the bot token or copy a maintainer credential into Actions.
 
 Inspect Actions runs, tags, drafts, release assets, and npm before retrying. An interrupted upload
 or failed post-upload verification can leave the immutable npm version published. After a successful
-upload, verification retries missing version metadata at five-second intervals, up to 12 retries.
+upload, verification retries missing version metadata at five-second intervals, up to 60 retries (five minutes). Release metadata reads use a unique validation URL to avoid
+cached pre-upload responses; upstream propagation can still take several minutes.
 A reported integrity mismatch or registry lookup error stops immediately. Retry with the same source and `candidate_run`;
 identical registry bytes skip npm upload, and the job verifies the channel before exposing the
 Release. Automatic Preview searches earlier recovery runs for the original producer artifact.

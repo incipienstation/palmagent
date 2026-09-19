@@ -14,9 +14,9 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <!-- content="#101010" is the DARK fallback (also the PWA manifest splash
-         color); the no-flash bootstrap below overrides it for the resolved theme. -->
-    <meta id="theme-color-meta" name="theme-color" content="#101010" />
+    <!-- Vite resolves the brand palette before the no-flash theme bootstrap. -->
+    <style id="brand-palette">__BRAND_STYLES__</style>
+    <meta id="theme-color-meta" name="theme-color" content="__BRAND_DARK_CHROME__" />
     <meta name="description" content="Drive Claude Code + Codex coding agents from your phone." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -31,8 +31,8 @@
     <script>
       (function () {
         try {
-          var DARK_BG = "#101010",
-            LIGHT_BG = "#ffffff";
+          var DARK_CHROME = "__BRAND_DARK_CHROME__",
+            LIGHT_CHROME = "__BRAND_LIGHT_CHROME__";
           var q = new URLSearchParams(location.search).get("__theme");
           var stored = q || localStorage.getItem("theme") || "system";
           var theme = stored === "light" || stored === "dark" ? stored : "system";
@@ -43,7 +43,7 @@
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", isDark);
           var meta = document.getElementById("theme-color-meta");
-          if (meta) meta.setAttribute("content", isDark ? DARK_BG : LIGHT_BG);
+          if (meta) meta.setAttribute("content", isDark ? DARK_CHROME : LIGHT_CHROME);
         } catch (e) {}
       })();
     </script>

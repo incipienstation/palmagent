@@ -53,7 +53,7 @@ for (const width of [320, 390, 430]) {
     await menu.click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "General" })).toBeVisible();
+    await expect(page.getByRole("radiogroup", { name: "Appearance", exact: true })).toBeVisible();
     await assertViewportLocked(page);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);

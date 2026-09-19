@@ -1,32 +1,20 @@
-import type { ReactNode } from "react";
-import { useUpdateState } from "../update-state";
-import { Monitor, Moon, Sun } from "lucide-react";
-
+import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, Monitor, Moon, Sun, X } from "lucide-react";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 import { api } from "../api";
 import type { ConnState } from "../hooks/useInbox";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
+import { useUpdateState } from "../update-state";
 import { PushToggle } from "./PushToggle";
 import { UpdateSettings } from "./UpdateSettings";
 import { RepoSettings } from "./RepoSettings";
@@ -35,12 +23,19 @@ async function signOut() {
   try {
     await api.auth.logout();
   } finally {
-    // Reload from the cached shell; AuthGate re-checks /api/auth/me → login screen.
     window.location.reload();
   }
 }
 
-// App preferences are opened from navigation; sections retain their drafts.
+const themeLabels: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
+const modeLabels: Record<OutputMode, string> = { compact: "Compact", default: "Default", verbose: "Verbose" };
+const modeDescriptions: Record<OutputMode, string> = {
+  compact: "Focus on answers. Keep background activity folded.",
+  default: "Show answers with a short activity preview.",
+  verbose: "Show all recorded activity in the conversation.",
+};
+
+// Keep panels mounted while open so navigation preserves edits and scroll positions.
 export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   conn?: ConnState;
   open: boolean;
@@ -50,149 +45,143 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
   const [section, setSection] = useUpdateState("settings:section", "general");
+  const title = useRef<HTMLHeadingElement>(null);
+  const spacesLink = useRef<HTMLButtonElement>(null);
+  const updatesLink = useRef<HTMLButtonElement>(null);
+  const previousSection = useRef(section);
+  const appearanceId = useId();
+  const detailId = useId();
+  const home = section === "general";
+
+  useLayoutEffect(() => {
+    const previous = previousSection.current;
+    previousSection.current = section;
+    if (!open || previous === section) return;
+    if (section === "general") {
+      (previous === "spaces" ? spacesLink : updatesLink).current?.focus({ preventScroll: true });
+    } else {
+      title.current?.focus({ preventScroll: true });
+    }
+  }, [section, open]);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
-      <SheetContent className="h-[min(560px,90dvh)] max-h-[90dvh]" onCloseAutoFocus={onCloseAutoFocus}>
-        <SheetHeader>
-          <SheetTitle>Settings</SheetTitle>
-          <SheetDescription className="sr-only">App preferences and account</SheetDescription>
-        </SheetHeader>
-
-        <Tabs value={section} onValueChange={setSection} className="min-h-0 flex-1 gap-3">
-          <div className="shrink-0 px-4">
-            <TabsList aria-label="Settings sections">
-              <TabsTrigger value="general">General</TabsTrigger>
-              <TabsTrigger value="spaces">Spaces</TabsTrigger>
-              <TabsTrigger value="updates">Updates</TabsTrigger>
-            </TabsList>
+      <SheetContent className="h-[min(680px,90dvh)] max-h-[90dvh] max-w-[640px]" onCloseAutoFocus={onCloseAutoFocus}>
+        <SheetHeader className="shrink-0 gap-0 px-5 pt-1 pb-4">
+          <div className="flex min-h-11 items-center gap-2">
+            {!home && <Button variant="ghost" size="icon-lg" aria-label="Back to settings" onClick={() => setSection("general")}>
+              <ArrowLeft />
+            </Button>}
+            <SheetTitle asChild className="flex-1 text-[22px] tracking-tight outline-none">
+              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Spaces" : "Updates"}</h2>
+            </SheetTitle>
+            <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
           </div>
-          <TabsContent forceMount hidden={section !== "general"} value="general" data-slot="settings-scroll" className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
-          {/* Appearance — the theme toggle's home. */}
-          <SettingRow label="Appearance">
-            <ToggleGroup
-              type="single"
-              value={theme}
-              // Keep the Radix Select-style "" guard: ignore the empty-string
-              // deselect so a segment is always active.
-              onValueChange={(v) => v && setTheme(v as Theme)}
-              className="w-auto"
-            >
-              <ToggleGroupItem value="system" aria-label="System theme" className="gap-1.5 px-3">
-                <Monitor className="size-4" />
-                System
-              </ToggleGroupItem>
-              <ToggleGroupItem value="light" aria-label="Light theme" className="gap-1.5 px-3">
-                <Sun className="size-4" />
-                Light
-              </ToggleGroupItem>
-              <ToggleGroupItem value="dark" aria-label="Dark theme" className="gap-1.5 px-3">
-                <Moon className="size-4" />
-                Dark
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </SettingRow>
+          <SheetDescription className={home ? "text-[13px]" : "sr-only"}>
+            {home ? "Preferences and installation" : section === "spaces" ? "Manage repository discovery on this installation." : "Manage Palmagent updates on this installation."}
+          </SheetDescription>
+        </SheetHeader>
+        <Separator />
 
-          <Separator />
+        <div hidden={!home} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-2", !home && "hidden")}>
+          <div className="flex flex-col gap-6">
+            <SettingsGroup label="On this device">
+              <FieldGroup className="gap-0 rounded-xl border border-border bg-background/50 px-3.5">
+                <Field className="gap-2.5 py-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <FieldLabel id={appearanceId} className="text-sm">Appearance</FieldLabel>
+                    <span className="text-xs text-muted-foreground">{themeLabels[theme]}</span>
+                  </div>
+                  <ToggleGroup type="single" value={theme} aria-labelledby={appearanceId}
+                    onValueChange={(value) => value && setTheme(value as Theme)}>
+                    <ToggleGroupItem value="system" aria-label="System theme" className="gap-1.5"><Monitor className="size-4" />System</ToggleGroupItem>
+                    <ToggleGroupItem value="light" aria-label="Light theme" className="gap-1.5"><Sun className="size-4" />Light</ToggleGroupItem>
+                    <ToggleGroupItem value="dark" aria-label="Dark theme" className="gap-1.5"><Moon className="size-4" />Dark</ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+                <Separator />
+                <Field className="gap-2.5 py-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <FieldLabel id={detailId} className="text-sm">Output detail</FieldLabel>
+                    <span className="text-xs text-muted-foreground">{modeLabels[mode]}</span>
+                  </div>
+                  <ToggleGroup type="single" value={mode} aria-labelledby={detailId} aria-describedby={`${detailId}-description`}
+                    onValueChange={(value) => value && setMode(value as OutputMode)}>
+                    <ToggleGroupItem value="compact" aria-label="Compact output">Compact</ToggleGroupItem>
+                    <ToggleGroupItem value="default" aria-label="Default output">Default</ToggleGroupItem>
+                    <ToggleGroupItem value="verbose" aria-label="Verbose output">Verbose</ToggleGroupItem>
+                  </ToggleGroup>
+                  <FieldDescription id={`${detailId}-description`} className="text-xs">{modeDescriptions[mode]}</FieldDescription>
+                </Field>
+                <PushToggle className="border-t border-border py-3.5" />
+              </FieldGroup>
+            </SettingsGroup>
 
-          {/* Output detail controls activity, progress, metadata and usage density. */}
-          <SettingRow label="Detail">
-            <ToggleGroup
-              type="single"
-              value={mode}
-              // Same empty-string deselect guard as Appearance: keep one active.
-              onValueChange={(v) => v && setMode(v as OutputMode)}
-              className="w-auto"
-            >
-              <ToggleGroupItem value="compact" aria-label="Compact output" className="px-3">
-                Compact
-              </ToggleGroupItem>
-              <ToggleGroupItem value="default" aria-label="Default output" className="px-3">
-                Default
-              </ToggleGroupItem>
-              <ToggleGroupItem value="verbose" aria-label="Verbose output" className="px-3">
-                Verbose
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </SettingRow>
-
-          <Separator />
-
-          {/* Notifications — PushToggle as a full-width Switch row. */}
-          <PushToggle />
-
-          <Separator />
-
-          {/* Connection — read-only SSE state. */}
-          {conn && (
-            <>
-              <div className="flex min-h-[44px] items-center justify-between gap-3 py-2">
-                <span className="text-[15px] text-foreground">Connection</span>
-                <ConnLabel conn={conn} />
+            <SettingsGroup label="Installation">
+              <div className="flex flex-col">
+                <Button ref={spacesLink} variant="ghost" aria-label="Spaces" onClick={() => setSection("spaces")}
+                  className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left hover:bg-accent">
+                  <FolderSearch className="text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Spaces</span><span className="text-xs font-normal text-muted-foreground">Folders to search for repositories</span></span>
+                  <ChevronRight className="text-muted-foreground" />
+                </Button>
+                <Separator />
+                <Button ref={updatesLink} variant="ghost" aria-label="Updates" onClick={() => setSection("updates")}
+                  className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left hover:bg-accent">
+                  <ArrowUpCircle className="text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Updates</span><span className="text-xs font-normal text-muted-foreground">Version, channel & automatic updates</span></span>
+                  <ChevronRight className="text-muted-foreground" />
+                </Button>
+                {conn && <>
+                  <Separator />
+                  <div className="flex min-h-11 items-center justify-between gap-3 px-1 py-2">
+                    <span className="text-xs text-muted-foreground">Server connection</span>
+                    <ConnLabel conn={conn} />
+                  </div>
+                </>}
               </div>
-              <Separator />
-            </>
-          )}
+            </SettingsGroup>
 
-          {/* Account — sign out, behind an AlertDialog confirm. */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <button
-                type="button"
-                aria-label="Sign out"
-                className="flex min-h-[44px] items-center py-2 text-left text-[15px] font-medium text-destructive outline-none active:opacity-70"
-              >
-                Sign out
-              </button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Sign out?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  You'll need your passkey to sign back in on this device.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogAction onClick={signOut}>Sign out</AlertDialogAction>
-                <AlertDialogCancel>Stay</AlertDialogCancel>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          </TabsContent>
-          <TabsContent forceMount hidden={section !== "spaces"} value="spaces" data-slot="settings-scroll" className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
-            {open && <RepoSettings />}
-          </TabsContent>
-          <TabsContent forceMount hidden={section !== "updates"} value="updates" data-slot="settings-scroll" className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
-            {open && <UpdateSettings />}
-          </TabsContent>
-        </Tabs>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" className="w-full justify-start px-1 font-medium text-destructive hover:bg-destructive/5">Sign out</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                  <AlertDialogDescription>You'll need your passkey to sign back in on this device.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogAction onClick={signOut}>Sign out</AlertDialogAction>
+                  <AlertDialogCancel>Stay</AlertDialogCancel>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
+        <div hidden={section !== "spaces"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "spaces" && "hidden")}>
+          {open && <RepoSettings />}
+        </div>
+        <div hidden={section !== "updates"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "updates" && "hidden")}>
+          {open && <UpdateSettings />}
+        </div>
       </SheetContent>
     </Sheet>
   );
 }
 
-function SettingRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2">
-      <span className="text-[15px] text-foreground">{label}</span>
-      {children}
-    </div>
-  );
+function SettingsGroup({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
+  return <section aria-labelledby={id} className="flex flex-col gap-2">
+    <h3 id={id} className="text-xs font-medium text-muted-foreground">{label}</h3>
+    {children}
+  </section>;
 }
 
 function ConnLabel({ conn }: { conn: ConnState }) {
-  const label = conn === "open" ? "live" : conn === "connecting" ? "connecting…" : "reconnecting…";
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
-      <span
-        className={
-          conn === "open"
-            ? "size-2 rounded-full bg-live"
-            : conn === "reconnecting"
-              ? "size-2 animate-pulse rounded-full bg-amber"
-              : "size-2 rounded-full bg-faint"
-        }
-      />
-      {label}
-    </span>
-  );
+  const label = conn === "open" ? "Live" : conn === "connecting" ? "Connecting…" : "Reconnecting…";
+  return <span role="status" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+    <span aria-hidden="true" className={cn("size-1.5 rounded-full", conn === "open" ? "bg-live" : conn === "reconnecting" ? "animate-pulse bg-amber" : "bg-faint")} />
+    {label}
+  </span>;
 }

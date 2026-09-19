@@ -10,7 +10,7 @@ import { ScrollBar } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-// The tap-to-answer UI for a Claude AskUserQuestion (the task is awaiting_input).
+// The tap-to-answer UI for a provider question (the task is awaiting_input).
 // Mobile-first: each option is a full-width, thumb-sized row; single-select acts
 // like a radio, multiSelect toggles. Each question also takes an optional custom
 // note. When the agent asks SEVERAL questions at once they page *horizontally* —
@@ -70,6 +70,7 @@ export function QuestionCard({
   const answeredAt = (qi: number) => selected[qi].length > 0 || notes[qi].trim().length > 0;
 
   const answers: QuestionAnswer[] = questions.map((q, qi) => ({
+    ...(q.id ? { questionId: q.id } : {}),
     question: q.question,
     selected: selected[qi],
     notes: notes[qi].trim() || undefined,
