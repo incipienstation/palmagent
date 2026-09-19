@@ -62,6 +62,10 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
   the diff.
 - The repository's `pnpm verify` gate runs this suite and the service-worker
   update smoke before a PWA change can be delivered.
+- Tests run in two concurrent groups, each with one worker and its own mock server.
+  This keeps rename requests and cleanup from changing another group's fixtures.
+  The servers use `E2E_PORT` (default `4317`) and the following port. Group assignment
+  does not change snapshot paths.
 - Baselines are generated on Linux (`*-linux.png`); regenerate on the same OS the
   gate runs on (this host / CI).
 

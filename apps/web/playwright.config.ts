@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { readdirSync } from "node:fs";
 
 // Galaxy S25 (model SM-S931B): 1080×2340 physical @ DPR 3 → 360×780 CSS, Android
 // 15. Playwright ships no built-in S25 descriptor, so pin the device explicitly.
@@ -30,15 +31,26 @@ const galaxyS25 = {
 
 const PORT = Number(process.env.E2E_PORT ?? 4317);
 const baseURL = `http://localhost:${PORT}`;
+const specs = readdirSync(new URL("./tests/e2e/", import.meta.url), { recursive: true })
+  .filter((file) => /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(file)).sort();
+const groups = [0, 1];
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  // Each test owns its browser context; the shared mock backend is read-only.
-  // Keep concurrency bounded so mobile screenshots remain stable on CI runners.
+  // Rename tests mutate the mock backend. Give each concurrent group its own
+  // server, and run that group's tests sequentially, including cleanup hooks.
   workers: 2,
+  projects: groups.map((group) => ({
+    name: `group-${group + 1}`,
+    workers: 1,
+    testMatch: specs.filter((_, index) => index % groups.length === group).map((file) => `**/${file}`),
+    use: { baseURL: `http://localhost:${PORT + group}` },
+  })),
+  // Group assignment is scheduling only; preserve the existing visual baselines.
+  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{-platform}{ext}",
   reporter: [["list"]],
   // Galaxy S25 fixes the viewport (360×780), DPR, touch and UA so renders are
   // reproducible run to run (see galaxyS25 above).
@@ -61,13 +73,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "on-first-retry",
   },
-  // Build the current source, then serve it through the mock backend. Building
-  // here (not relying on a stale dist) means the gate always tests HEAD.
-  webServer: {
+  // The calling verification command builds the PWA before starting these servers.
+  webServer: groups.map((group) => ({
     command: "node tests/mock-server.mjs",
-    url: baseURL,
-    env: { PORT: String(PORT) },
+    url: `http://localhost:${PORT + group}`,
+    env: { PORT: String(PORT + group) },
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-  },
+  })),
 });
