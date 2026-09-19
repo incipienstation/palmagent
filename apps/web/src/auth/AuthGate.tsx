@@ -22,7 +22,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     let alive = true;
     api.auth.me().then(
       (me) => alive && setPhase(me.authenticated || !me.required ? "authed" : "unauthed"),
-      // Offline first-load with no cached me() — fall back to the login screen.
+      // Offline first-load cannot verify the session — fall back to the login screen.
       () => alive && setPhase("unauthed"),
     );
     return () => {

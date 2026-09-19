@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Returning to recently visited conversations reuses loaded messages and fetches
+  only missed events. Repeated repository, routine, and usage reads share a bounded
+  memory cache that expires after changes, reconnection, or authentication changes.
+- Authentication and API responses no longer fall back to persisted offline data
+  from an earlier session. The app shell remains available offline.
+
 ## 0.1.0-alpha.34
 
 ### Fixed
@@ -25,6 +33,7 @@ An entry does not mean a version has been published.
 
 - Palm Teal is now the primary brand color across actions, selection states, links,
   app icons, and browser chrome, with coordinated light and dark palettes.
+
 
 ## 0.1.0-alpha.32
 

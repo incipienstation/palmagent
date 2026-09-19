@@ -231,8 +231,9 @@ for (const mode of ["compact", "default"]) {
     await deliver(page, rows(2001, 2020));
     release();
     await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+    // Loading can settle before Virtuoso commits the prepended page.
+    await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
     await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
-    expect(await viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   });
 }
 
@@ -265,4 +266,18 @@ test("short history fills the viewport automatically and stops at the beginning"
   await expect(page.getByText("History message 1", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("history-beginning.png") });
   expect(cursors).toEqual(["5", "3"]);
+});
+
+
+test("returning to a conversation keeps messages and resumes only missed events", async ({ page }) => {
+  await recent(page);
+  await page.evaluate(() => { location.hash = "/"; });
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
+  await expect(page.getByText("tool_result: Tool 2000", { exact: true })).toBeVisible();
+  const urls = await page.evaluate(() => (window as unknown as Harness).scopedUrls);
+  expect(new URL(urls.at(-1)!).searchParams.get("lastEventId")).toBe("2000");
+  await deliver(page, rows(2000, 2002));
+  await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-message-key="2000"]')).toHaveCount(1);
 });

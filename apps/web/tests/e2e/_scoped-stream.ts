@@ -6,6 +6,7 @@ export async function installScopedStream(page: Page) {
   await page.addInitScript(() => {
     const NativeEventSource = window.EventSource;
     const streams = new Map<string, EventSource>();
+    const urls: string[] = [];
     class ScopedStream extends EventTarget {
       onopen: ((event: Event) => void) | null = null;
       onmessage: ((event: MessageEvent) => void) | null = null;
@@ -15,6 +16,7 @@ export async function installScopedStream(page: Page) {
         const parsed = new URL(url, location.href);
         const taskId = parsed.searchParams.get("task");
         if (!taskId) return new NativeEventSource(url) as unknown as ScopedStream;
+        urls.push(parsed.href);
         streams.set(taskId, this as unknown as EventSource);
         queueMicrotask(() => this.onopen?.(new Event("open")));
       }
@@ -28,11 +30,13 @@ export async function installScopedStream(page: Page) {
         }));
       },
       hasScopedStream(taskId: string) { return streams.has(taskId); },
+      scopedUrls: urls,
     });
   });
 }
 
 export type Harness = Window & {
+  scopedUrls: string[];
   sendScopedFrame(taskId: string, frame: unknown, seq?: number): void;
   hasScopedStream(taskId: string): boolean;
 };

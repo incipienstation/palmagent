@@ -1,3 +1,4 @@
+import { useForegroundRefresh } from "../hooks/useForegroundRefresh";
 import { useUpdateState } from "../update-state";
 import { useEffect, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
@@ -116,26 +117,21 @@ function RoutineCard({ r, busy, onToggle, onRun, onDelete }: {
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  async function loadHistory() {
-    if (historyLoading) return;
-    setHistoryLoading(true);
-    setHistoryError("");
-    try {
-      setHistory(await api.routineRuns(r.id));
-    } catch (e) {
-      setHistoryError(errMsg(e));
-    } finally {
-      setHistoryLoading(false);
-    }
-  }
+  const [historyAttempt, setHistoryAttempt] = useState(0);
+  const loadHistory = () => setHistoryAttempt(value => value + 1);
+  useForegroundRefresh(() => { if (showHistory) loadHistory(); });
+  useEffect(() => {
+    if (!showHistory) return;
+    let active = true;
+    setHistoryLoading(true); setHistoryError("");
+    void api.routineRuns(r.id)
+      .then(value => { if (active) setHistory(value); })
+      .catch(error => { if (active) setHistoryError(errMsg(error)); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [showHistory, r.id, r.updatedAt, r.lastRunAt, historyAttempt]);
 
-  async function toggleHistory() {
-    const next = !showHistory;
-    setShowHistory(next);
-    if (next && history === null) {
-      await loadHistory();
-    }
-  }
+  function toggleHistory() { setShowHistory(value => !value); }
 
   return (
     <Card>
@@ -305,6 +301,8 @@ export function RoutinesView() {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useForegroundRefresh(() => { void reload(); });
 
   async function act(fn: () => Promise<unknown>) {
     setBusy(true);

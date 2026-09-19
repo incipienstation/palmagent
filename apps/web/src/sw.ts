@@ -1,14 +1,12 @@
 /// <reference lib="webworker" />
 // Custom service worker (vite-plugin-pwa `injectManifest` strategy). It does
 // everything the old generateSW config did — precached app shell, SPA
-// navigation fallback, /api runtime caching, and Web Push, which
+// navigation fallback and Web Push, which
 // generateSW cannot express. Typechecked by tsconfig.sw.json (WebWorker lib),
 // excluded from the app tsconfig (DOM and WebWorker globals conflict).
 import { clientsClaim } from "workbox-core";
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
-import { NetworkFirst, NetworkOnly } from "workbox-strategies";
-import { ExpirationPlugin } from "workbox-expiration";
 import { BRANDING, type PushPayload } from "@palmagent/shared";
 
 declare let self: ServiceWorkerGlobalScope;
@@ -39,26 +37,12 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { deny
 // Leave SSE fetches unhandled. Even NetworkOnly ties an open stream to the
 // active worker and can keep a waiting worker from completing activation.
 
-// Installation settings and the running version must never fall back to a stale
-// offline snapshot, including when reconciling a save whose response was lost.
-registerRoute(({ url }) => url.pathname.startsWith("/api/settings/"), new NetworkOnly());
-// Search and browsing must respect settings changed by another device or the CLI.
-registerRoute(({ url }) => ["/api/repos/discover", "/api/repos/validate", "/api/fs/list"].includes(url.pathname), new NetworkOnly());
-
-// Quotas must never fall back to another login's cached allowance or make a
-// failed refresh look healthy. Server-side caching owns the refresh interval.
-registerRoute(({ url }) => /^\/api\/tasks\/[^/]+\/account-limits$/.test(url.pathname), new NetworkOnly());
-
-// REST: network-first so control/read calls are always fresh online, with a
-// short-lived cache as an offline courtesy.
-registerRoute(
-  ({ url }) => url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/stream"),
-  new NetworkFirst({
-    cacheName: "api",
-    networkTimeoutSeconds: 10,
-    plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 300 })],
-  }),
-);
+// API responses belong to the current authenticated session. Leave them
+// unhandled (including SSE); explicit page-local caching owns safe read reuse.
+// Retire the old shared offline cache when upgrading an existing installation.
+self.addEventListener("activate", (event) => {
+  event.waitUntil(caches.delete("api"));
+});
 
 // ---- Web Push ----
 // The backend sends a JSON PushPayload; every push MUST surface a visible

@@ -212,14 +212,15 @@ export const InboxView = memo(function InboxView({
   // we join the human-friendly name client-side. If a task references a repo we
   // don't have yet (registered since the last fetch), refetch once — `tried`
   // bounds it to a single attempt per id so a deleted repo can't loop.
-  const { repos, refresh } = useRepos();
+  const { repos, refresh, loading: reposLoading } = useRepos();
   const tried = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (reposLoading) return;
     const missing = tasks.filter((t) => !repos.has(t.repoId) && !tried.current.has(t.repoId));
     if (missing.length === 0) return;
     for (const t of missing) tried.current.add(t.repoId);
     refresh();
-  }, [tasks, repos, refresh]);
+  }, [tasks, repos, refresh, reposLoading]);
 
   const [selected, setSelected] = useState(() => { try { return localStorage.getItem("working-directory") ?? "all"; } catch { return "all"; } });
   const selectDirectory = useCallback((path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } }, []);

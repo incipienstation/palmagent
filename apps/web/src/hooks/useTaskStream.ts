@@ -1,3 +1,5 @@
+import { cacheSession } from "../read-cache";
+import { historyCache, type HistorySnapshot } from "../history-cache";
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, AgentEventKind, AgentKind, AssistantTextPayload, SseFrame, TaskState } from "@palmagent/shared";
@@ -36,21 +38,22 @@ function append(items: LogItem[], event: AgentEvent, seq: number) {
 }
 
 export function useTaskStream(taskId: string): TaskStream {
-  const restored = useRef(readUpdateSnapshot<{ items: LogItem[]; lastSeq: number; before: number | null; task?: TaskState }>(`history:${taskId}`));
-  const checkpoint = useRef(restored.current);
+  const [restored] = useState(() => readUpdateSnapshot<HistorySnapshot>(`history:${taskId}`) ?? historyCache.get(taskId));
+  const checkpoint = useRef(restored);
   useUpdateSnapshot(`history:${taskId}`, () => checkpoint.current);
-  const [log, setLog] = useState<LogItem[]>(restored.current?.items ?? []);
+  const [log, setLog] = useState<LogItem[]>(restored?.items ?? []);
   const [conn, setConn] = useState<ConnState>("connecting");
-  const [task, setTask] = useState<TaskState | undefined>(restored.current?.task);
-  const [loadingHistory, setLoadingHistory] = useState(!restored.current);
-  const [hasEarlier, setHasEarlier] = useState(restored.current?.before != null);
+  const [task, setTask] = useState<TaskState | undefined>(restored?.task);
+  const [loadingHistory, setLoadingHistory] = useState(!restored);
+  const [hasEarlier, setHasEarlier] = useState(restored?.before != null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   const load = useRef<() => void>(() => {});
   const loadEarlier = useCallback(() => load.current(), []);
 
   useEffect(() => {
-    const saved = restored.current;
+    const generation = cacheSession();
+    const saved = restored;
     setLog(saved?.items ?? []); setTask(saved?.task);
     let currentTask = saved?.task;
     setLoadingHistory(!saved); setHasEarlier(saved?.before != null); setLoadingEarlier(false); setHistoryError(undefined);
@@ -135,6 +138,10 @@ export function useTaskStream(taskId: string): TaskStream {
       () => receivedSnapshot ? lastSeq : undefined,
     );
     return () => {
+      // Capture unpublished events too: a navigation can beat the next frame.
+      if (ready && generation === cacheSession()) {
+        historyCache.set(taskId, { items: [...items], lastSeq, before, task: currentTask });
+      }
       disposed = true;
       disconnect(); request?.abort(); cancelAnimationFrame(animation);
       load.current = () => {};

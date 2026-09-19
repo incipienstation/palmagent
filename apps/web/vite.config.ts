@@ -62,7 +62,7 @@ export default defineConfig({
     VitePWA({
       // A custom SW (src/sw.ts) replaces generateSW — Web Push handlers
       // can't be expressed in generateSW config. The SW reimplements the same
-      // precache + SPA-fallback + /api caching, plus push/notificationclick.
+      // precache + SPA-fallback, plus push/notificationclick.
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.ts",

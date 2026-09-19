@@ -1,3 +1,4 @@
+import { cacheSession, invalidateClientReads, readCache } from "./read-cache";
 import { hc } from "hono/client";
 import type { Api } from "@palmagent/shared/http";
 import type {
@@ -24,7 +25,7 @@ interface ApiLifecycle {
 
 export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...args) => fetch(...args)) {
   const { observeServerVersion, beginBrowserWork, onUnauthorized } = lifecycle;
-  const client = hc<Api>("/", { fetch: fetcher, headers: () => ({ "x-palmagent-version": lifecycle.version() }) }).api;
+  const client = hc<Api>("/", { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetcher(input, { ...init, cache: "no-store" }), headers: () => ({ "x-palmagent-version": lifecycle.version() }) }).api;
   const tasks = client.tasks[":id"];
   const routines = client.routines[":id"];
   // hc substitutes path parameters verbatim; preserve the previous URL encoding.
@@ -33,13 +34,22 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
 
   // Hono owns paths, query encoding, bodies, and response types. Keep the product's
   // auth/update lifecycle around the typed call, including response consumption.
-  async function request<T>(send: () => Promise<JsonResponse<T>>, opts?: { write?: boolean; authProbe?: boolean }): Promise<T> {
+  async function request<T>(send: () => Promise<JsonResponse<T>>, opts?: {
+    write?: boolean; authProbe?: boolean; sessionChange?: boolean; cacheKey?: string; ttl?: number;
+  }): Promise<T> {
     const finish = opts?.write ? beginBrowserWork() : undefined;
-    try {
+    // Invalidate on both sides: reads racing a write cannot refill the cache,
+    // including when a failed response leaves the write outcome uncertain.
+    if (opts?.write) invalidateClientReads(opts.sessionChange);
+    const generation = cacheSession();
+    const load = async () => {
       const res = await send();
       observeServerVersion(res.headers.get("x-palmagent-version"));
       if (!res.ok) {
-        if (res.status === 401 && !opts?.authProbe) onUnauthorized();
+        if (res.status === 401) {
+          invalidateClientReads(true);
+          if (!opts?.authProbe) onUnauthorized();
+        }
         const json: unknown = await res.json().catch(() => null);
         const message = json && typeof json === "object" && "error" in json && typeof json.error === "string" ? json.error : undefined;
         if (res.status === 413 && message === undefined) {
@@ -47,10 +57,21 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         }
         throw new ApiError(res.status, message ?? res.statusText);
       }
-      return await res.json();
-    } finally { finish?.(); }
+      const value = await res.json();
+      if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
+      return value;
+    };
+    try {
+      return await (opts?.cacheKey ? readCache.read(opts.cacheKey, opts.ttl!, load) : load());
+    } finally {
+      if (opts?.write) invalidateClientReads(opts.sessionChange);
+      finish?.();
+    }
   }
-  const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false) => request(send, { write: true, authProbe });
+  const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false, sessionChange = false) => request(send, { write: true, authProbe, sessionChange });
+  // Only these catalog/summary reads opt in. Auth, live task state, settings,
+  // discovery, filesystem validation, history pages and quotas use the network.
+  const cached = <T>(key: string, ttl: number, send: () => Promise<JsonResponse<T>>) => request(send, { cacheKey: key, ttl });
 
   const api = {
     repoSettings: {
@@ -65,7 +86,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       get: () => request(() => client.settings.updates.$get()),
       change: (json: UpdateSettingsChange) => write(() => client.settings.updates.$patch({ json })),
     },
-    listRepos: () => request(() => client.repos.$get()).then((r) => r.repos),
+    listRepos: (refresh = false) => {
+      if (refresh) readCache.invalidate(key => key === "/api/repos");
+      return cached("/api/repos", 30_000, () => client.repos.$get()).then((r) => r.repos);
+    },
     createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json })).then((r) => r.repo),
     deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) })).then((r) => r.repo),
     discoverRepos: (refresh = false) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} })),
@@ -77,7 +101,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
     createTask: (json: CreateTaskRequest) => write(() => client.tasks.$post({ json })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
-    getUsage: () => request(() => client.usage.$get()).then((r) => r.usage),
+    getUsage: () => cached("/api/usage", 10_000, () => client.usage.$get()).then((r) => r.usage),
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json })).then((r) => r.task),
     steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json })),
     approve: (id: string, json: ApproveRequest) => write(() => tasks.approve.$post({ param: idParam(id), json })).then((r) => r.task),
@@ -86,19 +110,19 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     stop: (id: string) => write(() => tasks.stop.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     cancel: (id: string) => write(() => tasks.cancel.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     archive: (id: string) => write(() => tasks.$delete({ param: idParam(id) })).then((r) => r.task),
-    listRoutines: () => request(() => client.routines.$get()).then((r) => r.routines),
+    listRoutines: () => cached("/api/routines", 30_000, () => client.routines.$get()).then((r) => r.routines),
     createRoutine: (json: CreateRoutineRequest) => write(() => client.routines.$post({ json })).then((r) => r.routine),
     updateRoutine: (id: string, json: UpdateRoutineRequest) => write(() => routines.$patch({ param: idParam(id), json })).then((r) => r.routine),
     deleteRoutine: (id: string) => write(() => routines.$delete({ param: idParam(id) })).then((r) => r.routine),
     runRoutine: (id: string) => write(() => routines.run.$post({ param: idParam(id) })).then((r) => r.routine),
-    routineRuns: (id: string) => request(() => routines.runs.$get({ param: idParam(id) })).then((r) => r.runs),
+    routineRuns: (id: string) => cached(`/api/routines/${encodeURIComponent(id)}/runs`, 10_000, () => routines.runs.$get({ param: idParam(id) })).then((r) => r.runs),
     auth: {
       me: () => request(() => client.auth.me.$get(), { authProbe: true }),
       loginOptions: () => write(() => client.auth.login.options.$post(), true),
-      loginVerify: (json: AuthenticationResponseJSON) => write(() => client.auth.login.verify.$post({ json: { ...json, clientExtensionResults: { ...json.clientExtensionResults } } }), true),
+      loginVerify: (json: AuthenticationResponseJSON) => write(() => client.auth.login.verify.$post({ json: { ...json, clientExtensionResults: { ...json.clientExtensionResults } } }), true, true),
       registerOptions: (token?: string) => write(() => client.auth.register.options.$post({ json: { token } }), true),
-      registerVerify: (response: RegistrationResponseJSON, label?: string) => write(() => client.auth.register.verify.$post({ json: { response: { ...response, clientExtensionResults: { ...response.clientExtensionResults } }, label } }), true),
-      logout: () => write(() => client.auth.logout.$post(), true),
+      registerVerify: (response: RegistrationResponseJSON, label?: string) => write(() => client.auth.register.verify.$post({ json: { response: { ...response, clientExtensionResults: { ...response.clientExtensionResults } }, label } }), true, true),
+      logout: () => write(() => client.auth.logout.$post(), true, true),
       enrollToken: () => write(() => client.auth["enroll-token"].$post()),
     },
     push: {
