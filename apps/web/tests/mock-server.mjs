@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { repos, tasks, events, usage, routines, routineRuns, updateSettings } from "./fixtures.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const DIST = join(__dirname, "..", "dist");
+const DIST = process.env.E2E_DIST ?? join(__dirname, "..", "dist");
 const PORT = Number(process.env.PORT ?? 4317);
 // The standalone service-worker test simulates an available package and a slow
 // install response. It never contacts an updater or an actual agent process.
@@ -189,7 +189,7 @@ const server = createServer(async (req, res) => {
     if (m === "GET") {
       if (pathname === "/api/auth/me")
         return json(res, 200, { authenticated: true, required: false, credentialCount: 1 });
-      if (pathname === "/api/health") return json(res, 200, { ok: true });
+      if (pathname === "/api/health") return json(res, 200, { ok: true, runId: process.env.E2E_RUN_ID });
       if (pathname === "/api/settings/updates") return json(res, 200, updateSettings);
       if (pathname === "/api/settings/repos") return json(res, 200, {
         repoRoots: ["/projects"], defaults: ["/projects"], source: "installation", writable: true,
@@ -300,4 +300,10 @@ const server = createServer(async (req, res) => {
   return void serveStatic(res, pathname);
 });
 
-server.listen(PORT, "localhost", () => console.log(`[mock-server] internal listener on localhost:${PORT} (dist: ${DIST})`));
+server.listen(PORT, "localhost", () => {
+  const port = server.address().port;
+  console.log(`[mock-server] internal listener on localhost:${port} (dist: ${DIST})`);
+  process.send?.({ url: `http://localhost:${port}`, runId: process.env.E2E_RUN_ID });
+});
+// The runner owns this process, including when it is interrupted before cleanup.
+if (process.send) process.on("disconnect", () => process.exit(0));

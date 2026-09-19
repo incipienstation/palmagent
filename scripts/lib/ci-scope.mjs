@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { versionPolicy } from './release-version.mjs';
 
-const full = () => ({ code: true, server: true, web: true, package: true });
+const full = () => ({ types: true, tooling: true, server: true, web: true, package: true });
 
 // pkg:check covers these tests and fixtures; none are runtime inputs. Keep
 // new/unknown tooling paths on the full gate until their consumers are reviewed.
@@ -27,12 +27,14 @@ const isStatic = (path) => /^(?:AGENTS|CLAUDE|README|CHANGELOG)\.md$/.test(path)
 
 export function classifyChanges(paths, eventName = 'pull_request') {
   if (eventName !== 'pull_request' || !Array.isArray(paths) || !paths.length) return full();
-  const scope = { code: false, server: false, web: false, package: false };
+  const scope = { types: false, tooling: false, server: false, web: false, package: false };
   for (const path of paths) {
     if (isStatic(path)) continue;
     if (/(?:^|\/)(?:package\.json|pnpm-lock\.yaml)$/.test(path)) return full();
-    scope.code = true;
-    if (toolingTests.has(path)) continue;
+    if (toolingTests.has(path)) { scope.tooling = true; continue; }
+    // Browser cases/snapshots are outside the typecheck projects and are not
+    // packaging/CLI inputs. Other source paths retain both checks conservatively.
+    if (!path.startsWith('apps/web/tests/e2e/')) scope.types = scope.tooling = true;
     if (path.startsWith('apps/server/')) {
       scope.server = true;
       if (path.startsWith('apps/server/src/cli/')) scope.package = true;
@@ -87,7 +89,7 @@ export function classifyPullRequest(cwd, base, head) {
       if (git(['ls-tree', ancestor, '--', path]).split(' ')[0] !== '100644'
         || git(['ls-tree', head, '--', path]).split(' ')[0] !== '100644') return full();
     }
-    return { code: false, server: false, web: false, package: false };
+    return { types: false, tooling: false, server: false, web: false, package: false };
   } catch {
     return full();
   }

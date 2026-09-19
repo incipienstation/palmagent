@@ -12,7 +12,7 @@
     "web:dev": "pnpm --filter @palmagent/web dev",
     "web:build": "pnpm --filter @palmagent/web build",
     "web:verify": "pnpm web:build && pnpm web:verify:built",
-    "web:verify:built": "pnpm --filter @palmagent/web exec playwright test && node apps/web/scripts/test-sw-update.mjs",
+    "web:verify:built": "node apps/web/scripts/run-e2e.mjs && node apps/web/scripts/test-sw-update.mjs",
     "typecheck": "nx run-many -t typecheck",
     "server:contracts": "pnpm --filter @palmagent/server contracts",
     "server:contracts:live": "pnpm --filter @palmagent/server contracts:live",

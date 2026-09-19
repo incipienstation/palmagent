@@ -11,84 +11,31 @@
  */
 
 import assert from "node:assert/strict";
+import { createWebHarness } from "./web-harness.mjs";
 import { chromium } from "@playwright/test";
-import { execFileSync, spawn } from "node:child_process";
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const WEB_DIR = fileURLToPath(new URL("..", import.meta.url));
-const SW_PATH = join(WEB_DIR, "dist", "sw.js");
-const PORT = 4398; // separate port — no conflict with normal e2e on 4317
-const BASE = `http://localhost:${PORT}`;
+let SW_PATH;
+let BASE;
 
-let originalSw = null;
-let server = null;
-
-// ---- cleanup ----------------------------------------------------------
-async function cleanup() {
-  try {
-    if (originalSw !== null) {
-      await writeFile(SW_PATH, originalSw);
-      console.log("[test] restored sw.js");
-    }
-  } finally {
-    // A failed restore must fail the gate: packaging reuses these verified bytes.
-    if (server) server.kill("SIGTERM");
-  }
-}
-
-process.on("SIGINT", () => cleanup().then(() => process.exit(1)));
-process.on("uncaughtException", (e) => {
-  console.error("[test] uncaught:", e);
-  cleanup().then(() => process.exit(1));
+let harness;
+let interrupted;
+const cleanup = async () => { await harness?.close(); };
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
+  interrupted = signal === "SIGINT" ? 130 : 143;
+  if (harness) void cleanup().then(() => process.exit(interrupted));
 });
-
-// ---- start mock server -------------------------------------------------
-function startMockServer() {
-  return new Promise((resolve, reject) => {
-    const child = spawn("node", [join(WEB_DIR, "tests/mock-server.mjs")], {
-      env: { ...process.env, PORT: String(PORT), PWA_UPDATE_TARGET: "0.1.0-alpha.5" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    child.stdout.on("data", (d) => {
-      const line = d.toString();
-      process.stdout.write(`[mock] ${line}`);
-      if (line.includes(`${PORT}`)) resolve(child); // ready when it logs the port
-    });
-    child.stderr.on("data", (d) => process.stderr.write(`[mock] ${d}`));
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code !== null && code !== 0) reject(new Error(`mock-server exited ${code}`));
-    });
-    setTimeout(() => reject(new Error("mock-server startup timeout")), 10_000);
-  });
-}
-
-async function waitForHealth(url, timeout = 10_000) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`${url}/api/health`);
-      if (r.ok) return;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 150));
-  }
-  throw new Error(`health check timeout: ${url}`);
-}
 
 // ---- test -------------------------------------------------------------
 async function run() {
-  execFileSync(process.execPath, ["--test", fileURLToPath(new URL("./test-pwa-state.mjs", import.meta.url))], { stdio: "inherit" });
-  // Preserve original sw.js before any mutation
-  originalSw = await readFile(SW_PATH, "utf8");
-
-  console.log("[test] starting mock server on port", PORT);
-  server = await startMockServer();
-  await waitForHealth(BASE);
-  console.log("[test] mock server healthy");
+  execFileSync(process.execPath, ["--test", fileURLToPath(new URL("./test-pwa-state.mjs", import.meta.url)), fileURLToPath(new URL("./test-web-harness.mjs", import.meta.url))], { stdio: "inherit" });
+  harness = await createWebHarness({ count: 1, env: { PWA_UPDATE_TARGET: "0.1.0-alpha.5" } });
+  if (interrupted) { await cleanup(); process.exit(interrupted); }
+  SW_PATH = join(harness.dist, "sw.js");
+  BASE = harness.urls[0];
 
   const browser = await chromium.launch({
     headless: true,
@@ -131,7 +78,7 @@ async function run() {
             navigator.serviceWorker.addEventListener("controllerchange", () => res(true), { once: true });
           }),
         ),
-      { timeout: 20_000 },
+      undefined, { timeout: 20_000 },
     );
     const swState = await page.evaluate(() => ({
       controller: !!navigator.serviceWorker.controller,

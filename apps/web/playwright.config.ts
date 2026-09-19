@@ -28,13 +28,14 @@ const galaxyS25 = {
 // baselines live next to each spec in <spec>.ts-snapshots/. Regenerate them
 // (test:e2e:update) only when a UI change is intentional, and inspect the diff.
 
-const PORT = Number(process.env.E2E_PORT ?? 4317);
-const baseURL = `http://localhost:${PORT}`;
+const baseURL = process.env.E2E_BASE_URL;
+const statefulURL = process.env.E2E_STATEFUL_URL;
+if (!baseURL || !statefulURL) throw new Error("Use node scripts/run-e2e.mjs to start isolated test servers.");
 const statefulSpecs = ["**/session-rename.spec.ts"];
-const groups = [0, 1];
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  outputDir: process.env.E2E_OUTPUT_DIR,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -43,7 +44,7 @@ export default defineConfig({
   workers: 2,
   projects: [
     { name: "stateful", workers: 1, fullyParallel: false, testMatch: statefulSpecs,
-      use: { baseURL: `http://localhost:${PORT + 1}` } },
+      use: { baseURL: statefulURL } },
     { name: "parallel", testIgnore: statefulSpecs, use: { baseURL } },
   ],
   // Group assignment is scheduling only; preserve the existing visual baselines.
@@ -70,12 +71,4 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "on-first-retry",
   },
-  // The calling verification command builds the PWA before starting these servers.
-  webServer: groups.map((group) => ({
-    command: "node tests/mock-server.mjs",
-    url: `http://localhost:${PORT + group}`,
-    env: { PORT: String(PORT + group) },
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  })),
 });
