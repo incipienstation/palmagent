@@ -11,8 +11,8 @@ Tailwind CSS v4 (`@tailwindcss/vite`, tokens in `src/index.css`) with
 **vendored shadcn/ui components** in `src/components/ui/` (Radix primitives +
 `cva`/`tailwind-merge`, `cn()` in `src/lib/utils.ts`, `@/*` path alias,
 `components.json` for the shadcn CLI). The bottom-sheet repo picker is a `vaul`
-drawer; icons are `lucide-react`. Components are sized mobile-first (44px tap
-targets); add new ones with `pnpm dlx shadcn@latest add <name>` or by hand in
+drawer; transient feedback uses Sonner, and icons are `lucide-react`. Components
+are sized mobile-first (44px tap targets); add new ones with `pnpm dlx shadcn@latest add <name>` or by hand in
 the same style. Gotcha to keep: Radix `Select` inside a `<form>` echoes a stale
 `""` through `onValueChange` when value + items land in the same render — keep
 the `v && set…(v)` guards.
@@ -242,3 +242,12 @@ browsers vibrate briefly when a menu opens or the delivery mode changes;
 visual feedback remains available when vibration is unavailable.
 
 See [message delivery and recovery](../../docs/MESSAGES.md) for server behavior.
+
+## Transient feedback
+
+Toasts are neutral, text-sized pills centered above the composer or bottom actions.
+A new message replaces the previous one. Brief confirmations disappear after
+2.5 seconds, errors after 6 seconds, and the exit hint retains its 2-second window.
+Longer messages wrap within the viewport. Swipe down to dismiss, or focus the
+notification with Alt+T and press Escape. Toasts follow the available keyboard space
+and respect reduced-motion preferences.

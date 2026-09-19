@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Toasts use compact, text-sized pills above bottom controls, with one message at
+  a time and touch-following swipe dismissal. Longer errors wrap within the screen.
+
 ## 0.1.0-alpha.35
 
 ### Fixed

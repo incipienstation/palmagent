@@ -25,7 +25,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
     finally { setBusy(false); }
   }
   async function copy() {
-    try { await navigator.clipboard.writeText(command); toast({ title: "Resume command copied", variant: "success" }); }
+    try { await navigator.clipboard.writeText(command); toast({ title: "Copied.", variant: "success" }); }
     catch { toast({ title: "Select and copy the command below", variant: "destructive" }); }
   }
   return <section aria-label="Shell handoff" className="flex flex-col gap-3">

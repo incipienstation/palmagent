@@ -1,3 +1,4 @@
+import { useToastObstacle } from "../hooks/useToastObstacle";
 import { useUpdateState } from "../update-state";
 import { useEffect, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo } from "@palmagent/shared";
@@ -30,6 +31,7 @@ function errMsg(e: unknown): string {
 }
 
 export function DispatchView() {
+  const toastObstacle = useToastObstacle();
   const [repos, setRepos] = useState<Repo[]>([]);
   // Everything except title + prompt is a sticky preference: the form re-opens
   // with the last-used choice rather than resetting each time (loadRepos still
@@ -136,7 +138,7 @@ export function DispatchView() {
             </Field>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col gap-2 px-3 pb-[calc(12px+var(--safe-bottom))]">
+        <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 px-3 pb-[calc(12px+var(--safe-bottom))]">
           {error && <Alert variant="destructive">{error}</Alert>}
           <Composer id="dispatch-prompt" label="Prompt" value={prompt} onChange={setPrompt}
             placeholder="Work with Palmagent" action="Dispatch" busy={busy}
