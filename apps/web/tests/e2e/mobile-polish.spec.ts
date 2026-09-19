@@ -1,8 +1,34 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 import { tasks, usage, repos } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
+
+async function expectTouchTarget(button: Locator): Promise<void> {
+  // Trial action waits for visibility and a stable box without clicking the control.
+  await button.click({ trial: true });
+  const box = (await button.boundingBox())!;
+  // Transformed DOMRects can report 43.999992 for a 44 CSS px target.
+  // Keep this far below a layout subpixel so genuinely undersized controls still fail.
+  const roundingTolerance = 0.0001;
+  expect(box.width + roundingTolerance, "touch target width").toBeGreaterThanOrEqual(44);
+  expect(box.height + roundingTolerance, "touch target height").toBeGreaterThanOrEqual(44);
+}
+
+test("touch target measurement waits for motion and rejects undersized controls", async ({ page }) => {
+  await page.setContent('<button style="box-sizing:border-box;width:44px;height:44px;padding:0;border:0">Target</button>');
+  const button = page.getByRole("button", { name: "Target" });
+  await button.evaluate(el => {
+    el.addEventListener("click", () => { el.dataset.clicked = "true"; });
+    el.animate([{ transform: "translateX(0)" }, { transform: "translateX(33.333333px)" }],
+      { duration: 150, fill: "forwards" });
+  });
+  await expectTouchTarget(button);
+  expect(await button.evaluate(el => el.getAnimations().every(animation => animation.playState === "finished"))).toBe(true);
+  await expect(button).not.toHaveAttribute("data-clicked", "true");
+  await button.evaluate(el => { el.style.width = "43.9px"; });
+  await expect(expectTouchTarget(button)).rejects.toThrow(/touch target width/);
+});
 
 test("the inbox distinguishes a pending snapshot, an empty list, and populated search results", async ({ page }) => {
   let release!: () => void;
@@ -67,9 +93,7 @@ test("Settings navigation preserves a folder draft and fits a narrow phone", asy
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   const settings = page.getByRole("button", { name: "Settings", exact: true });
-  const box = (await settings.boundingBox())!;
-  expect(box.width).toBeGreaterThanOrEqual(44);
-  expect(box.height).toBeGreaterThanOrEqual(44);
+  await expectTouchTarget(settings);
   await settings.click();
   await page.getByRole("button", { name: "Spaces", exact: true }).click();
   const input = page.getByRole("region", { name: "Space search paths" }).getByRole("textbox");
@@ -84,7 +108,7 @@ test("Settings navigation preserves a folder draft and fits a narrow phone", asy
   for (const name of ["Spaces", "Updates"]) {
     await page.getByRole("button", { name, exact: true }).click();
     const back = page.getByRole("button", { name: "Back to settings" });
-    expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await expectTouchTarget(back);
     await expect(page.locator('[data-slot="settings-scroll"]:visible')).toHaveCount(1);
     await page.locator('[data-slot="settings-scroll"]:visible').evaluate(el => { el.scrollTop = el.scrollHeight; });
     expect((await header.boundingBox())!.y).toBeCloseTo(headerTop, 0);
