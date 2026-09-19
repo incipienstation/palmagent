@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
-import { changedPaths, classifyChanges } from '../lib/ci-scope.mjs';
+import { changedPaths, classifyChanges, classifyPullRequest } from '../lib/ci-scope.mjs';
 
 const all = { code: true, server: true, web: true, package: true };
 const none = { code: false, server: false, web: false, package: false };
@@ -83,4 +83,53 @@ test('scope command fails closed when event metadata or commit history is unavai
       GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output },
   });
   assert.equal(readFileSync(output, 'utf8'), 'code=true\nserver=true\nweb=true\npackage=true\n');
+});
+
+
+test('only synchronized version fields and release notes qualify for preparation checks', (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), 'palmagent-ci-versions-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test.invalid', ...args],
+    { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const manifests = ['package.json', 'plugins/claude/.claude-plugin/plugin.json',
+    'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'];
+  const write = (path, value) => {
+    mkdirSync(dirname(join(cwd, path)), { recursive: true });
+    writeFileSync(join(cwd, path), JSON.stringify(value));
+  };
+  const prepare = (version) => {
+    for (const path of manifests) write(path, { name: 'palmagent', version, scripts: { test: 'node --test' } });
+    write('CHANGELOG.md', 'Reviewed release notes');
+  };
+  const commit = () => { git('add', '.'); git('commit', '--allow-empty', '-m', 'fixture'); return git('rev-parse', 'HEAD'); };
+  git('init', '-b', 'base');
+  prepare('0.1.0-alpha.1');
+  const base = commit();
+  prepare('0.1.0-alpha.2');
+  const prepared = commit();
+  assert.deepEqual(classifyPullRequest(cwd, base, prepared), none);
+  // A later documentation commit must not hide an earlier dependency change.
+  for (const change of [
+    () => write('package.json', { name: 'palmagent', version: '0.1.0-alpha.2', scripts: { test: 'exit 0' } }),
+    () => write('package.json', { name: 'palmagent', version: '0.1.0-alpha.2', dependencies: { example: '*' } }),
+    () => write(manifests[1], { name: 'different', version: '0.1.0-alpha.2', scripts: { test: 'node --test' } }),
+    () => write(manifests[1], { name: 'palmagent', version: '0.1.0-alpha.3', scripts: { test: 'node --test' } }),
+    () => write('pnpm-lock.yaml', 'changed'),
+    () => write('apps/web/src/app.tsx', 'changed'),
+    () => chmodSync(join(cwd, 'package.json'), 0o755),
+    () => prepare('invalid'),
+    () => rmSync(join(cwd, manifests[1])),
+  ]) {
+    git('reset', '--hard', prepared);
+    git('clean', '-fd');
+    change();
+    commit();
+    write('CHANGELOG.md', 'Later notes');
+    const head = commit();
+    assert.notDeepEqual(classifyPullRequest(cwd, base, head), none);
+  }
+  git('reset', '--hard', prepared);
+  git('clean', '-fd');
+  writeFileSync(join(cwd, 'package.json'), '{invalid');
+  assert.deepEqual(classifyPullRequest(cwd, base, commit()), all);
 });

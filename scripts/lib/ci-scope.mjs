@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
+import { versionPolicy } from './release-version.mjs';
 
 const full = () => ({ code: true, server: true, web: true, package: true });
 
@@ -41,4 +43,38 @@ export function changedPaths(cwd, base, head) {
   const ancestor = git(['merge-base', base, head]).trim();
   // Read the complete PR diff, including both sides of renames, without API path limits.
   return git(['diff', '--name-only', '--no-renames', '-z', ancestor, head, '--']).split('\0').filter(Boolean);
+}
+
+// A release preparation changes only versions and release notes. Inspect the
+// complete committed diff; branch names and the latest commit are not evidence.
+export function classifyPullRequest(cwd, base, head) {
+  const paths = changedPaths(cwd, base, head);
+  const manifests = ['package.json', 'plugins/claude/.claude-plugin/plugin.json',
+    'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'];
+  if (!paths.includes('package.json') || paths.some((path) => path !== 'CHANGELOG.md' && !manifests.includes(path))) {
+    return classifyChanges(paths);
+  }
+  try {
+    const git = (args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const ancestor = git(['merge-base', base, head]).trim();
+    let versions;
+    for (const path of manifests) {
+      const before = JSON.parse(git(['show', `${ancestor}:${path}`]));
+      const after = JSON.parse(git(['show', `${head}:${path}`]));
+      versionPolicy(before.version);
+      versionPolicy(after.version);
+      versions ??= [before.version, after.version];
+      if (!isDeepStrictEqual([before.version, after.version], versions) || before.version === after.version) {
+        return full();
+      }
+      delete before.version;
+      delete after.version;
+      if (!isDeepStrictEqual(before, after)) return full();
+      if (git(['ls-tree', ancestor, '--', path]).split(' ')[0] !== '100644'
+        || git(['ls-tree', head, '--', path]).split(' ')[0] !== '100644') return full();
+    }
+    return { code: false, server: false, web: false, package: false };
+  } catch {
+    return full();
+  }
 }

@@ -12,9 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  scope:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+      server: ${{ steps.scope.outputs.server }}
+      web: ${{ steps.scope.outputs.web }}
+      package: ${{ steps.scope.outputs.package }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,44 +38,98 @@ jobs:
           node scripts/validate.mjs
           node scripts/check-release.mjs
         env:
-          # Context/PII denylist — never committed; lives only as a repo secret.
-          # Required for same-repo PRs. Fork PRs cannot
-          # receive repository secrets, so they still run the generic patterns.
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+
+  tooling:
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
-        if: steps.scope.outputs.code == 'true'
       - uses: actions/setup-node@v4
-        if: steps.scope.outputs.code == 'true'
         with:
           node-version: '24'
           cache: pnpm
       - name: Install dependencies
-        if: steps.scope.outputs.code == 'true'
         run: pnpm install --frozen-lockfile
       - name: Verify types and tooling
-        if: steps.scope.outputs.code == 'true'
         run: pnpm typecheck && pnpm pkg:check
+
+  server:
+    needs: scope
+    if: needs.scope.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Verify server contracts and runtime
-        if: steps.scope.outputs.server == 'true'
         run: pnpm server:contracts && pnpm server:smoke
+
+  web:
+    needs: scope
+    if: needs.scope.outputs.web == 'true' || (needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Build the PWA once
-        if: steps.scope.outputs.web == 'true' || (steps.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
         run: pnpm web:build
       - name: Install Chromium
-        if: steps.scope.outputs.web == 'true'
+        if: needs.scope.outputs.web == 'true'
         run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
       - name: Verify PWA and service worker
-        if: steps.scope.outputs.web == 'true'
+        if: needs.scope.outputs.web == 'true'
         run: pnpm web:verify:built
       - name: Verify packed candidate
-        if: steps.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
         env:
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: "true"
-          PKG_PUBLISHABLE: "1"
-          EXPECT_PUBLISHABLE: "1"
+          REQUIRE_LEAK_DENYLIST: 'true'
+          PKG_PUBLISHABLE: '1'
+          EXPECT_PUBLISHABLE: '1'
         run: |
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/candidate
+
+  validate:
+    needs: [scope, tooling, server, web]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful selected checks
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module -e '
+            const results = JSON.parse(process.env.RESULTS);
+            if (results.scope.result !== "success" || Object.values(results).some(({ result }) => !["success", "skipped"].includes(result))) {
+              console.error("A required CI lane failed or was cancelled.");
+              process.exit(1);
+            }
+          '

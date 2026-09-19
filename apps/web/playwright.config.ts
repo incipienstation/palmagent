@@ -30,15 +30,24 @@ const galaxyS25 = {
 
 const PORT = Number(process.env.E2E_PORT ?? 4317);
 const baseURL = `http://localhost:${PORT}`;
+const statefulSpecs = ["**/session-rename.spec.ts"];
+const groups = [0, 1];
 
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  // One worker keeps the shared (read-only) mock server and screenshot timing
-  // deterministic; the suite is small and fast, so parallelism buys little.
-  workers: 1,
+  // Mutating tests own a separate server and run sequentially, including cleanup.
+  // Read-only tests can use both workers as soon as the stateful suite finishes.
+  workers: 2,
+  projects: [
+    { name: "stateful", workers: 1, fullyParallel: false, testMatch: statefulSpecs,
+      use: { baseURL: `http://localhost:${PORT + 1}` } },
+    { name: "parallel", testIgnore: statefulSpecs, use: { baseURL } },
+  ],
+  // Group assignment is scheduling only; preserve the existing visual baselines.
+  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{-platform}{ext}",
   reporter: [["list"]],
   // Galaxy S25 fixes the viewport (360×780), DPR, touch and UA so renders are
   // reproducible run to run (see galaxyS25 above).
@@ -61,13 +70,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "on-first-retry",
   },
-  // Build the current source, then serve it through the mock backend. Building
-  // here (not relying on a stale dist) means the gate always tests HEAD.
-  webServer: {
+  // The calling verification command builds the PWA before starting these servers.
+  webServer: groups.map((group) => ({
     command: "node tests/mock-server.mjs",
-    url: baseURL,
-    env: { PORT: String(PORT) },
+    url: `http://localhost:${PORT + group}`,
+    env: { PORT: String(PORT + group) },
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-  },
+  })),
 });
