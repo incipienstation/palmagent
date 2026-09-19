@@ -517,19 +517,29 @@ export class TaskService {
   // writes the control_response that unblocks the CLI), record the answer as a
   // synthetic event (shown as a "You" bubble), clear the pending question, and
   // resume `running`. 409 if the task isn't actually paused on a question.
-  answer(id: string, req: AnswerRequest): TaskState {
+  async answer(id: string, req: AnswerRequest): Promise<TaskState> {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
     if (task.status !== "awaiting_input") throw conflict(`task is not awaiting input (${task.status})`);
     if (!req?.requestId) throw badRequest("requestId is required");
     const handle = this.supervisor.get(id);
-    if (!handle?.answer(req)) throw conflict("no matching pending question to answer");
-    const now = Date.now();
-    task.pendingInput = undefined;
-    this.db.setTaskPendingInput(task.taskId, undefined, now);
-    this.emitSynthetic(task, { subtype: "answer", answers: req.answers, response: req.response });
-    this.transition(task, "running");
+    if (task.pendingInput?.requestId !== req.requestId) throw conflict("no matching pending question to answer");
+    if (!await handle?.answer(req)) throw conflict("Answer delivery could not be confirmed. The question has been kept; check the conversation before trying again.");
+    // The turn may finish, stop, or ask another question while delivery is pending.
+    // Independent hosts also replay a durable answer event, including across restarts.
+    if (!this.shuttingDown && this.resolveInput(task, req.requestId)) {
+      this.emitSynthetic(task, { subtype: "answer", requestId: req.requestId, answers: req.answers, response: req.response });
+    }
     return task;
+  }
+
+  private resolveInput(task: TaskState, requestId: string): boolean {
+    if (task.pendingInput?.requestId !== requestId) return false;
+    task.pendingInput = undefined;
+    this.db.setTaskPendingInput(task.taskId, undefined, Date.now());
+    if (task.status === "awaiting_input") this.transition(task, "running");
+    else this.broadcastTasks();
+    return true;
   }
 
   // Stop = interrupt the current turn but keep the task resumable. Unlike
@@ -723,8 +733,9 @@ export class TaskService {
     if (rawSeq !== undefined && rawSeq <= (this.turnBaseline.get(task.taskId) ?? 0)) return;
 
     if (event.kind === "status") {
-      const p = event.payload as { subtype?: string; messageId?: string };
+      const p = event.payload as { subtype?: string; messageId?: string; requestId?: string };
       if (p.subtype === "message_delivered" && p.messageId) this.messages.delivered(task.taskId, p.messageId);
+      if ((p.subtype === "answer" || p.subtype === "input_resolved") && p.requestId) this.resolveInput(task, p.requestId);
     }
 
     if (this.backend.independent && task.status !== "cancelled" && event.kind === "status") {

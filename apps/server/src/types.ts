@@ -24,7 +24,7 @@ export interface StartArgs {
   // On reattach to a turn paused on AskUserQuestion: the task's persisted pending
   // question. Historical control requests are skipped, so the adapter re-seeds
   // its requestId→questions map from this without reviving answered questions.
-  // Claude-only; undefined on fresh starts and for turns not paused on a question.
+  // Undefined on fresh starts and for turns not paused on a question.
   pendingInput?: QuestionRequest;
 }
 
@@ -34,7 +34,7 @@ export interface RunHandle {
   steer: (text: string, images?: ImageAttachment[]) => boolean; // mid-turn message; false if the CLI can't inject one
   interrupt: () => boolean; // graceful mid-turn stop; false if the CLI has no channel (caller falls back to cancel())
   approve: (decision: string, scope?: string) => boolean; // false if the CLI has no approval channel
-  answer: (req: AnswerRequest) => boolean; // answer a pending AskUserQuestion; false if no matching pending request
+  answer: (req: AnswerRequest) => boolean | Promise<boolean>; // true only after the provider write is confirmed
   cancel: () => void; // SIGINT to the child
   done: Promise<void>; // resolves when the child exits (turn over)
 }

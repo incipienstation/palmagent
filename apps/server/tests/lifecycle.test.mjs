@@ -376,21 +376,22 @@ for (const daemon of [true, false]) {
   });
 }
 
-test("Claude: pending question survives graceful restart and answered question stays cleared", options, async (t) => {
+for (const agent of ["claude", "codex"]) test(`${agent}: pending question survives graceful restart and answered question stays cleared`, options, async (t) => {
   const c = await harness(t);
-  const task = await c.create("claude", "question", "answered-hold");
+  const task = await c.create(agent, "question", "answered-hold");
   const pending = await c.waitTask(task.taskId, (task) => task.status === "awaiting_input");
   const rows = c.rows(task.taskId);
   await c.restart(true);
   assert.deepEqual((await c.task(task.taskId)).pendingInput, pending.pendingInput);
   assert.deepEqual(c.rows(task.taskId), rows);
   await c.api("tasks/" + task.taskId + "/answer", {
-    requestId: "q1", answers: [{ question: "Continue?", selected: ["Yes"] }],
+    requestId: pending.pendingInput.requestId, answers: [{ question: "Continue?", selected: ["Yes"] }],
   });
   await until("answer received", () => c.rows(task.taskId).some((row) =>
     row.kind === "assistant_text" && JSON.parse(row.payload_json).text === "question:answered"));
   const answered = JSON.parse(readFileSync(c.marker("question", ".answer"), "utf8"));
-  assert.equal(answered.response.response.updatedInput.answers["Continue?"], "Yes");
+  if (agent === "claude") assert.equal(answered.response.response.updatedInput.answers["Continue?"], "Yes");
+  else assert.deepEqual(answered.result.answers.continue.answers, ["Yes"]);
   const afterAnswer = c.rows(task.taskId);
   await c.restart();
   // A fresh line is an ordering barrier after the daemon's buffered replay.
@@ -456,18 +457,16 @@ test("legacy steer and explicit queue serialize their next runs", options, async
 for (const agent of ["claude", "codex"]) test(`${agent}: independent host survives web replacement, pending input and offline completion`, options, async t => {
   const c = await harness(t, "independent");
   assert.equal((await c.api("health")).executionProtocol, 1);
-  const task = await c.create(agent, "independent", agent === "claude" ? "answered-hold" : "hold");
+  const task = await c.create(agent, "independent", "answered-hold");
   const original = await c.ready("independent");
-  if (agent === "claude") await c.waitTask(task.taskId, t => t.status === "awaiting_input");
+  await c.waitTask(task.taskId, t => t.status === "awaiting_input");
   await c.restart(true);
   process.kill(original.pid, 0);
   assert.deepEqual(await c.ready("independent"), original);
   assert.equal((await c.task(task.taskId)).sessionId, task.sessionId);
-  if (agent === "claude") {
-    assert.equal((await c.task(task.taskId)).pendingInput.requestId, "q1");
-    await c.api(`tasks/${task.taskId}/answer`, { requestId: "q1", answers: [{ question: "Continue?", selected: ["Yes"] }] });
-    await until("original process receives answer", () => existsSync(c.marker("independent", ".answer")));
-  }
+  const requestId = (await c.task(task.taskId)).pendingInput.requestId;
+  await c.api(`tasks/${task.taskId}/answer`, { requestId, answers: [{ question: "Continue?", selected: ["Yes"] }] });
+  await until("original process receives answer", () => existsSync(c.marker("independent", ".answer")));
   await kill(c.web);
   c.mark("independent", ".release");
   await until("provider finishes while view is absent", () => existsSync(c.marker("independent", ".terminal")));

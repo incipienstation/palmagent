@@ -1,5 +1,45 @@
 import { test, expect } from "@playwright/test";
 import { assertViewportLocked } from "./_helpers";
+import { tasks } from "../fixtures.mjs";
+import { installScopedStream, open, send } from "./_scoped-stream";
+
+test("Codex answers carry question identities and preserve input after delivery failure", async ({ page }) => {
+  await installScopedStream(page);
+  await open(page, "t-input");
+  const task = { ...structuredClone(tasks.find(t => t.taskId === "t-input")!), agent: "codex" as const,
+    pendingInput: { requestId: "17", questions: [
+      { id: "first", question: "Choose", options: [{ label: "Yes" }] },
+      { id: "second", question: "Choose", options: [] },
+    ] } };
+  await send(page, task.taskId, { type: "tasks", tasks: [task], replayThrough: 0 });
+  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await page.getByRole("button", { name: "Go to question 2", exact: true }).click();
+  await page.getByPlaceholder("Or type a custom answer…").nth(1).fill("Custom answer");
+  let release: () => void = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/tasks/t-input/answer", async route => {
+    await gate;
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "Answer delivery could not be confirmed." }) });
+  });
+  const request = page.waitForRequest(r => r.url().endsWith("/api/tasks/t-input/answer"));
+  await page.getByRole("button", { name: "Send answer", exact: true }).click();
+  const body = (await request).postDataJSON();
+  expect(body.answers).toEqual([
+    { questionId: "first", question: "Choose", selected: ["Yes"] },
+    { questionId: "second", question: "Choose", selected: [], notes: "Custom answer" },
+  ]);
+  await expect(page.getByRole("button", { name: "Send answer", exact: true })).toBeDisabled();
+  await expect(page.getByText("The agent needs your input")).toBeVisible();
+  release();
+  await expect(page.getByText("Answer delivery could not be confirmed.", { exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("Or type a custom answer…").nth(1)).toHaveValue("Custom answer");
+  await expect(page.getByRole("button", { name: "Send answer", exact: true })).toBeEnabled();
+  await send(page, task.taskId, { type: "tasks", tasks: [{ ...task,
+    pendingInput: { requestId: "18", questions: [{ id: "next", question: "Next question", options: [] }] },
+  }] });
+  await expect(page.getByPlaceholder("Or type a custom answer…")).toHaveCount(1);
+  await expect(page.getByPlaceholder("Or type a custom answer…")).toHaveValue("");
+});
 
 // The AskUserQuestion flow: a task paused on a question (awaiting_input) renders
 // the tap-to-answer QuestionCard, and answering posts to /api/tasks/:id/answer.

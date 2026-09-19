@@ -116,7 +116,7 @@ export class ClaudeRunner implements AgentRunner {
     }
 
     const writeLine = (o: unknown) => {
-      proc.writeStdin(JSON.stringify(o) + "\n");
+      return proc.writeStdin(JSON.stringify(o) + "\n");
     };
     // Images ride the same stream-json channel as Anthropic-API image blocks
     // (verified: the CLI forwards them to the model — works mid-turn too).
@@ -305,7 +305,6 @@ export class ClaudeRunner implements AgentRunner {
       answer: (req: AnswerRequest): boolean => {
         const pending = pendingQuestions.get(req.requestId);
         if (!pending || !proc.stdinWritable()) return false;
-        pendingQuestions.delete(req.requestId);
         const byQuestion = new Map(pending.questions.map((q) => [q.question, q]));
         const answers: Record<string, string | string[]> = {};
         const annotations: Record<string, { notes: string }> = {};
@@ -318,19 +317,21 @@ export class ClaudeRunner implements AgentRunner {
         const response = req.response?.trim();
         const picked = Object.keys(answers).length > 0 || Object.keys(annotations).length > 0 || !!response;
         if (!picked) {
-          writeLine({
+          if (!writeLine({
             type: "control_response",
             response: { subtype: "success", request_id: req.requestId, response: { behavior: "deny", message: "User declined to answer." } },
-          });
+          })) return false;
+          pendingQuestions.delete(req.requestId);
           return true;
         }
         const updatedInput: Record<string, unknown> = { questions: pending.questions, answers };
         if (Object.keys(annotations).length) updatedInput.annotations = annotations;
         if (response) updatedInput.response = response;
-        writeLine({
+        if (!writeLine({
           type: "control_response",
           response: { subtype: "success", request_id: req.requestId, response: { behavior: "allow", updatedInput } },
-        });
+        })) return false;
+        pendingQuestions.delete(req.requestId);
         return true;
       },
       cancel: () => proc.kill("SIGINT"),

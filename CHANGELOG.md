@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Keep input questions visible until answer delivery is confirmed, including after
+  reconnecting, and show Codex questions with selectable or written answers.
+
 ## 0.1.0-alpha.33
 
 ### Changed

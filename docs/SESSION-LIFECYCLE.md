@@ -86,6 +86,14 @@ an uncertain delivery result is not automatically resent: a provider write and a
 SQLite receipt cannot be committed atomically. The product message queue already
 holds uncertain delivery for review.
 
+Claude and Codex input requests appear as **Needs answer**. Sending an answer
+keeps the question visible until the execution host confirms the provider write.
+A rejected answer retains the question and permits an explicit retry; an uncertain
+delivery cannot be resent automatically or through a duplicate submission.
+The delivered answer is recorded with its receipt so a replacement web process
+can clear the matching question without reviving a stopped turn or clearing a
+newer question. Codex request-resolution notifications also clear expired questions.
+
 A replacement web process attaches to the existing journal, including invocations
 that completed while it was absent. Replay rebuilds terminal bookkeeping while
 the product cursor prevents duplicate events and repeated questions. Provider

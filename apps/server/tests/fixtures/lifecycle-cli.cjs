@@ -53,7 +53,12 @@ function start(prompt) {
     home: process.env.HOME, configDir: process.env.CLAUDE_CONFIG_DIR,
   }));
   if (spec.mode === "question" || spec.mode === "answered-hold") {
-    emit({
+    emit(interactive ? {
+      id: "q1", method: "item/tool/requestUserInput",
+      params: { threadId: session, turnId: "turn-1", itemId: "input", questions: [
+        { id: "continue", question: "Continue?", header: "Probe", options: [{ label: "Yes", description: "Continue" }] },
+      ] },
+    } : {
       type: "control_request", request_id: "q1",
       request: {
         subtype: "can_use_tool", tool_name: "AskUserQuestion",
@@ -87,6 +92,12 @@ if (interactive) {
     if (msg.method === "turn/start") { emit({ id: msg.id, result: { turn: { id: "turn-1" } } }); start(msg.params.input[0].text); }
     if (msg.method === "turn/steer") { emit({ id: msg.id, result: { turnId: "turn-1" } }); text(msg.params.input[0].text); }
     if (msg.method === "turn/interrupt") { mark(".interrupted"); emit({ id: msg.id, result: {} }); result(); }
+    if (msg.id === "q1" && msg.result) {
+      mark(".answer", JSON.stringify(msg));
+      emit({ method: "serverRequest/resolved", params: { threadId: session, requestId: "q1" } });
+      text(spec.key + ":answered");
+      if (spec.mode !== "answered-hold") result();
+    }
   });
   input.on("close", () => { if (spec?.mode !== "terminal-hold") process.exit(spec ? exitCode() : 0); });
 } else if (agent === "codex") {

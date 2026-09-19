@@ -1,4 +1,4 @@
-import type { ImageAttachment } from "@palmagent/shared";
+import type { ImageAttachment, QuestionRequest } from "@palmagent/shared";
 import type { Emit, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
 
 const input = (text: string, images?: ImageAttachment[]) => [
@@ -16,6 +16,8 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
   let completed = false;
   let usage: Record<string, number> | undefined;
   const pending = new Map<string, { resolve: (s: "delivered" | "rejected" | "unknown") => void; timer: ReturnType<typeof setTimeout> }>();
+  const questions = new Map<string, QuestionRequest>();
+  if (reattach && args.pendingInput) questions.set(args.pendingInput.requestId, args.pendingInput);
   const permission = args.permission;
   const sandbox = permission === "read-only" || permission === "readonly" ? "read-only"
     : permission === "danger-full-access" || permission === "full" ? "danger-full-access" : "workspace-write";
@@ -97,7 +99,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
         break;
       }
       case "turn/completed":
-        completed = true; turnId = undefined; clearTimeout(startup);
+        completed = true; turnId = undefined; questions.clear(); clearTimeout(startup);
         if (p.turn.status === "failed") event("error", { message: p.turn.error?.message ?? "Codex turn failed." }, seq);
         event("result", { is_error: p.turn.status !== "completed", subtype: p.turn.status, error: p.turn.error, usage }, seq);
         proc.closeStdin(); break;
@@ -108,17 +110,32 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
       case "item/commandExecution/requestApproval":
       case "item/fileChange/requestApproval":
         write({ jsonrpc: "2.0", id: ev.id, result: { decision: "decline" } }); break;
-      case "item/tool/requestUserInput":
-        // Headless runs keep the existing policy. Do not leave an unexpected
-        // request hanging while pretending the normal composer can answer it.
-        write({ jsonrpc: "2.0", id: ev.id, result: { answers: {} } }); break;
+      case "item/tool/requestUserInput": {
+        if (typeof ev.id !== "string" && typeof ev.id !== "number") break;
+        // Encode the RPC id without losing whether it was numeric or a string.
+        const requestId = JSON.stringify(ev.id);
+        if (reattach && seq <= (args.resumeFromSeq ?? 0)) break;
+        if (!Array.isArray(p.questions)) break;
+        const question: QuestionRequest = { requestId, questions: p.questions.map((q: any) => ({
+          id: q.id, question: q.question, header: q.header, options: q.options ?? [],
+        })) };
+        questions.set(requestId, question);
+        event("question", question, seq);
+        break;
+      }
+      case "serverRequest/resolved": {
+        const requestId = JSON.stringify(p.requestId);
+        questions.delete(requestId);
+        event("status", { subtype: "input_resolved", requestId }, seq);
+        break;
+      }
     }
   });
   proc.onStderr(text => event("status", { subtype: "stderr", text }));
   const done = new Promise<void>(resolve => proc.onExit(code => {
     clearTimeout(startup);
     for (const p of pending.values()) { clearTimeout(p.timer); p.resolve("unknown"); }
-    pending.clear();
+    pending.clear(); questions.clear();
     if (!completed) event("error", { message: "Codex exited before a terminal turn result." });
     event("status", { subtype: "process_exit", code }); resolve();
   }));
@@ -136,6 +153,25 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
     },
     steer: () => false,
     interrupt: () => !!turnId && !completed && rpc(`stop:${turnId}`, "turn/interrupt", { threadId: sessionId, turnId }),
-    approve: () => false, answer: () => false, cancel: () => proc.kill("SIGINT"), done,
+    approve: () => false,
+    answer: (req) => {
+      const question = questions.get(req.requestId);
+      if (!question || completed || !proc.stdinWritable()) return false;
+      const answers: Record<string, { answers: string[] }> = {};
+      for (const q of question.questions) {
+        if (!q.id) return false;
+        const matching = req.answers.filter(a => a.questionId ? a.questionId === q.id : a.question === q.question);
+        // Legacy clients can identify unique question text, but must not guess
+        // when two provider questions have the same wording.
+        const a = matching[0];
+        if (matching.length > 1 || (a && !a.questionId && question.questions.filter(other => other.question === q.question).length > 1)) return false;
+        const values = [...(a?.selected ?? []), ...[a?.notes?.trim(), req.response?.trim()].filter((s): s is string => !!s)];
+        if (values.length) answers[q.id] = { answers: values };
+      }
+      if (!write({ jsonrpc: "2.0", id: JSON.parse(req.requestId), result: { answers } })) return false;
+      questions.delete(req.requestId);
+      return true;
+    },
+    cancel: () => proc.kill("SIGINT"), done,
   };
 }

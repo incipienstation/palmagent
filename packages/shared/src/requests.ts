@@ -19,7 +19,7 @@ export const FollowupSchema = z.object({ prompt: text, images, ...settings });
 export const RenameTaskSchema = z.object({ title: text.trim().min(1, "Enter a session name.").max(200, "Use 200 characters or fewer.").regex(/^[^\r\n]*$/, "Use a single line for the session name.") });
 export const SteerSchema = z.object({ text, images, ...settings });
 export const ApproveSchema = z.object({ decision: z.enum(["approve", "deny"]), scope: text.optional() });
-export const QuestionAnswerSchema = z.object({ question: text, selected: z.array(text), notes: text.optional() });
+export const QuestionAnswerSchema = z.object({ questionId: required.optional(), question: text, selected: z.array(text), notes: text.optional() });
 export const AnswerSchema = z.object({ requestId: required, answers: z.array(QuestionAnswerSchema), response: text.optional() });
 // Omitted preset means custom cron; friendly presets compile in the service.
 // Omitted hour/dayOfWeek keep the existing 09:00/Monday defaults.
