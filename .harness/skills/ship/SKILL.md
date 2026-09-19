@@ -32,9 +32,17 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
 
 After confirming the PR is merged into `develop`, run `git fetch origin develop`. Identify the
 primary checkout with `git worktree list --porcelain` and update it only when it already has
-`develop` checked out, has no tracked or untracked changes or Git operation in progress, and
-no other active session or process depends on its current files. Do not switch branches or
-update other tasks' worktrees to perform this step.
+`develop` checked out and has no tracked or untracked changes or Git operation in progress.
+Do not switch branches or update other tasks' worktrees to perform this step.
+
+When implementation is isolated in linked worktrees, proceed with the primary checkout's
+fast-forward without additional confirmation. An open shell or agent process whose working
+directory is the primary checkout is not, by itself, a reason to skip: updating `develop`
+does not change another worktree's checked-out branch or files. Skip for a process dependency
+only when there is concrete evidence that work uses the primary checkout's current files,
+such as an active edit, build, test, or server loading source from that checkout. State that
+dependency when reporting a skipped update; do not infer it from a process's working directory
+alone. This distinction applies to updating `develop`, not removing an active worktree.
 
 Confirm local `develop` is an ancestor of the fetched `origin/develop` (or already equal), then
 run `git -C <primary-checkout> merge --ff-only origin/develop`. Do not stash, reset, rebase,
