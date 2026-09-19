@@ -16,7 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      code: ${{ steps.scope.outputs.code }}
+      types: ${{ steps.scope.outputs.types }}
+      tooling: ${{ steps.scope.outputs.tooling }}
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
       package: ${{ steps.scope.outputs.package }}
@@ -43,7 +44,7 @@ jobs:
 
   tooling:
     needs: scope
-    if: needs.scope.outputs.code == 'true'
+    if: needs.scope.outputs.types == 'true' || needs.scope.outputs.tooling == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -57,8 +58,12 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Verify types and tooling
-        run: pnpm typecheck && pnpm pkg:check
+      - name: Verify types
+        if: needs.scope.outputs.types == 'true'
+        run: pnpm typecheck
+      - name: Verify tooling
+        if: needs.scope.outputs.tooling == 'true'
+        run: pnpm pkg:check
 
   server:
     needs: scope
@@ -108,12 +113,13 @@ jobs:
         run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
       - name: Verify PWA shard
         if: needs.scope.outputs.web == 'true'
-        run: pnpm --filter @palmagent/web exec playwright test --shard=${{ matrix.shard }}/2
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/2
+      # Recent runs put more browser time on shard 1; pair it with the shorter package tail.
       - name: Verify service-worker updates once
-        if: needs.scope.outputs.web == 'true' && matrix.shard == 1
+        if: needs.scope.outputs.web == 'true' && matrix.shard == 2
         run: node apps/web/scripts/test-sw-update.mjs
       - name: Verify packed candidate
-        if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository && (needs.scope.outputs.web != 'true' || matrix.shard == 2)
+        if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository && matrix.shard == 1
         env:
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: 'true'

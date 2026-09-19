@@ -9,8 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.sw.json --noEmit && tsc -p tsconfig.fixtures.json",
-    "test:e2e": "vite build && playwright test",
-    "test:e2e:update": "vite build && playwright test --update-snapshots",
+    "test:e2e": "vite build && node scripts/run-e2e.mjs",
+    "test:e2e:update": "vite build && node scripts/run-e2e.mjs --update-snapshots",
     "test:sw-update": "vite build && node scripts/test-sw-update.mjs",
     "icons:generate": "node scripts/generate-icons.mjs"
   },

@@ -39,7 +39,7 @@ plaintext proxy targets are accepted only on loopback.
 ## QA harness (Playwright)
 
 A **headless, isolated** E2E harness. It builds the app and runs it against a
-**hermetic mock backend** (`tests/mock-server.mjs` serves `dist/` + answers
+**hermetic mock backend** (`tests/mock-server.mjs` serves a private copy of `dist/` + answers
 `/api` over the real SSE+REST wire contract from `tests/fixtures.mjs`) — no real
 dispatcher, no `claude`/`codex` CLI — on a **Galaxy S25 mobile viewport**. It exists
 to stop the recurring mobile-layout regressions (Radix ScrollArea horizontal
@@ -52,6 +52,17 @@ pnpm --filter @palmagent/web exec playwright install chromium
 
 pnpm --filter @palmagent/web test:e2e          # build + run (the gate)
 pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
+```
+
+Each run owns two OS-assigned loopback ports and an immutable build snapshot, so
+other worktrees' servers cannot be reused accidentally. The service-worker check
+owns a separate writable snapshot; update simulation never edits the build used
+for packaging. Both runners stop their servers and remove snapshots on completion. Browser failure
+artifacts remain under a separate `test-results/<run-id>/` directory for each run.
+Build before running against existing output or passing Playwright filters:
+
+```bash
+node apps/web/scripts/run-e2e.mjs --grep 'draft'  # from the repository root
 ```
 
 - Tests in `tests/e2e/*.spec.ts` protect observable contracts: drafts survive
@@ -73,9 +84,8 @@ pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
 - Read-only tests share a mock server and use up to two workers. Rename tests run
   sequentially on a separate server, so their requests and cleanup cannot change
   other tests' fixtures. Add any other suites that mutate backend fixtures to
-  `statefulSpecs` in `playwright.config.ts`. The servers use `E2E_PORT` (default
-  `4317`) and the following port; the global worker limit is two. Project assignment
-  does not change snapshot paths.
+  `statefulSpecs` in `playwright.config.ts`. The runner supplies both server URLs;
+  the global worker limit is two. Project assignment does not change snapshot paths.
 - Baselines are generated on Linux (`*-linux.png`); regenerate on the same OS the
   gate runs on (this host / CI).
 

@@ -5,11 +5,11 @@ export function requireSuccessfulChecks(results, trusted) {
     throw new Error('CI scope validation did not succeed.');
   }
   const scope = results.scope.outputs;
-  if (!scope || ['code', 'server', 'web', 'package'].some(key => !['true', 'false'].includes(scope[key]))) {
+  if (!scope || ['types', 'tooling', 'server', 'web', 'package'].some(key => !['true', 'false'].includes(scope[key]))) {
     throw new Error('CI scope outputs are incomplete or invalid.');
   }
   const selected = {
-    tooling: scope.code === 'true',
+    tooling: scope.types === 'true' || scope.tooling === 'true',
     server: scope.server === 'true',
     web: scope.web === 'true' || (trusted && scope.package === 'true'),
   };

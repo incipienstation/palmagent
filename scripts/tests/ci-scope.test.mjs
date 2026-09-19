@@ -6,8 +6,8 @@ import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { changedPaths, classifyChanges, classifyPullRequest } from '../lib/ci-scope.mjs';
 
-const all = { code: true, server: true, web: true, package: true };
-const none = { code: false, server: false, web: false, package: false };
+const all = { types: true, tooling: true, server: true, web: true, package: true };
+const none = { types: false, tooling: false, server: false, web: false, package: false };
 
 test('documentation and repository/operator skills need no dependency or runtime work', () => {
   assert.deepEqual(classifyChanges(['AGENTS.md', 'CLAUDE.md', 'README.md', 'CHANGELOG.md',
@@ -19,28 +19,36 @@ test('documentation and repository/operator skills need no dependency or runtime
 
 test('package READMEs do not hide code or make arbitrary Markdown static', () => {
   assert.deepEqual(classifyChanges(['apps/web/README.md', 'apps/server/src/server.ts']),
-    { ...none, code: true, server: true });
-  assert.deepEqual(classifyChanges(['apps/web/src/prompt.md']), { ...none, code: true, web: true });
+    { ...none, types: true, tooling: true, server: true });
+  assert.deepEqual(classifyChanges(['apps/web/src/prompt.md']), { ...none, types: true, tooling: true, web: true });
   assert.deepEqual(classifyChanges(['packages/new/README.md']), all);
 });
 
 test('server, web, and shared changes select their runtime surfaces', () => {
-  assert.deepEqual(classifyChanges(['apps/server/src/server.ts']), { ...none, code: true, server: true });
-  assert.deepEqual(classifyChanges(['apps/web/src/app.tsx']), { ...none, code: true, web: true });
+  assert.deepEqual(classifyChanges(['apps/server/src/server.ts']), { ...none, types: true, tooling: true, server: true });
+  assert.deepEqual(classifyChanges(['apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
   assert.deepEqual(classifyChanges(['packages/shared/src/types.ts']), { ...all, package: false });
-  assert.deepEqual(classifyChanges(['README.md', 'apps/web/src/app.tsx']), { ...none, code: true, web: true });
+  assert.deepEqual(classifyChanges(['README.md', 'apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
 });
 
 test('reviewed tooling tests select tooling without hiding other changed consumers', () => {
   for (const path of ['scripts/tests/release-finalize.test.mjs', 'scripts/tests/package-fixture.mjs']) {
-    assert.deepEqual(classifyChanges([path]), { ...none, code: true });
-    assert.deepEqual(classifyChanges([path, 'apps/web/src/app.tsx']), { ...none, code: true, web: true });
-    assert.deepEqual(classifyChanges(['apps/server/src/server.ts', path]), { ...none, code: true, server: true });
+    assert.deepEqual(classifyChanges([path]), { ...none, tooling: true });
+    assert.deepEqual(classifyChanges([path, 'apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
+    assert.deepEqual(classifyChanges(['apps/server/src/server.ts', path]), { ...none, types: true, tooling: true, server: true });
     assert.deepEqual(classifyChanges([path, 'scripts/release-finalize.mjs']), all);
   }
   for (const path of ['scripts/tests/new.test.mjs', 'scripts/tests/new-fixture.mjs', '.nvmrc']) {
     assert.deepEqual(classifyChanges([path]), all);
   }
+});
+
+test('browser-only cases skip unrelated tooling and types without hiding mixed source changes', () => {
+  const browser = ['apps/web/tests/e2e/dispatch.spec.ts', 'apps/web/tests/e2e/example.spec.ts-snapshots/mobile.png'];
+  assert.deepEqual(classifyChanges(browser), { ...none, web: true });
+  assert.deepEqual(classifyChanges([...browser, 'apps/web/src/api.ts']), { ...none, types: true, tooling: true, web: true });
+  assert.deepEqual(classifyChanges([...browser, 'scripts/tests/ci-results.test.mjs']), { ...none, tooling: true, web: true });
+  assert.deepEqual(classifyChanges([...browser, 'packages/shared/src/types.ts']), { ...all, package: false });
 });
 
 test('packaging, dependency, workflow, and unknown changes cannot take the static shortcut', () => {
@@ -102,7 +110,7 @@ test('scope command fails closed when event metadata or commit history is unavai
     cwd, stdio: 'pipe', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request',
       GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output },
   });
-  assert.equal(readFileSync(output, 'utf8'), 'code=true\nserver=true\nweb=true\npackage=true\n');
+  assert.equal(readFileSync(output, 'utf8'), 'types=true\ntooling=true\nserver=true\nweb=true\npackage=true\n');
 });
 
 

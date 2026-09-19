@@ -54,8 +54,8 @@ export function verificationSteps({ scope, base, head }) {
   add('working-diff', 'git', ['diff', '--check']);
   add('staged-diff', 'git', ['diff', '--cached', '--check']);
   if (base && head) add('committed-diff', 'git', ['diff', '--check', `${base}...${head}`, '--']);
-  if (scope.code) {
-    pnpm('types', 'typecheck');
+  if (scope.types) pnpm('types', 'typecheck');
+  if (scope.tooling) {
     pnpm('tooling', 'pkg:check');
     // pkg:check already includes the scope and repository-skill test files.
     steps.splice(steps.findIndex(({ id }) => id === 'scope-tests'), 1);

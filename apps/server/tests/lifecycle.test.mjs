@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import test from "node:test";
+import test, { describe } from "node:test";
 import Database from "better-sqlite3";
 import { beginUpdateMaintenance, isUpdateMaintenance } from "../src/update-maintenance.ts";
 import { verifyUpdateIdle } from "../src/cli/update-idle.ts";
@@ -36,13 +36,19 @@ async function kill(child) {
   await until("owned process exit", () => child.exitCode !== null || child.signalCode !== null);
 }
 
+// Do not reassign a port between concurrent cases during startup/restart gaps.
+const assignedPorts = new Set();
 async function freePort() {
   return new Promise((resolve, reject) => {
     const socket = createServer();
     socket.on("error", reject);
     socket.listen(0, "localhost", () => {
       const port = socket.address().port;
-      socket.close(() => resolve(port));
+      socket.close(() => {
+        if (assignedPorts.has(port)) return freePort().then(resolve, reject);
+        assignedPorts.add(port);
+        resolve(port);
+      });
     });
   });
 }
@@ -201,6 +207,8 @@ async function replay(c, taskId, cursor, global = false) {
   return ids;
 }
 
+// Each case owns its environment, database, sockets and child process groups.
+describe("isolated lifecycle contracts", { concurrency: 2 }, () => {
 for (const agent of ["claude", "codex"]) {
   test(`${agent}: web crash preserves CLI and replays events once`, options, async (t) => {
     const c = await harness(t);
@@ -502,4 +510,6 @@ test("independent admission survives web absence and queued Stop prevents a prov
   await c.waitTask(queued.taskId, task => task.status === "running");
   for (const key of ["slot-two", "next-slot"]) c.mark(key, ".release");
   for (const task of [second, queued]) await c.waitTask(task.taskId, task => task.status === "idle");
+});
+
 });

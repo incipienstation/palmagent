@@ -22,8 +22,10 @@ It never stages, commits, opens PRs, merges, or publishes.
 
 The verifier uses the [CI classifier](../../../scripts/lib/ci-scope.mjs) on the complete task
 diff, including committed, staged, unstaged, renamed, and untracked files. Known documentation
-changes select metadata checks. Code selects type/tooling and affected runtime checks; unknown
-scope or unavailable history selects every lane. Selected checks run once, with one PWA build
+changes select metadata checks. Typechecking, tooling, and runtime checks are selected independently:
+reviewed tooling tests need no typecheck, and browser-case/snapshot-only changes need neither
+typechecking nor tooling. Mixed changes retain the union; unknown scope or unavailable history
+selects every lane. Selected checks run once, with one PWA build
 shared by browser and package checks. Logs stay in a private temporary directory; the command
 reports each result and stops at the first failure. Inspect relevant log excerpts to diagnose it.
 Steps time out after 10 minutes (15 for browser checks); `--timeout-seconds <seconds>` overrides

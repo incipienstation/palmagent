@@ -5,7 +5,7 @@ import { requireSuccessfulChecks } from '../ci-results.mjs';
 
 function results(outputs = {}) {
   return {
-    scope: { result: 'success', outputs: { code: 'false', server: 'false', web: 'false', package: 'false', ...outputs } },
+    scope: { result: 'success', outputs: { types: 'false', tooling: 'false', server: 'false', web: 'false', package: 'false', ...outputs } },
     tooling: { result: 'skipped' }, server: { result: 'skipped' }, web: { result: 'skipped' },
   };
 }
@@ -22,7 +22,7 @@ test('metadata and trusted/fork packaging scopes require exactly their selected 
 });
 
 test('every selected lane rejects missing, skipped, cancelled and failed results', () => {
-  for (const [output, lane] of [['code', 'tooling'], ['server', 'server'], ['web', 'web']]) {
+  for (const [output, lane] of [['types', 'tooling'], ['tooling', 'tooling'], ['server', 'server'], ['web', 'web']]) {
     for (const trusted of [true, false]) {
       const selected = results({ [output]: 'true' });
       selected[lane].result = 'success';
@@ -42,7 +42,7 @@ test('scope failure, malformed selection and failed unselected checks fail close
     const value = results(); value.scope.result = result;
     assert.throws(() => requireSuccessfulChecks(value, true), /scope/);
   }
-  for (const output of ['code', 'server', 'web', 'package']) {
+  for (const output of ['types', 'tooling', 'server', 'web', 'package']) {
     const value = results(); delete value.scope.outputs[output];
     assert.throws(() => requireSuccessfulChecks(value, true), /outputs/);
     value.scope.outputs[output] = true;

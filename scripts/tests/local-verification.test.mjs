@@ -8,8 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { localScope, requireVerificationNode, runVerification, verificationSteps } from '../lib/local-verification.mjs';
 
-const full = { code: true, server: true, web: true, package: true };
-const none = { code: false, server: false, web: false, package: false };
+const full = { types: true, tooling: true, server: true, web: true, package: true };
+const none = { types: false, tooling: false, server: false, web: false, package: false };
 
 function fixture(t, cleanup = () => {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'palmagent-local-verification-'));
@@ -87,6 +87,16 @@ test('check selection deduplicates metadata, scope tests, and shared PWA builds'
   assert(!steps.some(step => step.args[0] === 'verify' || step.args[0] === 'web:verify'));
   assert.equal(steps.filter(step => step.args.includes('scripts/check-release.mjs') && !step.args.includes('--artifact')).length, 1);
   assert(steps.filter(step => step.id.startsWith('package-')).every(step => step.env.REQUIRE_LEAK_DENYLIST === 'true'));
+});
+
+test('type and tooling selection remain independent in local verification', () => {
+  for (const [types, tooling] of [[true, false], [false, true], [false, false]]) {
+    const steps = verificationSteps({ scope: { ...none, types, tooling, web: true } });
+    assert.equal(steps.some(step => step.id === 'types'), types);
+    assert.equal(steps.some(step => step.id === 'tooling'), tooling);
+    assert.equal(steps.some(step => step.id === 'scope-tests'), !tooling);
+    assert(steps.some(step => step.id === 'web-tests'));
+  }
 });
 
 test('runner stops at failure, preserves private logs, and does not echo child output', async t => {
