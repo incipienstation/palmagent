@@ -151,6 +151,7 @@ pnpm pkg:build
 pnpm pkg:smoke
 pnpm release:check
 pnpm verify
+node scripts/verify-local.mjs
 node scripts/sync-skills.mjs
 ```
 
@@ -163,8 +164,9 @@ described in the [release automation reference](.harness/skills/release/referenc
 
 CI runs only on PRs and always reports `validate`, with expensive checks selected by the complete
 change scope.
-Use [verify](.harness/skills/verify/SKILL.md) to select local checks from the complete task diff
-with the existing CI classifier. Documentation and skill-only edits need only the metadata checks;
+Use `node scripts/verify-local.mjs` under [verify](.harness/skills/verify/SKILL.md) to select and
+run local checks from the complete task diff with the existing CI classifier.
+Documentation and skill-only edits need only the metadata checks;
 unknown scope retains the full gate. Release candidates retain full source and packed-install
 verification under the [CI and candidate policy](.harness/skills/release/references/automation.md#candidate-automation).
 Build the PWA before using `web:verify:built` or

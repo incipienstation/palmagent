@@ -244,13 +244,28 @@ installed for the web tests.
 For PWA development, run `pnpm web:dev` in another terminal. See the
 [web development guide](apps/web/README.md) for local ports and UI checks.
 
-Follow the [verification skill](.harness/skills/verify/SKILL.md) before submitting a change.
-Documentation and skill-only edits use its scoped checks. For code, dependencies,
-workflows, or uncertain scope, run the complete source gate:
+Run scoped local verification before submitting a change:
 
 ```bash
-pnpm verify
+node scripts/verify-local.mjs
 ```
+
+The command refreshes `origin/develop`, examines the complete task diff including local changes,
+and runs the selected metadata, tooling, server, web, and package checks once. Known package
+README changes need only metadata checks. Use `--plan` to preview the checks (it still refreshes
+the base), or `--base origin/main` to target another branch. An explicit full commit SHA pins
+the base instead of fetching. Unknown scope or unavailable history selects all checks.
+
+Code checks need dependencies installed with `pnpm install --frozen-lockfile`; browser checks
+also need `pnpm --filter @palmagent/web exec playwright install chromium`. Detailed logs are
+written outside the repository, with a short result per check and a nonzero exit on failure.
+The command never commits or ships changes.
+
+Packed verification requires the private `LEAK_DENYLIST`. Without it, the command runs selected
+source checks, then stops before packaging with a nonzero exit and reports incomplete verification.
+Obtain the trusted PR's packed-check result before delivery. Release candidates continue
+to require full source and packed-install verification. See the
+[verification skill](.harness/skills/verify/SKILL.md) for delivery requirements.
 
 Individual checks are also available while developing:
 
