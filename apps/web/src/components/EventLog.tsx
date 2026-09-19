@@ -22,6 +22,7 @@ import { describeEvent } from "../format";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
+import { ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { activityLabel, failed, presentTranscript, type Activity } from "../transcript";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
@@ -218,7 +219,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
   if (item.kind === "output_image") {
     const img = item.event.payload as { mediaType?: string; data?: string };
     if (!img.data || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(img.mediaType ?? "")) return null;
-    return <figure className="my-3"><img src={`data:${img.mediaType};base64,${img.data}`} alt="Session output" loading="lazy" onLoad={onImageLoad} className="max-h-96 max-w-full rounded-lg object-contain" /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
+    return <figure className="my-3"><ImagePreview src={`data:${img.mediaType};base64,${img.data}`} alt="Session output" onLoad={onImageLoad} /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
   }
   if (item.kind === "assistant_text") {
     return (
@@ -479,8 +480,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   />;
 }
 
-export function EventLog({ log, live, prompt, loading = false, ...history }: {
-  log: LogItem[]; live: boolean; prompt?: string; loading?: boolean;
+export function EventLog({ log, live, prompt, taskId, loading = false, ...history }: {
+  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; loading?: boolean;
 } & HistoryControls) {
   const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
@@ -532,7 +533,7 @@ export function EventLog({ log, live, prompt, loading = false, ...history }: {
     }
     return rows;
   }, [log, mode, live, prompt, openActivity]);
-  return <ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
+  return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
     {rows.length > 0 ? <VirtualTranscript key={mode} rows={rows}
       liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} {...history} /> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
@@ -541,5 +542,5 @@ export function EventLog({ log, live, prompt, loading = false, ...history }: {
         </div>
       </ScrollAreaPrimitive.Viewport>}
     <ScrollBar />
-  </ScrollAreaPrimitive.Root>;
+  </ScrollAreaPrimitive.Root></ImageTaskContext.Provider>;
 }

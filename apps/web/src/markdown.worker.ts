@@ -2,7 +2,7 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkRehype from "remark-rehype";
-import { defaultUrlTransform } from "react-markdown";
+import { markdownUrlTransform } from "./image-source";
 import type { Root, RootContent } from "hast";
 
 // Parse the whole document so late reference definitions, fences, tables, and
@@ -14,7 +14,7 @@ function clean(node: Root | RootContent): Root | RootContent {
   if (node.type === "element") {
     // These are the only URL properties produced by our Markdown pipeline.
     for (const key of ["href", "src"]) {
-      if (key in node.properties) node.properties[key] = defaultUrlTransform(String(node.properties[key] ?? ""));
+      if (key in node.properties) node.properties[key] = markdownUrlTransform(String(node.properties[key] ?? ""), key);
     }
   }
   delete node.position;

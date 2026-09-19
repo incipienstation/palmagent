@@ -22,6 +22,8 @@ function clientTypeChecks(client: ReturnType<typeof hc<Api>>) {
   client.api.tasks[":id"].$patch({ param: { id: "fixture" }, json: { title: 12 } });
   // @ts-expect-error A history cursor is required and travels as query text.
   client.api.tasks[":id"].history.$get({ param: { id: "fixture" }, query: {} });
+  // @ts-expect-error Image reads require an explicit local path.
+  client.api.tasks[":id"].image.$get({ param: { id: "fixture" }, query: {} });
   // @ts-expect-error Unknown routes must not silently become fetch URLs.
   client.api.tasks[":id"].rename.$post({ param: { id: "fixture" } });
 }

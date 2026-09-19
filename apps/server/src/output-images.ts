@@ -1,14 +1,17 @@
 import type { ImageAttachment } from "@palmagent/shared";
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export function rasterMediaType(bytes: Buffer): ImageAttachment["mediaType"] | undefined {
+  if (bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) return "image/png";
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
+  if (/^GIF8[79]a$/.test(bytes.subarray(0, 6).toString("ascii"))) return "image/gif";
+  if (bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP") return "image/webp";
+}
 export function rasterImage(mediaType: unknown, data: unknown): ImageAttachment | undefined {
   if (typeof mediaType !== "string" || typeof data !== "string" || data.length > MAX_IMAGE_BYTES * 4 / 3 + 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return;
   const bytes = Buffer.from(data, "base64");
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) return;
-  const valid = mediaType === "image/png" ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
-    : mediaType === "image/jpeg" ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
-    : mediaType === "image/gif" ? /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString("ascii"))
-    : mediaType === "image/webp" ? bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP" : false;
+  const valid = rasterMediaType(bytes) === mediaType;
   return valid ? { mediaType, data: bytes.toString("base64") } : undefined;
 }
 

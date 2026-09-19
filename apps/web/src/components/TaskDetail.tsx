@@ -243,7 +243,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       <div className="flex min-h-0 flex-1 flex-col">
         {localOwner && <Alert className="mx-3 my-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
 
-        <EventLog log={log} live={running} loading={loadingHistory}
+        <EventLog taskId={taskId} log={log} live={running} loading={loadingHistory}
           prompt={loadingHistory || hasEarlier ? undefined : task?.prompt}
           hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier} />
 

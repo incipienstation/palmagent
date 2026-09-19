@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../input.js";
 import type { HttpDependencies } from "../types.js";
+import { TaskImageQuerySchema } from "@palmagent/shared/requests";
+import { readTaskImage } from "../../task-images.js";
 
 export function taskRoutes({ service, db }: HttpDependencies) {
   const app = new Hono();
@@ -10,6 +12,15 @@ export function taskRoutes({ service, db }: HttpDependencies) {
     .get("/", query(TaskQuerySchema), (c) => c.json({ tasks: service.listTasks(c.req.valid("query").status) }, 200))
     .post("/", jsonBody(CreateTaskSchema), (c) => c.json({ task: service.createTask(c.req.valid("json")) }, 201))
     .get("/:id", params(IdParamsSchema), (c) => c.json({ task: service.getTask(c.req.valid("param").id) }, 200))
+    .get("/:id/image", params(IdParamsSchema), query(TaskImageQuerySchema), async (c) => {
+      c.header("Cache-Control", "no-store");
+      c.header("X-Content-Type-Options", "nosniff");
+      c.header("Cross-Origin-Resource-Policy", "same-origin");
+      c.header("Content-Security-Policy", "default-src 'none'; sandbox");
+      const task = service.getTask(c.req.valid("param").id);
+      const image = await readTaskImage(task.worktreePath, c.req.valid("query").path);
+      return c.body(new Uint8Array(image.bytes), 200, { "Content-Type": image.mediaType });
+    })
     .get("/:id/account-limits", params(IdParamsSchema), async (c) => {
       c.header("Cache-Control", "no-store");
       return c.json(await service.accountLimits(c.req.valid("param").id), 200);

@@ -113,6 +113,17 @@ order intact.
 
 ## Output detail
 
+Agent replies render Markdown images with relative file paths or URLs such as
+`![Preview](https://example.invalid/preview.png)`. Tap an image or embedded tool
+image to open a larger view; choose **Actual size** to pan across its full resolution.
+An image wrapped in a Markdown link keeps that link.
+Relative paths resolve from the task's working directory; absolute paths and local
+`file:` URLs work only inside that directory, including after resolving symlinks.
+Local previews support PNG, JPEG, GIF, and WebP up to 5 MB. SVG and files outside
+the working directory are not served. Keep generated previews in the task directory
+to display them. The file must still exist when viewed; previews are not archived
+or cached for offline use. Missing or unsupported images display their description.
+
 Settings groups device preferences separately from installation settings. Appearance and
 output detail change directly in the overview; Spaces and Updates open their own screens.
 Back returns to the overview without losing a folder draft.
