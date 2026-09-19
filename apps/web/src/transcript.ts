@@ -21,7 +21,14 @@ export function userMessage(item: LogItem): boolean {
 }
 
 export type Activity = { type: "activity"; key: number; items: LogItem[]; live: boolean; preview?: string };
-export type TranscriptRow = Activity | { type: "message"; key: number; item: LogItem };
+export type RunFailure = { type: "failure"; key: number; items: LogItem[]; previous: boolean; completed?: boolean };
+export type TranscriptRow = Activity | RunFailure | { type: "message"; key: number; item: LogItem };
+
+export function runInterrupted(failure: RunFailure): boolean {
+  return !failure.completed && failure.items.some((item) => item.kind === "result" ||
+    (item.kind === "status" && payload(item).subtype === "process_exit") ||
+    payload(item).message === "Codex exited before a terminal turn result.");
+}
 
 // This is a view over the retained stream, never a destructive filter. Explicit
 // provider phase markers can arrive after text deltas. Unknown/legacy prose is
@@ -30,6 +37,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
   if (mode === "verbose") return log.map((item) => ({ type: "message", key: item.key, item }));
   const rows: TranscriptRow[] = [];
   let turn: LogItem[] = [];
+  let failure: RunFailure | undefined;
   const flush = (active: boolean) => {
     if (!turn.length) return;
     const start = rows.length;
@@ -47,6 +55,19 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
     const texts = new Set(turn.flatMap((item) => item.kind === "assistant_text" && phaseOf(item) !== "progress" ? [item.text.trim()] : []));
     for (const item of turn) {
       const p = payload(item);
+      // Tool failures are work details. Run errors have one disclosure across
+      // error/result/process-exit signals, including signals after result flush.
+      if (failed(item) && item.kind !== "tool_call" && item.kind !== "tool_result") {
+        if (!failure) {
+          failure = { type: "failure", key: item.key, items: [], previous: false };
+          rows.push(failure);
+        }
+        failure.items.push(item);
+        failure.completed = false;
+        if (mode === "default") group = undefined;
+        continue;
+      }
+      if (item.kind === "result" && failure) failure.completed = true;
       const machinery = item.kind === "status" || item.kind === "tool_call" || item.kind === "tool_result" || item.kind === "result";
       const background = machinery || phaseOf(item) === "progress";
       if (background) {
@@ -57,9 +78,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
         group.items.push(item);
         if (item === latestProgress && (active || mode === "default") && item.kind === "assistant_text") group.preview = item.text;
       }
-      // Failure summaries remain visible even with activity collapsed. The raw
-      // output is also retained inside the disclosure for diagnosis.
-      if (failed(item) || !background) {
+      if (!background) {
         rows.push({ type: "message", key: item.key, item });
         if (mode === "default") group = undefined;
       }
@@ -92,6 +111,13 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
   };
   for (const item of log) {
     const p = payload(item);
+    // Answers and steering continue the same run; only a new request or a
+    // provider turn start makes the previous run's error historical.
+    if (item.kind === "status" && ["dispatch", "followup", "turn_started"].includes(String(p.subtype))) {
+      flush(false);
+      if (failure) failure.previous = true;
+      failure = undefined;
+    }
     if (userMessage(item) || item.kind === "question" || item.kind === "approval_request") {
       flush(false);
       rows.push({ type: "message", key: item.key, item });
@@ -121,5 +147,5 @@ export function activityLabel(group: Activity, mode: OutputMode): string {
   const label = mode === "compact" ? "Activity" : category;
   const count = tools.size ? `${tools.size} ${tools.size === 1 ? "tool" : "tools"}` : `${group.items.length} ${group.items.length === 1 ? "event" : "events"}`;
   const state = group.live ? mode === "compact" ? "Working…" : category === "Commands" ? "Running commands…" : "Working…" : label;
-  return `${failures.size ? `${failures.size} failed · ` : ""}${state} · ${count}`;
+  return `${state} · ${count}${failures.size ? ` · ${failures.size} failed` : ""}`;
 }

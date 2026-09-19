@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Keep repeated tool failures inside expandable Activity details in Compact and
+  Default views. Run errors appear once per run, with earlier errors clearly
+  marked after a follow-up and the full diagnostic record still available.
+
 ## 0.1.0-alpha.38
 
 ### Added

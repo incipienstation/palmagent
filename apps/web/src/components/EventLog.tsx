@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import { Virtuoso, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 import { ScrollBar } from "@/components/ui/scroll-area";
@@ -23,7 +24,7 @@ import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
 import { ImagePreview, ImageTaskContext } from "./ImagePreview";
-import { activityLabel, failed, presentTranscript, type Activity } from "../transcript";
+import { activityLabel, failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
 // strong text; machinery (tool_call/result/status/error/etc.) reads as a quieter,
@@ -164,6 +165,7 @@ type TranscriptRow = { key: string; seq: number } & (
   | { type: "prompt"; text: string }
   | { type: "message"; item: LogItem; raw?: boolean; groupEnd?: boolean }
   | { type: "activity"; activity: Activity; open: boolean }
+  | { type: "failure"; failure: RunFailure; open: boolean }
 );
 type HistoryControls = {
   hasEarlier?: boolean;
@@ -246,7 +248,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
 
   return (
     <MachineryLine
-      kind={!raw && failed(item) ? "error" : item.kind}
+      kind={failed(item) ? "error" : item.kind}
       detail={raw ? describeEvent(item.event, { full: true }) : failed(item) && (item.kind === "tool_call" || item.kind === "tool_result") ? "Tool failed — expand for details" : describeEvent(item.event)}
       full={describeEvent(item.event, { full: true })}
       expanded={raw || expanded}
@@ -254,6 +256,25 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
     />
   );
 });
+
+function RunFailureSummary({ failure, open, toggle }: { failure: RunFailure; open: boolean; toggle: () => void }) {
+  const interrupted = runInterrupted(failure);
+  const historical = failure.previous || failure.completed;
+  const title = failure.previous
+    ? interrupted ? "Previous run interrupted" : "Previous run reported an error"
+    : failure.completed ? "Earlier errors in this run" : interrupted ? "Run interrupted" : "Run reported an error";
+  return <Alert data-run-failure variant={historical ? "default" : interrupted ? "destructive" : "warning"}
+    role={historical ? "group" : "alert"} aria-label={title} className="mb-3 font-sans">
+    <div className="flex items-center gap-2 font-semibold"><AlertTriangle className="size-4 shrink-0" aria-hidden />{title}</div>
+    {!historical && <p className="mt-1">{interrupted
+      ? "This run ended before completing. Send a follow-up to continue."
+      : "Review the details if the problem persists."}</p>}
+    <Button variant="ghost" size="sm" className="mt-1" aria-expanded={open} onClick={toggle}>
+      <ChevronRight data-icon="inline-start" className={open ? "rotate-90" : undefined} />
+      {open ? "Hide error details" : "Show error details"}
+    </Button>
+  </Alert>;
+}
 
 function HistoryHeader({ context }: { context?: HistoryControls }) {
   const sentinel = useRef<HTMLDivElement>(null);
@@ -463,8 +484,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     components={VIRTUAL_COMPONENTS}
     context={{ ...history, onScrollPosition, showBeginning: hadEarlier.current && !history.hasEarlier }}
     itemContent={(_index, row) => <div className="flow-root px-4" data-row-key={row.key}
-      data-message-key={row.type === "message" ? row.item.key : undefined}>
-      {row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "activity" ?
+      data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
+      {row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
+        <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
         <div data-activity className={cn("min-w-0 font-sans text-muted-foreground", !row.open && "mb-2")}>
           <Button variant="ghost" className="group w-full justify-start px-0" title={activityLabel(row.activity, mode)}
             aria-expanded={row.open} onClick={() => { if (row.open) rememberDisclosure(row.key); toggleActivity(row.activity, !row.open); }}>
@@ -519,6 +541,13 @@ export function EventLog({ log, live, prompt, taskId, loading = false, ...histor
     for (const row of presentTranscript(log, mode, live)) {
       if (row.type === "message") {
         if (visible(row.item)) rows.push({ ...row, key: `message-${row.key}`, seq: row.key });
+      } else if (row.type === "failure") {
+        const open = toggled.has(row.key);
+        rows.push({ key: `failure-${row.key}`, seq: row.key, type: "failure", failure: row, open });
+        if (open) for (const [index, item] of row.items.entries()) rows.push({
+          key: `failure-raw-${item.key}`, seq: item.key, type: "message", item, raw: true,
+          groupEnd: index === row.items.length - 1,
+        });
       } else {
         const open = row.items.some((item) => openActivity.has(item.key));
         rows.push({ key: `activity-${row.key}`, seq: row.key, type: "activity", activity: row, open });
@@ -532,7 +561,7 @@ export function EventLog({ log, live, prompt, taskId, loading = false, ...histor
       }
     }
     return rows;
-  }, [log, mode, live, prompt, openActivity]);
+  }, [log, mode, live, prompt, openActivity, toggled]);
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
     {rows.length > 0 ? <VirtualTranscript key={mode} rows={rows}
       liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} {...history} /> :

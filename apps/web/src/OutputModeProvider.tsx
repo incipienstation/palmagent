@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 
 // Compact groups background work per turn; Default groups adjacent work and
 // shows a short progress preview; Verbose exposes all recorded events.
-// Questions, failures, final answers and unclassified legacy prose stay visible.
+// Questions, run errors, final answers and unclassified legacy prose stay visible.
+// Individual tool failures remain in the expandable activity record.
 // The setting also controls task metadata and usage density.
 export type OutputMode = "compact" | "default" | "verbose";
 
