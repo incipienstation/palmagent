@@ -13,12 +13,10 @@ function fixture(t) {
   return cwd;
 }
 
-test('parallel plan retains every source check exactly once and builds the PWA in one lane', () => {
+test('parallel plan retains every source check exactly once', () => {
   const plan = candidatePlan(manifest);
-  assert.equal(plan.lanes.length, 3);
   const actual = [...plan.before, ...plan.lanes.flat()].map(step => `pnpm ${step.args[0]}`);
   assert.deepEqual(actual.sort(), manifest.scripts.verify.split('&&').map(value => value.trim()).sort());
-  assert.equal(actual.filter(value => value === 'pnpm web:verify').length, 1);
 });
 
 test('changed, missing and hooked source gates fall back to the source full verification', () => {
@@ -31,7 +29,7 @@ test('changed, missing and hooked source gates fall back to the source full veri
   }
 });
 
-test('metadata must pass before all three lanes start, and all lanes must finish', async (t) => {
+test('metadata must pass before parallel lanes start, and all lanes must finish', async (t) => {
   let metadata = false;
   const started = [], release = [];
   const pending = verifyCandidate(fixture(t), { report() {}, run: async steps => {
@@ -41,13 +39,14 @@ test('metadata must pass before all three lanes start, and all lanes must finish
     return new Promise(resolve => release.push(resolve));
   } });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(started.length, 3);
+  assert.equal(started.length, candidatePlan(manifest).lanes.length);
+  assert(started.length > 1);
   let settled = false;
   pending.then(() => { settled = true; });
-  release[0](0); release[1](0);
+  for (const finish of release.slice(0, -1)) finish(0);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(settled, false);
-  release[2](0);
+  release.at(-1)(0);
   assert.equal(await pending, 0);
 });
 
@@ -69,7 +68,7 @@ test('metadata failures prevent lanes; lane failures and exceptions cancel and a
         setImmediate(() => { stopped++; resolve(130); });
       }, { once: true }));
     } }), throws ? 1 : 124);
-    assert.equal(stopped, 2);
+    assert.equal(stopped, candidatePlan(manifest).lanes.length - 1);
   }
 });
 
@@ -86,9 +85,9 @@ test('external interruption cancels active lanes and preserves the signal exit c
         }, { once: true }));
       } });
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(started, 3);
+    assert.equal(started, candidatePlan(manifest).lanes.length);
     controller.abort(reason);
     assert.equal(await pending, reason === 'SIGTERM' ? 143 : 130);
-    assert.equal(stopped, 3);
+    assert.equal(stopped, started);
   }
 });

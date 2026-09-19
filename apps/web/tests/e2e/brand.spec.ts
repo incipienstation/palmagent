@@ -41,7 +41,6 @@ for (const theme of ["light", "dark"] as const) {
     const selection = page.getByRole("radio", { name: "Default output", exact: true });
     await expect(selection).toHaveCSS("color", rgb(brand[theme]["accent-foreground"]));
     await expectReadable(selection);
-    await expect(page).toHaveScreenshot(`brand-settings-${theme}.png`);
     const next = theme === "light" ? "dark" : "light";
     await page.getByRole("radio", { name: `${next === "light" ? "Light" : "Dark"} theme` }).click();
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", brand[next].chrome);
@@ -57,7 +56,6 @@ for (const theme of ["light", "dark"] as const) {
     const button = page.getByRole("button", { name: "Sign in with passkey" });
     await expect(button).toHaveCSS("background-color", rgb(brand[theme].primary));
     await expectReadable(button);
-    await expect(page).toHaveScreenshot(`brand-sign-in-${theme}.png`);
   });
 }
 

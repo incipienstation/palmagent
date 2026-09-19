@@ -54,12 +54,20 @@ pnpm --filter @palmagent/web test:e2e          # build + run (the gate)
 pnpm --filter @palmagent/web test:e2e:update   # refresh visual baselines
 ```
 
-- **Two kinds of check** (`tests/e2e/*.spec.ts`): explicit **layout-contract
-  assertions** (no horizontal overflow, document never scrolls, FAB + content
-  padding both track `--banner-h`) and **visual snapshots** (`toHaveScreenshot`).
-  Baselines live in `tests/e2e/*-snapshots/` and **are committed — that image is
-  the contract.** Regenerate only when a UI change is intentional, and eyeball
-  the diff.
+- Tests in `tests/e2e/*.spec.ts` protect observable contracts: drafts survive
+  navigation, keyboard focus returns, controls remain reachable, content fits
+  the viewport, and overlays do not cover input. Assert those outcomes instead
+  of incidental copy, exact styling dimensions, or internal component structure.
+  Keep exact values when they define a contract, such as a minimum touch target
+  or text contrast; read brand expectations from the shared palette.
+- Run shared behavior once. Add viewport, theme, or input variants only when
+  they exercise a distinct failure mode. Remove duplicate flows and tests that
+  merely recheck the test framework.
+- Use **visual snapshots** (`toHaveScreenshot`) only for a specific rendering
+  regression that behavioral assertions cannot adequately capture. Prefer a
+  focused region to a whole-screen baseline. Retained baselines live in
+  `tests/e2e/*-snapshots/`; regenerate only for intentional changes and inspect
+  the diff. A screenshot of the current design is not itself a stable contract.
 - The repository's `pnpm verify` gate runs this suite and the service-worker
   update smoke before a PWA change can be delivered.
 - Read-only tests share a mock server and use up to two workers. Rename tests run

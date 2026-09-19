@@ -24,9 +24,9 @@ const galaxyS25 = {
 //   pnpm --filter @palmagent/web test:e2e            # build + run
 //   pnpm --filter @palmagent/web test:e2e:update     # refresh baselines
 //
-// Snapshot baselines live next to each spec in <spec>.ts-snapshots/ and ARE
-// committed — that committed image IS the regression contract. Regenerate them
-// (test:e2e:update) only when a UI change is intentional, and eyeball the diff.
+// Prefer observable behavioral/layout contracts (see README.md). Retained visual
+// baselines live next to each spec in <spec>.ts-snapshots/. Regenerate them
+// (test:e2e:update) only when a UI change is intentional, and inspect the diff.
 
 const PORT = Number(process.env.E2E_PORT ?? 4317);
 const baseURL = `http://localhost:${PORT}`;
