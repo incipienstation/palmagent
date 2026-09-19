@@ -16,6 +16,11 @@ trees and requires synchronized valid versions with every other manifest field u
 Dependency, script, file-mode, runtime, or other changes retain the ordinary checks. The final
 release candidate still runs the full source and packed-install verification.
 
+After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
+The required `validate` job aggregates their results and rejects any failure or cancellation.
+Static and version-only changes skip the runtime jobs; package checks reuse the PWA build
+within the web job. Parallel jobs use more runner time to shorten the critical path.
+
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
 trusted PRs, but do not upload a staging artifact. Same-repository checks require
