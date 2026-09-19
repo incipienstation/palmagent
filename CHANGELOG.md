@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.34
+
 ### Fixed
 
 - Keep input questions visible until answer delivery is confirmed, including after
