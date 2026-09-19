@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.35
+
 ### Fixed
 
 - Returning to recently visited conversations reuses loaded messages and fetches
