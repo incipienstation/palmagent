@@ -3,6 +3,7 @@ import { ArrowUp, Check, ChevronDown, Loader2 } from "lucide-react";
 import type { AgentKind } from "@palmagent/shared";
 import { DEFAULT_OPTION, effortsForModel, MODELS, PERMISSIONS } from "../api";
 import { useUpdateState } from "../update-state";
+import { useSendShortcut } from "../SendShortcutProvider";
 import { cn } from "@/lib/utils";
 import { AttachmentMenu, AttachmentTray, type useImageAttachments } from "./Attachments";
 import { Button } from "./ui/button";
@@ -70,7 +71,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
   </FieldGroup>;
 }
 
-export function Composer({ id, value, onChange, placeholder, label, action, onSend, busy, disabled,
+export function Composer({ id, value, onChange, placeholder, label, action, onSend, busy, disabled, sendDisabled,
   attachments, settings, description, controls, header, showSettings = true }: {
   id: string;
   value: string;
@@ -81,6 +82,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   onSend?: () => void;
   busy?: boolean;
   disabled?: boolean;
+  sendDisabled?: boolean;
   attachments: ReturnType<typeof useImageAttachments>;
   settings: ComposerSettings;
   description: string;
@@ -92,6 +94,9 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const [configure, setConfigure] = useUpdateState(`composer:${id}:configure`, false);
   const [menuOpen, setMenuOpen] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false);
+  const { shortcut } = useSendShortcut();
+  const cannotSend = disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0);
   const expanded = !!header || focused || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
   useLayoutEffect(() => {
     const el = textarea.current;
@@ -119,6 +124,21 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
     <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
       onChange={(e) => onChange(e.target.value)} onPaste={attachments.onPaste}
+      aria-keyshortcuts={shortcut === "enter" ? "Enter Meta+Enter Control+Enter" : "Meta+Enter Control+Enter"}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={() => { composing.current = false; }}
+      onBlur={() => { composing.current = false; }}
+      onKeyDown={(event) => {
+        // keyCode 229 also covers IME confirmation in browsers that end
+        // composition before dispatching the final Enter keydown.
+        if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.altKey ||
+          composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        if (shortcut !== "enter" && !event.metaKey && !event.ctrlKey) return;
+        event.preventDefault();
+        if (event.repeat || cannotSend) return;
+        if (onSend) onSend();
+        else if (!controls) event.currentTarget.form?.requestSubmit();
+      }}
       placeholder={placeholder} disabled={disabled || busy}
       className={cn("max-h-36 py-2.5", expanded ? "order-1 basis-full px-3" : "px-1")}
     />
@@ -159,7 +179,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       </Sheet>}
       {controls ?? <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
         size="icon-lg" className="shrink-0"
-        disabled={disabled || busy || attachments.preparing || (!value.trim() && attachments.images.length === 0)}>
+        disabled={cannotSend}>
         {busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}
       </Button>}
     </InputGroupAddon>

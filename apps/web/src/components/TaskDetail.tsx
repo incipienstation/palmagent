@@ -352,6 +352,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
             action="Send now" showSettings={!edit && !(running && deliveryMode === "send")}
+            onSend={() => void send()} sendDisabled={!!edit && (edit.expired || !editText.trim())}
             header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
               <Button type="button" variant="ghost" size="icon-lg" className="ml-auto shrink-0" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>

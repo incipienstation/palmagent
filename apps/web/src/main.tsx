@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { OutputModeProvider } from "./OutputModeProvider";
+import { SendShortcutProvider } from "./SendShortcutProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { setupBackGuard } from "./backGuard";
 import { Toaster } from "./components/ui/toaster";
@@ -30,10 +31,12 @@ async function boot() {
     <StrictMode>
       <ThemeProvider>
         <OutputModeProvider>
-          <TooltipProvider>
-            <App />
-            <Toaster />
-          </TooltipProvider>
+          <SendShortcutProvider>
+            <TooltipProvider>
+              <App />
+              <Toaster />
+            </TooltipProvider>
+          </SendShortcutProvider>
         </OutputModeProvider>
       </ThemeProvider>
     </StrictMode>,

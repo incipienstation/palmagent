@@ -48,19 +48,21 @@ test("long press opens a haptic toggle without sending; selection applies to one
   await expect(page).toHaveScreenshot("message-queue.png");
 });
 
-test("queue editing saves in place and restores the ordinary draft", async ({ page }) => {
+for (const keyboard of [false, true]) test(`queue editing saves in place and restores the ordinary draft (${keyboard ? "keyboard" : "button"})`, async ({ page }) => {
   const { calls } = await setup(page);
   await page.getByRole("textbox").fill("Original queued prompt");
   const control = page.getByRole("button", { name: "Send now", exact: true });
   await control.focus(); await control.press("ArrowDown");
   await page.getByRole("radio", { name: "Queue", exact: true }).click();
-  await page.getByRole("button", { name: "Add to queue" }).click();
+  if (keyboard) await page.getByRole("textbox").press("Control+Enter");
+  else await page.getByRole("button", { name: "Add to queue" }).click();
   await page.getByRole("textbox").fill("Unsent ordinary draft");
   await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
   await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
   await expect(page.getByRole("textbox")).toHaveValue("Original queued prompt");
   await page.getByRole("textbox").fill("Edited queued prompt");
-  await page.getByRole("button", { name: "Save queued message" }).click();
+  if (keyboard) await page.getByRole("textbox").press("Meta+Enter");
+  else await page.getByRole("button", { name: "Save queued message" }).click();
   await expect(page.getByRole("textbox")).toHaveValue("Unsent ordinary draft");
   await expect(page.getByRole("button", { name: /Queued message 1: Edited queued prompt/ })).toBeVisible();
   expect(calls.find(c => c.action === "save").version).toBe(1);
