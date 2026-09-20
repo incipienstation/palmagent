@@ -6,6 +6,7 @@ import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cachedMarkdown, markdownParser } from "../markdown-worker";
 import { markdownUrlTransform } from "../image-source";
 import { ImageLinkContext, ImagePreview } from "./ImagePreview";
+import { MermaidBlock } from "./MermaidBlock";
 
 import { cn } from "@/lib/utils";
 
@@ -53,11 +54,18 @@ const COMPONENTS = {
       {children}
     </code>
   ),
-  pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 font-mono text-[12.5px] leading-[18px] text-strong [&>code]:bg-transparent [&>code]:p-0">
+  pre: ({ children, node }) => {
+    const code = node?.children[0];
+    if (code?.type === "element" && code.tagName === "code"
+      && Array.isArray(code.properties.className)
+      && code.properties.className.includes("language-mermaid")) {
+      const source = code.children.map(child => child.type === "text" ? child.value : "").join("");
+      return <MermaidBlock source={source} />;
+    }
+    return <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 font-mono text-[12.5px] leading-[18px] text-strong [&>code]:bg-transparent [&>code]:p-0">
       {children}
-    </pre>
-  ),
+    </pre>;
+  },
   // GFM table: wrap in an overflow-x-auto rail so a wide table scrolls *inside*
   // the pane on a phone, never widening the document (the mobile overflow
   // contract the e2e harness asserts).
