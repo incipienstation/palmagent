@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.53
+
 ### Changed
 
 - Terminals enable input automatically when available and show **Type here** only when needed. A compact status line and actions menu leave more room for shell output on mobile; read-only mode and reconnects preserve other screens' input.
