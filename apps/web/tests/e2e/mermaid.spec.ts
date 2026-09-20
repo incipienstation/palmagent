@@ -136,8 +136,10 @@ test("diagram controls zoom, mouse drag pans, and fit restores the initial view"
   await assertViewportLocked(page);
 });
 
-test("native two-finger pinch and one-finger pan stay inside the diagram", async ({ page, context }) => {
+for (const fullscreen of [false, true]) {
+test(`native pinch and pan stay inside the ${fullscreen ? "fullscreen" : "inline"} diagram`, async ({ page, context }) => {
   await reply(page, fence(flow));
+  if (fullscreen) await page.getByRole("button", { name: "Open diagram fullscreen" }).click();
   const canvas = page.getByRole("region", { name: "Mermaid diagram", exact: true });
   await expect(canvas).toBeVisible();
   await canvas.scrollIntoViewIfNeeded();
@@ -160,7 +162,7 @@ test("native two-finger pinch and one-finger pan stay inside the diagram", async
   await expect.poll(async () => (await transform(page)).x).toBeLessThan(pinched.x - 20);
   await expect.poll(async () => (await transform(page)).y).toBeLessThan(pinched.y - 20);
   expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
-  await screenshot(page, "mermaid-pinch-mobile-dark");
+  await screenshot(page, fullscreen ? "mermaid-fullscreen-pinch-mobile-dark" : "mermaid-pinch-mobile-dark");
   // Reverse pinch returns toward fit without shrinking below it.
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(90) });
   for (let radius = 80; radius >= 10; radius -= 10) {
@@ -168,6 +170,7 @@ test("native two-finger pinch and one-finger pan stay inside the diagram", async
   }
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await expect.poll(async () => (await transform(page)).scale).toBe(1);
+  if (fullscreen) await page.getByRole("button", { name: "Exit diagram fullscreen" }).click();
   const diagram = page.getByRole("img", { name: "Mermaid diagram", exact: true });
   const darkSource = await diagram.getAttribute("src");
   await page.emulateMedia({ colorScheme: "light" });
@@ -177,6 +180,7 @@ test("native two-finger pinch and one-finger pan stay inside the diagram", async
   await assertViewportLocked(page);
   await cdp.detach();
 });
+}
 
 test("wheel zoom requires a modifier and zoom is bounded", async ({ page }) => {
   await reply(page, fence(flow));
@@ -207,3 +211,59 @@ test("wheel zoom requires a modifier and zoom is bounded", async ({ page }) => {
   await page.getByRole("button", { name: "Fit diagram" }).click();
   expect((await transform(page)).scale).toBe(1);
 });
+
+for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+  test(`fullscreen fills the ${viewport.width}px viewport and restores inline controls`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await reply(page, fence(flow));
+    const trigger = page.getByRole("button", { name: "Open diagram fullscreen" });
+    const diagram = page.getByRole("img", { name: "Mermaid diagram", exact: true });
+    for (const theme of ["dark", "light"] as const) {
+      if (theme === "light") {
+        const previous = await diagram.getAttribute("src");
+        await page.emulateMedia({ colorScheme: theme });
+        await expect(diagram).not.toHaveAttribute("src", previous!);
+      }
+      await expect(trigger).toBeVisible();
+      await page.getByRole("button", { name: "Fit diagram" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("button", { name: "Zoom in diagram" }).click();
+      const inline = await transform(page);
+      await trigger.click();
+      const dialog = page.getByRole("dialog", { name: "Mermaid diagram", exact: true });
+      await expect(dialog).toBeVisible();
+      await expect.poll(async () => {
+        const box = (await dialog.boundingBox())!;
+        return Object.fromEntries(Object.entries(box).map(([key, value]) => [key, Math.round(value)]));
+      }).toEqual({ x: 0, y: 0, ...viewport });
+      const canvas = dialog.getByRole("region", { name: "Mermaid diagram", exact: true });
+      expect((await canvas.boundingBox())!.height).toBeGreaterThan(viewport.height * 0.65);
+      expect((await transform(page)).scale).toBe(1);
+      await canvas.focus();
+      await page.keyboard.press("+");
+      await expect.poll(async () => (await transform(page)).scale).toBeGreaterThan(1);
+      await dialog.getByRole("button", { name: "Fit diagram" }).click();
+      await screenshot(page, `mermaid-fullscreen-${viewport.width}-${theme}`);
+      // Focus stays in the dialog; Escape restores the trigger and its view.
+      await dialog.getByRole("button", { name: "Exit diagram fullscreen" }).focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(canvas).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      expect(await transform(page)).toEqual(inline);
+      await trigger.click();
+      await expect(dialog).toBeVisible();
+      if (viewport.width === 360) {
+        await page.setViewportSize({ width: 780, height: 360 });
+        await expect(dialog).toHaveCSS("height", "360px");
+        await expect(dialog).toHaveCSS("width", "780px");
+      }
+      await dialog.getByRole("button", { name: "Exit diagram fullscreen" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      await page.setViewportSize(viewport);
+      await assertViewportLocked(page);
+    }
+  });
+}

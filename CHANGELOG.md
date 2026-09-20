@@ -10,6 +10,13 @@ An entry does not mean a version has been published.
 
 - Terminals enable input automatically when available and show **Type here** only when needed. A compact status line and actions menu leave more room for shell output on mobile; read-only mode and reconnects preserve other screens' input.
 
+## 0.1.0-alpha.52
+
+### Added
+
+- Open Mermaid diagrams in a fullscreen viewer with pan, pinch zoom, and keyboard controls.
+  The expand button now opens fullscreen; a separate reset icon fits the diagram to its viewer.
+
 ## 0.1.0-alpha.51
 
 ### Added
