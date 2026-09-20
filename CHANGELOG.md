@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.52
+
 ### Added
 
 - Open Mermaid diagrams in a fullscreen viewer with pan, pinch zoom, and keyboard controls.
