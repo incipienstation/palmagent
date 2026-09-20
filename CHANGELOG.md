@@ -6,12 +6,18 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Mermaid diagrams support dragging to pan and pinching to zoom, with zoom and fit controls,
+  keyboard navigation, and Ctrl/Command + wheel zoom. Diagrams initially fit their viewer.
+
 ## 0.1.0-alpha.50
 
 ### Fixed
 
 - `palmagent doctor` now checks an execution service template with a valid instance name,
   avoiding a false unavailable-service report on healthy Linux installations.
+
 
 ## 0.1.0-alpha.49
 
