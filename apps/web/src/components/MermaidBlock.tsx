@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useTheme } from "../ThemeProvider";
+
+const MermaidViewport = lazy(() => import("./MermaidViewport"));
 
 // Mermaid has global configuration. Serialize configuration + rendering together
 // so concurrently mounted diagrams cannot borrow another render's theme.
@@ -65,9 +67,9 @@ export function MermaidBlock({ source }: { source: string }) {
   const code = <pre className="overflow-x-auto p-3 font-mono text-[12.5px] leading-[18px] text-strong"><code>{source}</code></pre>;
   return <div className="my-2 min-w-0 overflow-hidden rounded-md border border-border bg-muted">
     {current?.url ? <>
-      <div className="overflow-x-auto p-3" tabIndex={0} role="region" aria-label="Mermaid diagram">
-        <img src={current.url} alt="Mermaid diagram" className="mx-auto h-auto max-w-none" />
-      </div>
+      <Suspense fallback={<p className="p-3 text-xs text-muted-foreground" role="status">Loading diagram controls…</p>}>
+        <MermaidViewport key={current.url} url={current.url} />
+      </Suspense>
       <details className="border-t border-border">
         <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">Diagram source</summary>
         {code}
