@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
+import { terminalCommand } from "./terminal.js";
 import { sessionCommand } from "./session.js";
 import { settingsCommand } from "./settings.js";
 import { ensurePrivateDirectory } from "../private-files.js";
@@ -123,6 +124,7 @@ Commands:
   update-settings  Internal web update bridge (JSON; installation runs separately)
   config       Internal plugin settings API: get, init, set --channel <name>
   settings     Manage Space search paths (run settings --help)
+  terminal     Manage persistent shells (run terminal --help)
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove the units + nginx vhost (data preserved unless --purge)
@@ -166,6 +168,7 @@ async function main(): Promise<void> {
     }
   }
   const [cmd, ...rest] = process.argv.slice(2);
+  if (cmd === "terminal") return terminalCommand(rest);
   if (cmd === "settings") return settingsCommand(rest);
   if (rest.includes("--help") || rest.includes("-h")) {
     printHelp();

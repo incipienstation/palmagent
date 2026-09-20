@@ -9,6 +9,7 @@ import { useSyncExternalStore } from "react";
 //   #/enroll/:token     passkey enrollment (host-CLI-minted link)
 export type Route =
   | { name: "inbox" }
+  | { name: "terminals"; repoId?: string; taskId?: string }
   | { name: "new" }
   | { name: "task"; id: string }
   | { name: "routines" }
@@ -17,6 +18,11 @@ export type Route =
 
 function parse(hash: string): Route {
   const path = hash.replace(/^#/, "") || "/";
+  if (path === "/terminals") return { name: "terminals" };
+  const terminalTask = /^\/terminals\/task\/(.+)$/.exec(path);
+  if (terminalTask) return { name: "terminals", taskId: decodeURIComponent(terminalTask[1]) };
+  const terminalRepo = /^\/terminals\/repo\/(.+)$/.exec(path);
+  if (terminalRepo) return { name: "terminals", repoId: decodeURIComponent(terminalRepo[1]) };
   if (path === "/new") return { name: "new" };
   if (path === "/routines") return { name: "routines" };
   if (path === "/usage") return { name: "usage" };

@@ -1,7 +1,7 @@
 import { useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X } from "lucide-react";
+import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X, Terminal } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -263,6 +263,11 @@ export const InboxView = memo(function InboxView({
               <div className="flex gap-2">
                 <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks…" value={query}
                   autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={event => setQuery(event.target.value)} />
+                {selected !== "all" && <Button variant="ghost" size="icon-lg" aria-label="Open Space terminals" onClick={() => {
+                  const task = tasks.find(t => taskDirectory(t, repos) === selected && !["cancelled", "archived"].includes(t.status));
+                  const repo = [...repos.values()].find(r => r.path === selected);
+                  navigate(repo ? "/terminals/repo/" + encodeURIComponent(repo.id) : task ? "/terminals/task/" + encodeURIComponent(task.taskId) : "/terminals");
+                }}><Terminal /></Button>}
                 {query && <Button variant="ghost" size="icon-lg" aria-label="Clear task search" onClick={clearSearch}><X /></Button>}
               </div>
               {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}

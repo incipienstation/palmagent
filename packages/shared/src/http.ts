@@ -1,3 +1,4 @@
+import type { CreateTerminalRequest, TerminalSession, TerminalCapabilities } from "./terminals.js";
 // Public HTTP contracts live here so browser builds never import server code.
 // The server's chained Hono routes are checked against this schema by typecheck.
 import type { Hono } from "hono";
@@ -21,6 +22,16 @@ type Query<T> = { query: T };
 type Ok = { ok: true };
 
 export type ApiSchema = {
+  "/api/terminals": {
+    $get: Endpoint<Query<{ taskId?: string; repoId?: string }>, { terminals: TerminalSession[]; capabilities: TerminalCapabilities }>;
+    $post: Endpoint<Json<CreateTerminalRequest>, { terminal: TerminalSession }, 201>;
+  };
+  "/api/terminals/:id": {
+    $get: Endpoint<Id, { terminal: TerminalSession }>;
+    $patch: Endpoint<Id & Json<{ title: string }>, { terminal: TerminalSession }>;
+  };
+  "/api/terminals/:id/terminate": { $post: Endpoint<Id, { terminal: TerminalSession }> };
+  "/api/terminals/:id/attach-ticket": { $post: Endpoint<Id, { ticket: string; protocol: number }> };
   "/api/tasks": {
     $get: Endpoint<Query<z.input<typeof Request.TaskQuerySchema>>, Response.TasksResponse>;
     $post: Endpoint<Json<Request.CreateTaskRequest>, Response.TaskResponse, 201>;

@@ -17,15 +17,20 @@
     "@hono/node-server": "^2.1.1",
     "@palmagent/shared": "workspace:*",
     "@simplewebauthn/server": "^13.3.1",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
     "better-sqlite3": "^13.0.3",
     "hono": "^4.13.7",
+    "node-pty": "^1.1.0",
     "web-push": "^3.6.7",
+    "ws": "^8.21.3",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3"
   }

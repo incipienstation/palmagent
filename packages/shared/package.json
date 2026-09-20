@@ -9,7 +9,8 @@
     "./requests": "./src/requests.ts",
     "./updates": "./src/updates.ts",
     "./executions": "./src/executions.ts",
-    "./http": "./src/http.ts"
+    "./http": "./src/http.ts",
+    "./terminals": "./src/terminals.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -76,6 +76,15 @@ export class AuthService {
     };
   }
 
+  get origin(): string { return this.settings.authOrigin; }
+
+  /** WebSocket checks must not renew the login indefinitely. */
+  sessionValid(token: string | undefined): boolean {
+    if (!token) return false;
+    const session = this.db.getSession(token);
+    return !!session && session.expiresAt > Date.now();
+  }
+
   // ---- session ----
   /** True if the request carries a valid, unexpired session cookie. Slides the expiry. */
   verifySession(token: string | undefined): boolean {

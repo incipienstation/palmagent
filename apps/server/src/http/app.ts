@@ -1,3 +1,4 @@
+import { terminalRoutes } from "./routes/terminals.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { StreamQuerySchema } from "@palmagent/shared/requests";
@@ -38,6 +39,7 @@ export function createApp(deps: HttpDependencies) {
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))
     .get("/api/usage", (c) => c.json({ usage: service.usage() }, 200))
     .get("/api/stream", query(StreamQuerySchema), (c) => sessionStream(c, deps, c.req.valid("query")))
+    .route("/api/terminals", terminalRoutes(deps))
     .route("/api/tasks", taskRoutes(deps))
     .route("/api", repoRoutes(deps))
     .route("/api/routines", routineRoutes(deps))

@@ -9,6 +9,8 @@ import type { UpdateSettingsService } from "../update-settings.js";
 import type { SettingsStore } from "../settings.js";
 
 export interface HttpDependencies {
+  terminals?: import("../terminal/service.js").TerminalService;
+  terminalTickets?: import("../terminal/gateway.js").TerminalTickets;
   settings: SettingsStore;
   db: Db;
   hub: Hub;

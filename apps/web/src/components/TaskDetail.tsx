@@ -1,3 +1,4 @@
+import { TerminalsView } from "./Terminals";
 import { useActionState } from "../action-state";
 import { cacheSession } from "../read-cache";
 import { acceptMessageQueue, clearQueuePreview, finishWhenStopped, beginTaskAction, useTaskActivity, type QueuePreview } from "../task-activity";
@@ -9,7 +10,7 @@ import type { MessageQueue, PendingMessage, SubmitMessage } from "@palmagent/sha
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Check, ChevronDown, Square, Trash2, X } from "lucide-react";
+import { Archive, Check, ChevronDown, Square, Trash2, X, Terminal } from "lucide-react";
 
 import {
   AlertDialog,
@@ -54,6 +55,7 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 }
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
+  const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const toastObstacle = useToastObstacle();
   const { log, conn, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
@@ -251,6 +253,8 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const canArchive = !localOwner && !active && status !== "archived";
 
   return (
+    <div className={terminalOpen ? "mx-auto flex max-w-[1600px]" : undefined}>
+    <div className={terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
     <AppShell>
       <Sheet>
         <AppBar title={heading} back conn={conn} titleControl={
@@ -264,7 +268,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           </SheetTrigger>
         }>
           {task && <>
-            <TaskActionsMenu task={task} busy={busy} canStop={canStop} canCancel={canCancel} canArchive={canArchive}
+            <TaskActionsMenu task={task} busy={busy} canStop={canStop} canCancel={canCancel} canArchive={canArchive} onTerminal={() => setTerminalOpen(true)}
               onStop={() => void stopTurn()}
               onCancel={() => act("Cancelling task…", () => api.cancel(taskId))}
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
@@ -367,6 +371,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         </div>
       </div>
     </AppShell>
+    </div>
+    {terminalOpen && <div className="min-w-0 flex-1 md:border-l"><TerminalsView taskId={taskId} onClose={() => setTerminalOpen(false)} /></div>}
+    </div>
   );
 }
 
@@ -384,6 +391,7 @@ function TaskActionsMenu({
   onStop,
   onCancel,
   onArchive,
+  onTerminal,
 }: {
   task: TaskState;
   busy: boolean;
@@ -393,6 +401,7 @@ function TaskActionsMenu({
   onStop: () => void;
   onCancel: () => void;
   onArchive: () => void;
+  onTerminal: () => void;
 }) {
   const mutationPending = useTaskMutations().get(task.taskId)?.pending;
   const [confirm, setConfirm] = useState<"cancel" | "archive" | null>(null);
@@ -400,6 +409,7 @@ function TaskActionsMenu({
   return (
     <>
       <SessionActionsMenu task={task} disabled={busy}>
+        <DropdownMenuItem onSelect={onTerminal}><Terminal />Open terminal</DropdownMenuItem>
         <DropdownMenuItem disabled={!canStop || mutationPending} onSelect={onStop}>
           <Square className="text-faint" />
           Stop
@@ -423,7 +433,7 @@ function TaskActionsMenu({
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel this task?</AlertDialogTitle>
             <AlertDialogDescription>
-              This kills the running turn and removes the task's git worktree. The work in progress
+              This kills the running turn. Its worktree is removed after any open terminals close. The work in progress
               cannot be resumed. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
