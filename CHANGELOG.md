@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.50
+
 ### Fixed
 
 - `palmagent doctor` now checks an execution service template with a valid instance name,
