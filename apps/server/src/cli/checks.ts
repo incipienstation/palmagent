@@ -151,7 +151,8 @@ export function doctor(cfg: InstallConfig): Check[] {
   if (cfg.executionNode) {
     try {
       verifyActiveExecutionCompatibility(cfg);
-      const loaded = run("systemctl", ["show", "palmagent-execution@.service", "--property=LoadState", "--value"]);
+      const probeId = "00000000-0000-4000-8000-000000000000";
+      const loaded = run("systemctl", ["show", "palmagent-execution@" + probeId + ".service", "--property=LoadState", "--value"]);
       if (!loaded.ok || loaded.stdout.trim() !== "loaded") throw new Error("Execution service template is unavailable");
       checks.push({ name: "independent executions", level: "ok", detail: "retained artifacts and execution contract verified" });
     } catch (error) {

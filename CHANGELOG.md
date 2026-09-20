@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- `palmagent doctor` now checks an execution service template with a valid instance name,
+  avoiding a false unavailable-service report on healthy Linux installations.
+
 ## 0.1.0-alpha.49
 
 ### Added
