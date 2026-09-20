@@ -50,7 +50,7 @@ const tsResolve: Plugin = {
 
 // External: native (better-sqlite3) + libs with their own runtime deps we'd
 // rather npm install than inline. These become `dependencies` of the package.
-const EXTERNAL = ["better-sqlite3", "@simplewebauthn/server", "web-push"];
+const EXTERNAL = ["better-sqlite3", "@simplewebauthn/server", "web-push", "node-pty", "ws"];
 
 const common = {
   bundle: true,
@@ -97,10 +97,10 @@ async function main(): Promise<void> {
     banner: { js: "#!/usr/bin/env node" },
   });
 
-  for (const entry of ["execution-host", "execution-launcher"]) {
+  for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1 }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1 }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
@@ -158,6 +158,8 @@ async function main(): Promise<void> {
       "cli.js",
       "server.js",
       "runner-daemon.js",
+      "terminal-host.js",
+      "terminal-launcher.js",
       "execution-host.js",
       "execution-launcher.js",
       "runtime-contract.json",
@@ -169,6 +171,8 @@ async function main(): Promise<void> {
     engines: { node: ">=22" },
     publishConfig: { access: "public" },
     dependencies: {
+      "ws": pick("ws"),
+      "node-pty": pick("node-pty"),
       "better-sqlite3": pick("better-sqlite3"),
       "@simplewebauthn/server": pick("@simplewebauthn/server"),
       "web-push": pick("web-push"),
@@ -212,6 +216,10 @@ async function main(): Promise<void> {
     "prereleases on Stable; a missing Stable release does not fall back to Preview.",
     "Ask the plugin to enable automatic updates for idle periods within the current compatibility line.",
     "Automatic updates are off by default; a required plugin change or failed installation needs attention.",
+    "",
+    "Linux package installations include persistent Task and Space shells. Use the web app",
+    "or run `palmagent terminal --help` for interactive CLI access. Ctrl+] detaches;",
+    "closing a viewer leaves the shell running. No separate terminal server is required.",
     "",
     "## Internal commands",
     "",

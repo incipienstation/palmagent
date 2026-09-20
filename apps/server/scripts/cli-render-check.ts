@@ -30,6 +30,7 @@ import {
   postUpgradeArgs,
   update,
 } from "../src/cli/install.js";
+import { renderTerminalUnits } from "../src/cli/terminal-units.js";
 import { renderNginx } from "../src/cli/nginx.js";
 import {
   recordRunnerArtifact,
@@ -150,7 +151,13 @@ check(
   "package mode pins the bundled PWA directory",
 );
 
+const terminalUnits = renderTerminalUnits({ ...packageConfig, executionNode: "/opt/runtime/node" }, "/opt/launcher/terminal.mjs");
+check(terminalUnits.template.includes("KillMode=control-group") && terminalUnits.template.includes("Restart=no"), "terminal stop covers its process group without recreating shells");
+check(!/PartOf=|BindsTo=|Requires=/.test(terminalUnits.template), "terminal lifetime is independent of the application service");
+check(terminalUnits.template.includes("UMask=0077") && terminalUnits.template.includes("User=palmagent"), "terminal runs as its unprivileged owner with private artifacts");
+check(rejects(() => renderTerminalUnits({ ...packageConfig, executionNode: "/opt/runtime/node", user: "root" }, "/opt/launcher/terminal.mjs")), "terminal installer refuses a root shell service");
 const nginx = renderNginx(config);
+check(nginx.vhost.text.includes("proxy_set_header Upgrade $http_upgrade;") && nginx.vhost.text.includes("/api/terminals/"), "nginx upgrades terminal streams on the authenticated application origin");
 const plaintextServer = nginx.vhost.text.split("server {")[1] ?? "";
 check(
   plaintextServer.includes("return 308 https://$host$request_uri;"),

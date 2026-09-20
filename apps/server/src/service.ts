@@ -42,6 +42,12 @@ interface TurnState {
 // The state machine + persistence + lifecycle glue. Everything agent-specific
 // stays behind getRunner() — this file never branches on agent kind.
 export class TaskService {
+  terminals?: import("./terminal/service.js").TerminalService;
+
+  cleanupTerminalWorktree(id: string) {
+    const task = this.getTask(id);
+    if (["cancelled", "archived"].includes(task.status)) this.cleanupWorktree(task);
+  }
   private accountLimitReader = new AccountLimitReader();
 
   accountLimits(taskId: string) {
@@ -217,6 +223,7 @@ export class TaskService {
     const repo = this.getRepo(id);
     const live = [...this.cache.values()].filter((t) => t.repoId === id && t.status !== "archived");
     if (live.length) throw conflict(`repo has ${live.length} non-archived task(s) — archive them first`);
+    if (this.terminals?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
     this.db.deleteRepo(id);
     // deleteRepo cascades to the repo's (archived) tasks in the DB; drop them
     // from the in-memory cache too so listTasks doesn't resurrect dead rows.
@@ -899,7 +906,11 @@ export class TaskService {
     // itself — never remove it.
     if (!task.worktreePath || !task.branch) return;
     const repo = this.db.getRepo(task.repoId);
-    if (repo) this.worktrees.remove(repo, { branch: task.branch, path: task.worktreePath });
+    if (repo) {
+      const remove = () => this.worktrees.remove(repo, { branch: task.branch!, path: task.worktreePath! });
+      if (this.terminals) this.terminals.store.cleanup(task.worktreePath, task.taskId, remove);
+      else remove();
+    }
   }
 
   private broadcastTasks(): void {

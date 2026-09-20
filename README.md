@@ -204,6 +204,13 @@ and replace the web service while existing processes continue. The browser may
 briefly reconnect; this does not restart or resume an agent. Local CLI sessions
 remain externally owned. Retained artifacts are not automatically deleted.
 
+Linux package installations also provide persistent Task and Space shells in the
+web app and through `palmagent terminal`. Shells have independent service lifetimes,
+restore their screen after reconnecting, and retain their starting worktree until
+they finish. Everything is distributed through the same `palmagent` npm package.
+See [shell access](docs/terminals.md) for controls, installation requirements, and
+the platform adapter design.
+
 The first upgrade from a legacy runner installation still waits for its active
 work to finish before enabling this architecture. Source installations retain
 their idle guard. `--force` never bypasses these protections. Unknown execution

@@ -1,3 +1,5 @@
+import { installTerminalGateway } from "./terminal/gateway.js";
+import { terminalPlatform } from "./terminal/adapters.js";
 import { bindUpdateActivity } from "./update-activity.js";
 import { watch } from "node:fs";
 import { readUpdateAccess, updateAccessFile } from "./cli/update-access.js";
@@ -30,6 +32,8 @@ updateWatcher?.on("error", () => { updateWatcher.close(); });
 const settings = new SettingsStore(runtime.config.dataDir, runtime.config.repoRoots);
 const app = createApp({ ...runtime, settings, build, updates, shutdown: shutdown.signal });
 const server = createServer(getRequestListener(app.fetch));
+const closeTerminals = installTerminalGateway(server, { service: runtime.terminals, auth: runtime.auth, tickets: runtime.terminalTickets,
+  transport: terminalPlatform(true).transport, origin: runtime.config.authOrigin, cookieName: runtime.config.cookieName });
 let local: Server | undefined;
 let closing: Promise<void> | undefined;
 
@@ -44,6 +48,7 @@ function close() {
   return closing ??= (async () => {
     updateActivity.close();
     updateWatcher?.close();
+    closeTerminals();
     shutdown.abort(); // stop admission and release SSE subscriptions first
     await Promise.all([closeServer(server), ...(local ? [closeServer(local)] : [])]);
     await runtime.close();
@@ -53,7 +58,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => { void close().then(() => process.exit(0), (error) => { console.error(error); process.exit(1); }); });
 }
 try {
-  local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service);
+  local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(runtime.config.port, runtime.config.host, () => { server.off("error", reject); resolve(); });

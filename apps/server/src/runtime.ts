@@ -1,3 +1,7 @@
+import { TerminalStore } from "./terminal/store.js";
+import { TerminalService } from "./terminal/service.js";
+import { terminalPlatform } from "./terminal/adapters.js";
+import { TerminalTickets } from "./terminal/gateway.js";
 import { dirname, join } from "node:path";
 import { AuthService } from "./auth.js";
 import { config, validateConfig } from "./config.js";
@@ -41,10 +45,16 @@ export async function createRuntime() {
   const supervisor = new ProcessSupervisor(config.concurrency);
   const worktrees = new WorktreeManager();
   let backend: RunnerBackend | undefined;
+  let terminalService: TerminalService | undefined;
   try {
     const push = new PushService(db, config.vapidKeyPath ?? join(dirname(config.dbPath), "vapid.json"), config.pushSubject);
     backend = await selectBackend();
     const service = new TaskService(db, hub, supervisor, backend, worktrees, push, () => isUpdateMaintenance(config.dbPath));
+    const terminals = terminalService = new TerminalService(new TerminalStore(join(config.dataDir, "terminals")),
+      terminalPlatform(Boolean(config.executionRelease && config.executionNode)).supervisor,
+      { task: id => service.getTask(id), repo: id => db.getRepo(id), cleanup: id => service.cleanupTerminalWorktree(id), updating: () => service.updating },
+      config.executionRelease ?? "", config.executionNode ?? "");
+    service.terminals = terminals;
     await service.init();
     const routines = new RoutineService(db, service);
     const github = new GithubService(service, config.githubToken);
@@ -52,16 +62,17 @@ export async function createRuntime() {
     const auth = new AuthService(db);
     let closing: Promise<void> | undefined;
     return {
-      db, hub, service, auth, push, routines, config,
-      start() { routines.start(); github.start(); },
+      db, hub, service, auth, push, routines, config, terminals, terminalTickets: new TerminalTickets(),
+      start() { routines.start(); github.start(); terminals.start(); },
       close() {
         return closing ??= (async () => {
           service.beginShutdown();
           routines.stop(); github.stop(); push.close();
           await backend?.close?.();
+          await terminals.close();
           db.close();
         })();
       },
     };
-  } catch (error) { await backend?.close?.(); db.close(); throw error; }
+  } catch (error) { await backend?.close?.(); await terminalService?.close(); db.close(); throw error; }
 }

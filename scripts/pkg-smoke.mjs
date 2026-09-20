@@ -6,6 +6,7 @@ import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { freePort, smokeEnv, startSmokeServer } from "./lib/pkg-smoke-runtime.mjs";
+import { smokeTerminal } from "./lib/pkg-smoke-terminal.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = join(ROOT, "build/pkg");
@@ -46,6 +47,8 @@ try {
   execFileSync("npm", ["install", tarball], options);
   const bin = join(scratch, "node_modules/.bin", binName);
   assert.equal(execFileSync(bin, ["--version"], { env, encoding: "utf8" }).trim(), pkg.version);
+  assert.match(execFileSync(bin, ["terminal", "--help"], { env, encoding: "utf8" }), /Ctrl\+\]/);
+  await smokeTerminal(join(scratch, "node_modules", pkg.name), scratch, env);
 
   const agentMetadata = JSON.parse(readFileSync(join(ROOT, "packages/shared/src/agent-compatibility.json"), "utf8"));
   assert.deepEqual(pkg.palmagent.agentCliCompatibility, agentMetadata, "package metadata preserves the declared agent ranges");

@@ -1,3 +1,4 @@
+import { installTerminalUnits } from "./terminal-units.js";
 // install / setup / update / uninstall orchestration. This is the only code
 // that mutates the host (systemd units, nginx, certbot, the SQLite db). Every
 // mutating step is gated behind --dry-run (render + print, touch nothing) so the
@@ -6,7 +7,7 @@
 // These commands are the packaged install/update path. Source mode supports a
 // checked-out maintainer build, but public self-update is package-only.
 import { writePrivateFileAtomic } from "../private-files.js";
-import { assertExecutionsFinished, retainInstalledRelease, stageRelease, verifyActiveExecutionCompatibility } from "./execution-release.js";
+import { assertExecutionsFinished, releaseContract, retainInstalledRelease, stageRelease, verifyActiveExecutionCompatibility } from "./execution-release.js";
 import { installExecutionUnits } from "./execution-units.js";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -216,6 +217,8 @@ function applyUnits(
   if (cfg.executionNode) {
     if (flags.dryRun) { log.plain(units.web.text); return { runnerChanged: false }; }
     installExecutionUnits(cfg);
+    // Rollback may reactivate an older retained package without terminal support.
+    if (releaseContract(cfg.pkgDir!).terminalProtocol === 1) installTerminalUnits(cfg);
     if (!sudoWriteFile(join(SYSTEMD_DIR, units.web.name), units.web.text)) throw new Error("Could not install application service");
     if (!sudo(["systemctl", "daemon-reload"]).ok || !sudo(["systemctl", "enable", units.web.name]).ok) throw new Error("Could not activate independent application units");
     return { runnerChanged: false };
@@ -977,7 +980,9 @@ export async function uninstall(flags: Flags): Promise<number> {
     }
     if (cfg.executionNode) {
       for (const path of [join(SYSTEMD_DIR, "palmagent-execution@.service"), join(SYSTEMD_DIR, "palmagent-executions.slice"),
-        "/etc/sudoers.d/palmagent-executions", "/usr/local/libexec/palmagent-execution-start"]) sudo(["rm", "-f", path]);
+        "/etc/sudoers.d/palmagent-executions", "/usr/local/libexec/palmagent-execution-start",
+        join(SYSTEMD_DIR, "palmagent-terminal@.service"), join(SYSTEMD_DIR, "palmagent-terminals.slice"),
+        "/etc/sudoers.d/palmagent-terminals", "/usr/local/libexec/palmagent-terminal-control"]) sudo(["rm", "-f", path]);
     }
     sudo(["systemctl", "daemon-reload"]);
     const ng = renderNginx(cfg);

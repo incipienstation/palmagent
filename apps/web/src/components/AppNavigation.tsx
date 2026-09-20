@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { BarChart3, Check, Clock3, Folder, Inbox, PanelLeftClose, Settings, SquarePen } from "lucide-react";
+import { BarChart3, Check, Clock3, Folder, Inbox, PanelLeftClose, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
@@ -48,6 +48,7 @@ export function AppNavigation({ tasks, conn, children }: {
       navigate("/"); showAfterClose(() => setSpacesOpen(true));
     } },
     { label: "Routines", icon: Clock3, active: route.name === "routines", onClick: () => go("/routines") },
+    { label: "Terminals", icon: Terminal, active: route.name === "terminals", onClick: () => go("/terminals") },
     { label: "Usage", icon: BarChart3, active: route.name === "usage", onClick: () => go("/usage") },
   ];
   return <NavigationContext.Provider value={context}>

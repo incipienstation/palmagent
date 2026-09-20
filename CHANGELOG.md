@@ -6,6 +6,15 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Open persistent shells from a Task or Space in the web app, or use
+  `palmagent terminal` to create, attach, rename, and terminate them. Linux package
+  installations include the terminal runtime; no separate terminal server is needed.
+- Shells survive browser disconnects and application updates, restore their screen
+  on reconnect, and accept input from one controller at a time. Task worktrees remain
+  available until their shells finish.
+
 ## 0.1.0-alpha.45
 
 ### Fixed

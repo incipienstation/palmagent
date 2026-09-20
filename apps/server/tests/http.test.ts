@@ -61,7 +61,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/unknown"]) {
     const denied = await fetch(base + path);
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get("cache-control"), "no-store");
@@ -512,4 +512,13 @@ test("task images require a session and serve only bounded raster files inside t
   assert.equal((await f.app.request("/api/tasks/missing/image?path=preview.png", { headers })).status, 404);
   await f.app.request("/api/auth/logout", { method: "POST", headers });
   assert.equal((await f.app.request(url("preview #1.png"), { headers })).status, 401);
+});
+
+
+test("browser terminal access fails closed when sign-in is disabled", async (t) => {
+  const f = fixture(t, false);
+  for (const method of ["GET", "POST"]) {
+    const response = await f.app.request("/api/terminals", { method });
+    assert.equal(response.status, 403);
+  }
 });

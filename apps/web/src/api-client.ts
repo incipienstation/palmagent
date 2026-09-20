@@ -1,3 +1,4 @@
+import type { CreateTerminalRequest } from "@palmagent/shared/terminals";
 import { cacheSession, invalidateClientReads, readCache } from "./read-cache";
 import { hc } from "hono/client";
 import type { Api, ApiErrorResponse } from "@palmagent/shared/http";
@@ -77,6 +78,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   const cached = <T>(key: string, ttl: number, send: () => Promise<JsonResponse<T>>) => request(send, { cacheKey: key, ttl });
 
   const api = {
+    terminals: {
+      list: (query: { taskId?: string; repoId?: string } = {}) => request(() => client.terminals.$get({ query })),
+      create: (json: CreateTerminalRequest) => write(() => client.terminals.$post({ json })),
+      rename: (id: string, title: string) => write(() => client.terminals[":id"].$patch({ param: idParam(id), json: { title } })),
+      terminate: (id: string) => write(() => client.terminals[":id"].terminate.$post({ param: idParam(id) })),
+      ticket: (id: string) => write(() => client.terminals[":id"]["attach-ticket"].$post({ param: idParam(id) })),
+    },
     repoSettings: {
       get: () => request(() => client.settings.repos.$get()),
       change: (json: RepoSettingsChange) => write(() => client.settings.repos.$patch({ json })),

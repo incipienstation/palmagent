@@ -1,3 +1,5 @@
+import { TerminalStore } from "../terminal/store.js";
+import { TERMINAL_PROTOCOL } from "@palmagent/shared/terminals";
 import { createHash, randomUUID } from "node:crypto";
 import { accessSync, constants, statSync, cpSync, copyFileSync, existsSync, readFileSync, renameSync, chmodSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -7,12 +9,18 @@ import { run } from "./sh.js";
 import { ExecutionStore } from "../execution/store.js";
 import { EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
 
-export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number }
+export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number }
 export function releaseContract(directory: string): ReleaseContract {
   const contract = JSON.parse(readFileSync(join(directory, "runtime-contract.json"), "utf8"));
   if (contract.executionProtocol !== EXECUTION_PROTOCOL || contract.productStorage !== 1 || contract.applicationApi !== 1) throw new Error("Candidate runtime or storage contract is incompatible");
+  if (contract.terminalProtocol !== undefined && contract.terminalProtocol !== TERMINAL_PROTOCOL) throw new Error("Candidate terminal protocol is incompatible");
   for (const file of ["cli.js", "server.js", "execution-host.js", "execution-launcher.js"]) {
     if (!existsSync(join(directory, file))) throw new Error("Candidate release is incomplete");
+  }
+  if (contract.terminalProtocol === TERMINAL_PROTOCOL) {
+    for (const file of ["terminal-host.js", "terminal-launcher.js"]) {
+      if (!existsSync(join(directory, file))) throw new Error("Candidate terminal runtime is incomplete");
+    }
   }
   return contract;
 }
@@ -61,6 +69,16 @@ export function stageRelease(cfg: InstallConfig, version: string): InstallConfig
 export function verifyActiveExecutionCompatibility(cfg: InstallConfig): void {
   if (!cfg.executionNode || !cfg.pkgDir) throw new Error("Independent execution is not enabled");
   const contract = releaseContract(cfg.pkgDir);
+  const terminalDirectory = join(cfg.dataDir, "terminals");
+  if (existsSync(terminalDirectory)) {
+    const terminals = new TerminalStore(terminalDirectory);
+    try {
+      for (const record of terminals.list().filter(r => ["starting", "running", "closing"].includes(r.state))) {
+        if (contract.terminalProtocol !== TERMINAL_PROTOCOL || record.protocol !== contract.terminalProtocol ||
+            !existsSync(record.node) || !existsSync(join(record.release, "terminal-host.js"))) throw new Error("Candidate cannot control a retained terminal");
+      }
+    } finally { terminals.close(); }
+  }
   const directory = join(cfg.dataDir, "executions");
   if (!existsSync(directory)) return;
   const store = new ExecutionStore(directory);
@@ -73,6 +91,12 @@ export function verifyActiveExecutionCompatibility(cfg: InstallConfig): void {
 }
 
 export function assertExecutionsFinished(cfg: InstallConfig): void {
+  const terminalDirectory = join(cfg.dataDir, "terminals");
+  if (existsSync(terminalDirectory)) {
+    const terminals = new TerminalStore(terminalDirectory);
+    try { if (terminals.list().some(r => ["starting", "running", "closing"].includes(r.state))) throw new Error("Close active terminals before removing the installation"); }
+    finally { terminals.close(); }
+  }
   const directory = join(cfg.dataDir, "executions");
   if (!cfg.executionNode || !existsSync(directory)) return;
   const store = new ExecutionStore(directory);

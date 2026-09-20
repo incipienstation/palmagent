@@ -1,3 +1,4 @@
+import { TerminalsView } from "./components/Terminals";
 import { AppNavigation } from "./components/AppNavigation";
 import { taskTitle } from "./lib/task-title";
 import { useAccessUpdates } from "./hooks/useAccessUpdates";
@@ -25,7 +26,7 @@ function AppInner() {
   // early return (rules of hooks).
   const active = route.name === "task" ? tasks.find((t) => t.taskId === route.id) : undefined;
   const pageTitle =
-    route.name === "new"
+    route.name === "terminals" ? "Terminals" : route.name === "new"
       ? "New task"
       : route.name === "routines"
         ? "Routines"
@@ -36,7 +37,7 @@ function AppInner() {
             : "Tasks";
   useDocumentTitle(pageTitle);
 
-  const view = route.name === "new" ? <DispatchView />
+  const view = route.name === "terminals" ? <TerminalsView key={route.taskId ?? route.repoId ?? "all"} repoId={route.repoId} taskId={route.taskId} /> : route.name === "new" ? <DispatchView />
     : route.name === "routines" ? <RoutinesView />
     : route.name === "usage" ? <UsageView />
     : route.name === "task" ? <TaskDetailView key={route.id} taskId={route.id} task={active} />
