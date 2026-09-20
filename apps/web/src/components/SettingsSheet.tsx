@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
+import { useSendShortcut } from "../SendShortcutProvider";
 import { useUpdateState } from "../update-state";
 import { PushToggle } from "./PushToggle";
 import { UpdateSettings } from "./UpdateSettings";
@@ -37,6 +38,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const { signingOut, signOut } = useSignOut();
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
+  const { shortcut, setShortcut } = useSendShortcut();
   const [section, setSection] = useUpdateState("settings:section", "general");
   const title = useRef<HTMLHeadingElement>(null);
   const spacesLink = useRef<HTMLButtonElement>(null);
@@ -44,6 +46,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const previousSection = useRef(section);
   const appearanceId = useId();
   const detailId = useId();
+  const shortcutId = useId();
   const home = section === "general";
 
   useLayoutEffect(() => {
@@ -105,6 +108,18 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                     <ToggleGroupItem value="verbose" aria-label="Verbose output">Verbose</ToggleGroupItem>
                   </ToggleGroup>
                   <FieldDescription id={`${detailId}-description`} className="text-xs">{modeDescriptions[mode]}</FieldDescription>
+                </Field>
+                <Separator />
+                <Field className="gap-2.5 py-3.5">
+                  <FieldLabel id={shortcutId} className="text-sm">Send message with</FieldLabel>
+                  <ToggleGroup type="single" value={shortcut} aria-labelledby={shortcutId} aria-describedby={`${shortcutId}-description`}
+                    onValueChange={(value) => { if (value === "enter" || value === "modifier-enter") setShortcut(value); }}>
+                    <ToggleGroupItem value="enter">Enter</ToggleGroupItem>
+                    <ToggleGroupItem value="modifier-enter">Cmd/Ctrl + Enter</ToggleGroupItem>
+                  </ToggleGroup>
+                  <FieldDescription id={`${shortcutId}-description`} className="text-xs">
+                    {shortcut === "enter" ? "Shift + Enter adds a new line." : "Enter adds a new line. Cmd + Enter (Mac) or Ctrl + Enter sends."}
+                  </FieldDescription>
                 </Field>
                 <PushToggle className="border-t border-border py-3.5" />
               </FieldGroup>

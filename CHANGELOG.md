@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Cmd/Ctrl + Enter now submits new tasks and messages, including the selected queue
+  action or queued-message edit. Choose Enter to send in Settings on each device;
+  Shift + Enter adds a new line, and IME composition does not submit a draft.
+
 ## 0.1.0-alpha.44
 
 ### Changed
