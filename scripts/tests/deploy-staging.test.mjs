@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
-import { deploy, rollback, validateBinding, validateTarget, verifyHealth, verifyInstalled } from '../deploy-staging.mjs';
+import { deploy, rollback, validateBinding, validateTarget, verifyHealth, verifyInstalled, verifyTerminalConnection } from '../deploy-staging.mjs';
 import { inspectPackage, hashFile } from '../lib/package-artifact.mjs';
 import { packageFixture, commit } from './package-fixture.mjs';
 
@@ -195,5 +195,50 @@ test('retained releases deploy through the active CLI and preserve the bound glo
     await assert.rejects(rollback(f.config, result.receipt, true, adapters), /Retained release rollback/);
     bind(f.next.directory);
     assert.throws(() => validateBinding(f.config, call), /differs from binding/);
+  } finally { rmSync(f.root, { recursive: true }); }
+});
+
+for (const success of [true, false]) test(`deployment requires public terminal verification when supported: ${success}`, async () => {
+  const f = fixture();
+  let probes = 0;
+  try {
+    const adapters = {
+      ...f.adapters,
+      health: async () => { writeFileSync(join(f.config.pkgDir, 'runtime-contract.json'), JSON.stringify({ terminalDiagnostics: 1 })); },
+      call: (command, args) => {
+        if (args[1] === 'terminal') {
+          probes++;
+          assert.deepEqual(args, [join(f.config.pkgDir, 'cli.js'), 'terminal', 'diagnose', '--data-dir', f.config.dataDir]);
+          return JSON.stringify({ status: success ? 'passed' : 'failed' });
+        }
+        return f.adapters.call(command, args);
+      },
+    };
+    if (success) {
+      const result = await deploy(f.config, f.target, adapters);
+      assert.equal(JSON.parse(readFileSync(result.receipt)).terminal.status, 'passed');
+    } else {
+      await assert.rejects(deploy(f.config, f.target, adapters), /failed at verifying-terminal/);
+      const latest = JSON.parse(readFileSync(join(f.config.dataDir, 'deployments/latest-operation.json')));
+      const receipt = JSON.parse(readFileSync(latest.receipt));
+      assert.equal(receipt.status, 'failed');
+      assert.equal(receipt.failedAt, 'verifying-terminal');
+      assert.equal(existsSync(join(f.config.dataDir, 'deployments/current.json')), false);
+    }
+    assert.equal(probes, 1);
+  } finally { rmSync(f.root, { recursive: true }); }
+});
+
+test('terminal verification uses the active retained CLI and explicitly reports older packages', () => {
+  const f = fixture();
+  try {
+    assert.equal(verifyTerminalConnection(f.config, () => assert.fail('must not invoke unsupported CLI')).status, 'unsupported');
+    writeFileSync(join(f.next.directory, 'runtime-contract.json'), JSON.stringify({ terminalDiagnostics: 1 }));
+    const config = { ...f.config, activePkgDir: f.next.directory, executionNode: '/retained/node' };
+    assert.equal(verifyTerminalConnection(config, (command, args) => {
+      assert.equal(command, config.executionNode);
+      assert.equal(args[0], join(f.next.directory, 'cli.js'));
+      return JSON.stringify({ status: 'passed' });
+    }).status, 'passed');
   } finally { rmSync(f.root, { recursive: true }); }
 });

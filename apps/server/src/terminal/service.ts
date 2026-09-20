@@ -16,7 +16,7 @@ export class TerminalService {
   capabilities() { return this.supervisor.capabilities; }
   start() { void this.reconcile(); this.timer = setInterval(() => void this.reconcile(), 5000); this.timer.unref(); }
   list(query: { taskId?: string; repoId?: string } = {}) {
-    return this.store.list().filter(r => (!query.taskId || r.taskId === query.taskId) && (!query.repoId || r.repoId === query.repoId)).map(publicTerminal);
+    return this.store.list().filter(r => (!r.diagnostic || r.diagnosticCleanupFailed) && (!query.taskId || r.taskId === query.taskId) && (!query.repoId || r.repoId === query.repoId)).map(publicTerminal);
   }
   get(id: string) {
     const record = this.store.get(id);
@@ -50,9 +50,8 @@ export class TerminalService {
     writePrivateFileAtomic(join(this.store.directory, id + ".json"), JSON.stringify({ id, protocol: record.protocol, directory: record.directory, release: record.release, node: record.node }));
     try {
       await this.supervisor.launch(record);
-      if (this.get(id).state === "starting") this.store.update(id, { startError: undefined });
     } catch {
-      if (this.get(id).state === "starting") this.store.update(id, { startError: "Shell launch could not be confirmed. Palmagent will retry this terminal; check the installation's terminal service." });
+      this.store.noteStartError(id, "launch_unconfirmed", "Shell launch could not be confirmed. Palmagent will retry this terminal; check the installation's terminal service.");
       throw new HttpError(503, "Shell launch could not be confirmed. Check this terminal's status before opening another.");
     }
   }
@@ -73,9 +72,15 @@ export class TerminalService {
   private async reconcileOnce() {
     for (const record of this.store.list()) {
       try {
-        if (record.state === "starting" && !record.pid) {
-          if (this.capabilities().available) await this.launch(record.id);
-          else this.store.update(record.id, { startError: this.capabilities().reason ?? "Terminal services are unavailable." });
+        if (this.store.expireStartup(record.id)) {
+          // Only a confirmed stop releases retention. Never relaunch an expired ID.
+          await this.supervisor.terminate(record);
+          this.store.update(record.id, { state: "lost", startErrorCode: "startup_timeout", startError: "Shell startup timed out and was stopped. Check the installation with palmagent doctor before trying again." });
+        } else if (record.state === "starting") {
+          if (record.pid) {
+            if (!await this.supervisor.alive(record)) this.store.update(record.id, { state: "lost", startErrorCode: "host_exited", startError: "The shell host exited before it became ready. Check the terminal service log." });
+          } else if (this.capabilities().available) await this.launch(record.id);
+          else this.store.noteStartError(record.id, "services_unavailable", this.capabilities().reason ?? "Terminal services are unavailable.");
         }
         else if (["running", "closing"].includes(record.state) && !await this.supervisor.alive(record)) {
           const latest = this.get(record.id);

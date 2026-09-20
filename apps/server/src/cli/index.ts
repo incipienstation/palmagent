@@ -254,7 +254,7 @@ async function main(): Promise<void> {
     case "setup":
       process.exit(await setup(flags));
     case "doctor":
-      process.exit(runDoctor(flags));
+      process.exit(await runDoctor(flags));
     case "update":
       parseArgs({ args: rest, strict: true, allowPositionals: false, options: {
         "dry-run": { type: "boolean" }, "non-interactive": { type: "boolean", short: "y" },

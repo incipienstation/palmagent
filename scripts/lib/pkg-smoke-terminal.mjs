@@ -54,7 +54,8 @@ export async function smokeTerminal(pkgDir, scratch, env) {
   };
   try {
     const { existsSync } = await import("node:fs");
-    await wait(() => existsSync(join(socketRoot, id + ".sock")));
+    await wait(() => JSON.parse(db.prepare("SELECT record FROM terminals WHERE id = ?").get(id).record).state === "running");
+    assert(existsSync(join(socketRoot, id + ".sock")), "a ready terminal must have its endpoint available");
     const first = await attach();
     first.send({ type: "claim-control" });
     await wait(() => first.frames.some(frame => frame.type === "control" && frame.writable));

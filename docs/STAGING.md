@@ -79,7 +79,12 @@ runtime dependencies; the snapshot is a product-package rollback,
 not a frozen snapshot of transitive dependencies or the operating system.
 
 Success requires installed product-file hashes, local and public health, the running server's
-embedded version/commit, and served PWA entry-file hashes to match. The result includes the
+embedded version/commit, and served PWA entry-file hashes to match. Packages advertising
+`terminalDiagnostics: 1` also must pass `palmagent terminal diagnose` using the active retained
+CLI and Node. This verifies public WebSocket input/output and screen restoration with a
+disposable shell, then confirms cleanup. The receipt records the result; failure leaves a
+`verifying-terminal` failure phase and does not advance `current.json`. Older packages explicitly
+record the check as unsupported. The result includes the
 version, commit, SHA-256, and receipt path. `deployments/current.json` points to the latest
 successful operation. CI success or an npm install exit code alone is not readiness evidence.
 `deployments/latest-operation.json` separately records the most recent deployment or rollback
@@ -122,5 +127,5 @@ original failure record; actual retry failures append to the receipt's rollback 
 
 An existing lock blocks concurrent operations. If a process was interrupted, inspect
 `deployments/.lock/owner.json`, prove that process has ended, and remove only that stale lock.
-Interrupted operations can leave `prepared`, `installing`, or `activating` receipts; inspect the
+Interrupted operations can leave `prepared`, `installing`, `activating`, or `verifying-terminal` receipts; inspect the
 actual installed files and services before recovery. No cleanup or database restore is automatic.

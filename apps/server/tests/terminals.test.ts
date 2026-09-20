@@ -225,6 +225,7 @@ test("missing services explain pending shells and recover the same reservation a
     launches++;
     if (fail) throw new Error("private host detail");
     f.store.claim(record.id, process.pid, "recovered");
+    f.store.ready(record.id, process.pid, "recovered");
   };
   const service = new TerminalService(f.store, supervisor, {
     task() { throw new Error(); }, repo: () => undefined, cleanup() {}, updating: () => false,
@@ -248,5 +249,87 @@ test("missing services explain pending shells and recover the same reservation a
     assert.equal(service.list()[0].id, record.id);
     assert.equal(service.list()[0].state, "running");
     assert.equal(service.list()[0].startError, undefined);
+  } finally { f.close(); }
+});
+
+test("claiming a host does not advertise readiness and expired hosts cannot become ready", () => {
+  const f = fixture();
+  try {
+    const id = f.reserve().record.id;
+    assert.equal(f.store.claim(id, 123, "owner"), true);
+    assert.equal(f.store.get(id)?.state, "starting");
+    assert.equal(f.store.ready(id, 124, "owner"), false);
+    assert.equal(f.store.ready(id, 123, "other"), false);
+    assert.equal(f.store.ready(id, 123, "owner"), true);
+    assert.equal(f.store.get(id)?.state, "running");
+    assert.equal(f.store.expireStartup(id), false);
+    const late = f.reserve().record.id;
+    f.store.claim(late, 123, "late");
+    f.store.update(late, { createdAt: Date.now() - 31_000 });
+    assert.equal(f.store.ready(late, 123, "late"), false);
+    assert.equal(f.store.get(late)?.startErrorCode, "startup_timeout");
+    assert.equal(f.store.get(late)?.state, "starting");
+  } finally { f.close(); }
+});
+
+test("startup timeout retains uncertain processes, fences late readiness and never relaunches", async () => {
+  const f = fixture();
+  let stops = 0, allowStop = false, launches = 0;
+  const service = new TerminalService(f.store, {
+    capabilities: { available: true, persistent: true },
+    async launch() { launches++; }, async terminate() { stops++; if (!allowStop) throw new Error("uncertain"); }, alive: async () => true,
+  }, { task() { throw new Error(); }, repo: () => undefined, cleanup() {}, updating: () => false }, "", "");
+  try {
+    const id = f.reserve().record.id;
+    f.store.claim(id, 123, "late");
+    f.store.update(id, { createdAt: Date.now() - 31_000 });
+    await service.reconcile();
+    assert.equal(f.store.get(id)?.state, "starting");
+    assert.equal(f.store.ready(id, 123, "late"), false);
+    f.store.noteStartError(id, "launch_unconfirmed", "late error");
+    assert.equal(f.store.get(id)?.startErrorCode, "startup_timeout");
+    assert.equal(f.store.cleanup(f.cwd, "task", () => assert.fail("must retain cwd")), false);
+    f.store.update(id, { state: "closing" }); // Host reacts to SIGTERM while stop remains uncertain.
+    await service.reconcile();
+    assert.equal(f.store.get(id)?.state, "closing");
+    allowStop = true;
+    await service.reconcile();
+    assert.equal(f.store.get(id)?.state, "lost");
+    assert.equal(f.store.get(id)?.startErrorCode, "startup_timeout");
+    assert.equal(f.store.cleanup(f.cwd, "task", () => {}), true);
+    await service.reconcile();
+    assert.equal(stops, 3);
+    assert.equal(launches, 0);
+  } finally { f.close(); }
+});
+
+test("a claimed host that exits before readiness is reported without launching a duplicate", async () => {
+  const f = fixture();
+  const service = new TerminalService(f.store, {
+    capabilities: { available: true, persistent: true },
+    async launch() { assert.fail("must not relaunch a claimed host"); }, async terminate() {}, alive: async () => false,
+  }, { task() { throw new Error(); }, repo: () => undefined, cleanup() {}, updating: () => false }, "", "");
+  try {
+    const id = f.reserve().record.id;
+    f.store.claim(id, 123, "dead");
+    await service.reconcile();
+    assert.equal(f.store.get(id)?.state, "lost");
+    assert.equal(f.store.get(id)?.startErrorCode, "host_exited");
+  } finally { f.close(); }
+});
+
+
+test("one diagnostic can run at full user capacity and cannot be removed while active", () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 16; i++) f.reserve();
+    assert.throws(() => f.reserve(), /limit: 16/);
+    const reserveDiagnostic = () => f.store.reserve({ diagnostic: true, requestId: randomUUID(), repoId: "diagnostic", title: "Diagnostic",
+      initialCwd: f.cwd, release: f.directory, node: process.execPath, directory: f.store.directory, cols: 80, rows: 24 });
+    const id = reserveDiagnostic().record.id;
+    assert.throws(reserveDiagnostic, /diagnostic is already active/);
+    assert.throws(() => f.store.removeDiagnostic(id), /termination must be confirmed/);
+    f.store.update(id, { state: "exited" }); f.store.removeDiagnostic(id);
+    assert.equal(f.store.list().length, 16);
   } finally { f.close(); }
 });
