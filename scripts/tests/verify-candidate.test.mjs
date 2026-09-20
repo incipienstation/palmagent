@@ -22,7 +22,7 @@ test('parallel plan retains every source check exactly once', () => {
 
 test('distributed verification covers both browser shards and the service worker once', () => {
   assert.equal(canDistributeCandidate(manifest, webManifest), true);
-  const lanes = ['tooling', 'server', 'web-1', 'web-2'].map(candidateLane);
+  const lanes = ['tooling', 'server', 'web-1', 'web-2', 'sw'].map(candidateLane);
   assert.deepEqual(lanes.flat().filter(s => s.command === 'pnpm').map(s => s.args[0]),
     ['typecheck', 'pkg:check', 'server:contracts', 'server:smoke']);
   assert.deepEqual(lanes.flat().filter(s => s.command !== 'pnpm').map(s => s.args), [
