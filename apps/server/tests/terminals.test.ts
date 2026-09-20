@@ -333,3 +333,56 @@ test("one diagnostic can run at full user capacity and cannot be removed while a
     assert.equal(f.store.list().length, 16);
   } finally { f.close(); }
 });
+
+test("idle claims are atomic, explicit takeover fences stale input, and release is owner-only", async () => {
+  const f = fixture();
+  const writes: string[] = [], sizes: number[][] = [];
+  const host = new TerminalHost(f.reserve().record, { spawn: () => ({
+    write: data => { writes.push(data); }, resize: (cols, rows) => { sizes.push([cols, rows]); },
+    terminate() {}, pause() {}, resume() {}, onOutput: () => () => {}, onExit: () => () => {},
+  }) }, { resolve: () => ({ executable: "shell", args: [], env: {} }) }, () => {});
+  function attach() {
+    const frames: TerminalFrame[] = [];
+    let receive: (value: unknown) => void = () => {}, close: () => void = () => {};
+    const channel: LocalChannel = {
+      send(value) { frames.push(value as TerminalFrame); return true; },
+      close() { close(); }, onMessage(callback) { receive = callback; }, onClose(callback) { close = callback; },
+    };
+    host.attach(channel);
+    return { frames, send: (value: unknown) => receive(value), close: () => channel.close(),
+      control: () => frames.filter(frame => frame.type === "control").at(-1)! };
+  }
+  try {
+    const first = attach(), second = attach();
+    await waitFor(() => Boolean(second.control()));
+    assert.equal(first.control().available, true);
+    first.send({ type: "claim-control", ifAvailable: true });
+    second.send({ type: "claim-control", ifAvailable: true });
+    await waitFor(() => second.frames.filter(f => f.type === "control").length >= 3);
+    assert.equal(first.control().writable, true);
+    assert.equal(second.control().writable, false);
+    assert.equal(second.control().available, false);
+    const previous = first.control().epoch;
+    second.send({ type: "claim-control" }); // Existing CLI clients explicitly take over.
+    await waitFor(() => second.control().writable);
+    first.send({ type: "input", epoch: previous, data: "stale" });
+    first.send({ type: "resize", epoch: previous, cols: 7, rows: 7 });
+    first.send({ type: "release-control" });
+    second.send({ type: "input", epoch: second.control().epoch, data: "current" });
+    second.send({ type: "resize", epoch: second.control().epoch, cols: 90, rows: 30 });
+    await waitFor(() => sizes.length === 1);
+    assert.deepEqual(writes, ["current"]);
+    assert.deepEqual(sizes, [[90, 30]]);
+    assert.equal(second.control().writable, true);
+    second.close();
+    assert.equal(first.control().available, true);
+    assert.equal(first.control().writable, false);
+    const reconnect = attach();
+    await waitFor(() => Boolean(reconnect.control()));
+    reconnect.send({ type: "claim-control", ifAvailable: true });
+    await waitFor(() => reconnect.control().writable);
+    reconnect.send({ type: "release-control" });
+    await waitFor(() => reconnect.control().available === true);
+    assert.equal(reconnect.control().writable, false);
+  } finally { host.close(); f.close(); }
+});

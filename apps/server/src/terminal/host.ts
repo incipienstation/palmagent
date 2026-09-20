@@ -61,7 +61,7 @@ export class TerminalHost {
       channel.send({ type: "snapshot", data: this.serializer.serialize(), seq: this.seq, cols: this.screen.cols, rows: this.screen.rows } satisfies TerminalFrame);
       this.acknowledgements.set(channel, this.seq);
       this.ready.add(channel);
-      // An explicit claim is always required; reconnect does not steal control.
+      // Clients may acquire an idle terminal, but only an explicit takeover replaces a writer.
       this.controls();
     });
   }
@@ -69,7 +69,10 @@ export class TerminalHost {
     if (frame.type === "ack") {
       if (frame.seq <= this.seq) this.acknowledgements.set(channel, Math.max(frame.seq, this.acknowledgements.get(channel) ?? 0));
     } else if (frame.type === "claim-control") {
-      this.writer = channel; this.epoch++; this.controls();
+      if (this.writer !== channel && (!frame.ifAvailable || !this.writer)) {
+        this.writer = channel; this.epoch++;
+      }
+      this.controls();
     } else if (frame.type === "release-control") {
       if (this.writer === channel) { this.writer = undefined; this.epoch++; this.controls(); }
     } else if (this.writer === channel && frame.epoch === this.epoch) {
@@ -81,7 +84,7 @@ export class TerminalHost {
     }
   }
   private controls() {
-    for (const channel of this.ready) channel.send({ type: "control", writable: channel === this.writer, epoch: this.epoch } satisfies TerminalFrame);
+    for (const channel of this.ready) channel.send({ type: "control", writable: channel === this.writer, available: !this.writer, epoch: this.epoch } satisfies TerminalFrame);
   }
   private broadcast(frame: TerminalFrame) {
     for (const channel of this.ready) {

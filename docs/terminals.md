@@ -6,13 +6,23 @@ its worktree; a Space shell starts in the repository directory.
 
 Desktop shows the conversation and terminal together. Mobile switches between
 them and provides Ctrl+C, Tab, Esc, and arrow keys above the safe area.
-Choose **Control here** to type. Other attachments remain viewers; claiming control
-in another browser or CLI immediately revokes the previous writer.
+An idle terminal enables input automatically; tap the terminal to open the keyboard.
+If another screen is using it, output remains visible and **Type here** moves input
+to this screen. Simply viewing or focusing a terminal never takes another screen's
+input. CLI attach explicitly takes input from other viewers.
+
+The **Terminal actions** menu contains rename, **View read-only**, terminal details
+(including the full starting directory), and termination. Read-only mode stays on
+for that terminal in this view across reconnects and terminal switches. Choose
+**Type here** or **Enable input** to leave it; other screens' preferences are unchanged.
 
 Returning to the conversation, closing a tab, losing connectivity, and updating
 Palmagent leave the shell running. Reconnecting restores the current screen and
-bounded scrollback, including an application's alternate screen. Reconnect begins
-in view mode and never sends buffered keystrokes. **Terminate terminal** ends the
+bounded scrollback, including an application's alternate screen. Reconnect enables
+input only if no other screen owns it and this view is not explicitly read-only.
+Keystrokes entered while disconnected are never replayed. Existing shells started
+by older Palmagent versions still support **Type here**, but require that explicit
+action until a new shell is started. **Terminate terminal** ends the
 shell and its child processes.
 
 The installation owner can also use:
