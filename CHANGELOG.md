@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.47
+
 ### Fixed
 
 - Application updates now provision host services and terminal WebSocket routing from the
