@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        lane: [tooling, server, web-1, web-2]
+        lane: [tooling, server, web-1, web-2, sw]
     env:
       RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
     steps:
@@ -137,12 +137,12 @@ jobs:
         working-directory: source
         run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
-        if: startsWith(matrix.lane, 'web-')
+        if: startsWith(matrix.lane, 'web-') || matrix.lane == 'sw'
         with:
           name: ${{ needs.prepare.outputs.web_artifact }}
           path: source/apps/web/dist
       - name: Install Chromium
-        if: startsWith(matrix.lane, 'web-')
+        if: startsWith(matrix.lane, 'web-') || matrix.lane == 'sw'
         working-directory: source
         run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
       - name: Verify exact source lane

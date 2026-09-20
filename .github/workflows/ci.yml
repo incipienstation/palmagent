@@ -93,7 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         # Packaging-only changes need one build and no browser shards.
-        shard: ${{ fromJSON(needs.scope.outputs.web == 'true' && '[1,2]' || '[1]') }}
+        shard: ${{ fromJSON(needs.scope.outputs.web == 'true' && '[1,2,"sw"]' || '[1]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -112,11 +112,10 @@ jobs:
         if: needs.scope.outputs.web == 'true'
         run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
       - name: Verify PWA shard
-        if: needs.scope.outputs.web == 'true'
+        if: needs.scope.outputs.web == 'true' && matrix.shard != 'sw'
         run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/2
-      # Recent runs put more browser time on shard 1; pair it with the shorter package tail.
       - name: Verify service-worker updates once
-        if: needs.scope.outputs.web == 'true' && matrix.shard == 2
+        if: needs.scope.outputs.web == 'true' && matrix.shard == 'sw'
         run: node apps/web/scripts/test-sw-update.mjs
       - name: Verify packed candidate
         if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository && matrix.shard == 1
