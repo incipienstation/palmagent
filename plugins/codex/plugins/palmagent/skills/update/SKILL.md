@@ -74,6 +74,12 @@ the native managers using the recorded prior refs and report what was restored.
 
 ## 3. Apply and verify
 
+Read [host ingress](../.shared/ingress.md) when adopting an older installation or verifying
+public access. The new CLI preserves existing proxy/TLS resources on update. Record
+existing routes and renewal ownership without rewriting healthy configuration; after
+activation compare `<cli> connection` with the route and verify HTTPS separately.
+
+
 Preserve every running Codex and Claude session. Independent-execution package
 installations stage an exact release, retain the previous artifacts, and restart
 only the web service. Existing invocation hosts keep their provider connection,

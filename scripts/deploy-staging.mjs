@@ -94,7 +94,7 @@ export function validateTarget(target) {
 }
 
 // Dependencies are injected only by tests. All production mutations use the
-// installed CLI, which owns systemd/nginx and runner restart decisions.
+// installed CLI, which owns application systemd and runner restart decisions; ingress is external.
 export async function deploy(config, target, { call = run, health = verifyHealth, installed = verifyInstalled, bind = validateBinding } = {}) {
   validateTarget(target);
   config = bind(config, call);

@@ -8,13 +8,14 @@ description: Use when an operator reports a Palmagent instance is unhealthy or w
 Thin wrapper over the `palmagent` CLI's `doctor` subcommand, PLUS adaptive
 diagnosis when it reports a fault. The CLI runs the deterministic structured
 checks (units active? runner socket present? claude/codex installed + authed?
-`nginx -t` clean? TLS expiry? SQLite present? VAPID keys present? port
+SQLite present? VAPID keys present? port
 loopback-only? PWA dist present? disk headroom?) and **exits non-zero on any
 failure**. Your added value is correlating its findings with the live logs.
 
 ## 1. Inspect without changing the installation
 
-Read the [shared CLI bootstrap guidance](../.shared/bootstrap.md) for discovery and
+Read [host ingress](../.shared/ingress.md) for proxy/TLS diagnosis and the
+[shared CLI bootstrap guidance](../.shared/bootstrap.md) for discovery and
 channel selection. Before applying its compatibility gate, gather read-only evidence:
 installed package and plugin versions, runtime health, service state, journals, and
 `auto-update status` when the installed CLI supports it. A mismatch must not block those
@@ -40,9 +41,10 @@ Show the operator the report.
 
 ## 3. If it is all green
 
-Report healthy and stop — no system changes. If they still see a problem, ask
-what symptom they observe (e.g. browser error, push not arriving) and dig into
-the matching check.
+CLI health covers the local runtime only. Inspect the actual ingress and verify public
+HTTPS using the shared reference; use `<cli> terminal diagnose` explicitly when supported
+to verify WebSocket shell transport. Report each result separately. No system changes
+are authorized by diagnosis alone. Investigate any remaining user symptom.
 
 ## 4. If the CLI reports a fault — correlate, then propose the fix
 
@@ -71,8 +73,9 @@ then propose the concrete fix. Common patterns to recognize:
 - **`claude`/`codex` not found by the service** → the unit's baked `PATH=`
   doesn't resolve the CLI; `journalctl` shows the spawn error. Point at the
   install config's `EXEC_PATH`.
-- **`nginx -t` fails or 502/TLS errors** → run `sudo nginx -t` and read
-  `journalctl -u nginx --no-pager -n 50`; an expired cert means re-run certbot.
+- **502/TLS/stream errors** → identify the actual ingress owner, upstream, certificate
+  renewal and logs using the shared reference. Do not assume nginx or Certbot, or change
+  unrelated sites. Public transport failures are separate from CLI runtime health.
 - **Auth/passkey failures** → check that the RP id/origin match the live domain
   (a domain change without `setup` desyncs them).
 - **Automatic updates paused** → inspect the last update result and the update

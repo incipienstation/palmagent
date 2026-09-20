@@ -1,5 +1,6 @@
 import { terminalRoutes } from "./routes/terminals.js";
 import { Hono } from "hono";
+import { authBudget } from "./auth-budget.js";
 import { bodyLimit } from "hono/body-limit";
 import { StreamQuerySchema } from "@palmagent/shared/requests";
 import { query } from "./input.js";
@@ -27,7 +28,7 @@ export function createApp(deps: HttpDependencies) {
   const app = new Hono();
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
-  app.use("*", versionHeader(deps), authenticate(deps), requireCurrentClient(deps), requestAdmission(deps));
+  app.use("*", versionHeader(deps), authBudget(), authenticate(deps), requireCurrentClient(deps), requestAdmission(deps));
   const limitBody = (maxSize: number) => bodyLimit({ maxSize, onError: (c) => c.json({ error: "request body too large" }, 413) });
   const standardBody = limitBody(MAX_BODY_BYTES);
   const imageBody = limitBody(MAX_IMAGE_BODY_BYTES);

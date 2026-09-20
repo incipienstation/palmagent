@@ -18,7 +18,7 @@
   "interface": {
     "displayName": "Palmagent",
     "shortDescription": "Install, reconfigure, diagnose, and update a self-hosted dispatcher",
-    "longDescription": "Operator skins over the palmagent CLI. Install a new instance, reconfigure an existing one, diagnose a broken one against systemd + journal logs, and update in place while preserving in-flight agent turns. The CLI is the brain; these skills add conversational confirmation and adaptive diagnosis.",
+    "longDescription": "Operator skins over the palmagent CLI. Install a new instance, reconfigure an existing one, diagnose a broken one against systemd + journal logs, and update in place while preserving in-flight agent turns. The CLI manages the application runtime; these skills inspect and manage host ingress, TLS, and operational recovery.",
     "developerName": "Palmagent",
     "category": "Developer Tools",
     "capabilities": [

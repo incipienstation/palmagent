@@ -1,7 +1,6 @@
-import { diagnoseTerminal } from "./terminal-diagnostics.js";
 import { installTerminalUnits } from "./terminal-units.js";
-// install / setup / update / uninstall orchestration. This is the only code
-// that mutates the host (systemd units, nginx, certbot, the SQLite db). Every
+// Application install / setup / update / uninstall orchestration.
+// Host ingress and TLS are managed separately by the operator plugin. Every
 // mutating step is gated behind --dry-run (render + print, touch nothing) so the
 // flow is inspectable and CI-testable; real mutations need sudo.
 //
@@ -11,7 +10,7 @@ import { writePrivateFileAtomic } from "../private-files.js";
 import { assertExecutionsFinished, releaseContract, retainInstalledRelease, stageRelease, verifyActiveExecutionCompatibility } from "./execution-release.js";
 import { installExecutionUnits } from "./execution-units.js";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { BRANDING } from "@palmagent/shared";
 import {
@@ -38,7 +37,7 @@ import { beginUpdateMaintenance, updateMaintenanceOwnedBy } from "../update-main
 import { verifyUpdateIdle } from "./update-idle.js";
 import { configureAutoUpdate, retireAutoUpdateTimer, removeAutoUpdateTimer } from "./auto-update.js";
 import { preflight, doctor, printChecks } from "./checks.js";
-import { renderNginx } from "./nginx.js";
+import { connectionInfo } from "./connection.js";
 import {
   recordRunnerArtifact,
   runnerArtifactChanged,
@@ -52,7 +51,6 @@ import {
   run,
   sudo,
   sudoWriteFile,
-  which,
 } from "./sh.js";
 
 import { clearUpdateRequest, validUpdateRequest } from "./update-access.js";
@@ -96,10 +94,6 @@ function persistUserChannel(cfg: InstallConfig, flags: Flags): void {
 }
 
 const SYSTEMD_DIR = "/etc/systemd/system";
-const NGINX_CONFD = "/etc/nginx/conf.d";
-const NGINX_SITES_AVAIL = "/etc/nginx/sites-available";
-const NGINX_SITES_ENABLED = "/etc/nginx/sites-enabled";
-
 // ----------------------------------------------------------------- run mode
 function detectRuntime(): {
   mode: "package" | "source";
@@ -258,195 +252,6 @@ function applyUnits(
   return { runnerChanged };
 }
 
-// ---------------------------------------------------------------- write nginx
-type PathSnapshot =
-  | { kind: "missing" }
-  | { kind: "file"; content: string }
-  | { kind: "symlink"; target: string };
-
-function snapshotPath(path: string): PathSnapshot {
-  const link = sudo(["readlink", path]);
-  if (link.ok) return { kind: "symlink", target: link.stdout.trim() };
-  const file = sudo(["cat", path]);
-  return file.ok ? { kind: "file", content: file.stdout } : { kind: "missing" };
-}
-
-function restorePath(path: string, snapshot: PathSnapshot): void {
-  sudo(["rm", "-f", path]);
-  if (snapshot.kind === "file" && !sudoWriteFile(path, snapshot.content)) {
-    throw new Error(`failed to restore ${path}`);
-  }
-  if (
-    snapshot.kind === "symlink" &&
-    !sudo(["ln", "-s", snapshot.target, path]).ok
-  ) {
-    throw new Error(`failed to restore symlink ${path}`);
-  }
-}
-
-function backupNginxFiles(
-  cfg: InstallConfig,
-  snapshots: Map<string, PathSnapshot>,
-): void {
-  const dir = join(cfg.dataDir, "nginx-last-good");
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  for (const [path, snapshot] of snapshots) {
-    if (snapshot.kind === "file")
-      writeFileSync(join(dir, basename(path)), snapshot.content, {
-        mode: 0o600,
-      });
-    if (snapshot.kind === "symlink")
-      writeFileSync(
-        join(dir, `${basename(path)}.symlink`),
-        `${snapshot.target}\n`,
-        { mode: 0o600 },
-      );
-  }
-}
-
-function assertNginxValid(): void {
-  const tested = sudo(["nginx", "-t"]);
-  if (!tested.ok) throw new Error(`nginx config invalid:\n${tested.stderr}`);
-}
-
-function reloadNginx(): void {
-  const reloaded = sudo(["systemctl", "reload", "nginx"]);
-  if (!reloaded.ok) throw new Error(`nginx reload failed:\n${reloaded.stderr}`);
-}
-
-function rollbackNginx(snapshots: Map<string, PathSnapshot>): void {
-  for (const [path, snapshot] of [...snapshots].reverse())
-    restorePath(path, snapshot);
-  assertNginxValid();
-  reloadNginx();
-}
-
-function applyNginx(cfg: InstallConfig, flags: Flags): void {
-  const ng = renderNginx(cfg);
-  const useSites = existsSync(NGINX_SITES_AVAIL);
-  const vhostPath = useSites
-    ? join(NGINX_SITES_AVAIL, ng.vhost.name)
-    : join(NGINX_CONFD, ng.vhost.name);
-  const zonesPath = join(NGINX_CONFD, ng.zones.name);
-  const enabledPath = useSites
-    ? join(NGINX_SITES_ENABLED, ng.vhost.name)
-    : undefined;
-
-  if (flags.dryRun) {
-    log.info(`[dry-run] would write ${zonesPath} and ${vhostPath}`);
-    log.info(
-      "[dry-run] would require a valid TLS certificate before activating the HTTPS vhost",
-    );
-    log.info(
-      "[dry-run] if absent, would use the ACME-only bootstrap without proxying the application over HTTP",
-    );
-    log.plain(`\n# ${zonesPath}\n${ng.zones.text}`);
-    log.plain(`\n# ${vhostPath}\n${ng.vhost.text}`);
-    log.plain(`\n# temporary ACME bootstrap\n${ng.bootstrap.text}`);
-    return;
-  }
-
-  assertNginxValid();
-  const paths = [zonesPath, vhostPath, ...(enabledPath ? [enabledPath] : [])];
-  const snapshots = new Map(paths.map((path) => [path, snapshotPath(path)]));
-  backupNginxFiles(cfg, snapshots);
-
-  try {
-    if (!sudoWriteFile(zonesPath, ng.zones.text))
-      throw new Error(`failed to write ${zonesPath}`);
-    if (!sudoWriteFile(vhostPath, ng.vhost.text))
-      throw new Error(`failed to write ${vhostPath}`);
-    if (enabledPath && !sudo(["ln", "-sfn", vhostPath, enabledPath]).ok) {
-      throw new Error(`failed to enable ${vhostPath}`);
-    }
-    assertNginxValid();
-    reloadNginx();
-  } catch (error) {
-    rollbackNginx(snapshots);
-    throw error;
-  }
-  log.ok("HTTPS-only nginx vhost applied");
-}
-
-function tlsCertificateUsable(cfg: InstallConfig): boolean {
-  const cert = `/etc/letsencrypt/live/${cfg.domain}/fullchain.pem`;
-  const key = `/etc/letsencrypt/live/${cfg.domain}/privkey.pem`;
-  return (
-    sudo(["test", "-s", key]).ok &&
-    sudo([
-      "openssl",
-      "x509",
-      "-checkend",
-      "0",
-      "-checkhost",
-      cfg.domain,
-      "-noout",
-      "-in",
-      cert,
-    ]).ok
-  );
-}
-
-function ensureTlsCertificate(cfg: InstallConfig, flags: Flags): void {
-  if (flags.dryRun) {
-    log.info(
-      `[dry-run] would verify or obtain a valid TLS certificate for ${cfg.domain}`,
-    );
-    return;
-  }
-  if (tlsCertificateUsable(cfg)) {
-    log.ok(`TLS cert already present for ${cfg.domain}`);
-    return;
-  }
-
-  const ng = renderNginx(cfg);
-  const useSites = existsSync(NGINX_SITES_AVAIL);
-  const bootstrapPath = useSites
-    ? join(NGINX_SITES_AVAIL, ng.bootstrap.name)
-    : join(NGINX_CONFD, ng.bootstrap.name);
-  const enabledPath = useSites
-    ? join(NGINX_SITES_ENABLED, ng.bootstrap.name)
-    : undefined;
-  const paths = [bootstrapPath, ...(enabledPath ? [enabledPath] : [])];
-  const snapshots = new Map(paths.map((path) => [path, snapshotPath(path)]));
-
-  log.info(`obtaining TLS cert for ${cfg.domain} …`);
-  try {
-    if (!sudoWriteFile(bootstrapPath, ng.bootstrap.text))
-      throw new Error(`failed to write ${bootstrapPath}`);
-    if (enabledPath && !sudo(["ln", "-sfn", bootstrapPath, enabledPath]).ok) {
-      throw new Error(`failed to enable ${bootstrapPath}`);
-    }
-    assertNginxValid();
-    reloadNginx();
-
-    const issued = sudo([
-      "certbot",
-      "certonly",
-      "--nginx",
-      "-d",
-      cfg.domain,
-      "--non-interactive",
-      "--agree-tos",
-      "--register-unsafely-without-email",
-      "--force-renewal",
-    ]);
-    if (!issued.ok)
-      throw new Error(`certbot did not complete:\n${issued.stderr}`);
-  } finally {
-    for (const [path, snapshot] of [...snapshots].reverse())
-      restorePath(path, snapshot);
-    assertNginxValid();
-    reloadNginx();
-  }
-
-  if (!tlsCertificateUsable(cfg))
-    throw new Error(
-      `certbot did not produce a valid TLS certificate for ${cfg.domain}`,
-    );
-  log.ok("TLS cert obtained");
-}
-
 /** Mint + print a first-passkey enroll link (ports scripts/register-passkey.ts).
  * Db/AuthService are imported lazily so the native better-sqlite3 binding only
  * loads when actually enrolling — `doctor`/`--help` never trigger it. */
@@ -513,7 +318,7 @@ function startServices(cfg: InstallConfig): void {
 }
 
 function runtimeIsHealthy(cfg: InstallConfig, expectedVersion?: string): boolean {
-  const r = run("curl", ["--max-time", "5", "-fsS", `http://${cfg.host}:${cfg.port}/api/health`]);
+  const r = run("curl", ["--max-time", "5", "-fsS", `${connectionInfo(cfg).upstream}/api/health`]);
   if (!r.ok) return false;
   try {
     const health = JSON.parse(r.stdout);
@@ -522,8 +327,8 @@ function runtimeIsHealthy(cfg: InstallConfig, expectedVersion?: string): boolean
 }
 
 async function healthcheck(cfg: InstallConfig, expectedVersion?: string): Promise<boolean> {
-  // Host-local transport stays on loopback. Every browser-facing origin is
-  // HTTPS-only through the generated nginx vhost.
+  // Host-local transport stays on loopback. Browser-facing HTTPS is owned
+  // by the operator plugin or external host ingress.
   for (let i = 0; i < 30; i++) {
     if (runtimeIsHealthy(cfg, expectedVersion)) return true;
     run("sleep", ["1"]);
@@ -568,12 +373,8 @@ export async function install(flags: Flags): Promise<number> {
     log.info("[dry-run] would write install.env");
   }
 
-  log.step("TLS (certbot)");
-  ensureTlsCertificate(cfg, flags);
   log.step("systemd units");
   applyUnits(cfg, flags);
-  log.step("HTTPS-only nginx vhost + rate limits");
-  applyNginx(cfg, flags);
 
   if (!flags.dryRun) {
     log.step("starting services");
@@ -590,13 +391,12 @@ export async function install(flags: Flags): Promise<number> {
     );
     retireAutoUpdateTimer();
     if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
-    log.step("first passkey");
-    await enrollPasskey(cfg, flags);
+    log.info(`After the operator plugin verifies public HTTPS, run ${BRANDING.cliName} passkey to enroll the first device.`);
   }
 
   log.step("done");
   log.ok(
-    `${BRANDING.productName} installed. Open https://${cfg.domain} and register your passkey.`,
+    `${BRANDING.productName} runtime installed. Public HTTPS must be configured and verified by the operator plugin.`,
   );
   return 0;
 }
@@ -611,15 +411,12 @@ export async function setup(flags: Flags): Promise<number> {
 
 async function applySetup(cfg: InstallConfig, flags: Flags): Promise<number> {
   const artifactChanged = runnerArtifactChanged(cfg);
-  log.step("TLS");
-  ensureTlsCertificate(cfg, flags);
   if (!flags.dryRun) {
     persistUserChannel(cfg, flags);
     saveConfig(cfg);
     log.ok("updated install.env");
   }
   const { runnerChanged } = applyUnits(cfg, flags);
-  applyNginx(cfg, flags);
   if (!flags.dryRun) {
     if (!cfg.executionNode && (runnerChanged || artifactChanged)) {
       log.warn(
@@ -825,7 +622,7 @@ export async function update(flags: Flags): Promise<number> {
 
 async function verifyIndependentActivation(cfg: InstallConfig): Promise<boolean> {
   verifyActiveExecutionCompatibility(cfg);
-  const response = await fetch(`http://${cfg.host}:${cfg.port}/api/health`, { signal: AbortSignal.timeout(5000) });
+  const response = await fetch(`${connectionInfo(cfg).upstream}/api/health`, { signal: AbortSignal.timeout(5000) });
   const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number };
   if (!response.ok || !health.ok || !health.updateMaintenance || health.executionProtocol !== 1) throw new Error("Cannot verify independent application activation");
   return true;
@@ -842,20 +639,19 @@ export function prepareIndependentRuntime(flags: Flags, pkgDir: string, node: st
   const candidate = { ...installed, pkgDir: release, workingDir: release, executionNode: runtime };
   verifyActiveExecutionCompatibility(candidate);
   applyUnits(candidate, flags);
-  applyNginx(candidate, flags);
   return 0;
 }
 
 export function provisionIndependentRuntime(cfg: InstallConfig, flags: Flags): void {
-  if (!flags.dryRun && releaseContract(cfg.pkgDir!).hostSetup === 1) {
+  if (!flags.dryRun && releaseContract(cfg.pkgDir!).hostSetup === 1 && releaseContract(cfg.pkgDir!).ingressOwner === "plugin") {
     const result = run(cfg.executionNode!, [join(cfg.pkgDir!, "cli.js"), "runtime-setup", "--data-dir", cfg.dataDir, "--non-interactive"], {
       env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 60_000,
     });
     if (!result.ok) throw new Error("Candidate runtime provisioning failed");
   } else {
-    // Older retained releases predate candidate-owned setup.
+    // Legacy candidate setup can mutate shared ingress. Restore only application
+    // units through this CLI; never execute its old proxy provisioning path.
     applyUnits(cfg, flags);
-    applyNginx(cfg, flags);
   }
 }
 
@@ -945,10 +741,8 @@ async function activateInstalledUpdate(cfg: InstallConfig, flags: Flags, expecte
   // Re-render units; restart the runner only when its unit or artifact changed
   // after the guarded update has verified that no turns can be interrupted.
   if (!flags.dryRun) retainInstalledRelease(cfg);
-  ensureTlsCertificate(cfg, flags);
   const artifactChanged = runnerArtifactChanged(cfg);
   const { runnerChanged } = applyUnits(cfg, flags);
-  applyNginx(cfg, flags);
   if (flags.dryRun) return 0;
 
   if (!cfg.executionNode && (runnerChanged || artifactChanged)) {
@@ -981,7 +775,7 @@ export async function uninstall(flags: Flags): Promise<number> {
   const units = renderUnits(cfg);
   if (flags.dryRun) {
     log.info(
-      `[dry-run] would stop+disable ${units.web.name} and ${units.runner.name}, remove their unit files and the nginx vhost`,
+      `[dry-run] would stop+disable ${units.web.name} and ${units.runner.name}, remove their application unit files; preserve host proxy and TLS resources`,
     );
     if (flags.purge)
       log.info(`[dry-run] --purge would DELETE the data dir ${cfg.dataDir}`);
@@ -1014,17 +808,7 @@ export async function uninstall(flags: Flags): Promise<number> {
         "/etc/sudoers.d/palmagent-terminals", "/usr/local/libexec/palmagent-terminal-control"]) sudo(["rm", "-f", path]);
     }
     sudo(["systemctl", "daemon-reload"]);
-    const ng = renderNginx(cfg);
-    sudo([
-      "rm",
-      "-f",
-      join(NGINX_SITES_ENABLED, ng.vhost.name),
-      join(NGINX_SITES_AVAIL, ng.vhost.name),
-      join(NGINX_CONFD, ng.vhost.name),
-      join(NGINX_CONFD, ng.zones.name),
-    ]);
-    if (which("nginx")) sudo(["systemctl", "reload", "nginx"]);
-    log.ok("services + nginx vhost removed");
+    log.ok("application services removed; host proxy and TLS resources preserved for operator cleanup");
 
     if (flags.purge) {
       const approved =
@@ -1074,14 +858,6 @@ export async function runDoctor(flags: Flags): Promise<number> {
     log.warn("Update channel is unknown: user or legacy settings could not be read");
   }
   const checks = doctor(cfg);
-  if (cfg.executionNode) {
-    try {
-      const result = await diagnoseTerminal(cfg);
-      checks.push({ name: "terminal connection", level: "ok", detail: result.checks.join(", ") });
-    } catch (error) {
-      checks.push({ name: "terminal connection", level: "fail", detail: error instanceof Error ? error.message : "Terminal diagnostic failed", fix: "Run palmagent setup to repair services, then palmagent terminal diagnose" });
-    }
-  }
   const code = printChecks(`${BRANDING.productName} doctor — ${cfg.domain}`, checks);
   return code || (updateFailure ? 1 : 0);
 }

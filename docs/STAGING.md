@@ -3,7 +3,8 @@
 Staging is an explicitly bound installation, never a role inferred from a hostname. Keep the
 binding, deployment receipts, package snapshots, logs, and database outside the source repository.
 Run these commands as the installed service owner, using the Node/npm toolchain that owns its
-global package prefix. The existing CLI handles privileged systemd/nginx operations.
+global package prefix. The CLI handles privileged application systemd operations. Host ingress and TLS are
+operator-managed; application deployment preserves their existing configuration.
 
 ## Bind an existing installation
 

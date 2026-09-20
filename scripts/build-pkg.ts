@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1 }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
@@ -202,7 +202,7 @@ async function main(): Promise<void> {
     "- Node.js >= 22",
     "- At least one of the `claude` or `codex` CLIs on PATH and authenticated",
     "- A public domain pointing at this host (TLS + passkey auth need a real https origin)",
-    "- Linux with systemd + nginx and sudo (the installer writes units + an nginx vhost)",
+    "- Linux with systemd and sudo (the CLI manages application units; the plugin manages host ingress)",
     "",
     "## Quickstart",
     "",
@@ -225,11 +225,12 @@ async function main(): Promise<void> {
     "",
     `- \`${cli} config\`     Shared user settings: get, init, set --channel stable|preview`,
     `- \`${cli} auto-update\` Access-triggered updates: enable, disable, status`,
-    `- \`${cli} install\`    First-run setup: systemd units, nginx, TLS (certbot), first passkey`,
-    `- \`${cli} setup\`      Reconfigure an existing install + re-render units/nginx`,
-    `- \`${cli} doctor\`     Diagnose a running instance + suggest fixes`,
+    `- \`${cli} install\`    Install the application runtime; the plugin configures proxy/TLS`,
+    `- \`${cli} setup\`      Reconfigure the application runtime and public domain`,
+    `- \`${cli} doctor\`     Diagnose the local application runtime`,
+    `- \`${cli} connection\` Read-only public origin and upstream contract as JSON`,
     `- \`${cli} update\`     \`--plan\` resolves package/plugin actions; \`--pull\` applies with installed plugin manifests`,
-    `- \`${cli} uninstall\`  Remove the units + nginx vhost (data preserved unless \`--purge\`)`,
+    `- \`${cli} uninstall\`  Remove application units; preserve proxy/TLS (data preserved unless \`--purge\`)`,
     `- \`${cli} passkey\`    Mint a fresh device-enroll link`,
     "",
     `Run \`${cli} --help\` for the full option list.`,

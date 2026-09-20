@@ -109,8 +109,8 @@ Retained package artifacts are not garbage-collected by this feature.
 ## Repair missing terminal services
 
 If a package upgrade leaves a shell at “Starting”, run `palmagent setup` as the installation
-owner with the installation's data directory. This reapplies terminal services and the nginx
-WebSocket route. A pending request retries with its original terminal ID within the 30-second
+owner with the installation's data directory. This reapplies terminal services. Ask the
+operator plugin to inspect the host ingress and verify its WebSocket route. A pending request retries with its original terminal ID within the 30-second
 startup deadline. After the deadline, Palmagent stops its process group and reports the failure;
 open a new terminal after repairing the installation. Uncertain termination keeps the original
 reservation and its worktree pinned until the service confirms it has stopped.
@@ -118,9 +118,9 @@ Application updates provision services using the incoming package's own installe
 
 ## Diagnose the full connection
 
-Run `palmagent terminal diagnose` as the installation owner. `palmagent doctor` also performs
-this check on package installations with retained runtimes. It verifies service permissions,
-starts a disposable shell in a temporary directory, executes a marker through the installation's
+Run `palmagent terminal diagnose` as the installation owner, or ask the operator plugin
+to verify public shell transport. This is separate from local `palmagent doctor` checks.
+It verifies service permissions, starts a disposable shell in a temporary directory, executes a marker through the installation's
 public authenticated WebSocket route, then reconnects and verifies the restored screen.
 A local health response alone cannot prove that the public WebSocket route works.
 
