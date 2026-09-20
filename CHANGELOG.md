@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.45
+
 ### Fixed
 
 - Cmd/Ctrl + Enter now submits new tasks and messages, including the selected queue
