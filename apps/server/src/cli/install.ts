@@ -1,3 +1,4 @@
+import { diagnoseTerminal } from "./terminal-diagnostics.js";
 import { installTerminalUnits } from "./terminal-units.js";
 // install / setup / update / uninstall orchestration. This is the only code
 // that mutates the host (systemd units, nginx, certbot, the SQLite db). Every
@@ -1054,7 +1055,7 @@ export async function passkey(flags: Flags): Promise<number> {
   return 0;
 }
 
-export function runDoctor(flags: Flags): number {
+export async function runDoctor(flags: Flags): Promise<number> {
   const cfg = loadInstalledConfig(flags);
   let updateFailure = false;
   try {
@@ -1072,9 +1073,15 @@ export function runDoctor(flags: Flags): number {
   } catch {
     log.warn("Update channel is unknown: user or legacy settings could not be read");
   }
-  const code = printChecks(
-    `${BRANDING.productName} doctor — ${cfg.domain}`,
-    doctor(cfg),
-  );
+  const checks = doctor(cfg);
+  if (cfg.executionNode) {
+    try {
+      const result = await diagnoseTerminal(cfg);
+      checks.push({ name: "terminal connection", level: "ok", detail: result.checks.join(", ") });
+    } catch (error) {
+      checks.push({ name: "terminal connection", level: "fail", detail: error instanceof Error ? error.message : "Terminal diagnostic failed", fix: "Run palmagent setup to repair services, then palmagent terminal diagnose" });
+    }
+  }
+  const code = printChecks(`${BRANDING.productName} doctor — ${cfg.domain}`, checks);
   return code || (updateFailure ? 1 : 0);
 }

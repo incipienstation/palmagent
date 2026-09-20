@@ -70,6 +70,9 @@ test("desktop shows conversation and terminal together; narrow light layout rema
   await assertViewportLocked(page);
   await page.screenshot({ path: testInfo.outputPath("terminal-desktop-light.png") });
   await page.setViewportSize({ width: 320, height: 568 });
+  // Chromium can acknowledge the viewport before delivering resize to the PWA.
+  // Wait for the visible shell to resize before measuring document overflow.
+  await expect(page.getByRole("region", { name: "Terminals", exact: true })).toHaveCSS("height", "568px");
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Control here" })).toBeVisible();
   await assertViewportLocked(page);

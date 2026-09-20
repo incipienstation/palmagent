@@ -18,6 +18,7 @@ shell and its child processes.
 The installation owner can also use:
 
 ```sh
+palmagent terminal diagnose
 palmagent terminal list
 palmagent terminal create --repo <space-id>
 palmagent terminal create --task <task-id> --title "Development"
@@ -91,7 +92,7 @@ flowchart LR
   supervisor-confirmed stopped service releases retention; unknown state stays pinned.
   Browser disconnect and application shutdown only detach clients.
 
-The current limits are 16 active terminals per installation, 8 attachments per
+The current limits are 16 active user terminals per installation, 8 attachments per
 terminal, 2,000 scrollback lines, and bounded frames, socket buffers, and input rates.
 Retained package artifacts are not garbage-collected by this feature.
 
@@ -99,6 +100,27 @@ Retained package artifacts are not garbage-collected by this feature.
 
 If a package upgrade leaves a shell at “Starting”, run `palmagent setup` as the installation
 owner with the installation's data directory. This reapplies terminal services and the nginx
-WebSocket route. Pending requests recover with their original terminal IDs; opening replacement
-shells is unnecessary. Newer versions show a repair instruction when these services are absent.
+WebSocket route. A pending request retries with its original terminal ID within the 30-second
+startup deadline. After the deadline, Palmagent stops its process group and reports the failure;
+open a new terminal after repairing the installation. Uncertain termination keeps the original
+reservation and its worktree pinned until the service confirms it has stopped.
 Application updates provision services using the incoming package's own installer.
+
+## Diagnose the full connection
+
+Run `palmagent terminal diagnose` as the installation owner. `palmagent doctor` also performs
+this check on package installations with retained runtimes. It verifies service permissions,
+starts a disposable shell in a temporary directory, executes a marker through the installation's
+public authenticated WebSocket route, then reconnects and verifies the restored screen.
+A local health response alone cannot prove that the public WebSocket route works.
+
+The diagnostic needs the configured HTTPS origin to be reachable from the installation host.
+It uses a temporary login session and one separate diagnostic slot, so existing user terminals
+are unaffected and a full user-terminal list does not block the check. Updates and concurrent
+diagnostics are serialized. The result contains check names, without shell output or credentials.
+
+On completion or failure, it revokes the temporary session and stops the diagnostic process
+group before removing its registry entry and scratch directory. If stopping cannot be confirmed,
+the check fails and leaves the terminal visible for inspection with `palmagent terminal list`
+and termination by ID. If the diagnostic CLI is killed, its host expires after two minutes;
+the temporary login session also expires within two minutes.

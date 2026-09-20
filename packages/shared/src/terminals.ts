@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const TERMINAL_PROTOCOL = 1;
+export const TERMINAL_STARTUP_TIMEOUT_MS = 30_000;
+export type TerminalStartError = "services_unavailable" | "launch_unconfirmed" | "startup_timeout" | "host_exited" | "initialization_failed";
 export const TerminalId = z.string().uuid();
 export const TerminalSize = z.object({ cols: z.number().int().min(2).max(500), rows: z.number().int().min(1).max(200) });
 export const CreateTerminal = TerminalSize.extend({
@@ -14,7 +16,7 @@ export const TerminalQuery = z.object({ taskId: z.string().optional(), repoId: z
 export type TerminalState = "starting" | "running" | "closing" | "exited" | "lost";
 export interface TerminalSession {
   id: string; taskId?: string; repoId: string; title: string; initialCwd: string;
-  state: TerminalState; createdAt: number; exitCode?: number; protocol: number; startError?: string;
+  state: TerminalState; createdAt: number; exitCode?: number; protocol: number; startError?: string; startErrorCode?: TerminalStartError;
 }
 export interface TerminalCapabilities { available: boolean; persistent: boolean; reason?: string }
 export const TerminalClientFrame = z.discriminatedUnion("type", [

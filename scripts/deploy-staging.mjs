@@ -69,6 +69,17 @@ export async function verifyHealth(config, identity, request = fetch) {
   }
 }
 
+export function verifyTerminalConnection(config, call = run) {
+  const directory = config.activePkgDir ?? config.pkgDir;
+  const path = join(directory, 'runtime-contract.json');
+  if (!existsSync(path) || json(path).terminalDiagnostics === undefined) return { status: 'unsupported', reason: 'Package predates terminal diagnostics' };
+  assert(json(path).terminalDiagnostics === 1, 'Unsupported terminal diagnostic contract');
+  const result = JSON.parse(call(config.executionNode ?? process.execPath,
+    [join(directory, 'cli.js'), 'terminal', 'diagnose', '--data-dir', config.dataDir]));
+  assert(result.status === 'passed', 'Public terminal connection verification failed');
+  return result;
+}
+
 function pack(spec, directory, call) {
   const result = JSON.parse(call('npm', ['pack', spec, '--json', '--ignore-scripts', '--registry=https://registry.npmjs.org', '--pack-destination', directory]));
   assert(result.length === 1 && /^[\w.-]+\.tgz$/.test(result[0].filename), 'Expected one npm package');
@@ -135,6 +146,8 @@ export async function deploy(config, target, { call = run, health = verifyHealth
     }
     installed(config, identity);
     await health(config, identity);
+    receipt.status = 'verifying-terminal'; save(receiptPath, receipt);
+    receipt.terminal = verifyTerminalConnection(config, call);
     receipt.status = 'succeeded'; receipt.completed = new Date().toISOString(); save(receiptPath, receipt);
     save(join(directory, 'current.json'), { receipt: receiptPath });
     return { status: receipt.status, receipt: receiptPath, version: identity.version, commit: identity.sourceCommit, sha256: identity.sha256 };

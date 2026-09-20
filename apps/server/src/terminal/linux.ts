@@ -11,6 +11,10 @@ import type { LocalChannel, LocalTransport, ShellResolver, TerminalDriver, Termi
 const exec = promisify(execFile);
 
 export const linuxShell: ShellResolver = {
+  diagnosticCommand(marker) {
+    if (!/^[A-Za-z0-9_]+$/.test(marker)) throw new Error("Invalid diagnostic marker");
+    return `command printf '\\n%s%s\\n' '${marker.slice(0, 15)}' '${marker.slice(15)}'\r`;
+  },
   resolve() {
     const user = userInfo();
     const executable = user.shell && existsSync(user.shell) ? user.shell : "/bin/sh";
@@ -38,6 +42,13 @@ export function linuxSupervisor(enabled: boolean, installed = () =>
         reason: enabled ? "Terminal services are not installed. Run palmagent setup to repair this installation."
           : "Run palmagent setup on a package installation to enable terminals.",
       } : {}) };
+    },
+    async inspect() {
+      const probeId = "00000000-0000-4000-8000-000000000000";
+      const loaded = await exec("systemctl", ["show", "palmagent-terminal@" + probeId + ".service", "--property=LoadState", "--value"], { timeout: 3000 });
+      if (loaded.stdout.trim() !== "loaded") throw new Error("Terminal service template is not loaded; run palmagent setup");
+      try { await exec("sudo", ["-n", "-l", "/usr/local/libexec/palmagent-terminal-control", "start", probeId], { timeout: 3000 }); }
+      catch { throw new Error("Terminal service permissions are unavailable; run palmagent setup as the installation owner"); }
     },
     async launch(record) {
       try { await exec("sudo", ["-n", "/usr/local/libexec/palmagent-terminal-control", "start", record.id], { timeout: 10_000 }); }

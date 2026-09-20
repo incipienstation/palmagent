@@ -16,11 +16,12 @@ export interface TerminalDriver {
 }
 export interface TerminalSupervisor {
   capabilities: TerminalCapabilities;
+  inspect?(): Promise<void>;
   launch(record: TerminalRecord): Promise<void>;
   terminate(record: TerminalRecord): Promise<void>;
   alive(record: TerminalRecord): Promise<boolean>;
 }
-export interface ShellResolver { resolve(): ShellProfile }
+export interface ShellResolver { resolve(): ShellProfile; diagnosticCommand?(marker: string): string }
 export interface LocalChannel {
   send(value: unknown): boolean;
   close(): void;

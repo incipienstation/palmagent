@@ -89,6 +89,7 @@ export class TerminalHost {
       else channel.send(frame);
     }
   }
+  async isReady(): Promise<boolean> { await this.tail; return !this.ended; }
   terminate() { if (!this.ended) this.process.terminate(); }
   close() { for (const channel of this.clients) channel.close(); this.screen.dispose(); }
 }

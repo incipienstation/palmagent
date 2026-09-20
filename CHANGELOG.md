@@ -6,12 +6,25 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- `palmagent terminal diagnose` and `palmagent doctor` verify a disposable shell through
+  public HTTPS, including WebSocket input/output and restored screen state. Staging
+  deployments require this check for packages that support it.
+
+### Fixed
+
+- Shells become ready only after their PTY and connection endpoint are initialized.
+  Startup has a 30-second deadline with a clear failure reason; uncertain processes
+  retain their reservation until termination is confirmed.
+
 ## 0.1.0-alpha.48
 
 ### Added
 
 - Mermaid code blocks in messages now render as diagrams, adapt to light and dark themes,
   and keep their source available. Incomplete or invalid diagrams display their source.
+
 
 ## 0.1.0-alpha.47
 

@@ -1,3 +1,4 @@
+import { diagnoseTerminal } from "./terminal-diagnostics.js";
 import { parseArgs } from "node:util";
 import { request } from "node:http";
 import { lstatSync } from "node:fs";
@@ -12,6 +13,7 @@ import { ViewerOutput } from "../terminal/viewer-output.js";
 
 export const terminalHelp = `Usage: palmagent terminal <command> [options]
 
+  diagnose                          Test a disposable shell through public HTTPS
   list                              List terminals
   create --task <id> | --repo <id>   Open a shell in a Task or Space
   attach <id>                       Attach interactively (Ctrl+] detaches)
@@ -34,10 +36,14 @@ export async function terminalCommand(args: string[]) {
   } });
   if (values.help) { console.log(terminalHelp); return; }
   const [action, id] = positionals;
-  if (positionals.length > 2 || !["list", "create", "attach", "rename", "terminate"].includes(action)) throw new Error(terminalHelp);
+  if (positionals.length > 2 || !["diagnose", "list", "create", "attach", "rename", "terminate"].includes(action)) throw new Error(terminalHelp);
   const directory = resolveDataDir(values["data-dir"]);
   // Respect a custom application database's local control socket location.
   const cfg = loadConfig({ dataDir: directory, requireInstalled: true });
+  if (action === "diagnose") {
+    if (id) throw new Error(terminalHelp);
+    console.log(JSON.stringify(await diagnoseTerminal(cfg))); return;
+  }
   const { dirname } = await import("node:path");
   const path = sessionSocket(dirname(cfg.dbPath ?? join(directory, "palmagent.db")));
   if (action === "attach") {
