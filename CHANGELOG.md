@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Mermaid code blocks in messages now render as diagrams, adapt to light and dark themes,
+  and keep their source available. Incomplete or invalid diagrams display their source.
+
 ## 0.1.0-alpha.47
 
 ### Fixed
