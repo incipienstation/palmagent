@@ -1,59 +1,40 @@
 ---
 name: setup
-description: Use when an operator wants to reconfigure or change the settings of an EXISTING Palmagent install on this host — phrases like "change the dispatcher domain", "reconfigure palmagent", "update the repo roots / port / concurrency", or "re-render the systemd units or nginx vhost". Not for moving persistent data, first-time install (use install), or diagnosing a broken instance (use doctor).
+description: Reconfigure an existing Palmagent installation, adopt its host ingress, or change its domain, port, concurrency or repository roots. Use install for a new instance and doctor for diagnosis.
 ---
 
-# Reconfigure an existing Palmagent instance
+# Reconfigure Palmagent
 
-Thin wrapper over the `palmagent` CLI's `setup` subcommand. The CLI owns
-the deterministic work — re-rendering the systemd units + nginx vhost from the
-new config and re-running certbot if the domain changed. Do **not** edit unit
-files or nginx config by hand in chat; drive the CLI.
+Read [CLI bootstrap](../.shared/bootstrap.md) and [host ingress](../.shared/ingress.md).
+The CLI manages the application; this plugin manages the host connection. Existing proxy
+files and certificates survive CLI updates and must be inspected before adoption or edits.
 
-## 1. Locate the CLI
+Inspect saved configuration and the connection contract. Apply requested changes only;
+retain the release channel, custom data directory and unspecified values. `--data-dir`
+selects an installation; it does not move persistent data. Use `install` if none exists.
 
-Read and follow the [shared CLI bootstrap guidance](../.shared/bootstrap.md).
-Use its exact command, saved channel, compatibility check, and custom data directory.
+For a domain or port change, prepare and record both the application and ingress changes
+before activation. Keep the old route until the new one is verified. A new domain changes
+passkey identity and needs a new device enrollment link. Optional settings use existing
+values or CLI defaults, not extra configuration questions.
 
-## 2. Resolve the requested changes
-
-`setup` is idempotent but it re-renders host config and may restart the service.
-Before running:
-
-- Read the existing settings and apply the user's requested changes to domain,
-  internal port, concurrency, or repo roots. Retain unspecified values and ask
-  only about missing required information or an unresolved choice.
-  `--data-dir` locates an existing custom installation; it does not move data.
-  Note that **changing the domain re-runs certbot** and requires the new
-  domain's DNS A-record + ports 80/443 to be live first.
-- Warn that re-rendering may restart the web unit; in-flight agent turns reattach
-  on a web-only restart. A runner unit/artifact change restarts the runner and
-  interrupts active turns; a domain/auth change is operator-visible.
-
-To preview the re-rendered units + nginx vhost without applying:
+Preview application changes:
 
 ```bash
 <cli> setup --dry-run --non-interactive <changed-config-flags>
 ```
 
-## 3. Run it
-
-For this authorized operation, run `<cli> config init` with the same custom
-`--data-dir` before applying service changes. It migrates legacy preferences without
-overwriting an existing user file; do not initialize during a dry-run-only request.
+For authorized work, initialize preferences with `<cli> config init` using the same data
+directory, then apply:
 
 ```bash
 <cli> setup --non-interactive <changed-config-flags>
+<cli> connection --data-dir <installed-data-dir>
 ```
 
-Replace `<changed-config-flags>` with the requested values using the supported flags
-from `<cli> setup --help`. Reuse the existing authorization under the shared guidance;
-if runner changes would interrupt active work, defer until it finishes unless that
-interruption is already authorized.
-
-## 4. Report
-
-Relay the CLI's summary of what was re-rendered and whether certbot ran. If it
-exits non-zero, read its remediation output verbatim and propose the named fix.
-If the operator instead reports the instance is now broken, hand off to the
-`doctor` skill.
+The CLI enforces activity checks for service activation. Preserve active work and do not
+manually restart services to bypass a refusal. Configure/adopt ingress through its actual
+owner, following the shared reference's ownership, validation and recovery procedure.
+If only application settings changed, an unchanged route requires no rewrite or reload.
+Verify runtime and public HTTPS separately. For a changed domain mint a fresh link with
+`<cli> passkey` only after HTTPS succeeds. Report any retained old routes or recovery work.

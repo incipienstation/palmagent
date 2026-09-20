@@ -1,5 +1,5 @@
-// Install configuration: resolve every host value the systemd units + nginx
-// vhost need, from `<data-dir>/install.env` (written by `install`). Persisted as
+// Install configuration: resolve application systemd values from
+// `<data-dir>/install.env` (written by `install`). Persisted as
 // a simple KEY=VALUE env file the units/CLI both read, and parsed/validated with
 // a zod schema.
 //
@@ -113,7 +113,7 @@ const LoopbackHost = z
   .min(1)
   .refine(
     isLoopbackHost,
-    "HOST must be loopback; terminate public HTTPS at nginx",
+    "HOST must be loopback; terminate public HTTPS at the host ingress",
   );
 const Port = z.coerce.number().int().min(1).max(65_535);
 const Concurrency = z.coerce.number().int().min(1);
@@ -367,7 +367,7 @@ export function saveConfig(cfg: InstallConfig): string {
   ensurePrivateDirectory(cfg.dataDir);
   const lines = [
     `# ${BRANDING.productName} install config — written by \`${BRANDING.cliName} install/setup\`.`,
-    `# Edit then re-run \`${BRANDING.cliName} setup\` to re-render the units + nginx vhost.`,
+    `# Edit then re-run \`${BRANDING.cliName} setup\` to re-render the application units.`,
     `MODE=${cfg.mode}`,
     `RUN_USER=${cfg.user}`,
     `RUN_GROUP=${cfg.group}`,

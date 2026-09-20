@@ -6,6 +6,21 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The operator plugins now own host-aware reverse proxy and HTTPS setup. The CLI manages
+  application services only and reports its connection contract as JSON. Existing proxy
+  files, certificates and renewal jobs survive updates and uninstall, including purge.
+  Use the plugin to coordinate domain/port changes and ingress cleanup; see
+  [migration guidance](docs/HOST-INGRESS.md).
+- Runtime diagnosis and public HTTPS checks are separate. First-device enrollment is
+  issued after the plugin verifies HTTPS; direct CLI users run `palmagent passkey` afterward.
+
+### Security
+
+- Authentication POST requests have an application-wide rate backstop in addition to
+  the host ingress's per-client limits.
+
 ## 0.1.0-alpha.53
 
 ### Changed

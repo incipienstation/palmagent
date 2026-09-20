@@ -43,6 +43,11 @@ acceptance gates; it is not yet implemented.
 
 The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
 public environment; Palmagent rejects plaintext authentication origins and non-loopback binds.
+The operator plugin inspects the host and manages that HTTPS connection. The CLI manages
+application services only: it does not require nginx/Certbot or modify proxy/TLS resources.
+`palmagent connection` returns the installed origin, loopback upstream, and proxy requirements
+as JSON. `doctor` checks the local runtime; the plugin separately verifies public transport.
+See [host ingress and migration](docs/HOST-INGRESS.md) for existing installations and removal.
 
 ## Choose a release channel
 
@@ -86,9 +91,10 @@ The CLI commands below are internal plugin operations.
 | `dispatch` | `palmagent session dispatch` | Continue the current local agent session in Palmagent |
 | `settings` | `palmagent settings`, `palmagent config`, `palmagent auto-update` | Manage Space search paths, shared preferences, and access-triggered updates |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |
-| `setup` | `palmagent setup` | Reconfigure an existing installation |
-| `doctor` | `palmagent doctor` | Diagnose service and host integration problems |
+| `setup` | `palmagent setup`, `palmagent connection` | Reconfigure the application and coordinate host ingress |
+| `doctor` | `palmagent doctor`, `palmagent terminal diagnose` | Diagnose the runtime and separately verify public transport |
 | `update` | `palmagent update` | Plan and coordinate package/plugin updates, then verify the running version |
+| `uninstall` | `palmagent uninstall` | Remove the runtime and clean up verified installation-owned ingress |
 
 Skill bodies are authored once under `skills/` and synchronized to both plugin trees with
 `node scripts/sync-skills.mjs`.

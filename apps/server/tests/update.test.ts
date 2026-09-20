@@ -583,7 +583,7 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   const pkg = path.join(args[args.indexOf('--prefix') + 1], 'node_modules', 'palmagent');
   fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
-  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1 }));
+  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1, ingressOwner: 'plugin' }));
   fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv[2] === 'runtime-setup' && process.env.TEST_INDEPENDENT_OUTCOME === 'provision') process.exit(1); if (process.argv[2] === 'runtime-setup') require('node:fs').writeFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'candidate-setup'), 'provisioned'); else console.log('0.1.0-alpha.3');");
   for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
 } else process.exit(1);
@@ -624,7 +624,7 @@ test("internal runtime setup refuses direct invocation before host mutations", t
   assert.equal(existsSync(join(f.root, "host.jsonl")), false);
 });
 
-test("target runtime setup installs services and nginx without changing activation ownership", t => {
+test("target runtime setup installs application services without touching ingress or activation ownership", t => {
   const f = fixture(t);
   const pkg = join(f.cfg.dataDir, "releases", "candidate", "palmagent");
   const node = join(f.cfg.dataDir, "runtimes", "candidate", "node");
@@ -643,9 +643,96 @@ test("target runtime setup installs services and nginx without changing activati
     assert.equal(result.status, 0, result.stderr);
     const commands = readFileSync(join(f.root, "host.jsonl"), "utf8");
     assert.match(commands, /palmagent-terminal@/);
-    assert.match(commands, /nginx/);
+    assert.doesNotMatch(commands, /nginx|certbot|letsencrypt|openssl/);
     assert(!commands.includes("restart"));
     assert.equal(readFileSync(join(f.cfg.dataDir, "install.env"), "utf8"), installed);
     assert(isUpdateMaintenance(f.cfg.dbPath));
   } finally { release(); }
+});
+
+// These commands are deliberately tested with the real orchestrator and a fake
+// host executor: no TLS files or working proxy are available or necessary.
+test("setup and uninstall preserve external ingress across legacy configuration adoption", async t => {
+  const { uninstall } = await import("../src/cli/install.js");
+  const f = fixture(t);
+  await idleFixture(t, f);
+  const flags = { ...f.flags, pull: false };
+  assert.equal(await setup(flags), 0);
+  assert.equal(await uninstall(flags), 0);
+  const calls = readFileSync(join(f.root, "host.jsonl"), "utf8");
+  assert.match(calls, /restart.*palmagent.service/);
+  assert.doesNotMatch(calls, /nginx|certbot|letsencrypt|openssl|caddy/);
+});
+
+test("connection command reads legacy state without writes and reports IPv6 upstream correctly", t => {
+  const f = fixture(t);
+  saveConfig({ ...f.cfg, host: "::1" });
+  const before = readFileSync(join(f.cfg.dataDir, "install.env"), "utf8");
+  const result = spawnSync(process.execPath, ["--import", "tsx", new URL("../src/cli/index.ts", import.meta.url).pathname, "connection", "--data-dir", f.cfg.dataDir], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const contract = JSON.parse(result.stdout);
+  assert.equal(contract.publicOrigin, f.cfg.authOrigin);
+  assert.equal(contract.upstream, "http://[::1]:4100");
+  assert.equal(contract.ingressOwner, "plugin");
+  assert.equal(contract.proxy.websocket.upgrade, true);
+  assert(!result.stdout.includes(f.cfg.dataDir));
+  assert.equal(readFileSync(join(f.cfg.dataDir, "install.env"), "utf8"), before);
+  assert.equal(existsSync(join(f.root, "host.jsonl")), false);
+});
+
+test("preflight and doctor do not require or invoke host ingress tools", async t => {
+  const { preflight, doctor } = await import("../src/cli/checks.js");
+  const f = fixture(t);
+  fakeRuntimeTools(f.root);
+  assert(!preflight().some(check => check.level === "fail"));
+  const checks = doctor(f.cfg);
+  assert(!checks.some(check => /nginx|TLS|certbot/.test(check.name)));
+  assert.equal(checks.find(check => check.name === "local HTTP")?.level, "ok");
+  writeFileSync(join(f.root, "bin", "curl"), `#!${process.execPath}\nconsole.log('invalid health');\n`, { mode: 0o700 });
+  assert.equal(doctor(f.cfg).find(check => check.name === "local HTTP")?.level, "fail");
+  assert.doesNotMatch(readFileSync(join(f.root, "host.jsonl"), "utf8"), /nginx|certbot|letsencrypt|openssl|caddy/);
+});
+
+function fakeRuntimeTools(root: string): void {
+  writeFileSync(join(root, "bin", "bash"), `#!${process.execPath}
+const command = process.argv.at(-1);
+if (command.startsWith('command -v ')) {
+ const tool = command.slice(11);
+ if (['systemctl', 'node', 'git', 'codex'].includes(tool)) console.log(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'bin', tool));
+ else process.exit(1);
+}
+`, { mode: 0o700 });
+  writeFileSync(join(root, "bin", "codex"), `#!${process.execPath}\nconsole.log('codex 0.116.0');\n`, { mode: 0o700 });
+}
+
+test("first installation needs no proxy tools or certificates and defers enrollment", async t => {
+  const { install } = await import("../src/cli/install.js");
+  const f = fixture(t);
+  await idleFixture(t, f);
+  fakeRuntimeTools(f.root);
+  rmSync(join(f.cfg.dataDir, "install.env"));
+  const messages: string[] = [];
+  t.mock.method(console, "log", (...args: unknown[]) => { messages.push(args.join(" ")); });
+  const flags = { ...f.flags, pull: false, get: (key: string) =>
+    key === "domain" ? f.cfg.domain : f.flags.get(key) };
+  assert.equal(await install(flags), 0);
+  const calls = readFileSync(join(f.root, "host.jsonl"), "utf8");
+  assert.match(calls, /restart.*palmagent.service/);
+  assert.doesNotMatch(calls, /nginx|certbot|letsencrypt|openssl|caddy/);
+  assert(!messages.some(message => message.includes("/#/enroll/")));
+  assert.equal(loadConfig({ dataDir: f.cfg.dataDir, requireInstalled: true }).authOrigin, f.cfg.authOrigin);
+});
+
+test("rollback provisioning never executes an older candidate's ingress-managing installer", async t => {
+  const { provisionIndependentRuntime } = await import("../src/cli/install.js");
+  const f = fixture(t);
+  writeFileSync(join(f.cfg.pkgDir!, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, hostSetup: 1 }));
+  for (const name of ["server.js", "execution-host.js", "execution-launcher.js"]) writeFileSync(join(f.cfg.pkgDir!, name), "// Fixture");
+  const marker = join(f.root, "legacy-installer-called");
+  writeFileSync(join(f.cfg.pkgDir!, "cli.js"), `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unsafe old ingress setup');`);
+  provisionIndependentRuntime({ ...f.cfg, executionNode: process.execPath }, f.flags);
+  assert(!existsSync(marker));
+  const calls = readFileSync(join(f.root, "host.jsonl"), "utf8");
+  assert.match(calls, /palmagent.service/);
+  assert.doesNotMatch(calls, /nginx|certbot|letsencrypt|openssl|caddy/);
 });

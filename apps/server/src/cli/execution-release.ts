@@ -9,7 +9,7 @@ import { run } from "./sh.js";
 import { ExecutionStore } from "../execution/store.js";
 import { EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
 
-export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number }
+export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin" }
 export function releaseContract(directory: string): ReleaseContract {
   const contract = JSON.parse(readFileSync(join(directory, "runtime-contract.json"), "utf8"));
   if (contract.executionProtocol !== EXECUTION_PROTOCOL || contract.productStorage !== 1 || contract.applicationApi !== 1) throw new Error("Candidate runtime or storage contract is incompatible");

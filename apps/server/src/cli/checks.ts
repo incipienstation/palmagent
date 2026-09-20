@@ -1,14 +1,15 @@
 // Preflight (before install) + doctor (diagnose a running instance) checks.
 // Each returns structured results; the CLI prints them and the plugin layer can
-// reason over a fault. Real systemd/nginx/certbot calls are best-effort and
+// reason over a fault. Runtime systemd calls are best-effort and
 // degrade gracefully when a tool is absent.
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BRANDING, AGENT_CLI_COMPATIBILITY, compatibleAgentCli } from "@palmagent/shared";
 import type { InstallConfig } from "./config.js";
+import { connectionInfo } from "./connection.js";
 import { verifyActiveExecutionCompatibility } from "./execution-release.js";
 import { runnerUnitName, webUnitName } from "./units.js";
-import { log, run, sudo, which } from "./sh.js";
+import { log, run, which } from "./sh.js";
 
 export type Level = "ok" | "warn" | "fail";
 export interface Check {
@@ -110,12 +111,6 @@ export function preflight(): Check[] {
   need("systemctl", "this tool requires a systemd Linux host");
   need("node", "install Node.js ≥ 22");
   need("git", "install git");
-  need("nginx", "install nginx (sudo apt install nginx)");
-  need(
-    "certbot",
-    "install certbot (sudo apt install certbot python3-certbot-nginx)",
-  );
-
   checks.push(...checkAgents());
 
   checks.push(
@@ -125,7 +120,7 @@ export function preflight(): Check[] {
           name: "sudo",
           level: "warn",
           detail: "sudo will prompt for a password",
-          fix: "install needs sudo for systemd/nginx/certbot",
+          fix: "install needs sudo for application systemd services",
         },
   );
   return checks;
@@ -185,69 +180,12 @@ export function doctor(cfg: InstallConfig): Check[] {
   // Agent providers: one valid login is sufficient; unavailable providers stay visible.
   checks.push(...checkAgents(cfg.claudeConfigDir));
 
-  // nginx config
-  if (which("nginx")) {
-    const t = run("sudo", ["nginx", "-t"]);
-    checks.push(
-      t.ok
-        ? { name: "nginx -t", level: "ok", detail: "config valid" }
-        : {
-            name: "nginx -t",
-            level: "fail",
-            detail: t.stderr.trim().split("\n").slice(-1)[0] || "invalid",
-            fix: "fix the nginx config, then `sudo nginx -t`",
-          },
-    );
-  }
-
-  // HTTPS is mandatory. Let's Encrypt directories are commonly root-only, so
-  // inspect the certificate through the same sudo path doctor already uses for nginx.
-  const certPath = `/etc/letsencrypt/live/${cfg.domain}/fullchain.pem`;
-  const keyPath = `/etc/letsencrypt/live/${cfg.domain}/privkey.pem`;
-  const key = sudo(["test", "-s", keyPath]);
-  const cert = sudo([
-    "openssl",
-    "x509",
-    "-checkhost",
-    cfg.domain,
-    "-enddate",
-    "-noout",
-    "-in",
-    certPath,
-  ]);
-  const expiry = cert.ok ? /notAfter=(.+)/.exec(cert.stdout) : undefined;
-  const expiryMs = expiry ? new Date(expiry[1]).getTime() : Number.NaN;
-  if (!key.ok || !expiry || !Number.isFinite(expiryMs)) {
-    checks.push({
-      name: "TLS cert",
-      level: "fail",
-      detail: `missing, unreadable, or invalid for ${cfg.domain}`,
-      fix: `sudo certbot certonly --nginx -d ${cfg.domain}`,
-    });
-  } else {
-    const days = Math.round((expiryMs - Date.now()) / 86_400_000);
-    checks.push(
-      days > 14
-        ? {
-            name: "TLS cert",
-            level: "ok",
-            detail: `expires in ${days}d (${cfg.domain})`,
-          }
-        : days >= 0
-          ? {
-              name: "TLS cert",
-              level: "warn",
-              detail: `expires in ${days}d`,
-              fix: "sudo certbot renew",
-            }
-          : {
-              name: "TLS cert",
-              level: "fail",
-              detail: `expired ${Math.abs(days)}d ago`,
-              fix: "sudo certbot renew --force-renewal",
-            },
-    );
-  }
+  const health = run("curl", ["--max-time", "5", "--noproxy", "*", "-fsS", `${connectionInfo(cfg).upstream}/api/health`]);
+  let healthy = false;
+  try { healthy = health.ok && JSON.parse(health.stdout).ok === true; } catch { /* Report a failed local probe. */ }
+  checks.push(healthy
+    ? { name: "local HTTP", level: "ok", detail: "application health endpoint responded" }
+    : { name: "local HTTP", level: "fail", detail: "application health endpoint unavailable or invalid", fix: `inspect journalctl -u ${web} -n 50` });
 
   // sqlite db
   if (existsSync(cfg.dbPath) && statSync(cfg.dbPath).size > 0) {
@@ -290,7 +228,7 @@ export function doctor(cfg: InstallConfig): Check[] {
         : {
             name: "port bind",
             level: "warn",
-            detail: `:${cfg.port} not bound to loopback — nginx should front it`,
+            detail: `:${cfg.port} not bound to loopback — public HTTPS must terminate at the host ingress`,
           },
     );
   } else {

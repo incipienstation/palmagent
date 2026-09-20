@@ -1,6 +1,7 @@
 // The operator-facing orchestration CLI — the deterministic "brain" the Claude
 // Code + Codex plugins (and a plain shell) all drive. It is the ONLY place that
-// touches systemd / nginx / certbot / passkeys / the install config.
+// manages application systemd units / passkeys / the install config.
+// The operator plugins own reverse proxies and TLS configuration.
 //
 // Bundled to `<pkg>/cli.js` (esbuild, scripts/build-pkg.ts) and exposed as the
 // package `bin`. server.js, runner-daemon.js, and web/ sit beside it.
@@ -10,6 +11,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
+import { connectionInfo } from "./connection.js";
 import { terminalCommand } from "./terminal.js";
 import { sessionCommand } from "./session.js";
 import { settingsCommand } from "./settings.js";
@@ -117,9 +119,10 @@ function printHelp(): void {
 Usage: ${BRANDING.cliName} <command> [options]
 
 Commands:
-  install      First-run setup: systemd units, nginx, TLS (certbot), first passkey
-  setup        Reconfigure an existing install + re-render units/nginx
-  doctor       Diagnose a running instance + suggest fixes
+  install      Install the application runtime (proxy/TLS managed by the plugin)
+  setup        Reconfigure the application runtime and public domain
+  doctor       Diagnose the local application runtime
+  connection   Print the installed public origin and upstream contract as JSON
   update       Apply config, or fetch the selected release channel with --pull
   auto-update  Access-triggered updates: enable, disable, status (off by default)
   update-settings  Internal web update bridge (JSON; installation runs separately)
@@ -128,7 +131,7 @@ Commands:
   terminal     Manage persistent shells (run terminal --help)
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
-  uninstall    Remove the units + nginx vhost (data preserved unless --purge)
+  uninstall    Remove application units (proxy/TLS preserved; --purge removes data)
   passkey      Mint a fresh device-enroll link for an existing install
   start        Run the web server directly (dev/manual; reads env)
 
@@ -253,6 +256,10 @@ async function main(): Promise<void> {
       process.exit(await withHostLock(flags, () => install(flags)));
     case "setup":
       process.exit(await setup(flags));
+    case "connection":
+      parseArgs({ args: rest, strict: true, allowPositionals: false, options: { "data-dir": { type: "string" } } });
+      console.log(JSON.stringify(connectionInfo(loadInstalledConfig(flags))));
+      return;
     case "doctor":
       process.exit(await runDoctor(flags));
     case "update":

@@ -31,7 +31,6 @@ import {
   update,
 } from "../src/cli/install.js";
 import { renderTerminalUnits } from "../src/cli/terminal-units.js";
-import { renderNginx } from "../src/cli/nginx.js";
 import {
   recordRunnerArtifact,
   runnerArtifactChanged,
@@ -156,48 +155,6 @@ check(terminalUnits.template.includes("KillMode=control-group") && terminalUnits
 check(!/PartOf=|BindsTo=|Requires=/.test(terminalUnits.template), "terminal lifetime is independent of the application service");
 check(terminalUnits.template.includes("UMask=0077") && terminalUnits.template.includes("User=palmagent"), "terminal runs as its unprivileged owner with private artifacts");
 check(rejects(() => renderTerminalUnits({ ...packageConfig, executionNode: "/opt/runtime/node", user: "root" }, "/opt/launcher/terminal.mjs")), "terminal installer refuses a root shell service");
-const nginx = renderNginx(config);
-check(nginx.vhost.text.includes("proxy_set_header Upgrade $http_upgrade;") && nginx.vhost.text.includes("/api/terminals/"), "nginx upgrades terminal streams on the authenticated application origin");
-const plaintextServer = nginx.vhost.text.split("server {")[1] ?? "";
-check(
-  plaintextServer.includes("return 308 https://$host$request_uri;"),
-  "port 80 redirects to HTTPS",
-);
-check(
-  !plaintextServer.includes("proxy_pass"),
-  "port 80 never proxies the application",
-);
-check(
-  nginx.vhost.text.includes("listen 443 ssl;"),
-  "permanent vhost terminates TLS",
-);
-check(
-  nginx.vhost.text.includes("Strict-Transport-Security"),
-  "permanent vhost enables HSTS",
-);
-check(
-  nginx.bootstrap.text.includes("return 404;"),
-  "ACME bootstrap denies application requests",
-);
-check(
-  !nginx.bootstrap.text.includes("proxy_pass"),
-  "ACME bootstrap never proxies the application",
-);
-check(
-  !nginx.bootstrap.text.includes("listen 443"),
-  "ACME bootstrap does not impersonate HTTPS",
-);
-const upstreams = [...nginx.vhost.text.matchAll(/proxy_pass\s+([^;]+);/g)].map(
-  (match) => match[1],
-);
-check(upstreams.length > 0, "permanent vhost contains reverse-proxy locations");
-check(
-  upstreams.every(
-    (value) => value === "http://" + loopback + ":" + config.port,
-  ),
-  "all upstream HTTP transport is host-local loopback only",
-);
-
 let schemeDomainRejected = false;
 try {
   validateInstallInput({
