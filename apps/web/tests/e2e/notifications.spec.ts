@@ -46,10 +46,29 @@ test("push uses a transparent logo badge that is available offline", async ({ pa
   expect(badge.visible).toBeGreaterThan(0);
   expect(badge.visible).toBeLessThan(badge.pixels);
   await context.setOffline(false);
+  // Chromium can prune a pending notification when getNotifications() races
+  // its display callback. Observe completion of the real browser call first;
+  // retain the real push handler, notification API, and enumeration assertions.
+  const worker = context.serviceWorkers().find((entry) => entry.url() === `${baseURL}/sw.js`)!;
+  const display = await worker.evaluateHandle(() => {
+    const registration = (globalThis as unknown as { registration: ServiceWorkerRegistration }).registration;
+    const original = registration.showNotification.bind(registration);
+    let finish!: (error: string | null) => void;
+    const finished = new Promise<string | null>((resolve) => { finish = resolve; });
+    registration.showNotification = (...args) => {
+      registration.showNotification = original;
+      const result = original(...args);
+      void result.then(() => finish(null), (error) => finish(String(error)));
+      return result;
+    };
+    return { finished };
+  });
   await cdp.send("ServiceWorker.deliverPushMessage", {
     origin: baseURL!, registrationId: registrationId!,
     data: JSON.stringify({ title: "Task completed", body: "Ready for review", taskId: "badge-test", url: "/#/task/badge-test" }),
   });
+  expect(await display.evaluate(({ finished }) => finished)).toBeNull();
+  await display.dispose();
   await expect.poll(() => page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     const [notification] = await registration.getNotifications({ tag: "badge-test" });
