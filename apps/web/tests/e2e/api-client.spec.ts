@@ -44,6 +44,13 @@ test("browser RPC keeps auth probes local and releases writes after every failur
   await assert.rejects(api.createRepo({ path: "/fixture" }), { status: 401 });
   assert.equal(unauthorized, 1);
   assert.equal(active, 0);
+  response = () => Response.json({ error: "Refresh the app", code: "update-required" }, { status: 409 });
+  await assert.rejects(api.stop("fixture"), (error: unknown) =>
+    error instanceof ApiError && error.status === 409 && error.code === "update-required" && error.message === "Refresh the app");
+  assert.equal(active, 0);
+  response = () => Response.json({ error: "invalid", code: 42 }, { status: 400 });
+  await assert.rejects(api.stop("fixture"), (error: unknown) =>
+    error instanceof ApiError && error.status === 400 && error.code === undefined);
   response = () => new Response("<html>too large</html>", { status: 413 });
   await assert.rejects(api.push.subscribe({ endpoint: "https://push.example/sub" }), (error: unknown) =>
     error instanceof ApiError && error.status === 413 && error.message.includes("Request too large for the proxy"));

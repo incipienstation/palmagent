@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- API routes that do not accept images now have a 1 MiB request body limit. Task creation,
+  message submission and editing, follow-up, and steering retain their 48 MB limit.
+
 ## 0.1.0-alpha.43
 
 ### Changed

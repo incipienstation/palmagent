@@ -1,3 +1,4 @@
+import type { ApiErrorResponse } from "@palmagent/shared/http";
 import { MessageConflict } from "../message-controller.js";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -13,5 +14,5 @@ export const handleError: ErrorHandler = (error, c) => {
   const expected = error instanceof MessageConflict || error instanceof HttpError || error instanceof HTTPException;
   const status = expected ? error.status : 500;
   if (!expected) console.error("HTTP request failed", error);
-  return c.json({ error: expected ? error.message : "internal server error" }, status as ContentfulStatusCode);
+  return c.json({ error: expected ? error.message : "internal server error" } satisfies ApiErrorResponse, status as ContentfulStatusCode);
 };

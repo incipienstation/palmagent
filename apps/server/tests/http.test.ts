@@ -17,7 +17,7 @@ import { RoutineService } from "../src/routines.js";
 import { TaskService } from "../src/service.js";
 import { ProcessSupervisor } from "../src/supervisor.js";
 import { WorktreeManager } from "../src/worktree.js";
-import { createApp, MAX_BODY_BYTES } from "../src/http/app.js";
+import { createApp, MAX_BODY_BYTES, MAX_IMAGE_BODY_BYTES } from "../src/http/app.js";
 import { SettingsStore } from "../src/settings.js";
 import { startSessionControl, sessionSocket } from "../src/session-control.js";
 import type { HttpDependencies } from "../src/http/types.js";
@@ -85,6 +85,25 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   assert.equal(f.service.listRepos().length, 0);
   const tooLarge = await f.app.request("/api/repos", { method: "POST", headers: { ...headers, "content-length": String(MAX_BODY_BYTES + 1) }, body: "{}" });
   assert.equal(tooLarge.status, 413);
+  const sendChunked = (path: string, body: string, method = "POST") => new Promise<number>((resolve, reject) => {
+    const req = request(base + path, { method, headers: { ...headers, "transfer-encoding": "chunked" } }, (res) => {
+      res.resume(); res.once("end", () => resolve(res.statusCode!));
+    });
+    req.on("error", reject); req.end(body);
+  });
+  const oversized = JSON.stringify({ text: "한".repeat(Math.ceil(MAX_BODY_BYTES / 3)) });
+  for (const [path, method] of [["/api/auth/login/verify", "POST"], ["/api/settings/updates", "PATCH"], ["/api/tasks/t", "PATCH"]]) {
+    assert.equal(await sendChunked(path, oversized, method), 413, path);
+  }
+  for (const path of ["/api/tasks", "/api/tasks/t/messages", "/api/tasks/t/messages/m", "/api/tasks/t/followup", "/api/tasks/t/steer"]) {
+    // Larger image envelopes reach validation; an invalid body cannot mutate state.
+    assert.equal(await sendChunked(path, "{}".padEnd(MAX_BODY_BYTES + 1)), 400, path);
+    assert.equal((await f.app.request(path, { method: "POST", headers: { ...headers, "content-length": String(MAX_IMAGE_BODY_BYTES + 1) }, body: "{}" })).status, 413, path);
+  }
+  assert.equal(await sendChunked("/api/auth/login/options", "{}".padEnd(MAX_BODY_BYTES)), 200);
+  assert.equal(await sendChunked("/api/auth/login/options", "{}".padEnd(MAX_BODY_BYTES + 1)), 413);
+  assert.equal(await sendChunked("/api/tasks/t/stop", oversized), 413);
+  assert.equal(f.service.listTasks().length, 0);
   const options = await fetch(base + "/api/auth/login/options", { method: "POST" });
   assert.equal(options.status, 200);
   assert.equal(options.headers.get("cache-control"), "no-store");
@@ -148,6 +167,9 @@ test("update settings require authentication, validate one bounded preference, a
   assert.equal((await f.app.request(path, { method: "POST", headers: { ...headers, origin: "https://other.example" }, body: '{"action":"visit"}' })).status, 403);
   const old = await f.app.request(path, { method: "POST", headers: { ...headers, "x-palmagent-version": "0.1.0-alpha.3" }, body: '{"action":"visit"}' });
   assert.equal(old.status, 409);
+  const oldError = await old.json();
+  assert.ok(oldError && typeof oldError === "object" && "code" in oldError);
+  assert.equal(oldError.code, "update-required");
   assert.equal(old.headers.get("x-palmagent-version"), "0.1.0-alpha.4");
   assert.equal(changes, 2, "old screens cannot change the new server");
   for (const input of [{ action: "visit" }, { action: "check" }, { action: "install", version: "0.1.0-alpha.5" }]) {
