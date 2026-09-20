@@ -1,6 +1,7 @@
 // Public HTTP contracts live here so browser builds never import server code.
 // The server's chained Hono routes are checked against this schema by typecheck.
 import type { Hono } from "hono";
+import type { ApplyGlobalResponse } from "hono/client";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import type { z } from "zod";
@@ -83,4 +84,9 @@ export type ApiSchema = {
   "/api/push/unsubscribe": { $post: Endpoint<Json<Request.PushUnsubscribeRequest>, Ok> };
 };
 
-export type Api = Hono<{}, ApiSchema>;
+export type ApiErrorResponse = { error: string; code?: string };
+type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 413 | 415 | 500 | 503;
+// Global middleware and onError responses are not inferred by Hono routes.
+export type Api = ApplyGlobalResponse<Hono<{}, ApiSchema>, {
+  [S in ErrorStatus]: { json: ApiErrorResponse };
+}>;

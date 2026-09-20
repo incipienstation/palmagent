@@ -1,6 +1,6 @@
 import { cacheSession, invalidateClientReads, readCache } from "./read-cache";
 import { hc } from "hono/client";
-import type { Api } from "@palmagent/shared/http";
+import type { Api, ApiErrorResponse } from "@palmagent/shared/http";
 import type {
   AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
   CreateTaskRequest, FollowupRequest, MessageAction, PushSubscribeRequest,
@@ -10,7 +10,7 @@ import type {
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: ApiErrorResponse["code"]) {
     super(message);
     this.name = "ApiError";
   }
@@ -30,7 +30,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   const routines = client.routines[":id"];
   // hc substitutes path parameters verbatim; preserve the previous URL encoding.
   const idParam = (id: string) => ({ id: encodeURIComponent(id) });
-  type JsonResponse<T> = Pick<Response, "ok" | "status" | "statusText" | "headers"> & { json(): Promise<T> };
+  type JsonResponse<T> = Pick<Response, "status" | "statusText" | "headers"> & (
+    { ok: true; json(): Promise<T> } | { ok: false; json(): Promise<unknown> }
+  );
 
   // Hono owns paths, query encoding, bodies, and response types. Keep the product's
   // auth/update lifecycle around the typed call, including response consumption.
@@ -55,7 +57,8 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         if (res.status === 413 && message === undefined) {
           throw new ApiError(413, "Request too large for the proxy — shrink/remove images (or raise nginx client_max_body_size).");
         }
-        throw new ApiError(res.status, message ?? res.statusText);
+        const code = json && typeof json === "object" && "code" in json && typeof json.code === "string" ? json.code : undefined;
+        throw new ApiError(res.status, message ?? res.statusText, code);
       }
       const value = await res.json();
       if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");

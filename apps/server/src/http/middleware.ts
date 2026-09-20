@@ -1,3 +1,4 @@
+import type { ApiErrorResponse } from "@palmagent/shared/http";
 import type { MiddlewareHandler } from "hono";
 import { HttpError } from "../service.js";
 import { getCookie } from "hono/cookie";
@@ -36,7 +37,7 @@ export function requireCurrentClient({ build }: HttpDependencies): MiddlewareHan
     const path = c.req.path;
     if (build && version && version !== build.version && path.startsWith("/api/") &&
         !path.startsWith("/api/auth/") && !["GET", "HEAD"].includes(c.req.method)) {
-      return c.json({ error: "Palmagent was updated. Refresh the app before making changes.", code: "update-required" }, 409);
+      return c.json({ error: "Palmagent was updated. Refresh the app before making changes.", code: "update-required" } satisfies ApiErrorResponse, 409);
     }
     await next();
   };

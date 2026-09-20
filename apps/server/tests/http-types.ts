@@ -15,7 +15,17 @@ type ClientMatchesServer = Assert<ApiSchema extends Pick<Actual, keyof ApiSchema
 // every other endpoint must remain represented in the browser contract.
 type AllRestPathsCovered = Assert<Exclude<keyof Actual, "/api/health" | "/api/compatibility" | "/api/stream"> extends keyof ApiSchema ? true : false>;
 
-function clientTypeChecks(client: ReturnType<typeof hc<Api>>) {
+async function clientTypeChecks(client: ReturnType<typeof hc<Api>>) {
+  const response = await client.api.tasks.$get({ query: {} });
+  if (response.ok) {
+    (await response.json()).tasks;
+  } else {
+    const error = await response.json();
+    const message: string = error.error;
+    const code: string | undefined = error.code;
+    // @ts-expect-error Failed responses must not masquerade as task lists.
+    error.tasks;
+  }
   // @ts-expect-error Missing task id must fail at the client call site.
   client.api.tasks[":id"].$get({ param: {} });
   // @ts-expect-error The schema requires a string title.

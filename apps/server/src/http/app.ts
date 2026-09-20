@@ -16,15 +16,23 @@ import { staticFiles } from "./static.js";
 import { sessionStream } from "./stream.js";
 import type { HttpDependencies } from "./types.js";
 
-// Several base64 images fit; decoded image/count limits belong to the service.
-export const MAX_BODY_BYTES = 48_000_000;
+export const MAX_BODY_BYTES = 1024 * 1024;
+// Only task creation, messages (including queue edits), follow-up and steering
+// accept base64 images. Decoded image/count limits remain in the service.
+export const MAX_IMAGE_BODY_BYTES = 48_000_000;
+const IMAGE_BODY_PATH = /^\/api\/tasks(?:\/[^/]+\/(?:messages(?:\/[^/]+)?|followup|steer))?$/;
 export function createApp(deps: HttpDependencies) {
   const { service, config } = deps;
   const app = new Hono();
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
   app.use("*", versionHeader(deps), authenticate(deps), requireCurrentClient(deps), requestAdmission(deps));
-  app.use("/api/*", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "request body too large" }, 413) }));
+  const limitBody = (maxSize: number) => bodyLimit({ maxSize, onError: (c) => c.json({ error: "request body too large" }, 413) });
+  const standardBody = limitBody(MAX_BODY_BYTES);
+  const imageBody = limitBody(MAX_IMAGE_BODY_BYTES);
+  app.use("/api/*", (c, next) => (
+    c.req.method === "POST" && IMAGE_BODY_PATH.test(c.req.path) ? imageBody : standardBody
+  )(c, next));
   const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol, ...(deps.build ? { build: deps.build } : {}) }, 200))
     .route("/api/auth", authRoutes(deps))
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))
