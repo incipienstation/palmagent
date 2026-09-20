@@ -83,7 +83,9 @@ test("public diagnostic executes through authenticated WebSocket and verifies a 
   const host = new TerminalHost(record, platform.driver, { resolve: () => ({ executable: "/bin/sh", args: [], env: { TERM: "xterm-256color", PATH: process.env.PATH! } }) }, () => {});
   const unlisten = await platform.transport.listen(store.directory, record.id, channel => host.attach(channel));
   store.claim(record.id, process.pid, "probe"); assert.equal(await host.isReady(), true); store.ready(record.id, process.pid, "probe");
-  const service = new TerminalService(store, platform.supervisor, { task() { throw new Error(); }, repo: () => undefined, cleanup() {}, updating: () => false }, "", "");
+  // The fixture starts its own PTY host; it does not require installed system services.
+  const supervisor = { ...platform.supervisor, capabilities: { available: true, persistent: true } };
+  const service = new TerminalService(store, supervisor, { task() { throw new Error(); }, repo: () => undefined, cleanup() {}, updating: () => false }, "", "");
   const tickets = new TerminalTickets();
   const auth = { enabled: true, sessionValid: (token: string) => token === "valid", origin: "" } as unknown as AuthService;
   const app = new Hono().onError(handleError).route("/api/terminals", terminalRoutes({ auth, terminals: service, terminalTickets: tickets,
