@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Open Mermaid diagrams in a fullscreen viewer with pan, pinch zoom, and keyboard controls.
+  The expand button now opens fullscreen; a separate reset icon fits the diagram to its viewer.
+
 ## 0.1.0-alpha.51
 
 ### Added
