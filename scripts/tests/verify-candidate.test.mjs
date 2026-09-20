@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { candidatePlan, verifyCandidate } from '../verify-candidate.mjs';
+import { candidatePlan, verifyCandidate, canDistributeCandidate, candidateLane, requireCandidateChecks } from '../verify-candidate.mjs';
 
 const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
+const webManifest = JSON.parse(readFileSync('apps/web/package.json', 'utf8'));
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'palmagent-candidate-gate-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
@@ -17,6 +18,59 @@ test('parallel plan retains every source check exactly once', () => {
   const plan = candidatePlan(manifest);
   const actual = [...plan.before, ...plan.lanes.flat()].map(step => `pnpm ${step.args[0]}`);
   assert.deepEqual(actual.sort(), manifest.scripts.verify.split('&&').map(value => value.trim()).sort());
+});
+
+test('distributed verification covers both browser shards and the service worker once', () => {
+  assert.equal(canDistributeCandidate(manifest, webManifest), true);
+  const lanes = ['tooling', 'server', 'web-1', 'web-2'].map(candidateLane);
+  assert.deepEqual(lanes.flat().filter(s => s.command === 'pnpm').map(s => s.args[0]),
+    ['typecheck', 'pkg:check', 'server:contracts', 'server:smoke']);
+  assert.deepEqual(lanes.flat().filter(s => s.command !== 'pnpm').map(s => s.args), [
+    ['apps/web/scripts/run-e2e.mjs', '--shard=1/2'],
+    ['apps/web/scripts/run-e2e.mjs', '--shard=2/2'],
+    ['apps/web/scripts/test-sw-update.mjs'],
+  ]);
+  for (const name of ['', 'web-3', 'constructor', '__proto__']) assert.throws(() => candidateLane(name));
+});
+
+test('browser gate additions and build lifecycle hooks keep the complete source fallback', () => {
+  for (const name of ['verify', 'web:build', 'web:verify', 'web:verify:built']) {
+    const changed = structuredClone(manifest);
+    changed.scripts[name] += ' && node extra-check.mjs';
+    assert.equal(canDistributeCandidate(changed, webManifest), false, name);
+  }
+  for (const name of ['verify', 'typecheck', 'web:build', 'web:verify', 'web:verify:built']) {
+    for (const prefix of ['pre', 'post']) {
+      const changed = structuredClone(manifest);
+      changed.scripts[prefix + name] = 'node lifecycle.mjs';
+      assert.equal(canDistributeCandidate(changed, webManifest), false, prefix + name);
+    }
+  }
+  for (const scripts of [{}, { build: 'vite build && node extra-check.mjs' },
+    { ...webManifest.scripts, prebuild: 'node setup.mjs' }, { ...webManifest.scripts, postbuild: 'node check.mjs' }]) {
+    assert.equal(canDistributeCandidate(manifest, { scripts }), false);
+  }
+});
+
+test('candidate packaging rejects failed, cancelled, missing or skipped required verification', () => {
+  const results = (reuse, distributed, result) => ({
+    prepare: { result: 'success', outputs: { reuse, distributed } }, verify: { result },
+  });
+  requireCandidateChecks(results('false', 'true', 'success'));
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    assert.throws(() => requireCandidateChecks(results('false', 'true', result)));
+  }
+  for (const [reuse, distributed] of [['true', 'true'], ['true', 'false'], ['false', 'false']]) {
+    requireCandidateChecks(results(reuse, distributed, 'skipped'));
+    assert.throws(() => requireCandidateChecks(results(reuse, distributed, 'failure')));
+  }
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    const value = results('false', 'true', 'success'); value.prepare.result = result;
+    assert.throws(() => requireCandidateChecks(value));
+  }
+  for (const value of [undefined, {}, results(undefined, 'true', 'success'), results('false', true, 'success')]) {
+    assert.throws(() => requireCandidateChecks(value));
+  }
 });
 
 test('changed, missing and hooked source gates fall back to the source full verification', () => {
