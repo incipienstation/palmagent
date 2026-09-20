@@ -37,23 +37,21 @@ permissions:
   actions: read
 
 jobs:
-  package:
+  prepare:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     outputs:
-      commit: ${{ steps.identity.outputs.commit }}
-      channel: ${{ steps.identity.outputs.channel }}
-      version: ${{ steps.identity.outputs.version }}
-      sha256: ${{ steps.identity.outputs.sha256 }}
       artifact: ${{ steps.artifact.outputs.artifact }}
       producer: ${{ steps.artifact.outputs.producer }}
+      reuse: ${{ steps.artifact.outputs.reuse }}
+      distributed: ${{ steps.plan.outputs.distributed }}
+      web_artifact: candidate-web-${{ inputs.commit || github.sha }}-${{ github.run_attempt }}
     env:
       RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Check out workflow tools
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           path: tooling
           persist-credentials: false
@@ -66,8 +64,118 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run }}
-      - name: Check out the exact product source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_COMMIT }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate source identity and channel ancestry
+        run: node tooling/scripts/release-candidate.mjs source source
+      - name: Select compatible source verification
+        id: plan
+        run: node tooling/scripts/verify-candidate.mjs source plan
+      - uses: pnpm/action-setup@v4
+        if: steps.artifact.outputs.reuse != 'true' && steps.plan.outputs.distributed == 'true'
+        with:
+          package_json_file: source/package.json
+      - uses: actions/setup-node@v4
+        if: steps.artifact.outputs.reuse != 'true' && steps.plan.outputs.distributed == 'true'
+        with:
+          node-version-file: tooling/.nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+      - name: Validate metadata and build the shared PWA
+        if: steps.artifact.outputs.reuse != 'true' && steps.plan.outputs.distributed == 'true'
+        working-directory: source
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm plugins:check
+          pnpm release:check
+          pnpm web:build
+      - uses: actions/upload-artifact@v4
+        if: steps.artifact.outputs.reuse != 'true' && steps.plan.outputs.distributed == 'true'
+        with:
+          name: candidate-web-${{ env.RELEASE_COMMIT }}-${{ github.run_attempt }}
+          path: source/apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  verify:
+    needs: prepare
+    if: needs.prepare.outputs.reuse == 'false' && needs.prepare.outputs.distributed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        lane: [tooling, server, web-1, web-2]
+    env:
+      RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_COMMIT }}
+          path: source
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: source/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: tooling/.nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+      - name: Install source dependencies
+        working-directory: source
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        if: startsWith(matrix.lane, 'web-')
+        with:
+          name: ${{ needs.prepare.outputs.web_artifact }}
+          path: source/apps/web/dist
+      - name: Install Chromium
+        if: startsWith(matrix.lane, 'web-')
+        working-directory: source
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
+      - name: Verify exact source lane
+        run: node tooling/scripts/verify-candidate.mjs source lane '${{ matrix.lane }}'
+
+  package:
+    needs: [prepare, verify]
+    if: always() && !cancelled() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      channel: ${{ steps.identity.outputs.channel }}
+      version: ${{ steps.identity.outputs.version }}
+      sha256: ${{ steps.identity.outputs.sha256 }}
+      artifact: ${{ needs.prepare.outputs.artifact }}
+      producer: ${{ needs.prepare.outputs.producer }}
+    env:
+      RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: tooling/.nvmrc
+      - name: Require every selected verification lane
+        run: node tooling/scripts/verify-candidate.mjs . results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_COMMIT }}
           path: source
@@ -76,53 +184,64 @@ jobs:
       - name: Validate source identity and channel ancestry
         run: node tooling/scripts/release-candidate.mjs source source
       - uses: actions/download-artifact@v4
-        if: steps.artifact.outputs.reuse == 'true'
+        if: needs.prepare.outputs.reuse == 'true'
         with:
-          name: ${{ steps.artifact.outputs.artifact }}
-          run-id: ${{ steps.artifact.outputs.producer }}
+          name: ${{ needs.prepare.outputs.artifact }}
+          run-id: ${{ needs.prepare.outputs.producer }}
           github-token: ${{ github.token }}
           path: source/build/release
       - uses: pnpm/action-setup@v4
-        if: steps.artifact.outputs.reuse != 'true'
+        if: needs.prepare.outputs.reuse != 'true'
         with:
           package_json_file: source/package.json
       - uses: actions/setup-node@v4
-        if: steps.artifact.outputs.reuse != 'true'
+        if: needs.prepare.outputs.reuse != 'true'
         with:
           node-version-file: tooling/.nvmrc
           cache: pnpm
           cache-dependency-path: source/pnpm-lock.yaml
-      - name: Install candidate dependencies and Chromium
-        if: steps.artifact.outputs.reuse != 'true'
+      - name: Install candidate dependencies
+        if: needs.prepare.outputs.reuse != 'true'
         working-directory: source
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        if: needs.prepare.outputs.reuse != 'true' && needs.prepare.outputs.distributed == 'true'
+        with:
+          name: ${{ needs.prepare.outputs.web_artifact }}
+          path: source/apps/web/dist
+      - name: Verify unfamiliar source gates in full
+        if: needs.prepare.outputs.reuse != 'true' && needs.prepare.outputs.distributed != 'true'
+        working-directory: source
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+          REQUIRE_LEAK_DENYLIST: 'true'
         run: |
-          pnpm install --frozen-lockfile
           pnpm --filter @palmagent/web exec playwright install --with-deps chromium
-      - name: Verify and pack the exact candidate
-        if: steps.artifact.outputs.reuse != 'true'
-        working-directory: source
-        run: |
           node ../tooling/scripts/verify-candidate.mjs .
-          pnpm pkg:assemble
-          pnpm release:check --artifact
-          node scripts/pkg-smoke.mjs --pack-destination build/release
+      - name: Pack the verified candidate
+        if: needs.prepare.outputs.reuse != 'true'
+        working-directory: source
         env:
           LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
           REQUIRE_LEAK_DENYLIST: 'true'
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
+        run: |
+          pnpm pkg:assemble
+          pnpm release:check --artifact
+          node scripts/pkg-smoke.mjs --pack-destination build/release
       - name: Record candidate identity without creating a tag
-        if: steps.artifact.outputs.reuse != 'true'
+        if: needs.prepare.outputs.reuse != 'true'
         run: node tooling/scripts/release-candidate.mjs prepare source source/build/release
       - name: Verify the candidate and present the approval evidence
         id: identity
         run: node tooling/scripts/release-candidate.mjs check source source/build/release
         env:
-          CANDIDATE_RUN_ID: ${{ steps.artifact.outputs.producer }}
+          CANDIDATE_RUN_ID: ${{ needs.prepare.outputs.producer }}
       - uses: actions/upload-artifact@v4
-        if: steps.artifact.outputs.reuse != 'true'
+        if: needs.prepare.outputs.reuse != 'true'
         with:
-          name: ${{ steps.artifact.outputs.artifact }}
+          name: ${{ needs.prepare.outputs.artifact }}
           path: source/build/release/*
           if-no-files-found: error
           retention-days: 90

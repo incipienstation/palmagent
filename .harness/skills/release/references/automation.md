@@ -31,8 +31,7 @@ shard also runs service-worker checks, while the second runs selected package ch
 its own build. Packaging-only
 scope uses one runner without browser tests. All selected lanes, including both PWA shards,
 must succeed; an unexpectedly skipped lane fails validation. Parallel jobs repeat setup and
-use more runner time to shorten the critical path. Release candidates still run the full
-unsharded source gate below.
+use more runner time to shorten the critical path. Release candidates retain every source check using the compatible distributed gate below.
 
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
@@ -65,13 +64,16 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 1. Check out workflow tools separately from the exact 40-character product commit.
 2. Verify the version, release notes, and `develop` ancestry for Preview or `main` for Stable.
 3. Install frozen dependencies and run the full source gate with the private `LEAK_DENYLIST`
-   required. Workflow-owned `scripts/verify-candidate.mjs` runs metadata first, then type/tooling,
-   server, and unsharded PWA checks concurrently on the same runner. Every lane must finish
-   successfully before packaging; failure or interruption cancels sibling processes. Dependencies
-   install once and only the PWA lane builds the web output. Unrecognized source `verify` commands
-   or lifecycle hooks fall back to that source's sequential `pnpm verify`, preserving older and
-   future source gates without silently dropping checks.
-4. Assemble once from the PWA built in that run, validate the publishable package, pack it,
+   required. For known source gates, metadata checks and one PWA build precede separate
+   type/tooling, server, and two browser-shard runners. The second browser shard also runs
+   service-worker checks. Browser runners and packaging download the same build artifact from
+   this run; its name is retained in preparation outputs so rerunning failed jobs reuses the
+   verified build. Every selected lane must succeed before packaging; missing, skipped, failed,
+   or cancelled verification blocks it. Unrecognized browser commands or build hooks use the
+   complete existing candidate verifier on one runner. Unrecognized source `verify` commands
+   or lifecycle hooks retain that source's sequential `pnpm verify`, preserving older and future
+   source gates without silently dropping checks.
+4. Assemble once from the PWA built and verified in that run, validate the publishable package, pack it,
    install that exact tarball in a scratch project, and boot it.
 5. Record `candidate.json`, `SHA256SUMS`, and `RELEASE_NOTES.md` alongside the tarball in
    `palmagent-candidate-<commit>`, retained for 90 days. The manifest binds version, commit,
