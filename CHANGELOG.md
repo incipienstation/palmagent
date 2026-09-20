@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.44
+
 ### Changed
 
 - API routes that do not accept images now have a 1 MiB request body limit. Task creation,
