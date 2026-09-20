@@ -205,6 +205,18 @@ test("a changed server keeps the screen open when worker registration is blocked
   await page.goto("/");
   await expect(page.getByText("Update paused", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  const banner = page.getByRole("status").filter({ hasText: "Update paused" });
+  const dispatch = page.getByRole("button", { name: "Dispatch new task", exact: true });
+  await dispatch.click({ trial: true });
+  const lastControl = page.getByTestId("inbox-content").getByRole("button").last();
+  await lastControl.scrollIntoViewIfNeeded();
+  for (const control of [dispatch, lastControl]) {
+    await expect(control).toBeInViewport();
+    await expect.poll(async () => {
+      const box = (await control.boundingBox())!;
+      return box.y + box.height - (await banner.boundingBox())!.y;
+    }, { message: "the update banner must not cover inbox controls" }).toBeLessThanOrEqual(1);
+  }
   await expect(page.getByRole("button", { name: "Dismiss update", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
 });

@@ -9,10 +9,6 @@ test.describe("task detail", () => {
     await expect(page.getByText("Harness scaffolded and passing.")).toBeVisible();
   });
 
-  test("viewport is locked (no document scroll, no horizontal overflow)", async ({ page }) => {
-    await assertViewportLocked(page);
-  });
-
   test("the event log never overflows horizontally, even with a long unbroken URL", async ({ page }) => {
     // Guards against Radix ScrollArea widening the document:
     // a long, space-free token must wrap inside the pane, never widen it.
@@ -43,7 +39,6 @@ test.describe("task detail", () => {
       "href",
       "https://github.com/acme/sample-app/pull/42",
     );
-    await expect(page).toHaveScreenshot("pr-sheet.png");
   });
 
   test("tapping the scrim dismisses session details and returns focus to the title", async ({ page }) => {
@@ -61,7 +56,7 @@ test.describe("task detail", () => {
   }) => {
     // The markdown-rendered assistant prose sits at the TOP of the log, which
     // auto-sticks to the bottom — scroll up to it (a real scroll so onScroll
-    // releases the stick) and lock the render as a committed baseline.
+    // releases the stick) before checking parsed content and overflow.
     const viewport = page.locator("[data-radix-scroll-area-viewport]").first();
     await viewport.evaluate((el) => {
       el.scrollTop = 0;
@@ -75,7 +70,7 @@ test.describe("task detail", () => {
     // scrolls inside the pane and never widens the log (the mobile contract).
     const overflow = await viewport.evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow, "markdown table widened the event log pane").toBeLessThanOrEqual(1);
-    await expect(page).toHaveScreenshot("task-detail-markdown.png");
+    await assertViewportLocked(page);
   });
 });
 

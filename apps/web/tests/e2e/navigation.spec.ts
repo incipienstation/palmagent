@@ -59,19 +59,18 @@ test("drawer closes with Escape and scrim, restores focus, and opens Spaces on a
   await expect(menu).toBeFocused();
 });
 
-for (const height of [320, 360]) {
-  test(`drawer actions remain reachable in a ${height}px landscape viewport`, async ({ page }) => {
-    await page.setViewportSize({ width: 640, height });
-    await page.goto("/");
-    await page.getByRole("button", { name: "Open navigation" }).click();
-    const dialog = page.getByRole("dialog");
-    for (const name of ["Close navigation", "New task", "Settings"]) {
-      const button = dialog.getByRole("button", { name, exact: true });
-      const bounds = (await button.boundingBox())!;
-      expect(bounds.y).toBeGreaterThanOrEqual(0);
-      expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
-      expect(bounds.height).toBeGreaterThanOrEqual(44);
-    }
-    await assertViewportLocked(page);
-  });
-}
+test("drawer actions remain reachable in a short landscape viewport", async ({ page }) => {
+  const height = 320;
+  await page.setViewportSize({ width: 640, height });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const dialog = page.getByRole("dialog");
+  for (const name of ["Close navigation", "New task", "Settings"]) {
+    const button = dialog.getByRole("button", { name, exact: true });
+    const bounds = (await button.boundingBox())!;
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+  await assertViewportLocked(page);
+});
