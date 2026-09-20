@@ -41,17 +41,21 @@ test.describe("REST navigation reuse", () => {
   test("repositories are reused across screens and revalidated after foregrounding", async ({ page }) => {
     let reads = 0;
     await page.route("**/api/repos", async route => { reads++; await route.continue(); });
+    const visit = page.waitForResponse(response => new URL(response.url()).pathname === "/api/settings/updates"
+      && response.request().method() === "POST");
     await page.goto("/");
     await expect.poll(() => reads).toBe(1);
-    // Let the app-access mutation finish before warming the cache.
+    // Navigation can render before the startup mutation finishes invalidating reads.
+    await (await visit).finished();
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.evaluate(() => { location.hash = "/new"; });
-    await expect(page.getByLabel("Prompt")).toBeVisible();
+    // The prompt renders before the repository request completes.
+    await expect(page.getByRole("combobox", { name: "Working directory" })).toBeEnabled();
     const warm = reads;
     await page.evaluate(() => { location.hash = "/"; });
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.evaluate(() => { location.hash = "/new"; });
-    await expect(page.getByLabel("Prompt")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Working directory" })).toBeEnabled();
     expect(reads).toBe(warm);
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await page.evaluate(() => { location.hash = "/"; });
