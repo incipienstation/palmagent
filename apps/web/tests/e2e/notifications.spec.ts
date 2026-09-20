@@ -18,25 +18,8 @@ test("push uses a transparent logo badge that is available offline", async ({ pa
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
   await expect.poll(() => registrationId).toBeTruthy();
-  // Go offline before push delivery can request or warm any notification assets.
+  // Check the cold asset before push delivery can warm notification assets.
   await context.setOffline(true);
-  await cdp.send("ServiceWorker.deliverPushMessage", {
-    origin: baseURL!, registrationId: registrationId!,
-    data: JSON.stringify({ title: "Task completed", body: "Ready for review", taskId: "badge-test", url: "/#/task/badge-test" }),
-  });
-  await expect.poll(() => page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.ready;
-    const [notification] = await registration.getNotifications({ tag: "badge-test" });
-    return notification ? {
-      title: notification.title, body: notification.body,
-      icon: new URL(notification.icon).pathname, badge: new URL(notification.badge).pathname,
-      url: notification.data.url,
-    } : null;
-  })).toEqual({
-    title: "Task completed", body: "Ready for review",
-    icon: "/icon-192.png", badge: "/notification-badge.png", url: "/#/task/badge-test",
-  });
-
   // Verify offline availability through a real read, without inspecting cache names.
   const badge = await page.evaluate(async () => {
     const response = await fetch("/notification-badge.png");
@@ -62,6 +45,24 @@ test("push uses a transparent logo badge that is available offline", async ({ pa
   expect(badge.colored).toBe(0);
   expect(badge.visible).toBeGreaterThan(0);
   expect(badge.visible).toBeLessThan(badge.pixels);
+  await context.setOffline(false);
+  await cdp.send("ServiceWorker.deliverPushMessage", {
+    origin: baseURL!, registrationId: registrationId!,
+    data: JSON.stringify({ title: "Task completed", body: "Ready for review", taskId: "badge-test", url: "/#/task/badge-test" }),
+  });
+  await expect.poll(() => page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    const [notification] = await registration.getNotifications({ tag: "badge-test" });
+    return notification ? {
+      title: notification.title, body: notification.body,
+      icon: new URL(notification.icon).pathname, badge: new URL(notification.badge).pathname,
+      url: notification.data.url,
+    } : null;
+  })).toEqual({
+    title: "Task completed", body: "Ready for review",
+    icon: "/icon-192.png", badge: "/notification-badge.png", url: "/#/task/badge-test",
+  });
+
   await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     for (const notification of await registration.getNotifications()) notification.close();
