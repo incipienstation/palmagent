@@ -4,7 +4,8 @@ import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 
-const currentToast = (page: Page) => page.locator('[data-testid="toast"][data-front="true"][data-removed="false"]');
+const toastSelector = '[data-testid="toast"][data-front="true"][data-removed="false"]';
+const currentToast = (page: Page) => page.locator(toastSelector);
 
 async function dispatchError(page: Page, message = "Please try again.") {
   await page.route("**/api/tasks", route => route.request().method() === "POST"
@@ -22,10 +23,14 @@ async function assertClearOfComposer(page: Page) {
     return composer!.y - toast!.y - toast!.height;
   }).toBeGreaterThanOrEqual(0);
   const send = page.getByRole("button", { name: /^(Dispatch|Send now)$/ });
-  expect(await send.evaluate(el => {
+  // Draft growth and keyboard resize commit asynchronously. Require reachability
+  // while feedback is still visible, so automatic dismissal cannot satisfy it.
+  await expect.poll(() => send.evaluate((el, selector) => {
+    const toast = document.querySelector(selector);
     const r = el.getBoundingClientRect();
-    return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
-  })).toBe(true);
+    return Boolean(toast?.getClientRects().length)
+      && el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+  }, toastSelector)).toBe(true);
 }
 
 test("dispatch feedback leaves the composer reachable and dismisses automatically", async ({ page }) => {
