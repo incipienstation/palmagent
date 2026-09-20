@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir, userInfo } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { hashFile, inspectPackage } from './lib/package-artifact.mjs';
@@ -26,7 +26,12 @@ export function validateBinding(config, call = run) {
   assert(installed.MODE === 'package', 'Staging deployment requires an existing package installation');
   assert(installed.RUN_USER === userInfo().username, 'Run deployment as the installed service owner');
   assert(installed.DOMAIN === config.domain && /^[a-z0-9.-]+\.[a-z]{2,63}$/.test(config.domain), 'Installed domain differs from staging binding');
-  assert(realpathSync(installed.PKG_DIR) === realpathSync(config.pkgDir), 'Installed package directory differs from binding');
+  const activePkgDir = realpathSync(installed.PKG_DIR);
+  const independent = activePkgDir !== realpathSync(config.pkgDir);
+  if (independent) {
+    assert(activePkgDir.startsWith(realpathSync(join(config.dataDir, 'releases')) + sep), 'Installed package directory differs from binding');
+    assert(installed.EXECUTION_NODE && realpathSync(installed.EXECUTION_NODE).startsWith(realpathSync(join(config.dataDir, 'runtimes')) + sep), 'Installed Node runtime differs from binding');
+  }
   assert(!lstatSync(config.pkgDir).isSymbolicLink(), 'Linked development packages cannot be staging targets');
   assert(!installed.DATA_DIR || realpathSync(installed.DATA_DIR) === realpathSync(config.dataDir), 'Installed data directory differs from binding');
   const npmRoot = call('npm', ['root', '--global', '--prefix', config.npmPrefix]).trim();
@@ -35,13 +40,13 @@ export function validateBinding(config, call = run) {
   assert(host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host), 'Health target must be loopback');
   const port = Number(installed.PORT ?? 4100);
   assert(Number.isInteger(port) && port > 0 && port < 65536, 'Invalid health port');
-  return { ...config, localOrigin: `http://${host === '::1' ? '[::1]' : host}:${port}` };
+  return { ...config, activePkgDir, independent, executionNode: installed.EXECUTION_NODE, localOrigin: `http://${host === '::1' ? '[::1]' : host}:${port}` };
 }
 
 export function verifyInstalled(config, identity) {
   for (const [name, hash] of Object.entries(identity.files)) {
     assert(!name.split('/').includes('..') && !isAbsolute(name), 'Invalid receipt path');
-    assert(hashFile(join(config.pkgDir, name)) === hash, `Installed package differs: ${name}`);
+    assert(hashFile(join(config.activePkgDir ?? config.pkgDir, name)) === hash, `Installed package differs: ${name}`);
   }
 }
 
@@ -82,6 +87,7 @@ export function validateTarget(target) {
 export async function deploy(config, target, { call = run, health = verifyHealth, installed = verifyInstalled, bind = validateBinding } = {}) {
   validateTarget(target);
   config = bind(config, call);
+  assert(!config.independent || target.version, 'Retained release installations require an exact published version');
   const scratch = mkdtempSync(join(tmpdir(), 'palmagent-staging-'));
   let lock;
   let receipt;
@@ -102,7 +108,7 @@ export async function deploy(config, target, { call = run, health = verifyHealth
     const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`;
     const deployment = join(directory, id);
     mkdirSync(deployment, { mode: 0o700 });
-    const previousPath = pack(config.pkgDir, deployment, call);
+    const previousPath = pack(config.activePkgDir ?? config.pkgDir, deployment, call);
     const previous = inspectPackage(previousPath, { allowLegacy: true });
     installed(config, previous); // Snapshot must include the installed product bytes.
     const targetPath = join(deployment, 'target.tgz');
@@ -115,10 +121,18 @@ export async function deploy(config, target, { call = run, health = verifyHealth
     // an older rollback retry even if both packages have identical bytes.
     save(join(directory, 'latest-operation.json'), { receipt: receiptPath, operation: 'deploy' });
     receipt.status = 'installing'; save(receiptPath, receipt);
-    call('npm', ['install', '--global', '--prefix', config.npmPrefix, targetPath, '--registry=https://registry.npmjs.org']);
-    installed(config, identity);
-    receipt.status = 'activating'; save(receiptPath, receipt);
-    call(process.execPath, [join(config.pkgDir, 'cli.js'), 'update', '--data-dir', config.dataDir, '--non-interactive']);
+    if (config.independent) {
+      receipt.status = 'activating'; save(receiptPath, receipt);
+      call(config.executionNode, [join(config.activePkgDir, 'cli.js'), 'update', '--pull', '--to', target.version, '--data-dir', config.dataDir, '--non-interactive']);
+      config = bind(config, call);
+      receipt.activatedPackage = config.activePkgDir;
+    } else {
+      call('npm', ['install', '--global', '--prefix', config.npmPrefix, targetPath, '--registry=https://registry.npmjs.org']);
+      installed(config, identity);
+      receipt.status = 'activating'; save(receiptPath, receipt);
+      call(process.execPath, [join(config.pkgDir, 'cli.js'), 'update', '--data-dir', config.dataDir, '--non-interactive']);
+      config = bind(config, call);
+    }
     installed(config, identity);
     await health(config, identity);
     receipt.status = 'succeeded'; receipt.completed = new Date().toISOString(); save(receiptPath, receipt);
@@ -127,7 +141,7 @@ export async function deploy(config, target, { call = run, health = verifyHealth
   } catch (error) {
     if (receipt) {
       receipt.failedAt = receipt.status; receipt.status = 'failed'; save(receiptPath, receipt);
-      throw new Error(`Deployment failed at ${receipt.failedAt}; inspect receipt ${receiptPath}. No database or automatic rollback was performed.`, { cause: error });
+      throw new Error(`Deployment failed at ${receipt.failedAt}; inspect receipt ${receiptPath}. The deploy script did not restore the database; inspect the CLI activation receipt for recovery status.`, { cause: error });
     }
     throw error;
   } finally {
@@ -149,6 +163,7 @@ export async function rollback(config, path, databaseCompatible, { call = run, h
     save(join(lock, 'owner.json'), { pid: process.pid, started: new Date().toISOString(), operation: 'rollback' });
     // Read mutable operation state under the lock, including on retries.
     receipt = json(path);
+    assert(!config.independent && !receipt.config?.independent, 'Retained release rollback requires a separate recovery plan; global package replacement is unsafe');
     assert(receipt.environment === 'staging' && ['succeeded', 'failed'].includes(receipt.status), 'Receipt is not a rollback candidate');
     for (const key of ['domain', 'pkgDir', 'dataDir', 'npmPrefix']) assert(receipt.config[key] === config[key], 'Rollback receipt belongs to another installation');
     const previous = inspectPackage(receipt.previous.path, { allowLegacy: true });

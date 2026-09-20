@@ -14,7 +14,7 @@ export const TerminalQuery = z.object({ taskId: z.string().optional(), repoId: z
 export type TerminalState = "starting" | "running" | "closing" | "exited" | "lost";
 export interface TerminalSession {
   id: string; taskId?: string; repoId: string; title: string; initialCwd: string;
-  state: TerminalState; createdAt: number; exitCode?: number; protocol: number;
+  state: TerminalState; createdAt: number; exitCode?: number; protocol: number; startError?: string;
 }
 export interface TerminalCapabilities { available: boolean; persistent: boolean; reason?: string }
 export const TerminalClientFrame = z.discriminatedUnion("type", [

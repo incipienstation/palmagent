@@ -26,6 +26,7 @@ import {
   loadInstalledConfig,
   type Flags,
   passkey,
+  prepareIndependentRuntime,
   runDoctor,
   setup,
   uninstall,
@@ -168,6 +169,10 @@ async function main(): Promise<void> {
     }
   }
   const [cmd, ...rest] = process.argv.slice(2);
+  if (cmd === "runtime-setup") {
+    process.exitCode = prepareIndependentRuntime(parseFlags(rest), PKG_DIR, process.execPath);
+    return;
+  }
   if (cmd === "terminal") return terminalCommand(rest);
   if (cmd === "settings") return settingsCommand(rest);
   if (rest.includes("--help") || rest.includes("-h")) {

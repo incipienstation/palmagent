@@ -10,8 +10,8 @@ export interface TerminalRecord extends TerminalSession {
   cols: number; rows: number; pid?: number; identity?: string;
 }
 const active = (record: TerminalRecord) => ["starting", "running", "closing"].includes(record.state);
-export const publicTerminal = ({ id, taskId, repoId, title, initialCwd, state, createdAt, exitCode, protocol }: TerminalRecord): TerminalSession =>
-  ({ id, taskId, repoId, title, initialCwd, state, createdAt, exitCode, protocol });
+export const publicTerminal = ({ id, taskId, repoId, title, initialCwd, state, createdAt, exitCode, protocol, startError }: TerminalRecord): TerminalSession =>
+  ({ id, taskId, repoId, title, initialCwd, state, createdAt, exitCode, protocol, startError });
 
 /** Stable registry shared by CLI, web, and pinned terminal hosts. No terminal bytes or input are persisted. */
 export class TerminalStore {
@@ -61,7 +61,7 @@ export class TerminalStore {
     return this.db.transaction(() => {
       const record = this.get(id);
       if (!record || record.state !== "starting" || record.pid) return false;
-      this.update(id, { pid, identity, state: "running" });
+      this.update(id, { pid, identity, state: "running", startError: undefined });
       return true;
     }).immediate();
   }

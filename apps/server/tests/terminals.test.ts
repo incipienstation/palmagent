@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { TerminalStore } from "../src/terminal/store.js";
 import { TerminalHost } from "../src/terminal/host.js";
-import { ptyDriver, unixTransport } from "../src/terminal/linux.js";
+import { linuxSupervisor, ptyDriver, unixTransport } from "../src/terminal/linux.js";
 import { TerminalTickets, installTerminalGateway } from "../src/terminal/gateway.js";
 import type { TerminalFrame } from "@palmagent/shared/terminals";
 import type { LocalChannel } from "../src/terminal/platform.js";
@@ -214,4 +214,39 @@ test("WebSocket rejects foreign origins and revoked sessions, and reconnects wit
     }
     assert.equal(f.store.get(record.id)?.state, "running");
   } finally { for (const ws of sockets) ws.terminate(); close(); await new Promise<void>(r => server.close(() => r())); f.close(); }
+});
+
+
+test("missing services explain pending shells and recover the same reservation after setup", async () => {
+  const f = fixture();
+  let installed = false, launches = 0, fail = true;
+  const supervisor = linuxSupervisor(true, () => installed);
+  supervisor.launch = async record => {
+    launches++;
+    if (fail) throw new Error("private host detail");
+    f.store.claim(record.id, process.pid, "recovered");
+  };
+  const service = new TerminalService(f.store, supervisor, {
+    task() { throw new Error(); }, repo: () => undefined, cleanup() {}, updating: () => false,
+  }, f.directory, process.execPath);
+  try {
+    await assert.rejects(service.create({ target: { repoId: "repo" }, requestId: randomUUID(), cols: 80, rows: 24 }), /setup/);
+    assert.equal(f.store.list().length, 0);
+    const record = f.reserve().record;
+    await service.reconcile();
+    assert.equal(launches, 0);
+    assert.match(service.list()[0].startError!, /setup/);
+    installed = true;
+    await service.reconcile();
+    assert.equal(launches, 1);
+    assert.match(service.list()[0].startError!, /retry this terminal/);
+    assert(!JSON.stringify(service.list()).includes("private host detail"));
+    fail = false;
+    await service.reconcile();
+    assert.equal(launches, 2);
+    assert.equal(service.list().length, 1);
+    assert.equal(service.list()[0].id, record.id);
+    assert.equal(service.list()[0].state, "running");
+    assert.equal(service.list()[0].startError, undefined);
+  } finally { f.close(); }
 });

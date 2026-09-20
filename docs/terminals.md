@@ -94,3 +94,11 @@ flowchart LR
 The current limits are 16 active terminals per installation, 8 attachments per
 terminal, 2,000 scrollback lines, and bounded frames, socket buffers, and input rates.
 Retained package artifacts are not garbage-collected by this feature.
+
+## Repair missing terminal services
+
+If a package upgrade leaves a shell at “Starting”, run `palmagent setup` as the installation
+owner with the installation's data directory. This reapplies terminal services and the nginx
+WebSocket route. Pending requests recover with their original terminal IDs; opening replacement
+shells is unnecessary. Newer versions show a repair instruction when these services are absent.
+Application updates provision services using the incoming package's own installer.

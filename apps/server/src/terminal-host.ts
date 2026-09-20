@@ -7,7 +7,8 @@ import { processIdentity } from "./native-session.js";
 
 const directory = process.argv[2];
 const id = TerminalId.parse(process.argv[3]);
-if (!directory || !terminalPlatform(true).supervisor.capabilities.available) throw new Error("Unsupported terminal platform");
+const platform = terminalPlatform(true);
+if (!directory || !platform.supported) throw new Error("Unsupported terminal platform");
 const store = new TerminalStore(resolve(directory));
 const record = store.get(id);
 if (!record || record.protocol !== TERMINAL_PROTOCOL) throw new Error("Terminal protocol mismatch");
@@ -24,7 +25,6 @@ function finish(code: number, lost = false) {
   setTimeout(() => { host?.close(); unlisten?.(); store.close(); process.exit(lost ? 1 : 0); }, 50);
 }
 try {
-  const platform = terminalPlatform(true);
   host = new TerminalHost(record, platform.driver, platform.shell, code => finish(code));
   unlisten = await platform.transport.listen(directory, id, channel => host!.attach(channel));
   process.on("SIGTERM", () => { host?.terminate(); finish(143); });

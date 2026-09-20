@@ -29,10 +29,16 @@ export const ptyDriver: TerminalDriver = {
       onExit: callback => { const sub = child.onExit(event => callback(event.exitCode)); return () => sub.dispose(); } };
   },
 };
-export function linuxSupervisor(enabled: boolean): TerminalSupervisor {
+export function linuxSupervisor(enabled: boolean, installed = () =>
+  existsSync("/usr/local/libexec/palmagent-terminal-control") && existsSync("/etc/systemd/system/palmagent-terminal@.service")): TerminalSupervisor {
   return {
-    capabilities: { available: enabled, persistent: enabled,
-      ...(!enabled ? { reason: "Run palmagent setup on a package installation to enable terminals." } : {}) },
+    get capabilities() {
+      const available = enabled && installed();
+      return { available, persistent: available, ...(!available ? {
+        reason: enabled ? "Terminal services are not installed. Run palmagent setup to repair this installation."
+          : "Run palmagent setup on a package installation to enable terminals.",
+      } : {}) };
+    },
     async launch(record) {
       try { await exec("sudo", ["-n", "/usr/local/libexec/palmagent-terminal-control", "start", record.id], { timeout: 10_000 }); }
       catch { throw new Error("Terminal launch is unconfirmed. Check terminal status before retrying."); }

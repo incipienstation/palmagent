@@ -75,3 +75,19 @@ test("desktop shows conversation and terminal together; narrow light layout rema
   await assertViewportLocked(page);
   await page.screenshot({ path: testInfo.outputPath("terminal-mobile-light.png") });
 });
+
+
+test("missing terminal services explain a pending shell and disable new shells", async ({ page }) => {
+  await page.route("**/api/terminals**", route => route.fulfill({ json: {
+    terminals: [{ id, repoId: "repo-app", taskId: "t-run", title: "Shell", initialCwd: "/projects/sample-app",
+      state: "starting", startError: "Terminal services are not installed. Run palmagent setup to repair this installation.", createdAt: 1, protocol: 1 }],
+    capabilities: { available: false, persistent: false, reason: "Terminal services are not installed. Run palmagent setup to repair this installation." },
+  } }));
+  await page.goto("/#/task/t-run");
+  await page.getByRole("button", { name: "Task actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Open terminal" }).click();
+  await expect(page.getByText("Shell could not start", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Run palmagent setup to repair/)).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeDisabled();
+  await expect(page.getByText("Starting shell…", { exact: true })).toHaveCount(0);
+});

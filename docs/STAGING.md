@@ -69,8 +69,13 @@ replaces manual live overlays: include their intended source changes in the cand
 The apply command locks `<data-dir>/deployments`, snapshots the currently installed product
 package (including manual product-file changes), writes a private receipt, installs the exact
 tarball into the bound npm prefix, and invokes the newly installed CLI's `update` command.
-It never uses `update --pull`. The CLI keeps an unchanged runner alive and restarts a changed
-runner. npm installs declared runtime dependencies; the snapshot is a product-package rollback,
+For installations already using retained releases, the same binding instead validates the
+active package and pinned Node beneath the data directory. Deployment requires an exact
+published version and invokes the active CLI's `update --pull --to <exact-version>`;
+it never overwrites a retained release or the global package. The receipt retains the old
+package path and snapshot. CI tarball deployment is currently limited to legacy installations.
+The CLI keeps an unchanged runner alive and restarts a changed runner. npm installs declared
+runtime dependencies; the snapshot is a product-package rollback,
 not a frozen snapshot of transitive dependencies or the operating system.
 
 Success requires installed product-file hashes, local and public health, the running server's
@@ -88,6 +93,12 @@ After confirming the previous code can use the current database schema:
 pnpm staging:deploy rollback --receipt '<deployment.json>' --database-compatible
 ```
 
+The rollback command above applies to legacy global-package installations. For retained
+releases it refuses global replacement: inspect `application-activation.json` and plan recovery
+against the retained package and Node paths. Manual rollback of retained releases is not
+implemented by this command. The CLI automatically
+restores the previous application if candidate activation fails, leaving both releases intact.
+
 Rollback checks the installation binding, current package hashes, and retained prior tarball's
 checksum, then installs and activates that exact prior package and verifies health/PWA again.
 Legacy snapshots without embedded source identity are allowed only as retained rollback inputs;
@@ -96,8 +107,9 @@ commit. Both deployment and rollback leave database files untouched; starting ei
 version may run migrations. The compatibility flag records an operator decision, not an
 automated schema guarantee. Restore a database only through a separately approved recovery plan.
 
-A failed operation retains its receipt and snapshots. It does not automatically downgrade code
-after activation, restore data, delete previous releases, or conceal the failure. Rollback refuses
+A failed operation retains its receipt and snapshots. The deploy script does not restore data,
+delete previous releases, or conceal the failure; the retained-release CLI may restore the prior
+application when activation fails. Rollback refuses
 to overwrite a later deployment or manual overlay. If npm failed halfway through installation,
 the installed files may not match either receipt: inspect the recorded phase and repair the
 package from the retained tarball before attempting activation; do not bypass the drift check.

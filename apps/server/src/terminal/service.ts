@@ -48,7 +48,13 @@ export class TerminalService {
   private async launch(id: string) {
     const record = this.get(id);
     writePrivateFileAtomic(join(this.store.directory, id + ".json"), JSON.stringify({ id, protocol: record.protocol, directory: record.directory, release: record.release, node: record.node }));
-    await this.supervisor.launch(record);
+    try {
+      await this.supervisor.launch(record);
+      if (this.get(id).state === "starting") this.store.update(id, { startError: undefined });
+    } catch {
+      if (this.get(id).state === "starting") this.store.update(id, { startError: "Shell launch could not be confirmed. Palmagent will retry this terminal; check the installation's terminal service." });
+      throw new HttpError(503, "Shell launch could not be confirmed. Check this terminal's status before opening another.");
+    }
   }
   rename(id: string, title: string) { this.get(id); return publicTerminal(this.store.update(id, { title })); }
   async terminate(id: string) {
@@ -67,7 +73,10 @@ export class TerminalService {
   private async reconcileOnce() {
     for (const record of this.store.list()) {
       try {
-        if (record.state === "starting" && !record.pid && this.capabilities().available) await this.launch(record.id);
+        if (record.state === "starting" && !record.pid) {
+          if (this.capabilities().available) await this.launch(record.id);
+          else this.store.update(record.id, { startError: this.capabilities().reason ?? "Terminal services are unavailable." });
+        }
         else if (["running", "closing"].includes(record.state) && !await this.supervisor.alive(record)) {
           const latest = this.get(record.id);
           this.store.update(record.id, { state: latest.exitCode === undefined ? "lost" : "exited" });

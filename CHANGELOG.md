@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Application updates now provision host services and terminal WebSocket routing from the
+  incoming package. Missing terminal services show a repair instruction instead of leaving
+  shells indefinitely at “Starting”; existing requests recover after setup is repaired.
+- Staging deployments recognize retained application releases and activate exact published
+  versions without overwriting the package used by running shells or agent executions.
+
 ## 0.1.0-alpha.46
 
 ### Added

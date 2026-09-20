@@ -9,11 +9,12 @@ import { run } from "./sh.js";
 import { ExecutionStore } from "../execution/store.js";
 import { EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
 
-export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number }
+export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number }
 export function releaseContract(directory: string): ReleaseContract {
   const contract = JSON.parse(readFileSync(join(directory, "runtime-contract.json"), "utf8"));
   if (contract.executionProtocol !== EXECUTION_PROTOCOL || contract.productStorage !== 1 || contract.applicationApi !== 1) throw new Error("Candidate runtime or storage contract is incompatible");
   if (contract.terminalProtocol !== undefined && contract.terminalProtocol !== TERMINAL_PROTOCOL) throw new Error("Candidate terminal protocol is incompatible");
+  if (contract.hostSetup !== undefined && contract.hostSetup !== 1) throw new Error("Candidate host setup protocol is incompatible");
   for (const file of ["cli.js", "server.js", "execution-host.js", "execution-launcher.js"]) {
     if (!existsSync(join(directory, file))) throw new Error("Candidate release is incomplete");
   }

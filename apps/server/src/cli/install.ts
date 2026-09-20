@@ -10,8 +10,8 @@ import { writePrivateFileAtomic } from "../private-files.js";
 import { assertExecutionsFinished, releaseContract, retainInstalledRelease, stageRelease, verifyActiveExecutionCompatibility } from "./execution-release.js";
 import { installExecutionUnits } from "./execution-units.js";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { BRANDING } from "@palmagent/shared";
 import {
   assertSafeInstallerIdentity,
@@ -830,6 +830,34 @@ async function verifyIndependentActivation(cfg: InstallConfig): Promise<boolean>
   return true;
 }
 
+/** Runs inside the target package, under its updater parent's admission barrier. */
+export function prepareIndependentRuntime(flags: Flags, pkgDir: string, node: string): number {
+  assertSafeInstallerIdentity();
+  const installed = loadInstalledConfig(flags);
+  if (!updateMaintenanceOwnedBy(installed.dbPath, process.ppid)) throw new Error("Runtime setup requires its live updater parent's maintenance window");
+  const release = realpathSync(pkgDir), runtime = realpathSync(node);
+  if (!release.startsWith(realpathSync(join(installed.dataDir, "releases")) + sep) ||
+      !runtime.startsWith(realpathSync(join(installed.dataDir, "runtimes")) + sep)) throw new Error("Runtime setup requires retained package and Node artifacts");
+  const candidate = { ...installed, pkgDir: release, workingDir: release, executionNode: runtime };
+  verifyActiveExecutionCompatibility(candidate);
+  applyUnits(candidate, flags);
+  applyNginx(candidate, flags);
+  return 0;
+}
+
+export function provisionIndependentRuntime(cfg: InstallConfig, flags: Flags): void {
+  if (!flags.dryRun && releaseContract(cfg.pkgDir!).hostSetup === 1) {
+    const result = run(cfg.executionNode!, [join(cfg.pkgDir!, "cli.js"), "runtime-setup", "--data-dir", cfg.dataDir, "--non-interactive"], {
+      env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 60_000,
+    });
+    if (!result.ok) throw new Error("Candidate runtime provisioning failed");
+  } else {
+    // Older retained releases predate candidate-owned setup.
+    applyUnits(cfg, flags);
+    applyNginx(cfg, flags);
+  }
+}
+
 async function updateIndependentRelease(cfg: InstallConfig, version: string, flags: Flags,
   record: (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => void): Promise<number> {
   if (!canSudoNonInteractive()) throw new Error("Updates require non-interactive service-management access");
@@ -853,7 +881,7 @@ async function updateIndependentRelease(cfg: InstallConfig, version: string, fla
     // hosts retain their own references and are never restarted here.
     writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: "applying" }) + "\n");
     changed = true;
-    applyUnits(candidate, flags);
+    provisionIndependentRuntime(candidate, flags);
     saveConfig(candidate);
     restartWeb();
     if (!await healthcheck(candidate, version)) throw new Error("Candidate application health check failed");
@@ -868,7 +896,7 @@ async function updateIndependentRelease(cfg: InstallConfig, version: string, fla
     if (changed) {
       let restored = false;
       try {
-        applyUnits(cfg, flags); saveConfig(cfg); restartWeb();
+        provisionIndependentRuntime(cfg, flags); saveConfig(cfg); restartWeb();
         restored = await healthcheck(cfg, installedVersion(cfg.pkgDir));
         if (restored && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
       } catch { /* Retain both releases for explicit recovery. */ }
