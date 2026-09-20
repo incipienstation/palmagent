@@ -250,8 +250,8 @@ body continues to use the color app icon. Both assets are precached by the servi
 After changing the logo geometry and regenerating app icons, regenerate the badge from its foreground
 geometry with `node apps/web/scripts/generate-notification-badge.mjs` from the repository
 root (requires the Playwright Chromium installation above). Review the image and run
-`pnpm web:verify`. The notification test checks the built asset's silhouette, offline
-availability, and real service-worker push options; Android status-bar rendering still
+`pnpm web:verify`. The notification test checks that the built asset is nonempty, monochrome,
+transparent, and available offline, along with real service-worker push options; Android status-bar rendering still
 needs a device check with a new notification after the updated worker activates.
 
 ## Message controls

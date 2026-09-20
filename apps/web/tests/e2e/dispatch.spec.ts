@@ -8,18 +8,9 @@ test.describe("dispatch form", () => {
     await expect(page.getByLabel("Prompt")).toBeVisible();
   });
 
-  test("viewport is locked (no document scroll, no horizontal overflow)", async ({ page }) => {
-    await assertViewportLocked(page);
-  });
-
-  test("auto-selects the first registered repo", async ({ page }) => {
-    // loadRepos() picks list[0] — the form must come up usable, not empty.
-    // (Target the repo combobox; Radix also renders a hidden <option> mirror.)
-    await expect(page.getByRole("combobox").filter({ hasText: "sample-app" })).toBeVisible();
-  });
-
   // Worktree isolation is opt-in and git-only; plain folders always run in place.
   test("shows the worktree-isolation toggle only for git repos", async ({ page }) => {
+    await assertViewportLocked(page);
     // First repo (auto-selected) is the git repo → toggle present, default off.
     await page.getByLabel("Prompt").tap();
     await page.getByRole("button", { name: "Configure model and effort" }).click();
