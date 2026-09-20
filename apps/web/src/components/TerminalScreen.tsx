@@ -6,14 +6,23 @@ import { api } from "../api";
 import { Button } from "./ui/button";
 import "@xterm/xterm/css/xterm.css";
 
-export function TerminalScreen({ id }: { id: string }) {
+export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id: string; initialCwd: string; readOnly: boolean; onEnableInput: () => void }) {
   const container = useRef<HTMLDivElement>(null);
-  const send = useRef<(value: TerminalInput) => void>(() => {});
   const input = useRef<(data: string) => void>(() => {});
   const termRef = useRef<Terminal | undefined>(undefined);
+  const readOnlyRef = useRef(readOnly);
+  const changeMode = useRef<(value: boolean) => void>(() => {});
+  const claim = useRef<() => void>(() => {});
   const [state, setState] = useState("Connecting…");
+  const [notice, setNotice] = useState("");
+  const [claiming, setClaiming] = useState(false);
   const [writable, setWritable] = useState(false);
   const [connected, setConnected] = useState(false);
+  useEffect(() => {
+    if (readOnlyRef.current === readOnly) return;
+    readOnlyRef.current = readOnly;
+    changeMode.current(readOnly);
+  }, [readOnly]);
   useEffect(() => {
     let disposed = false;
     let socket: WebSocket | undefined;
@@ -21,11 +30,25 @@ export function TerminalScreen({ id }: { id: string }) {
     let observer: ResizeObserver | undefined;
     let themeObserver: MutationObserver | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let claimTimeout: ReturnType<typeof setTimeout> | undefined;
     let epoch = 0, controls = false, attempts = 0, ended = false, connection = 0;
     const transmit = (value: TerminalInput) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
-    send.current = transmit;
-    const write = (data: string) => { if (controls) for (const chunk of terminalInputChunks(data)) transmit({ type: "input", epoch, data: chunk }); };
+    const write = (data: string) => { if (controls && !readOnlyRef.current) for (const chunk of terminalInputChunks(data)) transmit({ type: "input", epoch, data: chunk }); };
     input.current = write;
+    const requestInput = (ifAvailable = false) => {
+      if (socket?.readyState !== WebSocket.OPEN || ended) return;
+      setClaiming(true);
+      transmit(ifAvailable ? { type: "claim-control", ifAvailable: true } : { type: "claim-control" });
+      clearTimeout(claimTimeout);
+      claimTimeout = setTimeout(() => { setClaiming(false); setNotice("Input could not be enabled. Try again."); }, 5000);
+    };
+    claim.current = () => requestInput();
+    changeMode.current = value => {
+      if (!value) { requestInput(); return; }
+      controls = false; setWritable(false); setClaiming(false); clearTimeout(claimTimeout);
+      if (term) { term.options.disableStdin = true; term.blur(); }
+      setNotice(""); transmit({ type: "release-control" });
+    };
     void (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
       if (disposed || !container.current) return;
@@ -62,7 +85,8 @@ export function TerminalScreen({ id }: { id: string }) {
       async function connect() {
         if (disposed || ended) return;
         const version = ++connection;
-        controls = false; setConnected(false); setWritable(false); setState(attempts ? "Reconnecting… Input is paused." : "Connecting…");
+        let initialControl = true;
+        controls = false; setConnected(false); setWritable(false); setClaiming(false); clearTimeout(claimTimeout); setNotice(""); setState(attempts ? "Reconnecting… Input is paused." : "Connecting…");
         if (term) term.options.disableStdin = true;
         try {
           const ticket = await api.terminals.ticket(id);
@@ -81,16 +105,24 @@ export function TerminalScreen({ id }: { id: string }) {
                 await new Promise<void>(resolve => term!.write(frame.data, resolve));
                 if (disposed || version !== connection || socket?.readyState !== WebSocket.OPEN) return;
                 transmit({ type: "ack", seq: frame.seq }); setConnected(true);
-                setState("Connected · View only");
+                setState("Connected");
               } else if (frame.type === "output") {
                 await new Promise<void>(resolve => term!.write(frame.data, resolve));
                 transmit({ type: "ack", seq: frame.seq });
               }
               else if (frame.type === "resize") { term.resize(frame.cols, frame.rows); transmit({ type: "ack", seq: frame.seq }); }
               else if (frame.type === "control") {
-                epoch = frame.epoch; controls = frame.writable; term.options.disableStdin = !controls;
-                setWritable(controls); setState(controls ? "Connected · You have control" : "Connected · View only");
-                if (controls) { resize(); term.focus(); }
+                const lostInput = controls && !frame.writable;
+                epoch = frame.epoch; controls = frame.writable && !readOnlyRef.current; term.options.disableStdin = !controls;
+                clearTimeout(claimTimeout); setClaiming(false); setWritable(controls); setState("Connected");
+                setNotice(controls || readOnlyRef.current ? "" : lostInput ? "Input moved to another screen" : frame.available === false ? "In use on another screen" : "Viewing terminal output");
+                if (controls) resize();
+                // Never reopen the keyboard or reclaim after another screen takes over.
+                if (initialControl) {
+                  initialControl = false;
+                  // Older persistent hosts omit availability; explicit claims still work.
+                  if (frame.available === true && !readOnlyRef.current) requestInput(true);
+                }
               } else if (frame.type === "exit") { ended = true; controls = false; setConnected(false); setWritable(false); term.options.disableStdin = true; setState("Shell exited"); socket?.close(); }
             }).catch(() => { if (version === connection) socket?.close(); });
           };
@@ -98,6 +130,7 @@ export function TerminalScreen({ id }: { id: string }) {
             controls = false;
             if (disposed || ended) return;
             setConnected(false); setWritable(false); if (term) term.options.disableStdin = true;
+            setClaiming(false); clearTimeout(claimTimeout); setNotice("");
             setState("Disconnected · Input is paused");
             retry = setTimeout(() => void connect(), Math.min(10_000, 1000 * 2 ** attempts++));
           };
@@ -111,15 +144,19 @@ export function TerminalScreen({ id }: { id: string }) {
       void connect();
     })();
     return () => {
-      disposed = true; clearTimeout(retry); observer?.disconnect(); themeObserver?.disconnect();
-      socket?.close(); term?.dispose(); termRef.current = undefined; send.current = () => {}; input.current = () => {};
+      disposed = true; clearTimeout(retry); clearTimeout(claimTimeout); observer?.disconnect(); themeObserver?.disconnect();
+      socket?.close(); term?.dispose(); termRef.current = undefined; input.current = () => {};
+      claim.current = () => {}; changeMode.current = () => {};
     };
   }, [id]);
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-1">
-      <p role="status" className="text-xs text-muted-foreground">{state}</p>
-      <Button variant="outline" disabled={!connected} onClick={() => send.current({ type: writable ? "release-control" : "claim-control" })}>{writable ? "Release control" : "Control here"}</Button>
+    <div className="min-w-0 shrink-0 px-3 py-1">
+      <p role="status" className="truncate text-xs text-muted-foreground" title={"Started in " + initialCwd}>{readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
     </div>
+    {connected && !writable && <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-1">
+      <p role="status" className="text-xs text-muted-foreground">{claiming ? "Enabling input…" : readOnly ? "Viewing terminal output" : notice}</p>
+      <Button variant="outline" size="sm" disabled={claiming} onClick={() => { termRef.current?.focus(); if (readOnly) onEnableInput(); else claim.current(); }}>{claiming ? "Connecting…" : "Type here"}</Button>
+    </div>}
     <div ref={container} data-testid="terminal-screen" className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden bg-background p-2 text-foreground" />
     <div className="flex shrink-0 gap-1 overflow-x-auto px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" aria-label="Terminal keys">
       {[["Ctrl+C", "\x03"], ["Tab", "\t"], ["Esc", "\x1b"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"]].map(([label, data]) =>

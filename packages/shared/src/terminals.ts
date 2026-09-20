@@ -23,7 +23,8 @@ export const TerminalClientFrame = z.discriminatedUnion("type", [
   z.object({ type: z.literal("attach"), ticket: z.string().min(1).max(200), protocol: z.literal(1) }).strict(),
   z.object({ type: z.literal("input"), epoch: z.number().int().nonnegative(), data: z.string().max(16_384) }).strict(),
   TerminalSize.extend({ type: z.literal("resize"), epoch: z.number().int().nonnegative() }).strict(),
-  z.object({ type: z.literal("claim-control") }).strict(),
+  // Omission preserves explicit takeover for existing browsers and CLI attachments.
+  z.object({ type: z.literal("claim-control"), ifAvailable: z.boolean().optional() }).strict(),
   z.object({ type: z.literal("release-control") }).strict(),
   z.object({ type: z.literal("ack"), seq: z.number().int().nonnegative() }).strict(),
 ]);
@@ -42,6 +43,7 @@ export type TerminalFrame =
   | { type: "snapshot"; data: string; seq: number; cols: number; rows: number }
   | { type: "output"; data: string; seq: number }
   | { type: "resize"; cols: number; rows: number; seq: number }
-  | { type: "control"; writable: boolean; epoch: number }
+  // Older retained hosts omit availability; clients must not auto-claim those hosts.
+  | { type: "control"; writable: boolean; epoch: number; available?: boolean }
   | { type: "exit"; exitCode?: number }
   | { type: "error"; message: string };
