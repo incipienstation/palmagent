@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1 }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1 }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {

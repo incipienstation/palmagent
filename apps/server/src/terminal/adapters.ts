@@ -2,6 +2,7 @@ import { linuxShell, linuxSupervisor, ptyDriver, unixTransport } from "./linux.j
 import type { LocalTransport, ShellResolver, TerminalDriver, TerminalSupervisor } from "./platform.js";
 
 export interface TerminalPlatform {
+  supported: boolean;
   driver: TerminalDriver;
   shell: ShellResolver;
   transport: LocalTransport;
@@ -9,10 +10,10 @@ export interface TerminalPlatform {
 }
 /** Keep OS selection out of services, wire contracts, and clients. */
 export function terminalPlatform(installed: boolean, platform: NodeJS.Platform = process.platform): TerminalPlatform {
-  if (platform === "linux") return { driver: ptyDriver, shell: linuxShell, transport: unixTransport, supervisor: linuxSupervisor(installed) };
+  if (platform === "linux") return { supported: true, driver: ptyDriver, shell: linuxShell, transport: unixTransport, supervisor: linuxSupervisor(installed) };
   const unsupported = (): never => { throw new Error("Shell access is not yet supported on this platform"); };
   return {
-    driver: { spawn: unsupported }, shell: { resolve: unsupported },
+    supported: false, driver: { spawn: unsupported }, shell: { resolve: unsupported },
     transport: { connect: async () => unsupported(), listen: async () => unsupported() },
     supervisor: {
       capabilities: { available: false, persistent: false, reason: "Shell access is not yet supported on this platform." },

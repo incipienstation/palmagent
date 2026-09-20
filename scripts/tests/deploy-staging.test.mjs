@@ -154,3 +154,46 @@ test('health verifies the running commit and served shell/script on both origins
     await assert.rejects(verifyHealth(config, identity, async () => Response.json({ ok: true })), /Running build differs/);
   } finally { rmSync(f.root, { recursive: true }); }
 });
+
+test('retained releases deploy through the active CLI and preserve the bound global package', async () => {
+  const f = fixture();
+  try {
+    const old = join(f.config.dataDir, 'releases/old/node_modules/palmagent');
+    const next = join(f.config.dataDir, 'releases/new/node_modules/palmagent');
+    const node = join(f.config.dataDir, 'runtimes/pinned/node');
+    cpSync(f.previous.directory, old, { recursive: true });
+    mkdirSync(join(f.config.dataDir, 'runtimes/pinned'), { recursive: true });
+    writeFileSync(node, 'retained Node');
+    const bind = pkg => writeFileSync(join(f.config.dataDir, 'install.env'), `MODE=package\nRUN_USER=${userInfo().username}\nDOMAIN=${f.config.domain}\nPKG_DIR=${pkg}\nDATA_DIR=${f.config.dataDir}\nEXECUTION_NODE=${node}\n`);
+    bind(old);
+    const calls = [];
+    const call = (command, args) => {
+      calls.push([command, args]);
+      if (command === 'npm' && args[0] === 'pack' && args[1].startsWith('palmagent@')) {
+        copyFileSync(f.next.path, join(args.at(-1), 'candidate.tgz'));
+        return JSON.stringify([{ filename: 'candidate.tgz' }]);
+      }
+      if (command === node) {
+        assert.deepEqual(args, [join(old, 'cli.js'), 'update', '--pull', '--to', '0.1.0-alpha.1', '--data-dir', f.config.dataDir, '--non-interactive']);
+        cpSync(f.next.directory, next, { recursive: true }); bind(next);
+        return '';
+      }
+      return f.adapters.call(command, args);
+    };
+    const adapters = { ...f.adapters, call };
+    const target = { version: '0.1.0-alpha.1', commit };
+    assert.equal(validateBinding(f.config, call).activePkgDir, old);
+    await assert.rejects(deploy(f.config, f.target, adapters), /exact published version/);
+    assert.equal((await deploy(f.config, { ...target, dryRun: true }, adapters)).status, 'validated');
+    assert(!calls.some(([command]) => command === node));
+    const result = await deploy(f.config, target, adapters);
+    assert.equal(result.status, 'succeeded');
+    verifyInstalled(validateBinding(f.config, call), inspectPackage(f.next.path));
+    verifyInstalled(f.config, inspectPackage(f.previous.path, { allowLegacy: true }));
+    assert(!calls.some(([command, args]) => command === 'npm' && args[0] === 'install'));
+    assert.equal(JSON.parse(readFileSync(result.receipt)).activatedPackage, next);
+    await assert.rejects(rollback(f.config, result.receipt, true, adapters), /Retained release rollback/);
+    bind(f.next.directory);
+    assert.throws(() => validateBinding(f.config, call), /differs from binding/);
+  } finally { rmSync(f.root, { recursive: true }); }
+});

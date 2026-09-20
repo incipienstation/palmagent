@@ -79,13 +79,14 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
       </form>}
       {busy && <p role="status" className="text-xs text-muted-foreground">Updating terminal…</p>}
       {error && <Alert variant="destructive">{error}</Alert>}
+      {active?.state === "starting" && active.startError && capabilities?.available && <Alert variant="destructive">{active.startError}</Alert>}
       {capabilities && !capabilities.available && <Alert>{capabilities.reason ?? "Terminals are unavailable on this platform."}</Alert>}
       {active && <p className="truncate text-xs text-muted-foreground" title={active.initialCwd}>Started in {active.initialCwd}</p>}
     </div>
     {active?.state === "running" ? <TerminalScreen key={active.id} id={active.id} />
       : <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-5 text-center text-muted-foreground">
         <TerminalIcon aria-hidden="true" />
-        <p>{active ? active.state === "starting" ? "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? "This shell stopped unexpectedly. Open a new terminal to continue." : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : "Open a terminal to work in this directory."}</p>
+        <p>{active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? "This shell stopped unexpectedly. Open a new terminal to continue." : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : "Open a terminal to work in this directory."}</p>
         {!active && <p className="text-sm">Terminals keep running when you leave this screen.</p>}
       </div>}
     <AlertDialog open={confirm} onOpenChange={setConfirm}>

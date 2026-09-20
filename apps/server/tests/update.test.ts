@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { createServer } from "node:net";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -14,7 +14,7 @@ import { DEFAULT_CAPS, loadConfig, saveConfig, type InstallConfig } from "../src
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../src/cli/user-config.js";
 import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath } from "../src/update-maintenance.js";
 import { ExecutionStore } from "../src/execution/store.js";
-import { update, setup, type Flags } from "../src/cli/install.js";
+import { update, setup, prepareIndependentRuntime, type Flags } from "../src/cli/install.js";
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "palmagent-updates-"));
@@ -551,7 +551,7 @@ for (const command of ["update", "setup"]) {
 }
 
 
-for (const outcome of ["success", "contract", "rollback"]) test(`automatic independent application activation: ${outcome}`, async (t) => {
+for (const outcome of ["success", "contract", "rollback", "provision"]) test(`automatic independent application activation: ${outcome}`, async (t) => {
   const f = fixture(t);
   process.env.TEST_INDEPENDENT_OUTCOME = outcome;
   writeFileSync(join(f.root, "bin", "sleep"), `#!${process.execPath}\n`, { mode: 0o700 });
@@ -583,8 +583,8 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   const pkg = path.join(args[args.indexOf('--prefix') + 1], 'node_modules', 'palmagent');
   fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
-  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1 }));
-  fs.writeFileSync(path.join(pkg, 'cli.js'), "console.log('0.1.0-alpha.3');");
+  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1 }));
+  fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv[2] === 'runtime-setup' && process.env.TEST_INDEPENDENT_OUTCOME === 'provision') process.exit(1); if (process.argv[2] === 'runtime-setup') require('node:fs').writeFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'candidate-setup'), 'provisioned'); else console.log('0.1.0-alpha.3');");
   for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
 } else process.exit(1);
 `, { mode: 0o700 });
@@ -598,13 +598,14 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   t.after(() => { process.execPath = originalNode; });
   checkUpdateAccess(f.cfg, true); requestUpdateAccess(f.cfg, true);
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
-  process.env.TEST_UPDATE_HEALTH = outcome === "rollback" ? "0.1.0-alpha.2" : request.targetVersion;
+  process.env.TEST_UPDATE_HEALTH = ["rollback", "provision"].includes(outcome) ? "0.1.0-alpha.2" : request.targetVersion;
   assert.equal(await update({ ...f.flags, automatic: true, request }), outcome === "success" ? 0 : 1);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, outcome === "success" ? "succeeded" : "failed");
   if (outcome !== "success") {
     assert.equal(loadConfig({ dataDir: f.cfg.dataDir }).pkgDir, f.cfg.pkgDir);
-    if (outcome === "rollback") assert.equal(JSON.parse(readFileSync(join(f.cfg.dataDir, "application-activation.json"), "utf8")).status, "restored");
+    if (["rollback", "provision"].includes(outcome)) assert.equal(JSON.parse(readFileSync(join(f.cfg.dataDir, "application-activation.json"), "utf8")).status, "restored");
   }
+  assert.equal(existsSync(join(f.root, 'candidate-setup')), ['success', 'rollback'].includes(outcome));
   assert.equal(executions.get(active.id).state, "running");
   assert.equal(executions.get(active.id).release, f.cfg.pkgDir);
   assert.equal(readFileSync(join(f.cfg.pkgDir!, "execution-host.js"), "utf8"), "// Retained fixture artifact\n");
@@ -614,4 +615,37 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   assert(!commands.some((args) => args.includes("stop")));
   assert(!f.readCalls().some((args) => args.includes("-g")), "no global package tree is replaced");
   if (outcome === "success") assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+});
+
+
+test("internal runtime setup refuses direct invocation before host mutations", t => {
+  const f = fixture(t);
+  assert.throws(() => prepareIndependentRuntime(f.flags, f.cfg.pkgDir!, process.execPath), /live updater parent's maintenance window/);
+  assert.equal(existsSync(join(f.root, "host.jsonl")), false);
+});
+
+test("target runtime setup installs services and nginx without changing activation ownership", t => {
+  const f = fixture(t);
+  const pkg = join(f.cfg.dataDir, "releases", "candidate", "palmagent");
+  const node = join(f.cfg.dataDir, "runtimes", "candidate", "node");
+  mkdirSync(pkg, { recursive: true }); mkdirSync(dirname(node), { recursive: true });
+  writeFileSync(node, "Fixture retained runtime");
+  writeFileSync(join(pkg, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, hostSetup: 1, terminalProtocol: 1 }));
+  for (const name of ["cli.js", "server.js", "execution-host.js", "execution-launcher.js", "terminal-host.js", "terminal-launcher.js"]) writeFileSync(join(pkg, name), "// Fixture");
+  const installed = readFileSync(join(f.cfg.dataDir, "install.env"), "utf8");
+  const release = beginUpdateMaintenance(f.cfg.dbPath);
+  try {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+      import { prepareIndependentRuntime } from ${JSON.stringify(new URL("../src/cli/install.ts", import.meta.url).href)};
+      prepareIndependentRuntime({ dryRun: false, nonInteractive: true, force: false, purge: false, pull: false,
+        get: key => key === "data-dir" ? ${JSON.stringify(f.cfg.dataDir)} : undefined }, ${JSON.stringify(pkg)}, ${JSON.stringify(node)});
+    `], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const commands = readFileSync(join(f.root, "host.jsonl"), "utf8");
+    assert.match(commands, /palmagent-terminal@/);
+    assert.match(commands, /nginx/);
+    assert(!commands.includes("restart"));
+    assert.equal(readFileSync(join(f.cfg.dataDir, "install.env"), "utf8"), installed);
+    assert(isUpdateMaintenance(f.cfg.dbPath));
+  } finally { release(); }
 });
