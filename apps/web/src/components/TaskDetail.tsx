@@ -158,6 +158,12 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
   const status = task?.status;
   const running = status === "running";
+  const editedSettings = edit ? queue?.messages.find(message => message.id === edit.id)?.settings : undefined;
+  const settingsReadOnly = edit
+    ? "Settings are retained from the queued message."
+    : running && deliveryMode === "send" ? "Messages sent now use the running turn's settings." : undefined;
+  const displayedModel = settingsReadOnly ? (editedSettings?.model ?? task?.model) || DEFAULT_OPTION : model;
+  const displayedEffort = settingsReadOnly ? (editedSettings?.effort ?? task?.effort) || DEFAULT_OPTION : effort;
   const awaiting = status === "awaiting_approval";
   const needsInput = status === "awaiting_input";
   const active = running || status === "queued" || awaiting || needsInput;
@@ -362,7 +368,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
-            action="Send now" showSettings={!edit && !(running && deliveryMode === "send")}
+            action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
@@ -373,7 +379,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} />}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
-            settings={{ agent: task.agent, model, onModelChange: setModel, effort, onEffortChange: setEffort,
+            settings={{ agent: task.agent, model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
               permission, onPermissionChange: setPermission }} />}
         </div>
       </div>

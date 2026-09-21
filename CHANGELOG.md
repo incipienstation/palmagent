@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The skill picker uses a small slash keycap after the attachment button and compact
+  rows with each skill's icon, name and source. New tasks and conversations keep
+  model and effort beside Send, including a read-only summary for running turns
+  and queued-message edits.
+
 ## 0.1.0-alpha.57
 
 ### Fixed
