@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.64
+
 ### Changed
 
 - Codex CLI compatibility now includes 0.155.x alongside 0.154.x, verified with
