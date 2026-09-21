@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.67
+
 ### Added
 
 - Create and manage routines in natural language through the Palmagent plugin. Routines can now run scripts without an AI call, with timeouts, execution history, exit codes, and captured output.
