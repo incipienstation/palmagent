@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.61
+
 ### Added
 
 - Codex composers now have a microphone button beside Send. Speech is added to
