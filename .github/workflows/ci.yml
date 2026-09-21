@@ -92,6 +92,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Keep browser shards independent from the service-worker runner.
         # Packaging-only changes need one build and no browser shards.
         shard: ${{ fromJSON(needs.scope.outputs.web == 'true' && '[1,2,"sw"]' || '[1]') }}
     steps:
