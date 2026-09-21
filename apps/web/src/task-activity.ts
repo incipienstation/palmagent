@@ -3,7 +3,7 @@ import type { MessageQueue, TaskState } from "@palmagent/shared";
 import { onCacheSessionReset } from "./read-cache";
 import { beginBrowserWork } from "./update-state";
 
-export type QueuePreview = { apply: (queue: MessageQueue) => MessageQueue; id?: string; label: string };
+export type QueuePreview = { apply: (queue: MessageQueue) => MessageQueue; id?: string; label: string; submission?: boolean };
 interface Activity { token?: symbol; label?: string; preview?: QueuePreview; queue?: MessageQueue }
 const empty: Activity = {};
 const stopped = new Map<string, { finish: () => void; runId?: string | null }>();
@@ -12,6 +12,7 @@ const active = (task: TaskState) => ["queued", "running", "awaiting_input", "awa
 export function observeTaskActivity(task: TaskState) {
   if (task.updatedAt < (latestTasks.get(task.taskId)?.updatedAt ?? -Infinity)) return;
   latestTasks.set(task.taskId, task);
+  if (task.messageQueue) acceptMessageQueue(task.taskId, task.messageQueue);
   const waiting = stopped.get(task.taskId);
   if (waiting && (!active(task) || (waiting.runId && task.messageQueue?.runId && task.messageQueue.runId !== waiting.runId))) {
     stopped.delete(task.taskId); waiting.finish();
@@ -30,7 +31,12 @@ export const useTaskActivity = (id: string) => useSyncExternalStore(subscribe, (
 export function acceptMessageQueue(id: string, queue: MessageQueue) {
   const previous = activities.get(id) ?? empty;
   if (queue.revision < (previous.queue?.revision ?? -1)) return;
-  activities.set(id, { ...previous, queue }); notify();
+  // Once the server owns a submitted message, its receipt replaces the local
+  // preview. A later delivery snapshot must not re-add that preview while the
+  // original HTTP request is still in flight.
+  const preview = previous.preview?.submission && queue.messages.some(m => m.id === previous.preview?.id)
+    ? undefined : previous.preview;
+  activities.set(id, { ...previous, queue, preview }); notify();
 }
 export function clearQueuePreview(id: string) {
   const previous = activities.get(id);

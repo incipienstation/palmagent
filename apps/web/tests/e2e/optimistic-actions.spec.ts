@@ -172,6 +172,7 @@ for (const mode of ["send", "queue"] as const) test(`${mode} creates a pending i
   const pending = mode === "queue" ? page.getByRole("button", { name: /Queued message 1: Message before acknowledgment/ }) : page.getByRole("status", { name: "Pending message" });
   await expect(pending).toContainText(mode === "queue" ? "Adding…" : "Sending…");
   await expect(pending).toContainText("Message before acknowledgment");
+  if (mode === "send") await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox")).toHaveValue("");
   await expect(page.getByRole("textbox")).toBeDisabled();
   await send(page, "t-run", { type: "tasks", tasks: [task] });
@@ -182,6 +183,139 @@ for (const mode of ["send", "queue"] as const) test(`${mode} creates a pending i
   await expect(page.getByRole("textbox")).toBeEnabled();
   await expect(pending).toHaveCount(0);
   await expect(page.getByTestId("toast")).toContainText("Delivery could not be confirmed");
+});
+
+for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) test(`send stays separate from waiting turns through acknowledgment at ${viewport.width}px`, async ({ page }) => {
+  await page.setViewportSize(viewport);
+  const task = await queueSetup(page, [structuredClone(message)]);
+  const delayed = gate();
+  let accepted!: MessageQueue;
+  await page.route("**/api/tasks/t-run/messages", async route => {
+    const request = route.request().postDataJSON();
+    accepted = { ...task.messageQueue, revision: 2, messages: [message, {
+      id: request.clientMessageId, text: request.text, mode: "send", status: "sending", version: 1,
+    }] };
+    await delayed.wait;
+    await route.fulfill({ json: accepted });
+  });
+  await page.getByRole("textbox").fill("Immediate delivery");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  const pending = page.getByRole("status", { name: "Pending message" });
+  const queue = page.getByRole("region", { name: "Message queue", exact: true });
+  await expect(pending).toContainText("Immediate delivery");
+  await expect(pending).toContainText("Sending…");
+  await expect(queue).toContainText("Queue · 1");
+  await expect(queue).not.toContainText("Immediate delivery");
+  delayed.release();
+  await expect(page.getByRole("textbox")).toBeEnabled();
+  await expect(pending).toContainText("Sending…");
+  await expect(queue).toContainText("Queue · 1");
+  await assertViewportLocked(page);
+
+  task.messageQueue = accepted;
+  await page.evaluate(() => { location.hash = "/routines"; });
+  await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
+  await page.evaluate(() => { location.hash = "/task/t-run"; });
+  await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+  await expect(pending).toContainText("Immediate delivery");
+  task.messageQueue = { ...accepted, revision: 3, messages: [message] };
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(pending).toHaveCount(0);
+  await expect(queue).toContainText("Queue · 1");
+});
+
+for (const mode of ["send", "queue"] as const) test(`${mode} delivery problems stay outside Queue and dismissal rolls back`, async ({ page }) => {
+  const problem: PendingMessage = { ...message, id: "problem", mode, text: "Unconfirmed prompt", status: "unknown" };
+  const task = await queueSetup(page, [problem, message]);
+  task.messageQueue.paused = true;
+  task.messageQueue.revision++;
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  const pending = page.getByRole("status", { name: "Pending message" });
+  await expect(pending).toContainText("Delivery unconfirmed");
+  await expect(pending).toContainText("Check the conversation before sending again");
+  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toContainText("Queue paused · 1");
+  await expect(page.getByRole("button", { name: "Resume queue", exact: true })).toBeDisabled();
+  await assertViewportLocked(page);
+  const delayed = gate(); let calls = 0;
+  await page.route("**/api/tasks/t-run/messages/problem", async route => {
+    calls++; await delayed.wait;
+    await route.fulfill({ status: 503, json: { error: "Could not dismiss notice" } });
+  });
+  await page.getByRole("button", { name: "Dismiss delivery notice" }).click();
+  await expect(pending).toHaveCount(0);
+  delayed.release();
+  await expect(pending).toContainText("Delivery unconfirmed");
+  expect(calls).toBe(1);
+  problem.status = "rejected";
+  task.messageQueue.revision++;
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(pending).toContainText("Not sent");
+  await expect(pending).not.toContainText("Delivery unconfirmed");
+});
+
+test("sending a queued message moves it immediately and restores its position on rejection", async ({ page }) => {
+  const following = { ...message, id: "following", text: "Following turn" };
+  await queueSetup(page, [message, following]);
+  const delayed = gate();
+  await page.route(`**/api/tasks/t-run/messages/${message.id}`, async route => {
+    await delayed.wait; await route.fulfill({ status: 409, json: { error: "The active run changed" } });
+  });
+  await queueMenu(page, message.text);
+  await page.getByRole("button", { name: "Send now", exact: true }).last().click();
+  await expect(page.getByRole("status", { name: "Pending message" })).toContainText(message.text);
+  await expect(page.getByRole("button", { name: "Queued message 1: Following turn" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toContainText("Queue · 1");
+  delayed.release();
+  await expect(page.getByRole("status", { name: "Pending message" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Queued message 1: Queued original" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Queued message 2: Following turn" })).toBeVisible();
+});
+
+test("an automatically started queued turn leaves only waiting turns in Queue", async ({ page }) => {
+  const task = await queueSetup(page, [message, { ...message, id: "next", text: "Next turn" }]);
+  task.messageQueue = { ...task.messageQueue, revision: 2, messages: [
+    { ...message, status: "sending" }, task.messageQueue.messages[1],
+  ] };
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Queued original");
+  await expect(page.getByRole("button", { name: "Queued message 1: Next turn" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toContainText("Queue · 1");
+});
+
+test("a paused send can resume without showing a waiting-turn queue", async ({ page }) => {
+  const task = await queueSetup(page, [{ ...message, mode: "send" }]);
+  task.messageQueue.paused = true;
+  task.messageQueue.revision++;
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Send paused");
+  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resume delivery" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Cancel send" })).toBeEnabled();
+});
+
+test("delivery snapshots settle the optimistic bubble before a stale HTTP response", async ({ page }) => {
+  const task = await queueSetup(page);
+  const delayed = gate(); let accepted!: MessageQueue;
+  await page.route("**/api/tasks/t-run/messages", async route => {
+    const request = route.request().postDataJSON();
+    accepted = { ...task.messageQueue, revision: 2, messages: [{
+      id: request.clientMessageId, text: request.text, mode: "send", status: "sending", version: 1,
+    }] };
+    await delayed.wait; await route.fulfill({ json: accepted });
+  });
+  await page.getByRole("textbox").fill("Delivered before HTTP");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect.poll(() => accepted?.revision).toBe(2);
+  task.messageQueue = accepted;
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Sending…");
+  task.messageQueue = { ...accepted, revision: 3, messages: [] };
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(page.getByRole("status", { name: "Pending message" })).toHaveCount(0);
+  delayed.release();
+  await expect(page.getByRole("textbox")).toBeEnabled();
+  await expect(page.getByRole("status", { name: "Pending message" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
 });
 
 test("a lost send acknowledgment keeps the same id and original run when retried after navigation", async ({ page }) => {
@@ -215,7 +349,10 @@ for (const action of ["delete", "send"] as const) test(`queued ${action} is imme
   await queueMenu(page, message.text);
   await page.getByRole("button", { name: action === "delete" ? "Remove from queue" : "Send now", exact: true }).last().click();
   if (action === "delete") await expect(page.getByRole("button", { name: /Queued message 1:/ })).toBeHidden();
-  else await expect(page.getByRole("button", { name: /Queued message 1:/ })).toContainText("Sending…");
+  else {
+    await expect(page.getByRole("button", { name: /Queued message 1:/ })).toBeHidden();
+    await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Sending…");
+  }
   task.messageQueue.messages = []; task.messageQueue.revision = 2;
   await send(page, "t-run", { type: "tasks", tasks: [task] }); delayed.release();
   await expect(page.getByTestId("toast")).toContainText("Message already delivered");

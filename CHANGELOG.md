@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Send now shows immediate delivery feedback until confirmation instead of moving
+  into Queue. Queue lists waiting turns only; sending a queued message moves it
+  out immediately, and delivery problems remain visible separately.
+
 ## 0.1.0-alpha.59
 
 ### Added
