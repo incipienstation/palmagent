@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Codex composers now have a microphone button beside Send. Speech is added to
+  the draft after a pause, preserving edits and leaving submission under your
+  control. Voice input uses the installed Codex login and requires microphone
+  access and a Codex version with experimental WebRTC voice support.
+
 ## 0.1.0-alpha.60
 
 ### Fixed

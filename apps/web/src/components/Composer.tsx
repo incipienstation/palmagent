@@ -1,5 +1,7 @@
+import { useVoiceInput } from "../use-voice-input";
+import { Alert } from "./ui/alert";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Check, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Loader2, Mic, Square } from "lucide-react";
 import { SkillChips, SkillMenu, SkillTrigger, useSkillPicker } from "./SkillPicker";
 import { Popover, PopoverAnchor } from "./ui/popover";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
@@ -74,7 +76,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
 }
 
 export function Composer({ id, value, onChange, placeholder, label, action, onSend, busy, disabled, sendDisabled,
-  attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange }: {
+  attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange, voiceScope = id }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
@@ -91,6 +93,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   controls?: ReactNode;
   header?: ReactNode;
   settingsReadOnly?: string;
+  voiceScope?: string;
   skillContext?: SkillContext;
   skills?: SkillSelection[];
   onSkillsChange?: (skills: SkillSelection[]) => void;
@@ -102,8 +105,14 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
   const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy });
-  const cannotSend = disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0 && !skills?.length);
-  const expanded = !!skills?.length || picker.open || !!header || focused || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
+  const latest = useRef({ value, onChange }); latest.current = { value, onChange };
+  const voice = useVoiceInput(settings.agent === "codex" ? skillContext : undefined, voiceScope, !!(disabled || busy), text => {
+    const draft = latest.current.value;
+    const next = draft + (draft && !/\s$/.test(draft) ? " " : "") + text;
+    latest.current.value = next; latest.current.onChange(next);
+  }, () => !composing.current);
+  const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0 && !skills?.length);
+  const expanded = voice.active || !!voice.error || !!skills?.length || picker.open || !!header || focused || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
   useLayoutEffect(() => {
     const el = textarea.current;
     if (!el) return;
@@ -153,6 +162,10 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       placeholder={placeholder} disabled={disabled || busy}
       className="order-1 max-h-36 basis-full px-3 py-2.5"
     />
+    {(voice.error || voice.active) && <InputGroupAddon align="block-start" className="px-3">
+      {voice.error ? <Alert variant="destructive">{voice.error}</Alert>
+        : <span role="status" className="text-xs text-muted-foreground">{voice.state === "starting" ? "Connecting microphone…" : voice.state === "stopping" ? "Finishing transcription…" : "Listening… tap the microphone to finish."}</span>}
+    </InputGroupAddon>}
     {!!skills?.length && <InputGroupAddon align="block-start" className="px-3 pt-2"><SkillChips skills={skills} disabled={disabled || busy} onRemove={() => onSkillsChange?.([])} /></InputGroupAddon>}
     {header && <InputGroupAddon align="block-start" className="px-3">{header}</InputGroupAddon>}
     {attachments.images.length > 0 && <InputGroupAddon align="block-start" className="px-3 pt-2">
@@ -193,7 +206,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
           </div>
         </SheetContent>
       </Sheet>
-      {controls ?? <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
+      {settings.agent === "codex" && <Button type="button" variant={voice.active ? "selected" : "ghost"} size="icon-lg"
+        className="shrink-0" aria-label={voice.active ? "Stop voice input" : "Start voice input"} title={voice.active ? "Stop voice input" : "Start voice input"}
+        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={voice.toggle}>
+        {voice.state === "starting" || voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
+      </Button>}
+      {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
         size="icon-lg" className="shrink-0"
         disabled={cannotSend}>
         {busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}

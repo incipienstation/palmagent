@@ -1,3 +1,4 @@
+import { voiceRoutes } from "./routes/voice.js";
 import { terminalRoutes } from "./routes/terminals.js";
 import { Hono } from "hono";
 import { authBudget } from "./auth-budget.js";
@@ -45,6 +46,7 @@ export function createApp(deps: HttpDependencies) {
       c.header("Cache-Control", "no-store");
       return c.json(await service.availableSkills(c.req.valid("query")), 200);
     })
+    .route("/api/voice", voiceRoutes(deps))
     .route("/api/terminals", terminalRoutes(deps))
     .route("/api/tasks", taskRoutes(deps))
     .route("/api", repoRoutes(deps))

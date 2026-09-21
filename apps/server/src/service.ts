@@ -1,3 +1,4 @@
+import { VoiceSessions } from "./voice.js";
 import { LocalAttachmentStorage, sanitizeImages } from "./attachments.js";
 import { SkillDiscovery, skillId, type SkillEnvironment } from "./skills.js";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
@@ -55,7 +56,7 @@ export class TaskService {
   }
 
   private shuttingDown = false;
-  beginShutdown(): void { this.shuttingDown = true; this.messages.close(); }
+  beginShutdown(): void { this.shuttingDown = true; this.messages.close(); this.voice.close(); }
 
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
   private sessionMismatch = new Set<string>();
@@ -73,6 +74,13 @@ export class TaskService {
 
   readonly messages: MessageController;
   readonly skillDiscovery = new SkillDiscovery();
+  readonly voice = new VoiceSessions();
+  startVoice(context: SkillContext, sdp: string, signal?: AbortSignal) {
+    const env = this.skillEnvironment(context);
+    if (env.agent !== "codex") throw badRequest("Voice input is available only for Codex.");
+    if (this.shuttingDown || this.updating) throw new HttpError(503, "Voice input is unavailable while restarting.");
+    return this.voice.start(env.home, sdp, signal);
+  }
   private skillEnvironment(context: SkillContext): SkillEnvironment {
     if (context.taskId) {
       const task = this.getTask(context.taskId);
