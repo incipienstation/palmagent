@@ -18,7 +18,7 @@ async function setup(page: Page) {
   const calls: any[] = [];
   await page.route("**/api/tasks/t-run/messages**", async route => {
     const req = route.request().postDataJSON(); calls.push(req);
-    if (req.mode === "queue") state.messages.push({ id: req.clientMessageId, version: 1, status: "queued", mode: "queue", text: req.text, images: req.images });
+    if (req.mode === "queue") state.messages.push({ id: req.clientMessageId, version: 1, status: "queued", mode: "queue", text: req.text, images: req.images, settings: req.settings });
     if (req.action === "save") { state.messages[0].text = req.text; state.messages[0].version++; delete state.messages[0].editingUntil; }
     if (req.action === "edit" || req.action === "renew") state.messages[0].editingUntil = Date.now() + 60000;
     if (req.action === "release") delete state.messages[0].editingUntil;
@@ -30,6 +30,46 @@ async function setup(page: Page) {
   await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, messageQueue: state }], replayThrough: 0 });
   return { calls, state };
 }
+
+test("running and queued-edit summaries show the applicable settings without changing them", async ({ page }) => {
+  const { calls, state } = await setup(page);
+  const input = page.getByRole("textbox");
+  const summary = page.getByRole("button", { name: "Current model and effort" });
+  const settings = page.getByRole("button", { name: "Configure model and effort" });
+  await expect(summary).toBeVisible();
+  await expect(summary).toBeDisabled();
+  await expect(summary).toHaveText("sonnet");
+  const control = page.getByRole("button", { name: "Send now", exact: true });
+  await control.focus(); await control.press("ArrowDown");
+  await page.getByRole("radio", { name: "Queue", exact: true }).click();
+  await settings.click();
+  await page.getByRole("radio", { name: "opus", exact: true }).click();
+  await page.getByRole("combobox", { name: "Effort", exact: true }).click();
+  await page.getByRole("option", { name: "high", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await input.fill("Use these settings later");
+  await page.getByRole("button", { name: "Add to queue" }).click();
+  await expect.poll(() => calls.filter(call => call.mode === "queue").length).toBe(1);
+  expect(calls.find(call => call.mode === "queue").settings).toMatchObject({ model: "opus", effort: "high" });
+  // The next live message still uses the running turn, not the queue overrides.
+  await expect(summary).toHaveText("sonnet");
+  await input.fill("Ordinary draft");
+  await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
+  await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
+  await expect(summary).toHaveText("opus · high");
+  await expect(summary).toBeDisabled();
+  await page.getByRole("button", { name: "Cancel editing" }).click();
+  await expect(input).toHaveValue("Ordinary draft");
+  await expect(summary).toHaveText("sonnet");
+  // Empty persisted overrides explicitly reset to the agent's default; they
+  // must not inherit the running model or produce a blank summary.
+  state.messages[0].settings = { model: "", effort: "" };
+  await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
+  await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
+  await expect(summary).toHaveText("Claude");
+  await page.getByRole("button", { name: "Cancel editing" }).click();
+  await expect(summary).toHaveText("sonnet");
+});
 
 test("long press opens a haptic toggle without sending; selection applies to one draft", async ({ page }) => {
   const { calls } = await setup(page);

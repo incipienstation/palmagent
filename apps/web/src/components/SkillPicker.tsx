@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction, type KeyboardEvent, type RefObject } from "react";
-import { BookOpen, Slash, X } from "lucide-react";
+import { BookOpen, X } from "lucide-react";
 import { SelectedSkillsSchema, type AvailableSkill, type SkillContext, type SkillSelection } from "@palmagent/shared";
 import { api } from "../api";
 import { useDraft } from "../hooks/useDraft";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
+import { Kbd } from "./ui/kbd";
 import { PopoverContent } from "./ui/popover";
-import { cn } from "../lib/utils";
 
 function parseSkillDraft(raw: string): SkillSelection[] {
   try { return SelectedSkillsSchema.parse(JSON.parse(raw || "[]")) ?? []; } catch { return []; }
@@ -109,27 +109,31 @@ export function useSkillPicker({ value, onChange, context, onSelect, textarea, d
 export function SkillMenu({ picker, textarea }: { picker: ReturnType<typeof useSkillPicker>; textarea: RefObject<HTMLTextAreaElement | null> }) {
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => { list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }, [picker.selected]);
-  return <PopoverContent side="top" align="start" className="w-[min(26rem,calc(100vw-2rem))] p-2" aria-label="Skills"
+  return <PopoverContent side="top" align="start" className="w-[min(26rem,calc(100vw-2rem))] p-1" aria-label="Skills"
     onOpenAutoFocus={e => e.preventDefault()} onCloseAutoFocus={e => e.preventDefault()}
     onInteractOutside={e => { if (e.target === textarea.current) e.preventDefault(); }}>
-    <div className="flex items-center justify-between px-2 pb-1 text-sm text-muted-foreground"><span>Skills</span><span>Type / to search</span></div>
+    <div className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground"><span>Skills</span><span>Type / to search</span></div>
     {picker.loading ? <p role="status" className="p-2 text-sm">Loading skills…</p>
       : picker.error ? <div className="p-2"><p role="alert" className="text-sm">{picker.error}</p><Button type="button" variant="ghost" onClick={picker.retry}>Try again</Button></div>
       : <div ref={list} id={picker.id} role="listbox" aria-label="Available skills" className="max-h-[min(16rem,35dvh)] overflow-y-auto overscroll-contain">
         {picker.matches.length === 0 && <p role="status" className="p-2 text-sm text-muted-foreground">No matching skills in this environment.</p>}
         {picker.matches.map((skill, index) => <Button key={skill.id} type="button" role="option" id={`${picker.id}-${index}`}
-          aria-selected={picker.selected === index} tabIndex={-1} variant="ghost"
-          className={cn("h-auto min-h-12 w-full justify-start gap-3 whitespace-normal px-2 py-2 text-left", picker.selected === index && "bg-accent")}
+          aria-selected={picker.selected === index} tabIndex={-1} variant={picker.selected === index ? "selected" : "ghost"}
+          className="h-auto min-h-12 w-full justify-start gap-2 rounded-[6px] px-2 py-1.5 text-left"
+          title={`${skill.name}\n${skill.source} · ${skill.description}`}
           onMouseDown={e => e.preventDefault()} onClick={() => picker.pick(skill)}>
           <SkillIcon skill={skill} /><span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="break-words">{skill.name}</span><span className="line-clamp-2 text-xs font-normal text-muted-foreground">{skill.description}</span>
-            <span className="text-xs font-normal text-muted-foreground">{skill.source}</span>
+            <span className="truncate">{skill.name}</span>
+            <span className="truncate text-xs font-normal text-muted-foreground">{skill.source} · {skill.description}</span>
           </span>
         </Button>)}
       </div>}
     {picker.warning && <p role="status" className="p-2 text-xs text-muted-foreground">{picker.warning}</p>}
   </PopoverContent>;
 }
-export function SkillTrigger({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
-  return <Button type="button" variant="ghost" size="icon-lg" aria-label="Choose a skill" title="Skills (/)" disabled={disabled} onClick={onClick}><Slash /></Button>;
+export function SkillTrigger({ onClick, disabled, open }: { onClick: () => void; disabled?: boolean; open: boolean }) {
+  return <Button type="button" variant="ghost" size="icon-lg" aria-label="Choose a skill" title="Skills (/)"
+    aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={onClick}>
+    <Kbd aria-hidden className="size-5 border border-current bg-transparent shadow-none">/</Kbd>
+  </Button>;
 }
