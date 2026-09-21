@@ -13,7 +13,7 @@ export function MessageDelivery({ messages, paused, disabled, resumeDisabled, on
   onDelete: (message: PendingMessage) => void; onResume: () => void;
 }) {
   if (!messages.length) return null;
-  return <section aria-label="Message delivery status" className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+  return <section aria-label="Message delivery status" className="flex max-h-[min(16rem,30dvh)] flex-col gap-2 overflow-y-auto">
     {messages.map(message => {
       const uncertain = message.status === "unknown";
       const rejected = message.status === "rejected";
