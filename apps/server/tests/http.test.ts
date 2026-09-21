@@ -619,6 +619,11 @@ test("stored attachments require authentication and task membership, survive arc
   assert.equal((await f.app.request("/api/tasks/stored/attachments/not-an-id", { headers })).status, 400);
   f.service.archive("stored"); f.service.archive("other");
   assert.equal((await f.app.request(path, { headers })).status, 200);
+  f.db.setAttachmentLifecycle(ref.id, null, Date.now());
+  const expired = await f.app.request(path, { headers });
+  assert.equal(expired.status, 410);
+  assert.equal(expired.headers.get("cache-control"), "no-store");
+  assert.equal((await f.app.request(path)).status, 401);
   f.service.deleteRepo("r");
   assert.equal((await f.app.request(path, { headers })).status, 404);
   assert.equal(f.db.attachmentIds().size, 0);

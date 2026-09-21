@@ -56,7 +56,12 @@ export class TaskService {
   }
 
   private shuttingDown = false;
-  beginShutdown(): void { this.shuttingDown = true; this.messages.close(); this.voice.close(); }
+  beginShutdown(): void {
+    this.shuttingDown = true;
+    this.messages.close();
+    this.voice.close();
+    this.attachments.close();
+  }
 
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
   private sessionMismatch = new Set<string>();
@@ -113,7 +118,7 @@ export class TaskService {
     private readonly push?: PushService,
     private readonly maintenance: () => boolean = () => false,
   ) {
-    this.attachments = new LocalAttachmentStorage(db);
+    this.attachments = new LocalAttachmentStorage(db, config.attachmentStorage);
     this.messages = new MessageController(db, {
       assertWritable: (id) => {
         this.assertTaskAdmission();
@@ -185,7 +190,7 @@ export class TaskService {
   // in-process backend nothing is ever live → every in-flight task resets,
   // exactly the pre-daemon behavior.
   async init(): Promise<void> {
-    this.attachments.prune();
+    this.attachments.start();
     for (const t of this.db.listTasks()) {
       this.cache.set(t.taskId, t);
       const control = this.backend.loadControl?.(t.taskId);
