@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        lane: [tooling, server, web-1, web-2, sw]
+        lane: [tooling, server, web-1, web-2, web-3, sw]
     env:
       RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
     steps:

@@ -20,17 +20,18 @@ test('parallel plan retains every source check exactly once', () => {
   assert.deepEqual(actual.sort(), manifest.scripts.verify.split('&&').map(value => value.trim()).sort());
 });
 
-test('distributed verification covers both browser shards and the service worker once', () => {
+test('distributed verification covers all three browser shards and the service worker once', () => {
   assert.equal(canDistributeCandidate(manifest, webManifest), true);
-  const lanes = ['tooling', 'server', 'web-1', 'web-2', 'sw'].map(candidateLane);
+  const lanes = ['tooling', 'server', 'web-1', 'web-2', 'web-3', 'sw'].map(candidateLane);
   assert.deepEqual(lanes.flat().filter(s => s.command === 'pnpm').map(s => s.args[0]),
     ['typecheck', 'pkg:check', 'server:contracts', 'server:smoke']);
   assert.deepEqual(lanes.flat().filter(s => s.command !== 'pnpm').map(s => s.args), [
-    ['apps/web/scripts/run-e2e.mjs', '--shard=1/2'],
-    ['apps/web/scripts/run-e2e.mjs', '--shard=2/2'],
+    ['apps/web/scripts/run-e2e.mjs', '--shard=1/3'],
+    ['apps/web/scripts/run-e2e.mjs', '--shard=2/3'],
+    ['apps/web/scripts/run-e2e.mjs', '--shard=3/3'],
     ['apps/web/scripts/test-sw-update.mjs'],
   ]);
-  for (const name of ['', 'web-3', 'constructor', '__proto__']) assert.throws(() => candidateLane(name));
+  for (const name of ['', 'web-4', 'constructor', '__proto__']) assert.throws(() => candidateLane(name));
 });
 
 test('browser gate additions and build lifecycle hooks keep the complete source fallback', () => {
