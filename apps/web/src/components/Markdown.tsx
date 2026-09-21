@@ -7,6 +7,7 @@ import { cachedMarkdown, markdownParser } from "../markdown-worker";
 import { markdownUrlTransform } from "../image-source";
 import { ImageLinkContext, ImagePreview } from "./ImagePreview";
 import { MermaidBlock } from "./MermaidBlock";
+import { CodeBlock } from "./CodeBlock";
 
 import { cn } from "@/lib/utils";
 
@@ -56,11 +57,14 @@ const COMPONENTS = {
   ),
   pre: ({ children, node }) => {
     const code = node?.children[0];
-    if (code?.type === "element" && code.tagName === "code"
-      && Array.isArray(code.properties.className)
-      && code.properties.className.includes("language-mermaid")) {
+    if (code?.type === "element" && code.tagName === "code") {
       const source = code.children.map(child => child.type === "text" ? child.value : "").join("");
-      return <MermaidBlock source={source} />;
+      const language = Array.isArray(code.properties.className)
+        ? code.properties.className.find(value => typeof value === "string" && value.startsWith("language-"))?.toString().slice(9) : undefined;
+      if (language === "mermaid") return <MermaidBlock source={source} />;
+      const meta = typeof code.data?.meta === "string" ? code.data.meta : "";
+      const filename = /(?:^|\s)(?:title|filename)="([^"]+)"/.exec(meta)?.[1];
+      return <CodeBlock source={source} language={language} filename={filename} />;
     }
     return <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 font-mono text-[12.5px] leading-[18px] text-strong [&>code]:bg-transparent [&>code]:p-0">
       {children}

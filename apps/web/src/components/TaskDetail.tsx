@@ -40,6 +40,7 @@ import { AgentTag, StatusBadge } from "./chips";
 import { PrList } from "./PrChip";
 import { EventLog } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
+import { ApprovalCard } from "./ApprovalCard";
 import { SessionHandoff } from "./SessionHandoff";
 import { Alert } from "./ui/alert";
 import { SessionActionsMenu } from "./SessionActionsMenu";
@@ -339,23 +340,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           )}
 
           {awaiting && (
-            <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                disabled={busy}
-                onClick={() => act("Approving…", () => api.approve(taskId, { decision: "approve" }))}
-              >
-                Approve
-              </Button>
-              <Button
-                variant="destructive"
-                className="flex-1"
-                disabled={busy}
-                onClick={() => act("Denying…", () => api.approve(taskId, { decision: "deny" }))}
-              >
-                Deny
-              </Button>
-            </div>
+            <ApprovalCard busy={busy} onDecision={decision => void act(decision === "approve" ? "Approving…" : "Denying…", () => api.approve(taskId, { decision }))} />
           )}
 
           <MessageDelivery messages={pendingDeliveries} paused={queue?.paused ?? false} disabled={busy || localOwner || !!edit}

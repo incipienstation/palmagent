@@ -25,7 +25,10 @@ import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
 import { ImagePreview, ImageTaskContext } from "./ImagePreview";
-import { activityLabel, failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
+import { failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
+import { ActivitySummary } from "./ActivitySummary";
+import { ApprovalRequest } from "./ApprovalCard";
+import { payload } from "../transcript";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
 // strong text; machinery (tool_call/result/status/error/etc.) reads as a quieter,
@@ -226,6 +229,11 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
   if (item.kind === "question") {
     const qs = ((item.event.payload as { questions?: AskQuestion[] })?.questions) ?? [];
     return <QuestionRecord questions={qs} />;
+  }
+
+  if (item.kind === "approval_request" && !raw) {
+    return <ApprovalRequest payload={payload(item)} full={describeEvent(item.event, { full: true })}
+      expanded={expanded} onToggle={() => toggle(item.key)} />;
   }
 
   if (item.kind === "output_image") {
@@ -497,14 +505,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
       {row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
-        <div data-activity className={cn("min-w-0 font-sans text-muted-foreground", !row.open && "mb-2")}>
-          <Button variant="ghost" className="group w-full justify-start px-0" title={activityLabel(row.activity, mode)}
-            aria-expanded={row.open} onClick={() => { if (row.open) rememberDisclosure(row.key); toggleActivity(row.activity, !row.open); }}>
-            <ChevronRight data-icon="inline-start" className={row.open ? "rotate-90" : undefined} />
-            <span className="truncate">{activityLabel(row.activity, mode)}</span>
-          </Button>
-          {!row.open && row.activity.preview && <div data-progress-preview className={cn("text-[13px] break-words [overflow-wrap:anywhere]", mode === "compact" ? "line-clamp-1" : "line-clamp-2")}>{row.activity.preview}</div>}
-        </div> : <div data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
+        <ActivitySummary activity={row.activity} mode={mode} open={row.open}
+          onToggle={() => { if (row.open) rememberDisclosure(row.key); toggleActivity(row.activity, !row.open); }} />
+        : <div data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
           <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
             expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggleRow} onImageLoad={followBottom} />
         </div>}
