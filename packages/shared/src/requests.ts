@@ -29,8 +29,25 @@ const cadence = {
   schedule: text.optional(), hour: z.number().int().min(0).max(23).optional(),
   dayOfWeek: z.number().int().min(0).max(6).optional(),
 };
-export const CreateRoutineSchema = z.object({ repoId: required, agent, prompt: required, ...cadence, ...settings, title: text.optional() });
-export const UpdateRoutineSchema = z.object({ prompt: required.optional(), ...cadence, ...settings, title: text.optional(), enabled: z.boolean().optional() });
+export const RoutineScriptSchema = z.object({
+  command: text.trim().min(1).max(16_000),
+  timeoutSeconds: z.number().int().min(1).max(3600).optional(),
+});
+export const CreateRoutineSchema = z.object({ repoId: required, agent: agent.optional(), prompt: required.optional(),
+  kind: z.enum(["agent", "script"]).optional(), script: RoutineScriptSchema.optional(),
+  ...cadence, ...settings, title: text.optional(), enabled: z.boolean().optional(),
+}).superRefine((value, ctx) => {
+  if (value.kind === "script") {
+    if (!value.script) ctx.addIssue({ code: "custom", path: ["script"], message: "script is required" });
+    if ([value.agent, value.prompt, value.permission, value.model, value.effort].some(field => field !== undefined)) {
+      ctx.addIssue({ code: "custom", message: "script routines do not accept agent settings" });
+    }
+  } else {
+    if (!value.agent || !value.prompt?.trim()) ctx.addIssue({ code: "custom", message: "agent and prompt are required" });
+    if (value.script) ctx.addIssue({ code: "custom", path: ["script"], message: "script requires kind script" });
+  }
+});
+export const UpdateRoutineSchema = z.object({ script: RoutineScriptSchema.optional(), prompt: required.optional(), ...cadence, ...settings, title: text.optional(), enabled: z.boolean().optional() });
 export const PushSubscriptionSchema = z.object({ endpoint: required, expirationTime: z.number().nullable().optional(), keys: z.record(text).optional() });
 export const PushSubscribeSchema = z.object({ subscription: PushSubscriptionSchema });
 export const PushUnsubscribeSchema = z.object({ endpoint: required });

@@ -78,6 +78,7 @@ export type ApiSchema = {
     $delete: Endpoint<Id, Response.RoutineResponse>;
   };
   "/api/routines/:id/run": { $post: Endpoint<Id, Response.RoutineResponse> };
+  "/api/routines/:id/stop": { $post: Endpoint<Id, Response.RoutineResponse> };
   "/api/routines/:id/runs": { $get: Endpoint<Id, Response.RoutineRunsResponse> };
   "/api/settings/repos": {
     $get: Endpoint<{}, RepoSettingsStatus>;

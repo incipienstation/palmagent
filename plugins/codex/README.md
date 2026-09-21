@@ -11,6 +11,7 @@ description):
 
 | Skill                | Drives            | Use it for                                   |
 |----------------------|-------------------|----------------------------------------------|
+| `routine` | `palmagent routine` | Schedule and manage agent tasks or scripts from natural language |
 | `dispatch` | `palmagent session dispatch` | Continue a local agent session in Palmagent |
 | `settings` | Config and scheduler APIs | Manage channels and automatic updates |
 | `install` | `palmagent install` | First-run install on a fresh host   |

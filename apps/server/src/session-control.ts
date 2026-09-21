@@ -28,7 +28,7 @@ export function localSessionRequest(dataDir: string, body: DispatchSessionReques
 
 // This Unix socket is a host-owner capability, separate from browser passkeys.
 // Exposes local-session dispatch and terminal management to the installation owner.
-export async function startSessionControl(dataDir: string, service: TaskService, terminals?: import("./terminal/service.js").TerminalService) {
+export async function startSessionControl(dataDir: string, service: TaskService, terminals?: import("./terminal/service.js").TerminalService, routines?: import("./routines.js").RoutineService) {
   ensurePrivateParent(dataDir);
   const socket = sessionSocket(dataDir);
   try {
@@ -46,7 +46,7 @@ export async function startSessionControl(dataDir: string, service: TaskService,
     });
     try { unlinkSync(socket); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const app = createSessionApp(service, terminals);
+  const app = createSessionApp(service, terminals, routines);
   const server = createServer({ requestTimeout: 10_000 }, getRequestListener(app.fetch));
   const oldMask = process.umask(0o077);
   try {

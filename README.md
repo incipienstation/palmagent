@@ -82,6 +82,27 @@ downgrade is refused; returning to an older release requires a separately planne
 A missing Stable release never falls back to Preview. See the
 [settings and channel policy](.harness/skills/release/references/channels-and-updates.md#npm-channels).
 
+## Routines
+
+Ask the Palmagent plugin, for example, “Run the report script every weekday at 9”
+or “Create a daily Codex review for this space.” The `routine` skill creates the
+same routines shown in the app. It also supports inspecting history, changing
+schedules, pausing, deleting, and explicitly running a routine now.
+
+Choose **Agent task** for reasoning or **Script** for code execution without an AI call.
+Scripts run through `/bin/sh` as the server account. Git spaces use a fresh worktree
+from the configured base ref; commit referenced scripts first, because untracked files
+and installed dependencies are not copied. Plain folders run in place. Worktrees and
+generated files are retained; their locations appear in execution history. Removing a
+routine removes its history but leaves those files on disk.
+
+Scripts have a configurable timeout (default five minutes, maximum one hour), capture
+up to 64 KiB of combined output, and record their exit status. Each routine can have
+one running script; the server runs up to four scripts at once. Busy scheduled runs
+are recorded as skipped. Use **Stop script** in the app or ask the plugin to stop a run. Scripts stop when the server stops or updates, and are not
+retried automatically. Missed schedules do not catch up after a restart. All schedules
+use the server timezone; the plugin checks it when interpreting natural-language times.
+
 ## Plugin skills
 
 In the PWA, type `/` or tap the skill button to select an available skill for a message.
@@ -92,6 +113,7 @@ The CLI commands below are internal plugin operations.
 
 | Skill | CLI command | Purpose |
 | --- | --- | --- |
+| `routine` | `palmagent routine` | Schedule and manage agent tasks or scripts from natural language |
 | `dispatch` | `palmagent session dispatch` | Continue the current local agent session in Palmagent |
 | `settings` | `palmagent settings`, `palmagent config`, `palmagent auto-update` | Manage Space search paths, shared preferences, and access-triggered updates |
 | `install` | `palmagent install` | Install Palmagent and configure HTTPS and a first passkey |

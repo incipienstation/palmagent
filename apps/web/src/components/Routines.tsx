@@ -5,6 +5,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
 import { CalendarClock, ChevronRight, MoreVertical, Play, Plus, Trash2, X } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { Alert } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -47,9 +49,7 @@ import { AppBar, AppShell } from "./AppShell";
 import { AgentTag } from "./chips";
 import { EmptyState } from "./EmptyState";
 
-// Routines: recurring dispatch on a friendly cadence (preset → cron) or
-// manual run-now. Each fire creates a fresh task from the template (visible in
-// the inbox like any other task) and is recorded in the routine's run history.
+// Routines: recurring agent tasks or scripts, with shared cadence and history.
 
 const AGENTS: AgentKind[] = ["claude", "codex"];
 const PRESETS: RoutinePreset[] = ["hourly", "daily", "weekly", "weekdays", "manual", "custom"];
@@ -59,7 +59,8 @@ const PRESET_LABEL: Record<RoutinePreset, string> = {
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const hhmm = (h: number) => `${String(h).padStart(2, "0")}:00`;
 const RUN_LABEL: Record<RoutineRun["status"], string> = {
-  fired: "Ran on schedule", manual: "Ran (manual)", skipped: "Skipped (server was down)",
+  fired: "Ran on schedule", manual: "Ran (manual)", skipped: "Skipped",
+  running: "Script running", succeeded: "Script succeeded", failed: "Failed", interrupted: "Interrupted",
 };
 
 // Friendly one-line cadence for a routine card. Custom routines show their raw
@@ -106,33 +107,40 @@ function fmtNext(ms?: number): string {
   return fmtTime(ms);
 }
 
-function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
+function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete }: {
   r: Routine;
   busy: boolean;
   saving: boolean;
   stale: boolean;
   onToggle: () => void;
   onRun: () => void;
+  onStop: () => void;
   onDelete: () => void;
 }) {
   const [history, setHistory] = useState<RoutineRun[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
-
   const [historyAttempt, setHistoryAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!showHistory || !history?.some(run => run.status === "running")) return;
+    const timer = setInterval(() => setHistoryAttempt(value => value + 1), 3000);
+    return () => clearInterval(timer);
+  }, [showHistory, history]);
+
   const loadHistory = () => setHistoryAttempt(value => value + 1);
   useForegroundRefresh(() => { if (showHistory) loadHistory(); });
   useEffect(() => {
     if (!showHistory) return;
     let active = true;
     setHistoryLoading(true); setHistoryError("");
-    void api.routineRuns(r.id)
+    void api.routineRuns(r.id, r.kind === "script")
       .then(value => { if (active) setHistory(value); })
       .catch(error => { if (active) setHistoryError(errMsg(error)); })
       .finally(() => { if (active) setHistoryLoading(false); });
     return () => { active = false; };
-  }, [showHistory, r.id, r.updatedAt, r.lastRunAt, historyAttempt]);
+  }, [showHistory, r.id, r.kind, r.updatedAt, r.lastRunAt, historyAttempt]);
 
   function toggleHistory() { setShowHistory(value => !value); }
 
@@ -141,7 +149,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
       <CardContent className="p-4 pb-0">
         <div className="flex items-start gap-3">
           <span className="min-w-0 flex-1 truncate text-[15px] leading-5 font-semibold text-strong">
-            {r.title?.trim() || r.prompt.split("\n")[0]}
+            {r.title?.trim() || (r.script?.command ?? r.prompt).split("\n")[0]}
           </span>
           <Switch
             checked={r.enabled}
@@ -151,9 +159,9 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
             aria-label="Enabled"
           />
         </div>
-        <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{r.prompt}</p>
+        <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{r.script?.command ?? r.prompt}</p>
         <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-          <AgentTag agent={r.agent} />
+          {r.kind === "script" ? <Badge variant="secondary">Script</Badge> : <AgentTag agent={r.agent} />}
           {r.preset === "custom" ? (
             <span className="font-mono text-[12.5px] text-faint">{r.schedule}</span>
           ) : (
@@ -186,23 +194,28 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
               <span className="text-[12.5px] text-faint">No runs yet.</span>
             ) : (
               history.map((run) => (
-                <button
-                  key={run.id}
-                  type="button"
-                  disabled={!run.taskId}
-                  onClick={() => run.taskId && navigate(`/task/${encodeURIComponent(run.taskId)}`)}
-                  className="flex min-h-11 w-full items-center gap-2 text-left text-[12.5px] disabled:cursor-default"
-                >
-                  <span
-                    className={
-                      "size-1.5 shrink-0 rounded-full " +
-                      (run.status === "skipped" ? "bg-amber-500" : "bg-emerald-500")
-                    }
-                  />
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{RUN_LABEL[run.status]}</span>
-                  <span className="shrink-0 text-faint">{fmtTime(run.firedAt)}</span>
-                  {run.taskId && <ChevronRight className="size-3.5 shrink-0 text-faint" />}
-                </button>
+                <div key={run.id} className="min-w-0">
+                  <button
+                    type="button"
+                    disabled={!run.taskId}
+                    onClick={() => run.taskId && navigate(`/task/${encodeURIComponent(run.taskId)}`)}
+                    className="flex min-h-11 w-full items-center gap-2 text-left text-[12.5px] disabled:cursor-default"
+                  >
+                    <span
+                      className={
+                        "size-1.5 shrink-0 rounded-full " +
+                        (["failed", "interrupted"].includes(run.status) ? "bg-destructive" : "bg-muted-foreground")
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{run.status === "skipped" && run.note === "missed while the server was down" ? "Skipped (server was down)" : RUN_LABEL[run.status]}</span>
+                    <span className="shrink-0 text-faint">{fmtTime(run.firedAt)}</span>
+                    {run.taskId && <ChevronRight className="size-3.5 shrink-0 text-faint" />}
+                  </button>
+                  {run.note && <p className="break-words text-xs text-muted-foreground">{run.note}</p>}
+                  {run.exitCode !== undefined && <p className="text-xs text-muted-foreground">Exit code: {run.exitCode}</p>}
+                  {run.worktreePath && <p className="break-all text-xs text-muted-foreground">Files: {run.worktreePath}</p>}
+                  {run.output && <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs">{run.output}</pre>}
+                </div>
               ))
             ))}
           </div>
@@ -217,6 +230,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
         >
           <Play className="size-4" /> {busy ? "Requesting run…" : "Run now"}
         </Button>
+        {r.kind === "script" && <Button variant="secondary" disabled={busy || saving || stale} onClick={onStop}>Stop script</Button>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="icon" className="size-11 text-faint" aria-label="More">
@@ -243,7 +257,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
                   <AlertDialogTitle>Delete this routine?</AlertDialogTitle>
                   <AlertDialogDescription>
                     It will stop firing on its schedule. Tasks it already created stay in your
-                    inbox. This can't be undone.
+                    inbox. Script files stay on disk. This can't be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -262,11 +276,15 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onDelete }: {
 }
 
 export function RoutinesView() {
-  const { routines, actions, saving, stale, creating, error: mutationError, toggle, run, remove, create: createRoutine } = useRoutines();
+  const { routines, actions, saving, stale, creating, error: mutationError, toggle, run, stop, remove, create: createRoutine } = useRoutines();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [error, setError] = useState("");
   const busy = creating !== null;
   const [showForm, setShowForm] = useActionState(`routine:showForm`, false);
+
+  const [kind, setKind] = useActionState<"agent" | "script">("routine:kind", "agent");
+  const [command, setCommand] = useDraft("routine:command");
+  const [timeoutSeconds, setTimeoutSeconds] = useActionState("routine:timeout", 300);
 
   // create-form state
   const [repoId, setRepoId] = useActionState(`routine:repoId`, "");
@@ -311,26 +329,25 @@ export function RoutinesView() {
     e.preventDefault();
     if (busy) return;
     if (!repoId) return setError("Register a repo first (from the dispatch form).");
-    if (!prompt.trim()) return setError("Enter a prompt.");
+    if (kind === "agent" && !prompt.trim()) return setError("Enter a prompt.");
+    if (kind === "script" && !command.trim()) return setError("Enter a script command.");
     const hasTime = preset === "daily" || preset === "weekly" || preset === "weekdays";
     const created = await createRoutine({
         repoId,
-        agent,
-        prompt: prompt.trim(),
+        ...(kind === "script" ? { kind, script: { command: command.trim(), timeoutSeconds } }
+          : { kind, agent, prompt: prompt.trim(), permission,
+            ...(model !== DEFAULT_OPTION ? { model } : {}), ...(effort !== DEFAULT_OPTION ? { effort } : {}) }),
         preset,
         ...(preset === "custom" ? { schedule: cron.trim() } : {}),
         ...(hasTime ? { hour } : {}),
         ...(preset === "weekly" ? { dayOfWeek } : {}),
-        permission,
-        ...(model !== DEFAULT_OPTION ? { model } : {}),
-        ...(effort !== DEFAULT_OPTION ? { effort } : {}),
         ...(title.trim() ? { title: title.trim() } : {}),
       });
     if (created) {
       // Clear the one-shot fields only — model/effort/permission persist per
       // agent so the next routine re-opens with the same settings.
-      clearDraft("routine:title", "routine:prompt");
-      setPrompt("");
+      clearDraft("routine:title", kind === "script" ? "routine:command" : "routine:prompt");
+      if (kind === "script") setCommand(""); else setPrompt("");
       setTitle("");
       setPreset("daily");
       setShowForm(false);
@@ -360,7 +377,7 @@ export function RoutinesView() {
           <EmptyState
             icon={CalendarClock}
             title="No routines yet"
-            subtitle="Schedule a recurring dispatch and it'll fire a fresh task on your cadence."
+            subtitle="Schedule an agent task or a script to run on your cadence."
             action={{ label: "New routine", onClick: () => setShowForm(true) }}
           />
         )}
@@ -372,13 +389,14 @@ export function RoutinesView() {
             busy={actions.has(r.id)} saving={saving.has(r.id)} stale={stale.has(r.id)}
             onToggle={() => toggle(r)}
             onRun={() => void run(r.id)}
+            onStop={() => void stop(r.id)}
             onDelete={() => void remove(r.id)}
           />
         ))}
 
         {showForm ? (
           <Card>
-            <form className="flex flex-col gap-5 p-4" onSubmit={create}><fieldset disabled={busy} className="flex min-w-0 flex-col gap-5">
+            <form className="relative flex flex-col gap-5 p-4" onSubmit={create}><fieldset disabled={busy} className="flex min-w-0 flex-col gap-5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold tracking-wide text-faint uppercase">
                   New routine
@@ -422,6 +440,14 @@ export function RoutinesView() {
                 </Select>
               </div>
 
+              <Field>
+                <FieldLabel>Run type</FieldLabel>
+                <ToggleGroup type="single" value={kind} onValueChange={value => value && setKind(value as "agent" | "script")} aria-label="Run type">
+                  <ToggleGroupItem value="agent">Agent task</ToggleGroupItem>
+                  <ToggleGroupItem value="script">Script</ToggleGroupItem>
+                </ToggleGroup>
+              </Field>
+              {kind === "agent" && <>
               <div className="space-y-1.5">
                 <Label>Agent</Label>
                 {/* Model + effort + permission are remembered per agent, so
@@ -489,6 +515,7 @@ export function RoutinesView() {
                 </div>
               </div>
 
+              </>}
               <Separator />
 
               <div className="space-y-1.5">
@@ -573,7 +600,19 @@ export function RoutinesView() {
                 />
               </div>
 
-              <div className="space-y-1.5">
+              {kind === "script" ? <>
+                <Field>
+                  <FieldLabel htmlFor="routine-command">Script command</FieldLabel>
+                  <Textarea id="routine-command" value={command} onChange={event => setCommand(event.target.value)} rows={5}
+                    className="font-mono" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="node scripts/report.mjs" />
+                  <FieldDescription>Runs as the server account using /bin/sh. Git spaces use an isolated worktree; plain folders run in place. Generated files are retained.</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="routine-timeout">Timeout (seconds)</FieldLabel>
+                  <Input id="routine-timeout" type="number" min={1} max={3600} required value={timeoutSeconds}
+                    onChange={event => setTimeoutSeconds(Number(event.target.value))} />
+                </Field>
+              </> : <div className="space-y-1.5">
                 <Label htmlFor="routine-prompt">Prompt</Label>
                 <Textarea
                   id="routine-prompt"
@@ -582,7 +621,7 @@ export function RoutinesView() {
                   rows={4}
                   placeholder="What should run on this schedule?"
                 />
-              </div>
+              </div>}
 
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? "…" : "Create routine"}

@@ -132,7 +132,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     updateRoutine: (id: string, json: UpdateRoutineRequest) => write(() => routines.$patch({ param: idParam(id), json })).then((r) => r.routine),
     deleteRoutine: (id: string) => write(() => routines.$delete({ param: idParam(id) })).then((r) => r.routine),
     runRoutine: (id: string) => write(() => routines.run.$post({ param: idParam(id) })).then((r) => r.routine),
-    routineRuns: (id: string) => cached(`/api/routines/${encodeURIComponent(id)}/runs`, 10_000, () => routines.runs.$get({ param: idParam(id) })).then((r) => r.runs),
+    stopRoutine: (id: string) => write(() => routines.stop.$post({ param: idParam(id) })).then(r => r.routine),
+    routineRuns: (id: string, fresh = false) => (fresh ? request(() => routines.runs.$get({ param: idParam(id) }))
+      : cached(`/api/routines/${encodeURIComponent(id)}/runs`, 10_000, () => routines.runs.$get({ param: idParam(id) }))).then((r) => r.runs),
     auth: {
       me: () => request(() => client.auth.me.$get(), { authProbe: true }),
       loginOptions: () => write(() => client.auth.login.options.$post(), true),

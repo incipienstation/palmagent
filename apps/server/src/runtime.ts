@@ -67,7 +67,7 @@ export async function createRuntime() {
       close() {
         return closing ??= (async () => {
           service.beginShutdown();
-          routines.stop(); github.stop(); push.close();
+          await routines.stop(); github.stop(); push.close();
           await backend?.close?.();
           await terminals.close();
           db.close();

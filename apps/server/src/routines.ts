@@ -1,3 +1,5 @@
+import { CreateRoutineSchema, UpdateRoutineSchema } from "@palmagent/shared/requests";
+import { runRoutineScript } from "./routine-script.js";
 import { randomBytes } from "node:crypto";
 import type {
   CreateRoutineRequest, Routine, RoutinePreset, RoutineRun, UpdateRoutineRequest,
@@ -7,8 +9,8 @@ import { nextRun, parseCron, presetToCron } from "./cron.js";
 import type { Db } from "./db.js";
 import { HttpError, type TaskService } from "./service.js";
 
-// Routines: cron-scheduled recurring dispatch. Every fire creates a FRESH
-// task from the routine template (it does not resume a session). A cadence is
+// Routines: recurring agent tasks or scripts. Agent fires create a fresh task;
+// script fires run directly and record their result in routine history. A cadence is
 // chosen as a friendly preset (hourly/daily/weekly/weekdays) that compiles to
 // cron, "manual" (no schedule — run-now only), or "custom" (raw cron). Missed
 // runs while the server was down are skipped — on boot we recompute next_run_at
@@ -19,6 +21,8 @@ const TICK_MS = 15_000;
 
 export class RoutineService {
   private timer?: NodeJS.Timeout;
+  private scripts = new Map<string, ReturnType<typeof runRoutineScript>>();
+  private stopping = false;
 
   constructor(
     private readonly db: Db,
@@ -26,6 +30,9 @@ export class RoutineService {
   ) {}
 
   start(): void {
+    if (this.timer) return;
+    this.stopping = false;
+    this.db.interruptRoutineRuns();
     const now = Date.now();
     for (const r of this.db.listRoutines()) {
       if (!r.enabled || r.preset === "manual" || !r.schedule) continue;
@@ -45,8 +52,12 @@ export class RoutineService {
     this.timer.unref();
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    for (const run of this.scripts.values()) run.stop();
+    await Promise.all([...this.scripts.values()].map(run => run.done));
   }
 
   private tick(): void {
@@ -58,10 +69,27 @@ export class RoutineService {
     }
   }
 
-  // Dispatch one task from the template. `manual` = a run-now (does not advance
+  // Execute the template. `manual` = a run-now (does not advance
   // the schedule); a scheduled fire advances next_run_at. Every fire is recorded
   // in the routine's run history.
   private fire(r: Routine, now: number, manual = false): void {
+    if (r.kind === "script") {
+      if (this.stopping || this.tasks.updating) throw new HttpError(503, "Palmagent is restarting");
+      if (this.scripts.has(r.id) || this.scripts.size >= 4) {
+        if (manual) throw new HttpError(409, "A script is already running or all four script slots are busy");
+        this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "skipped", note: "script already running or script capacity reached" });
+      } else {
+        const runId = this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "running", note: manual ? "manual" : "scheduled" });
+        const execution = runRoutineScript(this.db, r, runId);
+        this.scripts.set(r.id, execution);
+        void execution.done.finally(() => this.scripts.delete(r.id));
+      }
+      r.lastRunAt = now;
+      if (!manual) r.nextRunAt = r.schedule ? nextRun(r.schedule, now) : undefined;
+      r.updatedAt = now;
+      this.db.updateRoutine(r);
+      return;
+    }
     let taskId: string | undefined;
     let note: string | undefined;
     try {
@@ -94,10 +122,9 @@ export class RoutineService {
 
   // ---- CRUD (REST layer calls these) ----
   create(req: CreateRoutineRequest): Routine {
-    if (req?.agent !== "claude" && req?.agent !== "codex") {
-      throw new HttpError(400, "agent must be 'claude' or 'codex'");
-    }
-    if (!req.prompt) throw new HttpError(400, "prompt is required");
+    const parsed = CreateRoutineSchema.safeParse(req);
+    if (!parsed.success) throw new HttpError(400, parsed.error.message);
+    req = parsed.data;
     if (!this.db.getRepo(req.repoId)) throw new HttpError(400, `no such repo: ${req.repoId}`);
 
     const preset: RoutinePreset = req.preset ?? "custom";
@@ -106,16 +133,18 @@ export class RoutineService {
     const routine: Routine = {
       id: "rt" + randomBytes(4).toString("hex"),
       repoId: req.repoId,
-      agent: req.agent,
+      kind: req.kind ?? "agent",
+      script: req.script ? { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? 300 } : undefined,
+      agent: req.agent ?? "claude",
       title: req.title,
-      prompt: req.prompt,
-      permission: req.permission ?? DEFAULT_PERMISSION[req.agent],
+      prompt: req.prompt ?? "",
+      permission: req.permission ?? DEFAULT_PERMISSION[req.agent ?? "claude"],
       model: req.model,
       effort: req.effort,
       preset,
       schedule,
-      enabled: true,
-      nextRunAt,
+      enabled: req.enabled ?? true,
+      nextRunAt: req.enabled === false ? undefined : nextRunAt,
       createdAt: now,
       updatedAt: now,
     };
@@ -141,6 +170,10 @@ export class RoutineService {
     return { schedule: cron, nextRunAt: nextRun(cron, now) };
   }
 
+  context() {
+    return { repos: this.db.listRepos(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  }
+
   list(): Routine[] {
     return this.db.listRoutines();
   }
@@ -153,6 +186,14 @@ export class RoutineService {
 
   update(id: string, req: UpdateRoutineRequest): Routine {
     const r = this.get(id);
+    const parsed = UpdateRoutineSchema.safeParse(req);
+    if (!parsed.success) throw new HttpError(400, parsed.error.message);
+    req = parsed.data;
+    if (r.kind === "script" && [req.prompt, req.permission, req.model, req.effort].some(field => field !== undefined)) {
+      throw new HttpError(400, "Script routines do not accept agent settings");
+    }
+    if (req.script && r.kind !== "script") throw new HttpError(400, "Only script routines accept script settings");
+    if (req.script) r.script = { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? r.script?.timeoutSeconds ?? 300 };
     const now = Date.now();
     // Recompile the cadence when any cadence field is present in the patch.
     const cadenceChanged =
@@ -160,7 +201,10 @@ export class RoutineService {
       req.hour !== undefined || req.dayOfWeek !== undefined;
     if (cadenceChanged) {
       const preset = req.preset ?? r.preset;
-      const { schedule } = this.compile(preset, { schedule: req.schedule ?? r.schedule, hour: req.hour, dayOfWeek: req.dayOfWeek }, now);
+      const fields = r.schedule.split(/\s+/);
+      const existingNumber = (field?: string) => field && /^\d+$/.test(field) ? Number(field) : undefined;
+      const { schedule } = this.compile(preset, { schedule: req.schedule ?? r.schedule,
+        hour: req.hour ?? existingNumber(fields[1]), dayOfWeek: req.dayOfWeek ?? existingNumber(fields[4]) }, now);
       r.preset = preset;
       r.schedule = schedule;
     }
@@ -181,6 +225,7 @@ export class RoutineService {
   }
 
   remove(id: string): Routine {
+    if (this.scripts.has(id)) throw new HttpError(409, "Wait for the running script before deleting this routine");
     const r = this.get(id);
     this.db.deleteRoutine(id);
     return r;
@@ -189,6 +234,15 @@ export class RoutineService {
   runNow(id: string): Routine {
     const r = this.get(id);
     this.fire(r, Date.now(), true); // manual: record + dispatch, leave the cadence alone
+    return this.get(id);
+  }
+
+  async stopRun(id: string): Promise<Routine> {
+    const r = this.get(id);
+    if (r.kind !== "script") throw new HttpError(400, "Stop agent runs from their task");
+    const execution = this.scripts.get(id);
+    execution?.stop("interrupted by user");
+    await execution?.done;
     return this.get(id);
   }
 

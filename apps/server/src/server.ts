@@ -58,7 +58,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => { void close().then(() => process.exit(0), (error) => { console.error(error); process.exit(1); }); });
 }
 try {
-  local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals);
+  local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(runtime.config.port, runtime.config.host, () => { server.off("error", reject); resolve(); });

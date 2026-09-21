@@ -38,10 +38,12 @@ export interface Repo {
 // schedule is empty); "custom" carries a raw cron the user typed.
 export type RoutinePreset = "hourly" | "daily" | "weekly" | "weekdays" | "manual" | "custom";
 
-// A scheduled, recurring dispatch. Every fire creates a fresh
-// task from this template; `schedule` is a standard 5-field cron expression
+// A recurring agent task or script. Agent runs create fresh tasks; script runs
+// record their result directly. `schedule` is a standard 5-field cron expression
 // (empty for a "manual" routine, which only fires via run-now).
 export interface Routine {
+  kind?: "agent" | "script"; // omitted on legacy agent routines
+  script?: { command: string; timeoutSeconds: number };
   id: string;
   repoId: string;
   agent: AgentKind;
@@ -66,7 +68,11 @@ export interface RoutineRun {
   id: number;
   routineId: string;
   firedAt: number;
-  status: "fired" | "manual" | "skipped";
+  status: "fired" | "manual" | "skipped" | "running" | "succeeded" | "failed" | "interrupted";
+  finishedAt?: number;
+  exitCode?: number;
+  output?: string;
+  worktreePath?: string;
   taskId?: string; // absent for "skipped" (or a fire that failed before dispatch)
   note?: string; // error detail when a fire failed
 }
