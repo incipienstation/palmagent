@@ -99,8 +99,9 @@ The package is one update unit containing the CLI, server, PWA, and runner. The
    returns JSON with the package action and each plugin's keep/update decision.
    Repeat the manifest argument for each participating installation and scope.
    Planning is read-only; unlike `--dry-run`, it contacts npm.
-2. If a plugin needs changing, the agent uses its native manager and the exact
-   published Git tag, retaining the previous ref/scope for recovery. It verifies
+2. The CLI discovers installed native plugins and refreshes older compatible
+   versions using the exact published Git tag, retaining previous source/scope
+   details in a private recovery receipt. The skill handles older CLIs. It verifies
    actual installed manifests before proceeding. A catalog refresh is insufficient.
 3. `update --pull --to <planned-version> --plugin-manifest <verified-path>` checks
    target compatibility before activation. Independent installations stage a new
@@ -146,7 +147,13 @@ block the transition. A failed checkpoint keeps the page open for recovery.
 Browser event streams briefly reconnect around worker activation; no agent
 lifecycle action is sent. Hidden and offline tabs wait until they return.
 
-Automatic updates retain plugins and stay within the current package's `x.x.x`.
+Automatic updates refresh older compatible plugins and stay within the current
+package's `x.x.x`. A plugin-only update is eligible even when the app is current.
+An equal or newer compatible plugin is retained without downgrading. Native
+managers preserve installation scope; managed installations are never converted
+to user installations. Disabled Codex plugins need operator handling because its
+install command enables them. Failed native updates pause automatic retries and
+retain `<data-dir>/plugin-update.json`; catalog restoration is not plugin rollback.
 They defer a new compatibility line, including any new Stable patch release, to
 the update skill. Unattended advancement therefore applies to prereleases within
 one version line under the current compatibility promise. Before package mutation,

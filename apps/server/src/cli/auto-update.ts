@@ -25,6 +25,8 @@ export function renderAutoUpdateUnits(cfg: InstallConfig, options = { node: proc
       "[Service]", "Type=oneshot", `User=${cfg.user}`, `Group=${cfg.group}`,
       `Environment=${quote(`HOME=${options.home}`)}`,
       `Environment=${quote(`PALMAGENT_HOME=${options.configHome}`)}`, `Environment=${quote(`PATH=${cfg.execPath}`)}`,
+      ...(process.env.CODEX_HOME ? [`Environment=${quote(`CODEX_HOME=${process.env.CODEX_HOME}`)}`] : []),
+      ...(process.env.CLAUDE_CONFIG_DIR ? [`Environment=${quote(`CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR}`)}`] : []),
       "Environment=PALMAGENT_NON_INTERACTIVE=1",
       `ExecStart=${argv.map((arg) => quote(arg.replace(/\$/g, () => "$$"))).join(" ")}`,
       "TimeoutStartSec=30min", "",

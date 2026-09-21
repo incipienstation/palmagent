@@ -41,7 +41,7 @@ export function UpdateSettings() {
   const discovery = settings?.discovery;
   const pending = settings?.pending;
   const checkedAt = discovery ? new Date(discovery.checkedAt) : null;
-  const newer = discovery?.targetVersion && discovery.targetVersion !== status?.currentVersion;
+  const newer = discovery?.targetVersion && (discovery.targetVersion !== status?.currentVersion || Boolean(discovery.pluginsPending));
   const paused = last?.status === "failed" || last?.status === "applying";
 
   return (
@@ -81,11 +81,12 @@ export function UpdateSettings() {
         </p>
         <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
           {discovery?.error ? <Alert variant="warning">Could not check for updates. Try again when connected.</Alert>
-            : newer ? <p>Version {discovery.targetVersion} is available.</p>
+            : newer ? <p>{discovery.targetVersion === status?.currentVersion ? "Operator plugin updates are available." : `Version ${discovery.targetVersion} is available.`}</p>
             : discovery ? <p>You are up to date.</p> : <p>No update checks yet.</p>}
           {newer && !discovery?.eligible && <Alert>This release needs a matching operator plugin. Use the update plugin to continue.</Alert>}
           {pending && !paused && <p>{settings.independentExecutions ? `Preparing update to ${pending.targetVersion}. Your agent runs continue.` : `Update to ${pending.targetVersion} is scheduled. It will start after active tasks finish.`}</p>}
           {last && (paused || last.status === "deferred") && <p>{updateMessage(last)}</p>}
+          {last?.pluginActivationPending && <p>Operator plugins were updated. Start a new agent session to load the new skills.</p>}
           {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
         </div>
       </FieldGroup>}

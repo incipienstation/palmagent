@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BRANDING } from "@palmagent/shared";
-import { compatiblePlugin, channelTag, validateUpdateTarget, type ReleaseChannel } from "./release-policy.js";
+import { compatiblePlugin, channelTag, compareProductVersions, validateUpdateTarget, type ReleaseChannel } from "./release-policy.js";
 import { run } from "./sh.js";
 
 export interface PluginVersion { manifest: string; version: string }
 export interface UpdatePlan {
   schemaVersion: 1;
+  pluginManagement: "native";
   channel: ReleaseChannel;
   currentVersion: string;
   targetVersion: string;
@@ -32,14 +33,14 @@ export function readPluginVersions(paths: string[]): PluginVersion[] {
 export function planUpdate(currentVersion: string, targetVersion: string, channel: ReleaseChannel, plugins: PluginVersion[]): UpdatePlan {
   validateUpdateTarget(currentVersion, targetVersion, channel);
   const decisions = plugins.map((plugin) => {
-    const keep = compatiblePlugin(targetVersion, plugin.version);
+    const keep = compatiblePlugin(targetVersion, plugin.version) && compareProductVersions(plugin.version, targetVersion) >= 0;
     return { ...plugin, action: keep ? "keep" as const : "update" as const, targetVersion: keep ? plugin.version : targetVersion };
   });
   return {
-    schemaVersion: 1, channel, currentVersion, targetVersion,
+    schemaVersion: 1, pluginManagement: "native", channel, currentVersion, targetVersion,
     packageAction: currentVersion === targetVersion ? "keep" : "update",
     plugins: decisions,
-    automaticEligible: compatiblePlugin(currentVersion, targetVersion) && decisions.every((plugin) => plugin.action === "keep"),
+    automaticEligible: compatiblePlugin(currentVersion, targetVersion) && plugins.every((plugin) => compatiblePlugin(targetVersion, plugin.version)),
   };
 }
 

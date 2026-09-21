@@ -9,6 +9,8 @@ export const UpdateReceiptSchema = z.object({
   previousVersion: z.string(),
   targetVersion: z.string(),
   reason: z.string(),
+  pluginsUpdated: z.number().int().nonnegative().optional(),
+  pluginActivationPending: z.boolean().optional(),
   checkedAt: z.string(),
 });
 export type UpdateReceipt = z.infer<typeof UpdateReceiptSchema>;
@@ -33,6 +35,7 @@ export const UpdateDiscoverySchema = z.object({
   targetVersion: z.string().nullable(),
   checkedAt: z.string().datetime(),
   eligible: z.boolean(),
+  pluginsPending: z.number().int().nonnegative().optional(),
   error: z.boolean(),
 });
 export type UpdateDiscovery = z.infer<typeof UpdateDiscoverySchema>;

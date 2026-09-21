@@ -206,14 +206,15 @@ check. Doctor reports installed CLI versions outside the declared ranges.
 
 Ask **“Check for Palmagent updates”** to see the target version and which plugins
 need changing. Ask **“Update Palmagent”** to apply that plan. The CLI, server, web
-app, and runner ship together; compatible operator plugins can stay installed.
+app, and runner ship together. Older compatible operator plugins update through
+their native managers, even when the app is already current.
 
 Ask **“Turn on automatic updates”** to install eligible updates discovered when
 you open or return to the app. Automatic updates are off by default and follow
 your saved Stable/Preview channel. They stay within the current `x.x.x` version
-line and keep plugins. On independent-execution installations, running, queued,
+line and refresh installed compatible plugins. On independent-execution installations, running, queued,
 or waiting tasks continue through application updates.
-A version that needs a plugin change waits for a plugin-assisted update.
+A new compatibility line waits for a plugin-assisted update.
 With the current compatibility rule, a new Stable patch also needs that flow;
 automatic advancement currently applies to prereleases within the same version line.
 
@@ -226,7 +227,10 @@ In the web app, open **Settings → Updates** to see the running server version,
 choose Stable or Preview, toggle automatic updates, and inspect the last check.
 The app checks on connection and foreground return, reusing checks made within
 15 minutes. **Check again** checks immediately. With automatic updates enabled,
-an eligible release installs and the screen switches automatically. When disabled,
+an eligible release installs and the screen switches automatically. Plugin updates
+also run when the app is current; start a new agent session to load new skills.
+Managed installations retain their policy and scope. A native-manager failure
+pauses retries and reports recovery information instead of claiming success. When disabled,
 **Update** schedules the displayed version. There is no recurring update timer. Existing timers are retired
 when the updated package is activated.
 

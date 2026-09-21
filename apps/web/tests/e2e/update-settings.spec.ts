@@ -233,3 +233,25 @@ test("automatic independent updates show progress without asking for an Update c
   await expect(page.getByRole("button", { name: /^Update( scheduled)?$/ })).toHaveCount(0);
   await expect(page.getByText(/after active tasks finish/)).toHaveCount(0);
 });
+
+test("plugin-only updates remain actionable and explain when new skills become active", async ({ page }) => {
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  state.settings!.discovery!.targetVersion = state.currentVersion;
+  state.settings!.discovery!.pluginsPending = 1;
+  await page.route("**/api/settings/updates", async (route) => {
+    if (route.request().method() === "POST" && route.request().postDataJSON().action === "install") {
+      expect(route.request().postDataJSON().version).toBe(state.currentVersion);
+      state.settings!.discovery!.pluginsPending = 0;
+      state.settings!.lastUpdate = { schemaVersion: 1, status: "succeeded", previousVersion: state.currentVersion!,
+        targetVersion: state.currentVersion!, reason: "plugins-updated", pluginsUpdated: 1, pluginActivationPending: true,
+        checkedAt: new Date().toISOString() };
+    }
+    await route.fulfill({ json: state });
+  });
+  await openSettings(page);
+  await expect(page.getByText("Operator plugin updates are available.")).toBeVisible();
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  await expect(page.getByText("Operator plugins were updated. Start a new agent session to load the new skills.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("current-version")).toHaveText(state.currentVersion!);
+});
