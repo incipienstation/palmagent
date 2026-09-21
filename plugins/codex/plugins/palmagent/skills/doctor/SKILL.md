@@ -7,7 +7,8 @@ description: Use when an operator reports a Palmagent instance is unhealthy or w
 
 Thin wrapper over the `palmagent` CLI's `doctor` subcommand, PLUS adaptive
 diagnosis when it reports a fault. The CLI runs the deterministic structured
-checks (units active? runner socket present? claude/codex installed + authed?
+checks (web unit active? independent execution artifacts/template valid, or legacy
+runner unit/socket available? claude/codex installed + authed?
 SQLite present? VAPID keys present? port
 loopback-only? PWA dist present? disk headroom?) and **exits non-zero on any
 failure**. Your added value is correlating its findings with the live logs.
@@ -48,14 +49,26 @@ are authorized by diagnosis alone. Investigate any remaining user symptom.
 
 ## 4. If the CLI reports a fault — correlate, then propose the fix
 
-For each failing area, gather the live evidence the CLI does not print. The two
-systemd units are **`palmagent.service`** (web/SSE server) and
-**`palmagent-runner.service`** (long-lived process host). For the relevant
-unit(s):
+For each failing area, gather the live evidence the CLI does not print. Inspect
+the saved installation configuration and doctor report to identify its execution
+mode. All installations use **`palmagent.service`** for the web/SSE server:
 
 ```bash
 systemctl status palmagent.service --no-pager
 journalctl -u palmagent.service --no-pager -n 50
+```
+
+Independent package installations use **`palmagent-execution@<uuid>.service`**
+for each invocation, with retained package and Node paths. Inspect the failing
+execution's actual unit and journal; an idle installation need not have an active
+execution unit. Doctor verifies retained artifacts, compatibility, and template
+availability. Do not start a probe execution or restart an existing invocation
+just to inspect it.
+
+Legacy and source runner installations use **`palmagent-runner.service`** as
+the process host. Only for that mode, inspect:
+
+```bash
 systemctl status palmagent-runner.service --no-pager
 journalctl -u palmagent-runner.service --no-pager -n 50
 ```
@@ -67,9 +80,13 @@ then propose the concrete fix. Common patterns to recognize:
   `better-sqlite3` / native-module error usually means a rebuild is needed
   (`npm rebuild better-sqlite3`); an `EADDRINUSE` means the port is taken; a
   missing-file error often means the PWA dist or data dir moved.
-- **Runner socket not answering** while the web unit is up → check the runner
-  unit's status/journal; if the runner is down the web server falls back to its
-  degraded in-process backend.
+- **Configured runner unavailable** → check the legacy runner unit's status,
+  journal, and configured socket. Web startup fails rather than falling back to
+  an in-process backend. Independent package installations do not require this runner.
+- **Independent execution check failed** → inspect the reported retained package,
+  Node path, compatibility contract, and execution service template. Correlate a
+  failing invocation with its own unit and journal; a web restart does not restart
+  or resume it. Preserve referenced artifacts and running executions during recovery.
 - **`claude`/`codex` not found by the service** → the unit's baked `PATH=`
   doesn't resolve the CLI; `journalctl` shows the spawn error. Point at the
   install config's `EXEC_PATH`.
