@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.57
+
 ### Fixed
 
 - The double-Back exit window resets as soon as its hint disappears, including
