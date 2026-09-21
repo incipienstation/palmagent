@@ -1,3 +1,4 @@
+import { useBackLayer } from "../hooks/useBackLayer";
 import { useSignOut } from "../auth/useSignOut";
 import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, Monitor, Moon, Sun, X } from "lucide-react";
@@ -48,6 +49,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const detailId = useId();
   const shortcutId = useId();
   const home = section === "general";
+  useBackLayer(open && !home, () => setSection("general"), 150);
 
   useLayoutEffect(() => {
     const previous = previousSection.current;

@@ -1,3 +1,4 @@
+import { useBackLayer } from "../hooks/useBackLayer";
 import { registerRepo, removeRepo as removeRegisteredRepo, useRepoMutations } from "../repo-mutations";
 import { toast } from "./ui/toaster";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
@@ -111,6 +112,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const [query, setQuery] = useUpdateState(`picker:query`, "");
   const [discovered, setDiscovered] = useState<DiscoveredRepo[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [browseTrail, setBrowseTrail] = useUpdateState<FsListResponse[]>("picker:browse-trail", []);
+  const browseRequest = useRef(0);
   const [browse, setBrowse] = useUpdateState<FsListResponse | null>("picker:browse", null);
   const [manualPath, setManualPath] = useUpdateState(`picker:manualPath`, "");
   const [validation, setValidation] = useUpdateState<ValidateRepoPathResponse | null>("picker:validation", null);
@@ -121,6 +124,14 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const busy = mutations.registering.size > 0;
   const [error, setError] = useState("");
   const debounceRef = useRef<number | undefined>(undefined);
+  const backToSearch = () => { browseRequest.current++; setMode("search"); setBrowseTrail([]); };
+  useBackLayer(open && mode !== "search", backToSearch, 150);
+  useBackLayer(open && mode === "browse" && browseTrail.length > 0, () => {
+    browseRequest.current++;
+    setBrowse(browseTrail.at(-1)!);
+    setBrowseTrail(browseTrail.slice(0, -1));
+  }, 160);
+  useEffect(() => { if (!open) browseRequest.current++; }, [open]);
 
   const registeredByPath = useMemo(() => new Map(repos.map((r) => [r.path, r])), [repos]);
 
@@ -129,7 +140,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   useEffect(() => {
     if (!open) return;
     if (!restoring.current) {
-      setMode("search"); setQuery(""); setPicked(null);
+      setMode("search"); setBrowseTrail([]); setQuery(""); setPicked(null);
       setValidation(null); setManualPath(""); setError("");
     }
     restoring.current = false;
@@ -193,12 +204,18 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   }
 
   async function openBrowse(path?: string) {
+    const request = ++browseRequest.current;
+    const previous = mode === "browse" ? browse : null;
     setMode("browse");
     setError("");
     try {
-      setBrowse(await api.listFs(path));
+      const next = await api.listFs(path);
+      if (request !== browseRequest.current) return;
+      if (previous && previous.path !== next.path) setBrowseTrail(trail => [...trail, previous]);
+      else if (!previous) setBrowseTrail([]);
+      setBrowse(next);
     } catch (e) {
-      setError(errMsg(e));
+      if (request === browseRequest.current) setError(errMsg(e));
     }
   }
 
@@ -233,7 +250,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                 size="icon-sm"
                 className="-ml-1.5 text-primary"
                 aria-label="Back to repo list"
-                onClick={() => setMode("search")}
+                onClick={backToSearch}
               >
                 <ChevronLeft className="size-5" />
               </Button>

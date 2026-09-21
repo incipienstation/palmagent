@@ -1,3 +1,4 @@
+import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Popover as PopoverPrimitive } from "radix-ui"
@@ -5,7 +6,8 @@ import { Popover as PopoverPrimitive } from "radix-ui"
 function Popover({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+  const { depth, ...back } = useBackDismiss(props);
+  return <BackLayerScope depth={depth}><PopoverPrimitive.Root data-slot="popover" {...props} {...back} /></BackLayerScope>
 }
 
 function PopoverTrigger({

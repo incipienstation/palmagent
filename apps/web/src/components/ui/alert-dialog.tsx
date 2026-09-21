@@ -1,3 +1,4 @@
+import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui";
 
@@ -5,7 +6,8 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
 function AlertDialog(props: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
-  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
+  const { depth, ...back } = useBackDismiss(props);
+  return <BackLayerScope depth={depth}><AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} {...back} /></BackLayerScope>;
 }
 
 function AlertDialogTrigger(props: React.ComponentProps<typeof AlertDialogPrimitive.Trigger>) {

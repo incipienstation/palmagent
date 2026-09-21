@@ -2,7 +2,7 @@ import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { useRepoMutations } from "../repo-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { useUpdateState } from "../update-state";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Repo } from "@palmagent/shared";
 import { Plus } from "lucide-react";
 
@@ -21,7 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
 import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort } from "../api";
-import { clearDraft, useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
+import { useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
@@ -34,6 +34,8 @@ function errMsg(e: unknown): string {
 }
 
 export function DispatchView() {
+  const mounted = useRef(false);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const toastObstacle = useToastObstacle();
   const [registeredRepos, setRepos] = useState<Repo[]>([]);
   const repoMutations = useRepoMutations();
@@ -111,11 +113,16 @@ export function DispatchView() {
         ...(title.trim() ? { title: title.trim() } : {}),
         ...(att.images.length ? { images: att.images } : {}),
       });
-      clearDraft("draft:dispatch-title", "draft:dispatch-prompt");
-      att.clear(); setSkills([]);
+      // A late acknowledgement must not erase work entered after navigating
+      // away and reopening the form. Clear only the draft that was submitted.
+      setTitle(current => current === title ? "" : current);
+      setPrompt(current => current === prompt ? "" : current);
+      att.setImages(current => current === att.images ? [] : current);
+      setSkills(current => JSON.stringify(current) === JSON.stringify(skills) ? [] : current);
       toast({ title: "Dispatched", variant: "success" });
-      // Replace the dispatch form in history so Back returns to the inbox, not /new.
-      navigate(`/task/${encodeURIComponent(task.taskId)}`, { replace: true });
+      // Replace only this still-mounted form; Back may have already taken the
+      // user elsewhere (including a new instance of the dispatch form).
+      if (mounted.current) navigate(`/task/${encodeURIComponent(task.taskId)}`, { replace: true });
     } catch (e) {
       // Transient REST failure → toast (the form stays put so the user can retry
       // without re-typing). Inline Alert is reserved for the pre-flight

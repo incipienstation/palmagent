@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Back closes the current dialog, menu, settings subpage or conversation terminal before
+  leaving the page. Direct conversation links return to Tasks, and reloading the
+  installed app no longer adds extra exit barriers to navigation history.
+- Finishing task creation after you navigate away keeps your current screen and
+  any newer draft intact.
+
 ## 0.1.0-alpha.56
 
 ### Fixed

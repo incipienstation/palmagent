@@ -1,3 +1,4 @@
+import { useBackLayer } from "../hooks/useBackLayer";
 import { TerminalsView } from "./Terminals";
 import { useActionState } from "../action-state";
 import { cacheSession } from "../read-cache";
@@ -57,6 +58,7 @@ function permLabel(agent: TaskState["agent"], value: string): string {
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
+  useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
   const { log, conn, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live

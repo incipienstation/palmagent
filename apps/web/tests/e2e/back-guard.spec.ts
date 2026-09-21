@@ -6,7 +6,7 @@ import { test, expect, type Page } from "@playwright/test";
 //   - installed as standalone → first back is absorbed (stays in-app + warns)
 //   - a plain browser tab     → gate off, no history sentinel installed
 //
-// setupBackGuard() runs at module load in main.tsx, so we must fake the
+// setupNavigation() runs before rendering in main.tsx, so we must fake the
 // display-mode BEFORE the app boots — addInitScript runs before any page script.
 // We special-case only the display-mode query so ThemeProvider's prefers-color
 // matchMedia still works (the harness renders dark).
