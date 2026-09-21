@@ -90,7 +90,7 @@ test.describe("image caching with the real service worker", () => {
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload();
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
-  const path = "/api/tasks/t-idle-rich/image?path=preview.png";
+  for (const path of ["/api/tasks/t-idle-rich/image?path=preview.png", "/api/tasks/t-idle-rich/attachments/93db3f15-c90f-40b4-a28c-b0fd573a6d9f"]) {
   await page.evaluate(async ({ path, data }) => {
     const cache = await caches.open("api");
     await cache.put(path, new Response(Uint8Array.from(atob(data), c => c.charCodeAt(0)), { headers: { "Content-Type": "image/png" } }));
@@ -98,5 +98,39 @@ test.describe("image caching with the real service worker", () => {
   await context.setOffline(true);
   const result = await page.evaluate(async path => { try { return (await fetch(path)).status; } catch { return null; } }, path);
   expect(result).toBeNull();
+  await context.setOffline(false);
+  }
 });
 });
+
+
+for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+  test(`sent attachments remain viewable after replay at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const taskId = "t-idle-rich", id = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
+    const path = `/api/tasks/${taskId}/attachments/${id}`;
+    await page.route(`**${path}`, route => route.fulfill({ contentType: "image/png", body: png }));
+    await installScopedStream(page);
+    await open(page, taskId);
+    const replay = async () => {
+      await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 0 });
+      await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 1, kind: "status",
+        payload: { subtype: "followup", text: "Please inspect this image", images: 1,
+          attachments: [{ id, mediaType: "image/png", size: png.length }] } } }, 1);
+    };
+    await replay();
+    const preview = page.getByRole("button", { name: "Enlarge image: Attached image 1" });
+    await expect(preview).toBeVisible();
+    await expect(preview.locator("img")).toHaveAttribute("src", path);
+    await expect.poll(() => preview.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
+    await preview.click();
+    await expect(page.getByRole("dialog", { name: "Attached image 1", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.reload();
+    await expect.poll(() => page.evaluate(id => (window as unknown as { hasScopedStream(id: string): boolean }).hasScopedStream(id), taskId)).toBe(true);
+    await replay();
+    await expect(preview).toBeVisible();
+    await expect.poll(() => preview.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
+    await assertViewportLocked(page);
+  });
+}

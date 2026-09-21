@@ -1,3 +1,4 @@
+import type { AttachmentRecord } from "./attachments.js";
 import type { MessageState } from "./message-controller.js";
 import Database from "better-sqlite3";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
@@ -124,6 +125,24 @@ export class Db {
     })();
   }
 
+  transaction<T>(work: () => T): T { return this.db.transaction(work).immediate(); }
+
+  attachment(taskId: string, id: string): AttachmentRecord | undefined {
+    return this.db.prepare("SELECT id, task_id AS taskId, media_type AS mediaType, size, digest FROM attachments WHERE task_id = ? AND id = ?")
+      .get(taskId, id) as AttachmentRecord | undefined;
+  }
+  attachmentByDigest(taskId: string, digest: string): AttachmentRecord | undefined {
+    return this.db.prepare("SELECT id, task_id AS taskId, media_type AS mediaType, size, digest FROM attachments WHERE task_id = ? AND digest = ?")
+      .get(taskId, digest) as AttachmentRecord | undefined;
+  }
+  insertAttachment(record: AttachmentRecord): void {
+    this.db.prepare("INSERT INTO attachments (id, task_id, media_type, size, digest) VALUES (?, ?, ?, ?, ?)")
+      .run(record.id, record.taskId, record.mediaType, record.size, record.digest);
+  }
+  attachmentIds(): Set<string> {
+    return new Set((this.db.prepare("SELECT id FROM attachments").all() as { id: string }[]).map(row => row.id));
+  }
+
   private migrate() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS repos (
@@ -150,6 +169,14 @@ export class Db {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         last_activity_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        media_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        digest TEXT NOT NULL,
+        UNIQUE(task_id, digest)
       );
       CREATE TABLE IF NOT EXISTS task_message_state (
         task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,

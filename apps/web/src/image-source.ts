@@ -32,6 +32,9 @@ export function previewSource(value: string, taskId?: string): string {
   if (!safe) return "";
   if (/^(?:https?:\/\/|\/\/|data:)/i.test(safe)) return safe;
   if (!taskId) return "";
+  // Only this task's generated attachment endpoint bypasses local-file resolution.
+  const attachmentPrefix = `/api/tasks/${encodeURIComponent(taskId)}/attachments/`;
+  if (safe.startsWith(attachmentPrefix) && /^[0-9a-f-]{36}$/.test(safe.slice(attachmentPrefix.length))) return safe;
   try {
     const path = decodeURIComponent(/^file:/i.test(safe) ? new URL(safe).pathname : safe);
     return `/api/tasks/${encodeURIComponent(taskId)}/image?${new URLSearchParams({ path })}`;

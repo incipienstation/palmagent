@@ -20,12 +20,12 @@ export function ensurePrivateFile(path: string): void {
 }
 
 /** Commit one private record without exposing a truncated activation decision. */
-export function writePrivateFileAtomic(path: string, content: string): void {
+export function writePrivateFileAtomic(path: string, content: string | Uint8Array): void {
   ensurePrivateParent(dirname(path));
   const temporary = `${path}.${randomUUID()}.tmp`;
   const fd = openSync(temporary, "wx", 0o600);
-  try { writeFileSync(fd, content); fsyncSync(fd); } finally { closeSync(fd); }
   try {
+    try { writeFileSync(fd, content); fsyncSync(fd); } finally { closeSync(fd); }
     renameSync(temporary, path);
     const directory = openSync(dirname(path), "r");
     try { fsyncSync(directory); } finally { closeSync(directory); }

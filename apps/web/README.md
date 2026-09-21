@@ -129,6 +129,25 @@ Palmagent and synchronized across connected screens, including for running and
 local sessions. Renaming keeps the original prompt, native CLI session, and activity
 order intact.
 
+## Sent image attachments
+
+New image attachments appear in your message and open in the existing enlarged
+viewer. They remain available after reload, on other signed-in devices, after a
+server restart, and after archiving the conversation. Older attachments are not
+migrated. PNG, JPEG, GIF, and WebP are supported, with up to eight images per
+message and 4.5 MiB per image after the composer's image preparation.
+
+The server keeps image files under `attachments/<database-filename>/` beside its
+SQLite database. Back up both the database and that directory while the server is
+stopped. Queue and history records contain attachment references; image bytes are
+loaded for delivery or when editing a queued message. Duplicate content is shared
+within a task. Files are private to the service account and served through
+authenticated task-scoped endpoints with no offline cache. Archiving preserves
+attachments; permanently removing the Space removes them with its tasks. Removed
+or replaced queue attachments follow the same task lifetime. Startup cleans up
+unindexed files from interrupted writes. There is no automatic age-based eviction
+or total storage quota; operators should include this directory in disk monitoring.
+
 ## Output detail
 
 Agent replies render Markdown images with relative file paths or URLs such as
