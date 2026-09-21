@@ -1,0 +1,3 @@
+interface:
+  display_name: "Palmagent Routines"
+  short_description: "Schedule agent tasks and scripts in Palmagent"

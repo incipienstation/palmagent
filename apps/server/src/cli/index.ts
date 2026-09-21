@@ -14,6 +14,7 @@ import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
 import { connectionInfo } from "./connection.js";
 import { terminalCommand } from "./terminal.js";
 import { sessionCommand } from "./session.js";
+import { routineCommand } from "./routine.js";
 import { settingsCommand } from "./settings.js";
 import { ensurePrivateDirectory } from "../private-files.js";
 import { getUserConfig, initUserConfig, setUserChannel } from "./user-config.js";
@@ -127,6 +128,7 @@ Commands:
   auto-update  Access-triggered updates: enable, disable, status (off by default)
   update-settings  Internal web update bridge (JSON; installation runs separately)
   config       Internal plugin settings API: get, init, set --channel <name>
+  routine      Manage scheduled agent tasks and scripts (run routine --help)
   settings     Manage Space search paths (run settings --help)
   terminal     Manage persistent shells (run terminal --help)
   session        Dispatch an active native CLI session back to Palmagent
@@ -177,6 +179,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "terminal") return terminalCommand(rest);
+  if (cmd === "routine") return routineCommand(rest);
   if (cmd === "settings") return settingsCommand(rest);
   if (rest.includes("--help") || rest.includes("-h")) {
     printHelp();

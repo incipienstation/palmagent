@@ -280,6 +280,7 @@ export class TaskService {
     const live = [...this.cache.values()].filter((t) => t.repoId === id && t.status !== "archived");
     if (live.length) throw conflict(`repo has ${live.length} non-archived task(s) — archive them first`);
     if (this.terminals?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
+    if (this.db.hasRunningRoutine(id)) throw conflict("Stop this Space's running scripts before removing it");
     this.db.deleteRepo(id);
     this.attachments.prune();
     // deleteRepo cascades to the repo's (archived) tasks in the DB; drop them

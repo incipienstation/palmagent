@@ -33,11 +33,13 @@ type TaskRow = {
   created_at: number; updated_at: number; last_activity_at: number;
 };
 type RoutineRow = {
+  kind: string; script_json: string | null;
   id: string; repo_id: string; agent: string; title: string | null; prompt: string;
   permission: string; model: string | null; effort: string | null; preset: string; schedule: string; enabled: number;
   last_run_at: number | null; next_run_at: number | null; created_at: number; updated_at: number;
 };
 type RoutineRunRow = {
+  result_json: string | null;
   id: number; routine_id: string; fired_at: number; status: string; task_id: string | null; note: string | null;
 };
 type EventJoinRow = {
@@ -313,7 +315,11 @@ export class Db {
     for (const column of ["unused_since", "expired_at"]) {
       if (!attachmentCols.includes(column)) this.db.exec(`ALTER TABLE attachments ADD COLUMN ${column} INTEGER`);
     }
+    const routineRunCols = (this.db.pragma("table_info(routine_runs)") as { name: string }[]).map(c => c.name);
+    if (!routineRunCols.includes("result_json")) this.db.exec("ALTER TABLE routine_runs ADD COLUMN result_json TEXT");
     const routineCols = (this.db.pragma("table_info(routines)") as { name: string }[]).map((c) => c.name);
+    if (!routineCols.includes("kind")) this.db.exec("ALTER TABLE routines ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'");
+    if (!routineCols.includes("script_json")) this.db.exec("ALTER TABLE routines ADD COLUMN script_json TEXT");
     if (!routineCols.includes("effort")) {
       this.db.exec(`ALTER TABLE routines ADD COLUMN effort TEXT`);
     }
@@ -627,15 +633,15 @@ export class Db {
   // ---- routines ----
   insertRoutine(r: Routine) {
     this.db.prepare(
-      `INSERT INTO routines (id, repo_id, agent, title, prompt, permission, model, effort, preset, schedule,
+      `INSERT INTO routines (kind, script_json, id, repo_id, agent, title, prompt, permission, model, effort, preset, schedule,
          enabled, last_run_at, next_run_at, created_at, updated_at)
-       VALUES (@id, @repo_id, @agent, @title, @prompt, @permission, @model, @effort, @preset, @schedule,
+       VALUES (@kind, @script_json, @id, @repo_id, @agent, @title, @prompt, @permission, @model, @effort, @preset, @schedule,
          @enabled, @last_run_at, @next_run_at, @created_at, @updated_at)`,
     ).run(routineToRow(r));
   }
   updateRoutine(r: Routine) {
     this.db.prepare(
-      `UPDATE routines SET repo_id=@repo_id, agent=@agent, title=@title, prompt=@prompt,
+      `UPDATE routines SET kind=@kind, script_json=@script_json, repo_id=@repo_id, agent=@agent, title=@title, prompt=@prompt,
          permission=@permission, model=@model, effort=@effort, preset=@preset, schedule=@schedule, enabled=@enabled,
          last_run_at=@last_run_at, next_run_at=@next_run_at, updated_at=@updated_at
        WHERE id=@id`,
@@ -655,8 +661,8 @@ export class Db {
     return (this.db.prepare(`SELECT * FROM routines ORDER BY created_at`).all() as RoutineRow[]).map(rowToRoutine);
   }
   // ---- routine run history ----
-  insertRoutineRun(run: Omit<RoutineRun, "id">): void {
-    this.db.prepare(
+  insertRoutineRun(run: Omit<RoutineRun, "id">): number {
+    const result = this.db.prepare(
       `INSERT INTO routine_runs (routine_id, fired_at, status, task_id, note)
        VALUES (@routine_id, @fired_at, @status, @task_id, @note)`,
     ).run({
@@ -666,6 +672,17 @@ export class Db {
       task_id: run.taskId ?? null,
       note: run.note ?? null,
     });
+    return Number(result.lastInsertRowid);
+  }
+  finishRoutineRun(id: number, result: Pick<RoutineRun, "status" | "note" | "finishedAt" | "exitCode" | "output" | "worktreePath">) {
+    this.db.prepare("UPDATE routine_runs SET status = ?, note = ?, result_json = ? WHERE id = ?")
+      .run(result.status, result.note ?? null, JSON.stringify(result), id);
+  }
+  hasRunningRoutine(repoId: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM routine_runs rr JOIN routines r ON r.id = rr.routine_id WHERE r.repo_id = ? AND rr.status = 'running' LIMIT 1").get(repoId);
+  }
+  interruptRoutineRuns() {
+    this.db.prepare("UPDATE routine_runs SET status = 'interrupted', note = 'server stopped before completion was recorded' WHERE status = 'running'").run();
   }
   listRoutineRuns(routineId: string, limit = 20): RoutineRun[] {
     return (
@@ -865,6 +882,8 @@ function taskToRow(t: TaskState) {
 
 function rowToRoutine(r: RoutineRow): Routine {
   return {
+    kind: r.kind as Routine["kind"],
+    script: r.script_json ? JSON.parse(r.script_json) : undefined,
     id: r.id,
     repoId: r.repo_id,
     agent: r.agent as AgentKind,
@@ -885,6 +904,7 @@ function rowToRoutine(r: RoutineRow): Routine {
 
 function rowToRoutineRun(r: RoutineRunRow): RoutineRun {
   return {
+    ...(r.result_json ? JSON.parse(r.result_json) : {}),
     id: r.id,
     routineId: r.routine_id,
     firedAt: r.fired_at,
@@ -896,6 +916,8 @@ function rowToRoutineRun(r: RoutineRunRow): RoutineRun {
 
 function routineToRow(r: Routine) {
   return {
+    kind: r.kind ?? "agent",
+    script_json: r.script ? JSON.stringify(r.script) : null,
     id: r.id,
     repo_id: r.repoId,
     agent: r.agent,

@@ -5,7 +5,7 @@ import { cacheSession, onCacheSessionReset } from "../read-cache";
 import { createOptimisticPreference } from "../optimistic-preference";
 import { toast } from "../components/ui/toaster";
 
-type Action = "run" | "delete";
+type Action = "run" | "stop" | "delete";
 let routines: Routine[] | null = null;
 let version = 0;
 const actions = new Map<string, Action>();
@@ -76,7 +76,7 @@ async function runAction(id: string, action: Action) {
         preferences.get(id)?.dispose(); preferences.delete(id);
       }
     } else {
-      const actual = await api.runRoutine(id);
+      const actual = await (action === "stop" ? api.stopRoutine(id) : api.runRoutine(id));
       if (generation === cacheSession()) routines = routines?.map(r => r.id === id ? actual : r) ?? [actual];
     }
   } catch (cause) { if (generation === cacheSession()) fail(cause); }
@@ -90,7 +90,7 @@ async function runAction(id: string, action: Action) {
 async function create(input: Parameters<typeof api.createRoutine>[0]): Promise<boolean> {
   if (creating !== null) return false;
   const generation = cacheSession();
-  version++; creating = input.title || input.prompt; error = ""; publish();
+  version++; creating = input.title || input.script?.command || input.prompt || "Routine"; error = ""; publish();
   try {
     const actual = await api.createRoutine(input);
     if (generation !== cacheSession()) return false;
@@ -107,5 +107,5 @@ onCacheSessionReset(() => {
 });
 export function useRoutines() {
   const state = useSyncExternalStore(subscribe, () => snapshot);
-  return { ...state, toggle, run: (id: string) => runAction(id, "run"), remove: (id: string) => runAction(id, "delete"), create };
+  return { ...state, toggle, stop: (id: string) => runAction(id, "stop"), run: (id: string) => runAction(id, "run"), remove: (id: string) => runAction(id, "delete"), create };
 }
