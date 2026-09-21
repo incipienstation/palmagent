@@ -283,6 +283,11 @@ uses the running turn's settings. Camera and Photos use the existing image limit
 Tap Send to deliver the draft to the current run, or start a run when idle.
 Hold Send to open the Send/Queue toggle. Selecting a mode does not submit; tap
 again to send. Queue applies to the current draft and resets after submission.
+Send shows a message bubble immediately and keeps its Sending indicator until
+delivery is confirmed, including after the server accepts the request. Queue
+lists only waiting turns; Send now moves a queued message into delivery feedback
+immediately and restores its queue position if the action fails. Unconfirmed or
+rejected delivery stays visible with recovery controls outside Queue.
 Hold a queued message for Edit prompt, Send now, and Remove from queue. Editing
 uses the composer while preserving the ordinary text and attachment draft.
 The editor renews a server hold; after a disconnected editor's hold expires,

@@ -33,8 +33,8 @@ function QueueItem({ message, index, disabled, pending, onEdit, onSend, onDelete
     </PopoverContent>
   </Popover>;
 }
-export function MessageQueue({ queue, disabled, pending, onEdit, onSend, onDelete, onResume }: {
-  queue: Queue; disabled: boolean; pending?: { id?: string; label: string }; onEdit: (m: PendingMessage) => void; onSend: (m: PendingMessage) => void;
+export function MessageQueue({ queue, disabled, resumeDisabled, pending, onEdit, onSend, onDelete, onResume }: {
+  queue: Queue; disabled: boolean; resumeDisabled: boolean; pending?: { id?: string; label: string }; onEdit: (m: PendingMessage) => void; onSend: (m: PendingMessage) => void;
   onDelete: (m: PendingMessage) => void; onResume: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -44,7 +44,7 @@ export function MessageQueue({ queue, disabled, pending, onEdit, onSend, onDelet
       <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         {queue.paused ? "Queue paused" : "Queue"} · {queue.messages.length}
       </Button>
-      {queue.paused && <Button variant="ghost" size="sm" disabled={disabled || queue.messages.some(m => m.status === "unknown" || m.status === "sending")} onClick={onResume}>Resume queue</Button>}
+      {queue.paused && <Button variant="ghost" size="sm" disabled={disabled || resumeDisabled} onClick={onResume}>Resume queue</Button>}
     </div>
     {expanded && <div className="max-h-36 overflow-y-auto">
       {queue.messages.map((m, index) => <QueueItem key={m.id} message={m} index={index} disabled={disabled} pending={pending?.id === m.id ? pending.label : undefined}
