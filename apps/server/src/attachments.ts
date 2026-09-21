@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, statfsSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Attachment, ImageAttachment } from "@palmagent/shared";
 import type { Db } from "./db.js";
+import { ATTACHMENT_DEFAULTS, ATTACHMENT_MAINTENANCE_MS, type AttachmentPolicy } from "./attachment-policy.js";
 import { HttpError } from "./errors.js";
 import { rasterImage, rasterMediaType } from "./output-images.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "./private-files.js";
 
-export interface AttachmentRecord extends Attachment { taskId: string; digest: string }
+export interface AttachmentRecord extends Attachment { taskId: string; digest: string; unusedSince: number | null; expiredAt: number | null }
 export interface AttachmentStorage {
   save(taskId: string, images?: readonly ImageAttachment[]): Attachment[] | undefined;
   read(taskId: string, id: string): { bytes: Buffer; mediaType: string };
@@ -20,7 +21,9 @@ const reference = ({ id, mediaType, size }: AttachmentRecord): Attachment => ({ 
 /** Immutable private files with a task-scoped SQLite index. Only the index grants access. */
 export class LocalAttachmentStorage implements AttachmentStorage {
   private readonly directory: string;
-  constructor(private readonly db: Db) {
+  private timer?: ReturnType<typeof setInterval>;
+  constructor(private readonly db: Db, private readonly policy: AttachmentPolicy = ATTACHMENT_DEFAULTS,
+    private readonly now: () => number = Date.now) {
     this.directory = join(dirname(db.path), "attachments", basename(db.path));
   }
   save(taskId: string, images?: readonly ImageAttachment[]): Attachment[] | undefined {
@@ -33,29 +36,41 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     ensurePrivateDirectory(this.directory);
     const created: string[] = [];
     try {
-      return this.db.transaction(() => prepared.map(image => {
-        const existing = this.db.attachmentByDigest(taskId, image.digest);
-        if (existing) {
-          // Repair missing or damaged bytes on explicit resubmission.
-          try { this.read(taskId, existing.id); }
-          catch { writePrivateFileAtomic(join(this.directory, existing.id), image.bytes); }
-          return reference(existing);
-        }
-        const record: AttachmentRecord = { id: randomUUID(), taskId, mediaType: image.mediaType, size: image.bytes.length, digest: image.digest };
-        const path = join(this.directory, record.id);
-        created.push(path);
-        writePrivateFileAtomic(path, image.bytes);
-        this.db.insertAttachment(record);
-        return reference(record);
-      }));
+      return this.db.transaction(() => {
+        // Charge actual directory bytes, including orphan files and failed deletions.
+        // A single transaction serializes admission across processes using this DB.
+        return prepared.map(image => {
+          const existing = this.db.attachmentByDigest(taskId, image.digest);
+          if (existing && existing.expiredAt === null) {
+            try {
+              this.read(taskId, existing.id);
+              this.db.setAttachmentLifecycle(existing.id, null, null);
+              return reference(existing);
+            } catch (error) { if (!(error instanceof HttpError)) throw error; }
+          }
+          this.assertCapacity(image.bytes.length);
+          const record: AttachmentRecord = existing ?? { id: randomUUID(), taskId, mediaType: image.mediaType,
+            size: image.bytes.length, digest: image.digest, unusedSince: null, expiredAt: null };
+          const path = join(this.directory, record.id);
+          if (!existing) created.push(path);
+          writePrivateFileAtomic(path, image.bytes);
+          if (existing) this.db.setAttachmentLifecycle(existing.id, null, null);
+          else this.db.insertAttachment(record);
+          return reference(record);
+        });
+      });
     } catch (error) {
       for (const path of created) this.remove(path);
+      if (["ENOSPC", "EDQUOT"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+        throw new HttpError(507, "Not enough disk space for attachments. Free disk space, then retry.");
+      }
       throw error;
     }
   }
   read(taskId: string, id: string) {
     const record = this.db.attachment(taskId, id);
     if (!record) throw new HttpError(404, "Attachment not found");
+    if (record.expiredAt !== null) throw new HttpError(410, "Attachment expired under the archived conversation retention policy");
     let fd: number | undefined;
     try {
       fd = openSync(join(this.directory, record.id), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -74,22 +89,71 @@ export class LocalAttachmentStorage implements AttachmentStorage {
       return { mediaType, data: bytes.toString("base64") };
     });
   }
-  /** Run at startup and after permanent repository deletion, never on archive. */
+  start(): void {
+    this.close();
+    this.prune();
+    this.timer = setInterval(() => {
+      if (!this.db.isOpen) { this.close(); return; }
+      this.prune();
+    }, ATTACHMENT_MAINTENANCE_MS);
+    this.timer.unref();
+  }
+  close(): void { clearInterval(this.timer); this.timer = undefined; }
+
+  /** Mark first, then unlink: interrupted cleanup must never resurrect expired access. */
   prune(): void {
-    if (!existsSync(this.directory)) return;
     try {
-      // Serialize with writers before taking the index snapshot: another server
-      // opening this database must not collect a file whose write is in flight.
       this.db.transaction(() => {
-        const retained = this.db.attachmentIds();
+        const now = this.now();
+        const refs = new Map<string, ReturnType<Db["attachmentReferences"]>>();
+        for (const record of this.db.attachmentInventory()) {
+          if (record.expiredAt !== null) continue;
+          let taskRefs = refs.get(record.taskId);
+          if (!taskRefs) { taskRefs = this.db.attachmentReferences(record.taskId); refs.set(record.taskId, taskRefs); }
+          if (taskRefs.pending.has(record.id)) {
+            this.db.setAttachmentLifecycle(record.id, null, null);
+          } else if (taskRefs.history.has(record.id)) {
+            const expired = this.policy.retentionMs > 0 && record.status === "archived"
+              && now - record.updatedAt >= this.policy.retentionMs;
+            this.db.setAttachmentLifecycle(record.id, null, expired ? now : null);
+          } else if (record.unusedSince === null) {
+            this.db.setAttachmentLifecycle(record.id, now, null);
+          } else if (now - record.unusedSince >= this.policy.unusedGraceMs) {
+            this.db.deleteAttachment(record.id);
+          }
+        }
+      });
+      if (!existsSync(this.directory)) return;
+      // Re-read under the writer lock: an explicit upload may have restored a file
+      // after the marking transaction. Never unlink that newly accepted content.
+      this.db.transaction(() => {
+        const retained = new Set(this.db.attachmentInventory().filter(r => r.expiredAt === null).map(r => r.id));
         for (const name of readdirSync(this.directory)) {
           if (/^[0-9a-f-]{36}(?:\.[0-9a-f-]{36}\.tmp)?$/.test(name) && !retained.has(name)) this.remove(join(this.directory, name));
         }
       });
     } catch {
-      // Metadata already denies access; retry file cleanup on the next startup.
-      console.warn("[attachments] File cleanup deferred; check storage permissions");
+      console.warn("[attachments] Cleanup deferred; check database and storage permissions");
     }
+  }
+  private assertCapacity(bytes: number): void {
+    // Recheck each physical write, accounting for completed repairs and filesystem
+    // activity since the preceding file. Atomic replacement needs a temporary copy.
+    if (this.usedBytes() + bytes > this.policy.maxBytes) {
+      throw new HttpError(507, "Attachment storage is full. Free space or increase ATTACHMENT_MAX_BYTES, then retry.");
+    }
+    if (this.freeBytes() - bytes < this.policy.minFreeBytes) {
+      throw new HttpError(507, "Not enough disk space for attachments. Free disk space, then retry.");
+    }
+  }
+  private usedBytes(): number {
+    return readdirSync(this.directory).reduce((total, name) => total + lstatSync(join(this.directory, name)).size, 0);
+  }
+  private freeBytes(): number {
+    try {
+      const { bavail, bsize } = statfsSync(this.directory);
+      return bavail * bsize;
+    } catch { throw new HttpError(507, "Cannot check attachment disk space. Check storage access, then retry."); }
   }
   private remove(path: string): void {
     try { unlinkSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }

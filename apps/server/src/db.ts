@@ -128,11 +128,11 @@ export class Db {
   transaction<T>(work: () => T): T { return this.db.transaction(work).immediate(); }
 
   attachment(taskId: string, id: string): AttachmentRecord | undefined {
-    return this.db.prepare("SELECT id, task_id AS taskId, media_type AS mediaType, size, digest FROM attachments WHERE task_id = ? AND id = ?")
+    return this.db.prepare("SELECT id, task_id AS taskId, media_type AS mediaType, size, digest, unused_since AS unusedSince, expired_at AS expiredAt FROM attachments WHERE task_id = ? AND id = ?")
       .get(taskId, id) as AttachmentRecord | undefined;
   }
   attachmentByDigest(taskId: string, digest: string): AttachmentRecord | undefined {
-    return this.db.prepare("SELECT id, task_id AS taskId, media_type AS mediaType, size, digest FROM attachments WHERE task_id = ? AND digest = ?")
+    return this.db.prepare("SELECT id, task_id AS taskId, media_type AS mediaType, size, digest, unused_since AS unusedSince, expired_at AS expiredAt FROM attachments WHERE task_id = ? AND digest = ?")
       .get(taskId, digest) as AttachmentRecord | undefined;
   }
   insertAttachment(record: AttachmentRecord): void {
@@ -142,6 +142,33 @@ export class Db {
   attachmentIds(): Set<string> {
     return new Set((this.db.prepare("SELECT id FROM attachments").all() as { id: string }[]).map(row => row.id));
   }
+
+  attachmentInventory(): (AttachmentRecord & { status: string; updatedAt: number })[] {
+    return this.db.prepare(`SELECT a.id, a.task_id AS taskId, a.media_type AS mediaType, a.size, a.digest,
+      a.unused_since AS unusedSince, a.expired_at AS expiredAt, t.status, t.updated_at AS updatedAt
+      FROM attachments a JOIN tasks t ON t.id = a.task_id`).all() as ReturnType<Db["attachmentInventory"]>;
+  }
+  attachmentReferences(taskId: string): { history: Set<string>; pending: Set<string> } {
+    const history = new Set<string>(), pending = new Set<string>();
+    // Stream only user-message events, not the potentially large assistant transcript.
+    const rows = this.db.prepare("SELECT payload_json FROM events WHERE task_id = ? AND kind = 'status'")
+      .iterate(taskId) as Iterable<{ payload_json: string }>;
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload_json);
+      for (const ref of payload?.attachments ?? []) history.add(ref.id);
+    }
+    for (const message of this.readMessageState(taskId)?.messages ?? []) {
+      if (!["delivered", "cancelled"].includes(message.status)) {
+        for (const ref of message.attachments ?? []) pending.add(ref.id);
+      }
+    }
+    return { history, pending };
+  }
+  setAttachmentLifecycle(id: string, unusedSince: number | null, expiredAt: number | null): void {
+    this.db.prepare("UPDATE attachments SET unused_since = ?, expired_at = ? WHERE id = ?")
+      .run(unusedSince, expiredAt, id);
+  }
+  deleteAttachment(id: string): void { this.db.prepare("DELETE FROM attachments WHERE id = ?").run(id); }
 
   private migrate() {
     this.db.exec(`
@@ -281,6 +308,10 @@ export class Db {
     // synthesize their prs from it in rowToTask until the next PR event rewrites it.
     if (!taskCols.includes("pr_urls")) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN pr_urls TEXT`);
+    }
+    const attachmentCols = (this.db.pragma("table_info(attachments)") as { name: string }[]).map(c => c.name);
+    for (const column of ["unused_since", "expired_at"]) {
+      if (!attachmentCols.includes(column)) this.db.exec(`ALTER TABLE attachments ADD COLUMN ${column} INTEGER`);
     }
     const routineCols = (this.db.pragma("table_info(routines)") as { name: string }[]).map((c) => c.name);
     if (!routineCols.includes("effort")) {

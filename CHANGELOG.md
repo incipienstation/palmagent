@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Image storage now limits total usage and reserves free disk space, with automatic
+  cleanup of unused attachments. Operators can optionally expire images from
+  archived conversations; expiration is off by default and expired images are
+  clearly labeled. See [storage settings](apps/web/README.md#sent-image-attachments).
+
 ## 0.1.0-alpha.61
 
 ### Added

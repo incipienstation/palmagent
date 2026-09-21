@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { BRANDING } from "@palmagent/shared";
+import { ATTACHMENT_DEFAULTS } from "./attachment-policy.js";
 import { expandHome } from "./paths.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,6 +28,10 @@ const Env = z
       .min(1)
       .refine(isLoopbackHost, "HOST must be loopback; terminate public HTTPS at the reverse proxy")
       .default("localhost"),
+    ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().safe().default(ATTACHMENT_DEFAULTS.maxBytes),
+    ATTACHMENT_MIN_FREE_BYTES: z.coerce.number().int().nonnegative().safe().default(ATTACHMENT_DEFAULTS.minFreeBytes),
+    ATTACHMENT_UNUSED_GRACE_HOURS: z.coerce.number().int().min(1).max(8760).default(24),
+    ATTACHMENT_RETENTION_DAYS: z.coerce.number().int().min(0).max(36500).default(0),
     DISPATCH_CONCURRENCY: z.coerce.number().int().min(1).default(8),
     SSE_KEEPALIVE_MS: z.coerce.number().int().positive().default(15000),
     AUTH_SESSION_TTL_MS: z.coerce.number().int().positive().default(30 * 24 * 60 * 60 * 1000),
@@ -113,6 +118,12 @@ export const config = {
   port: env.PORT,
   host: env.HOST,
   concurrency: env.DISPATCH_CONCURRENCY,
+  attachmentStorage: {
+    maxBytes: env.ATTACHMENT_MAX_BYTES,
+    minFreeBytes: env.ATTACHMENT_MIN_FREE_BYTES,
+    unusedGraceMs: env.ATTACHMENT_UNUSED_GRACE_HOURS * 60 * 60 * 1000,
+    retentionMs: env.ATTACHMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  },
   dataDir,
   dbPath,
   keepAliveMs: env.SSE_KEEPALIVE_MS,

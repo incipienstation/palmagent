@@ -134,3 +134,24 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
     await assertViewportLocked(page);
   });
 }
+
+for (const width of [360, 1280]) {
+  test(`expired attachments explain retention while missing images remain retryable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    const expiredId = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
+    const missingId = "ad45ce67-5265-4b98-b601-8f80775ea7e2";
+    let probes = 0;
+    await page.route("**/api/tasks/*/attachments/*", route => {
+      if (route.request().resourceType() === "fetch") probes++;
+      return route.fulfill({ status: route.request().url().endsWith(expiredId) ? 410 : 404, body: "Unavailable" });
+    });
+    const taskId = await reply(page, "Images in this conversation");
+    await send(page, taskId, { type: "event", event: { taskId, agent: "codex", kind: "status", ts: 2,
+      payload: { subtype: "followup", text: "Saved images", attachments: [expiredId, missingId].map(id => ({ id, mediaType: "image/png", size: png.length })) } } }, 2);
+    await expect(page.getByText("Image expired: Attached image 1", { exact: true })).toBeVisible();
+    await expect(page.getByText("Image unavailable: Attached image 2", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry image", exact: true })).toHaveCount(1);
+    await expect.poll(() => probes).toBe(2);
+    await assertViewportLocked(page);
+  });
+}

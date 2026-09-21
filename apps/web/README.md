@@ -143,10 +143,40 @@ stopped. Queue and history records contain attachment references; image bytes ar
 loaded for delivery or when editing a queued message. Duplicate content is shared
 within a task. Files are private to the service account and served through
 authenticated task-scoped endpoints with no offline cache. Archiving preserves
-attachments; permanently removing the Space removes them with its tasks. Removed
-or replaced queue attachments follow the same task lifetime. Startup cleans up
-unindexed files from interrupted writes. There is no automatic age-based eviction
-or total storage quota; operators should include this directory in disk monitoring.
+attachments by default; permanently removing the Space removes them with its tasks.
+Unused attachments, including removed or replaced queue images, are collected after
+a grace period. History references and queued, editing, rejected, or unconfirmed
+messages protect their images from unused-file cleanup. Cleanup runs at startup,
+after permanent Space deletion, and hourly while the server is running.
+
+Storage limits are installation settings in the **server service environment**;
+restart the service after changing them:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `ATTACHMENT_MAX_BYTES` | `1073741824` (1 GiB) | Maximum attachment-directory bytes; includes files awaiting cleanup. |
+| `ATTACHMENT_MIN_FREE_BYTES` | `268435456` (256 MiB) | Free disk space to leave available when accepting an image. |
+| `ATTACHMENT_UNUSED_GRACE_HOURS` | `24` | Hours since an attachment was first observed unused before removal; minimum 1. |
+| `ATTACHMENT_RETENTION_DAYS` | `0` (disabled) | Optional expiration for images in archived conversations. |
+
+For example, set `ATTACHMENT_RETENTION_DAYS=90` to expire archived images after
+90 days since that conversation's last update. Active conversations and pending
+or recoverable messages are exempt. Enabling retention also applies to existing
+archived conversations with stored attachments. Expired images show **Image expired**;
+the message remains, but the bytes cannot be recovered by disabling retention.
+Old messages without stored attachments are not migrated.
+
+A limit blocks new image writes with an actionable error; it does not evict
+conversation images to make room. Existing images remain readable, and sending
+text remains available. Exact duplicates already stored for that conversation do
+not consume another allocation. Atomic repairs also require room for a temporary
+copy. If usage already exceeds a newly lowered limit, free space or raise the limit
+before retrying uploads. Check the directory and filesystem when an upload is rejected;
+cleanup may take up to an hour beyond the grace or retention period.
+
+The disk reserve checks available space before a write; other processes can still
+consume it concurrently. It is not a filesystem quota or a backup. Keep monitoring
+the volume and back up the database and attachments together.
 
 ## Output detail
 
