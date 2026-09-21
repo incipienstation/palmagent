@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.66
+
 ### Fixed
 
 - Reopening the installed app resets the two-Back exit sequence, including when
