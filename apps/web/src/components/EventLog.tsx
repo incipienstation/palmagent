@@ -11,7 +11,6 @@ import {
   CircleHelp,
   type LucideProps,
   Terminal,
-  User,
   Wrench,
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
@@ -68,16 +67,14 @@ const KIND_ICON: Partial<Record<AgentEventKind, ComponentType<LucideProps>>> = {
 export function UserBubble({ text, meta, skills }: { text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[] }) {
   // Right-aligned soft chat bubble — the human side of the transcript.
   return (
-    <div className="mb-3 flex flex-col items-end">
-      <div className="mb-1 flex items-center gap-1.5 font-sans text-[11px] font-semibold tracking-wide text-faint uppercase">
-        <User className="size-3" aria-hidden />
-        You
-        {meta && (
+    <div role="group" aria-label="Your message" className="mb-3 flex flex-col items-end">
+      {meta && (
+        <div className="mb-1 flex items-center font-sans text-[11px] font-semibold text-faint">
           <span className="rounded bg-muted px-1.5 py-px font-sans text-[10px] tracking-normal normal-case text-faint">
             {meta}
           </span>
-        )}
-      </div>
+        </div>
+      )}
       <div className="max-w-[88%] rounded-3xl bg-secondary px-4 py-3 font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere]">
         <SkillChips skills={skills} />
         {text}
@@ -190,7 +187,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
   item: LogItem; live: boolean; expanded: boolean; toggle: (key: number) => void; onImageLoad: () => void; raw?: boolean;
 }) {
 
-  // status events with subtype steer/followup + text → render as "You" bubble
+  // status events with subtype steer/followup + text → render as a user bubble
   if (item.kind === "status") {
     const p = (item.event.payload ?? {}) as Record<string, unknown>;
     const sub = typeof p.subtype === "string" ? p.subtype : "";
@@ -200,7 +197,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
       const selected = SelectedSkillsSchema.safeParse(p.skills);
       return <UserBubble text={text} meta={meta} skills={selected.success ? selected.data : undefined} />;
     }
-    // The user's answer to an AskUserQuestion → render as a "You" bubble.
+    // The user's answer to an AskUserQuestion → render as a user bubble.
     if (sub === "answer") {
       const rows = Array.isArray(p.answers) ? (p.answers as QuestionAnswer[]) : [];
       const summary = rows

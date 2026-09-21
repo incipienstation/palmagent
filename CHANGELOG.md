@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Your messages use a cleaner conversation layout without the repeated user icon
+  and "You" label above each bubble.
+
 ## 0.1.0-alpha.57
 
 ### Fixed
