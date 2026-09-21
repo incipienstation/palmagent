@@ -99,7 +99,7 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 
 | Phase | Preview | Requested Stable release |
 | --- | --- | --- |
-| Version, changelog, preparation PR and checks | Automatic preparation; maintainer approves bot PR workflow execution | Prepare automatically; present in final evidence |
+| Version, changelog, preparation PR and checks | Automatic with the release App; built-in-token fallback needs maintainer approval of PR workflow execution | Prepare automatically; present in final evidence |
 | Channel-source merge | Squash into `develop` | Dedicated `develop` to `main` PR, merge commit after required checks |
 | Exact candidate build and verification | Automatic | Automatic, before final approval |
 | Annotated tag | Automatic, after preparation merge | After final approval |

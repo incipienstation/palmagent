@@ -36,10 +36,10 @@ on paths, methods, inputs, response bodies, and success statuses. Keep both side
 updated when changing an endpoint. The JSON middleware preserves empty-body and
 missing-Content-Type compatibility for existing clients.
 Runtime startup and shutdown are separate from app construction.
-The runner daemon keeps its existing NDJSON protocol and survives web-server restarts.
-The [session lifecycle redesign](docs/SESSION-LIFECYCLE.md) specifies the planned
-separation of application updates from agent execution, including the legacy migration and
-acceptance gates; it is not yet implemented.
+Package installations keep agent executions independent of application updates.
+Source installations retain the runner lifecycle, and the first migration from a legacy
+runner requires an idle window. See [session lifecycle](docs/SESSION-LIFECYCLE.md) for
+ownership, migration, and verification details. Source implementation does not prove deployment.
 
 The runtime binds only to a loopback host. A reverse proxy must terminate HTTPS for every
 public environment; Palmagent rejects plaintext authentication origins and non-loopback binds.
@@ -274,8 +274,9 @@ and runs the selected metadata, tooling, server, web, and package checks once. K
 README changes need only metadata checks. Use `--plan` to preview the checks (it still refreshes
 the base), or `--base origin/main` to target another branch. An explicit full commit SHA pins
 the base instead of fetching. Unknown scope or unavailable history selects all checks.
-Reviewed tooling-test-only changes run metadata and type/tooling checks; mixed changes
-retain every affected runtime lane. The verifier rejects a Node version that differs
+See the [verification skill](.harness/skills/verify/SKILL.md) for check selection,
+including tooling-test and browser-case exceptions. Mixed changes retain every affected
+lane. The verifier rejects a Node version that differs
 from `.nvmrc` before starting work; `--plan` remains available without switching versions.
 
 Code checks need dependencies installed with `pnpm install --frozen-lockfile`; browser checks

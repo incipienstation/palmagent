@@ -1,20 +1,23 @@
 # Palmagent — Codex operator plugin
 
 This is the Codex operator plugin for Palmagent, paired with the Claude Code plugin in
-`plugins/claude/`. Both invoke the same `palmagent` CLI by its bin name. Skills locate the CLI,
-confirm intent, and run it; `doctor` also guides diagnosis using service journals. Orchestration
-logic stays in the CLI.
+`plugins/claude/`. Both invoke the same `palmagent` CLI by its bin name. Skills locate the CLI
+and coordinate the requested operation; `doctor` also guides diagnosis using service journals.
+The CLI manages application services and data. Operator plugins inspect and manage host
+ingress and TLS, preserving the host's existing routing owner.
 
 The contributed Codex **skills** (each invokable as a `$<name>` chip or model-triggered by its
 description):
 
 | Skill                | Drives            | Use it for                                   |
 |----------------------|-------------------|----------------------------------------------|
+| `dispatch` | `palmagent session dispatch` | Continue a local agent session in Palmagent |
 | `settings` | Config and scheduler APIs | Manage channels and automatic updates |
 | `install` | `palmagent install` | First-run install on a fresh host   |
 | `setup`   | `palmagent setup`   | Reconfigure an existing install     |
 | `doctor`  | `palmagent doctor`  | Diagnose a broken instance (+journal) |
 | `update`  | `palmagent update`  | Plan, coordinate, and verify updates |
+| `uninstall` | `palmagent uninstall` | Remove the runtime and clean up owned ingress |
 
 ## Layout (verified against codex 0.154.0)
 
@@ -31,11 +34,13 @@ plugins/codex/                                  ← marketplace ROOT (pass THIS 
     └── palmagent/                              ← the plugin (folder name == plugin.json "name")
         ├── .codex-plugin/plugin.json            ← required manifest
         └── skills/
+            ├── dispatch/ SKILL.md + agents/openai.yaml
             ├── settings/ SKILL.md + agents/openai.yaml
             ├── install/  SKILL.md + agents/openai.yaml
             ├── setup/    SKILL.md + agents/openai.yaml
             ├── doctor/   SKILL.md + agents/openai.yaml
-            └── update/   SKILL.md + agents/openai.yaml
+            ├── update/   SKILL.md + agents/openai.yaml
+            └── uninstall/ SKILL.md + agents/openai.yaml
 ```
 
 ## Install (verified `codex plugin` commands, 0.154.0)

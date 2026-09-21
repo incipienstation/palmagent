@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- The doctor skill now distinguishes independent execution hosts from legacy runners
+  and explains runner startup failures without suggesting an automatic fallback.
+
 ## 0.1.0-alpha.55
 
 ### Added
