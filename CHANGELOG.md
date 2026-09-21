@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Codex CLI compatibility now includes 0.155.x alongside 0.154.x, verified with
+  0.155.1 for execution, resume, interactive delivery and interruption, tool output,
+  and native transcript import. Versions 0.156.0 and later still require verification.
+
 ## 0.1.0-alpha.63
 
 ### Fixed
