@@ -1,3 +1,5 @@
+import { VoiceSessions } from "./voice.js";
+import { LocalAttachmentStorage, sanitizeImages } from "./attachments.js";
 import { SkillDiscovery, skillId, type SkillEnvironment } from "./skills.js";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
 import { MessageController } from "./message-controller.js";
@@ -24,12 +26,8 @@ import type { RawEvent, RunHandle, RunnerBackend } from "./types.js";
 import { expandHome } from "./paths.js";
 import { detectDefaultBranch, gitToplevel, WorktreeManager } from "./worktree.js";
 
-// Lets handlers translate failures into HTTP status codes.
-export class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
+import { HttpError } from "./errors.js";
+export { HttpError } from "./errors.js";
 const badRequest = (m: string) => new HttpError(400, m);
 const notFound = (m: string) => new HttpError(404, m);
 const conflict = (m: string) => new HttpError(409, m);
@@ -58,7 +56,12 @@ export class TaskService {
   }
 
   private shuttingDown = false;
-  beginShutdown(): void { this.shuttingDown = true; this.messages.close(); }
+  beginShutdown(): void {
+    this.shuttingDown = true;
+    this.messages.close();
+    this.voice.close();
+    this.attachments.close();
+  }
 
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
   private sessionMismatch = new Set<string>();
@@ -76,6 +79,13 @@ export class TaskService {
 
   readonly messages: MessageController;
   readonly skillDiscovery = new SkillDiscovery();
+  readonly voice = new VoiceSessions();
+  startVoice(context: SkillContext, sdp: string, signal?: AbortSignal) {
+    const env = this.skillEnvironment(context);
+    if (env.agent !== "codex") throw badRequest("Voice input is available only for Codex.");
+    if (this.shuttingDown || this.updating) throw new HttpError(503, "Voice input is unavailable while restarting.");
+    return this.voice.start(env.home, sdp, signal);
+  }
   private skillEnvironment(context: SkillContext): SkillEnvironment {
     if (context.taskId) {
       const task = this.getTask(context.taskId);
@@ -97,6 +107,8 @@ export class TaskService {
     catch (error) { throw conflict(error instanceof Error ? error.message : "Choose the skill again."); }
   }
 
+  readonly attachments: LocalAttachmentStorage;
+
   constructor(
     private readonly db: Db,
     private readonly hub: Hub,
@@ -106,6 +118,7 @@ export class TaskService {
     private readonly push?: PushService,
     private readonly maintenance: () => boolean = () => false,
   ) {
+    this.attachments = new LocalAttachmentStorage(db, config.attachmentStorage);
     this.messages = new MessageController(db, {
       assertWritable: (id) => {
         this.assertTaskAdmission();
@@ -125,22 +138,23 @@ export class TaskService {
       },
       start: (id, message) => {
         const task = this.getTask(id);
+        const images = this.attachments.load(id, message.attachments) ?? message.images;
         this.applySettings(task, message.settings?.model, message.settings?.effort, message.settings?.permission);
-        this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.images?.length, skills: message.skills });
-        void this.runTurn(task, message.text, task.sessionId, message.images, message.id, message.skills);
+        this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
+        void this.runTurn(task, message.text, task.sessionId, images, message.id, message.skills);
       },
       steer: async (id, message) => {
         const task = this.getTask(id), handle = this.supervisor.get(id);
         if (task.status !== "running" || this.stopping.has(id) || !handle?.send) return "rejected";
-        this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.images?.length, skills: message.skills });
+        this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
         try {
           const skills = await this.resolveSkills({ taskId: id }, message.skills);
           if (this.supervisor.get(id) !== handle || task.status !== "running") return "rejected";
-          return handle.send(message.text, message.images, message.id, skills);
+          return handle.send(message.text, this.attachments.load(id, message.attachments) ?? message.images, message.id, skills);
         } catch { return "rejected"; }
       },
       changed: () => this.broadcastTasks(),
-    });
+    }, this.attachments);
   }
 
   async resolveMessageSkills(id: string, req: SubmitMessage) {
@@ -176,6 +190,7 @@ export class TaskService {
   // in-process backend nothing is ever live → every in-flight task resets,
   // exactly the pre-daemon behavior.
   async init(): Promise<void> {
+    this.attachments.start();
     for (const t of this.db.listTasks()) {
       this.cache.set(t.taskId, t);
       const control = this.backend.loadControl?.(t.taskId);
@@ -266,6 +281,7 @@ export class TaskService {
     if (live.length) throw conflict(`repo has ${live.length} non-archived task(s) — archive them first`);
     if (this.terminals?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
     this.db.deleteRepo(id);
+    this.attachments.prune();
     // deleteRepo cascades to the repo's (archived) tasks in the DB; drop them
     // from the in-memory cache too so listTasks doesn't resurrect dead rows.
     for (const t of [...this.cache.values()]) {
@@ -477,14 +493,17 @@ export class TaskService {
       updatedAt: now,
       lastActivityAt: now,
     };
-    this.db.insertTask(task);
+    const attachments = this.db.transaction(() => {
+      this.db.insertTask(task);
+      return this.attachments.save(taskId, images);
+    });
     this.cache.set(taskId, task);
     this.broadcastTasks();
     // Emit the dispatch prompt into the event log (like followup/steer) so the
     // task view renders it from the live stream, not just the inbox snapshot —
     // otherwise opening a fresh task before its snapshot lands shows no prompt.
     const nImages = images?.length ?? 0;
-    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, images: nImages || undefined });
+    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, attachments, images: nImages || undefined });
     void this.runTurn(task, req.prompt, undefined, images, undefined, skills); // new session
     return task;
   }
@@ -499,9 +518,10 @@ export class TaskService {
     if (task.status !== "idle" && task.status !== "failed") {
       throw conflict(`cannot follow up a ${task.status} task`);
     }
+    const attachments = this.attachments.save(id, images);
     this.applySettings(task, model, effort, permission); // resumes with the new model/effort/permission if changed
     const nImages = images?.length ?? 0;
-    this.emitSynthetic(task, { subtype: "followup", text: prompt, images: nImages || undefined });
+    this.emitSynthetic(task, { subtype: "followup", text: prompt, attachments, images: nImages || undefined });
     void this.runTurn(task, prompt, task.sessionId, images); // resume by id off the local transcript
     return task;
   }
@@ -513,6 +533,8 @@ export class TaskService {
     if (!text) throw badRequest("text is required");
     const images = sanitizeImages(rawImages);
     const nImages = images?.length ?? 0;
+    const attachments = this.supervisor.has(id) || ["idle", "failed"].includes(task.status)
+      ? this.attachments.save(id, images) : undefined;
     // Persist any model/effort/permission override up front — every turn reads it off the task.
     const settingsChanged = this.applySettings(task, model, effort, permission);
     const handle = this.supervisor.get(id);
@@ -530,25 +552,25 @@ export class TaskService {
         if (!restarted) { this.steerRestart.delete(id); this.persistControl(id); }
         this.emitSynthetic(task, {
           subtype: "steer", injected: false, queued: true, restarted, text,
-          model: task.model, effort: task.effort, permission: task.permission, images: nImages || undefined,
+          model: task.model, effort: task.effort, permission: task.permission, attachments, images: nImages || undefined,
         });
         return { injected: false, queued: true, restarted };
       }
       // Claude: control_request interrupt (true). Codex: no channel (false).
       if (handle.steer(text, images)) {
-        this.emitSynthetic(task, { subtype: "steer", injected: true, text, images: nImages || undefined });
+        this.emitSynthetic(task, { subtype: "steer", injected: true, text, attachments, images: nImages || undefined });
         return { injected: true, queued: false };
       }
       const q = this.pendingSteer.get(id) ?? [];
       q.push({ text, images: images ?? [] });
       this.pendingSteer.set(id, q); this.persistControl(id);
-      this.emitSynthetic(task, { subtype: "steer", injected: false, queued: true, text, images: nImages || undefined });
+      this.emitSynthetic(task, { subtype: "steer", injected: false, queued: true, text, attachments, images: nImages || undefined });
       return { injected: false, queued: true };
     }
     // No active turn: run the steer as an immediate follow-up if resumable.
     if (task.status === "idle" || task.status === "failed") {
       void this.runTurn(task, text, task.sessionId, images);
-      this.emitSynthetic(task, { subtype: "steer", injected: false, queued: false, text, images: nImages || undefined, note: "ran as follow-up" });
+      this.emitSynthetic(task, { subtype: "steer", injected: false, queued: false, text, attachments, images: nImages || undefined, note: "ran as follow-up" });
       return { injected: false, queued: false };
     }
     this.emitSynthetic(task, { subtype: "steer", injected: false, queued: false, text, note: `ignored in ${task.status}` });
@@ -982,32 +1004,6 @@ export class TaskService {
     const title = `${task.agent} ${what}: ${headline(task)}`;
     this.push?.notify({ title, body, taskId: task.taskId, url: `/#/task/${task.taskId}` });
   }
-}
-
-// ---- image attachments ----
-// Claude's API caps images at 5MB; cap a bit under it (decoded) and keep the
-// count sane. The PWA downscales before upload, so these are backstops.
-const MAX_IMAGES = 8;
-const MAX_IMAGE_BYTES = 4.5 * 1024 * 1024;
-const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-
-function sanitizeImages(raw: unknown): ImageAttachment[] | undefined {
-  if (raw == null) return undefined;
-  if (!Array.isArray(raw)) throw badRequest("images must be an array");
-  if (raw.length === 0) return undefined;
-  if (raw.length > MAX_IMAGES) throw badRequest(`too many images (max ${MAX_IMAGES})`);
-  return raw.map((img, i) => {
-    const mediaType = String((img as { mediaType?: unknown })?.mediaType ?? "");
-    let data = String((img as { data?: unknown })?.data ?? "");
-    if (!IMAGE_MEDIA_TYPES.has(mediaType)) throw badRequest(`images[${i}]: unsupported mediaType '${mediaType}'`);
-    data = data.replace(/^data:[^,]*,/, ""); // be lenient about data: URL prefixes
-    if (!data || !/^[A-Za-z0-9+/=\s]+$/.test(data)) throw badRequest(`images[${i}]: data must be base64`);
-    data = data.replace(/\s+/g, "");
-    if (data.length * 0.75 > MAX_IMAGE_BYTES) {
-      throw badRequest(`images[${i}]: too large (max ${Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)}MB decoded)`);
-    }
-    return { mediaType, data };
-  });
 }
 
 // A short push-body for an AskUserQuestion: the first question's text (or count).

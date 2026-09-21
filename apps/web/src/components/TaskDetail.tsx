@@ -7,6 +7,7 @@ import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
 import { MessageQueue as QueuePanel } from "./MessageQueue";
+import { isWaitingMessage, MessageDelivery } from "./MessageDelivery";
 import type { MessageQueue, PendingMessage, SubmitMessage } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
@@ -37,7 +38,7 @@ import { useSkillDraft } from "./SkillPicker";
 import { Composer } from "./Composer";
 import { AgentTag, StatusBadge } from "./chips";
 import { PrList } from "./PrChip";
-import { EventLog, UserBubble } from "./EventLog";
+import { EventLog } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
 import { SessionHandoff } from "./SessionHandoff";
 import { Alert } from "./ui/alert";
@@ -117,8 +118,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const remoteQueue = task?.messageQueue;
   const confirmedQueue = queueOverride && queueOverride.revision > (remoteQueue?.revision ?? -1) ? queueOverride : remoteQueue;
   const queue = activity.preview?.apply(confirmedQueue ?? { revision: 0, paused: false, runId: null, messages: [] }) ?? confirmedQueue;
-  const pendingSend = queue?.messages.find(m => m.id === activity.preview?.id && m.version === 0 && m.mode === "send");
-  const displayedQueue = pendingSend && queue ? { ...queue, messages: queue.messages.filter(m => m !== pendingSend) } : queue;
+  const pendingDeliveries = queue?.messages.filter(m => !isWaitingMessage(m)) ?? [];
+  const displayedQueue = queue && { ...queue, messages: queue.messages.filter(isWaitingMessage) };
+  const resumeDisabled = !!queue?.messages.some(m => m.status === "unknown" || m.status === "sending");
   const att = edit ? editAtt : normalAtt;
   useEffect(() => {
     if (!edit || edit.expired) return;
@@ -132,7 +134,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     await act("Preparing edit…", async () => {
       const q = await api.messageAction(taskId, message.id, { action: "edit", version: message.version, token });
       setQueueOverride(q); setEdit({ id: message.id, version: message.version, token });
-      setEditText(message.text); setEditSkills(message.skills ?? []); editAtt.setImages(message.images ?? []);
+      setEditText(message.text); setEditSkills(message.skills ?? []); editAtt.setImages(q.messages.find(m => m.id === message.id)?.images ?? []);
     });
   }
   async function endEdit(save: boolean) {
@@ -158,6 +160,12 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
   const status = task?.status;
   const running = status === "running";
+  const editedSettings = edit ? queue?.messages.find(message => message.id === edit.id)?.settings : undefined;
+  const settingsReadOnly = edit
+    ? "Settings are retained from the queued message."
+    : running && deliveryMode === "send" ? "Messages sent now use the running turn's settings." : undefined;
+  const displayedModel = settingsReadOnly ? (editedSettings?.model ?? task?.model) || DEFAULT_OPTION : model;
+  const displayedEffort = settingsReadOnly ? (editedSettings?.effort ?? task?.effort) || DEFAULT_OPTION : effort;
   const awaiting = status === "awaiting_approval";
   const needsInput = status === "awaiting_input";
   const active = running || status === "queued" || awaiting || needsInput;
@@ -210,7 +218,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         setCompose(originalDraft); setSkills(skills); att.setImages(images ?? []);
         throw error;
       }
-    }, undefined, { id, label: deliveryMode === "queue" ? "Adding…" : "Sending…", apply: q => q.messages.some(m => m.id === id) ? q : { ...q, messages: [...q.messages, preview] } });
+    }, undefined, { id, submission: true, label: deliveryMode === "queue" ? "Adding…" : "Sending…", apply: q => q.messages.some(m => m.id === id) ? q : { ...q, messages: [...q.messages, preview] } });
   }
 
   async function act(label: string, fn: () => Promise<unknown>, after?: () => void, preview?: QueuePreview) {
@@ -240,7 +248,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
         : { action, version: message.version }));
     }, undefined, { id: message.id, label: "Sending…", apply: q => ({ ...q, messages: action === "delete"
       ? q.messages.filter(m => m.id !== message.id)
-      : q.messages.map(m => m.id === message.id ? { ...m, status: "sending" } : m) }) });
+      : q.messages.map(m => m.id === message.id && m.status === "queued" ? { ...m, mode: "send", status: "sending" } : m) }) });
   }
 
   async function stopTurn() {
@@ -350,8 +358,10 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             </div>
           )}
 
-          {pendingSend && <div role="status" aria-label="Pending message" className="max-h-36 overflow-y-auto"><UserBubble text={pendingSend.text} skills={pendingSend.skills} meta={`Sending…${pendingSend.images?.length ? ` · ${pendingSend.images.length} image(s)` : ""}`} /></div>}
-          {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit}
+          <MessageDelivery messages={pendingDeliveries} paused={queue?.paused ?? false} disabled={busy || localOwner || !!edit}
+            resumeDisabled={resumeDisabled} onDelete={m => void queueAction(m, "delete")}
+            onResume={() => void act("Resuming delivery…", async () => setQueueOverride(await api.resumeQueue(taskId)))} />
+          {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit} resumeDisabled={resumeDisabled}
             onEdit={m => void startEdit(m)}
             onSend={m => void queueAction(m, "send")}
             onDelete={m => void queueAction(m, "delete")}
@@ -359,10 +369,10 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
           {(!answering || !!edit) && task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
             skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
-            id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
+            voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
-            action="Send now" showSettings={!edit && !(running && deliveryMode === "send")}
+            action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
@@ -373,7 +383,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} />}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
-            settings={{ agent: task.agent, model, onModelChange: setModel, effort, onEffortChange: setEffort,
+            settings={{ agent: task.agent, model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
               permission, onPermissionChange: setPermission }} />}
         </div>
       </div>

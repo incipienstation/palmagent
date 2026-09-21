@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { previewSource } from "../image-source";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -20,12 +20,23 @@ function Preview({ src, alt, title, onLoad, linked }: {
   src: string; alt: string; title?: string; onLoad?: () => void; linked: boolean;
 }) {
   const [failed, setFailed] = useState(false);
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    // Only probe our attachment endpoint after an image error. Never fetch remote
+    // Markdown URLs here, and never cache an expiration response offline.
+    if (!failed || !/^\/api\/tasks\/[^/]+\/attachments\/[0-9a-f-]{36}$/.test(src)) return;
+    const controller = new AbortController();
+    void fetch(src, { cache: "no-store", signal: controller.signal })
+      .then(response => { setExpired(response.status === 410); return response.body?.cancel(); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [failed, src]);
   const [attempt, setAttempt] = useState(0);
   const [actualSize, setActualSize] = useState(false);
   const label = alt || "Image";
   if (!src || failed) return <span className="my-2 inline-flex max-w-full flex-wrap items-center gap-2 text-sm text-muted-foreground">
-    <span>Image unavailable: {label}</span>
-    {src && !linked && <Button type="button" variant="outline" size="sm" onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Retry image</Button>}
+    <span>{expired ? "Image expired" : "Image unavailable"}: {label}</span>
+    {src && !expired && !linked && <Button type="button" variant="outline" size="sm" onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Retry image</Button>}
   </span>;
   const image = <img key={attempt} src={src} alt={label} title={title} loading="lazy" decoding="async" referrerPolicy="no-referrer"
     onLoad={onLoad} onError={() => { setFailed(true); onLoad?.(); }}

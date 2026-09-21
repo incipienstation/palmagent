@@ -12,13 +12,14 @@ function QueueItem({ message, index, disabled, pending, onEdit, onSend, onDelete
 }) {
   const [panel, setPanel] = useState<"detail" | "actions" | null>(null);
   const press = useLongPress(() => setPanel("actions"), () => setPanel("detail"), disabled);
+  const imageCount = message.attachments?.length ?? message.images?.length ?? 0;
   const editing = (message.editingUntil ?? 0) > Date.now();
   return <Popover open={!!panel} onOpenChange={open => { if (!open) setPanel(null); }}>
     <PopoverAnchor asChild>
       <Button type="button" variant="ghost" className={cn("h-auto min-h-11 w-full justify-start touch-pan-y select-none [-webkit-touch-callout:none]", press.pressing && "scale-[0.98]")}
         disabled={disabled} aria-label={`Queued message ${index + 1}: ${message.text}`} aria-haspopup="dialog" aria-expanded={!!panel} {...press.handlers}>
         <span className="shrink-0">{index + 1}.</span><span className="truncate">{message.text}</span>
-        {message.images?.length ? <span className="shrink-0">· {message.images.length} image(s)</span> : null}
+        {imageCount ? <span className="shrink-0">· {imageCount} image(s)</span> : null}
         <span className="ml-auto shrink-0">{pending ?? (editing ? "Editing" : message.status === "queued" ? "" : message.status)}</span>
       </Button>
     </PopoverAnchor>
@@ -32,8 +33,8 @@ function QueueItem({ message, index, disabled, pending, onEdit, onSend, onDelete
     </PopoverContent>
   </Popover>;
 }
-export function MessageQueue({ queue, disabled, pending, onEdit, onSend, onDelete, onResume }: {
-  queue: Queue; disabled: boolean; pending?: { id?: string; label: string }; onEdit: (m: PendingMessage) => void; onSend: (m: PendingMessage) => void;
+export function MessageQueue({ queue, disabled, resumeDisabled, pending, onEdit, onSend, onDelete, onResume }: {
+  queue: Queue; disabled: boolean; resumeDisabled: boolean; pending?: { id?: string; label: string }; onEdit: (m: PendingMessage) => void; onSend: (m: PendingMessage) => void;
   onDelete: (m: PendingMessage) => void; onResume: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -43,7 +44,7 @@ export function MessageQueue({ queue, disabled, pending, onEdit, onSend, onDelet
       <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         {queue.paused ? "Queue paused" : "Queue"} · {queue.messages.length}
       </Button>
-      {queue.paused && <Button variant="ghost" size="sm" disabled={disabled || queue.messages.some(m => m.status === "unknown" || m.status === "sending")} onClick={onResume}>Resume queue</Button>}
+      {queue.paused && <Button variant="ghost" size="sm" disabled={disabled || resumeDisabled} onClick={onResume}>Resume queue</Button>}
     </div>
     {expanded && <div className="max-h-36 overflow-y-auto">
       {queue.messages.map((m, index) => <QueueItem key={m.id} message={m} index={index} disabled={disabled} pending={pending?.id === m.id ? pending.label : undefined}

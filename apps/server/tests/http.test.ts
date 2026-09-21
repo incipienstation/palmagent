@@ -47,6 +47,25 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDepend
   return { dir, db, hub, service, auth, settings, repoSettings, shutdown, app, closeListener };
 }
 
+test("voice routes require authentication, reject non-Codex contexts and resolve the native home server-side", async t => {
+  const f = fixture(t);
+  const repo = f.service.createRepo({ path: f.dir });
+  const id = "11111111-1111-4111-8111-111111111111";
+  const calls: string[] = [];
+  f.service.voice.start = async (home, sdp) => { calls.push(home); assert.equal(sdp, "v=0\r\noffer"); return { id, sdp: "v=0\r\nanswer" }; };
+  const now = Date.now(); f.db.createSession("voice-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=voice-session`, "content-type": "application/json" };
+  const payload = (agent: string) => JSON.stringify({ context: { repoId: repo.id, agent }, sdp: "v=0\r\noffer" });
+  assert.equal((await f.app.request("/api/voice", { method: "POST", body: payload("codex") })).status, 401);
+  assert.equal((await f.app.request("/api/voice", { method: "POST", headers, body: payload("claude") })).status, 400);
+  const result = await f.app.request("/api/voice", { method: "POST", headers, body: payload("codex") });
+  assert.equal(result.status, 200); assert.deepEqual(await result.json(), { id, sdp: "v=0\r\nanswer" });
+  assert.deepEqual(calls, [nativeHome("codex")]);
+  assert.equal((await f.app.request(`/api/voice/${id}/heartbeat`, { method: "POST", headers })).status, 410);
+  assert.equal((await f.app.request(`/api/voice/${id}`, { method: "DELETE", headers })).status, 200);
+  assert.equal((await f.app.request("/api/voice/not-an-id", { method: "DELETE", headers })).status, 400);
+});
+
 // Use the real Node adapter: cookies, streamed bodies and HEAD can differ from
 // app.request even when route-level unit tests pass.
 test("HTTP auth gates and input failures preserve cookies, status codes and mutation boundaries", async (t) => {
@@ -575,4 +594,50 @@ test("retrying an accepted skill message returns its receipt after plugin remova
   assert.equal(discoveries, 1);
   assert.equal((await post({ ...request, text: "Different intent" })).status, 409);
   assert.equal((await post({ ...request, skills: [] })).status, 409);
+});
+
+
+test("stored attachments require authentication and task membership, survive archive, and disappear with the Space", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const taskId of ["stored", "other"]) f.db.insertTask({ taskId, repoId: "r", agent: "codex", prompt: "fixture", worktreePath: f.dir,
+    permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  const image = { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
+  const [ref] = f.service.attachments.save("stored", [image])!;
+  const path = `/api/tasks/stored/attachments/${ref.id}`;
+  assert.equal((await f.app.request(path)).status, 401);
+  f.db.createSession("attachment-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=attachment-session` };
+  const response = await f.app.request(path, { headers });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("content-type"), "image/png");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(image.data, "base64"));
+  assert.equal((await f.app.request(`/api/tasks/other/attachments/${ref.id}`, { headers })).status, 404);
+  assert.equal((await f.app.request("/api/tasks/stored/attachments/not-an-id", { headers })).status, 400);
+  f.service.archive("stored"); f.service.archive("other");
+  assert.equal((await f.app.request(path, { headers })).status, 200);
+  f.db.setAttachmentLifecycle(ref.id, null, Date.now());
+  const expired = await f.app.request(path, { headers });
+  assert.equal(expired.status, 410);
+  assert.equal(expired.headers.get("cache-control"), "no-store");
+  assert.equal((await f.app.request(path)).status, 401);
+  f.service.deleteRepo("r");
+  assert.equal((await f.app.request(path, { headers })).status, 404);
+  assert.equal(f.db.attachmentIds().size, 0);
+});
+
+
+test("attachment storage failure rolls back task creation", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  await f.service.init();
+  writeFileSync(join(f.dir, "state/attachments"), "not a directory");
+  assert.throws(() => f.service.createTask({ repoId: "r", agent: "codex", prompt: "Keep my image",
+    images: [{ mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" }] }));
+  assert.deepEqual(f.db.listTasks(), []);
+  assert.deepEqual(f.service.listTasks(), []);
+  assert.equal(f.db.attachmentIds().size, 0);
 });

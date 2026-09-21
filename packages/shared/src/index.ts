@@ -12,3 +12,7 @@ export type * from "./settings.js";
 export * from "./ingress.js";
 
 export * from "./skills.js";
+
+export * from "./attachments.js";
+
+export * from "./voice.js";

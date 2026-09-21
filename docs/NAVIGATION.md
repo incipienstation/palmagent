@@ -10,7 +10,13 @@ entry first. Existing page entries survive reloads without another floor. Only
 Back at that floor shows the two-second exit hint; page changes and opening a
 layer disarm it. Dismissing or replacing the exit hint also disarms it immediately.
 The fixed two-second deadline dismisses the hint even if hover/focus has paused
-ordinary toast timers. In-app arrows never request app exit.
+ordinary toast timers. While the hint is visible, the original history entry stays
+exposed so the next system Back can leave through the browser's native behavior.
+Expiry, dismissal, or continued app interaction restores the existing root entry
+with Forward, without pushing a replacement from `popstate`. JavaScript Back at
+the start of history is a no-op, not an app-close API; it must never lock navigation.
+In-app arrows never request app exit. Browser tests cover history traversal, not
+the operating system's PWA window lifecycle.
 
 Task creation replaces the form with its conversation only while that form remains
 mounted. A late acknowledgement retains the chosen screen and clears only the

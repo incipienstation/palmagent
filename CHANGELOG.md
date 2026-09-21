@@ -11,6 +11,65 @@ An entry does not mean a version has been published.
 - Your messages use a cleaner conversation layout without the repeated user icon
   and "You" label above each bubble.
 
+## 0.1.0-alpha.64
+
+### Changed
+
+- Codex CLI compatibility now includes 0.155.x alongside 0.154.x, verified with
+  0.155.1 for execution, resume, interactive delivery and interruption, tool output,
+  and native transcript import. Versions 0.156.0 and later still require verification.
+
+## 0.1.0-alpha.63
+
+### Fixed
+
+- In the installed app, the first Back at Tasks now leaves the history boundary
+  ready for the next system Back to exit. Expiring or dismissing the hint restores
+  the guard without adding history, and an unavailable exit cannot freeze navigation.
+
+## 0.1.0-alpha.62
+
+### Added
+
+- Image storage now limits total usage and reserves free disk space, with automatic
+  cleanup of unused attachments. Operators can optionally expire images from
+  archived conversations; expiration is off by default and expired images are
+  clearly labeled. See [storage settings](apps/web/README.md#sent-image-attachments).
+
+## 0.1.0-alpha.61
+
+### Added
+
+- Codex composers now have a microphone button beside Send. Speech is added to
+  the draft after a pause, preserving edits and leaving submission under your
+  control. Voice input uses the installed Codex login and requires microphone
+  access and a Codex version with experimental WebRTC voice support.
+
+## 0.1.0-alpha.60
+
+### Fixed
+
+- Send now shows immediate delivery feedback until confirmation instead of moving
+  into Queue. Queue lists waiting turns only; sending a queued message moves it
+  out immediately, and delivery problems remain visible separately.
+
+## 0.1.0-alpha.59
+
+### Added
+
+- New image attachments stay with their conversations and can be reopened after
+  sending, reloading, restarting the server, or archiving a task. Older attachments
+  are not migrated.
+
+## 0.1.0-alpha.58
+
+### Changed
+
+- The skill picker uses a small slash keycap after the attachment button and compact
+  rows with each skill's icon, name and source. New tasks and conversations keep
+  model and effort beside Send, including a read-only summary for running turns
+  and queued-message edits.
+
 ## 0.1.0-alpha.57
 
 ### Fixed

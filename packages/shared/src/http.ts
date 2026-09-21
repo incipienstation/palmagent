@@ -22,6 +22,9 @@ type Query<T> = { query: T };
 type Ok = { ok: true };
 
 export type ApiSchema = {
+  "/api/voice": { $post: Endpoint<Json<import("./voice.js").VoiceStart>, import("./voice.js").VoiceConnection> };
+  "/api/voice/:id": { $delete: Endpoint<Id, Ok> };
+  "/api/voice/:id/heartbeat": { $post: Endpoint<Id, Ok> };
   "/api/skills": { $get: Endpoint<Query<import("./skills.js").SkillContext>, import("./skills.js").SkillCatalog> };
   "/api/terminals": {
     $get: Endpoint<Query<{ taskId?: string; repoId?: string }>, { terminals: TerminalSession[]; capabilities: TerminalCapabilities }>;
@@ -43,6 +46,7 @@ export type ApiSchema = {
     $delete: Endpoint<Id, Response.TaskResponse>;
   };
   "/api/tasks/:id/account-limits": { $get: Endpoint<Id, AccountLimits> };
+  "/api/tasks/:id/attachments/:attachmentId": { $get: { input: { param: { id: string; attachmentId: string } }; output: Uint8Array<ArrayBuffer>; outputFormat: "body"; status: 200 } };
   "/api/tasks/:id/image": { $get: { input: Id & Query<{ path: string | string[] }>; output: Uint8Array<ArrayBuffer>; outputFormat: "body"; status: 200 } };
   "/api/tasks/:id/history": { $get: Endpoint<Id & Query<{ before: string | string[] }>, Response.TaskHistoryResponse> };
   "/api/tasks/:id/handoff": { $post: Endpoint<Id, SessionHandoffResponse> };

@@ -1,7 +1,7 @@
 import { SkillChips } from "./SkillPicker";
-import { SelectedSkillsSchema } from "@palmagent/shared";
+import { AttachmentSchema, attachmentUrl, type Attachment, SelectedSkillsSchema } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
-import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject } from "react";
+import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import {
   AlertTriangle,
@@ -64,7 +64,10 @@ const KIND_ICON: Partial<Record<AgentEventKind, ComponentType<LucideProps>>> = {
   question: CircleHelp,
 };
 
-export function UserBubble({ text, meta, skills }: { text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[] }) {
+export function UserBubble({ text, meta, skills, attachments, onImageLoad }: {
+  text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[]; attachments?: Attachment[]; onImageLoad?: () => void;
+}) {
+  const taskId = useContext(ImageTaskContext);
   // Right-aligned soft chat bubble — the human side of the transcript.
   return (
     <div role="group" aria-label="Your message" className="mb-3 flex flex-col items-end">
@@ -78,6 +81,10 @@ export function UserBubble({ text, meta, skills }: { text: string; meta?: string
       <div className="max-w-[88%] rounded-3xl bg-secondary px-4 py-3 font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere]">
         <SkillChips skills={skills} />
         {text}
+        {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
+          {attachments.map((attachment, index) => <ImagePreview key={`${attachment.id}-${index}`}
+            src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`} onLoad={onImageLoad} />)}
+        </div>}
       </div>
     </div>
   );
@@ -195,7 +202,9 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
     if ((sub === "steer" || sub === "followup" || sub === "dispatch") && text) {
       const meta = p.queued === true ? "queued" : p.injected === true ? "injected" : undefined;
       const selected = SelectedSkillsSchema.safeParse(p.skills);
-      return <UserBubble text={text} meta={meta} skills={selected.success ? selected.data : undefined} />;
+      const attachments = AttachmentSchema.array().safeParse(p.attachments);
+      return <UserBubble text={text} meta={meta} skills={selected.success ? selected.data : undefined}
+        attachments={attachments.success ? attachments.data : undefined} onImageLoad={onImageLoad} />;
     }
     // The user's answer to an AskUserQuestion → render as a user bubble.
     if (sub === "answer") {

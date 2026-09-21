@@ -11,6 +11,36 @@ async function onScreen(control: Locator) {
   }), "control is hittable").toBe(true);
 }
 
+for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar order and adjacent model/send controls at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  for (const route of ["new", "task/t-idle-rich"]) {
+    await page.goto(`/#/${route}`);
+    const composer = page.getByRole("group", { name: "Message composer", exact: true });
+    const input = composer.getByRole("textbox");
+    const attachments = composer.getByRole("button", { name: "Add attachments" });
+    const skills = composer.getByRole("button", { name: "Choose a skill" });
+    const settings = composer.getByRole("button", { name: "Configure model and effort" });
+    const action = composer.getByRole("button", { name: route === "new" ? "Dispatch" : "Send now", exact: true });
+    // Check both the empty/unfocused and populated states: the settings must
+    // remain discoverable and Send must not absorb space between the two.
+    for (const draft of ["", "Review this change"]) {
+      if (draft) await input.fill(draft);
+      await onScreen(settings);
+      await expect(action).toBeInViewport({ ratio: 1 });
+      if (draft) await onScreen(action);
+      await onScreen(skills);
+      const [add, skill, model, send] = await Promise.all([attachments, skills, settings, action].map(control => control.boundingBox()));
+      expect(skill!.x).toBeGreaterThanOrEqual(add!.x + add!.width);
+      expect(skill!.width).toBeGreaterThanOrEqual(44);
+      expect(model!.x).toBeGreaterThanOrEqual(skill!.x + skill!.width);
+      expect(send!.x - model!.x - model!.width).toBeLessThanOrEqual(8);
+      expect(Math.abs(model!.y + model!.height / 2 - send!.y - send!.height / 2)).toBeLessThanOrEqual(1);
+      expect((await input.boundingBox())!.y).toBeLessThan(add!.y);
+      await assertViewportLocked(page);
+    }
+  }
+});
+
 test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
   const width = 360;
   await page.setViewportSize({ width, height: 780 });

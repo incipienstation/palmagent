@@ -129,6 +129,55 @@ Palmagent and synchronized across connected screens, including for running and
 local sessions. Renaming keeps the original prompt, native CLI session, and activity
 order intact.
 
+## Sent image attachments
+
+New image attachments appear in your message and open in the existing enlarged
+viewer. They remain available after reload, on other signed-in devices, after a
+server restart, and after archiving the conversation. Older attachments are not
+migrated. PNG, JPEG, GIF, and WebP are supported, with up to eight images per
+message and 4.5 MiB per image after the composer's image preparation.
+
+The server keeps image files under `attachments/<database-filename>/` beside its
+SQLite database. Back up both the database and that directory while the server is
+stopped. Queue and history records contain attachment references; image bytes are
+loaded for delivery or when editing a queued message. Duplicate content is shared
+within a task. Files are private to the service account and served through
+authenticated task-scoped endpoints with no offline cache. Archiving preserves
+attachments by default; permanently removing the Space removes them with its tasks.
+Unused attachments, including removed or replaced queue images, are collected after
+a grace period. History references and queued, editing, rejected, or unconfirmed
+messages protect their images from unused-file cleanup. Cleanup runs at startup,
+after permanent Space deletion, and hourly while the server is running.
+
+Storage limits are installation settings in the **server service environment**;
+restart the service after changing them:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `ATTACHMENT_MAX_BYTES` | `1073741824` (1 GiB) | Maximum attachment-directory bytes; includes files awaiting cleanup. |
+| `ATTACHMENT_MIN_FREE_BYTES` | `268435456` (256 MiB) | Free disk space to leave available when accepting an image. |
+| `ATTACHMENT_UNUSED_GRACE_HOURS` | `24` | Hours since an attachment was first observed unused before removal; minimum 1. |
+| `ATTACHMENT_RETENTION_DAYS` | `0` (disabled) | Optional expiration for images in archived conversations. |
+
+For example, set `ATTACHMENT_RETENTION_DAYS=90` to expire archived images after
+90 days since that conversation's last update. Active conversations and pending
+or recoverable messages are exempt. Enabling retention also applies to existing
+archived conversations with stored attachments. Expired images show **Image expired**;
+the message remains, but the bytes cannot be recovered by disabling retention.
+Old messages without stored attachments are not migrated.
+
+A limit blocks new image writes with an actionable error; it does not evict
+conversation images to make room. Existing images remain readable, and sending
+text remains available. Exact duplicates already stored for that conversation do
+not consume another allocation. Atomic repairs also require room for a temporary
+copy. If usage already exceeds a newly lowered limit, free space or raise the limit
+before retrying uploads. Check the directory and filesystem when an upload is rejected;
+cleanup may take up to an hour beyond the grace or retention period.
+
+The disk reserve checks available space before a write; other processes can still
+consume it concurrently. It is not a filesystem quota or a backup. Keep monitoring
+the volume and back up the database and attachments together.
+
 ## Output detail
 
 Agent replies render Markdown images with relative file paths or URLs such as
@@ -264,6 +313,11 @@ uses the running turn's settings. Camera and Photos use the existing image limit
 Tap Send to deliver the draft to the current run, or start a run when idle.
 Hold Send to open the Send/Queue toggle. Selecting a mode does not submit; tap
 again to send. Queue applies to the current draft and resets after submission.
+Send shows a message bubble immediately and keeps its Sending indicator until
+delivery is confirmed, including after the server accepts the request. Queue
+lists only waiting turns; Send now moves a queued message into delivery feedback
+immediately and restores its queue position if the action fails. Unconfirmed or
+rejected delivery stays visible with recovery controls outside Queue.
 Hold a queued message for Edit prompt, Send now, and Remove from queue. Editing
 uses the composer while preserving the ordinary text and attachment draft.
 The editor renews a server hold; after a disconnected editor's hold expires,

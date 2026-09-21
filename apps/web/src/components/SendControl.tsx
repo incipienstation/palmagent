@@ -15,7 +15,7 @@ export function SendControl({ mode, onMode, onSend, disabled, sendDisabled }: {
   const press = useLongPress(() => setOpen(true), () => { if (!sendDisabled) onSend(); }, disabled);
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverAnchor asChild>
-      <Button ref={button} type="button" size="icon-lg" className={cn("relative ml-auto shrink-0 touch-pan-y select-none [-webkit-touch-callout:none]", press.pressing && "scale-95")}
+      <Button ref={button} type="button" size="icon-lg" className={cn("relative shrink-0 touch-pan-y select-none [-webkit-touch-callout:none]", press.pressing && "scale-95")}
         disabled={disabled} aria-disabled={disabled || sendDisabled} aria-label={mode === "send" ? "Send now" : "Add to queue"}
         aria-haspopup="dialog" aria-expanded={open} aria-keyshortcuts="ArrowDown Shift+F10" title="Hold or press Arrow Down to choose Send or Queue" {...press.handlers}>
         {mode === "send" ? <ArrowUp /> : <ListPlus />}

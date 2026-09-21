@@ -1,3 +1,4 @@
+import { LocalAttachmentStorage, type AttachmentStorage } from "./attachments.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { MessageAction, MessageQueue, MessageSettings, PendingMessage, SubmitMessage } from "@palmagent/shared";
 import type { Db } from "./db.js";
@@ -25,7 +26,7 @@ const conflict = (s: string): never => { throw new MessageConflict(s); };
 // claim work before any asynchronous adapter call; callbacks always re-read it.
 export class MessageController {
   private timer: ReturnType<typeof setInterval>;
-  constructor(private db: Db, private host: Host) {
+  constructor(private db: Db, private host: Host, private attachments: AttachmentStorage = new LocalAttachmentStorage(db)) {
     this.timer = setInterval(() => { if (!this.db.isOpen) { this.close(); return; } for (const id of this.db.messageTaskIds()) this.pump(id); }, 1000);
     this.timer.unref();
   }
@@ -103,9 +104,9 @@ export class MessageController {
       if (s.messages.some(x => x.status === "sending" || x.status === "unknown")) conflict("Wait for the previous message delivery to be confirmed.");
       if (!s.runId && !this.host.canStart(id)) conflict("The task cannot start a new run yet.");
     }
-    const m: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text, images: req.images, skills: req.skills,
-      settings: { ...this.host.settings(id), ...req.settings }, status: "queued", fingerprint };
     if (req.mode === "send" && s.runId && req.settings && Object.keys(req.settings).length) conflict("Model and permission changes apply to queued messages or the next run.");
+    const m: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text, attachments: this.attachments.save(id, req.images), skills: req.skills,
+      settings: { ...this.host.settings(id), ...req.settings }, status: "queued", fingerprint };
     s.messages.push(m); this.save(id, s);
     if (req.mode === "send") this.sendNow(id, m.id);
     else this.pump(id);
@@ -116,6 +117,7 @@ export class MessageController {
     const s = this.state(id), m = s.messages.find(m => m.id === messageId);
     if (!m) conflict("Message not found.");
     const entry = m!;
+    let editImages: PendingMessage["images"];
     if ("version" in action && action.version !== entry.version) conflict("This message changed. Reload it before editing.");
     if (action.action === "delete") {
       if (entry.status === "sending" || entry.status === "delivered") conflict("The message has already been sent.");
@@ -130,17 +132,25 @@ export class MessageController {
       if (entry.status !== "queued") conflict("This message is no longer waiting.");
       if (action.action === "edit") {
         if (entry.editToken && entry.editToken !== action.token && (entry.editingUntil ?? 0) > Date.now()) conflict("This message is being edited on another device.");
+        editImages = this.attachments.load(id, entry.attachments) ?? entry.images;
         entry.editToken = action.token; entry.editingUntil = Date.now() + EDIT_MS;
       } else {
         if (entry.editToken !== action.token || (entry.editingUntil ?? 0) <= Date.now()) conflict("The edit session expired. Your draft is preserved; reopen the message.");
         if (action.action === "renew") entry.editingUntil = Date.now() + EDIT_MS;
         else {
-          if (action.action === "save") { entry.text = action.text; entry.images = action.images; entry.skills = action.skills; entry.version++; }
+          if (action.action === "save") {
+            const attachments = this.attachments.save(id, action.images);
+            entry.text = action.text; entry.attachments = attachments; delete entry.images;
+            entry.skills = action.skills; entry.version++;
+          }
           delete entry.editToken; delete entry.editingUntil;
         }
       }
     }
-    this.save(id, s); this.pump(id); return this.snapshot(id);
+    this.save(id, s); this.pump(id);
+    const snapshot = this.snapshot(id);
+    if (action.action === "edit") snapshot.messages = snapshot.messages.map(message => message.id === messageId ? { ...message, images: editImages } : message);
+    return snapshot;
   }
   private sendNow(id: string, messageId: string) {
     const s = this.state(id), m = s.messages.find(m => m.id === messageId)!;
@@ -148,7 +158,7 @@ export class MessageController {
     if (!s.runId && !this.host.canStart(id)) conflict("The task cannot start a new run yet.");
     m.status = "sending"; m.mode = "send"; m.runId = s.runId ?? undefined;
     this.save(id, s);
-    if (!s.runId) { this.host.start(id, m); return; }
+    if (!s.runId) { this.start(id, m); return; }
     void this.host.steer(id, m).then(status => {
       const current = this.state(id), entry = current.messages.find(x => x.id === messageId)!;
       if (entry.status === "delivered") return;
@@ -160,12 +170,22 @@ export class MessageController {
       if (entry.status !== "delivered") { entry.status = "unknown"; entry.error = "Delivery could not be confirmed."; current.paused = true; this.save(id, current); }
     });
   }
+  private start(id: string, message: PendingMessage) {
+    try { this.host.start(id, message); }
+    catch (error) {
+      const state = this.state(id), entry = state.messages.find(m => m.id === message.id);
+      if (!state.runId && entry?.status === "sending") {
+        entry.status = "rejected"; entry.error = error instanceof Error ? error.message : "Unable to start message";
+        state.paused = true; this.save(id, state);
+      } else throw error;
+    }
+  }
   pump(id: string) {
     const s = this.state(id);
     if (s.paused || s.runId || !this.host.canStart(id)) return;
     if (s.messages.some(m => m.status === "sending" || m.status === "unknown" || m.status === "rejected")) return;
     const next = s.messages.find(m => m.status === "queued");
     if (!next || (next.editingUntil ?? 0) > Date.now()) return;
-    next.status = "sending"; this.save(id, s); this.host.start(id, next);
+    next.status = "sending"; this.save(id, s); this.start(id, next);
   }
 }
