@@ -1,3 +1,4 @@
+import { SelectedSkillsSchema, type SkillSelection } from "@palmagent/shared";
 import Database from "better-sqlite3";
 import { randomUUID, createHash } from "node:crypto";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import type { RawEvent } from "../types.js";
 
 export interface ExecutionRecord {
   id: string; taskId: string; protocol: number; release: string; node: string;
+  skills?: SkillSelection[];
   args: ExecutionStart; state: "queued" | "starting" | "running" | "finished" | "lost";
   pid: number | null; identity: string | null; question: string | null; lastSeq: number;
 }
@@ -39,6 +41,7 @@ export class ExecutionStore {
       CREATE TABLE IF NOT EXISTS commands (execution TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL, result TEXT NOT NULL, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(execution,id));
       CREATE TABLE IF NOT EXISTS admission_settings (id INTEGER PRIMARY KEY CHECK(id=1), capacity INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS control_state (taskId TEXT PRIMARY KEY, body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS skill_inputs (execution TEXT PRIMARY KEY, body TEXT NOT NULL);
       PRAGMA user_version = 1;
     `);
   }
@@ -51,7 +54,9 @@ export class ExecutionStore {
   get(id: string): ExecutionRecord {
     const row = this.db.prepare("SELECT * FROM executions WHERE id=?").get(id) as Stored | undefined;
     if (!row) throw new Error("Execution not found");
-    return { ...row, args: ExecutionStartSchema.parse(JSON.parse(row.args)) };
+    const selected = this.db.prepare("SELECT body FROM skill_inputs WHERE execution=?").get(id) as { body: string } | undefined;
+    return { ...row, args: ExecutionStartSchema.parse(JSON.parse(row.args)),
+      ...(selected ? { skills: SelectedSkillsSchema.parse(JSON.parse(selected.body)) } : {}) };
   }
   latest(taskId: string): ExecutionRecord | undefined {
     const row = this.db.prepare("SELECT id FROM executions WHERE taskId=? ORDER BY rowid DESC LIMIT 1").get(taskId) as { id: string } | undefined;
@@ -60,18 +65,22 @@ export class ExecutionStore {
   list(): ExecutionRecord[] {
     return (this.db.prepare("SELECT id FROM executions ORDER BY rowid").all() as { id: string }[]).map(({ id }) => this.get(id));
   }
-  reserve(input: ExecutionStart, release: string, node: string): ExecutionRecord {
+  reserve(input: ExecutionStart, release: string, node: string, skills?: SkillSelection[]): ExecutionRecord {
     const args = ExecutionStartSchema.parse(input);
+    const selected = SelectedSkillsSchema.parse(skills);
     return this.db.transaction(() => {
       const existing = this.latest(args.taskId);
       if (existing && ["queued", "starting", "running"].includes(existing.state)) {
-        if (args.messageId && existing.args.messageId === args.messageId && JSON.stringify(existing.args) === JSON.stringify(args)) return existing;
+        if (args.messageId && existing.args.messageId === args.messageId && JSON.stringify(existing.args) === JSON.stringify(args) && JSON.stringify(existing.skills) === JSON.stringify(selected)) return existing;
         throw new Error("An execution already owns this task");
       }
       const id = randomUUID();
       const ownerKey = createHash("sha256").update(JSON.stringify([args.agent, args.providerHome ?? "", args.resumeId ?? id])).digest("hex");
       this.db.prepare("INSERT INTO executions(id,taskId,protocol,release,node,args,state,ownerKey,createdAt) VALUES (?,?,?,?,?,?,'queued',?,?)")
         .run(id, args.taskId, EXECUTION_PROTOCOL, release, node, JSON.stringify(args), ownerKey, Date.now());
+      // Keep optional inputs outside the strict v1 argument object. Older web
+      // packages can still read retained executions during a rollback.
+      if (selected !== undefined) this.db.prepare("INSERT INTO skill_inputs VALUES (?,?)").run(id, JSON.stringify(selected));
       this.append(id, { taskId: args.taskId, kind: "status", payload: { subtype: "execution_queued" } });
       return this.get(id);
     }).immediate();

@@ -27,6 +27,7 @@ type TaskRow = {
   status: string; interrupted: number; session_id: string | null; branch: string | null;
   worktree_path: string | null; permission: string; model: string | null; effort: string | null;
   session_control: string | null;
+  skills_json: string | null;
   pr_url: string | null; pr_urls: string | null; pending_input: string | null;
   created_at: number; updated_at: number; last_activity_at: number;
 };
@@ -229,6 +230,7 @@ export class Db {
     `);
     // Additive migrations preserve existing native sessions and task events.
     const taskCols = (this.db.pragma("table_info(tasks)") as { name: string }[]).map((c) => c.name);
+    if (!taskCols.includes("skills_json")) this.db.exec("ALTER TABLE tasks ADD COLUMN skills_json TEXT");
     if (!taskCols.includes("session_control")) this.db.exec("ALTER TABLE tasks ADD COLUMN session_control TEXT");
     if (!taskCols.includes("pr_url")) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN pr_url TEXT`);
@@ -313,9 +315,9 @@ export class Db {
   insertTask(t: TaskState) {
     this.db.prepare(
       `INSERT INTO tasks (id, repo_id, agent, title, prompt, status, interrupted, session_id,
-         branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, session_control, created_at, updated_at, last_activity_at)
+         branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, session_control, skills_json, created_at, updated_at, last_activity_at)
        VALUES (@id, @repo_id, @agent, @title, @prompt, @status, @interrupted, @session_id,
-         @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @session_control, @created_at, @updated_at, @last_activity_at)`,
+         @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @session_control, @skills_json, @created_at, @updated_at, @last_activity_at)`,
     ).run(taskToRow(t));
   }
   getTask(id: string): TaskState | undefined {
@@ -762,6 +764,7 @@ function rowToTask(r: TaskRow): TaskState {
     interrupted: r.interrupted === 1,
     sessionId: r.session_id ?? undefined,
     sessionControl: r.session_control ? JSON.parse(r.session_control) : undefined,
+    skills: r.skills_json ? JSON.parse(r.skills_json) : undefined,
     branch: r.branch ?? undefined,
     worktreePath: r.worktree_path ?? undefined,
     permission: r.permission as Permission,
@@ -787,6 +790,7 @@ function taskToRow(t: TaskState) {
     interrupted: t.interrupted ? 1 : 0,
     session_id: t.sessionId ?? null,
     session_control: t.sessionControl ? JSON.stringify(t.sessionControl) : null,
+    skills_json: t.skills?.length ? JSON.stringify(t.skills) : null,
     branch: t.branch ?? null,
     worktree_path: t.worktreePath ?? null,
     permission: t.permission,

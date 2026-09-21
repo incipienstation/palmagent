@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Select an available agent skill with `/` or the skill button in a message. Choices
+  stay with drafts, queued messages and conversation history; Palmagent plugin skills
+  carry a small Palmagent logo.
+
 ## 0.1.0-alpha.54
 
 ### Changed

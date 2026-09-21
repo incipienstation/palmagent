@@ -522,3 +522,57 @@ test("browser terminal access fails closed when sign-in is disabled", async (t) 
     assert.equal(response.status, 403);
   }
 });
+
+test("skill discovery is authenticated and bound to the task's provider home and worktree", async t => {
+  const f = fixture(t, false);
+  const seen: unknown[] = [];
+  f.service.skillDiscovery.list = async env => { seen.push(env); return { skills: [] }; };
+  const now = Date.now();
+  f.db.insertRepo({ id: "skills-repo", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: now });
+  f.db.insertTask({ taskId: "skills-task", repoId: "skills-repo", agent: "codex", prompt: "Hello", status: "idle", interrupted: false,
+    permission: "read-only", createdAt: now, updatedAt: now, lastActivityAt: now, worktreePath: join(f.dir, "worktree"),
+    sessionControl: { owner: "palmagent", home: join(f.dir, "profile"), transcript: "", cursor: 0, prefixHash: "" } });
+  await f.service.init();
+  const res = await f.app.request("/api/skills?taskId=skills-task");
+  assert.equal(res.status, 200); assert.equal(res.headers.get("cache-control"), "no-store");
+  assert.deepEqual(seen, [{ agent: "codex", cwd: join(f.dir, "worktree"), home: join(f.dir, "profile") }]);
+  assert.equal((await f.app.request("/api/skills?repoId=skills-repo&agent=claude")).status, 200);
+  assert.equal((await f.app.request("/api/skills?taskId=missing")).status, 404);
+  assert.equal((await f.app.request("/api/skills?taskId=skills-task&repoId=skills-repo")).status, 400);
+  assert.equal((await f.app.request("/api/skills?cwd=/arbitrary")).status, 400);
+  const secured = fixture(t);
+  assert.equal((await secured.app.request("/api/skills?taskId=skills-task")).status, 401);
+});
+
+test("stopping or cancelling during skill revalidation never starts a provider", async t => {
+  for (const action of ["stop", "cancel"] as const) {
+    const f = fixture(t, false);
+    f.db.insertRepo({ id: "skills-race", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+    let reject!: (error: Error) => void;
+    f.service.skillDiscovery.resolve = () => new Promise((_resolve, fail) => { reject = fail; });
+    const task = f.service.createTask({ repoId: "skills-race", agent: "codex", prompt: "Check", skills: [{ id: "skill", name: "check", source: "repo" }] });
+    assert.equal(task.status, "queued");
+    f.service[action](task.taskId);
+    reject(new Error("Skill was removed"));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.service.getTask(task.taskId).status, action === "stop" ? "idle" : "cancelled");
+  }
+});
+
+test("retrying an accepted skill message returns its receipt after plugin removal", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "skill-retry", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "skill-retry-task", repoId: "skill-retry", agent: "codex", prompt: "Hello", status: "idle", interrupted: false,
+    permission: "read-only", createdAt: 1, updatedAt: 1, lastActivityAt: 1, worktreePath: f.dir });
+  await f.service.init(); f.service.messages.pause("skill-retry-task");
+  const skill = { id: "selected", name: "check", source: "repo" };
+  let discoveries = 0;
+  f.service.skillDiscovery.resolve = async () => { if (++discoveries > 1) throw Error("Plugin removed"); return [skill]; };
+  const request = { clientMessageId: "d882c3fc-d8c5-4df5-8f2b-3877de3d5823", mode: "queue", expectedRunId: null, text: "Check", skills: [skill] };
+  const post = (body: unknown) => f.app.request("/api/tasks/skill-retry-task/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await post(request)).status, 202);
+  assert.equal((await post(request)).status, 202);
+  assert.equal(discoveries, 1);
+  assert.equal((await post({ ...request, text: "Different intent" })).status, 409);
+  assert.equal((await post({ ...request, skills: [] })).status, 409);
+});

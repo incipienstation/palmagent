@@ -51,6 +51,12 @@ export class MessageController {
     this.save(id, s);
     return s.runId;
   }
+  rejectBeforeStart(id: string, error: string) {
+    const s = this.state(id);
+    if (s.runtimeStarted) return;
+    for (const m of s.messages) if (m.status === "sending") { m.status = "rejected"; m.error = error; }
+    s.runId = null; s.paused = true; this.save(id, s);
+  }
   startingRuntime(id: string) { const s = this.state(id); s.runtimeStarted = true; this.save(id, s); }
   stopWaiting(id: string) {
     const s = this.state(id);
@@ -97,7 +103,7 @@ export class MessageController {
       if (s.messages.some(x => x.status === "sending" || x.status === "unknown")) conflict("Wait for the previous message delivery to be confirmed.");
       if (!s.runId && !this.host.canStart(id)) conflict("The task cannot start a new run yet.");
     }
-    const m: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text, images: req.images,
+    const m: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text, images: req.images, skills: req.skills,
       settings: { ...this.host.settings(id), ...req.settings }, status: "queued", fingerprint };
     if (req.mode === "send" && s.runId && req.settings && Object.keys(req.settings).length) conflict("Model and permission changes apply to queued messages or the next run.");
     s.messages.push(m); this.save(id, s);
@@ -129,7 +135,7 @@ export class MessageController {
         if (entry.editToken !== action.token || (entry.editingUntil ?? 0) <= Date.now()) conflict("The edit session expired. Your draft is preserved; reopen the message.");
         if (action.action === "renew") entry.editingUntil = Date.now() + EDIT_MS;
         else {
-          if (action.action === "save") { entry.text = action.text; entry.images = action.images; entry.version++; }
+          if (action.action === "save") { entry.text = action.text; entry.images = action.images; entry.skills = action.skills; entry.version++; }
           delete entry.editToken; delete entry.editingUntil;
         }
       }

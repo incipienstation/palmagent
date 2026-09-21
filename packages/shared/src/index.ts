@@ -10,3 +10,5 @@ export type * from "./requests.js";
 export * from "./messages.js";
 export type * from "./settings.js";
 export * from "./ingress.js";
+
+export * from "./skills.js";

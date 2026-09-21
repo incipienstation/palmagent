@@ -10,7 +10,11 @@ export function taskRoutes({ service, db }: HttpDependencies) {
   const app = new Hono();
   return app
     .get("/", query(TaskQuerySchema), (c) => c.json({ tasks: service.listTasks(c.req.valid("query").status) }, 200))
-    .post("/", jsonBody(CreateTaskSchema), (c) => c.json({ task: service.createTask(c.req.valid("json")) }, 201))
+    .post("/", jsonBody(CreateTaskSchema), async (c) => {
+      const input = c.req.valid("json");
+      const skills = await service.resolveSkills({ repoId: input.repoId, agent: input.agent }, input.skills);
+      return c.json({ task: service.createTask({ ...input, skills }) }, 201);
+    })
     .get("/:id", params(IdParamsSchema), (c) => c.json({ task: service.getTask(c.req.valid("param").id) }, 200))
     .get("/:id/image", params(IdParamsSchema), query(TaskImageQuerySchema), async (c) => {
       c.header("Cache-Control", "no-store");
@@ -38,8 +42,16 @@ export function taskRoutes({ service, db }: HttpDependencies) {
     })
     .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))
-    .post("/:id/messages", params(IdParamsSchema), jsonBody(SubmitMessageSchema), (c) => c.json(service.submitMessage(c.req.valid("param").id, c.req.valid("json")), 202))
-    .post("/:id/messages/:messageId", params(MessageParamsSchema), jsonBody(MessageActionSchema), (c) => c.json(service.messageAction(c.req.valid("param").id, c.req.valid("param").messageId, c.req.valid("json")), 200))
+    .post("/:id/messages", params(IdParamsSchema), jsonBody(SubmitMessageSchema), async (c) => {
+      const id = c.req.valid("param").id, input = c.req.valid("json");
+      const skills = await service.resolveMessageSkills(id, input);
+      return c.json(service.submitMessage(id, { ...input, skills }), 202);
+    })
+    .post("/:id/messages/:messageId", params(MessageParamsSchema), jsonBody(MessageActionSchema), async (c) => {
+      const { id, messageId } = c.req.valid("param"), input = c.req.valid("json");
+      const action = input.action === "save" ? { ...input, skills: await service.resolveSkills({ taskId: id }, input.skills) } : input;
+      return c.json(service.messageAction(id, messageId, action), 200);
+    })
     .post("/:id/queue/resume", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json(service.messages.resume(c.req.valid("param").id), 200))
     .post("/:id/followup", params(IdParamsSchema), jsonBody(FollowupSchema), (c) => {
       const input = c.req.valid("json");

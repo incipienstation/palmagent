@@ -1,5 +1,8 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, Check, ChevronDown, Loader2 } from "lucide-react";
+import { SkillChips, SkillMenu, SkillTrigger, useSkillPicker } from "./SkillPicker";
+import { Popover, PopoverAnchor } from "./ui/popover";
+import type { SkillContext, SkillSelection } from "@palmagent/shared";
 import type { AgentKind } from "@palmagent/shared";
 import { DEFAULT_OPTION, effortsForModel, MODELS, PERMISSIONS } from "../api";
 import { useUpdateState } from "../update-state";
@@ -72,7 +75,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
 }
 
 export function Composer({ id, value, onChange, placeholder, label, action, onSend, busy, disabled, sendDisabled,
-  attachments, settings, description, controls, header, showSettings = true }: {
+  attachments, settings, description, controls, header, showSettings = true, skillContext, skills, onSkillsChange }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
@@ -89,6 +92,9 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   controls?: ReactNode;
   header?: ReactNode;
   showSettings?: boolean;
+  skillContext?: SkillContext;
+  skills?: SkillSelection[];
+  onSkillsChange?: (skills: SkillSelection[]) => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [configure, setConfigure] = useUpdateState(`composer:${id}:configure`, false);
@@ -96,8 +102,9 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
-  const cannotSend = disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0);
-  const expanded = !!header || focused || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
+  const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy });
+  const cannotSend = disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0 && !skills?.length);
+  const expanded = !!skills?.length || picker.open || !!header || focused || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
   useLayoutEffect(() => {
     const el = textarea.current;
     if (!el) return;
@@ -118,17 +125,22 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     : MODELS[settings.agent].find((m) => m.value === settings.model)?.label ?? settings.model;
   const effort = settings.effort === DEFAULT_OPTION ? "" : effortsForModel(settings.agent, settings.model).find((e) => e.value === settings.effort)?.label ?? settings.effort;
 
-  return <InputGroup aria-label="Message composer" data-expanded={expanded}
+  return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
     className={cn("p-1", expanded ? "rounded-3xl" : "rounded-full")}
     onFocusCapture={() => setFocused(true)}
     onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
     <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
-      onChange={(e) => onChange(e.target.value)} onPaste={attachments.onPaste}
+      onChange={(e) => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
+      onSelect={e => picker.cursor(e.currentTarget)}
+      aria-autocomplete={skillContext ? "list" : undefined} aria-controls={picker.open ? picker.id : undefined}
+      aria-haspopup={skillContext ? "listbox" : undefined}
+      aria-activedescendant={picker.open && picker.matches.length && !picker.loading ? `${picker.id}-${picker.selected}` : undefined}
       aria-keyshortcuts={shortcut === "enter" ? "Enter Meta+Enter Control+Enter" : "Meta+Enter Control+Enter"}
       onCompositionStart={() => { composing.current = true; }}
       onCompositionEnd={() => { composing.current = false; }}
       onBlur={() => { composing.current = false; }}
       onKeyDown={(event) => {
+        if (!event.defaultPrevented && !composing.current && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && picker.keyDown(event)) return;
         // keyCode 229 also covers IME confirmation in browsers that end
         // composition before dispatching the final Enter keydown.
         if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.altKey ||
@@ -142,11 +154,13 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       placeholder={placeholder} disabled={disabled || busy}
       className={cn("max-h-36 py-2.5", expanded ? "order-1 basis-full px-3" : "px-1")}
     />
+    {!!skills?.length && <InputGroupAddon align="block-start" className="px-3 pt-2"><SkillChips skills={skills} disabled={disabled || busy} onRemove={() => onSkillsChange?.([])} /></InputGroupAddon>}
     {header && <InputGroupAddon align="block-start" className="px-3">{header}</InputGroupAddon>}
     {attachments.images.length > 0 && <InputGroupAddon align="block-start" className="px-3 pt-2">
       <AttachmentTray images={attachments.images} disabled={busy} onRemove={attachments.remove} />
     </InputGroupAddon>}
     <InputGroupAddon align="inline-start" className={expanded ? "order-2" : undefined}>
+      {skillContext && onSkillsChange && <SkillTrigger onClick={picker.trigger} disabled={disabled || busy} />}
       <AttachmentMenu open={menuOpen} onOpenChange={setMenuOpen} disabled={disabled || busy || attachments.preparing}
         preparing={attachments.preparing} onAdd={(files) => void attachments.addFiles(files)} />
     </InputGroupAddon>
@@ -183,5 +197,5 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         {busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}
       </Button>}
     </InputGroupAddon>
-  </InputGroup>;
+  </InputGroup></PopoverAnchor><SkillMenu picker={picker} textarea={textarea} /></Popover>;
 }

@@ -32,6 +32,7 @@ import { useTaskStream } from "../hooks/useTaskStream";
 import { navigate } from "../router";
 import { AppBar, AppShell, ConnPill } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
+import { useSkillDraft } from "./SkillPicker";
 import { Composer } from "./Composer";
 import { AgentTag, StatusBadge } from "./chips";
 import { PrList } from "./PrChip";
@@ -65,6 +66,8 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const task = streamTask ?? inboxTask;
   // Per-task draft, persisted so a deploy refresh never drops an unsent steer/follow-up.
   const [compose, setCompose] = useDraft(`draft:compose:${taskId}`);
+  const [skills, setSkills] = useSkillDraft(`draft:skills:${taskId}`);
+  const [editSkills, setEditSkills] = useSkillDraft(`draft:queue-skills:${taskId}`);
   // The compose selectors mirror the task's live model/effort (DEFAULT_OPTION =
   // the agent's own default). They re-sync whenever the task's setting changes —
   // e.g. after a steer persists a new one — instead of resetting to "default"
@@ -127,13 +130,14 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     await act("Preparing edit…", async () => {
       const q = await api.messageAction(taskId, message.id, { action: "edit", version: message.version, token });
       setQueueOverride(q); setEdit({ id: message.id, version: message.version, token });
-      setEditText(message.text); editAtt.setImages(message.images ?? []);
+      setEditText(message.text); setEditSkills(message.skills ?? []); editAtt.setImages(message.images ?? []);
     });
   }
   async function endEdit(save: boolean) {
-    if (!edit || busy || (save && (edit.expired || !editText.trim()))) return;
+    if (!edit || busy || (save && (edit.expired || (!editText.trim() && !editSkills.length)))) return;
     const draft = edit;
-    const text = editText;
+    const text = editText || (editSkills.length ? "Use the selected skill." : "");
+    const selectedSkills = editSkills;
     const images = editAtt.images;
     await act(save ? "Saving message…" : "Releasing edit…", async () => {
       // The lease remains represented by the pending action until release is
@@ -141,12 +145,12 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       setEdit(null);
       try {
         if (save || !draft.expired) setQueueOverride(await api.messageAction(taskId, draft.id, save
-          ? { action: "save", token: draft.token, version: draft.version, text, images }
+          ? { action: "save", token: draft.token, version: draft.version, text, images, skills: selectedSkills }
           : { action: "release", token: draft.token }));
-        editAtt.clear(); if (save) setEditText("");
+        editAtt.clear(); if (save) { setEditText(""); setEditSkills([]); }
       } catch (error) { setEdit({ ...draft, expired: true }); throw error; }
     }, undefined, { id: draft.id, label: save ? "Saving…" : "Releasing edit…", apply: q => ({ ...q, messages: q.messages.map(m => m.id === draft.id
-      ? { ...m, ...(save ? { text, images } : {}), editingUntil: undefined } : m) }) });
+      ? { ...m, ...(save ? { text, images, skills: selectedSkills } : {}), editingUntil: undefined } : m) }) });
   }
 
   const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
@@ -169,7 +173,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
   async function send() {
     if (edit) { await endEdit(true); return; }
-    const text = compose.trim() || (att.images.length ? "See the attached image(s)." : "");
+    const text = compose.trim() || (skills.length ? "Use the selected skill." : att.images.length ? "See the attached image(s)." : "");
     if (!text || !composeMode) return;
     const images = att.images.length ? att.images : undefined;
     // Send an override only when it differs from the task's current setting.
@@ -186,22 +190,22 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       ...(effort !== curEffort ? { effort: effort === DEFAULT_OPTION ? "" : effort } : {}),
       ...(permission !== curPermission ? { permission } : {}),
     };
-    const request = { mode: deliveryMode, text, images, expectedRunId: confirmedQueue?.runId ?? null,
+    const request = { mode: deliveryMode, text, images, ...(skills.length ? { skills } : {}), expectedRunId: confirmedQueue?.runId ?? null,
       ...(running && deliveryMode === "send" ? {} : { settings: override }) };
-    const fingerprint = JSON.stringify({ mode: deliveryMode, text, images, model, effort, permission });
+    const fingerprint = JSON.stringify({ mode: deliveryMode, text, images, skills, model, effort, permission });
     const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
     const submission = submitted?.fingerprint === fingerprint ? submitted.request : request;
-    const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, images, status: deliveryMode === "queue" ? "queued" : "sending" };
+    const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, images, skills, status: deliveryMode === "queue" ? "queued" : "sending" };
     const originalDraft = compose;
     await act(deliveryMode === "queue" ? "Adding to queue…" : "Sending message…", async () => {
       setSubmitted({ fingerprint, id, request: submission });
-      setCompose(""); att.clear();
+      setCompose(""); setSkills([]); att.clear();
       try {
         setQueueOverride(await api.submitMessage(taskId, { ...submission, clientMessageId: id }));
         setSubmitted(null); setDeliveryMode("send");
       } catch (error) {
         if (error instanceof ApiError && error.status >= 400 && error.status < 500) setSubmitted(null);
-        setCompose(originalDraft); att.setImages(images ?? []);
+        setCompose(originalDraft); setSkills(skills); att.setImages(images ?? []);
         throw error;
       }
     }, undefined, { id, label: deliveryMode === "queue" ? "Adding…" : "Sending…", apply: q => q.messages.some(m => m.id === id) ? q : { ...q, messages: [...q.messages, preview] } });
@@ -344,7 +348,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             </div>
           )}
 
-          {pendingSend && <div role="status" aria-label="Pending message" className="max-h-36 overflow-y-auto"><UserBubble text={pendingSend.text} meta={`Sending…${pendingSend.images?.length ? ` · ${pendingSend.images.length} image(s)` : ""}`} /></div>}
+          {pendingSend && <div role="status" aria-label="Pending message" className="max-h-36 overflow-y-auto"><UserBubble text={pendingSend.text} skills={pendingSend.skills} meta={`Sending…${pendingSend.images?.length ? ` · ${pendingSend.images.length} image(s)` : ""}`} /></div>}
           {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit}
             onEdit={m => void startEdit(m)}
             onSend={m => void queueAction(m, "send")}
@@ -352,19 +356,20 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             onResume={() => void act("Resuming queue…", async () => setQueueOverride(await api.resumeQueue(taskId)))} />}
 
           {(!answering || !!edit) && task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
+            skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
             id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
             action="Send now" showSettings={!edit && !(running && deliveryMode === "send")}
-            onSend={() => void send()} sendDisabled={!!edit && (edit.expired || !editText.trim())}
+            onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
               <Button type="button" variant="ghost" size="icon-lg" className="ml-auto shrink-0" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>
             </div>}
             controls={edit
-              ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || !editText.trim()} onClick={() => void endEdit(true)}><Check /></Button>
+              ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length)} onClick={() => void endEdit(true)}><Check /></Button>
               : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
-                  sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0)} />}
+                  sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} />}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
             settings={{ agent: task.agent, model, onModelChange: setModel, effort, onEffortChange: setEffort,
               permission, onPermissionChange: setPermission }} />}

@@ -5,6 +5,7 @@ import { bodyLimit } from "hono/body-limit";
 import { StreamQuerySchema } from "@palmagent/shared/requests";
 import { query } from "./input.js";
 import { versionHeader, authenticate, requireCurrentClient, requestAdmission } from "./middleware.js";
+import { SkillContextSchema } from "@palmagent/shared";
 import { AGENT_CLI_COMPATIBILITY } from "@palmagent/shared";
 import { handleError } from "./errors.js";
 import { authRoutes } from "./routes/auth.js";
@@ -40,6 +41,10 @@ export function createApp(deps: HttpDependencies) {
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))
     .get("/api/usage", (c) => c.json({ usage: service.usage() }, 200))
     .get("/api/stream", query(StreamQuerySchema), (c) => sessionStream(c, deps, c.req.valid("query")))
+    .get("/api/skills", query(SkillContextSchema), async (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json(await service.availableSkills(c.req.valid("query")), 200);
+    })
     .route("/api/terminals", terminalRoutes(deps))
     .route("/api/tasks", taskRoutes(deps))
     .route("/api", repoRoutes(deps))

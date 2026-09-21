@@ -84,6 +84,10 @@ A missing Stable release never falls back to Preview. See the
 
 ## Plugin skills
 
+In the PWA, type `/` or tap the skill button to select an available skill for a message.
+Palmagent plugin skills have a small Palmagent logo; other installed skills use the same
+picker. See [selecting skills](docs/SKILLS.md).
+
 The CLI commands below are internal plugin operations.
 
 | Skill | CLI command | Purpose |

@@ -30,7 +30,7 @@ export class ExecutionBackend implements RunnerBackend {
       taskId: args.taskId, agent, cwd: args.cwd, prompt: args.prompt, images: args.images,
       resumeId: args.resumeId, providerHome: args.providerHome, permission: args.permission,
       model: args.model, effort: args.effort, messageId: args.messageId, interactive: args.interactive,
-    }), this.releaseDirectory, this.node);
+    }), this.releaseDirectory, this.node, args.skills ?? []);
     if (!record) throw new Error("Execution identity is unavailable; it will not be resumed automatically");
     const handle = new ExecutionHandle(this.store, record, emit);
     this.handles.set(args.taskId, handle);
@@ -106,7 +106,12 @@ class ExecutionHandle implements RunHandle {
       this.waiters.set(id, { resolve, timer });
     });
   }
-  send = (text: string, images: StartArgs["images"], messageId: string) => this.deliveredCommand({ kind: "send", text, images, messageId }, messageId);
+  send = (text: string, images: StartArgs["images"], messageId: string, skills?: StartArgs["skills"]) => {
+    // Runs retained from older packages do not carry this capability marker.
+    // Their command parser would silently discard a newly added skills field.
+    if (skills?.length && this.record.skills === undefined) return Promise.resolve("rejected" as const);
+    return this.deliveredCommand({ kind: "send", text, images, messageId, skills }, messageId);
+  };
   steer = (text: string, images?: StartArgs["images"]) => this.record.args.agent === "claude" && this.command({ kind: "steer", text, images }) !== "rejected";
   interrupt = () => this.record.args.agent === "claude" && this.command({ kind: "interrupt" }) !== "rejected";
   approve = (decision: string, scope?: string) => this.command({ kind: "approve", decision, scope }) !== "rejected";

@@ -8,6 +8,7 @@ export interface StartArgs {
   interactive?: boolean;
   cwd: string; // the task's worktree path — stable for the task's whole life
   prompt: string;
+  skills?: import("@palmagent/shared").SkillSelection[];
   images?: ImageAttachment[]; // attached to the opening user message of the turn
   providerHome?: string; // pinned native transcript/config root for this session
   resumeId?: string; // present => resume an existing session/thread by id
@@ -30,7 +31,7 @@ export interface StartArgs {
 
 // A live, in-flight turn. The process is held open only for its duration.
 export interface RunHandle {
-  send?: (text: string, images: ImageAttachment[] | undefined, messageId: string) => Promise<"delivered" | "rejected" | "unknown">;
+  send?: (text: string, images: ImageAttachment[] | undefined, messageId: string, skills?: import("@palmagent/shared").SkillSelection[]) => Promise<"delivered" | "rejected" | "unknown">;
   steer: (text: string, images?: ImageAttachment[]) => boolean; // mid-turn message; false if the CLI can't inject one
   interrupt: () => boolean; // graceful mid-turn stop; false if the CLI has no channel (caller falls back to cancel())
   approve: (decision: string, scope?: string) => boolean; // false if the CLI has no approval channel

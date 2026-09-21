@@ -78,6 +78,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   const cached = <T>(key: string, ttl: number, send: () => Promise<JsonResponse<T>>) => request(send, { cacheKey: key, ttl });
 
   const api = {
+    skills: (query: import("@palmagent/shared").SkillContext) => request(() => client.skills.$get({ query })),
     terminals: {
       list: (query: { taskId?: string; repoId?: string } = {}) => request(() => client.terminals.$get({ query })),
       create: (json: CreateTerminalRequest) => write(() => client.terminals.$post({ json })),
