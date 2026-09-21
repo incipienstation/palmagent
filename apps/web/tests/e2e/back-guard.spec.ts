@@ -34,7 +34,7 @@ async function fakeStandalone(page: Page): Promise<void> {
 const guardMarker = () => (history.state as { __backGuard?: string } | null)?.__backGuard;
 
 test.describe("root back-guard (standalone)", () => {
-  test("first back is absorbed — stays in-app, warns, and re-arms", async ({ page }) => {
+  test("first back stays in-app and exposes the history floor for native exit", async ({ page }) => {
     await fakeStandalone(page);
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
@@ -45,11 +45,11 @@ test.describe("root back-guard (standalone)", () => {
     // popstate; avoids page.goBack()'s cross-document navigation wait).
     await page.evaluate(() => history.back());
 
-    // Absorbed: the exit hint shows, the inbox is still mounted (app not closed),
-    // and the guard re-covered the floor (armed for a second, real back).
+    // The exit hint shows while the original entry is exposed. The next native
+    // Back can leave without requiring JavaScript to close the browser window.
     await expect(page.getByText("Press back again to exit", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-    expect(await page.evaluate(guardMarker)).toBe("app");
+    expect(await page.evaluate(guardMarker)).toBe("floor");
   });
 });
 
@@ -81,19 +81,44 @@ async function rootWithClock(page: Page) {
 async function expectFreshHint(page: Page) {
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await expect(exitHint(page)).toContainText("Press back again to exit");
-  expect(await page.evaluate(guardMarker)).toBe("app");
+  expect(await page.evaluate(guardMarker)).toBe("floor");
 }
 
-for (const hover of [false, true]) test(`the two-second exit window expires${hover ? " even while hovering the hint" : ""}`, async ({ page }) => {
+for (const hover of [false, true]) test(`the two-second exit window expires${hover ? " even while hovering the hint" : ""}`, async ({ page, context }) => {
   if (hover) await page.setViewportSize({ width: 1280, height: 900 });
   await rootWithClock(page);
+  const cdp = await context.newCDPSession(page);
+  const originalEntries = (await cdp.send("Page.getNavigationHistory")).entries.map(entry => entry.id);
   await pressBack(page);
   await expectFreshHint(page);
   if (hover) await exitHint(page).hover();
   await page.clock.runFor(2100);
   await expect(exitHint(page)).toHaveCount(0);
+  await expect.poll(() => page.evaluate(guardMarker)).toBe("app");
+  expect((await cdp.send("Page.getNavigationHistory")).entries.map(entry => entry.id)).toEqual(originalEntries);
   await pressBack(page);
   await expectFreshHint(page);
+});
+
+test("a fresh launch with no previous document stays navigable after two Back calls", async ({ page, context }) => {
+  await fakeStandalone(page);
+  // Replace about:blank so the test does not supply an artificial exit target.
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  await page.evaluate(url => location.replace(url), origin);
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  const cdp = await context.newCDPSession(page);
+  expect((await cdp.send("Page.getNavigationHistory")).currentIndex).toBe(1);
+  await page.evaluate(() => history.back());
+  await expectFreshHint(page);
+  expect((await cdp.send("Page.getNavigationHistory")).currentIndex).toBe(0);
+  // This cannot close a native app. It must not leave navigation waiting for a
+  // popstate that will never arrive, even if the user continues using the app.
+  await page.evaluate(() => history.back());
+  await page.getByText("Wire the web QA harness", { exact: true }).click();
+  await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
+  await expect(exitHint(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 });
 
 test("Escape dismissal resets the exit window before its deadline", async ({ page }) => {

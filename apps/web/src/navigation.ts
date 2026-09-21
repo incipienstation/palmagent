@@ -1,5 +1,5 @@
 import { flushSync } from "react-dom";
-import { disarmExit, isStandalone, shouldExit } from "./backGuard";
+import { disarmExit, isStandalone, showExitHint } from "./backGuard";
 
 // One temporary entry covers the visible layer stack. Nested Back dismisses one
 // layer and re-covers the page; ordinary close removes the entry before routing.
@@ -64,8 +64,19 @@ function schedule() {
   scheduled = true;
   queueMicrotask(() => { scheduled = false; reconcile(); });
 }
+function restoreRootGuard() {
+  if (current.kind !== "floor" || traversing) return;
+  disarmExit();
+  // Reuse the existing root entry. Pushing from popstate can make Chromium skip
+  // every same-document entry on the next system Back, even after hint expiry.
+  removeCover(1);
+}
 function reconcile() {
   if (!current || traversing) return;
+  if (current.kind === "floor" && (destination || layers.size)) {
+    restoreRootGuard();
+    return;
+  }
   if (destination) {
     if (layers.size) dismissAll();
     // A saving dialog may refuse dismissal. Keep the user's work on screen.
@@ -120,13 +131,11 @@ function onPopState() {
   }
   dismissAll();
   if (standalone && current.kind === "floor") {
-    if (shouldExit()) {
-      traversing = true;
-      history.back();
-    } else {
-      write({ ...current, kind: "page", index: current.index + 1 });
-      publish();
-    }
+    // Leave the first entry exposed for the *next native* Back. JavaScript
+    // history.back() cannot close a PWA at the start of history; waiting for its
+    // nonexistent popstate would permanently block subsequent app navigation.
+    showExitHint(restoreRootGuard);
+    publish();
     return;
   }
   disarmExit();
