@@ -13,6 +13,7 @@ const listeners = new Set<() => void>();
 let current: Entry;
 let visibleHash = "#/";
 let standalone = false;
+let suspended = false;
 let ready: Promise<void> | undefined;
 let finishBoot: (() => void) | undefined;
 let traversing = false;
@@ -65,11 +66,24 @@ function schedule() {
   queueMicrotask(() => { scheduled = false; reconcile(); });
 }
 function restoreRootGuard() {
-  if (current.kind !== "floor" || traversing) return;
+  if (suspended || current.kind !== "floor" || traversing) return;
   disarmExit();
   // Reuse the existing root entry. Pushing from popstate can make Chromium skip
   // every same-document entry on the next system Back, even after hint expiry.
   removeCover(1);
+}
+function suspendExit() {
+  if (!standalone) return;
+  suspended = true;
+  // Native exit can retain this document. Its timer must not carry an armed
+  // exit into the next visit, or traverse history while the page is hidden.
+  disarmExit();
+}
+function resumeExit() {
+  if (!suspended || document.visibilityState === "hidden") return;
+  suspended = false;
+  restoreRootGuard();
+  schedule();
 }
 function reconcile() {
   if (!current || traversing) return;
@@ -134,7 +148,7 @@ function onPopState() {
     // Leave the first entry exposed for the *next native* Back. JavaScript
     // history.back() cannot close a PWA at the start of history; waiting for its
     // nonexistent popstate would permanently block subsequent app navigation.
-    showExitHint(restoreRootGuard);
+    if (!suspended) showExitHint(restoreRootGuard);
     publish();
     return;
   }
@@ -164,6 +178,14 @@ export function setupNavigation(): Promise<void> {
   if (current.kind === "floor") write({ ...current, kind: "page", index: current.index + 1 });
   visibleHash = current.hash;
   window.addEventListener("popstate", onPopState);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") suspendExit();
+    else resumeExit();
+  });
+  document.addEventListener("freeze", suspendExit);
+  document.addEventListener("resume", resumeExit);
+  window.addEventListener("pagehide", suspendExit);
+  window.addEventListener("pageshow", resumeExit);
   window.addEventListener("hashchange", () => {
     // popstate usually adopts native hash navigation first; this also supports
     // external replaceState callers that explicitly emit hashchange.

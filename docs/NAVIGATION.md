@@ -15,6 +15,10 @@ exposed so the next system Back can leave through the browser's native behavior.
 Expiry, dismissal, or continued app interaction restores the existing root entry
 with Forward, without pushing a replacement from `popstate`. JavaScript Back at
 the start of history is a no-op, not an app-close API; it must never lock navigation.
+Backgrounding, freezing, or leaving the document cancels the exit hint without
+traversing history. Returning to a visible document restores the existing root
+guard, so each visit starts a fresh two-Back sequence even without a reload.
+Page and layer history are retained across these lifecycle transitions.
 In-app arrows never request app exit. Browser tests cover history traversal, not
 the operating system's PWA window lifecycle.
 

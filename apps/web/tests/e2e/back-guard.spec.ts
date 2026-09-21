@@ -193,3 +193,101 @@ test("opening navigation dismisses the exit hint and disarms it", async ({ page 
   await pressBack(page);
   await expectFreshHint(page);
 });
+
+for (const lifecycle of ["visibility", "freeze", "page-cache"] as const) {
+  test(`reopening after ${lifecycle} lifecycle signals resets each exit attempt without adding history`, async ({ page, context }) => {
+    await rootWithClock(page);
+    const cdp = await context.newCDPSession(page);
+    const entries = (await cdp.send("Page.getNavigationHistory")).entries.map(entry => entry.id);
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await pressBack(page);
+      await expectFreshHint(page);
+      // Lifecycle signals model a retained PWA document. OS window closing is
+      // browser-owned; JS Back at its history boundary cannot simulate it.
+      if (lifecycle === "freeze") {
+        await page.evaluate(() => {
+          document.dispatchEvent(new Event("freeze"));
+          document.dispatchEvent(new Event("resume"));
+        });
+      } else {
+        await page.evaluate(kind => {
+          if (kind === "visibility") {
+            Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+            document.dispatchEvent(new Event("visibilitychange"));
+            Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+            document.dispatchEvent(new Event("visibilitychange"));
+          } else {
+            window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+            window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+          }
+        }, lifecycle);
+      }
+      await page.clock.runFor(400);
+      await expect(exitHint(page)).toHaveCount(0);
+      await expect.poll(() => page.evaluate(guardMarker)).toBe("app");
+      expect((await cdp.send("Page.getNavigationHistory")).entries.map(entry => entry.id)).toEqual(entries);
+    }
+    await pressBack(page);
+    await expectFreshHint(page);
+  });
+}
+
+async function visibility(page: Page, state: "hidden" | "visible") {
+  await page.evaluate(value => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, state);
+}
+
+test("time spent hidden does not traverse history or retain the exit deadline", async ({ page }) => {
+  await rootWithClock(page);
+  await pressBack(page);
+  await expectFreshHint(page);
+  await visibility(page, "hidden");
+  await page.clock.runFor(10_000);
+  await expect(exitHint(page)).toHaveCount(0);
+  expect(await page.evaluate(guardMarker)).toBe("floor");
+  await visibility(page, "visible");
+  await expect.poll(() => page.evaluate(guardMarker)).toBe("app");
+  await pressBack(page);
+  await expectFreshHint(page);
+  await page.clock.runFor(2100);
+  await expect(exitHint(page)).toHaveCount(0);
+  await expect.poll(() => page.evaluate(guardMarker)).toBe("app");
+});
+
+test("resuming preserves the current task, draft, and open layer", async ({ page, context }) => {
+  await fakeStandalone(page);
+  await page.goto("/");
+  await page.getByText("Wire the web QA harness", { exact: true }).click();
+  const draft = page.getByRole("textbox", { name: "Message", exact: true });
+  await draft.fill("Keep this draft across app switching");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect.poll(() => page.evaluate(() => history.state?.__palmagentNavigation?.kind)).toBe("layer");
+  const cdp = await context.newCDPSession(page);
+  const before = await cdp.send("Page.getNavigationHistory");
+  await visibility(page, "hidden");
+  await visibility(page, "visible");
+  expect(await cdp.send("Page.getNavigationHistory")).toEqual(before);
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.evaluate(() => history.back());
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(draft).toHaveValue("Keep this draft across app switching");
+  await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
+});
+
+test("cold reopening at the exit floor also starts a fresh sequence", async ({ page }) => {
+  await fakeStandalone(page);
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  await page.evaluate(url => location.replace(url), origin);
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await page.evaluate(() => history.back());
+    await expectFreshHint(page);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+    expect(await page.evaluate(guardMarker)).toBe("app");
+    expect(await page.evaluate(() => history.length)).toBe(2);
+    await expect(exitHint(page)).toHaveCount(0);
+  }
+});
