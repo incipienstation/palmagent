@@ -78,6 +78,11 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   const cached = <T>(key: string, ttl: number, send: () => Promise<JsonResponse<T>>) => request(send, { cacheKey: key, ttl });
 
   const api = {
+    voice: {
+      start: (json: import("@palmagent/shared").VoiceStart, signal: AbortSignal) => request(() => client.voice.$post({ json }, { init: { signal } })),
+      heartbeat: (id: string) => request(() => client.voice[":id"].heartbeat.$post({ param: idParam(id) })),
+      stop: (id: string) => request(() => client.voice[":id"].$delete({ param: idParam(id) }, { init: { keepalive: true } })),
+    },
     skills: (query: import("@palmagent/shared").SkillContext) => request(() => client.skills.$get({ query })),
     terminals: {
       list: (query: { taskId?: string; repoId?: string } = {}) => request(() => client.terminals.$get({ query })),

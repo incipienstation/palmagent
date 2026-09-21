@@ -369,7 +369,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
           {(!answering || !!edit) && task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
             skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
-            id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
+            voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
             action="Send now" settingsReadOnly={settingsReadOnly}

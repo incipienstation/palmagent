@@ -22,6 +22,9 @@ type Query<T> = { query: T };
 type Ok = { ok: true };
 
 export type ApiSchema = {
+  "/api/voice": { $post: Endpoint<Json<import("./voice.js").VoiceStart>, import("./voice.js").VoiceConnection> };
+  "/api/voice/:id": { $delete: Endpoint<Id, Ok> };
+  "/api/voice/:id/heartbeat": { $post: Endpoint<Id, Ok> };
   "/api/skills": { $get: Endpoint<Query<import("./skills.js").SkillContext>, import("./skills.js").SkillCatalog> };
   "/api/terminals": {
     $get: Endpoint<Query<{ taskId?: string; repoId?: string }>, { terminals: TerminalSession[]; capabilities: TerminalCapabilities }>;

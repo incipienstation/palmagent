@@ -47,6 +47,25 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDepend
   return { dir, db, hub, service, auth, settings, repoSettings, shutdown, app, closeListener };
 }
 
+test("voice routes require authentication, reject non-Codex contexts and resolve the native home server-side", async t => {
+  const f = fixture(t);
+  const repo = f.service.createRepo({ path: f.dir });
+  const id = "11111111-1111-4111-8111-111111111111";
+  const calls: string[] = [];
+  f.service.voice.start = async (home, sdp) => { calls.push(home); assert.equal(sdp, "v=0\r\noffer"); return { id, sdp: "v=0\r\nanswer" }; };
+  const now = Date.now(); f.db.createSession("voice-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=voice-session`, "content-type": "application/json" };
+  const payload = (agent: string) => JSON.stringify({ context: { repoId: repo.id, agent }, sdp: "v=0\r\noffer" });
+  assert.equal((await f.app.request("/api/voice", { method: "POST", body: payload("codex") })).status, 401);
+  assert.equal((await f.app.request("/api/voice", { method: "POST", headers, body: payload("claude") })).status, 400);
+  const result = await f.app.request("/api/voice", { method: "POST", headers, body: payload("codex") });
+  assert.equal(result.status, 200); assert.deepEqual(await result.json(), { id, sdp: "v=0\r\nanswer" });
+  assert.deepEqual(calls, [nativeHome("codex")]);
+  assert.equal((await f.app.request(`/api/voice/${id}/heartbeat`, { method: "POST", headers })).status, 410);
+  assert.equal((await f.app.request(`/api/voice/${id}`, { method: "DELETE", headers })).status, 200);
+  assert.equal((await f.app.request("/api/voice/not-an-id", { method: "DELETE", headers })).status, 400);
+});
+
 // Use the real Node adapter: cookies, streamed bodies and HEAD can differ from
 // app.request even when route-level unit tests pass.
 test("HTTP auth gates and input failures preserve cookies, status codes and mutation boundaries", async (t) => {
