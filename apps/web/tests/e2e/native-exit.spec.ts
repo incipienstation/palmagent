@@ -20,7 +20,7 @@ async function standalone(context: BrowserContext, singleEntry = false) {
 }
 async function passive(cdp: CDPSession, expression: string) {
   const result = await cdp.send("Runtime.evaluate", { expression, userGesture: false, returnByValue: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
   return result.result.value;
 }
 async function state(cdp: CDPSession) {
@@ -29,7 +29,7 @@ async function state(cdp: CDPSession) {
       .find(element => element.textContent.includes('Press back again to exit'));
     return { active: navigator.userActivation.hasBeenActive, guard: history.state?.__backGuard,
       length: history.length,
-      text: hint?.textContent ?? '', index: window.navigation.currentEntry.index,
+      text: hint?.textContent ?? '', index: window.navigation.currentEntry?.index ?? -1,
       ready: [...document.querySelectorAll('h1,h2')].some(element => element.textContent === 'Tasks') };
   })()`);
 }
