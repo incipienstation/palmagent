@@ -41,6 +41,20 @@ test("Codex answers carry question identities and preserve input after delivery 
   await expect(page.getByPlaceholder("Or type a custom answer…")).toHaveValue("");
 });
 
+test("approval request keeps full details accessible beside explicit decisions", async ({ page }) => {
+  await page.goto("/#/task/t-await");
+  await expect(page.locator("[data-approval-card]")).toContainText("Approval needed");
+  await expect(page.locator("pre").filter({ hasText: "DROP TABLE legacy_events" })).toBeVisible();
+  const details = page.getByRole("button", { name: "Request details", exact: true });
+  await details.focus();
+  await page.keyboard.press("Enter");
+  await expect(details).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("pre").filter({ hasText: '"reason":"destructive schema change"' })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeEnabled();
+  await assertViewportLocked(page);
+});
+
 // The AskUserQuestion flow: a task paused on a question (awaiting_input) renders
 // the tap-to-answer QuestionCard, and answering posts to /api/tasks/:id/answer.
 test.describe("awaiting input (AskUserQuestion)", () => {
@@ -104,6 +118,8 @@ test.describe("awaiting input (AskUserQuestion)", () => {
 
   test("picking an option enables Send and POSTs the answer", async ({ page }) => {
     await page.getByRole("button", { name: /Tailwind utilities/ }).click();
+    await expect(page.getByRole("button", { name: /Tailwind utilities/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("status").filter({ hasText: "1 of 2 answered" })).toBeVisible();
     const send = page.getByRole("button", { name: "Send answer" });
     await expect(send).toBeEnabled();
     const [req] = await Promise.all([
@@ -113,6 +129,24 @@ test.describe("awaiting input (AskUserQuestion)", () => {
     const body = req.postDataJSON();
     expect(body.requestId).toBe("req-ask-1");
     expect(body.answers[0].selected).toContain("Tailwind utilities");
+  });
+
+  test("numbered navigation preserves multiple choices and notes without submitting", async ({ page }) => {
+    let submissions = 0;
+    page.on("request", request => { if (request.url().endsWith("/answer")) submissions++; });
+    await page.getByRole("button", { name: /Tailwind utilities/ }).click();
+    await page.getByRole("button", { name: "Next question", exact: true }).click();
+    await page.getByRole("button", { name: /Notifications/ }).click();
+    await page.getByRole("button", { name: /Appearance/ }).click();
+    await page.getByPlaceholder("Or type a custom answer…").nth(1).fill("Keep my theme preference");
+    await page.getByRole("button", { name: "Previous question", exact: true }).click();
+    await expect(page.getByRole("button", { name: /Tailwind utilities/ })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Next question", exact: true }).click();
+    await expect(page.getByRole("button", { name: /Notifications/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: /Appearance/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByPlaceholder("Or type a custom answer…").nth(1)).toHaveValue("Keep my theme preference");
+    await expect(page.getByRole("status").filter({ hasText: "2 of 2 answered" })).toBeVisible();
+    expect(submissions).toBe(0);
   });
 
   test("matches the visual baseline", async ({ page }) => {

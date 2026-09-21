@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Conversation code blocks now include syntax highlighting, language labels, and
+  copy controls. Activity summaries show compact tool chips with expandable
+  execution details. Question and approval cards make response progress and
+  pending decisions clearer while preserving unsent answers after a failed send.
+
 ## 0.1.0-alpha.68
 
 ### Fixed

@@ -1,12 +1,14 @@
 import { useUpdateState } from "../update-state";
-import { useLayoutEffect, useRef } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import type { AskQuestion, QuestionAnswer } from "@palmagent/shared";
-import { Check, CircleHelp } from "lucide-react";
+import { Check, CircleHelp, ChevronLeft, ChevronRight, LoaderCircle } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import { ScrollBar } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,7 @@ export function QuestionCard({
   const trackRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useUpdateState(`question:${checkpointKey}:page`, 0);
   const paged = questions.length > 1;
+  const id = useId();
   useLayoutEffect(() => {
     if (trackRef.current) trackRef.current.scrollLeft = page * trackRef.current.clientWidth;
   }, []);
@@ -49,7 +52,7 @@ export function QuestionCard({
 
   function goTo(qi: number) {
     const el = trackRef.current;
-    if (el) el.scrollTo({ left: qi * el.clientWidth, behavior: "smooth" });
+    if (el) el.scrollTo({ left: qi * el.clientWidth, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   }
 
   function toggle(qi: number, label: string, multi: boolean) {
@@ -76,24 +79,23 @@ export function QuestionCard({
     notes: notes[qi].trim() || undefined,
   }));
   const hasAny = answers.some((a) => a.selected.length > 0 || a.notes);
+  const progress = <p role="status" className="text-xs text-muted-foreground">{busy ? "Sending…" : `${questions.filter((_q, qi) => answeredAt(qi)).length} of ${questions.length} answered`}</p>;
 
   return (
     // The whole panel is height-capped (max-h) so it can't grow up and bury the
     // session output above it (the composer below is hidden while answering —
-    // TaskDetail). It's a flex column: the header / dot pager / Skip+Send stay
+    // TaskDetail). It's a flex column: the header / numbered pager / Skip+Send stay
     // pinned and the question SLIDE is the only part that scrolls (vertically as a
     // safety net for a long single question; horizontally to page between many).
-    <Card className="flex max-h-[46dvh] flex-col border-question-border bg-question-bg p-3 shadow-none">
-      <div className="mb-2 flex shrink-0 items-center gap-1.5 text-[11px] font-semibold tracking-wide text-question-fg uppercase">
-        <CircleHelp className="size-3.5" aria-hidden />
-        The agent needs your input
-        {paged && (
-          <span className="ml-auto tabular-nums text-question-fg/70">
-            {page + 1} / {questions.length}
-          </span>
-        )}
-      </div>
-
+    <Card data-question-card aria-busy={busy} className="flex max-h-[46dvh] flex-col overflow-hidden shadow-none">
+      <CardHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b border-border p-3">
+        <CardTitle className="flex min-w-0 items-center gap-2">
+          <CircleHelp className="size-4 shrink-0 text-question-fg" aria-hidden />
+          <span className="text-xs">The agent needs your input</span>
+        </CardTitle>
+        <Badge variant="secondary" className="tabular-nums">{page + 1} / {questions.length}</Badge>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col p-3 pb-0">
       {/* Several questions page horizontally — one per full-width, swipeable slide
           — so the panel shows a SINGLE question at a time instead of one tall
           stack. This track is the flex-1 middle of the capped card: it shrinks to
@@ -125,14 +127,14 @@ export function QuestionCard({
             <ScrollAreaPrimitive.Viewport className="h-full w-full pr-2.5">
               <div className="flex flex-col gap-2">
               {q.header && (
-                <span className="self-start rounded bg-question-active/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-question-fg uppercase">
+                <Badge variant="outline">
                   {q.header}
-                </span>
+                </Badge>
               )}
-              <div className="text-[14px] leading-snug font-semibold text-strong">{q.question}</div>
+              <div id={`${id}-question-${qi}`} className="text-[14px] leading-snug font-semibold text-strong">{q.question}</div>
               {q.multiSelect && <div className="-mt-1 text-[11px] text-faint">Select all that apply</div>}
 
-              <div className="flex flex-col gap-1.5">
+              <div role="group" aria-labelledby={`${id}-question-${qi}`} className="flex flex-col gap-1.5">
                 {q.options.map((opt) => {
                   const on = selected[qi].includes(opt.label);
                   return (
@@ -140,6 +142,7 @@ export function QuestionCard({
                       key={opt.label}
                       type="button"
                       disabled={busy}
+                      aria-pressed={on}
                       onClick={() => toggle(qi, opt.label, !!q.multiSelect)}
                       className={cn(
                         "flex min-h-11 w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50",
@@ -172,7 +175,10 @@ export function QuestionCard({
                 })}
               </div>
 
+              <FieldGroup className="gap-2"><Field className="gap-1">
+              <FieldLabel htmlFor={`${id}-answer-${qi}`} className="text-xs">Your answer or additional context</FieldLabel>
               <Textarea
+                id={`${id}-answer-${qi}`}
                 className="min-h-9 resize-none"
                 rows={1}
                 value={notes[qi]}
@@ -182,6 +188,7 @@ export function QuestionCard({
                 placeholder="Or type a custom answer…"
                 disabled={busy}
               />
+              </Field></FieldGroup>
               </div>
             </ScrollAreaPrimitive.Viewport>
             <ScrollBar />
@@ -189,42 +196,26 @@ export function QuestionCard({
         ))}
       </div>
 
-      {/* Dot pager: tap a dot to jump; the current slide is a wider dot, answered
-          slides fill with a check so you can see which questions still need input
-          before submitting them all at once. */}
+      </CardContent>
+      <CardFooter className="flex shrink-0 flex-col items-stretch gap-2 p-3">
       {paged && (
-        <div className="mt-2.5 flex shrink-0 items-center justify-center gap-2">
-          {questions.map((_q, qi) => {
-            const cur = qi === page;
-            const done = answeredAt(qi);
-            return (
-              <button
-                key={qi}
-                type="button"
-                aria-label={`Go to question ${qi + 1}${done ? ", answered" : ""}`}
-                aria-current={cur}
-                onClick={() => goTo(qi)}
-                className="flex h-6 items-center justify-center px-0.5"
-              >
-                <span
-                  className={cn(
-                    "flex items-center justify-center rounded-full transition-all",
-                    cur ? "size-4" : "size-3",
-                    done ? "bg-question-active text-primary-foreground" : "bg-question-fg/25",
-                  )}
-                >
-                  {done && <Check className={cur ? "size-2.5" : "size-2"} strokeWidth={3} />}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between gap-1">
+          <Button variant="ghost" size="icon-lg" aria-label="Previous question" disabled={page === 0 || busy} onClick={() => goTo(page - 1)}><ChevronLeft /></Button>
+          {progress}
+          <div className="flex min-w-0 gap-1 overflow-x-auto">
+          {questions.map((_q, qi) => <Button key={qi} type="button" variant={qi === page ? "selected" : "ghost"} size="icon-lg"
+            aria-label={`Go to question ${qi + 1}${answeredAt(qi) ? ", answered" : ""}`} aria-current={qi === page ? "step" : undefined}
+            disabled={busy} onClick={() => goTo(qi)}>
+            {answeredAt(qi) ? <Check /> : qi + 1}
+          </Button>)}
+          </div>
+          <Button variant="ghost" size="icon-lg" aria-label="Next question" disabled={page === questions.length - 1 || busy} onClick={() => goTo(page + 1)}><ChevronRight /></Button>
         </div>
       )}
-
-      <div className="mt-3 flex shrink-0 gap-2">
+      {!paged && progress}
+      <div className="flex shrink-0 gap-2">
         <Button
           variant="secondary"
-          size="sm"
           className="flex-1"
           disabled={busy}
           onClick={() => onSubmit(answers, true)}
@@ -236,9 +227,11 @@ export function QuestionCard({
           disabled={busy || !hasAny}
           onClick={() => onSubmit(answers, false)}
         >
+          {busy && <LoaderCircle data-icon="inline-start" className="motion-safe:animate-spin" />}
           Send answer
         </Button>
       </div>
+      </CardFooter>
     </Card>
   );
 }
