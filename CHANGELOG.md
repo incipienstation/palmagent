@@ -12,6 +12,13 @@ An entry does not mean a version has been published.
   the browser retains or freezes the previous page. An old exit hint no longer
   carries over into the next visit.
 
+## 0.1.0-alpha.65
+
+### Changed
+
+- Your messages use a cleaner conversation layout without the repeated user icon
+  and "You" label above each bubble.
+
 ## 0.1.0-alpha.64
 
 ### Changed
