@@ -8,6 +8,8 @@ An entry does not mean a version has been published.
 
 ### Fixed
 
+- The double-Back exit window resets as soon as its hint disappears, including
+  swipe dismissal or replacement by another toast, and expires after two seconds.
 - Back closes the current dialog, menu, settings subpage or conversation terminal before
   leaving the page. Direct conversation links return to Tasks, and reloading the
   installed app no longer adds extra exit barriers to navigation history.

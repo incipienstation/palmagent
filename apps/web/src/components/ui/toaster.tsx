@@ -11,27 +11,39 @@ export type ToastOptions = {
   description?: ReactNode;
   variant?: "default" | "success" | "info" | "destructive";
   duration?: number;
+  /** Fires once when feedback expires, is dismissed, or is replaced. */
+  onClose?: () => void;
 };
 
 let counter = 0;
-let current: number | undefined;
+let current: { id: number; close: () => void } | undefined;
 
 /** Keep transient feedback to one message; callers can still dismiss by id. */
-export function toast({ title, description, variant, duration }: ToastOptions): number {
+export function toast({ title, description, variant, duration, onClose }: ToastOptions): number {
   updateToastClearance();
-  if (current !== undefined) notify.dismiss(current);
+  if (current) dismissToast(current.id);
   const id = ++counter;
-  current = id;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    if (current?.id === id) current = undefined;
+    onClose?.();
+  };
+  current = { id, close };
   notify(title ?? description, {
     id,
     description: title ? description : undefined,
     duration: duration ?? (variant === "destructive" ? 6000 : 2500),
     testId: "toast",
+    onDismiss: close,
+    onAutoClose: close,
   });
   return id;
 }
 
 export function dismissToast(id: number) {
+  if (current?.id === id) current.close();
   notify.dismiss(id);
 }
 
@@ -48,7 +60,7 @@ export function Toaster() {
     updateToastClearance();
     const element = region.current;
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && current !== undefined) notify.dismiss(current);
+      if (event.key === "Escape" && current) dismissToast(current.id);
     };
     element?.addEventListener("keydown", dismissOnEscape);
     window.addEventListener("resize", updateToastClearance);
