@@ -9,6 +9,20 @@ The installed PWA has one exit floor below Tasks. A direct task link gets a Task
 entry first. Existing page entries survive reloads without another floor. Only
 Back at that floor shows the two-second exit hint; page changes and opening a
 layer disarm it. Dismissing or replacing the exit hint also disarms it immediately.
+On Android browsers with `CloseWatcher`, the root also owns a single native close
+watcher. It receives system Back before Chromium's history-skipping policy, even
+when a reopened page has never received user activation. Its first close request
+explicitly traverses onto the floor; no watcher remains during the exit window,
+so the second system Back uses the browser's native exit behavior. If only the
+current history entry was restored, the hint opens without an unavailable traversal.
+If a retained floor loses its Forward entry, returning rebuilds the missing cover.
+Expiry, dismissal, or a foreground return restores one watcher. Page navigation
+and open layers destroy it so their existing Back handling takes priority.
+
+Browsers without Android close-request support retain the history fallback. That
+fallback cannot guarantee the hint before the first page interaction: Chromium
+can skip script-created history on native Back. Desktop Back is not a close
+request, so desktop installed windows also retain the history fallback.
 The fixed two-second deadline dismisses the hint even if hover/focus has paused
 ordinary toast timers. While the hint is visible, the original history entry stays
 exposed so the next system Back can leave through the browser's native behavior.
@@ -66,6 +80,12 @@ menu-to-dialog transitions do not accumulate entries.
 
 `back-navigation.spec.ts` covers browser and emulated standalone sequences,
 nesting, direct links, reloads, Forward, ordinary dismissal cleanup and root exit.
+`native-exit.spec.ts` uses the real Chromium CloseWatcher with trusted Escape
+close requests (the desktop equivalent of Android's system Back close request).
+Its cold-launch and timeout checks use passive CDP reads and assert that user
+activation stays false; Playwright evaluation and locator helpers can otherwise
+hide the original failure by granting activation. These checks do not emulate
+the Android OS closing its app window.
 Image-preview Back also runs in `image-rendering.spec.ts`. Native Android system
 exit and iOS edge gestures still require device testing; desktop Chromium's
 standalone emulation verifies application history behavior, not OS integration.

@@ -1,5 +1,5 @@
 import { flushSync } from "react-dom";
-import { disarmExit, isStandalone, showExitHint } from "./backGuard";
+import { disarmExit, hasExitHint, isStandalone, showExitHint, watchNativeBack } from "./backGuard";
 
 // One temporary entry covers the visible layer stack. Nested Back dismisses one
 // layer and re-covers the page; ordinary close removes the entry before routing.
@@ -14,6 +14,7 @@ let current: Entry;
 let visibleHash = "#/";
 let standalone = false;
 let suspended = false;
+let stopNativeBack: (() => void) | undefined;
 let ready: Promise<void> | undefined;
 let finishBoot: (() => void) | undefined;
 let traversing = false;
@@ -63,11 +64,44 @@ function removeCover(direction: -1 | 1 = -1) {
 function schedule() {
   if (scheduled) return;
   scheduled = true;
-  queueMicrotask(() => { scheduled = false; reconcile(); });
+  queueMicrotask(() => { scheduled = false; reconcile(); syncNativeBack(); });
+}
+function clearNativeBack() {
+  stopNativeBack?.();
+  stopNativeBack = undefined;
+}
+function syncNativeBack() {
+  const atRoot = standalone && !suspended && !traversing && !destination && !layers.size
+    && current.kind === "page" && current.depth === 0 && !hasExitHint();
+  if (!atRoot) { clearNativeBack(); return; }
+  stopNativeBack ??= watchNativeBack(() => {
+    clearNativeBack();
+    // Consume exactly one native close request. Do not cancel it or create a
+    // replacement watcher while the hint is showing: the second Back must exit.
+    const navigation = (window as Window & { navigation?: { canGoBack: boolean } }).navigation;
+    if (navigation?.canGoBack ?? history.length > 1) {
+      traversing = true;
+      history.back(); // Explicit traversal is not subject to native history skipping.
+    } else {
+      // A browser can restore only the current entry. Never await a popstate
+      // from an unavailable history traversal.
+      showExitHint(restoreRootGuard);
+    }
+  });
 }
 function restoreRootGuard() {
-  if (suspended || current.kind !== "floor" || traversing) return;
+  if (suspended || traversing) return;
+  if (current.kind !== "floor") { schedule(); return; }
   disarmExit();
+  const navigation = (window as Window & { navigation?: { canGoForward: boolean } }).navigation;
+  if (navigation?.canGoForward === false) {
+    // Session restoration may discard Forward entries. Rebuild the missing
+    // cover instead of waiting forever for an impossible Forward traversal.
+    // Android's native watcher still protects this new entry without activation.
+    write({ ...current, kind: "page", index: current.index + 1 });
+    schedule();
+    return;
+  }
   // Reuse the existing root entry. Pushing from popstate can make Chromium skip
   // every same-document entry on the next system Back, even after hint expiry.
   removeCover(1);
@@ -75,6 +109,7 @@ function restoreRootGuard() {
 function suspendExit() {
   if (!standalone) return;
   suspended = true;
+  clearNativeBack();
   // Native exit can retain this document. Its timer must not carry an armed
   // exit into the next visit, or traverse history while the page is hidden.
   disarmExit();
@@ -114,6 +149,7 @@ function reconcile() {
   }
 }
 function onPopState() {
+  clearNativeBack();
   const previous = current;
   const cleaning = cleanup;
   cleanup = 0;
@@ -195,6 +231,7 @@ export function setupNavigation(): Promise<void> {
     if (current.kind === "layer") { finishBoot = resolve; removeCover(); }
     else resolve();
   });
+  schedule();
   return ready;
 }
 export function registerBackLayer(dismiss: () => void, priority: number): () => void {
