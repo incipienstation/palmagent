@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.65
+
 ### Changed
 
 - Your messages use a cleaner conversation layout without the repeated user icon
