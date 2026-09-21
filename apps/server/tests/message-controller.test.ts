@@ -47,7 +47,7 @@ test("editing holds queue order; save checks version and retains position", t =>
   f.c.action("t", m.id, { action: "edit", token, version: 1 });
   f.finish(); assert.deepEqual(f.starts, []);
   assert.throws(() => f.c.action("t", m.id, { action: "save", token, version: 0, text: "stale" }), /changed/);
-  f.c.action("t", m.id, { action: "save", token, version: 1, text: "edited", images: [{ mediaType: "image/png", data: "AAAA" }] });
+  f.c.action("t", m.id, { action: "save", token, version: 1, text: "edited", images: [{ mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" }] });
   assert.deepEqual(f.starts, ["edited"]); f.finish(); assert.deepEqual(f.starts, ["edited", "second"]);
 });
 test("Stop and failure preserve prompts and require explicit resume", t => {

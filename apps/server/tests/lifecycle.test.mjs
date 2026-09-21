@@ -513,3 +513,41 @@ test("independent admission survives web absence and queued Stop prevents a prov
 });
 
 });
+
+
+for (const agent of ["claude", "codex"]) test(`${agent}: new attachments remain viewable across delivery, restart and archive`, options, async t => {
+  const c = await harness(t, "independent");
+  const image = { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
+  const { task } = await c.api("tasks", { repoId: c.repo.id, agent, prompt: JSON.stringify({ key: "image-initial", mode: "hold" }), images: [image] });
+  await c.ready("image-initial");
+  const dispatch = c.rows(task.taskId).map(row => JSON.parse(row.payload_json)).find(p => p.subtype === "dispatch");
+  assert.equal(dispatch.attachments.length, 1);
+  const path = c.base + `/api/tasks/${task.taskId}/attachments/${dispatch.attachments[0].id}`;
+  const verifyImage = async () => {
+    const response = await fetch(path);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(image.data, "base64"));
+  };
+  await verifyImage();
+  const current = await c.task(task.taskId);
+  const id = crypto.randomUUID();
+  const queued = await c.api(`tasks/${task.taskId}/messages`, { clientMessageId: id, mode: "queue", expectedRunId: current.messageQueue.runId,
+    text: JSON.stringify({ key: "image-queued", mode: "auto" }), images: [image] });
+  assert.equal(queued.messages[0].images, undefined);
+  assert.deepEqual(queued.messages[0].attachments, dispatch.attachments);
+  await c.restart(true); await verifyImage();
+  c.mark("image-initial", ".release");
+  await c.ready("image-queued");
+  await c.waitTask(task.taskId, t => t.status === "idle" && !t.messageQueue.messages.length);
+  const followup = c.rows(task.taskId).map(row => JSON.parse(row.payload_json)).find(p => p.messageId === id && p.subtype === "followup");
+  assert.deepEqual(followup.attachments, dispatch.attachments);
+  await c.api(`tasks/${task.taskId}/followup`, { prompt: JSON.stringify({ key: "image-followup", mode: "hold" }), images: [image] });
+  await c.ready("image-followup");
+  await c.api(`tasks/${task.taskId}/steer`, { text: JSON.stringify({ key: "image-steer", mode: "auto" }), images: [image] });
+  assert(c.rows(task.taskId).map(row => JSON.parse(row.payload_json)).some(p => p.subtype === "steer" && p.attachments?.length === 1));
+  await c.api(`tasks/${task.taskId}/stop`, {});
+  await c.waitTask(task.taskId, t => t.status === "idle");
+  const archived = await fetch(c.base + `/api/tasks/${task.taskId}`, { method: "DELETE" });
+  assert.equal(archived.status, 200);
+  await c.restart(true); await verifyImage();
+});

@@ -43,6 +43,7 @@ export type ApiSchema = {
     $delete: Endpoint<Id, Response.TaskResponse>;
   };
   "/api/tasks/:id/account-limits": { $get: Endpoint<Id, AccountLimits> };
+  "/api/tasks/:id/attachments/:attachmentId": { $get: { input: { param: { id: string; attachmentId: string } }; output: Uint8Array<ArrayBuffer>; outputFormat: "body"; status: 200 } };
   "/api/tasks/:id/image": { $get: { input: Id & Query<{ path: string | string[] }>; output: Uint8Array<ArrayBuffer>; outputFormat: "body"; status: 200 } };
   "/api/tasks/:id/history": { $get: Endpoint<Id & Query<{ before: string | string[] }>, Response.TaskHistoryResponse> };
   "/api/tasks/:id/handoff": { $post: Endpoint<Id, SessionHandoffResponse> };

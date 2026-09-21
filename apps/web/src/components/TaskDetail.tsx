@@ -132,7 +132,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     await act("Preparing edit…", async () => {
       const q = await api.messageAction(taskId, message.id, { action: "edit", version: message.version, token });
       setQueueOverride(q); setEdit({ id: message.id, version: message.version, token });
-      setEditText(message.text); setEditSkills(message.skills ?? []); editAtt.setImages(message.images ?? []);
+      setEditText(message.text); setEditSkills(message.skills ?? []); editAtt.setImages(q.messages.find(m => m.id === message.id)?.images ?? []);
     });
   }
   async function endEdit(save: boolean) {

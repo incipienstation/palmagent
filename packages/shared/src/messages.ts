@@ -25,7 +25,8 @@ export interface PendingMessage {
   mode: "send" | "queue";
   text: string;
   skills?: import("./skills.js").SkillSelection[];
-  images?: z.infer<typeof ImageAttachmentSchema>[];
+  images?: z.infer<typeof ImageAttachmentSchema>[]; // unsent drafts and legacy queue entries
+  attachments?: import("./attachments.js").Attachment[];
   settings?: MessageSettings;
   status: "queued" | "sending" | "delivered" | "rejected" | "unknown" | "cancelled";
   runId?: string;

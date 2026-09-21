@@ -1,4 +1,4 @@
-import { SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
+import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
 import { Hono } from "hono";
 import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../input.js";
@@ -16,6 +16,16 @@ export function taskRoutes({ service, db }: HttpDependencies) {
       return c.json({ task: service.createTask({ ...input, skills }) }, 201);
     })
     .get("/:id", params(IdParamsSchema), (c) => c.json({ task: service.getTask(c.req.valid("param").id) }, 200))
+    .get("/:id/attachments/:attachmentId", params(AttachmentParamsSchema), (c) => {
+      c.header("Cache-Control", "no-store");
+      c.header("X-Content-Type-Options", "nosniff");
+      c.header("Cross-Origin-Resource-Policy", "same-origin");
+      c.header("Content-Security-Policy", "default-src 'none'; sandbox");
+      const { id, attachmentId } = c.req.valid("param");
+      service.getTask(id);
+      const image = service.attachments.read(id, attachmentId);
+      return c.body(new Uint8Array(image.bytes), 200, { "Content-Type": image.mediaType });
+    })
     .get("/:id/image", params(IdParamsSchema), query(TaskImageQuerySchema), async (c) => {
       c.header("Cache-Control", "no-store");
       c.header("X-Content-Type-Options", "nosniff");

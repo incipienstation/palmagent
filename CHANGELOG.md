@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- New image attachments stay with their conversations and can be reopened after
+  sending, reloading, restarting the server, or archiving a task. Older attachments
+  are not migrated.
+
 ## 0.1.0-alpha.58
 
 ### Changed
