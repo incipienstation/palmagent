@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.62
+
 ### Added
 
 - Image storage now limits total usage and reserves free disk space, with automatic
