@@ -8,7 +8,9 @@ link has no previous Palmagent page. Plain browser Back can still leave the site
 The installed PWA has one exit floor below Tasks. A direct task link gets a Tasks
 entry first. Existing page entries survive reloads without another floor. Only
 Back at that floor shows the two-second exit hint; page changes and opening a
-layer disarm it. In-app arrows never request app exit.
+layer disarm it. Dismissing or replacing the exit hint also disarms it immediately.
+The fixed two-second deadline dismisses the hint even if hover/focus has paused
+ordinary toast timers. In-app arrows never request app exit.
 
 Task creation replaces the form with its conversation only while that form remains
 mounted. A late acknowledgement retains the chosen screen and clears only the
