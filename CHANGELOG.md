@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.55
+
 ### Added
 
 - Select an available agent skill with `/` or the skill button in a message. Choices
