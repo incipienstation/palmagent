@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- On supported Android browsers, reopening the installed app starts a fresh
+  two-Back exit sequence even before touching the page. The exit hint expires
+  after two seconds, and restoring a single history entry no longer blocks navigation.
+
 ## 0.1.0-alpha.69
 
 ### Changed
