@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- In the installed app, the first Back at Tasks now leaves the history boundary
+  ready for the next system Back to exit. Expiring or dismissing the hint restores
+  the guard without adding history, and an unavailable exit cannot freeze navigation.
+
 ## 0.1.0-alpha.62
 
 ### Added
