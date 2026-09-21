@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { assertViewportLocked } from "./_helpers";
 
+// Browser coverage retains permission prompts, feedback, and Settings lifetime.
 test.use({ serviceWorkers: "block" });
 
 type PushProbe = {
