@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.60
+
 ### Fixed
 
 - Send now shows immediate delivery feedback until confirmation instead of moving
