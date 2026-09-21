@@ -282,6 +282,22 @@ test("an automatically started queued turn leaves only waiting turns in Queue", 
   await expect(page.getByRole("region", { name: "Message queue", exact: true })).toContainText("Queue · 1");
 });
 
+test("delivery keeps its image count when the server replaces uploads with durable attachments", async ({ page }) => {
+  const task = await queueSetup(page, [{ ...message, mode: "send", status: "sending", images: [
+    { mediaType: "image/png", data: "AA==" },
+  ] }]);
+  const pending = page.getByRole("status", { name: "Pending message" });
+  await expect(pending).toContainText("1 image(s)");
+  task.messageQueue = { ...task.messageQueue, revision: 2, messages: [{
+    ...message, mode: "send", status: "sending", attachments: [
+      { id: "22222222-2222-4222-8222-222222222222", mediaType: "image/png", size: 1 },
+    ],
+  }] };
+  await send(page, "t-run", { type: "tasks", tasks: [task] });
+  await expect(pending).toContainText("1 image(s)");
+  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
+});
+
 test("a paused send can resume without showing a waiting-turn queue", async ({ page }) => {
   const task = await queueSetup(page, [{ ...message, mode: "send" }]);
   task.messageQueue.paused = true;
