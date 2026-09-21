@@ -73,3 +73,27 @@ test("ownership checks cover edit, delete, send and resume", t => {
   assert.throws(() => f.c.action("t", m.id, { action: "delete", version: 1 }), /local owner/);
   assert.throws(() => f.c.resume("t"), /local owner/);
 });
+
+test("selected skills survive restart, idempotent submission and queue editing", t => {
+  const f = fixture(t);
+  const skill = { id: "skill-1", name: "palmagent:doctor", source: "palmagent", pluginId: "palmagent@palmagent" };
+  const req = { clientMessageId: randomUUID(), mode: "queue" as const, text: "Check service", skills: [skill], expectedRunId: f.c.state("t").runId };
+  f.c.submit("t", req); f.c.submit("t", req); f.restart(true);
+  assert.deepEqual(f.c.snapshot("t").messages[0].skills, [skill]);
+  assert.throws(() => f.c.submit("t", { ...req, skills: [] }), /different content/);
+  const token = randomUUID();
+  f.c.action("t", req.clientMessageId, { action: "edit", token, version: 1 });
+  f.c.action("t", req.clientMessageId, { action: "save", token, version: 1, text: "Plain request", skills: [] });
+  f.restart(true);
+  assert.deepEqual(f.c.snapshot("t").messages[0].skills, []);
+});
+
+test("failed skill validation before spawn is rejected, never recorded as uncertain delivery", t => {
+  const f = fixture(t);
+  const id = randomUUID();
+  f.c.submit("t", { clientMessageId: id, mode: "send", text: "Check", skills: [{ id: "skill", name: "check", source: "repo" }], expectedRunId: f.c.state("t").runId });
+  f.c.rejectBeforeStart("t", "Skill is unavailable");
+  assert.equal(f.c.snapshot("t").messages[0].status, "rejected");
+  assert.equal(f.c.snapshot("t").messages[0].error, "Skill is unavailable");
+  assert.equal(f.c.snapshot("t").paused, true);
+});

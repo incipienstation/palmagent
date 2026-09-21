@@ -150,3 +150,26 @@ test("a failed provider spawn completes exactly once", async t => {
   await new Promise<void>(resolve => handle.onExit(code => { exits.push(code); resolve(); }));
   assert.deepEqual(exits, [-1]);
 });
+
+test("retained executions without skill capability reject selection before enqueueing a command", async t => {
+  const { store } = fixture(t);
+  const old = store.reserve(request("legacy-skills"), "/opt/releases/previous", process.execPath);
+  const backend = new ExecutionBackend(store.directory, "/opt/releases/current", process.execPath, 1, () => {});
+  t.after(() => backend.close());
+  const handle = backend.agentRunner("codex").start({ taskId: "legacy-skills", cwd: "/tmp/legacy-skills", prompt: "", reattach: true }, () => {}, backend);
+  const result = await handle.send!("Check", undefined, "skill-message", [{ id: "skill", name: "doctor", source: "repo" }]);
+  assert.equal(result, "rejected");
+  assert.deepEqual(store.pending(old.id), []);
+});
+
+test("skill inputs persist beside v1 args without breaking older execution readers", t => {
+  const { store } = fixture(t);
+  const skills = [{ id: "skill", name: "palmagent:doctor", source: "palmagent" }];
+  const args = { ...request("selected-skill"), messageId: "selected-message" };
+  const record = store.reserve(args, "/opt/releases/current", process.execPath, skills);
+  assert.deepEqual(store.get(record.id).skills, skills);
+  const raw = store.db.prepare("SELECT args FROM executions WHERE id=?").get(record.id) as { args: string };
+  assert.deepEqual(JSON.parse(raw.args), args, "v1 readers see unchanged argument shape");
+  assert.equal(store.reserve(args, record.release, process.execPath, skills).id, record.id);
+  assert.throws(() => store.reserve(args, record.release, process.execPath, []), /already owns/);
+});

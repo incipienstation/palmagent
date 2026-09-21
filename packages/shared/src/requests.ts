@@ -1,3 +1,4 @@
+import { SelectedSkillsSchema } from "./skills.js";
 import { z } from "zod";
 export { UpdateSettingsChangeSchema } from "./updates.js";
 export { RepoRootsSchema, RepoSettingsChangeSchema } from "./settings.js";
@@ -12,7 +13,7 @@ export const ImageAttachmentSchema = z.object({ mediaType: text, data: text });
 const images = z.array(ImageAttachmentSchema).optional(); // decoded limits remain in the service
 export const CreateRepoSchema = z.object({ path: required, name: text.optional(), defaultBaseRef: text.optional() });
 export const CreateTaskSchema = z.object({
-  repoId: required, agent, prompt: text, ...settings, title: text.optional(), images,
+  repoId: required, agent, prompt: text, skills: SelectedSkillsSchema, ...settings, title: text.optional(), images,
   isolate: z.boolean().optional(), // false/omitted runs in place; ignored for plain folders
 });
 export const FollowupSchema = z.object({ prompt: text, images, ...settings });

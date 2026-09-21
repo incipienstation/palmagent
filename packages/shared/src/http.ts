@@ -22,6 +22,7 @@ type Query<T> = { query: T };
 type Ok = { ok: true };
 
 export type ApiSchema = {
+  "/api/skills": { $get: Endpoint<Query<import("./skills.js").SkillContext>, import("./skills.js").SkillCatalog> };
   "/api/terminals": {
     $get: Endpoint<Query<{ taskId?: string; repoId?: string }>, { terminals: TerminalSession[]; capabilities: TerminalCapabilities }>;
     $post: Endpoint<Json<CreateTerminalRequest>, { terminal: TerminalSession }, 201>;

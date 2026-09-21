@@ -1,3 +1,4 @@
+import { SelectedSkillsSchema } from "./skills.js";
 import { z } from "zod";
 import { AnswerSchema, ImageAttachmentSchema } from "./requests.js";
 
@@ -13,7 +14,7 @@ export const ExecutionStartSchema = z.object({
 }).strict();
 export type ExecutionStart = z.infer<typeof ExecutionStartSchema>;
 export const ExecutionCommandSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("send"), text: z.string(), images: z.array(ImageAttachmentSchema).optional(), messageId: z.string() }),
+  z.object({ kind: z.literal("send"), skills: SelectedSkillsSchema, text: z.string(), images: z.array(ImageAttachmentSchema).optional(), messageId: z.string() }),
   z.object({ kind: z.literal("steer"), text: z.string(), images: z.array(ImageAttachmentSchema).optional() }),
   z.object({ kind: z.literal("answer"), answer: AnswerSchema }),
   z.object({ kind: z.literal("approve"), decision: z.string(), scope: z.string().optional() }),

@@ -25,6 +25,7 @@ import { clearDraft, useDraft, usePersistedMapEntry, usePersistedString } from "
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
+import { useSkillDraft } from "./SkillPicker";
 import { Composer } from "./Composer";
 import { RepoPicker } from "./RepoPicker";
 
@@ -61,6 +62,7 @@ export function DispatchView() {
   // Persisted so a deploy refresh (or accidental reload) never drops typing.
   const [title, setTitle] = useDraft("draft:dispatch-title");
   const [prompt, setPrompt] = useDraft("draft:dispatch-prompt");
+  const [skills, setSkills] = useSkillDraft(`draft:dispatch-skills:${repoId}:${agent}`);
   const [pickerOpen, setPickerOpen] = useUpdateState(`dispatch:picker`, false);
   const activity = useTaskActivity("dispatch");
   const busy = Boolean(activity.label);
@@ -93,14 +95,15 @@ export function DispatchView() {
     e.preventDefault();
     setError("");
     if (!repos.some(repo => repo.id === repoId)) return setError("Register and select a repo first.");
-    if (!prompt.trim() && att.images.length === 0) return setError("Enter a prompt.");
+    if (!prompt.trim() && att.images.length === 0 && !skills.length) return setError("Enter a prompt.");
     const finish = beginTaskAction("dispatch", title.trim() || prompt.trim() || "New task");
     if (!finish) return;
     try {
       const task = await api.createTask({
         repoId,
         agent,
-        prompt: prompt.trim() || "See the attached image(s).",
+        prompt: prompt.trim() || (skills.length ? "Use the selected skill." : "See the attached image(s)."),
+        ...(skills.length ? { skills } : {}),
         permission,
         ...(model !== DEFAULT_OPTION ? { model } : {}),
         ...(effort !== DEFAULT_OPTION ? { effort } : {}),
@@ -109,7 +112,7 @@ export function DispatchView() {
         ...(att.images.length ? { images: att.images } : {}),
       });
       clearDraft("draft:dispatch-title", "draft:dispatch-prompt");
-      att.clear();
+      att.clear(); setSkills([]);
       toast({ title: "Dispatched", variant: "success" });
       // Replace the dispatch form in history so Back returns to the inbox, not /new.
       navigate(`/task/${encodeURIComponent(task.taskId)}`, { replace: true });
@@ -147,7 +150,7 @@ export function DispatchView() {
         </div>
         <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 px-3 pb-[calc(12px+var(--safe-bottom))]">
           {error && <Alert variant="destructive">{error}</Alert>}
-          <Composer id="dispatch-prompt" label="Prompt" value={prompt} onChange={setPrompt}
+          <Composer skillContext={repoId ? { repoId, agent } : undefined} skills={skills} onSkillsChange={setSkills} id="dispatch-prompt" label="Prompt" value={prompt} onChange={setPrompt}
             placeholder="Work with Palmagent" action="Dispatch" busy={busy}
             attachments={att} description="Your choices are remembered for this agent."
             settings={{ agent, onAgentChange: setAgent, model, onModelChange: setModel,

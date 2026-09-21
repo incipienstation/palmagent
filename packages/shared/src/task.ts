@@ -116,6 +116,7 @@ export interface TaskState {
   repoId: string;
   agent: AgentKind;
   title?: string;
+  skills?: import("./skills.js").SkillSelection[];
   prompt: string; // the initial dispatch prompt
   status: TaskStatus;
   interrupted: boolean; // true once a turn was cut short (e.g. restart recovery)

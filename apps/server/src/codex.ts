@@ -113,7 +113,8 @@ export class CodexRunner implements AgentRunner {
     // Plain-folder tasks require --skip-git-repo-check. Headless execution pins
     // approval_policy=never, while resume expresses sandbox/model settings via
     // -c because it does not accept the dispatch-only flag forms.
-    const argv = buildCodexArgv({ prompt, resumeId, permission, model, effort }, imgs.argv);
+    const skillPrompt = args.skills?.length ? args.skills.map(s => `$${s.name} (${s.path})`).join("\n") + "\n" + prompt : prompt;
+    const argv = buildCodexArgv({ prompt: skillPrompt, resumeId, permission, model, effort }, imgs.argv);
 
     const proc = backend.start({ turnId: taskId, command: "codex", argv, cwd, ...(args.providerHome ? { env: { CODEX_HOME: args.providerHome } } : {}) });
     proc.closeStdin(); // we never feed stdin; close it so codex doesn't wait

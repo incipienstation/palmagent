@@ -1,3 +1,4 @@
+import { SkillChips } from "./SkillPicker";
 import { useState } from "react";
 import type { MessageQueue as Queue, PendingMessage } from "@palmagent/shared";
 import { Button } from "./ui/button";
@@ -22,7 +23,7 @@ function QueueItem({ message, index, disabled, pending, onEdit, onSend, onDelete
       </Button>
     </PopoverAnchor>
     <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} side="top" align="start" className="max-h-80 overflow-y-auto p-2" aria-label="Queued message">
-      {panel === "detail" ? <p className="whitespace-pre-wrap break-words p-2">{message.text}</p> : <div className="flex flex-col gap-1">
+      {panel === "detail" ? <div className="flex flex-col gap-2 p-2"><SkillChips skills={message.skills} /><p className="whitespace-pre-wrap break-words">{message.text}</p></div> : <div className="flex flex-col gap-1">
         <Button variant="ghost" disabled={message.status !== "queued" || editing} onClick={() => { setPanel(null); onEdit(); }}>Edit prompt</Button>
         <Button variant="ghost" disabled={message.status !== "queued" || editing} onClick={() => { setPanel(null); onSend(); }}>Send now</Button>
         <Button variant="ghost" disabled={message.status === "sending" || editing} onClick={() => { setPanel(null); onDelete(); }}>Remove from queue</Button>

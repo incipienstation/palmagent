@@ -1,8 +1,9 @@
 import type { ImageAttachment, QuestionRequest } from "@palmagent/shared";
 import type { Emit, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
 
-const input = (text: string, images?: ImageAttachment[]) => [
-  { type: "text", text, text_elements: [] },
+export const codexInput = (text: string, images?: ImageAttachment[], skills?: StartArgs["skills"]) => [
+  { type: "text", text: [...(skills ?? []).map(s => `$${s.name}`), text].join("\n"), text_elements: [] },
+  ...(skills ?? []).map(s => ({ type: "skill", name: s.name, path: s.path })),
   ...(images ?? []).map(i => ({ type: "image", url: `data:${i.mediaType};base64,${i.data}` })),
 ];
 
@@ -67,7 +68,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
       } else if (ev.id === "session") {
         sessionId = ev.result.thread.id;
         event("status", { subtype: "thread_started" }, seq);
-        if (!reattach) rpc("start", "turn/start", { threadId: sessionId, input: input(args.prompt, args.images),
+        if (!reattach) rpc("start", "turn/start", { threadId: sessionId, input: codexInput(args.prompt, args.images, args.skills),
           ...(args.messageId ? { clientUserMessageId: args.messageId } : {}),
           ...(args.effort ? { effort: args.effort } : {}) });
       } else if (ev.id === "start") {
@@ -141,12 +142,12 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
   }));
   if (!reattach) rpc("initialize", "initialize", { clientInfo: { name: "palmagent", version: "1.0.0" }, capabilities: {} });
   return {
-    send: (text, images, messageId) => {
+    send: (text, images, messageId, skills) => {
       if (!turnId || completed || !proc.stdinWritable()) return Promise.resolve("rejected");
       return new Promise(resolve => {
         const timer = setTimeout(() => { pending.delete(messageId); resolve("unknown"); }, 15_000); timer.unref();
         pending.set(messageId, { resolve, timer });
-        if (!rpc(`message:${messageId}`, "turn/steer", { threadId: sessionId, expectedTurnId: turnId, clientUserMessageId: messageId, input: input(text, images) })) {
+        if (!rpc(`message:${messageId}`, "turn/steer", { threadId: sessionId, expectedTurnId: turnId, clientUserMessageId: messageId, input: codexInput(text, images, skills) })) {
           clearTimeout(timer); pending.delete(messageId); resolve("unknown");
         }
       });

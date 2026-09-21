@@ -752,3 +752,30 @@ test("Codex App Server retains successful PR creation evidence", async () => {
   assert.deepEqual(found, ["https://github.com/acme/sample-app/pull/42"]);
   backend.proc.exit(0); await handle.done;
 });
+
+test("explicit skills reach native initial and mid-turn inputs for both adapters", async () => {
+  const skills = [{ id: "fixture-skill", name: "palmagent:doctor", source: "palmagent", pluginId: "palmagent@palmagent", path: "/plugins/palmagent/skills/doctor/SKILL.md" }];
+  for (const agent of ["codex", "claude"] as const) {
+    const backend = new FakeBackend();
+    const runner = agent === "codex" ? new CodexRunner() : new ClaudeRunner();
+    const handle = runner.start(startArgs({ interactive: true, skills }), () => {}, backend);
+    if (agent === "codex") {
+      backend.proc.emit({ id: "initialize", result: {} });
+      backend.proc.emit({ id: "session", result: { thread: { id: "thread" } } });
+      assert.equal(writtenJson(backend.proc).at(-1).params.input[1].type, "skill");
+      backend.proc.emit({ id: "start", result: { turn: { id: "turn" } } });
+      const sent = handle.send!("Check again", undefined, "skill-message", skills);
+      assert.deepEqual(writtenJson(backend.proc).at(-1).params.input[1], { type: "skill", name: skills[0].name, path: skills[0].path });
+      backend.proc.emit({ id: "message:skill-message", result: { turnId: "turn" } });
+      assert.equal(await sent, "delivered");
+    } else {
+      assert.ok(JSON.stringify(writtenJson(backend.proc).at(-1)).includes("/palmagent:doctor"));
+      const sent = handle.send!("Check again", undefined, "skill-message", skills);
+      backend.proc.emit({ type: "result", is_error: true });
+      assert.ok(JSON.stringify(writtenJson(backend.proc).at(-1)).includes("/palmagent:doctor Check again"));
+      backend.proc.emit({ type: "user", uuid: "skill-message", message: { role: "user", content: [{ type: "text", text: "/palmagent:doctor Check again" }] } });
+      assert.equal(await sent, "delivered");
+    }
+    backend.proc.exit(0); await handle.done;
+  }
+});

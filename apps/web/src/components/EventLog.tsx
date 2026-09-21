@@ -1,3 +1,5 @@
+import { SkillChips } from "./SkillPicker";
+import { SelectedSkillsSchema } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
 import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
@@ -63,7 +65,7 @@ const KIND_ICON: Partial<Record<AgentEventKind, ComponentType<LucideProps>>> = {
   question: CircleHelp,
 };
 
-export function UserBubble({ text, meta }: { text: string; meta?: string }) {
+export function UserBubble({ text, meta, skills }: { text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[] }) {
   // Right-aligned soft chat bubble — the human side of the transcript.
   return (
     <div className="mb-3 flex flex-col items-end">
@@ -77,6 +79,7 @@ export function UserBubble({ text, meta }: { text: string; meta?: string }) {
         )}
       </div>
       <div className="max-w-[88%] rounded-3xl bg-secondary px-4 py-3 font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere]">
+        <SkillChips skills={skills} />
         {text}
       </div>
     </div>
@@ -194,7 +197,8 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
     const text = typeof p.text === "string" ? p.text.trim() : "";
     if ((sub === "steer" || sub === "followup" || sub === "dispatch") && text) {
       const meta = p.queued === true ? "queued" : p.injected === true ? "injected" : undefined;
-      return <UserBubble text={text} meta={meta} />;
+      const selected = SelectedSkillsSchema.safeParse(p.skills);
+      return <UserBubble text={text} meta={meta} skills={selected.success ? selected.data : undefined} />;
     }
     // The user's answer to an AskUserQuestion → render as a "You" bubble.
     if (sub === "answer") {

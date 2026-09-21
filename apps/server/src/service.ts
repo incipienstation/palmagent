@@ -1,3 +1,5 @@
+import { SkillDiscovery, skillId, type SkillEnvironment } from "./skills.js";
+import type { SkillContext, SkillSelection } from "@palmagent/shared";
 import { MessageController } from "./message-controller.js";
 import type { SubmitMessage, MessageAction } from "@palmagent/shared";
 import { randomBytes } from "node:crypto";
@@ -73,6 +75,27 @@ export class TaskService {
   private github?: GithubService;
 
   readonly messages: MessageController;
+  readonly skillDiscovery = new SkillDiscovery();
+  private skillEnvironment(context: SkillContext): SkillEnvironment {
+    if (context.taskId) {
+      const task = this.getTask(context.taskId);
+      if (!task.worktreePath) throw conflict("The task working directory is unavailable.");
+      return { agent: task.agent, cwd: task.worktreePath, home: task.sessionControl?.home ?? nativeHome(task.agent) };
+    }
+    if (!context.repoId || !context.agent) throw badRequest("Select a repository and agent.");
+    return { agent: context.agent, cwd: this.getRepo(context.repoId).path, home: nativeHome(context.agent) };
+  }
+  async availableSkills(context: SkillContext) {
+    const env = this.skillEnvironment(context);
+    try { return await this.skillDiscovery.list(env); }
+    catch (error) { throw new HttpError(503, error instanceof Error ? error.message : "Skills are unavailable."); }
+  }
+  async resolveSkills(context: SkillContext, skills?: SkillSelection[]) {
+    if (!skills?.length) return undefined;
+    const env = this.skillEnvironment(context);
+    try { return await this.skillDiscovery.resolve(env, skills); }
+    catch (error) { throw conflict(error instanceof Error ? error.message : "Choose the skill again."); }
+  }
 
   constructor(
     private readonly db: Db,
@@ -103,17 +126,35 @@ export class TaskService {
       start: (id, message) => {
         const task = this.getTask(id);
         this.applySettings(task, message.settings?.model, message.settings?.effort, message.settings?.permission);
-        this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.images?.length });
-        void this.runTurn(task, message.text, task.sessionId, message.images, message.id);
+        this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.images?.length, skills: message.skills });
+        void this.runTurn(task, message.text, task.sessionId, message.images, message.id, message.skills);
       },
       steer: async (id, message) => {
         const task = this.getTask(id), handle = this.supervisor.get(id);
         if (task.status !== "running" || this.stopping.has(id) || !handle?.send) return "rejected";
-        this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.images?.length });
-        return handle.send(message.text, message.images, message.id);
+        this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.images?.length, skills: message.skills });
+        try {
+          const skills = await this.resolveSkills({ taskId: id }, message.skills);
+          if (this.supervisor.get(id) !== handle || task.status !== "running") return "rejected";
+          return handle.send(message.text, message.images, message.id, skills);
+        } catch { return "rejected"; }
       },
       changed: () => this.broadcastTasks(),
     });
+  }
+
+  async resolveMessageSkills(id: string, req: SubmitMessage) {
+    // A retry asks for the existing receipt even if the plugin was removed
+    // after delivery. Do not turn an acknowledged send into a new intent.
+    this.getTask(id);
+    const old = this.db.readMessageState(id)?.messages.find(message => message.id === req.clientMessageId);
+    if (old) {
+      if (JSON.stringify(old.skills?.map(skill => skill.id) ?? []) !== JSON.stringify(req.skills?.map(skill => skill.id) ?? [])) {
+        throw conflict("This message ID was already used with different content.");
+      }
+      return old.skills;
+    }
+    return this.resolveSkills({ taskId: id }, req.skills);
   }
 
   submitMessage(id: string, req: SubmitMessage) { return this.messages.submit(id, { ...req, images: sanitizeImages(req.images) }); }
@@ -413,12 +454,17 @@ export class TaskService {
     // cwd and there is no branch.
     const wt =
       req.isolate && repo.vcs !== "none" ? this.worktrees.create(repo, taskId) : undefined;
+    const skills = req.skills?.map(skill => {
+      const path = wt && skill.path?.startsWith(repo.path + "/") ? wt.path + skill.path.slice(repo.path.length) : skill.path;
+      return { ...skill, path, id: skillId({ agent: req.agent, home: nativeHome(req.agent) }, skill.name, path) };
+    });
     const task: TaskState = {
       taskId,
       repoId: repo.id,
       agent: req.agent,
       title: req.title,
       prompt: req.prompt,
+      skills,
       status: "queued",
       interrupted: false,
       sessionControl: { owner: "palmagent", home: nativeHome(req.agent), transcript: "", cursor: 0, prefixHash: emptyTranscriptHash },
@@ -438,8 +484,8 @@ export class TaskService {
     // task view renders it from the live stream, not just the inbox snapshot —
     // otherwise opening a fresh task before its snapshot lands shows no prompt.
     const nImages = images?.length ?? 0;
-    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, images: nImages || undefined });
-    void this.runTurn(task, req.prompt, undefined, images); // new session
+    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, images: nImages || undefined });
+    void this.runTurn(task, req.prompt, undefined, images, undefined, skills); // new session
     return task;
   }
 
@@ -607,7 +653,7 @@ export class TaskService {
   }
 
   // ---- turn execution ----
-  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string): Promise<void> {
+  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string, skills?: SkillSelection[]): Promise<void> {
     const runId = this.messages.beginRun(task.taskId, messageId);
     if (!this.backend.independent && !this.supervisor.tryAcquire()) {
       this.transition(task, "queued"); // over the concurrency cap — wait for a slot
@@ -619,10 +665,24 @@ export class TaskService {
         return;
       }
     }
-    this.startTurnNow(task, prompt, resumeId, images, messageId);
+    if (skills?.length) {
+      this.transition(task, "queued");
+      try { skills = await this.resolveSkills({ taskId: task.taskId }, skills); }
+      catch (error) {
+        this.supervisor.release(task.taskId);
+        if (this.shuttingDown || this.messages.state(task.taskId).runId !== runId || task.status !== "queued") return;
+        const message = error instanceof Error ? error.message : "Skill is unavailable.";
+        this.emitSynthetic(task, { subtype: "error", message });
+        this.transition(task, "failed"); this.messages.rejectBeforeStart(task.taskId, message); return;
+      }
+      if (this.shuttingDown || this.messages.state(task.taskId).runId !== runId || ["cancelled", "archived"].includes(task.status)) {
+        this.supervisor.release(task.taskId); return;
+      }
+    }
+    this.startTurnNow(task, prompt, resumeId, images, messageId, skills);
   }
 
-  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string): void {
+  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string, skills?: SkillSelection[]): void {
     if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
     const runner = this.backend.agentRunner?.(task.agent) ?? getRunner(task.agent);
     this.sessionMismatch.delete(task.taskId);
@@ -640,6 +700,7 @@ export class TaskService {
           messageId, interactive: true,
           cwd: task.worktreePath!, // stable for the task's whole life
           prompt,
+          skills,
           images,
           resumeId,
           providerHome: task.sessionControl?.home,

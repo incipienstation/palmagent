@@ -56,7 +56,7 @@ async function drain() {
         const body = command.body;
         let accepted = false;
         switch (body.kind) {
-          case "send": result = await handle.send?.(body.text, body.images, body.messageId) ?? "rejected"; break;
+          case "send": result = await handle.send?.(body.text, body.images, body.messageId, body.skills) ?? "rejected"; break;
           case "steer": accepted = handle.steer(body.text, body.images); break;
           case "answer": accepted = await handle.answer(body.answer); break;
           case "approve": accepted = handle.approve(body.decision, body.scope); break;
@@ -85,7 +85,7 @@ async function finish(lost = false) {
 }
 try {
   emit({ taskId: record.taskId, kind: "status", payload: { subtype: "execution_started" } });
-  handle = getRunner(record.args.agent).start(record.args, emit, backend);
+  handle = getRunner(record.args.agent).start({ ...record.args, skills: record.skills }, emit, backend);
   dispose = watchExecutions(store.directory, () => { void drain(); });
   void drain();
   handle.done.then(() => finish(), () => finish(true));

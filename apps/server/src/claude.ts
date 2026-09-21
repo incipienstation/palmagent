@@ -257,15 +257,15 @@ export class ClaudeRunner implements AgentRunner {
     });
 
     // Kick off the turn — unless reattaching, where the live turn already got it.
-    if (!reattach) sendUser(prompt, images, args.messageId);
+    if (!reattach) sendUser(claudeSkillPrompt(prompt, args.skills), images, args.messageId);
 
     return {
-      send: (text, images, id) => {
+      send: (text, images, id, skills) => {
         if (!proc.stdinWritable() || delivery || closeTimer || !args.interactive) return Promise.resolve("rejected");
         steerInFlight = true; cancelClose();
         return new Promise(resolve => {
           const timer = setTimeout(() => { settleDelivery("unknown"); scheduleClose(); }, 15_000); timer.unref();
-          delivery = { id, text, images, sent: false, resolve, timer };
+          delivery = { id, text: claudeSkillPrompt(text, skills), images, sent: false, resolve, timer };
           writeLine({ type: "control_request", request_id: `send_${id}`, request: { subtype: "interrupt" } });
         });
       },
@@ -338,4 +338,8 @@ export class ClaudeRunner implements AgentRunner {
       done,
     };
   }
+}
+
+export function claudeSkillPrompt(text: string, skills?: StartArgs["skills"]): string {
+  return skills?.length ? `/${skills[0].name} ${text}` : text;
 }
