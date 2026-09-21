@@ -81,7 +81,9 @@ applying update finish safely. `--dry-run` previews enable/disable without write
 Service removal removes the update executor while retaining the preference for reinstall.
 
 Settings in the signed-in app offer **Check again**, and **Update** when automatic
-updates are disabled. Enabled automatic updates need no additional update click. Checks reuse a
+updates are disabled. Enabled automatic updates refresh both the app and older
+compatible installed plugins, even when only plugins need updating, without an
+additional update click. New skills load in a new agent session. Checks reuse a
 15-minute result on ordinary access; explicit checks bypass that cache. Elapsed
 time alone never triggers a check. An explicit Update pins the displayed version
 and activates independently of running execution hosts. Legacy installations

@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Manual and automatic updates now refresh older compatible operator plugins, even when the app is already current, so newly released skills become available. Native plugin failures pause retries and preserve recovery details; new skills load in a new agent session.
+
 ## 0.1.0-alpha.67
 
 ### Added

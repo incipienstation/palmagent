@@ -31,6 +31,7 @@ import {
   validateUpdateTarget,
 } from "./release-policy.js";
 import { assertUserConfigPreserved, getUserConfig, initUserConfig, setUserChannel, userConfigPath } from "./user-config.js";
+import { discoverPlugins, participatingPlugins, refreshPlugins } from "./plugin-update.js";
 import { readPluginVersions, resolveUpdatePlan } from "./update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "./update-state.js";
 import { beginUpdateMaintenance, updateMaintenanceOwnedBy } from "../update-maintenance.js";
@@ -53,7 +54,7 @@ import {
   sudoWriteFile,
 } from "./sh.js";
 
-import { clearUpdateRequest, validUpdateRequest } from "./update-access.js";
+import { clearUpdateRequest, validUpdateRequest, readUpdateAccess, writeUpdateAccess } from "./update-access.js";
 
 export interface Flags {
   dryRun: boolean;
@@ -490,11 +491,11 @@ export async function update(flags: Flags): Promise<number> {
     log.err("source checkouts are maintainer-managed and cannot self-update; use the repository build workflow and setup");
     return 1;
   }
-  const pluginPaths = flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []);
-  const plugins = readPluginVersions(pluginPaths);
+  let pluginPaths = flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []);
+  let plugins = readPluginVersions(pluginPaths);
   if (flags.plan) {
     if (flags.dryRun || flags.automatic) throw new Error("--plan cannot be combined with --dry-run or --automatic");
-    console.log(JSON.stringify(resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion)));
+    console.log(JSON.stringify(resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, participatingPlugins(discoverPlugins(cfg), pluginPaths), requestedVersion)));
     return 0;
   }
   if (flags.automatic && (!flags.pull || explicitVersion || flags.get("channel"))) throw new Error("--automatic requires --pull and follows only the saved channel");
@@ -522,10 +523,18 @@ export async function update(flags: Flags): Promise<number> {
       return 0;
     }
     canRecordRequestError = true;
+    const native = discoverPlugins(cfg);
+    plugins = participatingPlugins(native, pluginPaths);
+    pluginPaths = plugins.map((p) => p.manifest);
     const plan = resolveUpdatePlan(installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion);
-    const record = (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => writeUpdateReceipt(cfg.dataDir, {
-      status, previousVersion: plan.currentVersion, targetVersion: plan.targetVersion, reason,
-    });
+    let pluginsUpdated = 0;
+    const record = (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => {
+      writeUpdateReceipt(cfg.dataDir, {
+        status, previousVersion: plan.currentVersion, targetVersion: plan.targetVersion, reason,
+        ...(pluginsUpdated ? { pluginsUpdated, pluginActivationPending: true } : {}),
+      });
+      if (status === "succeeded") writeUpdateAccess(cfg.dataDir, { ...readUpdateAccess(cfg.dataDir), discovery: null });
+    };
     if (flags.automatic && !plan.automaticEligible) {
       record("deferred", "plugin-update-required");
       log.info("a plugin-assisted update is needed for the new compatibility line; automatic update deferred");
@@ -535,12 +544,31 @@ export async function update(flags: Flags): Promise<number> {
     // their existing --pull call working inside that line; a transition needs
     // explicit installed-manifest evidence from the coordinated update flow.
     if (!plugins.length && !plan.automaticEligible) throw new Error("crossing a compatibility line requires --plugin-manifest for each participating installed plugin; use update --plan first");
-    if (plan.plugins.some((plugin) => plugin.action === "update")) throw new Error("the target needs a matching plugin; refresh it through its native manager, verify its installed manifest, and retry the same exact target");
+    if (plan.plugins.some((plugin) => plugin.action === "update")) {
+      // Supplied manifests outside native inventories remain operator-owned.
+      if (plan.plugins.some((p) => p.action === "update" && !native.some((n) => n.manifest === p.manifest))) {
+        throw new Error("the target needs a matching plugin; refresh it through its native manager and retry");
+      }
+      record("applying", "plugin-update");
+      try {
+        const refreshed = refreshPlugins(cfg, plan, native);
+        pluginsUpdated = plan.plugins.filter((p) => p.action === "update").length;
+        pluginPaths = participatingPlugins(refreshed, pluginPaths.filter((path) => !native.some((p) => p.manifest === resolve(path)))).map((p) => p.manifest);
+        log.ok(`updated ${pluginsUpdated} operator plugin(s); start a new agent session to load their skills`);
+      } catch (error) {
+        record("failed", "plugin-update-failed");
+        log.err(error instanceof Error ? error.message : "Plugin update failed");
+        return 1;
+      }
+    }
+    const originalFlags = flags;
+    flags = { ...originalFlags, getAll: (key) => key === "plugin-manifest" ? pluginPaths : originalFlags.getAll?.(key) ?? [] };
     const recovering = previous?.status === "failed" || previous?.status === "applying";
-    if (plan.packageAction === "keep" && !recovering) {
+    const applicationRecovery = recovering && !["plugin-update", "plugin-update-failed"].includes(previous.reason);
+    if (plan.packageAction === "keep" && !applicationRecovery) {
       if (!runtimeIsHealthy(cfg, plan.currentVersion)) throw new Error("the package is current but its running version is not healthy; use the doctor plugin before retrying");
-      record("succeeded", "already-current");
-      log.ok(`package ${plan.currentVersion} is already current and healthy; compatible plugins are retained`);
+      record("succeeded", pluginsUpdated ? "plugins-updated" : "already-current");
+      log.ok(`package ${plan.currentVersion} is current and healthy; participating plugins are up to date`);
       return 0;
     }
     if (cfg.executionNode) {
@@ -586,7 +614,7 @@ export async function update(flags: Flags): Promise<number> {
     initUserConfig({ dataDir: cfg.dataDir });
     record("applying", "package-install");
     try {
-      log.info(`updating the package to ${plan.targetVersion}; compatible plugins are retained`);
+      log.info(`updating the package to ${plan.targetVersion}; participating plugins are prepared`);
       if (!npmGlobalInstall(BRANDING.packageName, plan.targetVersion, root.stdout.trim())) throw new Error("package installation failed");
       const cli = join(cfg.pkgDir!, "cli.js");
       const actual = run(process.execPath, [cli, "--version"]);

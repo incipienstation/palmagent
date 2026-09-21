@@ -32,6 +32,14 @@ export function channelTag(channel: ReleaseChannel): "latest" | "next" {
   return channel === "stable" ? "latest" : "next";
 }
 
+/** Prerelease-aware ordering; compatibility and freshness are separate decisions. */
+export function compareProductVersions(left: string, right: string): number {
+  const a = productVersion(left), b = productVersion(right);
+  const av = [...a.parts, a.stage, a.sequence], bv = [...b.parts, b.stage, b.sequence];
+  for (let i = 0; i < av.length; i++) if (av[i] !== bv[i]) return Math.sign(av[i] - bv[i]);
+  return 0;
+}
+
 export function validateUpdateTarget(
   current: string,
   target: string,

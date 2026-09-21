@@ -6,6 +6,7 @@ import { UpdateDiscoverySchema, UpdateRequestSchema, type UpdateRequest } from "
 import { ensurePrivateParent } from "../private-files.js";
 import type { InstallConfig } from "./config.js";
 import { getUserConfig } from "./user-config.js";
+import { discoverPlugins } from "./plugin-update.js";
 import { resolveUpdatePlan } from "./update-plan.js";
 import { readUpdateReceipt } from "./update-state.js";
 
@@ -50,11 +51,11 @@ export function checkUpdateAccess(cfg: InstallConfig, force: boolean, now = Date
   const currentVersion = packageVersion(cfg);
   const cached = state.discovery;
   const age = cached ? now - Date.parse(cached.checkedAt) : Infinity;
-  if (!force && cached?.channel === channel && cached.currentVersion === currentVersion && age >= 0 && age < CHECK_CACHE_MS) return state;
+  if (!force && cached?.channel === channel && cached.currentVersion === currentVersion && (cached.error || cached.pluginsPending !== undefined) && age >= 0 && age < CHECK_CACHE_MS) return state;
   try {
-    const plan = resolveUpdatePlan(currentVersion, channel, []);
+    const plan = resolveUpdatePlan(currentVersion, channel, discoverPlugins(cfg));
     state.discovery = { channel, currentVersion, targetVersion: plan.targetVersion,
-      eligible: plan.automaticEligible, checkedAt: new Date(now).toISOString(), error: false };
+      eligible: plan.automaticEligible, pluginsPending: plan.plugins.filter((p) => p.action === "update").length, checkedAt: new Date(now).toISOString(), error: false };
   } catch {
     // Cache failures too, so reconnect storms cannot hammer the registry.
     state.discovery = { channel, currentVersion, targetVersion: null,
@@ -74,7 +75,7 @@ export function requestUpdateAccess(cfg: InstallConfig, automatic: boolean, vers
   const state = readUpdateAccess(cfg.dataDir);
   const check = state.discovery;
   const preferences = getUserConfig({ dataDir: cfg.dataDir });
-  if (!check || check.error || !check.eligible || !check.targetVersion || check.targetVersion === check.currentVersion ||
+  if (!check || check.error || !check.eligible || !check.targetVersion || (check.targetVersion === check.currentVersion && !check.pluginsPending) ||
       check.channel !== preferences.channel || check.currentVersion !== packageVersion(cfg) ||
       (automatic && !preferences.autoUpdate) || (version !== undefined && version !== check.targetVersion)) {
     throw new Error("check for updates again");

@@ -25,6 +25,8 @@ function fixture(t: TestContext) {
   process.env.PALMAGENT_HOME = join(root, "preferences");
   process.env.PATH = join(root, "bin") + ":" + process.env.PATH;
   process.env.TEST_UPDATE_ROOT = root;
+  process.env.CODEX_HOME = join(root, "codex");
+  process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
   t.after(() => { process.env = env; rmSync(root, { recursive: true, force: true }); });
   writeFileSync(join(pkg, "package.json"), JSON.stringify({ version: "0.1.0-alpha.2" }));
   const cfg: InstallConfig = {
@@ -37,7 +39,7 @@ function fixture(t: TestContext) {
   saveConfig(cfg);
   setUserChannel("preview");
   const manifest = join(root, "plugin.json");
-  writeFileSync(manifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.1" }));
+  writeFileSync(manifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.3" }));
   const calls = join(root, "calls.jsonl");
   writeFileSync(join(root, "bin", "sudo"), `#!${process.execPath}
 require('node:fs').appendFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'host.jsonl'), JSON.stringify(process.argv.slice(2)) + '\\n');
@@ -87,12 +89,12 @@ async function idleFixture(t: TestContext, f: ReturnType<typeof fixture>, turns:
   return { db, turns, messages };
 }
 
-test("one planner retains compatible plugins and identifies a required version-line transition", () => {
+test("one planner refreshes compatible plugins and identifies a required version-line transition", () => {
   const plugin = { manifest: "/opt/plugins/palmagent/plugin.json", version: "0.1.0-alpha.1" };
   const compatible = planUpdate("0.1.0-alpha.2", "0.1.0", "stable", [plugin]);
   assert.equal(compatible.automaticEligible, true);
-  assert.equal(compatible.plugins[0].action, "keep");
-  assert.equal(compatible.plugins[0].targetVersion, plugin.version);
+  assert.equal(compatible.plugins[0].action, "update");
+  assert.equal(compatible.plugins[0].targetVersion, "0.1.0");
   const transition = planUpdate("0.1.0", "0.2.0", "stable", [plugin]);
   assert.equal(transition.automaticEligible, false);
   assert.equal(transition.plugins[0].action, "update");
@@ -100,6 +102,90 @@ test("one planner retains compatible plugins and identifies a required version-l
   assert.equal(planUpdate("0.1.0", "0.2.0", "stable", []).automaticEligible, false);
   assert.throws(() => planUpdate("0.2.0", "0.1.0", "stable", []), /downgrade/);
   assert.throws(() => planUpdate("0.1.0", "0.2.0-alpha.1", "stable", []), /Stable/);
+});
+
+function nativeCodexFixture(f: ReturnType<typeof fixture>) {
+  const home = process.env.CODEX_HOME!;
+  const source = join(f.root, "marketplace");
+  const writeJson = (path: string, value: unknown) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(value)); };
+  writeJson(join(source, ".agents/plugins/marketplace.json"), { name: "palmagent", plugins: [{ name: "palmagent" }] });
+  writeJson(join(home, "plugins/cache/palmagent/palmagent/0.1.0-alpha.1/.codex-plugin/plugin.json"), { name: "palmagent", version: "0.1.0-alpha.1" });
+  writeJson(join(f.root, "native.json"), { root: source, version: "0.1.0-alpha.1" });
+  writeFileSync(join(f.root, "bin/codex"), `#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path');
+const file = path.join(process.env.TEST_UPDATE_ROOT, 'native.json');
+const state = JSON.parse(fs.readFileSync(file)), a = process.argv.slice(2);
+if (a.includes('--help')) process.exit(0);
+if (a[1] === 'list') console.log(JSON.stringify({ installed: state.registered === false ? [] : [{ pluginId: 'palmagent@palmagent', version: state.version, enabled: true, installPolicy: 'AVAILABLE' }] }));
+else if (a[1] === 'marketplace' && a[2] === 'list') console.log(JSON.stringify({ marketplaces: [{ name: 'palmagent', root: state.root, marketplaceSource: { sourceType: 'local', source: state.root } }] }));
+else if (a[1] === 'marketplace' && a[2] === 'remove') state.registered = false;
+else if (a[1] === 'marketplace' && a[2] === 'add') state.root = a[3];
+else if (a[1] === 'add') {
+  if (process.env.TEST_PLUGIN_FAIL) process.exit(1);
+  state.version = '0.1.0-alpha.2'; state.registered = true;
+  const manifest = path.join(process.env.CODEX_HOME, 'plugins/cache/palmagent/palmagent', state.version, '.codex-plugin/plugin.json');
+  fs.mkdirSync(path.dirname(manifest), { recursive: true });
+  fs.writeFileSync(manifest, JSON.stringify({ name: 'palmagent', version: state.version }));
+} else process.exit(1);
+fs.writeFileSync(file, JSON.stringify(state));
+`, { mode: 0o700 });
+  writeFileSync(join(f.root, "bin/git"), `#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path'), a = process.argv.slice(2);
+if (a[0] === 'clone') {
+ const root = a.at(-1), v = '0.1.0-alpha.2';
+ for (const [p, value] of [
+   ['plugins/codex/.agents/plugins/marketplace.json', { name: 'palmagent', plugins: [{ name: 'palmagent' }] }],
+   ['.claude-plugin/marketplace.json', { name: 'palmagent', plugins: [{ name: 'palmagent' }] }],
+   ['plugins/codex/plugins/palmagent/.codex-plugin/plugin.json', { name: 'palmagent', version: v }],
+   ['plugins/claude/.claude-plugin/plugin.json', { name: 'palmagent', version: v }],
+ ]) { const file = path.join(root, p); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); }
+} else console.log('v0.1.0-alpha.2');
+`, { mode: 0o700 });
+  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.2";
+  return { ...f.flags, get: (key: string) => key === "data-dir" ? f.cfg.dataDir : undefined };
+}
+
+test("automatic access discovers and applies a plugin-only update without restarting the healthy app", async (t) => {
+  const f = fixture(t);
+  const flags = nativeCodexFixture(f);
+  setUserAutoUpdate(true);
+  const checked = checkUpdateAccess(f.cfg, true);
+  assert.equal(checked.discovery?.pluginsPending, 1);
+  assert.equal(checked.discovery?.targetVersion, checked.discovery?.currentVersion);
+  assert.equal(checked.discovery?.eligible, true);
+  requestUpdateAccess(f.cfg, true);
+  const request = readUpdateAccess(f.cfg.dataDir).pending!;
+  assert.equal(await update({ ...flags, automatic: true, request }), 0);
+  const receipt = readUpdateReceipt(f.cfg.dataDir)!;
+  assert.equal(receipt.reason, "plugins-updated");
+  assert.equal(receipt.pluginsUpdated, 1);
+  assert.equal(receipt.pluginActivationPending, true);
+  assert.equal(readUpdateAccess(f.cfg.dataDir).discovery, null, "invalidate a stale plugin-only check after success");
+  assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+  assert(f.readCalls().every((args) => args[0] === "view"), "no package replacement or runtime activation");
+  assert.equal(checkUpdateAccess(f.cfg, true).discovery?.pluginsPending, 0);
+});
+
+test("manual recovery of a plugin-only failure does not reinstall a healthy current application", async (t) => {
+  const f = fixture(t);
+  const flags = nativeCodexFixture(f);
+  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0-alpha.2", reason: "plugin-update-failed" });
+  assert.equal(await update(flags), 0);
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "plugins-updated");
+  assert(f.readCalls().every((args) => args[0] === "view"));
+});
+
+test("native plugin failure pauses automatic retries before application replacement", async (t) => {
+  const f = fixture(t);
+  const flags = nativeCodexFixture(f);
+  setUserAutoUpdate(true);
+  process.env.TEST_PLUGIN_FAIL = "1";
+  assert.equal(await update({ ...flags, automatic: true }), 1);
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "plugin-update-failed");
+  const count = f.readCalls().length;
+  assert.equal(await update({ ...flags, automatic: true }), 0);
+  assert.equal(f.readCalls().length, count);
+  assert(f.readCalls().every((args) => args[0] === "view"));
 });
 
 test("planning resolves a single exact target without creating an update receipt or changing preferences", async (t) => {

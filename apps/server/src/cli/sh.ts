@@ -17,11 +17,12 @@ export interface RunResult {
 export function run(
   cmd: string,
   args: string[],
-  opts: { input?: string; env?: NodeJS.ProcessEnv; timeout?: number } = {},
+  opts: { input?: string; env?: NodeJS.ProcessEnv; timeout?: number; cwd?: string } = {},
 ): RunResult {
   const r = spawnSync(cmd, args, {
     encoding: "utf8",
     input: opts.input,
+    cwd: opts.cwd,
     env: opts.env ?? process.env,
     timeout: opts.timeout,
   });

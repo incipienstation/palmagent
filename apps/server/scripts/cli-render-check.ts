@@ -191,6 +191,9 @@ check(
 
 const scratch = mkdtempSync(join(tmpdir(), "palmagent-cli-check-"));
 const previousPalmagentHome = process.env.PALMAGENT_HOME;
+const previousPluginHomes = { CODEX_HOME: process.env.CODEX_HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+process.env.CODEX_HOME = join(scratch, "codex");
+process.env.CLAUDE_CONFIG_DIR = join(scratch, "claude");
 process.env.PALMAGENT_HOME = join(scratch, "preferences");
 try {
   const fallback = loadConfig({ dataDir: scratch });
@@ -399,7 +402,7 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
   const preflightConfig = readFileSync(installEnvPath(scratch), "utf8");
   const savedPreferences = readFileSync(userConfigPath(), "utf8");
   const pluginManifest = join(scratch, "plugin.json");
-  writeFileSync(pluginManifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.2" }));
+  writeFileSync(pluginManifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.3" }));
   try {
     process.env.PATH = fakeBin + ":" + process.env.PATH;
     process.env.TEST_NPM_CALLS = npmCalls;
@@ -526,6 +529,7 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
     "installer config rejects a plaintext push contact",
   );
 } finally {
+  for (const [key, value] of Object.entries(previousPluginHomes)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   if (previousPalmagentHome === undefined) delete process.env.PALMAGENT_HOME;
   else process.env.PALMAGENT_HOME = previousPalmagentHome;
   rmSync(scratch, { recursive: true, force: true });
