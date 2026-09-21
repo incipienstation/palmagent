@@ -1,3 +1,4 @@
+import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
 
@@ -7,7 +8,8 @@ import { cn } from "@/lib/utils";
 // drawer.tsx: drag-to-dismiss, scrim, body scroll-lock). Used by SettingsSheet.
 // `rounded-t-3xl` + grab handle + safe-area bottom padding.
 function Sheet(props: React.ComponentProps<typeof DrawerPrimitive.Root>) {
-  return <DrawerPrimitive.Root data-slot="sheet" {...props} />;
+  const { depth, ...back } = useBackDismiss(props);
+  return <BackLayerScope depth={depth}><DrawerPrimitive.Root data-slot="sheet" {...props} {...back} /></BackLayerScope>;
 }
 
 function SheetTrigger(props: React.ComponentProps<typeof DrawerPrimitive.Trigger>) {

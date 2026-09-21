@@ -1,3 +1,4 @@
+import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
@@ -5,7 +6,8 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+  const { depth, ...back } = useBackDismiss(props);
+  return <BackLayerScope depth={depth}><DialogPrimitive.Root data-slot="dialog" {...props} {...back} /></BackLayerScope>;
 }
 
 function DialogTrigger(props: React.ComponentProps<typeof DialogPrimitive.Trigger>) {

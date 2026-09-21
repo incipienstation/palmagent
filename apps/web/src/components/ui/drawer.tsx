@@ -1,3 +1,4 @@
+import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
 
@@ -6,7 +7,8 @@ import { cn } from "@/lib/utils";
 // vaul bottom drawer — replaces the hand-rolled .sheet/.sheet-scrim bottom
 // sheet (drag-to-dismiss, scrim and body scroll lock come from the library).
 function Drawer(props: React.ComponentProps<typeof DrawerPrimitive.Root>) {
-  return <DrawerPrimitive.Root data-slot="drawer" {...props} />;
+  const { depth, ...back } = useBackDismiss(props);
+  return <BackLayerScope depth={depth}><DrawerPrimitive.Root data-slot="drawer" {...props} {...back} /></BackLayerScope>;
 }
 
 function DrawerTrigger(props: React.ComponentProps<typeof DrawerPrimitive.Trigger>) {

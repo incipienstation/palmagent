@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { navigationHash, subscribeNavigation } from "./navigation";
+export { navigate, goBack } from "./navigation";
 
 // Minimal hash router — no dependency, free back-button support. Routes:
 //   #/                  inbox
@@ -33,28 +35,6 @@ function parse(hash: string): Route {
   return { name: "inbox" };
 }
 
-function subscribe(cb: () => void) {
-  window.addEventListener("hashchange", cb);
-  return () => window.removeEventListener("hashchange", cb);
-}
-
 export function useRoute(): Route {
-  const hash = useSyncExternalStore(
-    subscribe,
-    () => window.location.hash,
-    () => "#/",
-  );
-  return parse(hash);
+  return parse(useSyncExternalStore(subscribeNavigation, navigationHash, () => "#/"));
 }
-
-export const navigate = (path: string, opts?: { replace?: boolean }) => {
-  const hash = path.startsWith("#") ? path : `#${path}`;
-  if (opts?.replace) {
-    // replaceState doesn't fire hashchange, so notify subscribers manually.
-    history.replaceState(null, "", hash);
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    return;
-  }
-  window.location.hash = path;
-};
-export const goBack = () => window.history.back();

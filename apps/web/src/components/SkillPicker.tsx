@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction, type KeyboardEvent, type RefObject } from "react";
 import { BookOpen, Slash, X } from "lucide-react";
 import { SelectedSkillsSchema, type AvailableSkill, type SkillContext, type SkillSelection } from "@palmagent/shared";
 import { api } from "../api";
@@ -8,11 +8,15 @@ import { Badge } from "./ui/badge";
 import { PopoverContent } from "./ui/popover";
 import { cn } from "../lib/utils";
 
-export function useSkillDraft(key: string): [SkillSelection[], (skills: SkillSelection[]) => void] {
+function parseSkillDraft(raw: string): SkillSelection[] {
+  try { return SelectedSkillsSchema.parse(JSON.parse(raw || "[]")) ?? []; } catch { return []; }
+}
+export function useSkillDraft(key: string): [SkillSelection[], Dispatch<SetStateAction<SkillSelection[]>>] {
   const [raw, setRaw] = useDraft(key);
-  let skills: SkillSelection[] = [];
-  try { skills = SelectedSkillsSchema.parse(JSON.parse(raw || "[]")) ?? []; } catch { /* old or invalid draft */ }
-  return [skills, values => setRaw(values.length ? JSON.stringify(values) : "")];
+  return [parseSkillDraft(raw), next => setRaw(current => {
+    const values = typeof next === "function" ? next(parseSkillDraft(current)) : next;
+    return values.length ? JSON.stringify(values) : "";
+  })];
 }
 
 function SkillIcon({ skill }: { skill: SkillSelection }) {

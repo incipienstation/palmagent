@@ -1,3 +1,4 @@
+import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
@@ -5,7 +6,8 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function Select(props: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+  const { depth, ...back } = useBackDismiss(props);
+  return <BackLayerScope depth={depth}><SelectPrimitive.Root data-slot="select" {...props} {...back} /></BackLayerScope>;
 }
 
 function SelectGroup(props: React.ComponentProps<typeof SelectPrimitive.Group>) {

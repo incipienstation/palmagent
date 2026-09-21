@@ -4,7 +4,7 @@ import { App } from "./App";
 import { OutputModeProvider } from "./OutputModeProvider";
 import { SendShortcutProvider } from "./SendShortcutProvider";
 import { ThemeProvider } from "./ThemeProvider";
-import { setupBackGuard } from "./backGuard";
+import { setupNavigation } from "./navigation";
 import { Toaster } from "./components/ui/toaster";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { initViewportHeight } from "./viewport";
@@ -17,15 +17,12 @@ import "./index.css";
 // over-measurement that hides bottom controls on reload (see viewport.ts).
 initViewportHeight();
 
-// Standalone-only: guard the system Back button at the app root so a stray tap
-// can't close the installed PWA — first back warns, a second exits (see backGuard.ts).
-setupBackGuard();
-
 // ThemeProvider keeps the .dark class + theme-color-meta in sync (the no-flash
 // inline bootstrap in index.html applies the initial theme before first paint).
 // Toaster + TooltipProvider are mounted app-wide (above AuthGate) so transient
 // feedback and tooltips work on every route, including the login/enroll gate.
 async function boot() {
+  await setupNavigation();
   await restoreUpdateState();
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

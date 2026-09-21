@@ -45,7 +45,8 @@ for (const parser of ["static", "streaming", "long"] as const) {
     await expect.poll(() => dialog.getByRole("img").evaluate(img => img.getBoundingClientRect().width)).toBe(512);
     await assertViewportLocked(page);
     await dialog.getByRole("button", { name: "Fit image" }).click();
-    await page.keyboard.press("Escape");
+    if (parser === "static") await page.evaluate(() => history.back());
+    else await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(preview).toBeFocused();
     expect(errors).toEqual([]);
