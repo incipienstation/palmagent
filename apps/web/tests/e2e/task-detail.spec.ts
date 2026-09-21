@@ -20,9 +20,10 @@ test.describe("task detail", () => {
     expect(overflow, "event log pane overflows horizontally").toBeLessThanOrEqual(1);
   });
 
-  test("shows the dispatch prompt as a You bubble and a follow-up composer", async ({ page }) => {
+  test("shows the dispatch prompt as a user bubble and a follow-up composer", async ({ page }) => {
     await page.locator("[data-radix-scroll-area-viewport]").first().evaluate((el) => { el.scrollTop = 0; });
-    await expect(page.getByText("You", { exact: true })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Your message", exact: true })).toBeVisible();
+    await expect(page.getByText("You", { exact: true })).toHaveCount(0);
     // idle task → follow-up composer is enabled.
     await expect(page.getByPlaceholder(/Send a follow-up turn/)).toBeVisible();
   });
@@ -83,6 +84,6 @@ test.describe("dispatch prompt from the event stream", () => {
     await expect(
       page.getByText("Refactor hub.ts so a misbehaving subscriber can never break fan-out to the others."),
     ).toBeVisible();
-    await expect(page.getByText("You", { exact: true })).toHaveCount(1);
+    await expect(page.getByRole("group", { name: "Your message", exact: true })).toHaveCount(1);
   });
 });
