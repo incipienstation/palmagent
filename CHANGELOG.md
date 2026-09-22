@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The composer switches immediately from Send to Stop when submitting a prompt,
+  including new tasks. Stop remains available during questions and approvals,
+  and has been removed from the task menu. Follow-up drafts retain Send and Queue.
+
 ## 0.1.0-alpha.72
 
 ### Changed

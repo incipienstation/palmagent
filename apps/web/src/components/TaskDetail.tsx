@@ -2,7 +2,8 @@ import { useBackLayer } from "../hooks/useBackLayer";
 import { TerminalsView } from "./Terminals";
 import { useActionState } from "../action-state";
 import { cacheSession } from "../read-cache";
-import { acceptMessageQueue, clearQueuePreview, finishWhenStopped, beginTaskAction, useTaskActivity, type QueuePreview } from "../task-activity";
+import { acceptMessageQueue, clearQueuePreview, beginTaskAction, useTaskActivity, type QueuePreview } from "../task-activity";
+import { stopTaskTurn } from "../task-stop";
 import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
@@ -12,7 +13,7 @@ import type { MessageQueue, PendingMessage, SubmitMessage } from "@palmagent/sha
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Check, ChevronDown, Square, Trash2, X, Terminal } from "lucide-react";
+import { Archive, Check, ChevronDown, Trash2, X, Terminal } from "lucide-react";
 
 import {
   AlertDialog,
@@ -170,10 +171,6 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const awaiting = status === "awaiting_approval";
   const needsInput = status === "awaiting_input";
   const active = running || status === "queued" || awaiting || needsInput;
-  // While a question is pending the task is awaiting_input, so the composer is
-  // non-functional anyway ("No further input for this task"). Hide it (and the
-  // helper line) so the QuestionCard + the session output above it get that room
-  // back instead of the dead composer stacking under the panel and burying the log.
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
   const composeMode: "steer" | "followup" | null = localOwner || status === "archived" || status === "cancelled" ? null : running
@@ -252,18 +249,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       : q.messages.map(m => m.id === message.id && m.status === "queued" ? { ...m, mode: "send", status: "sending" } : m) }) });
   }
 
-  async function stopTurn() {
-    const finish = beginTaskAction(taskId, "Stopping turn…");
-    if (!finish) return;
-    try {
-      const actual = await api.stop(taskId);
-      if (["queued", "running", "awaiting_input", "awaiting_approval"].includes(actual.status)) finishWhenStopped(taskId, finish, confirmedQueue?.runId);
-      else finish();
-    } catch (error) { toast({ title: errMsg(error), variant: "destructive" }); finish(); }
-  }
-
   const heading = task ? taskTitle(task) : taskId;
-  const canStop = active;
+  const sending = activity.label === "Sending message…" || activity.label === "Sending queued message…" || pendingDeliveries.some(m => m.status === "sending");
+  const canStop = active || sending || activity.stopping;
+  const hasDraft = !!compose.trim() || normalAtt.images.length > 0 || skills.length > 0;
+  const showSend = !canStop || (!busy && (hasDraft || deliveryMode === "queue"));
   const canCancel = running || status === "queued";
   const canArchive = !localOwner && !active && status !== "archived";
 
@@ -283,8 +273,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           </SheetTrigger>
         }>
           {task && <>
-            <TaskActionsMenu task={task} busy={busy} canStop={canStop} canCancel={canCancel} canArchive={canArchive} onTerminal={() => setTerminalOpen(true)}
-              onStop={() => void stopTurn()}
+            <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} onTerminal={() => setTerminalOpen(true)}
               onCancel={() => act("Cancelling task…", () => api.cancel(taskId))}
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
           </>}
@@ -352,11 +341,12 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             onDelete={m => void queueAction(m, "delete")}
             onResume={() => void act("Resuming queue…", async () => setQueueOverride(await api.resumeQueue(taskId)))} />}
 
-          {(!answering || !!edit) && task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
+          {task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
             skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
+            onStop={canStop ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
@@ -365,8 +355,8 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             </div>}
             controls={edit
               ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length)} onClick={() => void endEdit(true)}><Check /></Button>
-              : <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
-                  sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} />}
+              : showSend ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
+                  sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
             settings={{ agent: task.agent, model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
               permission, onPermissionChange: setPermission }} />}
@@ -379,28 +369,20 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   );
 }
 
-// Stop / Cancel / Archive collapse into one thumb-reachable overflow menu beside
-// the metadata strip. Stop (reversible interrupt) fires directly; Cancel (kills
-// the task + removes its worktree) and Archive open an AlertDialog confirm. The
-// triggers keep their accessible names (`Stop`/`Cancel`/`Archive`) and the same
-// REST call fires on confirm.
+// Destructive lifecycle actions stay in the overflow menu; Stop lives in the composer.
 function TaskActionsMenu({
   task,
   busy,
-  canStop,
   canCancel,
   canArchive,
-  onStop,
   onCancel,
   onArchive,
   onTerminal,
 }: {
   task: TaskState;
   busy: boolean;
-  canStop: boolean;
   canCancel: boolean;
   canArchive: boolean;
-  onStop: () => void;
   onCancel: () => void;
   onArchive: () => void;
   onTerminal: () => void;
@@ -412,10 +394,6 @@ function TaskActionsMenu({
     <>
       <SessionActionsMenu task={task} disabled={busy}>
         <DropdownMenuItem onSelect={onTerminal}><Terminal />Open terminal</DropdownMenuItem>
-        <DropdownMenuItem disabled={!canStop || mutationPending} onSelect={onStop}>
-          <Square className="text-faint" />
-          Stop
-        </DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
           disabled={!canCancel || mutationPending}

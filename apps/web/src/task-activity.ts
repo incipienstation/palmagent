@@ -4,7 +4,7 @@ import { onCacheSessionReset } from "./read-cache";
 import { beginBrowserWork } from "./update-state";
 
 export type QueuePreview = { apply: (queue: MessageQueue) => MessageQueue; id?: string; label: string; submission?: boolean };
-interface Activity { token?: symbol; label?: string; preview?: QueuePreview; queue?: MessageQueue }
+interface Activity { token?: symbol; label?: string; preview?: QueuePreview; queue?: MessageQueue; settled?: Promise<void>; onStop?: () => Promise<void>; stopping?: symbol }
 const empty: Activity = {};
 const stopped = new Map<string, { finish: () => void; runId?: string | null }>();
 const latestTasks = new Map<string, TaskState>();
@@ -42,15 +42,35 @@ export function clearQueuePreview(id: string) {
   const previous = activities.get(id);
   if (previous) { activities.set(id, { ...previous, preview: undefined }); notify(); }
 }
-export function beginTaskAction(id: string, label: string, preview?: QueuePreview) {
+export function beginTaskAction(id: string, label: string, preview?: QueuePreview, onStop?: () => Promise<void>) {
   if (activities.get(id)?.label) return;
   const finish = beginBrowserWork();
   const token = Symbol();
-  activities.set(id, { ...activities.get(id), label, preview, token }); notify();
+  let resolve!: () => void;
+  const settled = new Promise<void>(done => { resolve = done; });
+  activities.set(id, { ...activities.get(id), label, preview, token, settled, onStop }); notify();
   return () => {
     const previous = activities.get(id);
-    if (previous?.token === token) activities.set(id, { queue: previous.queue });
-    finish(); notify();
+    if (previous?.token === token) activities.set(id, { queue: previous.queue, ...(previous.stopping ? { stopping: previous.stopping, label: "Stopping turn…" } : {}) });
+    resolve(); finish(); notify();
+  };
+}
+// Stop reserves the next action immediately, then waits for any submission to
+// settle so its request cannot overtake the message or task being created.
+export function beginTaskStop(id: string) {
+  const previous = activities.get(id) ?? empty;
+  if (previous.stopping) return;
+  const finish = beginBrowserWork();
+  const token = Symbol();
+  activities.set(id, { ...previous, stopping: token, label: "Stopping turn…" }); notify();
+  return {
+    ready: previous.settled ?? Promise.resolve(),
+    onStop: previous.onStop,
+    finish: () => {
+      const current = activities.get(id);
+      if (current?.stopping === token) activities.set(id, { queue: current.queue });
+      finish(); notify();
+    },
   };
 }
 onCacheSessionReset(() => { for (const waiting of stopped.values()) waiting.finish(); stopped.clear(); latestTasks.clear(); activities.clear(); notify(); });

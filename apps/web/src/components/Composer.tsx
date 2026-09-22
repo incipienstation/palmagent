@@ -75,7 +75,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
   </FieldGroup>;
 }
 
-export function Composer({ id, value, onChange, placeholder, label, action, onSend, busy, disabled, sendDisabled,
+export function Composer({ id, value, onChange, placeholder, label, action, onSend, onStop, stopping, busy, disabled, sendDisabled,
   attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange, voiceScope = id }: {
   id: string;
   value: string;
@@ -84,6 +84,8 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   label: string;
   action: string;
   onSend?: () => void;
+  onStop?: () => void;
+  stopping?: boolean;
   busy?: boolean;
   disabled?: boolean;
   sendDisabled?: boolean;
@@ -211,7 +213,9 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={voice.toggle}>
         {voice.state === "starting" || voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
-      {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
+      {onStop && <Button type="button" size="icon-lg" className="shrink-0" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
+        disabled={stopping} onClick={onStop}><Square fill="currentColor" /></Button>}
+      {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : !onStop && <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
         size="icon-lg" className="shrink-0"
         disabled={cannotSend}>
         {busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}

@@ -8,7 +8,7 @@ async function hold(page: Page, button: Locator) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down(); await page.waitForTimeout(520); await page.mouse.up();
 }
-async function setup(page: Page) {
+async function setup(page: Page, idle = false) {
   await installScopedStream(page);
   await page.addInitScript(() => {
     Object.assign(window, { vibrations: [] });
@@ -27,7 +27,7 @@ async function setup(page: Page) {
     await route.fulfill({ json: state });
   });
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, messageQueue: state }], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, ...(idle ? { status: "idle" as const } : {}), messageQueue: state }], replayThrough: 0 });
   return { calls, state };
 }
 
@@ -39,6 +39,7 @@ test("running and queued-edit summaries show the applicable settings without cha
   await expect(summary).toBeVisible();
   await expect(summary).toBeDisabled();
   await expect(summary).toHaveText("sonnet");
+  await input.fill("Use these settings later");
   const control = page.getByRole("button", { name: "Send now", exact: true });
   await control.focus(); await control.press("ArrowDown");
   await page.getByRole("radio", { name: "Queue", exact: true }).click();
@@ -82,7 +83,7 @@ test("long press opens a haptic toggle without sending; selection applies to one
   await expect(page.getByRole("button", { name: "Add to queue" })).toBeFocused();
   await page.getByRole("button", { name: "Add to queue" }).click();
   await expect(page.getByRole("button", { name: /Queued message 1: Do this later/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   expect(calls[0].mode).toBe("queue");
   expect(await page.evaluate(() => (window as any).vibrations)).toEqual([12, 6]);
   await expect(page).toHaveScreenshot("message-queue.png");
@@ -143,7 +144,7 @@ async function touchHold(page: Page, button: Locator) {
 
 for (const focusDuringHold of [false, true]) {
   test(`collapsed composer hold ${focusDuringHold ? "survives input focus and keyboard reflow" : "keeps Send and Queue selectable"}`, async ({ page }) => {
-    const { calls } = await setup(page);
+    const { calls } = await setup(page, true);
     const input = page.getByRole("textbox");
     const composer = page.getByRole("group", { name: "Message composer", exact: true });
     const menu = page.getByRole("radiogroup", { name: "Message delivery mode" });
@@ -232,7 +233,7 @@ test("touch release keeps queued-message actions open and editing preserves the 
 
 for (const draft of ["", "Keep the keyboard open"]) {
   test(`touch menu keeps input focus with ${draft ? "a draft" : "an empty composer"} and a keyboard-sized viewport`, async ({ page }) => {
-    const { calls } = await setup(page);
+    const { calls } = await setup(page, !draft);
     await page.setViewportSize({ width: 360, height: 430 });
     const input = page.getByRole("textbox");
     await input.fill(draft);
@@ -260,7 +261,7 @@ for (const draft of ["", "Keep the keyboard open"]) {
 }
 
 test("finishing the mode menu exit does not steal focus from a resumed draft", async ({ page }) => {
-  const { calls } = await setup(page);
+  const { calls } = await setup(page, true);
   const control = page.getByRole("button", { name: "Send now", exact: true });
   await control.focus();
   await control.press("ArrowDown");

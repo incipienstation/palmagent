@@ -35,6 +35,10 @@ for (const width of [360, 1280]) for (const echoFirst of [true, false]) {
     await expect(bubble).toHaveCount(1);
     await expect(working).toHaveCount(1);
     await expect(page.getByRole("textbox")).toHaveValue("");
+    const stop = page.getByRole("button", { name: "Stop", exact: true });
+    await expect(stop).toBeEnabled();
+    await expect(stop.locator(".animate-spin")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send now", exact: true })).toHaveCount(0);
     await expect(page.getByText(/Sending/)).toHaveCount(0);
     expect((await working.boundingBox())!.y).toBeGreaterThan((await bubble.boundingBox())!.y);
     await expect(working).toHaveCSS("animation-name", "tw-shimmer");
@@ -73,6 +77,8 @@ for (const width of [360, 1280]) for (const echoFirst of [true, false]) {
     task.status = "idle";
     await send(page, "t-run", { type: "tasks", tasks: [task] });
     await expect(working).toHaveCount(0);
+    await expect(stop).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeVisible();
     await expect(transcript.getByText("Once upon a time.")).toBeVisible();
     await assertViewportLocked(page);
   });

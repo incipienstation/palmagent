@@ -305,6 +305,12 @@ needs a device check with a new notification after the updated worker activates.
 
 ## Message controls
 
+The composer switches immediately to Stop after submitting a prompt, including
+new tasks. A Stop click during submission waits for that request to settle before
+interrupting the turn. Stop is available only in the composer, including while
+a question or approval is pending. Typing a follow-up exposes Send and Queue
+alongside Stop.
+
 The composer stays compact until focused or holding a draft. Text and image
 previews expand above the action row, with long drafts scrolling inside the input.
 Model and effort open Configure for idle Send and queued messages; an active Send
