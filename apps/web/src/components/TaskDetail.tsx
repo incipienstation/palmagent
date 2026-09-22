@@ -7,7 +7,7 @@ import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
 import { MessageQueue as QueuePanel } from "./MessageQueue";
-import { isWaitingMessage, MessageDelivery } from "./MessageDelivery";
+import { isWaitingMessage } from "./MessageDelivery";
 import type { MessageQueue, PendingMessage, SubmitMessage } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
@@ -312,12 +312,15 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         <EventLog taskId={taskId} log={log} live={running} loading={loadingHistory}
           prompt={loadingHistory || hasEarlier ? undefined : task?.prompt}
-          hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier} />
+          hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier}
+          delivery={{ messages: pendingDeliveries, paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,
+            resumeDisabled, onDelete: m => void queueAction(m, "delete"),
+            onResume: () => void act("Resuming delivery…", async () => setQueueOverride(await api.resumeQueue(taskId))) }} />
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
         <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
-          {activity.label && <p role="status" className="text-xs text-muted-foreground">{activity.label}</p>}
+          {activity.label && !(["Sending message…", "Sending queued message…"].includes(activity.label)) && <p role="status" className="text-xs text-muted-foreground">{activity.label}</p>}
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
@@ -343,9 +346,6 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             <ApprovalCard busy={busy} onDecision={decision => void act(decision === "approve" ? "Approving…" : "Denying…", () => api.approve(taskId, { decision }))} />
           )}
 
-          <MessageDelivery messages={pendingDeliveries} paused={queue?.paused ?? false} disabled={busy || localOwner || !!edit}
-            resumeDisabled={resumeDisabled} onDelete={m => void queueAction(m, "delete")}
-            onResume={() => void act("Resuming delivery…", async () => setQueueOverride(await api.resumeQueue(taskId)))} />
           {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit} resumeDisabled={resumeDisabled}
             onEdit={m => void startEdit(m)}
             onSend={m => void queueAction(m, "send")}

@@ -1,8 +1,9 @@
-import { ChevronRight, FilePenLine, FileSearch, LoaderCircle, Terminal, Wrench } from "lucide-react";
+import { ChevronRight, FilePenLine, FileSearch, Terminal, Wrench } from "lucide-react";
 import { activityLabel, failed, payload, type Activity } from "../transcript";
 import type { OutputMode } from "../OutputModeProvider";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { WorkingLabel } from "./WorkingLabel";
 import { cn } from "../lib/utils";
 
 // Compact tool chips and expandable progress, inspired by Beautiful UI:
@@ -26,14 +27,16 @@ export function ActivitySummary({ activity, mode, open, onToggle }: {
   const chips = [...tools.values()];
   const label = activityLabel(activity, mode);
   return <div data-activity className={cn("min-w-0 font-sans text-muted-foreground", !open && "mb-3")}>
-    <Button variant="ghost" className="h-auto min-h-11 w-full flex-col items-stretch gap-2 rounded-xl border border-border px-3 py-2.5 text-left"
+    <Button variant="ghost" className={cn("h-auto min-h-11 flex-col items-stretch gap-2 text-left", activity.live ? "px-0 py-2" : "w-full rounded-xl border border-border px-3 py-2.5")}
       aria-label={label} title={label} aria-expanded={open} onClick={onToggle}>
       <span className="flex min-w-0 items-center gap-2">
-        {activity.live ? <LoaderCircle data-icon="inline-start" className="motion-safe:animate-spin" /> : <Wrench data-icon="inline-start" />}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronRight data-icon="inline-end" className={cn("transition-transform motion-reduce:transition-none", open && "rotate-90")} />
+        {activity.live ? <WorkingLabel /> : <>
+          <Wrench data-icon="inline-start" />
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+        </>}
+        {(!activity.live || open) && <ChevronRight data-icon="inline-end" className={cn("transition-transform motion-reduce:transition-none", open && "rotate-90")} />}
       </span>
-      {mode !== "compact" && chips.length > 0 && <span className="flex flex-wrap gap-1.5" aria-hidden>
+      {(!activity.live || open) && mode !== "compact" && chips.length > 0 && <span className="flex flex-wrap gap-1.5" aria-hidden>
         {chips.slice(0, 3).map((tool, index) => {
           const Icon = /bash|command_execution/i.test(tool.name) ? Terminal : /write|edit|file_change/i.test(tool.name) ? FilePenLine : /read|glob|grep/i.test(tool.name) ? FileSearch : Wrench;
           return <Badge key={index} variant={tool.failed ? "destructive" : "secondary"} className="max-w-full gap-1.5" title={`${tool.name} ${tool.detail}`}>
@@ -43,6 +46,7 @@ export function ActivitySummary({ activity, mode, open, onToggle }: {
         {chips.length > 3 && <Badge variant="outline">+{chips.length - 3}</Badge>}
       </span>}
     </Button>
+    {activity.live && open && <p className="mb-2 text-xs">{label}</p>}
     {!open && activity.preview && <div data-progress-preview className={cn("mt-2 border-l-2 border-border pl-3 text-[13px] break-words [overflow-wrap:anywhere]", mode === "compact" ? "line-clamp-1" : "line-clamp-2")}>{activity.preview}</div>}
   </div>;
 }

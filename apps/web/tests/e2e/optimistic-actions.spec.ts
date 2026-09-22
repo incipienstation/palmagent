@@ -170,7 +170,11 @@ for (const mode of ["send", "queue"] as const) test(`${mode} creates a pending i
   }
   await page.getByRole("button", { name: mode === "queue" ? "Add to queue" : "Send now", exact: true }).click();
   const pending = mode === "queue" ? page.getByRole("button", { name: /Queued message 1: Message before acknowledgment/ }) : page.getByRole("status", { name: "Pending message" });
-  await expect(pending).toContainText(mode === "queue" ? "Adding…" : "Sending…");
+  if (mode === "queue") await expect(pending).toContainText("Adding…");
+  else {
+    await expect(page.getByLabel("Session transcript").getByText("Working…", { exact: true })).toBeVisible();
+    await expect(page.getByText("Sending…", { exact: true })).toHaveCount(0);
+  }
   await expect(pending).toContainText("Message before acknowledgment");
   if (mode === "send") await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox")).toHaveValue("");
@@ -203,12 +207,12 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
   const pending = page.getByRole("status", { name: "Pending message" });
   const queue = page.getByRole("region", { name: "Message queue", exact: true });
   await expect(pending).toContainText("Immediate delivery");
-  await expect(pending).toContainText("Sending…");
+  await expect(pending).not.toContainText("Sending…");
   await expect(queue).toContainText("Queue · 1");
   await expect(queue).not.toContainText("Immediate delivery");
   delayed.release();
   await expect(page.getByRole("textbox")).toBeEnabled();
-  await expect(pending).toContainText("Sending…");
+  await expect(pending).not.toContainText("Sending…");
   await expect(queue).toContainText("Queue · 1");
   await assertViewportLocked(page);
 
@@ -282,19 +286,21 @@ test("an automatically started queued turn leaves only waiting turns in Queue", 
   await expect(page.getByRole("region", { name: "Message queue", exact: true })).toContainText("Queue · 1");
 });
 
-test("delivery keeps its image count when the server replaces uploads with durable attachments", async ({ page }) => {
+test("delivery shows images when the server replaces uploads with durable attachments", async ({ page }) => {
+  const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+  await page.route("**/api/tasks/t-run/attachments/*", route => route.fulfill({ contentType: "image/png", body: Buffer.from(image, "base64") }));
   const task = await queueSetup(page, [{ ...message, mode: "send", status: "sending", images: [
-    { mediaType: "image/png", data: "AA==" },
+    { mediaType: "image/png", data: image },
   ] }]);
   const pending = page.getByRole("status", { name: "Pending message" });
-  await expect(pending).toContainText("1 image(s)");
+  await expect(pending.getByRole("img", { name: "Attached image 1", exact: true })).toBeVisible();
   task.messageQueue = { ...task.messageQueue, revision: 2, messages: [{
     ...message, mode: "send", status: "sending", attachments: [
       { id: "22222222-2222-4222-8222-222222222222", mediaType: "image/png", size: 1 },
     ],
   }] };
   await send(page, "t-run", { type: "tasks", tasks: [task] });
-  await expect(pending).toContainText("1 image(s)");
+  await expect(pending.getByRole("img", { name: "Attached image 1", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
 });
 
@@ -324,7 +330,7 @@ test("delivery snapshots settle the optimistic bubble before a stale HTTP respon
   await expect.poll(() => accepted?.revision).toBe(2);
   task.messageQueue = accepted;
   await send(page, "t-run", { type: "tasks", tasks: [task] });
-  await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Sending…");
+  await expect(page.getByRole("status", { name: "Pending message" })).toBeVisible();
   task.messageQueue = { ...accepted, revision: 3, messages: [] };
   await send(page, "t-run", { type: "tasks", tasks: [task] });
   await expect(page.getByRole("status", { name: "Pending message" })).toHaveCount(0);
@@ -367,7 +373,7 @@ for (const action of ["delete", "send"] as const) test(`queued ${action} is imme
   if (action === "delete") await expect(page.getByRole("button", { name: /Queued message 1:/ })).toBeHidden();
   else {
     await expect(page.getByRole("button", { name: /Queued message 1:/ })).toBeHidden();
-    await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Sending…");
+    await expect(page.getByRole("status", { name: "Pending message" })).toBeVisible();
   }
   task.messageQueue.messages = []; task.messageQueue.revision = 2;
   await send(page, "t-run", { type: "tasks", tasks: [task] }); delayed.release();
