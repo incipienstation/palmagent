@@ -36,11 +36,15 @@ containing the public HTTPS origin, RP ID, loopback upstream, and forwarding req
 It is read-only and contains no session tokens or private keys. The existing `--domain`
 setting remains the input; there is no new required installation configuration.
 
-`palmagent doctor` diagnoses the local application and providers without consulting nginx
-or local certificate paths. Public health/version, TLS, streaming, and terminal WebSocket
-checks are performed separately by the plugin. `palmagent terminal diagnose` remains an
-explicit end-to-end check. Local requests to a public hostname are not proof of off-host
-reachability. A first enrollment link is minted with `palmagent passkey` after HTTPS works.
+`palmagent doctor` diagnoses the local runtime and providers. For package installations,
+it also checks health, version, source commit, and PWA shell/entry-script hashes against
+the installed package at both the loopback and public HTTPS origins. It does not inspect
+nginx configuration or local certificate paths.
+
+Streaming and terminal WebSocket checks remain separate operator tests;
+`palmagent terminal diagnose` provides an explicit end-to-end terminal check.
+Local requests to a public hostname are not proof of off-host reachability.
+A first enrollment link is minted with `palmagent passkey` after HTTPS works.
 
 Preserve Host, uncached APIs, unbuffered SSE and WebSocket upgrades. Follow the connection
 contract's body and per-client rate/connection limits. An application-wide authentication

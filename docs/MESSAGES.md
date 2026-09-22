@@ -8,25 +8,29 @@ The contract is defined in `packages/shared/src/messages.ts`.
 
 `MessageController` owns the persisted queue, message IDs, settings snapshots,
 edit holds and logical run IDs. `TaskService` owns admission, native-session
-ownership, execution slots and task lifecycle. The adapters own CLI protocols;
-`RunnerBackend` and the daemon continue to own processes and replayable stdout.
+ownership, execution slots and task lifecycle. The adapters own CLI protocols.
+`RunnerBackend` abstracts execution: package installations use independent execution
+hosts, while source and legacy installations can use a daemon or in-process backend.
+See [session lifecycle](SESSION-LIFECYCLE.md) for process ownership and durable replay.
 
 A logical run may receive several Send messages. Queued messages each start a
-separate run. For this implementation each run retains a dedicated process,
-including Codex App Server, which closes after the terminal turn result. Claude
+separate run. Each run retains a dedicated process, including Codex App Server,
+which closes after the terminal turn result. Claude
 may interrupt and continue inside that process when it receives a Send. A
 process exit without a terminal Codex result is a failure.
 
 ## Persistence and delivery
 
-The existing SQLite database stores each task's versioned message-control state
-in `task_message_state`: run identity, protocol, pause state and message records.
+SQLite stores each task's versioned message-control state in `task_message_state`:
+run identity, protocol, pause state and message records.
 This is one atomic aggregate rather than separate run, attempt and command
 tables. Task status and existing output events remain the lifecycle/transcript
 records. Queue revisions travel in task snapshots; they do not add transcript
 messages on every edit or lease renewal. Full snapshots restore missed updates.
 
-Messages retain their IDs, original request fingerprints, settings and images.
+Messages retain their IDs, original request fingerprints, settings and attachment references.
+Image bytes live in private files beside SQLite; see
+[attachment storage and backup](../apps/web/README.md#sent-image-attachments).
 An identical client ID returns the accepted state; reuse with a different
 request is rejected. Sending claims a message synchronously before adapter I/O.
 Settings are captured per queued prompt; active Send does not change model or
@@ -49,7 +53,6 @@ conversation, the operator can explicitly resume the remaining queue.
 Queue entries run individually in FIFO order. Stop or a failed run pauses the
 queue without deleting entries. Resume is explicit. A server restart reattaches
 surviving processes; missing runs remain interrupted with a paused queue.
-Waiting messages retain their images in the private database.
 
 Editing holds one waiting entry for 60 seconds, renewed every 20 seconds by the
 open editor. Following entries cannot overtake it. Save checks both lease token
