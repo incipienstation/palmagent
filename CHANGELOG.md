@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- The skill button's slash is steeper so it reads more clearly as the `/` shortcut.
+
 ## 0.1.0-alpha.74
 
 ### Fixed
