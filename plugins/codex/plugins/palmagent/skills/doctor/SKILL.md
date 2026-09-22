@@ -9,7 +9,7 @@ Thin wrapper over the `palmagent` CLI's `doctor` subcommand, PLUS adaptive
 diagnosis when it reports a fault. The CLI runs the deterministic structured
 checks (web unit active? independent execution artifacts/template valid, or legacy
 runner unit/socket available? claude/codex installed + authed?
-SQLite present? VAPID keys present? port
+package build and local/public PWA hashes match? SQLite present? VAPID keys present? port
 loopback-only? PWA dist present? disk headroom?) and **exits non-zero on any
 failure**. Your added value is correlating its findings with the live logs.
 
@@ -42,8 +42,9 @@ Show the operator the report.
 
 ## 3. If it is all green
 
-CLI health covers the local runtime only. Inspect the actual ingress and verify public
-HTTPS using the shared reference; use `<cli> terminal diagnose` explicitly when supported
+Current package diagnostics verify build identity and PWA hashes through both local and
+public origins. Older CLIs may cover local health only; inspect their actual output and
+verify public HTTPS using the shared reference when absent. Use `<cli> terminal diagnose` explicitly when supported
 to verify WebSocket shell transport. Report each result separately. No system changes
 are authorized by diagnosis alone. Investigate any remaining user symptom.
 

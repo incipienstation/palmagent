@@ -104,7 +104,10 @@ to make an update proceed. Drive the CLI service logic, not manual unit restarts
 Repeat the verified manifest argument for all participating plugins. The CLI
 rechecks target compatibility before package replacement, installs the exact
 version, activates it through the new CLI, verifies the runtime version and
-health, and checks plugin manifests again. Incompatible targets stop before
+health, and checks plugin manifests again. Current package updates also verify the source
+commit and served local PWA hashes before success. Use `doctor` for public HTTPS and
+served-file verification; a proxy failure does not automatically roll back a healthy
+local application. Incompatible targets stop before
 package mutation. This flow also repairs a known failed attempt at the same
 version; successful recovery releases the automatic-update hold.
 
@@ -131,3 +134,8 @@ older compatible plugins, including when only plugins need updating. They defer
 when the package or a participating plugin crosses a compatibility boundary.
 Independent runs do not block application updates; legacy runs block migration. `settings` controls access-triggered updates. Source checkouts remain
 maintainer-managed and use the repository build workflow followed by `setup`.
+
+Validation environments use Preview and enabled automatic updates through this same
+flow. No separate staging deployment or per-release approval is required for updates
+already authorized by saved preferences. Report actual installed identity separately
+from publication; a merge alone neither enables automatic updates nor changes channels.

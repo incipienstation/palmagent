@@ -95,8 +95,8 @@ Never hand-edit generated skill or reference copies. Platform manifests and Code
 - Branch `feature/*` from an up-to-date `origin/develop` in an isolated linked worktree.
 - Open feature pull requests into `develop`, never directly into `main`, and squash-merge each
   reviewed feature pull request so it lands as one reversible change.
-- `develop` is the source for staging, prerelease tags, and prereleases; `main` is the source for
-  production deployment, stable version tags, and stable releases. Record the exact deployed commit
+- `develop` is the source for Preview releases; `main` is the source for Stable releases.
+  Installations follow their configured release channel and update preferences. Record the exact deployed commit
   or immutable artifact and verify health separately from CI or merge status.
 - Completing an authorized task includes automatic squash merge of its verified PR into
   `develop` through [ship](.harness/skills/ship/SKILL.md), unless the user requests PR-only delivery,
@@ -109,11 +109,12 @@ Never hand-edit generated skill or reference copies. Platform manifests and Code
   [local develop update](.harness/skills/ship/SKILL.md#post-merge-local-develop-update).
   Report its result and final local commit, including the reason for any skipped update.
 - Product changes merged into `develop` are eligible for automatic Preview versioning, tagging,
-  and publication under the release policy. Repository visibility and host deployment remain
-  independent approvals.
+  and publication under the release policy. Repository visibility remains a separate approval.
+  Enabled automatic updates authorize eligible installations within their saved channel and
+  compatibility rules; do not add a per-release deployment approval.
 - Promote `develop` to `main` through a separate reviewed PR using a merge commit, never squash
-  or rebase. Stable tagging and publication wait for the final candidate approval; host deployment
-  remains separate.
+  or rebase. Stable tagging and publication wait for the final candidate approval.
+  Installation updates follow their saved preferences or an operator request.
 - Before a hotfix or merge-settings change, follow the
   [environment and merge model](.harness/skills/release/references/policy.md#environment-and-merge-model), including hotfix
   propagation to `develop` and branch-specific merge enforcement.
@@ -131,8 +132,11 @@ candidate verification; its single `npm-latest` approval covers the exact candid
 tagging, npm publication, and public Release creation. Never publish from a workstation.
 Keep release-specific evidence outside the skill.
 
-Host deployment remains operator-initiated through [staging-deploy](.harness/skills/staging-deploy/SKILL.md).
-Keep private environment bindings outside the repository; never infer staging or production from DNS.
+Staging is an ordinary installation configured for Preview and automatic updates; see
+[validation environments](docs/STAGING.md). Use the shared operator update/settings/doctor
+flows rather than a separate deployment command. A merge alone does not enable automatic
+updates, change an installation channel, or authorize an unrelated host operation.
+Keep host configuration and update evidence outside the repository.
 
 ## Commands
 

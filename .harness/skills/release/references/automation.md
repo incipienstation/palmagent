@@ -45,18 +45,9 @@ and the rule requiring PRs to be current with their base branch before merge.
 Post-merge Preview automation has its own eligibility check and candidate verification.
 It does not build a staging deployment package for every merge.
 
-When a staging package is needed, manually run `staging-candidate.yml` on the
-`develop` branch and provide the full 40-character `commit` SHA. The workflow
-requires that exact commit to belong to `develop` history, then checks it out
-separately from the workflow tools. It runs metadata/leak checks and package
-build/install verification without repeating the PR runtime/browser suites.
-The selected revision must support the current package assembly and smoke commands.
-
-The resulting `palmagent-staging-<commit>` artifact contains the exact installed
-tarball, `SHA256SUMS`, and `staging.json` with source and workflow commit IDs and
-the run URL. Use that artifact for staging and record its checksum alongside
-the source commit and staging health. Runs on other branches are skipped.
-This workflow neither deploys a service nor publishes to npm or GitHub Releases.
+Validation installations follow published Preview releases through the common automatic updater.
+There is no staging-only package workflow or deployment command. See
+[validation environments](../../../../docs/STAGING.md) for setup and runtime verification.
 
 `release-candidate.yml` is a read-only, commit-based reusable workflow, also available through
 manual dispatch on `develop` or `main`. It never creates tags or Releases. The agent can invoke
@@ -253,7 +244,8 @@ existing assets and tags must match exactly, and published assets are never over
 5. Make the workflows available on the repository default branch for dispatch through its normal
    reviewed PR path. Confirm source eligibility, App installation (or fallback Actions PR permission),
    tag rules, and channel environments before setting `PREVIEW_RELEASE_ENABLED=true`. Enabling is standing authorization
-   to publish eligible Preview changes; it does not authorize host deployment.
+   to publish eligible Preview changes; installation updates follow saved preferences
+   or an operator request.
 
 The built-in token does not provide ordinary push-triggered workflow chaining. The controller
 explicitly dispatches publication and queues another Preview comparison when product changes
@@ -296,8 +288,8 @@ needs a source fix, pause the Preview switch and let active runs finish. Prepare
 on fixed `develop` through a verified PR, then dispatch `npm-publish.yml` for that exact commit.
 Keep the failed tag/candidate evidence. After successful publication establishes the new baseline,
 restore the switch. This is recovery within Preview authorization, not a parallel release train;
-ordinary retries intentionally resume the older pending preparation first. Host rollback is
-separate; see [staging rollback](../../../../docs/STAGING.md#rollback-and-failures).
+ordinary retries intentionally resume the older pending preparation first. Installation failures
+use the ordinary update/doctor recovery flow; retain its receipts and previous releases. Package recovery does not restore the database.
 
 ## Release checklist
 
@@ -310,4 +302,5 @@ For Stable, also complete applicable clean-host install, update from the previou
 database backup/quick-check, passkey login, HTTPS, SSE reconnect, and rollback acceptance on the
 exact candidate. Record live checks and their limitations with the candidate's review evidence;
 hermetic CI does not prove them. A first Stable release has no previous Stable to upgrade from.
-Repository visibility and host deployment remain separately authorized and verified.
+Repository visibility remains separately authorized. Installed versions and health must
+be verified independently of publication, whether updates are automatic or requested.

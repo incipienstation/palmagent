@@ -38,7 +38,7 @@ values intact. Package versions never override a migrated preference.
 
 The `settings` skill uses `config set --channel stable|preview` for an explicit preference
 change. It works before a service is installed and does not deploy or restart anything.
-The preference remains saved even if a later, separately requested deployment fails.
+The preference remains saved even if a later automatic or requested update fails.
 The existing operation-level `--channel` override is still supported: install/setup save
 it with configuration, and update saves it only after health succeeds.
 
@@ -192,3 +192,9 @@ capabilities do not deploy an update on a host merely because their PR is merged
 Published versions are immutable. Never overwrite or reuse a version. If a
 release is bad, move the dist-tag back to the last good version, deprecate the
 bad version with a useful message, and publish a new patch or prerelease.
+
+Validation environments use Preview and enabled automatic updates as described in
+[validation environments](../../../../docs/STAGING.md). There is no staging-specific
+deployment gate. Package activation verifies the local build identity and PWA hashes;
+`doctor` adds public-origin verification. Existing automatic-update authorization
+remains valid without a new approval for each eligible release.

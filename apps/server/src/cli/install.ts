@@ -1,3 +1,4 @@
+import { applicationChecks, applicationIdentity, verifyApplication } from "./application-verification.js";
 import { installTerminalUnits } from "./terminal-units.js";
 // Application install / setup / update / uninstall orchestration.
 // Host ingress and TLS are managed separately by the operator plugin. Every
@@ -619,11 +620,13 @@ export async function update(flags: Flags): Promise<number> {
       const cli = join(cfg.pkgDir!, "cli.js");
       const actual = run(process.execPath, [cli, "--version"]);
       if (!actual.ok || actual.stdout.trim() !== plan.targetVersion || installedVersion(cfg.pkgDir) !== plan.targetVersion) throw new Error("installed package identity does not match the planned target");
+      const identity = applicationIdentity(cfg.pkgDir!);
       const child = spawnSync(process.execPath, [cli, ...postUpgradeArgs(cfg, flags), "--expected-version", plan.targetVersion], {
         stdio: "inherit", env: { ...process.env, [POST_UPGRADE_ENV]: "1", ...(flags.automatic ? { PALMAGENT_NON_INTERACTIVE: "1" } : {}) },
       });
       if (child.status !== 0) throw new Error("service activation or target health verification failed");
       if (!runtimeIsHealthy(cfg, plan.targetVersion)) throw new Error("the running service does not match the healthy target version");
+      await verifyApplication(identity, connectionInfo(cfg).upstream);
       const finalPlugins = readPluginVersions(pluginPaths);
       if (finalPlugins.some((plugin) => !compatiblePlugin(plan.targetVersion, plugin.version))) throw new Error("a plugin changed during the update and is no longer compatible");
       record("succeeded", "runtime-and-compatibility-verified");
@@ -688,6 +691,7 @@ async function updateIndependentRelease(cfg: InstallConfig, version: string, fla
   if (!canSudoNonInteractive()) throw new Error("Updates require non-interactive service-management access");
   record("applying", "candidate-preparation");
   const candidate = stageRelease(cfg, version);
+  const identity = applicationIdentity(candidate.pkgDir!);
   const actual = run(candidate.executionNode!, [join(candidate.pkgDir!, "cli.js"), "--version"], {
     env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 10_000,
   });
@@ -710,12 +714,13 @@ async function updateIndependentRelease(cfg: InstallConfig, version: string, fla
     saveConfig(candidate);
     restartWeb();
     if (!await healthcheck(candidate, version)) throw new Error("Candidate application health check failed");
+    await verifyApplication(identity, connectionInfo(candidate).upstream);
     if (settings.autoUpdate) configureAutoUpdate(candidate, true);
     const pluginPaths = flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []);
     if (readPluginVersions(pluginPaths).some((plugin) => !compatiblePlugin(version, plugin.version))) throw new Error("An operator plugin changed during activation");
     persistUserChannel(candidate, flags);
     record("succeeded", "application-and-executions-verified");
-    writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: "succeeded" }) + "\n");
+    writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: "succeeded", verification: identity }) + "\n");
     return 0;
   } catch (error) {
     if (changed) {
@@ -885,7 +890,7 @@ export async function runDoctor(flags: Flags): Promise<number> {
   } catch {
     log.warn("Update channel is unknown: user or legacy settings could not be read");
   }
-  const checks = doctor(cfg);
+  const checks = [...doctor(cfg), ...await applicationChecks(cfg)];
   const code = printChecks(`${BRANDING.productName} doctor — ${cfg.domain}`, checks);
   return code || (updateFailure ? 1 : 0);
 }

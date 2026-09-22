@@ -1,132 +1,80 @@
-# Staging package deployment
+# Validation environments
 
-Staging is an explicitly bound installation, never a role inferred from a hostname. Keep the
-binding, deployment receipts, package snapshots, logs, and database outside the source repository.
-Run these commands as the installed service owner, using the Node/npm toolchain that owns its
-global package prefix. The CLI handles privileged application systemd operations. Host ingress and TLS are
-operator-managed; application deployment preserves their existing configuration.
+A staging environment is an ordinary Palmagent package installation configured for
+Preview and automatic updates. Maintainers use the same install, settings, update,
+and doctor flows as other operators. There is no staging-specific deployment command,
+private binding, candidate workflow, or per-release deployment approval.
 
-## Bind an existing installation
+## Set up a validation installation
 
-After confirming the target is staging, supply the real host values privately:
+Use the Palmagent install plugin to create an installation, or its setup plugin to
+reconfigure an existing one. Choose a host and installation owner with independent
+state when separation from everyday work is needed. Keep host values, credentials,
+and runtime data outside the repository. The operator plugin manages HTTPS ingress.
+A repository checkout, private staging configuration, or another maintainer's paths
+are not required to operate the installation.
 
-```bash
-pnpm staging:deploy bind \
-  --data-dir '<absolute-state-directory>' \
-  --npm-prefix '<absolute-npm-prefix>' \
-  --domain '<staging-hostname>'
-```
-
-The command creates `~/.config/palmagent/staging.json` with mode 0600. It checks the service
-owner, package installation, domain, data directory, and global npm prefix against `install.env`.
-It refuses to replace an existing binding. `--config <private-file>` selects another binding.
-Binding does not install a package or restart a service.
-
-## Deploy an approved package
-
-For a published prerelease, choose the exact version and commit from its reviewed release:
+Ask the settings plugin to select **Preview** and enable **automatic updates**, or
+choose those settings in the signed-in app. For maintainers using the CLI directly:
 
 ```bash
-pnpm staging:deploy deploy --version '<exact-version>' --commit '<40-character-source-sha>' --dry-run
-pnpm staging:deploy deploy --version '<exact-version>' --commit '<40-character-source-sha>'
+palmagent config set --channel preview
+palmagent auto-update enable
+palmagent auto-update status
 ```
 
-`next` and `latest` are moving discovery channels, not deploy targets. The command downloads
-the exact npm version, checks its embedded clean-source identity, and records the archive hash.
-Stable candidates can also be accepted in staging before production promotion.
+Retain the installation's custom `--data-dir` on each command when applicable.
+Channel and auto-update preferences are shared by installations using the same
+Palmagent configuration home; use separate owner accounts or explicitly isolated
+`PALMAGENT_HOME` values when installations must have different preferences.
 
-For a CI package, manually run `staging-candidate.yml` on `develop` with the approved source
-commit. Branch pushes do not build staging packages:
+## Follow Preview
 
-```bash
-gh workflow run staging-candidate.yml --ref develop -f commit='<40-character-source-sha>'
-gh run list --workflow staging-candidate.yml --branch develop --event workflow_dispatch
-gh run view '<run-id>' --json headSha,headBranch,event,conclusion
-gh run download '<run-id>' --name 'palmagent-staging-<source-sha>' --dir '<private-artifact-directory>'
-cat '<private-artifact-directory>/staging.json'
-cat '<private-artifact-directory>/SHA256SUMS'
-sha256sum '<private-artifact-directory>/palmagent-<version>.tgz'
-pnpm staging:deploy deploy --artifact '<package.tgz>' --sha256 '<reviewed-sha256>' --commit '<source-sha>' --dry-run
-pnpm staging:deploy deploy --artifact '<package.tgz>' --sha256 '<reviewed-sha256>' --commit '<source-sha>'
-```
+Eligible product changes merged into `develop` trigger Preview preparation,
+verification, and publication. The installed updater discovers the published version
+when the signed-in app connects or returns to the foreground. Ordinary access reuses
+a 15-minute discovery cache; **Check again** refreshes it. Merely waiting does not
+trigger a check, and a tag or successful CI run does not prove installation.
 
-Select the requested run and wait for success. Confirm its workflow is `staging-candidate.yml`,
-its event is `workflow_dispatch`, and its branch is `develop`. The run's `headSha` identifies
-the workflow tools; it can differ from the selected package source. In `staging.json`, verify
-`commit` matches the approved source SHA, `workflowCommit` matches the run's `headSha`, and
-`runUrl` points to that run. Check the named tarball's SHA-256 against both `staging.json.sha256`
-and `SHA256SUMS`, then supply that source commit and checksum to the deployment command.
+Enabling automatic updates authorizes eligible updates under that saved policy;
+do not add another staging approval for each release. Updates stay within the current
+`x.x.x` line, coordinate compatible operator plugins, and preserve independent active
+executions. Crossing a version line requires the ordinary update flow. Legacy
+migration waits for idle. Changing channel alone does not install a release.
 
-Candidate release assets may also be supplied with `--artifact` after checking their
-`release.json` and trusted release workflow. A locally computed checksum pins downloaded bytes;
-it does not authenticate the producer. Dirty local builds and packages without source identity
-cannot be new deployment targets.
+## Verify the installed result
 
-Dry-run downloads and validates into temporary storage. It performs no package installation,
-service restart, or persistent deployment write. Before activation, review schema compatibility,
-the data backup/restore plan, and any runner changes that could end active turns. A full package
-replaces manual live overlays: include their intended source changes in the candidate first.
+Use `palmagent auto-update status` for the selected channel and last update result,
+and `palmagent doctor` for runtime verification. Package activation verifies local
+health, the exact build version and source commit, and PWA shell and entry-script
+hashes against the installed package before reporting success. npm validates package
+integrity during installation. Retained application activation records also capture
+the verified identity and hashes.
 
-The apply command locks `<data-dir>/deployments`, snapshots the currently installed product
-package (including manual product-file changes), writes a private receipt, installs the exact
-tarball into the bound npm prefix, and invokes the newly installed CLI's `update` command.
-For installations already using retained releases, the same binding instead validates the
-active package and pinned Node beneath the data directory. Deployment requires an exact
-published version and invokes the active CLI's `update --pull --to <exact-version>`;
-it never overwrites a retained release or the global package. The receipt retains the old
-package path and snapshot. CI tarball deployment is currently limited to legacy installations.
-The CLI keeps an unchanged runner alive and restarts a changed runner. npm installs declared
-runtime dependencies; the snapshot is a product-package rollback,
-not a frozen snapshot of transitive dependencies or the operating system.
+Doctor checks the package identity and both local and configured public origins,
+including HTTPS and served PWA hashes. A public-origin failure is reported separately
+and does not turn a healthy local activation into an automatic rollback. Use
+`palmagent terminal diagnose` when testing public WebSocket input/output and screen
+restoration; it creates and cleans up a disposable diagnostic shell. Terminal and
+browser interaction acceptance remain explicit tests, not background update tasks.
 
-Success requires installed product-file hashes, local and public health, the running server's
-embedded version/commit, and served PWA entry-file hashes to match. Packages advertising
-`terminalDiagnostics: 1` also must pass `palmagent terminal diagnose` using the active retained
-CLI and Node. This verifies public WebSocket input/output and screen restoration with a
-disposable shell, then confirms cleanup. The receipt records the result; failure leaves a
-`verifying-terminal` failure phase and does not advance `current.json`. Older packages explicitly
-record the check as unsupported. The result includes the
-version, commit, SHA-256, and receipt path. `deployments/current.json` points to the latest
-successful operation. CI success or an npm install exit code alone is not readiness evidence.
-`deployments/latest-operation.json` separately records the most recent deployment or rollback
-attempt, including failures, so an older rollback cannot supersede a later operation.
+Record the version and source actually tested for a release review. Preview can advance
+while validation is in progress; do not attribute old evidence to a newer version.
+Exact Stable candidate verification remains part of the release workflow, including
+its source and package checks. Preview acceptance does not prove a different Stable
+artifact works. Unpublished candidate installation is not supported by the normal
+package updater; do not restore a parallel staging deployment path to bypass it.
 
-## Rollback and failures
+## Recovery and older records
 
-After confirming the previous code can use the current database schema:
+An update failure pauses automatic retries. Use the doctor plugin to inspect the
+result and the update plugin to repair the exact target through the normal updater.
+Retained releases attempt to restore the previous application if activation fails;
+verify the recorded result and live runtime. Legacy replacements have different
+recovery limits. Package recovery never implies database rollback.
 
-```bash
-pnpm staging:deploy rollback --receipt '<deployment.json>' --database-compatible
-```
-
-The rollback command above applies to legacy global-package installations. For retained
-releases it refuses global replacement: inspect `application-activation.json` and plan recovery
-against the retained package and Node paths. Manual rollback of retained releases is not
-implemented by this command. The CLI automatically
-restores the previous application if candidate activation fails, leaving both releases intact.
-
-Rollback checks the installation binding, current package hashes, and retained prior tarball's
-checksum, then installs and activates that exact prior package and verifies health/PWA again.
-Legacy snapshots without embedded source identity are allowed only as retained rollback inputs;
-their product files and served PWA are checked, but their health endpoint cannot prove a source
-commit. Both deployment and rollback leave database files untouched; starting either server
-version may run migrations. The compatibility flag records an operator decision, not an
-automated schema guarantee. Restore a database only through a separately approved recovery plan.
-
-A failed operation retains its receipt and snapshots. The deploy script does not restore data,
-delete previous releases, or conceal the failure; the retained-release CLI may restore the prior
-application when activation fails. Rollback refuses
-to overwrite a later deployment or manual overlay. If npm failed halfway through installation,
-the installed files may not match either receipt: inspect the recorded phase and repair the
-package from the retained tarball before attempting activation; do not bypass the drift check.
-
-If rollback installed the previous package but activation or health verification failed, fix
-the cause and repeat the same rollback command. It resumes activation and verification without
-reinstalling when the previous package hashes match and no later deployment operation has
-started. Manual overlays and later operations block the retry. Blocked retries preserve the
-original failure record; actual retry failures append to the receipt's rollback failure history.
-
-An existing lock blocks concurrent operations. If a process was interrupted, inspect
-`deployments/.lock/owner.json`, prove that process has ended, and remove only that stale lock.
-Interrupted operations can leave `prepared`, `installing`, `activating`, or `verifying-terminal` receipts; inspect the
-actual installed files and services before recovery. No cleanup or database restore is automatic.
+The retired staging command's private configuration, snapshots, and deployment
+receipts are historical operator data. This repository cleanup does not delete them
+or change running installations. They are not inputs to the automatic updater.
+Preserve useful recovery evidence; do not treat an old staging receipt as the current
+installation state or invoke an old deployment script against a newer installation.

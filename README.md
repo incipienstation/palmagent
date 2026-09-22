@@ -343,7 +343,8 @@ the instructions for coding agents working in this repository.
 
 For releases, follow the [release skill](.harness/skills/release/SKILL.md), which covers versioning, candidate
 artifacts, automatic Preview publication for product changes on `develop`, and the single Stable
-publication approval. Repository visibility and host deployment remain separate decisions.
+publication approval. Repository visibility remains separate. Installations update according to their saved
+preferences or an operator request.
 
 ## Install the operator plugin
 
@@ -375,4 +376,5 @@ See [plugins/codex/README.md](plugins/codex/README.md) for Codex-specific detail
 
 [MIT](LICENSE)
 
-Maintainers deploy exact npm versions or tested CI packages with the [staging runbook](docs/STAGING.md).
+Maintainers use an ordinary installation with Preview and automatic updates as a
+[validation environment](docs/STAGING.md); no separate staging deployment is required.

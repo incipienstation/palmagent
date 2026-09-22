@@ -51,15 +51,18 @@ preparation steps within the Stable request; do not request separate publication
 
 Build the exact final source with [candidate automation](references/automation.md#candidate-automation).
 Inspect the tarball, `candidate.json`, `SHA256SUMS`, packaged identity, notes, and producer run.
-Complete applicable [Stable acceptance](references/automation.md#release-checklist) on those bytes,
-handing authorized host work to [staging-deploy](../staging-deploy/SKILL.md). Present version,
+Complete applicable [Stable acceptance](references/automation.md#release-checklist) on those bytes.
+Use isolated candidate acceptance for unpublished packages; published installations follow
+[validation environments](../../../docs/STAGING.md). Report any live acceptance not covered. Present version,
 commit, checksum, scope, compatibility impact, checks, and limits in the approval evidence.
 Dispatch `npm-publish.yml` with the exact commit and candidate producer run; wait for its single
 `npm-latest` reviewer approval. Do not create a Stable tag or publish a Release before this gate.
 
 Follow the publication run through completion. Verify the registry's exact version and intended
 dist-tag, then download the tarball and check SHA-512 integrity and SHA-256 against the candidate.
-Report release/run URLs and verified identity. Host deployment remains a separate requested action.
+Report release/run URLs and verified identity. Validation environments follow Preview with enabled
+automatic updates; observe the actual installed result without adding a staging deployment gate.
+Manual updates and preference changes use the operator skills and existing user authorization.
 
 ## Recover
 
