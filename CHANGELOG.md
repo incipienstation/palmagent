@@ -6,6 +6,16 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Validation installations now use Preview and automatic updates. The separate
+  staging deployment command and candidate workflow have been removed; existing
+  installations and historical deployment records are preserved. See
+  [validation environments](docs/STAGING.md) for setup and recovery.
+- Package updates verify the running source commit and served PWA file hashes
+  before reporting success. Doctor checks both local and public application
+  identity and files, helping detect stale or misrouted frontend assets.
+
 ## 0.1.0-alpha.70
 
 ### Fixed

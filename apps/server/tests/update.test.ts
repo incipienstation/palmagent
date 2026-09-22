@@ -16,6 +16,19 @@ import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath } from "..
 import { ExecutionStore } from "../src/execution/store.js";
 import { update, setup, prepareIndependentRuntime, type Flags } from "../src/cli/install.js";
 
+const applicationFixtureScript = `
+  fs.mkdirSync(path.join(pkg, 'web', 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'web', 'index.html'), '<script src="/assets/app.js"></script>');
+  fs.writeFileSync(path.join(pkg, 'web', 'assets', 'app.js'), 'fixture application');
+  fs.writeFileSync(path.join(pkg, 'build-info.json'), JSON.stringify({ version: JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8')).version, sourceCommit: 'a'.repeat(40), dirty: false }));
+`;
+function applicationResponse(input: string | URL | Request, version = "0.1.0-alpha.3") {
+  const pathname = new URL(typeof input === "string" || input instanceof URL ? input : input.url).pathname;
+  if (pathname === "/") return new Response('<script src="/assets/app.js"></script>');
+  if (pathname === "/assets/app.js") return new Response("fixture application");
+  return Response.json({ ok: true, updateMaintenance: true, executionProtocol: 1, build: { version, sourceCommit: "a".repeat(40), dirty: false } });
+}
+
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "palmagent-updates-"));
   const env = { ...process.env };
@@ -59,6 +72,7 @@ else if (process.argv[2] === 'root') console.log(process.env.TEST_UPDATE_ROOT);
 else if (process.argv[2] === 'install' && process.env.TEST_UPDATE_INSTALL === 'success') {
   const pkg = path.join(process.env.TEST_UPDATE_ROOT, 'palmagent');
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: process.env.TEST_UPDATE_TARGET || '0.1.0-alpha.3' }));
+  ${applicationFixtureScript}
   fs.writeFileSync(path.join(pkg, 'cli.js'), "const fs = require('node:fs'); const path = require('node:path'); if (process.argv[2] === '--version') console.log(require('./package.json').version); else fs.writeFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'activation.json'), JSON.stringify({ args: process.argv.slice(2), sentinel: process.env.PALMAGENT_UPDATE_POST_UPGRADE }));");
 }
 else process.exit(1);
@@ -75,9 +89,9 @@ async function idleFixture(t: TestContext, f: ReturnType<typeof fixture>, turns:
   const db = new Database(f.cfg.dbPath);
   db.exec("CREATE TABLE tasks (status TEXT)");
   t.after(() => db.close());
-  t.mock.method(globalThis, "fetch", async () => {
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     assert.equal(isUpdateMaintenance(f.cfg.dbPath), true, "admission is closed before checking activity");
-    return Response.json({ ok: true, updateMaintenance: true });
+    return applicationResponse(input, process.env.TEST_UPDATE_TARGET || "0.1.0-alpha.3");
   });
   const messages: unknown[] = [];
   const runner = createServer((socket) => socket.on("data", (data) => {
@@ -387,7 +401,7 @@ test("a manual app update preserves busy work and resumes the pinned release wit
   t.after(() => db.close());
   db.exec("CREATE TABLE tasks (status TEXT); INSERT INTO tasks VALUES ('running')");
   writeFileSync(join(f.root, "bin", "sudo"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
-  t.mock.method(globalThis, "fetch", async () => Response.json({ ok: true, updateMaintenance: true }));
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => applicationResponse(input));
   checkUpdateAccess(f.cfg, true);
   requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
@@ -420,7 +434,8 @@ test("automatic request CLI defers active sessions and then installs its queued 
   process.env.TEST_UPDATE_TAG_TARGET = "0.1.0-alpha.4";
   const execute = async () => {
     const script = `
-      globalThis.fetch = async () => Response.json({ ok: true, updateMaintenance: true });
+      const fixtureResponse = ${applicationResponse.toString()};
+      globalThis.fetch = async (input) => fixtureResponse(input);
       process.argv = [process.execPath, 'fixture', 'update-request', '--data-dir', process.env.TEST_ACTIVATION_DATA];
       await import(${JSON.stringify(new URL("../src/cli/index.ts", import.meta.url).href)});
     `;
@@ -637,7 +652,7 @@ for (const command of ["update", "setup"]) {
 }
 
 
-for (const outcome of ["success", "contract", "rollback", "provision"]) test(`automatic independent application activation: ${outcome}`, async (t) => {
+for (const outcome of ["success", "contract", "rollback", "provision", "assets"]) test(`automatic independent application activation: ${outcome}`, async (t) => {
   const f = fixture(t);
   process.env.TEST_INDEPENDENT_OUTCOME = outcome;
   writeFileSync(join(f.root, "bin", "sleep"), `#!${process.execPath}\n`, { mode: 0o700 });
@@ -654,9 +669,13 @@ for (const outcome of ["success", "contract", "rollback", "provision"]) test(`au
   const db = new Database(f.cfg.dbPath);
   db.exec("CREATE TABLE tasks (status TEXT); INSERT INTO tasks VALUES ('running'),('awaiting_input')");
   t.after(() => db.close());
-  t.mock.method(globalThis, "fetch", async () => {
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     assert(isUpdateMaintenance(f.cfg.dbPath));
-    return Response.json({ ok: true, updateMaintenance: true, executionProtocol: 1 });
+    if (outcome === "assets" && new URL(String(input)).pathname === "/assets/app.js") {
+      process.env.TEST_UPDATE_HEALTH = "0.1.0-alpha.2"; // Previous application is healthy after restoration.
+      return new Response("stale application");
+    }
+    return applicationResponse(input);
   });
   writeFileSync(join(f.root, "bin", "npm"), `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path');
@@ -670,6 +689,7 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
   fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1, ingressOwner: 'plugin' }));
+  ${applicationFixtureScript}
   fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv[2] === 'runtime-setup' && process.env.TEST_INDEPENDENT_OUTCOME === 'provision') process.exit(1); if (process.argv[2] === 'runtime-setup') require('node:fs').writeFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'candidate-setup'), 'provisioned'); else console.log('0.1.0-alpha.3');");
   for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
 } else process.exit(1);
@@ -689,9 +709,9 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, outcome === "success" ? "succeeded" : "failed");
   if (outcome !== "success") {
     assert.equal(loadConfig({ dataDir: f.cfg.dataDir }).pkgDir, f.cfg.pkgDir);
-    if (["rollback", "provision"].includes(outcome)) assert.equal(JSON.parse(readFileSync(join(f.cfg.dataDir, "application-activation.json"), "utf8")).status, "restored");
+    if (["rollback", "provision", "assets"].includes(outcome)) assert.equal(JSON.parse(readFileSync(join(f.cfg.dataDir, "application-activation.json"), "utf8")).status, "restored");
   }
-  assert.equal(existsSync(join(f.root, 'candidate-setup')), ['success', 'rollback'].includes(outcome));
+  assert.equal(existsSync(join(f.root, 'candidate-setup')), ['success', 'rollback', 'assets'].includes(outcome));
   assert.equal(executions.get(active.id).state, "running");
   assert.equal(executions.get(active.id).release, f.cfg.pkgDir);
   assert.equal(readFileSync(join(f.cfg.pkgDir!, "execution-host.js"), "utf8"), "// Retained fixture artifact\n");

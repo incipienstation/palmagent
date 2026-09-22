@@ -26,7 +26,8 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
    product changes on `develop` can trigger automatic Preview publication; a requested Stable
    release includes its dedicated `main` promotion PR with a merge commit and required checks.
    Other `main` merges require explicit approval. Stable tagging/publication wait for the final
-   candidate approval. Visibility and host deployment remain separate.
+   candidate approval. Visibility remains separate; installation updates follow saved automatic-update
+   preferences or an operator request. Do not require staging deployment after a merge.
 5. Keep the worktree while the PR is open or implementation/review is still active. After merge,
    complete the local develop update and cleanup below, reporting any skipped action with its reason.
 

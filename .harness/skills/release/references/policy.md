@@ -37,7 +37,8 @@ version was tagged, published to npm, deployed to a host, or made public.
   including only categories with entries. Explicitly describe breaking changes, deprecations,
   and required upgrade or recovery steps, linking to detailed instructions when needed.
 - Keep branch policies, approval gates, and CI procedures in the release skill references. Put host
-  deployment and rollback instructions in the [staging runbook](../../../../docs/STAGING.md). Changelog entries
+  update and recovery instructions in the operator skills; document maintainer
+  [validation environments](../../../../docs/STAGING.md) separately. Changelog entries
   may summarize a new operator capability without duplicating its procedure.
 - During release preparation, review `Unreleased` for accuracy, omissions, and duplicate
   entries, then follow the [release flow](#branch-and-approval-flow) to move it into
@@ -47,13 +48,13 @@ version was tagged, published to npm, deployed to a host, or made public.
 
 ## Environment and merge model
 
-Palmagent keeps two long-lived branches because staging acceptance and
-production release are separate gates.
+Palmagent keeps two long-lived branches for Preview and Stable release preparation.
+Validation installations use the same update mechanism as other installations.
 
 | Branch | Environment role | Incoming pull request | Merge method |
 | --- | --- | --- | --- |
-| `develop` | staging and prerelease source | `feature/*` or `hotfix-sync/*` | squash |
-| `main` | production and stable release source | `develop` promotion or `hotfix/*` | merge commit |
+| `develop` | Preview source | `feature/*` or `hotfix-sync/*` | squash |
+| `main` | Stable source | `develop` promotion or `hotfix/*` | merge commit |
 
 Feature branches are short-lived and represent one logical change, so they are
 squash-merged into `develop`. `develop` is long-lived: never squash or rebase a
@@ -69,18 +70,17 @@ merges retain explicit human approval. This policy applies to the PR being shipp
 it does not enable unattended merging of unrelated repository PRs.
 
 A successful merge or check does not prove that either environment changed.
-Every staging or production deployment must record the exact source commit and
-immutable artifact, then produce its own health evidence. Production should
-promote the artifact accepted in staging when the delivery system supports
-artifact promotion; it must not silently substitute an unreviewed build.
+Verify the exact installed version, source commit, and runtime health through the common
+update and doctor flow. Release candidate evidence identifies the immutable package;
+Preview validation does not substitute for acceptance of the exact Stable candidate.
 
 Repository merge methods are limited to squash and merge commit; rebase merge is
 disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
 Both branches require a pull request and the GitHub Actions `validate` check, and
 block deletion and force pushes. These rules define branch and approval ownership;
 npm publication uses channel environments: eligible Preview changes publish after their required
-PR CI passes, while Stable waits for one reviewer approval before tag creation and publication. Staging uses
-an explicit operator command.
+PR CI passes, while Stable waits for one reviewer approval before tag creation and publication.
+Staging follows Preview through enabled automatic updates, with no separate deployment gate.
 
 Hotfixes branch from `main` and return to `main` through a reviewed pull request
 using a merge commit. After landing, create a short-lived branch from current
@@ -104,7 +104,8 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 | Exact candidate build and verification | Automatic | Automatic, before final approval |
 | Annotated tag | Automatic, after preparation merge | After final approval |
 | npm publication and public GitHub Release | Automatic through `npm-next` | Same final `npm-latest` approval |
-| Host deployment or repository visibility | Separate request | Separate request |
+| Installation updates | Saved automatic-update preferences or operator request | Saved automatic-update preferences or operator request |
+| Repository visibility | Separate request | Separate request |
 
 ### Preview
 
@@ -152,7 +153,7 @@ reused without rebuilding. Changed source or bytes require a new candidate and a
 
 Preparation can be rejected or revised before this gate; do not create a Stable tag or expose
 a public Release early. A Stable package has distinct bytes from a prerelease and needs its
-own acceptance. Deprecation, dist-tag rollback, visibility changes, and host deployment are
+own acceptance. Deprecation, dist-tag rollback, visibility changes, and manual host changes are
 separate decisions. A release never implicitly authorizes a service restart or database change.
 
 `release:prepare` accepts a supplied version and supports a read-only preview. It synchronizes
