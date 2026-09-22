@@ -1,11 +1,10 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction, type KeyboardEvent, type RefObject } from "react";
-import { BookOpen, X } from "lucide-react";
+import { BookOpen, SquareSlash, X } from "lucide-react";
 import { SelectedSkillsSchema, type AvailableSkill, type SkillContext, type SkillSelection } from "@palmagent/shared";
 import { api } from "../api";
 import { useDraft } from "../hooks/useDraft";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Kbd } from "./ui/kbd";
 import { PopoverContent } from "./ui/popover";
 
 function parseSkillDraft(raw: string): SkillSelection[] {
@@ -134,6 +133,6 @@ export function SkillMenu({ picker, textarea }: { picker: ReturnType<typeof useS
 export function SkillTrigger({ onClick, disabled, open }: { onClick: () => void; disabled?: boolean; open: boolean }) {
   return <Button type="button" variant="ghost" size="icon-lg" aria-label="Choose a skill" title="Skills (/)"
     aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={onClick}>
-    <Kbd aria-hidden className="size-5 border border-current bg-transparent shadow-none">/</Kbd>
+    <SquareSlash aria-hidden />
   </Button>;
 }
