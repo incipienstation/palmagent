@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Sent messages appear immediately in the conversation without a duplicate preview
+  above the composer. A subtle shimmering Working label shows progress inline;
+  delivery problems stay beside the affected message, and queued turns remain separate.
+
 ## 0.1.0-alpha.71
 
 ### Changed

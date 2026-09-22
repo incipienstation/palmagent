@@ -1,5 +1,5 @@
 import { SkillChips } from "./SkillPicker";
-import { AttachmentSchema, attachmentUrl, type Attachment, SelectedSkillsSchema } from "@palmagent/shared";
+import { AttachmentSchema, attachmentUrl, type Attachment, type PendingMessage, type ImageAttachment, SelectedSkillsSchema } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
 import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
@@ -26,6 +26,8 @@ import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
 import { ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
+import { MessageDelivery, type DeliveryControls } from "./MessageDelivery";
+import { WorkingLabel } from "./WorkingLabel";
 import { ActivitySummary } from "./ActivitySummary";
 import { ApprovalRequest } from "./ApprovalCard";
 import { payload } from "../transcript";
@@ -67,8 +69,8 @@ const KIND_ICON: Partial<Record<AgentEventKind, ComponentType<LucideProps>>> = {
   question: CircleHelp,
 };
 
-export function UserBubble({ text, meta, skills, attachments, onImageLoad }: {
-  text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[]; attachments?: Attachment[]; onImageLoad?: () => void;
+export function UserBubble({ text, meta, skills, attachments, images, onImageLoad }: {
+  text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[]; attachments?: Attachment[]; images?: ImageAttachment[]; onImageLoad?: () => void;
 }) {
   const taskId = useContext(ImageTaskContext);
   // Right-aligned soft chat bubble — the human side of the transcript.
@@ -84,6 +86,10 @@ export function UserBubble({ text, meta, skills, attachments, onImageLoad }: {
       <div className="max-w-[88%] rounded-3xl bg-secondary px-4 py-3 font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere]">
         <SkillChips skills={skills} />
         {text}
+        {!attachments?.length && !!images?.length && <div className="flex flex-wrap gap-2">
+          {images.map((image, index) => <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
+            alt={`Attached image ${index + 1}`} onLoad={onImageLoad} />)}
+        </div>}
         {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
           {attachments.map((attachment, index) => <ImagePreview key={`${attachment.id}-${index}`}
             src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`} onLoad={onImageLoad} />)}
@@ -173,7 +179,9 @@ function MachineryLine({
 
 type TranscriptRow = { key: string; seq: number } & (
   | { type: "prompt"; text: string }
-  | { type: "message"; item: LogItem; raw?: boolean; groupEnd?: boolean }
+  | { type: "delivery"; message: PendingMessage }
+  | { type: "working" }
+  | { type: "message"; item: LogItem; raw?: boolean; groupEnd?: boolean; delivery?: PendingMessage }
   | { type: "activity"; activity: Activity; open: boolean }
   | { type: "failure"; failure: RunFailure; open: boolean }
 );
@@ -366,8 +374,8 @@ const rowKey = (_index: number, item: TranscriptRow) => item.key;
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
-function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivity, following, ...history }: {
-  rows: TranscriptRow[]; liveKey?: number; mode: OutputMode;
+function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivity, following, delivery, ...history }: {
+  rows: TranscriptRow[]; liveKey?: number; mode: OutputMode; delivery?: DeliveryControls;
   toggled: Set<number>; toggle: (key: number) => void;
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
 } & HistoryControls) {
@@ -503,20 +511,25 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     context={{ ...history, onScrollPosition, showBeginning: hadEarlier.current && !history.hasEarlier }}
     itemContent={(_index, row) => <div className="flow-root px-4" data-row-key={row.key}
       data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
-      {row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
+      {row.type === "working" ? <div className="mb-3 py-2"><WorkingLabel /></div> : row.type === "delivery" ?
+        <div role="status" aria-label="Pending message">
+          <UserBubble text={row.message.text} skills={row.message.skills} attachments={row.message.attachments} images={row.message.images} onImageLoad={followBottom} />
+          {delivery && <MessageDelivery {...delivery} message={row.message} />}
+        </div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
         <ActivitySummary activity={row.activity} mode={mode} open={row.open}
           onToggle={() => { if (row.open) rememberDisclosure(row.key); toggleActivity(row.activity, !row.open); }} />
-        : <div data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
+        : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined} data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
           <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
             expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggleRow} onImageLoad={followBottom} />
+          {row.delivery && delivery && <MessageDelivery {...delivery} message={row.delivery} />}
         </div>}
     </div>}
   />;
 }
 
-export function EventLog({ log, live, prompt, taskId, loading = false, ...history }: {
-  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; loading?: boolean;
+export function EventLog({ log, live, prompt, taskId, loading = false, delivery, ...history }: {
+  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; loading?: boolean; delivery?: DeliveryControls;
 } & HistoryControls) {
   const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
@@ -551,9 +564,17 @@ export function EventLog({ log, live, prompt, taskId, loading = false, ...histor
     const hasDispatch = log.some((item) => item.kind === "status" &&
       (item.event.payload as { subtype?: string } | null)?.subtype === "dispatch");
     if (!hasDispatch && prompt?.trim()) rows.push({ key: "prompt", seq: 0, type: "prompt", text: prompt.trim() });
-    for (const row of presentTranscript(log, mode, live)) {
+    const messages = new Map(delivery?.messages.map(message => [message.id, message]));
+    const seen = new Set<string>();
+    const last = log.at(-1);
+    const ended = last && (last.kind === "result" || last.kind === "error" || payload(last).subtype === "process_exit");
+    for (const row of presentTranscript(log, mode, live && !ended)) {
       if (row.type === "message") {
-        if (visible(row.item)) rows.push({ ...row, key: `message-${row.key}`, seq: row.key });
+        const p = payload(row.item);
+        const messageId = row.item.kind === "status" && ["followup", "steer", "dispatch"].includes(String(p.subtype)) && typeof p.messageId === "string" ? p.messageId : undefined;
+        if (messageId) seen.add(messageId);
+        if (visible(row.item)) rows.push({ ...row, key: messageId ? `delivery-${messageId}` : `message-${row.key}`, seq: row.key,
+          delivery: messageId ? messages.get(messageId) : undefined });
       } else if (row.type === "failure") {
         const open = toggled.has(row.key);
         rows.push({ key: `failure-${row.key}`, seq: row.key, type: "failure", failure: row, open });
@@ -573,11 +594,24 @@ export function EventLog({ log, live, prompt, taskId, loading = false, ...histor
         }
       }
     }
+    const pending = [...messages.values()].filter(message => !seen.has(message.id));
+    const sending = [...messages.values()].some(message => message.status === "sending");
+    const seq = log.at(-1)?.key ?? 0;
+    if (pending.length) {
+      // A new optimistic message starts after the current activity; don't leave
+      // the active indicator above the message the user just sent.
+      for (const row of rows) if (row.type === "activity" && row.activity.live) row.activity = { ...row.activity, live: false };
+      for (const message of pending) rows.push({ key: `delivery-${message.id}`, seq: seq + 1, type: "delivery", message });
+    }
+    if ((sending || (live && !ended)) && !rows.some(row => row.type === "activity" && row.activity.live)
+      && (pending.length || !last || last.kind !== "assistant_text")) {
+      rows.push({ key: "working", seq: seq + 2, type: "working" });
+    }
     return rows;
-  }, [log, mode, live, prompt, openActivity, toggled]);
+  }, [log, mode, live, prompt, openActivity, toggled, delivery?.messages]);
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
     {rows.length > 0 ? <VirtualTranscript key={mode} rows={rows}
-      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} {...history} /> :
+      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={history} /><div className="mb-1.5 text-faint">
           {loading ? "Loading history…" : log.length ? "No messages in this view." : "waiting for events…"}
