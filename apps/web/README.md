@@ -106,11 +106,11 @@ Focused screens retain Back; the task title opens session details.
    desktop sidebar search names and full paths; worktrees expand separately and
    appear automatically in search results. The selected filter survives reloads.
 3. **Task detail + steer** (`#/task/:id`) — scoped `GET /api/stream?task=:id`;
-   virtualized event log (assistant token deltas coalesced, tool calls/results, result)
-   with a single Send button (hold, right-click, or press Arrow Down for the Send/Queue toggle),
-   an editable persistent queue,
-   stop (interrupt the turn, task stays resumable), cancel, and archive. Tap the
-   header title for session configuration, pull requests, and shell handoff;
+   virtualized event log (coalesced assistant deltas, tool calls/results, and turn results),
+   composer Send/Stop controls, and an editable persistent queue.
+   See [Message controls](#message-controls) for delivery and editing. Cancel and Archive
+   remain in the task menu. Tap the header title for session configuration, pull requests,
+   and shell handoff;
    the task status and local-control notices remain visible in the conversation.
 4. **Account limits** — session footers show remaining account allowance and reset
    countdowns in aligned columns, including while idle or previewing a local session. When available,
@@ -307,9 +307,9 @@ needs a device check with a new notification after the updated worker activates.
 
 The composer switches immediately to Stop after submitting a prompt, including
 new tasks. A Stop click during submission waits for that request to settle before
-interrupting the turn. Stop is available only in the composer, including while
-a question or approval is pending. Typing a follow-up exposes Send and Queue
-alongside Stop.
+interrupting the turn and leaving the task resumable. Stop is available only in
+the composer, including while a question or approval is pending. Typing a follow-up
+exposes Send and Queue alongside Stop.
 
 The composer stays compact until focused or holding a draft. Text and image
 previews expand above the action row, with long drafts scrolling inside the input.
@@ -319,11 +319,11 @@ uses the running turn's settings. Camera and Photos use the existing image limit
 Tap Send to deliver the draft to the current run, or start a run when idle.
 Hold Send to open the Send/Queue toggle. Selecting a mode does not submit; tap
 again to send. Queue applies to the current draft and resets after submission.
-Send shows a message bubble immediately and keeps its Sending indicator until
-delivery is confirmed, including after the server accepts the request. Queue
-lists only waiting turns; Send now moves a queued message into delivery feedback
-immediately and restores its queue position if the action fails. Unconfirmed or
-rejected delivery stays visible with recovery controls outside Queue.
+Send shows the message immediately in the conversation. An inline Working label
+indicates pending delivery or an active turn. Queue lists only waiting turns;
+Send now moves a queued message into the conversation immediately and restores
+its queue position if the action fails. Unconfirmed or rejected delivery keeps
+recovery controls beside the affected message.
 Hold a queued message for Edit prompt, Send now, and Remove from queue. Editing
 uses the composer while preserving the ordinary text and attachment draft.
 The editor renews a server hold; after a disconnected editor's hold expires,

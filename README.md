@@ -4,9 +4,6 @@ Palmagent is a self-hosted dispatcher for running Claude Code and Codex from one
 agent-neutral interface. The project combines a server, a mobile-first PWA, a public CLI, and
 operator plugins for both agent platforms.
 
-This source monorepo contains the shared wire contracts, host runtime, mobile PWA, public CLI
-package assembly, and operator plugins.
-
 ## Current layout
 
 ```text
@@ -46,8 +43,9 @@ public environment; Palmagent rejects plaintext authentication origins and non-l
 The operator plugin inspects the host and manages that HTTPS connection. The CLI manages
 application services only: it does not require nginx/Certbot or modify proxy/TLS resources.
 `palmagent connection` returns the installed origin, loopback upstream, and proxy requirements
-as JSON. `doctor` checks the local runtime; the plugin separately verifies public transport.
-See [host ingress and migration](docs/HOST-INGRESS.md) for existing installations and removal.
+as JSON. For package installations, `doctor` verifies the local and public application
+build and PWA files. See [host ingress and migration](docs/HOST-INGRESS.md#runtime-and-transport-checks)
+for diagnostic coverage, additional transport checks, and existing-installation guidance.
 
 ## Choose a release channel
 
@@ -295,30 +293,18 @@ Run scoped local verification before submitting a change:
 node scripts/verify-local.mjs
 ```
 
-The command refreshes `origin/develop`, examines the complete task diff including local changes,
-and runs the selected metadata, tooling, server, web, and package checks once. Known package
-README changes need only metadata checks. Use `--plan` to preview the checks (it still refreshes
-the base), or `--base origin/main` to target another branch. An explicit full commit SHA pins
-the base instead of fetching. Unknown scope or unavailable history selects all checks.
-See the [verification skill](.harness/skills/verify/SKILL.md) for check selection,
-including tooling-test and browser-case exceptions. Mixed changes retain every affected
-lane. The verifier rejects a Node version that differs
-from `.nvmrc` before starting work; `--plan` remains available without switching versions.
+The verifier selects checks from the complete task diff, including local changes. Use `--plan`
+to preview them; both commands refresh `origin/develop` by default. Unknown scope selects all checks.
+It reports results with detailed logs outside the repository and never commits or ships changes.
 
-Code checks need dependencies installed with `pnpm install --frozen-lockfile`; browser checks
-also need `pnpm --filter @palmagent/web exec playwright install chromium`. Detailed logs are
-written outside the repository, with a short result per check and a nonzero exit on failure.
-The command never commits or ships changes.
-Each step has a 10-minute limit (15 minutes for browser checks), configurable with
-`--timeout-seconds <seconds>`. A timeout exits with 124; Ctrl-C or SIGTERM cancels the active
-check and exits with 130 or 143 respectively. Cancellation targets the check's process group
-on POSIX (`taskkill /T` on Windows), with two seconds before forced termination.
+Code checks require `pnpm install --frozen-lockfile`; browser checks also require
+`pnpm --filter @palmagent/web exec playwright install chromium`. The verifier enforces `.nvmrc`;
+`--plan` remains available without switching Node versions.
 
-Packed verification requires the private `LEAK_DENYLIST`. Without it, the command runs selected
-source checks, then stops before packaging with a nonzero exit and reports incomplete verification.
-Obtain the trusted PR's packed-check result before delivery. Release candidates continue
-to require full source and packed-install verification. See the
-[verification skill](.harness/skills/verify/SKILL.md) for delivery requirements.
+Packed checks require the private `LEAK_DENYLIST`. If it is unavailable, selected source checks
+still run, but package verification remains incomplete; require the trusted PR's packed checks
+before delivery. See the [verification skill](.harness/skills/verify/SKILL.md) for scope exceptions,
+base selection, timeouts, cancellation, and release-candidate requirements.
 
 Individual checks are also available while developing:
 
