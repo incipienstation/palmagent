@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.73
+
 ### Changed
 
 - The composer switches immediately from Send to Stop when submitting a prompt,
