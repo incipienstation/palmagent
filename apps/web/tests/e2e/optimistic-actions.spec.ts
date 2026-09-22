@@ -485,7 +485,9 @@ test("Stop stays pending after acceptance until the live run actually stops", as
   let calls = 0;
   await page.route("**/api/tasks/t-run/stop", route => { calls++; return route.fulfill({ json: { task } }); });
   await page.getByRole("button", { name: "Task actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Stop", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Stop", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect.poll(() => calls).toBe(1);
   await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeDisabled();
@@ -550,4 +552,68 @@ test("successful dispatch clears the submitted attachments before the next task"
   await page.evaluate(() => { location.hash = "/new"; });
   await expect(page.getByRole("textbox", { name: "Prompt" })).toHaveValue("");
   await expect(page.getByAltText("attachment 1")).toHaveCount(0);
+});
+
+for (const fail of [false, true]) test(`composer Stop is immediate and serialized behind a ${fail ? "failed" : "successful"} send`, async ({ page }) => {
+  const task = await queueSetup(page);
+  const delayed = gate(); const calls: string[] = [];
+  await page.route("**/api/tasks/t-run/messages", async route => {
+    calls.push("send"); await delayed.wait;
+    await route.fulfill(fail ? { status: 503, json: { error: "Send unavailable" } } : { json: { ...task.messageQueue, revision: 2 } });
+  });
+  await page.route("**/api/tasks/t-run/stop", route => { calls.push("stop"); return route.fulfill({ json: { task } }); });
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Interrupt this prompt");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  const stop = page.getByRole("group", { name: "Message composer", exact: true }).getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeEnabled();
+  await expect(stop.locator(".animate-spin")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toHaveCount(0);
+  await stop.click(); await expect(stop).toBeDisabled();
+  expect(calls).toEqual(["send"]);
+  // The request and the stop intent survive leaving and reopening the task.
+  await page.evaluate(() => { location.hash = "/"; });
+  await expect(page.getByRole("button", { name: "Dispatch new task", exact: true })).toBeVisible();
+  await page.evaluate(() => { location.hash = "/task/t-run"; });
+  await expect(stop).toBeDisabled();
+  delayed.release();
+  await expect.poll(() => calls).toEqual(["send", "stop"]);
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "idle", updatedAt: task.updatedAt + 1 }] });
+  await expect(stop).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(fail ? "Interrupt this prompt" : "");
+});
+
+test("new task shows Stop before creation completes and stops the returned task", async ({ page }) => {
+  const delayed = gate(); const calls: string[] = [];
+  const task = tasks.find(t => t.taskId === "t-run")!;
+  await page.route("**/api/tasks", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    calls.push("create"); await delayed.wait; await route.fulfill({ json: { task } });
+  });
+  await page.route("**/api/tasks/t-run/stop", route => { calls.push("stop"); return route.fulfill({ json: { task: { ...task, status: "idle" } } }); });
+  await page.goto("/#/new"); await page.getByRole("textbox", { name: "Prompt" }).fill("Stop after creating");
+  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeEnabled(); await expect(stop.locator(".animate-spin")).toHaveCount(0);
+  await stop.click(); await expect(stop).toBeDisabled();
+  expect(calls).toEqual(["create"]); delayed.release();
+  await expect.poll(() => calls).toEqual(["create", "stop"]);
+  await expect(page).toHaveURL(/task\/t-run/);
+});
+
+for (const id of ["t-input", "t-await"]) test(`composer keeps Stop available on ${id}`, async ({ page }) => {
+  await page.goto(`/#/task/${id}`);
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Task actions", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Stop", exact: true })).toHaveCount(0);
+});
+
+test("a failed Stop can be retried without losing a follow-up draft", async ({ page }) => {
+  await queueSetup(page);
+  await page.route("**/api/tasks/t-run/stop", route => route.fulfill({ status: 503, json: { error: "Stop unavailable" } }));
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Keep this follow-up");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByTestId("toast")).toContainText("Stop unavailable");
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Keep this follow-up");
 });

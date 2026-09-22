@@ -1,3 +1,4 @@
+import { stopTaskTurn } from "../task-stop";
 import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { useRepoMutations } from "../repo-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
@@ -98,7 +99,10 @@ export function DispatchView() {
     setError("");
     if (!repos.some(repo => repo.id === repoId)) return setError("Register and select a repo first.");
     if (!prompt.trim() && att.images.length === 0 && !skills.length) return setError("Enter a prompt.");
-    const finish = beginTaskAction("dispatch", title.trim() || prompt.trim() || "New task");
+    let createdTaskId: string | undefined;
+    const finish = beginTaskAction("dispatch", title.trim() || prompt.trim() || "New task", undefined, async () => {
+      if (createdTaskId) await stopTaskTurn(createdTaskId);
+    });
     if (!finish) return;
     try {
       const task = await api.createTask({
@@ -113,6 +117,7 @@ export function DispatchView() {
         ...(title.trim() ? { title: title.trim() } : {}),
         ...(att.images.length ? { images: att.images } : {}),
       });
+      createdTaskId = task.taskId;
       // A late acknowledgement must not erase work entered after navigating
       // away and reopening the form. Clear only the draft that was submitted.
       setTitle(current => current === title ? "" : current);
@@ -159,6 +164,7 @@ export function DispatchView() {
           {error && <Alert variant="destructive">{error}</Alert>}
           <Composer skillContext={repoId ? { repoId, agent } : undefined} skills={skills} onSkillsChange={setSkills} id="dispatch-prompt" label="Prompt" value={prompt} onChange={setPrompt}
             placeholder="Work with Palmagent" action="Dispatch" busy={busy}
+            onStop={busy ? () => void stopTaskTurn("dispatch") : undefined} stopping={!!activity.stopping}
             attachments={att} description="Your choices are remembered for this agent."
             settings={{ agent, onAgentChange: setAgent, model, onModelChange: setModel,
               effort, onEffortChange: setEffort, permission, onPermissionChange: setPermission,
