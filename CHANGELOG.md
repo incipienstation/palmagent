@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.74
+
 ### Fixed
 
 - The composer skill button now matches the line weight and color of the adjacent icons.
