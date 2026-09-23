@@ -33,6 +33,11 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
       expect(skill!.x).toBeGreaterThanOrEqual(add!.x + add!.width);
       expect(skill!.width).toBeGreaterThanOrEqual(44);
       expect(model!.x).toBeGreaterThanOrEqual(skill!.x + skill!.width);
+      expect(send!.width).toBeGreaterThanOrEqual(44);
+      expect(send!.height).toBeGreaterThanOrEqual(44);
+      const visual = action.locator("[data-send-visual]");
+      await expect(visual).toHaveCSS("width", "40px");
+      await expect(visual).toHaveCSS("height", "40px");
       expect(send!.x - model!.x - model!.width).toBeLessThanOrEqual(8);
       expect(Math.abs(model!.y + model!.height / 2 - send!.y - send!.height / 2)).toBeLessThanOrEqual(1);
       expect((await input.boundingBox())!.y).toBeLessThan(add!.y);
