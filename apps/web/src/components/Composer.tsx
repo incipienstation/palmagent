@@ -216,9 +216,11 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       {onStop && <Button type="button" size="icon-lg" className="shrink-0" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
         disabled={stopping} onClick={onStop}><Square fill="currentColor" /></Button>}
       {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : !onStop && <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
-        size="icon-lg" className="shrink-0"
+        variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent"
         disabled={cannotSend}>
-        {busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+        <span data-send-visual="true" aria-hidden="true" className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
+          {busy ? <Loader2 className="size-[18px] animate-spin" /> : <ArrowUp className="size-[18px]" />}
+        </span>
       </Button>}
     </InputGroupAddon>
   </InputGroup></PopoverAnchor><SkillMenu picker={picker} textarea={textarea} /></Popover>;

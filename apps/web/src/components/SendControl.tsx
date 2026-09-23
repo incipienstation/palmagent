@@ -15,10 +15,12 @@ export function SendControl({ mode, onMode, onSend, disabled, sendDisabled }: {
   const press = useLongPress(() => setOpen(true), () => { if (!sendDisabled) onSend(); }, disabled);
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverAnchor asChild>
-      <Button ref={button} type="button" size="icon-lg" className={cn("relative shrink-0 touch-pan-y select-none [-webkit-touch-callout:none]", press.pressing && "scale-95")}
+      <Button ref={button} type="button" variant="ghost" size="icon-lg" className={cn("group relative shrink-0 touch-pan-y select-none [-webkit-touch-callout:none] active:bg-transparent", press.pressing && "scale-95")}
         disabled={disabled} aria-disabled={disabled || sendDisabled} aria-label={mode === "send" ? "Send now" : "Add to queue"}
         aria-haspopup="dialog" aria-expanded={open} aria-keyshortcuts="ArrowDown Shift+F10" title="Hold or press Arrow Down to choose Send or Queue" {...press.handlers}>
-        {mode === "send" ? <ArrowUp /> : <ListPlus />}
+        <span data-send-visual="true" aria-hidden="true" className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
+          {mode === "send" ? <ArrowUp className="size-[18px]" /> : <ListPlus className="size-[18px]" />}
+        </span>
       </Button>
     </PopoverAnchor>
     <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} onFocusOutside={press.onFocusOutside} onCloseAutoFocus={event => {
