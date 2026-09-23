@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.76
+
 ### Changed
 
 - Project Spaces now carry the working context across Tasks, New task, and global Terminals. A project includes its worktrees by default, selecting a specific worktree narrows the view, changing Space clears stale task search, and repository-discovery paths are labeled separately in Settings.
