@@ -24,8 +24,8 @@ for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate fir
     measure: releaseTiming({ report: value => timings.push(JSON.parse(value)) }),
     metadata: async () => metadata(), tarball: async () => bytes, skipFetch: true,
     checkTag: (value, object) => ({ tag: value.tag, tagObject: object, commit: value.commit, version, channel: value.channel, branch: value.branch }),
-    releases: () => release ? [release] : [],
-    assets: { download: (asset) => assets.get(asset.name), upload: (name, value) => { assets.set(name, value); release.assets.push({ name }); calls.push('asset'); } },
+    releases: () => release ? [{ ...release, assets: [] }] : [],
+    assets: { download: (asset) => assets.get(asset.name), upload: (name, value) => { assets.set(name, value); release.assets.push({ name, id: name }); calls.push('asset'); } },
     publish: () => { calls.push('npm'); published = true; if (failAfterNpm) throw new Error('connection lost after upload'); },
     api: (path, options) => {
       if (path.startsWith('environments/')) return { name: env.RELEASE_ENVIRONMENT, protection_rules: reviewers ? [{ type: 'required_reviewers', reviewers: [{}] }] : [] };
@@ -34,6 +34,8 @@ for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate fir
       if (path === 'git/tags') { calls.push('tag'); tagObject = 'b'.repeat(40); return { sha: tagObject }; }
       if (path === 'git/refs') return {};
       if (path === 'releases') { calls.push('draft'); release = { id: 1, tag_name: candidate.tag, prerelease: candidate.channel === 'next', draft: true, assets: [], html_url: 'https://example.invalid/release' }; return release; }
+      if (path === 'releases/1' && !options) return { ...release, assets: [] };
+      if (path === 'releases/1/assets?per_page=100') return release.assets.map((asset) => ({ ...asset, id: asset.id ?? asset.name }));
       assert.equal(path, 'releases/1'); assert.equal(options.body.draft, false); calls.push('public'); release.draft = false;
     },
   };
@@ -64,4 +66,15 @@ test('tag conflicts and published missing assets stop without overwrite', () => 
   assert.throws(() => ensureReleaseTag('', identity, (path) => path.startsWith('git/matching') ? [{ ref: 'refs/tags/v0.1.0', object: { type: 'tag', sha: 'b'.repeat(40) } }]
     : { tag: 'v0.1.0', object: { type: 'commit', sha: 'c'.repeat(40) } }), /different source/);
   assert.throws(() => ensureReleaseAssets({ draft: false, assets: [] }, { 'package.tgz': Buffer.from('data') }, { upload: () => assert.fail('no upload') }), /missing an immutable asset/);
+});
+
+test('ambiguous duplicate uploads reconcile an exact existing asset without retrying or overwriting', () => {
+  const bytes = Buffer.from('immutable candidate'), release = { id: 1, tag_name: 'v0.1.0-alpha.1', prerelease: true, draft: true, assets: [] };
+  let uploaded = false, attempts = 0;
+  assert.doesNotThrow(() => ensureReleaseAssets(release, { 'package.tgz': bytes }, {
+    refresh: () => ({ ...release, assets: uploaded ? [{ id: 2, name: 'package.tgz' }] : [] }),
+    download: () => bytes,
+    upload: () => { uploaded = true; attempts++; throw new Error('asset under the same name already exists'); },
+  }));
+  assert.equal(attempts, 1);
 });
