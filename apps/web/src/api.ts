@@ -31,7 +31,7 @@ export async function probeAuth(): Promise<void> {
 // Per-agent permission catalog + per-agent default live in the shared contract
 // (the server maps each value to CLI flags). Re-exported here so the forms can
 // keep importing permissions from "../api".
-export { PERMISSIONS, DEFAULT_PERMISSION } from "@palmagent/shared";
+export { PERMISSIONS, DEFAULT_PERMISSION, PERMISSION_CLI_FLAG } from "@palmagent/shared";
 export type { PermissionOption } from "@palmagent/shared";
 
 // Default delegates to the server/CLI. The Codex model catalog is loaded from the

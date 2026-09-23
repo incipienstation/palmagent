@@ -1,4 +1,4 @@
-import type { AgentKind, QuestionRequest } from "./events.js";
+import type { AgentKind, PermissionRequest, QuestionRequest } from "./events.js";
 
 // Task lifecycle. `idle` = turn done, no process held, resumable;
 // `interrupted` flags a turn that was cut short (usually recovered after a
@@ -6,7 +6,7 @@ import type { AgentKind, QuestionRequest } from "./events.js";
 export type TaskStatus =
   | "queued" // accepted, waiting for a concurrency slot
   | "running" // a child process is alive for the active turn
-  | "awaiting_approval" // paused on an approval request (rare under our non-interactive modes)
+  | "awaiting_approval" // paused on a provider permission request
   | "awaiting_input" // paused on an AskUserQuestion — the agent needs the user to answer (Claude)
   | "idle" // turn finished, no process held, resumable via follow-up
   | "archived" // retired by the user; worktree removed
@@ -16,7 +16,7 @@ export type TaskStatus =
 // How much autonomy the agent gets for a turn. PER-AGENT vocabulary (like model/
 // effort), carried as an opaque string on the wire; each adapter maps it to that
 // CLI's flags. See PERMISSIONS / DEFAULT_PERMISSION in permissions.ts for the
-// catalog + per-agent default (Claude `--permission-mode`; Codex sandbox + network).
+// catalog + per-agent default (Claude `--permission-mode`; Codex `--sandbox`).
 // Older rows may still hold the former shared enum ("readonly" | "auto-edit" | "full");
 // each adapter normalizes those to its native vocabulary.
 export type Permission = string;
@@ -133,6 +133,7 @@ export interface TaskState {
   prs?: PrRef[]; // every GitHub PR opened in this task's event stream, in first-seen order
   prUrl?: string; // back-compat: the first PR's URL (= prs[0]?.url); kept for the push body + older clients
   pendingInput?: QuestionRequest; // set while awaiting_input — the unanswered AskUserQuestion (cleared on answer/settle)
+  pendingApproval?: PermissionRequest; // set while awaiting_approval — the unanswered provider prompt
   permission: Permission;
   model?: string;
   effort?: string; // reasoning effort (claude --effort / codex model_reasoning_effort)

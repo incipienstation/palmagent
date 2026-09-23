@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
 import { dirname } from "node:path";
 import type {
-  AgentEvent, AgentKind, AgentUsage, Permission, PrRef, PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, TaskState, TaskStatus,
+  AgentEvent, AgentKind, AgentUsage, Permission, PermissionRequest, PrRef, PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { HISTORY_PAGE_EVENTS, makePrRef } from "@palmagent/shared";
 import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
@@ -29,7 +29,7 @@ type TaskRow = {
   worktree_path: string | null; permission: string; model: string | null; effort: string | null;
   session_control: string | null;
   skills_json: string | null;
-  pr_url: string | null; pr_urls: string | null; pending_input: string | null;
+  pr_url: string | null; pr_urls: string | null; pending_input: string | null; pending_approval: string | null;
   created_at: number; updated_at: number; last_activity_at: number;
 };
 type RoutineRow = {
@@ -305,6 +305,12 @@ export class Db {
     if (!taskCols.includes("pending_input")) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN pending_input TEXT`);
     }
+    // Additive migration for provider permission prompts: the unanswered
+    // request is durable so the UI and daemon reattach can agree on what is
+    // being approved.
+    if (!taskCols.includes("pending_approval")) {
+      this.db.exec(`ALTER TABLE tasks ADD COLUMN pending_approval TEXT`);
+    }
     // Additive migration for multiple PRs per task: the full PrRef[] (JSON). The
     // legacy single pr_url column stays (kept = prs[0].url); pre-existing rows
     // synthesize their prs from it in rowToTask until the next PR event rewrites it.
@@ -379,9 +385,9 @@ export class Db {
   insertTask(t: TaskState) {
     this.db.prepare(
       `INSERT INTO tasks (id, repo_id, agent, title, prompt, status, interrupted, session_id,
-         branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, session_control, skills_json, created_at, updated_at, last_activity_at)
+         branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, pending_approval, session_control, skills_json, created_at, updated_at, last_activity_at)
        VALUES (@id, @repo_id, @agent, @title, @prompt, @status, @interrupted, @session_id,
-         @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @session_control, @skills_json, @created_at, @updated_at, @last_activity_at)`,
+         @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @pending_approval, @session_control, @skills_json, @created_at, @updated_at, @last_activity_at)`,
     ).run(taskToRow(t));
   }
   getTask(id: string): TaskState | undefined {
@@ -452,6 +458,13 @@ export class Db {
       pending ? JSON.stringify(pending) : null, now, id,
     );
   }
+  // The provider permission request the task is paused on (NULL clears it once
+  // approved, denied, or the turn settles).
+  setTaskPendingApproval(id: string, pending: PermissionRequest | undefined, now: number) {
+    this.db.prepare(`UPDATE tasks SET pending_approval = ?, updated_at = ? WHERE id = ?`).run(
+      pending ? JSON.stringify(pending) : null, now, id,
+    );
+  }
   // Reattach high-water-mark: the last stdout line seq durably persisted for the
   // active turn. Reset to 0 when a new turn starts (resume/followup).
   setTaskRawSeq(id: string, seq: number) {
@@ -483,7 +496,7 @@ export class Db {
     const ids = this.inFlightTaskIds().filter((id) => !keep?.has(id));
     // Reset to resumable idle; clear any pending question (a reset turn can't be
     // answered — the next follow-up resumes the session fresh).
-    const reset = this.db.prepare(`UPDATE tasks SET status='idle', interrupted=1, pending_input=NULL, updated_at=? WHERE id=?`);
+    const reset = this.db.prepare(`UPDATE tasks SET status='idle', interrupted=1, pending_input=NULL, pending_approval=NULL, updated_at=? WHERE id=?`);
     const tx = this.db.transaction((list: string[]) => {
       for (const id of list) reset.run(now, id);
     });
@@ -848,6 +861,7 @@ function rowToTask(r: TaskRow): TaskState {
     prs: parsePrs(r),
     prUrl: r.pr_url ?? undefined,
     pendingInput: r.pending_input ? (JSON.parse(r.pending_input) as QuestionRequest) : undefined,
+    pendingApproval: r.pending_approval ? (JSON.parse(r.pending_approval) as PermissionRequest) : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     lastActivityAt: r.last_activity_at,
@@ -874,6 +888,7 @@ function taskToRow(t: TaskState) {
     pr_url: t.prs?.[0]?.url ?? t.prUrl ?? null,
     pr_urls: t.prs && t.prs.length ? JSON.stringify(t.prs) : null,
     pending_input: t.pendingInput ? JSON.stringify(t.pendingInput) : null,
+    pending_approval: t.pendingApproval ? JSON.stringify(t.pendingApproval) : null,
     created_at: t.createdAt,
     updated_at: t.updatedAt,
     last_activity_at: t.lastActivityAt,

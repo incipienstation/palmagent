@@ -42,13 +42,14 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { effortChoices, selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag } from "./chips";
 import { EmptyState } from "./EmptyState";
+import { PermissionPicker, selectablePermission } from "./PermissionPicker";
 
 // Routines: recurring agent tasks or scripts, with shared cadence and history.
 
@@ -293,7 +294,8 @@ export function RoutinesView() {
   // Model/effort/permission are remembered PER AGENT across form opens, on keys
   // separate from the dispatch form's — a routine's unattended settings are a
   // distinct intent from an ad-hoc dispatch, so they don't cross-contaminate.
-  const [permission, setPermission] = usePersistedMapEntry<Permission>("pref:routine-permission", agent, DEFAULT_PERMISSION[agent]);
+  const [savedPermission, setPermission] = usePersistedMapEntry<Permission>("pref:routine-permission", agent, DEFAULT_PERMISSION[agent]);
+  const permission = selectablePermission(agent, savedPermission);
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
   const catalog = useAgentCatalog(agent);
@@ -468,21 +470,7 @@ export function RoutinesView() {
                 </ToggleGroup>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Permission</Label>
-                <Select value={permission} onValueChange={(v) => v && setPermission(v)}>
-                  <SelectTrigger aria-label="Permission">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-w-[min(20rem,calc(100vw-1.25rem))]">
-                    {PERMISSIONS[agent].map((p) => (
-                      <SelectItem key={p.value} value={p.value} textValue={p.label} description={p.description}>
-                        <span className={p.danger ? "text-destructive" : undefined}>{p.label}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <PermissionPicker agent={agent} value={permission} onChange={setPermission} />
 
               <div className="flex gap-2.5">
                 <div className="min-w-0 flex-1 space-y-1.5">

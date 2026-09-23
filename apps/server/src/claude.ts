@@ -1,4 +1,4 @@
-import type { AnswerRequest, AskQuestion, ImageAttachment } from "@palmagent/shared";
+import type { AnswerRequest, AskQuestion, ImageAttachment, PermissionRequest } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { config } from "./config.js";
 import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
@@ -20,9 +20,13 @@ const IDLE_CLOSE_MS = 1500; // grace after `result` before we close stdin → pr
 // unknown falls back to the agent default. See PERMISSIONS in @palmagent/shared.
 const PERMISSION_MODE: Record<string, string> = {
   plan: "plan",
+  auto: "auto",
   acceptEdits: "acceptEdits",
+  manual: "manual",
   dontAsk: "dontAsk",
   bypassPermissions: "bypassPermissions",
+  // Older settings called the provider default "default".
+  default: "auto",
   // legacy shared-enum values (pre per-agent permissions)
   readonly: "plan",
   "auto-edit": "acceptEdits",
@@ -43,13 +47,15 @@ type ClaudeUserMessage = {
 };
 
 export function buildClaudeArgv({ permission, model, effort, resumeId }: ClaudeLaunchArgs): string[] {
+  const mode = permissionMode(permission);
   const argv = [
     "-p",
     "--input-format", "stream-json",
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--permission-mode", permissionMode(permission),
+    ...(mode === "bypassPermissions" ? ["--allow-dangerously-skip-permissions"] : []),
+    "--permission-mode", mode,
     "--permission-prompt-tool", "stdio",
   ];
   if (model) argv.push("--model", model);
@@ -71,10 +77,11 @@ export class ClaudeRunner implements AgentRunner {
   readonly agent = "claude" as const;
 
   start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
-    const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach, resumeFromSeq, pendingInput } = args;
+    const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach, resumeFromSeq, pendingInput, pendingApproval } = args;
     // `--permission-prompt-tool stdio` routes genuinely interactive requests to
-    // the control channel; non-question requests are denied below. The launch
-    // matrix is centralized so dispatch and resume cannot drift independently.
+    // the control channel; permission requests are surfaced through the same
+    // approval lifecycle as questions. The launch matrix is centralized so
+    // dispatch and resume cannot drift independently.
     const argv = buildClaudeArgv({ permission, model, effort, resumeId });
     if (args.interactive) argv.push("--replay-user-messages");
 
@@ -106,14 +113,14 @@ export class ClaudeRunner implements AgentRunner {
     let closeTimer: NodeJS.Timeout | undefined;
     let restoringClose = false;
     let intReq = 0;
-    // AskUserQuestion: control_request id → the CLI's original tool input, kept so
-    // answer() can echo it back with the user's picks. Only the persisted pending
-    // request is restored: replaying older requests must not revive answered
-    // questions or send duplicate permission responses.
+    // Control requests are split into two user-controlled channels. The original
+    // input is retained so an approval can echo it back to the CLI verbatim.
     const pendingQuestions = new Map<string, { questions: AskQuestion[] }>();
+    const pendingApprovals = new Map<string, PermissionRequest>();
     if (reattach && pendingInput) {
       pendingQuestions.set(pendingInput.requestId, { questions: pendingInput.questions });
     }
+    if (reattach && pendingApproval) pendingApprovals.set(pendingApproval.requestId, pendingApproval);
 
     const writeLine = (o: unknown) => {
       return proc.writeStdin(JSON.stringify(o) + "\n");
@@ -213,10 +220,10 @@ export class ClaudeRunner implements AgentRunner {
         case "control_response":
           e({ taskId, kind: "status", sessionId, payload: { subtype: "control_response", response: ev.response } });
           break;
-        // The CLI asks US to make a permission decision (--permission-prompt-tool
-        // stdio). Under acceptEdits this fires ONLY for genuinely-interactive
-        // tools; AskUserQuestion is the one we surface. Anything else is
-        // auto-denied to preserve the prior (no-flag) non-interactive behavior.
+        // The CLI asks us to make a permission decision (--permission-prompt-tool
+        // stdio). AskUserQuestion remains a structured input card; every other
+        // permission request is surfaced as an approval card instead of being
+        // silently denied.
         case "control_request": {
           if (replayed) break;
           const reqId: string = ev.request_id;
@@ -227,14 +234,14 @@ export class ClaudeRunner implements AgentRunner {
             pendingQuestions.set(reqId, { questions });
             e({ taskId, kind: "question", sessionId, payload: { requestId: reqId, questions } });
           } else {
-            writeLine({
-              type: "control_response",
-              response: {
-                subtype: "success",
-                request_id: reqId,
-                response: { behavior: "deny", message: "Auto-denied (non-interactive dispatch)." },
-              },
-            });
+            const request: PermissionRequest = {
+              requestId: reqId,
+              tool: typeof r.tool_name === "string" ? r.tool_name : "Requested action",
+              input: r.input,
+              ...(typeof r.reason === "string" ? { reason: r.reason } : {}),
+            };
+            pendingApprovals.set(reqId, request);
+            e({ taskId, kind: "approval_request", sessionId, payload: request });
           }
           break;
         }
@@ -296,9 +303,25 @@ export class ClaudeRunner implements AgentRunner {
         scheduleClose();
         return true;
       },
-      // Under --permission-mode acceptEdits the CLI auto-accepts edits, so there
-      // is no live approval channel to answer. The service records the decision.
-      approve: () => false,
+      // Resolve the oldest pending provider request. The service only clears its
+      // durable pending state after this write is accepted by the child process.
+      approve: (decision: string): boolean => {
+        const pending = pendingApprovals.values().next().value as PermissionRequest | undefined;
+        if (!pending || !proc.stdinWritable()) return false;
+        const approved = decision === "approve";
+        const written = writeLine({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: pending.requestId,
+            response: approved
+              ? { behavior: "allow", updatedInput: pending.input }
+              : { behavior: "deny", message: "Denied by the user." },
+          },
+        });
+        if (written) pendingApprovals.delete(pending.requestId);
+        return written;
+      },
       // Answer a pending AskUserQuestion: echo the original input back with the
       // user's picks as `answers` ({ [question]: label | label[] }), so the tool
       // produces a real result and the turn resumes. No picks anywhere → decline.

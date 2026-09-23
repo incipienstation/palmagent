@@ -1,6 +1,6 @@
 // Backend-only interfaces. The data contracts (AgentEvent, TaskState, Repo, REST
 // DTOs, SSE frames) live in @palmagent/shared so the PWA can reuse them.
-import type { AgentEvent, AgentKind, AnswerRequest, ImageAttachment, Permission, QuestionRequest } from "@palmagent/shared";
+import type { AgentEvent, AgentKind, AnswerRequest, ImageAttachment, Permission, PermissionRequest, QuestionRequest } from "@palmagent/shared";
 
 export interface StartArgs {
   taskId: string;
@@ -27,6 +27,10 @@ export interface StartArgs {
   // its requestId→questions map from this without reviving answered questions.
   // Undefined on fresh starts and for turns not paused on a question.
   pendingInput?: QuestionRequest;
+  // Same recovery boundary for a provider permission request. The active
+  // execution backend normally retains this in memory; the task copy lets the
+  // web service render the request and re-seed in-process/daemon adapters.
+  pendingApproval?: PermissionRequest;
 }
 
 // A live, in-flight turn. The process is held open only for its duration.

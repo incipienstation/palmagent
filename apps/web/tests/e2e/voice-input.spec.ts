@@ -103,7 +103,7 @@ test("cancelling while permission is pending releases a later microphone grant",
 test("changing runtime closes dictation and ignores late words", async ({ page }) => {
   const calls = await microphone(page);
   await page.goto("/#/new");
-  const configure = page.getByRole("button", { name: "Configure model and effort" });
+  const configure = page.getByRole("button", { name: "Configure task settings" });
   await configure.click(); await page.getByRole("radio", { name: "codex", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft");

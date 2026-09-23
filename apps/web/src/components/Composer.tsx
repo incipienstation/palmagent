@@ -6,7 +6,7 @@ import { SkillChips, SkillMenu, SkillTrigger, useSkillPicker } from "./SkillPick
 import { Popover, PopoverAnchor } from "./ui/popover";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
 import type { AgentKind } from "@palmagent/shared";
-import { DEFAULT_OPTION, PERMISSIONS } from "../api";
+import { DEFAULT_OPTION } from "../api";
 import { effortChoices, modelChoices, useAgentCatalog } from "../model-catalog";
 import { useUpdateState } from "../update-state";
 import { useSendShortcut } from "../SendShortcutProvider";
@@ -17,6 +17,7 @@ import { InputGroup, InputGroupAddon, InputGroupTextarea } from "./ui/input-grou
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
+import { PermissionPicker, permissionLabel } from "./PermissionPicker";
 
 export interface ComposerSettings {
   agent: AgentKind;
@@ -60,17 +61,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
         <SelectContent><SelectGroup>{effortChoices(catalog, s.model, s.effort).map((e) => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}</SelectGroup></SelectContent>
       </Select>
     </Field>
-    <Field>
-      <FieldLabel htmlFor="composer-permission">Permission</FieldLabel>
-      <Select value={s.permission} onValueChange={(v) => v && s.onPermissionChange(v)}>
-        <SelectTrigger id="composer-permission" className="rounded-full"><SelectValue /></SelectTrigger>
-        <SelectContent className="max-w-[calc(100vw-2rem)]"><SelectGroup>
-          {PERMISSIONS[s.agent].map((p) => <SelectItem key={p.value} value={p.value} textValue={p.label} description={p.description}>
-            <span className={p.danger ? "text-destructive" : undefined}>{p.label}</span>
-          </SelectItem>)}
-        </SelectGroup></SelectContent>
-      </Select>
-    </Field>
+    <PermissionPicker agent={s.agent} value={s.permission} onChange={s.onPermissionChange} />
     {s.children}
     <p className="text-xs text-muted-foreground">{description}</p>
   </FieldGroup>;
@@ -136,6 +127,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     ? (settings.agent === "claude" ? "Claude" : "Codex")
     : modelChoices(catalog, settings.model).find((m) => m.value === settings.model)?.label ?? settings.model;
   const effort = settings.effort === DEFAULT_OPTION ? "" : effortChoices(catalog, settings.model, settings.effort).find((e) => e.value === settings.effort)?.label ?? settings.effort;
+  const permission = permissionLabel(settings.agent, settings.permission);
 
   return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
     className="rounded-3xl p-1"
@@ -184,11 +176,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       <Sheet open={configure && !settingsReadOnly} onOpenChange={setConfigure} repositionInputs={false} autoFocus>
         <SheetTrigger asChild>
           <Button type="button" variant="ghost" disabled={disabled || busy || !!settingsReadOnly}
-            aria-label={settingsReadOnly ? "Current model and effort" : "Configure model and effort"}
-            title={settingsReadOnly ? `${model}${effort ? ` · ${effort}` : ""} — ${settingsReadOnly}` : `${model}${effort ? ` · ${effort}` : ""}`}
+            aria-label={settingsReadOnly ? "Current task settings" : "Configure task settings"}
+            title={settingsReadOnly ? `${model}${effort ? ` · ${effort}` : ""} · ${permission} — ${settingsReadOnly}` : `${model}${effort ? ` · ${effort}` : ""} · ${permission}`}
             className="min-w-0 gap-1 rounded-full px-2">
             <span className="truncate">{model}</span>
             {effort && <span className="shrink-0 font-normal text-muted-foreground"> · {effort}</span>}
+            <span className="hidden shrink-0 font-normal text-muted-foreground sm:inline"> · {permission}</span>
             {!settingsReadOnly && <ChevronDown data-icon="inline-end" />}
           </Button>
         </SheetTrigger>

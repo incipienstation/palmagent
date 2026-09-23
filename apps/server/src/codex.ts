@@ -8,9 +8,9 @@ import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend,
 // Codex's launch and JSONL protocol live here as executable integration code.
 // Keep the dispatch/resume matrix and normalized-event behavior covered by the
 // adapter contract tests instead of duplicating version snapshots in docs.
-// The sandbox <mode> (+ optional workspace network_access) is derived from the
-// task's permission via SANDBOX below; approval_policy is always "never" (exec is
-// headless — nothing can answer an approval prompt). See @palmagent/shared
+// The sandbox <mode> (plus a legacy workspace network override when needed) is
+// derived from the task's permission via SANDBOX below; approval_policy is always
+// "never" (exec is headless — nothing can answer an approval prompt). See @palmagent/shared
 // PERMISSIONS for the catalog. Current CLI flag constraints: there is no
 // `--ask-for-approval` flag (use `-c approval_policy=...`), and `resume` rejects
 // `--sandbox` (use `-c sandbox_mode=...`). Codex exec has no stdin steer channel —
@@ -37,7 +37,9 @@ function spillImages(images: ImageAttachment[] | undefined): { argv: string[]; c
   return { argv, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-// Strategy: map the task's per-agent permission to Codex sandbox flags.
+// Strategy: map the task's per-agent permission to Codex sandbox flags. The
+// workspace-write-net entry remains only for old persisted tasks; it is not in
+// the native picker because current `codex exec --sandbox` does not expose it.
 // approval_policy is always "never" (headless). Accepts native values AND the
 // legacy shared enum (readonly|auto-edit|full); unknown → the safe default
 // (workspace-write). See PERMISSIONS in @palmagent/shared.
