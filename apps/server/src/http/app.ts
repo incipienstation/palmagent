@@ -19,6 +19,7 @@ import { settingsRoutes } from "./routes/settings.js";
 import { staticFiles } from "./static.js";
 import { sessionStream } from "./stream.js";
 import type { HttpDependencies } from "./types.js";
+import { nativeHome } from "../native-session.js";
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 // Only task creation, messages (including queue edits), follow-up and steering
@@ -40,6 +41,10 @@ export function createApp(deps: HttpDependencies) {
   const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol, ...(deps.build ? { build: deps.build } : {}) }, 200))
     .route("/api/auth", authRoutes(deps))
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))
+    .get("/api/model-catalog", async (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json(await deps.modelCatalog.get(nativeHome("codex")), 200);
+    })
     .get("/api/usage", (c) => c.json({ usage: service.usage() }, 200))
     .get("/api/stream", query(StreamQuerySchema), (c) => sessionStream(c, deps, c.req.valid("query")))
     .get("/api/skills", query(SkillContextSchema), async (c) => {

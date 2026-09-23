@@ -34,6 +34,7 @@ test("Codex choices survive agent switches and reload, while unsupported effort 
   await page.getByLabel("Prompt").fill("Check model efforts");
   await page.getByRole("button", { name: "Configure model and effort" }).click();
   await page.getByRole("radio", { name: "codex", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "gpt-6-astra", exact: true })).toBeVisible();
   const effort = page.getByRole("combobox", { name: "Effort", exact: true });
   // Exercise one supported/unsupported pair instead of copying the entire catalog.
   await page.getByRole("radio", { name: "gpt-6-astra", exact: true }).click();

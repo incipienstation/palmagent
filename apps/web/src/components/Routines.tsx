@@ -42,7 +42,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort, effortsForModel, MODELS, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
+import { effortChoices, selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
@@ -295,11 +296,12 @@ export function RoutinesView() {
   const [permission, setPermission] = usePersistedMapEntry<Permission>("pref:routine-permission", agent, DEFAULT_PERMISSION[agent]);
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
-  const model = selectableModel(agent, savedModel);
-  const effort = selectableEffort(agent, model, savedEffort);
+  const catalog = useAgentCatalog(agent);
+  const model = selectableModel(catalog, savedModel);
+  const effort = selectableEffort(catalog, model, savedEffort);
   function setModel(value: string) {
     saveModel(value);
-    setEffort(selectableEffort(agent, value, effort));
+    setEffort(selectableEffort(catalog, value, effort));
   }
   const [preset, setPreset] = useActionState<RoutinePreset>(`routine:preset`, "daily");
   const [hour, setHour] = useActionState(`routine:hour`, 9);
@@ -490,7 +492,7 @@ export function RoutinesView() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {MODELS[agent].map((m) => (
+                      {catalog.models.map((m) => (
                         <SelectItem key={m.value} value={m.value}>
                           {m.label}
                         </SelectItem>
@@ -505,7 +507,7 @@ export function RoutinesView() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {effortsForModel(agent, model).map((eo) => (
+                      {effortChoices(catalog, model, effort).map((eo) => (
                         <SelectItem key={eo.value} value={eo.value}>
                           {eo.label}
                         </SelectItem>

@@ -29,7 +29,8 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort, PERMISSIONS } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
+import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, usePersistedString } from "../hooks/useDraft";
 import { useTaskStream } from "../hooks/useTaskStream";
 import { navigate } from "../router";
@@ -69,6 +70,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   // when the long-lived inbox stream freezes in the background. Fall back to the
   // inbox task for the first paint before the scoped snapshot arrives.
   const task = streamTask ?? inboxTask;
+  const catalog = useAgentCatalog(task?.agent ?? "codex");
   // Per-task draft, persisted so a deploy refresh never drops an unsent steer/follow-up.
   const [compose, setCompose] = useDraft(`draft:compose:${taskId}`);
   const [skills, setSkills] = useSkillDraft(`draft:skills:${taskId}`);
@@ -82,11 +84,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const selectorVersion = useRef<string>(undefined);
   const [savedModel, saveModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
   const [savedEffort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
-  const model = selectableModel(task?.agent ?? "codex", savedModel);
-  const effort = selectableEffort(task?.agent ?? "codex", model, savedEffort);
+  const model = selectableModel(catalog, savedModel);
+  const effort = selectableEffort(catalog, model, savedEffort);
   function setModel(value: string) {
     saveModel(value);
-    setEffort(selectableEffort(task?.agent ?? "codex", value, effort));
+    setEffort(selectableEffort(catalog, value, effort));
   }
   // Permission has no DEFAULT_OPTION (always a concrete value); clamp the task's
   // stored value to a valid option for its agent (a legacy value shows the agent

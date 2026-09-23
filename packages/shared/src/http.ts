@@ -68,6 +68,7 @@ export type ApiSchema = {
   "/api/repos/validate": { $get: Endpoint<Query<z.input<typeof Request.PathQuerySchema>>, Response.ValidateRepoPathResponse> };
   "/api/fs/list": { $get: Endpoint<Query<z.input<typeof Request.PathQuerySchema>>, Response.FsListResponse> };
   "/api/usage": { $get: Endpoint<{}, Response.UsageResponse> };
+  "/api/model-catalog": { $get: Endpoint<{}, import("./model-catalog.js").CodexModelCatalog> };
   "/api/routines": {
     $get: Endpoint<{}, Response.RoutinesResponse>;
     $post: Endpoint<Json<Request.CreateRoutineRequest>, Response.RoutineResponse, 201>;
