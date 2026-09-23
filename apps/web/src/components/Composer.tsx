@@ -213,8 +213,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={voice.toggle}>
         {voice.state === "starting" || voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
-      {onStop && <Button type="button" size="icon-lg" className="shrink-0" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
-        disabled={stopping} onClick={onStop}><Square fill="currentColor" /></Button>}
+      {onStop && <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
+        disabled={stopping} onClick={onStop}>
+        <span data-stop-visual="true" aria-hidden="true" className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
+          <Square className="size-[18px]" fill="currentColor" />
+        </span>
+      </Button>}
       {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : !onStop && <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
         variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent"
         disabled={cannotSend}>
