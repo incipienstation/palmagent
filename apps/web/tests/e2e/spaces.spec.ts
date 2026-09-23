@@ -113,3 +113,29 @@ test("desktop space search and light mobile sheet keep paths readable", async ({
   await page.getByRole("button", { name: /^Switch space:/ }).click();
   await assertSheetFits(page);
 });
+
+test("project spaces include worktrees, reset search, and inherit into New task", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:dispatch-repo", "other"));
+  await setup(page);
+  const trigger = page.getByRole("button", { name: /^Switch space:/ });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
+  const project = dialog.locator(`button[title="${fixtureRepos[0].path}"]`);
+  await project.click();
+  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
+  await expect(page.getByText("Worktree task 11", { exact: true })).toBeVisible();
+
+  const search = page.getByRole("searchbox", { name: "Search tasks" });
+  await search.fill("Review the space picker");
+  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
+  await trigger.click();
+  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator(`button[title="${fixtureRepos[2].path}"]`).click();
+  await expect(search).toHaveValue("");
+
+  await trigger.click();
+  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator(`button[title="${fixtureRepos[0].path}"]`).click();
+  await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Working directory" })).toHaveText("palmagent (main)");
+  await expect(page.getByText("Inherited from Space: palmagent", { exact: true })).toBeVisible();
+});

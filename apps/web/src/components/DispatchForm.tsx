@@ -24,6 +24,7 @@ import { toast } from "@/components/ui/toaster";
 import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort } from "../api";
 import { useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
 import { navigate } from "../router";
+import { ALL_SPACES, readSelectedSpace, repoForSelectedSpace, spaceName, writeSelectedSpace } from "../space-context";
 import { AppBar, AppShell } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
 import { useSkillDraft } from "./SkillPicker";
@@ -41,6 +42,7 @@ export function DispatchView() {
   const [registeredRepos, setRepos] = useState<Repo[]>([]);
   const repoMutations = useRepoMutations();
   const repos = registeredRepos.filter(repo => !repoMutations.removed.has(repo.id));
+  const [inheritedSpace, setInheritedSpace] = useState(readSelectedSpace);
   // Everything except title + prompt is a sticky preference: the form re-opens
   // with the last-used choice rather than resetting each time (loadRepos still
   // validates a stale repo id).
@@ -78,9 +80,12 @@ export function DispatchView() {
   async function loadRepos(selectId?: string) {
     try {
       const list = await api.listRepos();
+      const byId = new Map(list.map((repo) => [repo.id, repo]));
+      const inheritedRepoId = selectId ? undefined : repoForSelectedSpace(inheritedSpace, byId);
       setRepos(list);
       setRepoId((cur) => {
         if (selectId) return selectId; // just-added repo
+        if (inheritedRepoId && byId.has(inheritedRepoId)) return inheritedRepoId;
         if (cur && list.some((r) => r.id === cur)) return cur; // keep valid selection
         return list[0]?.id ?? "";
       });
@@ -88,6 +93,13 @@ export function DispatchView() {
       setError(errMsg(e));
     }
   }
+
+  const repoMap = new Map(repos.map((repo) => [repo.id, repo]));
+  const inheritedRepoId = repoForSelectedSpace(inheritedSpace, repoMap);
+  const inheritedName = inheritedSpace === ALL_SPACES ? "" : spaceName(inheritedSpace, repoMap);
+  const contextDescription = inheritedName
+    ? inheritedRepoId === repoId ? `Inherited from Space: ${inheritedName}` : `Space context: ${inheritedName}`
+    : "";
 
   useEffect(() => {
     void loadRepos();
@@ -147,7 +159,15 @@ export function DispatchView() {
             <Field>
               <FieldLabel htmlFor="dispatch-repo">Working directory</FieldLabel>
               <div className="flex min-w-0 gap-2">
-                <Select value={repoId} onValueChange={(v) => v && setRepoId(v)} disabled={repos.length === 0 || busy}>
+                <Select value={repoId} onValueChange={(v) => {
+                  if (!v) return;
+                  setRepoId(v);
+                  const repo = repos.find((candidate) => candidate.id === v);
+                  if (repo) {
+                    setInheritedSpace(repo.path);
+                    writeSelectedSpace(repo.path, repo.id);
+                  }
+                }} disabled={repos.length === 0 || busy}>
                   <SelectTrigger id="dispatch-repo" className="min-w-0 flex-1 rounded-full">
                     <SelectValue placeholder={repos.length === 0 ? "No repos registered" : "Select a repo"} />
                   </SelectTrigger>
@@ -157,6 +177,7 @@ export function DispatchView() {
                 </Select>
                 <Button type="button" variant="secondary" className="shrink-0 rounded-full" disabled={busy} onClick={() => setPickerOpen(true)}><Plus data-icon="inline-start" /> Add</Button>
               </div>
+              {contextDescription && <FieldDescription>{contextDescription}</FieldDescription>}
             </Field>
           </div>
         </div>

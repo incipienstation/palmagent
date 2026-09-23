@@ -20,7 +20,7 @@ export function RepoSettings() {
 
   return (
     <section className="flex flex-col gap-3 py-4" aria-labelledby={id}>
-      <h3 id={id} className="text-[15px] font-medium">Space search paths</h3>
+      <h3 id={id} className="text-[15px] font-medium">Repository search paths</h3>
       <p className="text-xs text-muted-foreground">Folders on the server to search for Git repositories. Changes apply to all devices without a restart.</p>
       {error && <Alert variant="destructive">{error}</Alert>}
       {!status && busy && <Skeleton className="h-20 w-full" aria-label="Loading search paths" />}

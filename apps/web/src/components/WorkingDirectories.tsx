@@ -7,40 +7,41 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer";
 import { Input } from "./ui/input";
+import { ALL_SPACES, taskDirectoryFor } from "../space-context";
 
-export function taskDirectory(task: TaskState, repos: Map<string, Repo>): string {
-  return task.worktreePath ?? repos.get(task.repoId)?.path ?? `repo:${task.repoId}`;
-}
+export const taskDirectory = taskDirectoryFor;
 
-type Space = { path: string; name: string; count: number; worktree: boolean; project?: string };
+type Space = { path: string; name: string; count: number; worktree: boolean; project?: string; repoId?: string };
 const leaf = (path: string) => path.split("/").filter(Boolean).at(-1) ?? path;
 
 function spacesFor(tasks: TaskState[], repos: Map<string, Repo>, selected: string): Space[] {
   const spaces = new Map<string, Space>();
   for (const repo of repos.values()) {
-    spaces.set(repo.path, { path: repo.path, name: repo.name, count: 0, worktree: false });
+    spaces.set(repo.path, { path: repo.path, name: repo.name, count: 0, worktree: false, repoId: repo.id });
   }
   for (const task of tasks) {
     const path = taskDirectory(task, repos);
     const repo = repos.get(task.repoId);
+    if (repo && path !== repo.path) spaces.get(repo.path)!.count++;
     const space = spaces.get(path) ?? {
       path, name: leaf(path), count: 0,
       worktree: !!task.worktreePath && task.worktreePath !== repo?.path,
       project: repo?.name,
+      repoId: task.repoId,
     };
     space.count++;
     spaces.set(path, space);
   }
   // A saved filter can outlive its repo or last task. Keep it identifiable and
   // let the user explicitly return to All spaces instead of changing scope.
-  if (selected !== "all" && !spaces.has(selected)) {
+  if (selected !== ALL_SPACES && !spaces.has(selected)) {
     spaces.set(selected, { path: selected, name: leaf(selected), count: 0, worktree: false });
   }
   return [...spaces.values()].sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
 }
 
 function SpaceRow({ space, selected, onSelect }: {
-  space: Space; selected: string; onSelect: (path: string) => void;
+  space: Space; selected: string; onSelect: (path: string, repoId?: string) => void;
 }) {
   const Icon = space.worktree ? GitBranch : Folder;
   return (
@@ -49,7 +50,7 @@ function SpaceRow({ space, selected, onSelect }: {
       className="h-auto min-h-14 w-full min-w-0 justify-start px-3 py-2.5"
       title={space.path}
       aria-current={selected === space.path ? "page" : undefined}
-      onClick={() => onSelect(space.path)}
+      onClick={() => onSelect(space.path, space.repoId)}
     >
       <Icon data-icon="inline-start" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
@@ -66,7 +67,7 @@ function SpaceRow({ space, selected, onSelect }: {
 }
 
 function SpaceList({ spaces, total, selected, onSelect }: {
-  spaces: Space[]; total: number; selected: string; onSelect: (path: string) => void;
+  spaces: Space[]; total: number; selected: string; onSelect: (path: string, repoId?: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<boolean | null>(null);
@@ -81,11 +82,11 @@ function SpaceList({ spaces, total, selected, onSelect }: {
     <div className="flex shrink-0 flex-col gap-3 px-3 pb-3">
       <Input type="search" aria-label="Search spaces" placeholder="Search names or paths…" value={query}
         onChange={(event) => setQuery(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-      <Button variant={selected === "all" ? "selected" : "ghost"} className="w-full justify-start px-3" onClick={() => onSelect("all")} aria-current={selected === "all" ? "page" : undefined}>
+      <Button variant={selected === ALL_SPACES ? "selected" : "ghost"} className="w-full justify-start px-3" onClick={() => onSelect(ALL_SPACES)} aria-current={selected === ALL_SPACES ? "page" : undefined}>
         <Layers data-icon="inline-start" />
         <span className="min-w-0 flex-1 text-left">All spaces</span>
         <Badge variant="secondary" aria-label={`${total} tasks`}>{total}</Badge>
-        {selected === "all" && <Check data-icon="inline-end" aria-hidden="true" />}
+        {selected === ALL_SPACES && <Check data-icon="inline-end" aria-hidden="true" />}
       </Button>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[calc(16px+var(--safe-bottom))]" data-testid="space-results">
@@ -110,7 +111,7 @@ function SpaceList({ spaces, total, selected, onSelect }: {
 }
 
 export function WorkingDirectories({ tasks, repos, selected, onSelect, loading = false }: {
-  tasks: TaskState[]; repos: Map<string, Repo>; selected: string; onSelect: (path: string) => void; loading?: boolean;
+  tasks: TaskState[]; repos: Map<string, Repo>; selected: string; onSelect: (path: string, repoId?: string) => void; loading?: boolean;
 }) {
   const [localOpen, setLocalOpen] = useState(false);
   const navigation = useAppNavigation();
@@ -122,8 +123,8 @@ export function WorkingDirectories({ tasks, repos, selected, onSelect, loading =
   </div>;
   const spaces = spacesFor(tasks, repos, selected);
   const current = spaces.find((space) => space.path === selected);
-  const Icon = selected === "all" ? Layers : current?.worktree ? GitBranch : Folder;
-  const name = selected === "all" ? "All spaces" : current?.name ?? leaf(selected);
+  const Icon = selected === ALL_SPACES ? Layers : current?.worktree ? GitBranch : Folder;
+  const name = selected === ALL_SPACES ? "All spaces" : current?.name ?? leaf(selected);
   return <>
     <div className="min-w-0 px-4 py-2 md:hidden">
       <Drawer open={open} onOpenChange={setOpen}>
@@ -131,7 +132,7 @@ export function WorkingDirectories({ tasks, repos, selected, onSelect, loading =
           <Button variant="ghost" aria-label={`Switch space: ${name}`} className="w-full min-w-0 justify-start rounded-xl px-3 text-muted-foreground">
             <Icon data-icon="inline-start" />
             <span className="min-w-0 flex-1 truncate text-left">{name}</span>
-            <Badge variant="secondary">{selected === "all" ? tasks.length : current?.count ?? 0}</Badge>
+            <Badge variant="secondary">{selected === ALL_SPACES ? tasks.length : current?.count ?? 0}</Badge>
             <ChevronDown data-icon="inline-end" />
           </Button>
         </DrawerTrigger>
@@ -144,9 +145,9 @@ export function WorkingDirectories({ tasks, repos, selected, onSelect, loading =
               <DrawerTitle>Spaces</DrawerTitle>
               <DrawerClose asChild><Button ref={closeRef} variant="ghost" size="icon-lg" aria-label="Close spaces"><X /></Button></DrawerClose>
             </div>
-            <DrawerDescription>Filter tasks by project, folder, or worktree.</DrawerDescription>
+            <DrawerDescription>Filter by project, folder, or one worktree. Projects include their worktrees.</DrawerDescription>
           </DrawerHeader>
-          <SpaceList spaces={spaces} total={tasks.length} selected={selected} onSelect={(path) => { onSelect(path); setOpen(false); }} />
+          <SpaceList spaces={spaces} total={tasks.length} selected={selected} onSelect={(path, repoId) => { onSelect(path, repoId); setOpen(false); }} />
         </DrawerContent>
       </Drawer>
     </div>
