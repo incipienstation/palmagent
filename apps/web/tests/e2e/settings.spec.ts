@@ -55,10 +55,10 @@ test("keyboard navigation returns focus and keeps narrow settings within the vie
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/");
   await openSettings(page);
-  const spaces = page.getByRole("button", { name: "Spaces", exact: true });
+  const spaces = page.getByRole("button", { name: "Repository search paths", exact: true });
   await spaces.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "Spaces", exact: true })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Repository search paths", exact: true, level: 2 })).toBeFocused();
   const input = page.getByRole("textbox", { name: "Add search folder" });
   await input.fill("/projects/draft");
   await page.getByRole("button", { name: "Back to settings" }).focus();

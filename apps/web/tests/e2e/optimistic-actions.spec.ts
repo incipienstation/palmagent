@@ -6,7 +6,7 @@ import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 function gate() { let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; }); return { wait, release }; }
-async function settings(page: Page, section?: "Updates" | "Spaces") {
+async function settings(page: Page, section?: "Updates" | "Repository search paths") {
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   if (section) await page.getByRole("button", { name: section, exact: true }).click();
@@ -77,8 +77,8 @@ for (const action of ["remove", "reset"] as const) test(`search path ${action} c
     if (route.request().method() === "PATCH") { writes++; await delayed.wait; return route.fulfill({ status: 503, json: { error: "Paths unavailable" } }); }
     await route.fulfill({ json: state });
   });
-  await page.goto("/"); await settings(page, "Spaces");
-  const region = page.getByRole("region", { name: "Space search paths" });
+  await page.goto("/"); await settings(page, "Repository search paths");
+  const region = page.getByRole("region", { name: "Repository search paths" });
   await region.getByRole("button", { name: action === "remove" ? "Remove /projects/custom" : "Use installation defaults", exact: true }).click();
   await expect(region.getByText("/projects/custom", { exact: true })).toBeHidden();
   if (action === "reset") await expect(region.getByText("/projects/default", { exact: true })).toBeVisible();
@@ -93,7 +93,7 @@ test("new search paths remain pending until validated and retain the draft on re
     if (route.request().method() === "PATCH") { await delayed.wait; return route.fulfill({ status: 400, json: { error: "Folder is inaccessible" } }); }
     await route.fulfill({ json: { repoRoots: [], defaults: [], source: "saved", writable: true } });
   });
-  await page.goto("/"); await settings(page, "Spaces");
+  await page.goto("/"); await settings(page, "Repository search paths");
   await page.getByRole("textbox", { name: "Add search folder" }).fill("~/new-folder");
   await page.getByRole("button", { name: "Add folder", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "~/new-folder · Adding…" })).toBeVisible();

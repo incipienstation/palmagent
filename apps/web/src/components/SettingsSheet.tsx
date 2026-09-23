@@ -42,7 +42,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const { shortcut, setShortcut } = useSendShortcut();
   const [section, setSection] = useUpdateState("settings:section", "general");
   const title = useRef<HTMLHeadingElement>(null);
-  const spacesLink = useRef<HTMLButtonElement>(null);
+  const searchPathsLink = useRef<HTMLButtonElement>(null);
   const updatesLink = useRef<HTMLButtonElement>(null);
   const previousSection = useRef(section);
   const appearanceId = useId();
@@ -56,7 +56,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
     previousSection.current = section;
     if (!open || previous === section) return;
     if (section === "general") {
-      (previous === "spaces" ? spacesLink : updatesLink).current?.focus({ preventScroll: true });
+      (previous === "spaces" ? searchPathsLink : updatesLink).current?.focus({ preventScroll: true });
     } else {
       title.current?.focus({ preventScroll: true });
     }
@@ -71,12 +71,12 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               <ArrowLeft />
             </Button>}
             <SheetTitle asChild className="flex-1 text-[22px] tracking-tight outline-none">
-              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Spaces" : "Updates"}</h2>
+              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Repository search paths" : "Updates"}</h2>
             </SheetTitle>
             <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
           </div>
           <SheetDescription className={home ? "text-[13px]" : "sr-only"}>
-            {home ? "Preferences and installation" : section === "spaces" ? "Manage repository discovery on this installation." : "Manage Palmagent updates on this installation."}
+            {home ? "Preferences and installation" : section === "spaces" ? "Manage folders searched for repositories on this installation." : "Manage Palmagent updates on this installation."}
           </SheetDescription>
         </SheetHeader>
         <Separator />
@@ -129,10 +129,10 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 
             <SettingsGroup label="Installation">
               <div className="flex flex-col">
-                <Button ref={spacesLink} variant="ghost" aria-label="Spaces" onClick={() => setSection("spaces")}
+                <Button ref={searchPathsLink} variant="ghost" aria-label="Repository search paths" onClick={() => setSection("spaces")}
                   className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left hover:bg-accent">
                   <FolderSearch className="text-muted-foreground" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Spaces</span><span className="text-xs font-normal text-muted-foreground">Folders to search for repositories</span></span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Repository search paths</span><span className="text-xs font-normal text-muted-foreground">Folders to search for repositories</span></span>
                   <ChevronRight className="text-muted-foreground" />
                 </Button>
                 <Separator />

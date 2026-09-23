@@ -23,6 +23,7 @@ import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
 import { SessionActionsMenu } from "./SessionActionsMenu";
+import { ALL_SPACES, readSelectedSpace, spaceName, taskBelongsToSpace, writeSelectedSpace } from "../space-context";
 
 // repoId → Repo map for the rows, provided once by InboxView so each card can
 // resolve its project name without prop-drilling through StatusGroup.
@@ -227,13 +228,17 @@ export const InboxView = memo(function InboxView({
     refresh();
   }, [tasks, repos, refresh, reposLoading]);
 
-  const [selected, setSelected] = useState(() => { try { return localStorage.getItem("working-directory") ?? "all"; } catch { return "all"; } });
-  const selectDirectory = useCallback((path: string) => { setSelected(path); try { localStorage.setItem("working-directory", path); } catch { /* optional preference */ } }, []);
+  const [selected, setSelected] = useState(readSelectedSpace);
   const [query, setQuery] = useUpdateState("inbox:query", lastQuery);
   useEffect(() => { lastQuery = query; }, [query]);
+  const selectDirectory = useCallback((path: string, repoId?: string) => {
+    setSelected(path);
+    writeSelectedSpace(path, repoId);
+    setQuery("");
+  }, [setQuery]);
   const searchInput = useRef<HTMLInputElement>(null);
   const search = query.trim().toLocaleLowerCase();
-  const scoped = selected === "all" ? tasks : tasks.filter(task => taskDirectory(task, repos) === selected);
+  const scoped = selected === ALL_SPACES ? tasks : tasks.filter(task => taskBelongsToSpace(task, selected, repos));
   const filtered = search ? scoped.filter(task => `${taskTitle(task)} ${task.prompt}`.toLocaleLowerCase().includes(search)) : scoped;
   const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
   const byStatus = new Map<InboxStatus, TaskState[]>();
@@ -247,11 +252,12 @@ export const InboxView = memo(function InboxView({
   for (const arr of byStatus.values()) arr.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 
   const isEmpty = !loading && filtered.length === 0;
+  const selectedName = spaceName(selected, repos, tasks);
 
   return (
     <ReposContext.Provider value={repos}>
       <AppShell wide>
-        <AppBar title="Tasks" conn={conn} />
+        <AppBar title={selected === ALL_SPACES ? "Tasks" : `Tasks · ${selectedName}`} conn={conn} />
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} loading={loading} />
@@ -261,9 +267,9 @@ export const InboxView = memo(function InboxView({
           <div data-testid="inbox-content" className="pb-[calc(var(--banner-h,0px)+var(--safe-bottom)+88px)]">
             {!loading && <div className="px-4 pt-2 pb-1">
               <div className="flex gap-2">
-                <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks…" value={query}
+                <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder={selected === ALL_SPACES ? "Search tasks…" : `Search tasks in ${selectedName}…`} value={query}
                   autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={event => setQuery(event.target.value)} />
-                {selected !== "all" && <Button variant="ghost" size="icon-lg" aria-label="Open Space terminals" onClick={() => {
+                {selected !== ALL_SPACES && <Button variant="ghost" size="icon-lg" aria-label="Open Space terminals" onClick={() => {
                   const task = tasks.find(t => taskDirectory(t, repos) === selected && !["cancelled", "archived"].includes(t.status));
                   const repo = [...repos.values()].find(r => r.path === selected);
                   navigate(repo ? "/terminals/repo/" + encodeURIComponent(repo.id) : task ? "/terminals/task/" + encodeURIComponent(task.taskId) : "/terminals");

@@ -51,6 +51,21 @@ async function terminalFixture(page: Page, options: { legacy?: boolean; occupied
     },
   };
 }
+
+test("global terminals inherit the selected project context", async ({ page }) => {
+  const requests: string[] = [];
+  await page.addInitScript(() => localStorage.setItem("working-directory", "/projects/sample-app"));
+  await page.route("**/api/terminals*", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "GET") requests.push(url.searchParams.get("repoId") ?? "all");
+    await route.fulfill({ json: { terminals: [], capabilities: { available: true, persistent: true } } });
+  });
+  await page.goto("/#/terminals");
+  await expect(page.getByRole("combobox", { name: "Terminal project" })).toHaveText("sample-app");
+  await expect.poll(() => requests.includes("repo-app")).toBe(true);
+  await assertViewportLocked(page);
+});
+
 test("mobile task terminal keeps its shell when returning to conversation and requires explicit termination", async ({ page }, testInfo) => {
   const f = await terminalFixture(page);
   await page.goto("/#/task/t-run");

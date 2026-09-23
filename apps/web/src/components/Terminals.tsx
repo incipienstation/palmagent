@@ -13,11 +13,12 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { AppBar } from "./AppShell";
 import { TerminalScreen } from "./TerminalScreen";
 import { useUpdateState } from "../update-state";
+import { readSelectedSpace, readSelectedSpaceRepoId, repoForSelectedSpace, writeSelectedSpace } from "../space-context";
 
 export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; repoId?: string; onClose?: () => void }) {
   const { repos } = useRepos();
   const scope = "terminals:" + (taskId ?? repoId ?? "all");
-  const [space, setSpace] = useUpdateState(scope + ":space", repoId ?? "");
+  const [space, setSpace] = useUpdateState(scope + ":space", () => repoId ?? readSelectedSpaceRepoId() ?? "");
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [capabilities, setCapabilities] = useState<TerminalCapabilities>();
   const [selected, setSelected] = useUpdateState(scope + ":selected", "");
@@ -36,6 +37,14 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const [title, setTitle] = useUpdateState(scope + ":title", "");
   const requestId = useRef<string | undefined>(undefined);
   const generation = useRef(0);
+  useEffect(() => {
+    if (taskId || repoId || !repos.size) return;
+    const inherited = repoForSelectedSpace(readSelectedSpace(), repos);
+    if (inherited && inherited !== space) {
+      setSpace(inherited);
+      setSelected("");
+    }
+  }, [repos, repoId, setSelected, setSpace, space, taskId]);
   useEffect(() => { requestId.current = undefined; }, [space, taskId]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
@@ -68,10 +77,15 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     {onClose ? <header className="flex shrink-0 items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2">
       <Button variant="ghost" size="icon-lg" aria-label="Back to conversation" onClick={onClose}><ArrowLeft /></Button>
       <h2 className="text-base font-semibold">Terminals</h2>
-    </header> : <AppBar title="Terminals" back />}
+    </header> : <AppBar title={space && repos.get(space) ? `Terminals · ${repos.get(space)!.name}` : "Terminals"} back />}
     <div className="flex shrink-0 flex-col gap-2 px-3 pb-2">
-      {!taskId && <Select value={space} onValueChange={value => { setSpace(value); setSelected(""); }} disabled={busy}>
-        <SelectTrigger aria-label="Terminal space"><SelectValue placeholder="Choose a Space" /></SelectTrigger>
+      {!taskId && <Select value={space} onValueChange={value => {
+        setSpace(value);
+        setSelected("");
+        const repo = repos.get(value);
+        if (repo) writeSelectedSpace(repo.path, repo.id);
+      }} disabled={busy}>
+        <SelectTrigger aria-label="Terminal project"><SelectValue placeholder="Choose a project" /></SelectTrigger>
         <SelectContent><SelectGroup>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
       </Select>}
       <div className="flex min-w-0 gap-2">
