@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AnswerRequest, QuestionRequest } from "@palmagent/shared";
+import { PERMISSIONS, type AnswerRequest, type QuestionRequest } from "@palmagent/shared";
 import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../src/claude.js";
 import { buildCodexArgv, CodexRunner } from "../src/codex.js";
 import { InProcessBackend } from "../src/inproc-backend.js";
@@ -148,6 +148,7 @@ test("Claude launch contract covers resume settings and safe permission fallback
       "--output-format", "stream-json",
       "--verbose",
       "--include-partial-messages",
+      "--allow-dangerously-skip-permissions",
       "--permission-mode", "bypassPermissions",
       "--permission-prompt-tool", "stdio",
       "--model", "claude-contract-model",
@@ -157,6 +158,22 @@ test("Claude launch contract covers resume settings and safe permission fallback
   );
   const safeArgs = buildClaudeArgv({ permission: "unknown" });
   assert.equal(safeArgs[safeArgs.indexOf("--permission-mode") + 1], "acceptEdits");
+});
+
+test("permission catalog values reach each adapter's native launch flag", () => {
+  const claudeValues = PERMISSIONS.claude.map(({ value }) => value);
+  assert.deepEqual(
+    claudeValues.map((permission) => buildClaudeArgv({ permission })[buildClaudeArgv({ permission }).indexOf("--permission-mode") + 1]),
+    claudeValues,
+  );
+  const codexValues = PERMISSIONS.codex.map(({ value }) => value);
+  assert.deepEqual(
+    codexValues.map((permission) => {
+      const argv = buildCodexArgv({ prompt: "catalog", permission });
+      return argv[argv.indexOf("--sandbox") + 1];
+    }),
+    codexValues,
+  );
 });
 
 test("Claude user-message contract keeps image blocks before the text block", () => {
@@ -183,7 +200,7 @@ test("Codex launch contract keeps dispatch and resume flag forms distinct", () =
     buildCodexArgv(
       {
         prompt: "dispatch prompt",
-        permission: "workspace-write-net",
+        permission: "workspace-write",
         model: "codex-contract-model",
         effort: "high",
       },
@@ -195,7 +212,6 @@ test("Codex launch contract keeps dispatch and resume flag forms distinct", () =
       "--skip-git-repo-check",
       "-c", "approval_policy=never",
       "--sandbox", "workspace-write",
-      "-c", "sandbox_workspace_write.network_access=true",
       "-c", "model=codex-contract-model",
       "-c", "model_reasoning_effort=high",
       "-i", "/tmp/contract-image.png",
@@ -219,6 +235,11 @@ test("Codex launch contract keeps dispatch and resume flag forms distinct", () =
     buildCodexArgv({ prompt: "safe default", permission: "unknown" }).slice(-2),
     ["--sandbox", "workspace-write"],
   );
+  const legacyNetwork = buildCodexArgv({ prompt: "legacy network", permission: "workspace-write-net" });
+  assert.deepEqual(legacyNetwork.slice(legacyNetwork.indexOf("--sandbox")), [
+    "--sandbox", "workspace-write",
+    "-c", "sandbox_workspace_write.network_access=true",
+  ]);
 });
 
 test("Claude runner owns prompt, event normalization, questions, steer, and stop", async () => {
@@ -264,6 +285,16 @@ test("Claude runner owns prompt, event normalization, questions, steer, and stop
   });
   backend.proc.emit({
     type: "control_request",
+    request_id: "approval-1",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "Bash",
+      input: { command: "pnpm test" },
+      reason: "Run the requested verification",
+    },
+  });
+  backend.proc.emit({
+    type: "control_request",
     request_id: "question-1",
     request: {
       subtype: "can_use_tool",
@@ -278,8 +309,19 @@ test("Claude runner owns prompt, event normalization, questions, steer, and stop
     ["status", 1],
     ["assistant_text", 2],
     ["tool_call", 3],
-    ["question", 4],
+    ["approval_request", 4],
+    ["question", 5],
   ]);
+
+  assert.equal(handle.approve("approve"), true);
+  assert.deepEqual(writtenJson(backend.proc).at(-1), {
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "approval-1",
+      response: { behavior: "allow", updatedInput: { command: "pnpm test" } },
+    },
+  });
 
   const answer: AnswerRequest = {
     requestId: "question-1",

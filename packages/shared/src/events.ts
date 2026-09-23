@@ -24,7 +24,7 @@ export type AgentEventKind =
   | "assistant_text" // streamed assistant prose (token deltas for Claude, items for Codex)
   | "tool_call" // a tool/command the agent decided to run
   | "tool_result" // the result of a tool/command
-  | "approval_request" // agent is asking for permission (not expected under our non-interactive modes)
+  | "approval_request" // agent is asking for a user decision on a permission-gated action
   | "question" // agent is asking the user a multiple-choice question (Claude AskUserQuestion); payload: QuestionRequest
   | "result" // the turn finished — carries final text / usage
   | "error";
@@ -49,6 +49,16 @@ export interface AskQuestion {
 export interface QuestionRequest {
   requestId: string; // the CLI's control_request id — echoed back when answering
   questions: AskQuestion[];
+}
+
+// A provider permission prompt that Palmagent can present and answer. The input
+// is opaque because each CLI owns its tool schema; it is echoed back only when
+// the user explicitly approves the request.
+export interface PermissionRequest {
+  requestId: string;
+  tool: string;
+  input?: unknown;
+  reason?: string;
 }
 
 export interface AgentEvent {

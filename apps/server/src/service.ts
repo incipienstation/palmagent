@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type {
-  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
+  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PermissionRequest, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { checkpointSession, emptyTranscriptHash, locateSession, nativeHome, processIdentity, resumeCommand, synchronizeSession } from "./native-session.js";
@@ -581,9 +581,21 @@ export class TaskService {
   approve(id: string, decision: string, scope?: string): TaskState {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    const pending = task.pendingApproval;
+    const handle = this.supervisor.get(id);
+    // New provider permission prompts carry a durable request and must be
+    // delivered to the live adapter before the task can resume. Keep the old
+    // event-only approval path usable for historical tasks that predate that
+    // request payload.
+    if (pending && !handle?.approve(decision, scope)) {
+      throw conflict("Approval delivery could not be confirmed. The request has been kept; check the conversation before trying again.");
+    }
     const now = Date.now();
-    this.db.insertApproval(id, null, scope ? JSON.stringify({ scope }) : null, decision, now);
-    this.supervisor.get(id)?.approve(decision, scope);
+    this.db.insertApproval(id, null, pending ? JSON.stringify({ request: pending, scope }) : scope ? JSON.stringify({ scope }) : null, decision, now);
+    if (pending) {
+      task.pendingApproval = undefined;
+      this.db.setTaskPendingApproval(id, undefined, now);
+    }
     if (task.status === "awaiting_approval") this.transition(task, "running");
     this.emitSynthetic(task, { subtype: "approval", decision, scope });
     return task;
@@ -772,6 +784,7 @@ export class TaskService {
         // If the turn is paused on AskUserQuestion, hand the adapter the persisted
         // question so historical control requests can be skipped during replay.
         pendingInput: task.pendingInput,
+        pendingApproval: task.pendingApproval,
       },
       (raw, rawSeq) => this.onRaw(task, raw, rawSeq),
       this.backend,
@@ -835,6 +848,9 @@ export class TaskService {
       if (subtype === "execution_started") this.transition(task, "running");
     }
     if (event.kind === "approval_request" && task.status === "running") {
+      const request = event.payload as PermissionRequest;
+      task.pendingApproval = request;
+      this.db.setTaskPendingApproval(task.taskId, request, now);
       this.transition(task, "awaiting_approval");
       this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
     }
@@ -888,6 +904,10 @@ export class TaskService {
     if (task.pendingInput) {
       task.pendingInput = undefined;
       this.db.setTaskPendingInput(task.taskId, undefined, Date.now());
+    }
+    if (task.pendingApproval) {
+      task.pendingApproval = undefined;
+      this.db.setTaskPendingApproval(task.taskId, undefined, Date.now());
     }
     // A steer that changed model/effort interrupted this turn on purpose so the
     // queued steer can resume with the new flags — its aborted result is not a

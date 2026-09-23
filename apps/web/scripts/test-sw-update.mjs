@@ -100,7 +100,7 @@ async function run() {
     // Two tabs have different drafts; activation in one must preserve both.
     await page.goto("/#/new");
     await page.getByLabel("Prompt").fill("Keep this unsent draft");
-    await page.getByRole("button", { name: "Configure model and effort" }).click();
+    await page.getByRole("button", { name: "Configure task settings" }).click();
     await page.getByPlaceholder("short label").fill("Draft title");
     await page.getByRole("button", { name: "Done", exact: true }).click();
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
@@ -168,7 +168,7 @@ async function run() {
     assert.equal(loads, 1, "the same update must not cause a reload loop");
     console.log("[test] storage failures preserve work and event-driven recovery completes automatically");
 
-    await page.getByRole("button", { name: "Configure model and effort" }).click();
+    await page.getByRole("button", { name: "Configure task settings" }).click();
     await page.getByRole("radio", { name: "opus", exact: true }).click();
     await page.getByPlaceholder("short label").fill("Restored configuration");
     const configurationReload = page.waitForEvent("load", { timeout: 20_000 });

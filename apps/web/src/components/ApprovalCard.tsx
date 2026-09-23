@@ -1,4 +1,5 @@
 import { Check, LoaderCircle, ShieldCheck, X } from "lucide-react";
+import type { PermissionRequest } from "@palmagent/shared";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
 
@@ -23,15 +24,21 @@ export function ApprovalRequest({ payload, full, expanded, onToggle }: {
 
 // Uses the same explicit-review layout as the question card. Decisions remain
 // controlled by the task action lifecycle, including retry after a failed send.
-export function ApprovalCard({ busy, onDecision }: {
-  busy: boolean; onDecision: (decision: "approve" | "deny") => void;
+export function ApprovalCard({ busy, request, onDecision }: {
+  busy: boolean; request?: PermissionRequest; onDecision: (decision: "approve" | "deny") => void;
 }) {
+  const input = request?.input && typeof request.input === "object" ? request.input as Record<string, unknown> : undefined;
+  const detail = typeof input?.command === "string" ? input.command
+    : typeof input?.file_path === "string" ? input.file_path
+      : typeof input?.path === "string" ? input.path
+        : undefined;
   return <Card data-approval-card aria-busy={busy}>
     <CardHeader className="p-3 pb-2">
-      <CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-amber" aria-hidden />Approval needed</CardTitle>
-      <CardDescription>Review the requested action in the conversation.</CardDescription>
+      <CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-amber" aria-hidden />Permission needed{request?.tool ? ` · ${request.tool}` : ""}</CardTitle>
+      <CardDescription>{request?.reason ?? "Review the requested action before allowing it."}</CardDescription>
     </CardHeader>
     <CardContent className="px-3 pb-3">
+      {detail && <pre className="mb-3 max-h-32 overflow-auto rounded-lg bg-background p-2 font-mono text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{detail}</pre>}
       <p role="status" className="text-xs text-muted-foreground">{busy ? "Sending your decision…" : "The agent is waiting for your decision."}</p>
     </CardContent>
     <CardFooter className="p-3 pt-0">

@@ -34,11 +34,11 @@ async function setup(page: Page, idle = false) {
 test("running and queued-edit summaries show the applicable settings without changing them", async ({ page }) => {
   const { calls, state } = await setup(page);
   const input = page.getByRole("textbox");
-  const summary = page.getByRole("button", { name: "Current model and effort" });
-  const settings = page.getByRole("button", { name: "Configure model and effort" });
+  const summary = page.getByRole("button", { name: "Current task settings" });
+  const settings = page.getByRole("button", { name: "Configure task settings" });
   await expect(summary).toBeVisible();
   await expect(summary).toBeDisabled();
-  await expect(summary).toHaveText("sonnet");
+  await expect(summary).toContainText("sonnet");
   await input.fill("Use these settings later");
   const control = page.getByRole("button", { name: "Send now", exact: true });
   await control.focus(); await control.press("ArrowDown");
@@ -53,23 +53,23 @@ test("running and queued-edit summaries show the applicable settings without cha
   await expect.poll(() => calls.filter(call => call.mode === "queue").length).toBe(1);
   expect(calls.find(call => call.mode === "queue").settings).toMatchObject({ model: "opus", effort: "high" });
   // The next live message still uses the running turn, not the queue overrides.
-  await expect(summary).toHaveText("sonnet");
+  await expect(summary).toContainText("sonnet");
   await input.fill("Ordinary draft");
   await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
   await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
-  await expect(summary).toHaveText("opus · high");
+  await expect(summary).toContainText("opus · high");
   await expect(summary).toBeDisabled();
   await page.getByRole("button", { name: "Cancel editing" }).click();
   await expect(input).toHaveValue("Ordinary draft");
-  await expect(summary).toHaveText("sonnet");
+  await expect(summary).toContainText("sonnet");
   // Empty persisted overrides explicitly reset to the agent's default; they
   // must not inherit the running model or produce a blank summary.
   state.messages[0].settings = { model: "", effort: "" };
   await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
   await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
-  await expect(summary).toHaveText("Claude");
+  await expect(summary).toContainText("Claude");
   await page.getByRole("button", { name: "Cancel editing" }).click();
-  await expect(summary).toHaveText("sonnet");
+  await expect(summary).toContainText("sonnet");
 });
 
 test("long press opens a haptic toggle without sending; selection applies to one draft", async ({ page }) => {

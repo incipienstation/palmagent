@@ -30,6 +30,7 @@ import { AppBar, AppShell } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
 import { useSkillDraft } from "./SkillPicker";
 import { Composer } from "./Composer";
+import { selectablePermission } from "./PermissionPicker";
 import { RepoPicker } from "./RepoPicker";
 
 function errMsg(e: unknown): string {
@@ -53,7 +54,8 @@ export function DispatchView() {
   // last choice, so switching claude↔codex restores that agent's trio instead of
   // resetting — and since each value comes from that agent's own option set, one
   // never leaks across agents.
-  const [permission, setPermission] = usePersistedMapEntry<Permission>("pref:dispatch-permission", agent, DEFAULT_PERMISSION[agent]);
+  const [savedPermission, setPermission] = usePersistedMapEntry<Permission>("pref:dispatch-permission", agent, DEFAULT_PERMISSION[agent]);
+  const permission = selectablePermission(agent, savedPermission);
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:dispatch-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:dispatch-effort", agent, DEFAULT_OPTION);
   const catalog = useAgentCatalog(agent);

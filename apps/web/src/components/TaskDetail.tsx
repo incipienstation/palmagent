@@ -38,6 +38,7 @@ import { AppBar, AppShell, ConnPill } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
 import { useSkillDraft } from "./SkillPicker";
 import { Composer } from "./Composer";
+import { permissionLabel } from "./PermissionPicker";
 import { AgentTag, StatusBadge } from "./chips";
 import { PrList } from "./PrChip";
 import { EventLog } from "./EventLog";
@@ -52,12 +53,6 @@ import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescri
 
 function errMsg(e: unknown): string {
   return e instanceof ApiError || e instanceof Error ? e.message : String(e);
-}
-
-// Short label for a task's permission value (the catalog label, or the raw value
-// for a legacy/unknown one). Used in the metadata strip + the composer picker.
-function permLabel(agent: TaskState["agent"], value: string): string {
-  return PERMISSIONS[agent].find((p) => p.value === value)?.label ?? value;
 }
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
@@ -289,7 +284,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               {task?.branch && <><dt>Branch</dt><dd>{task.branch}</dd></>}
               {task?.model && <><dt>Model</dt><dd>{task.model}</dd></>}
               {task?.effort && <><dt>Effort</dt><dd>{task.effort}</dd></>}
-              {task && <><dt>Permission</dt><dd>{permLabel(task.agent, task.permission)}</dd></>}
+              {task && <><dt>Permission</dt><dd>{permissionLabel(task.agent, task.permission)}</dd></>}
               {task?.sessionId && <><dt>Session</dt><dd>{task.sessionId}</dd></>}
             </dl>
             {!!task?.prs?.length && <section aria-label="Pull requests"><h3 className="text-sm font-semibold">Pull requests</h3><PrList prs={task.prs} /></section>}
@@ -334,7 +329,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
           )}
 
           {awaiting && (
-            <ApprovalCard busy={busy} onDecision={decision => void act(decision === "approve" ? "Approving…" : "Denying…", () => api.approve(taskId, { decision }))} />
+            <ApprovalCard request={task?.pendingApproval} busy={busy} onDecision={decision => void act(decision === "approve" ? "Approving…" : "Denying…", () => api.approve(taskId, { decision }))} />
           )}
 
           {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit} resumeDisabled={resumeDisabled}

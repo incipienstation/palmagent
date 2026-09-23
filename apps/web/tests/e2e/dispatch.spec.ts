@@ -13,7 +13,7 @@ test.describe("dispatch form", () => {
     await assertViewportLocked(page);
     // First repo (auto-selected) is the git repo → toggle present, default off.
     await page.getByLabel("Prompt").tap();
-    await page.getByRole("button", { name: "Configure model and effort" }).click();
+    await page.getByRole("button", { name: "Configure task settings" }).click();
     const toggle = page.getByRole("switch", { name: "Isolated worktree" });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -24,7 +24,7 @@ test.describe("dispatch form", () => {
     await page.getByRole("option", { name: /notes/ }).click();
     await expect(page.getByRole("combobox", { name: "Working directory" })).toBeFocused();
     await page.getByLabel("Prompt").tap();
-    await page.getByRole("button", { name: "Configure model and effort" }).click();
+    await page.getByRole("button", { name: "Configure task settings" }).click();
     await expect(page.getByRole("switch", { name: "Isolated worktree" })).toHaveCount(0);
   });
 });
@@ -32,7 +32,7 @@ test.describe("dispatch form", () => {
 test("Codex choices survive agent switches and reload, while unsupported effort resets", async ({ page }) => {
   await page.goto("/#/new");
   await page.getByLabel("Prompt").fill("Check model efforts");
-  await page.getByRole("button", { name: "Configure model and effort" }).click();
+  await page.getByRole("button", { name: "Configure task settings" }).click();
   await page.getByRole("radio", { name: "codex", exact: true }).click();
   await expect(page.getByRole("radio", { name: "gpt-6-astra", exact: true })).toBeVisible();
   const effort = page.getByRole("combobox", { name: "Effort", exact: true });
@@ -59,7 +59,7 @@ test("Codex choices survive agent switches and reload, while unsupported effort 
   await page.getByRole("option", { name: "ultra", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
-  await page.getByRole("button", { name: "Configure model and effort" }).click();
+  await page.getByRole("button", { name: "Configure task settings" }).click();
   await expect(page.getByRole("radio", { name: "gpt-6-astra", exact: true })).toBeChecked();
   await expect(effort).toHaveText("ultra");
   await page.getByRole("button", { name: "Done", exact: true }).click();
@@ -76,7 +76,7 @@ for (const model of ["gpt-5.4", "gpt-5.4-mini", "gpt-6-astra"]) test(`stale save
   }, model);
   await page.goto("/#/new");
   await page.getByLabel("Prompt").fill("Use valid defaults");
-  await expect(page.getByRole("button", { name: "Configure model and effort" })).toHaveText(model === "gpt-6-astra" ? model : "Codex");
+  await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText(model === "gpt-6-astra" ? model : "Codex");
   const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/tasks");
   await page.getByRole("button", { name: "Dispatch", exact: true }).click();
   const payload = (await request).postDataJSON();

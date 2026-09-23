@@ -43,7 +43,7 @@ test("Codex answers carry question identities and preserve input after delivery 
 
 test("approval request keeps full details accessible beside explicit decisions", async ({ page }) => {
   await page.goto("/#/task/t-await");
-  await expect(page.locator("[data-approval-card]")).toContainText("Approval needed");
+  await expect(page.locator("[data-approval-card]")).toContainText("Permission needed");
   await expect(page.locator("pre").filter({ hasText: "DROP TABLE legacy_events" })).toBeVisible();
   const details = page.getByRole("button", { name: "Request details", exact: true });
   await details.focus();
