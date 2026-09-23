@@ -45,17 +45,53 @@ export function ensureReleaseDraft(identity, candidate, releases, api) {
   } });
 }
 
-export function ensureReleaseAssets(release, files, { download, upload }) {
+export function refreshRelease(release, api) {
+  assert(release?.id, 'Existing release has no immutable id');
+  const current = api(`releases/${release.id}`);
+  assert(current?.id === release.id && current.tag_name === release.tag_name,
+    'Release identity changed while refreshing assets');
+  assert(current.prerelease === release.prerelease, 'Release channel changed while refreshing assets');
+  const assets = api(`releases/${release.id}/assets?per_page=100`);
+  assert(Array.isArray(assets), 'Release asset inventory is malformed');
+  return { ...current, assets };
+}
+
+export function ensureReleaseAssets(release, files, { download, upload, refresh }) {
+  const reconcile = refresh ?? (() => release);
+  let current = reconcile(release);
+  assert(Array.isArray(current.assets), 'Release asset inventory is malformed');
   for (const [name, bytes] of Object.entries(files)) {
-    const existing = release.assets.filter((asset) => asset.name === name);
+    const existing = current.assets.filter((asset) => asset.name === name);
     assert(existing.length <= 1, 'Duplicate release assets');
     if (existing.length) {
       assert(download(existing[0]).equals(bytes), `Existing release asset differs: ${name}`);
     } else {
-      assert(release.draft, 'Published release is missing an immutable asset');
-      upload(name, bytes);
+      assert(current.draft, 'Published release is missing an immutable asset');
+      try {
+        upload(name, bytes);
+        if (refresh) {
+          current = reconcile(release);
+          const uploaded = current.assets.filter((asset) => asset.name === name);
+          assert(uploaded.length === 1, `Uploaded release asset is not visible: ${name}`);
+          assert(download(uploaded[0]).equals(bytes), `Uploaded release asset differs: ${name}`);
+        }
+      } catch (error) {
+        // The upload may have succeeded remotely before the client observed a
+        // duplicate or transport error. Reconcile the immutable asset before
+        // surfacing the failure; never overwrite or blindly retry it.
+        let observed;
+        if (!refresh) throw error;
+        try { observed = reconcile(release); } catch { throw error; }
+        const uploaded = observed.assets.filter((asset) => asset.name === name);
+        assert(uploaded.length <= 1, 'Duplicate release assets');
+        if (!uploaded.length) throw error;
+        assert(download(uploaded[0]).equals(bytes), `Existing release asset differs: ${name}`);
+        current = observed;
+        continue;
+      }
     }
   }
+  return current;
 }
 
 export async function finalizeRelease(cwd, directory, env, adapters = {}) {
@@ -93,15 +129,19 @@ export async function finalizeRelease(cwd, directory, env, adapters = {}) {
       'release.json': Buffer.from(JSON.stringify(manifest, null, 2) + '\n'),
       'SHA256SUMS': readFileSync(join(directory, 'SHA256SUMS')),
     };
-    ensureReleaseAssets(release, files, adapters.assets ?? {
-      download: (asset) => github(env.GH_REPO, `releases/assets/${asset.id}`, { binary: true }),
-      upload: (name) => {
-        // gh uploads from disk; no clobber flag is ever used. Partial drafts can fill only missing assets.
-        if (name === 'release.json') writeFileSync(join(directory, name), files[name]);
-        execFileSync('gh', ['release', 'upload', candidate.tag, join(directory, name), '--repo', env.GH_REPO], { stdio: ['ignore', 'pipe', 'pipe'] });
-      },
+    return ensureReleaseAssets(release, files, {
+      ...(adapters.assets ?? {
+        download: (asset) => github(env.GH_REPO, `releases/assets/${asset.id}`, { binary: true }),
+        upload: (name) => {
+          // gh uploads from disk; no clobber flag is ever used. Partial drafts fill only missing assets.
+          if (name === 'release.json') writeFileSync(join(directory, name), files[name]);
+          execFileSync('gh', ['release', 'upload', candidate.tag, join(directory, name), '--repo', env.GH_REPO], { stdio: ['ignore', 'pipe', 'pipe'] });
+        },
+      }),
+      refresh: (value) => adapters.refreshRelease
+        ? adapters.refreshRelease(value)
+        : refreshRelease(value, api),
     });
-    return release;
   });
   const result = await publishPackage(candidate, {
     env, measure, registryVersion: async (version) => (await metadata()).versions[version] ?? null,
