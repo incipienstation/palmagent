@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.79
+
 ### Fixed
 
 - Search, selection, and text-entry controls now use the Palm Teal focus border in both light and dark themes.
