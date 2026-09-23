@@ -19,6 +19,18 @@ async function expectReadable(control: Locator): Promise<void> {
   expect(ratio, "text contrast on the rendered brand surface").toBeGreaterThanOrEqual(4.5);
 }
 
+function rgb(hex: string): string {
+  const value = hex.slice(1);
+  const channels = [0, 2, 4].map(offset => Number.parseInt(value.slice(offset, offset + 2), 16));
+  return `rgb(${channels.join(", ")})`;
+}
+
+async function expectBrandFocusBorder(control: Locator, color: string): Promise<void> {
+  await control.focus();
+  await expect(control).toBeFocused();
+  await expect.poll(() => control.evaluate(element => getComputedStyle(element).borderTopColor)).toBe(rgb(color));
+}
+
 for (const theme of ["light", "dark"] as const) {
   test(`${theme} controls stay readable and browser chrome follows the selected theme`, async ({ page }) => {
     // Choose the opposite OS scheme to catch manual-theme overrides drifting.
@@ -46,6 +58,20 @@ for (const theme of ["light", "dark"] as const) {
     await page.goto(`/?__theme=${theme}`);
     const button = page.getByRole("button", { name: "Sign in with passkey" });
     await expectReadable(button);
+  });
+
+  test(`${theme} form control focus borders use the Palm Teal token`, async ({ page }) => {
+    await page.goto(`/?__theme=${theme}`);
+    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expectBrandFocusBorder(page.getByRole("searchbox", { name: "Search tasks" }), brand[theme].primary);
+
+    await page.goto(`/?__theme=${theme}#/new`);
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
+    await expectBrandFocusBorder(page.getByRole("combobox", { name: "Working directory" }), brand[theme].primary);
+
+    await page.goto(`/?__theme=${theme}#/task/t-input`);
+    await expect(page.getByText("The agent needs your input")).toBeVisible();
+    await expectBrandFocusBorder(page.getByPlaceholder("Or type a custom answer…").first(), brand[theme].primary);
   });
 }
 
