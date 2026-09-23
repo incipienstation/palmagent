@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, selectableModel, selectableEffort } from "../api";
+import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
+import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { ALL_SPACES, readSelectedSpace, repoForSelectedSpace, spaceName, writeSelectedSpace } from "../space-context";
@@ -55,11 +56,12 @@ export function DispatchView() {
   const [permission, setPermission] = usePersistedMapEntry<Permission>("pref:dispatch-permission", agent, DEFAULT_PERMISSION[agent]);
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:dispatch-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:dispatch-effort", agent, DEFAULT_OPTION);
-  const model = selectableModel(agent, savedModel);
-  const effort = selectableEffort(agent, model, savedEffort);
+  const catalog = useAgentCatalog(agent);
+  const model = selectableModel(catalog, savedModel);
+  const effort = selectableEffort(catalog, model, savedEffort);
   function setModel(value: string) {
     saveModel(value);
-    setEffort(selectableEffort(agent, value, effort));
+    setEffort(selectableEffort(catalog, value, effort));
   }
   // Worktree isolation is remembered PER REPO (run a git task in an isolated
   // worktree+branch vs. in the repo itself). Default off (run in place).

@@ -18,6 +18,7 @@ import { ProcessSupervisor } from "./supervisor.js";
 import type { RunnerBackend } from "./types.js";
 import { WorktreeManager } from "./worktree.js";
 import { isUpdateMaintenance } from "./update-maintenance.js";
+import { CodexModelCatalogService } from "./model-catalog.js";
 
 async function selectBackend(): Promise<RunnerBackend> {
   if (config.executionRelease) {
@@ -60,9 +61,10 @@ export async function createRuntime() {
     const github = new GithubService(service, config.githubToken);
     service.attachGithub(github);
     const auth = new AuthService(db);
+    const modelCatalog = new CodexModelCatalogService();
     let closing: Promise<void> | undefined;
     return {
-      db, hub, service, auth, push, routines, config, terminals, terminalTickets: new TerminalTickets(),
+      db, hub, service, auth, push, routines, modelCatalog, config, terminals, terminalTickets: new TerminalTickets(),
       start() { routines.start(); github.start(); terminals.start(); },
       close() {
         return closing ??= (async () => {

@@ -16,7 +16,7 @@ import { existsSync } from "node:fs";
 import { join, normalize, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { repos, tasks, events, usage, routines, routineRuns, updateSettings } from "./fixtures.mjs";
+import { repos, tasks, events, usage, routines, routineRuns, updateSettings, modelCatalog } from "./fixtures.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const DIST = process.env.E2E_DIST ?? join(__dirname, "..", "dist");
@@ -245,6 +245,7 @@ const server = createServer(async (req, res) => {
         return task ? json(res, 200, { task }) : json(res, 404, { error: "no such task" });
       }
       if (pathname === "/api/usage") return json(res, 200, { usage });
+      if (pathname === "/api/model-catalog") return json(res, 200, modelCatalog);
       if (pathname === "/api/routines") return json(res, 200, { routines });
       {
         const rm = /^\/api\/routines\/([^/]+)\/runs$/.exec(pathname);

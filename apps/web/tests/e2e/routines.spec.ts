@@ -46,6 +46,7 @@ test.describe("routines", () => {
     const form = page.locator("form");
     await form.getByRole("radio", { name: "codex", exact: true }).click();
     await form.getByRole("combobox", { name: "Model", exact: true }).click();
+    await expect(page.getByRole("option", { name: "gpt-5.6-luna", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: /gpt-5\.4/ })).toHaveCount(0);
     await page.getByRole("option", { name: "gpt-5.6-luna", exact: true }).click();
     await form.getByRole("combobox", { name: "Effort", exact: true }).click();

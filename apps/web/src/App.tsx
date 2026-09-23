@@ -11,6 +11,7 @@ import { DispatchView } from "./components/DispatchForm";
 import { RoutinesView } from "./components/Routines";
 import { UsageView } from "./components/Usage";
 import { TaskDetailView } from "./components/TaskDetail";
+import { ModelCatalogProvider } from "./model-catalog";
 
 function AppInner() {
   const route = useRoute();
@@ -50,7 +51,7 @@ export function App() {
   // stream) only mounts once authenticated.
   return (
     <AuthGate>
-      <AppInner />
+      <ModelCatalogProvider><AppInner /></ModelCatalogProvider>
     </AuthGate>
   );
 }

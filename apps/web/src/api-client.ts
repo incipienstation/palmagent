@@ -107,6 +107,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       if (refresh) readCache.invalidate(key => key === "/api/repos");
       return cached("/api/repos", 30_000, () => client.repos.$get()).then((r) => r.repos);
     },
+    modelCatalog: () => cached("/api/model-catalog", 300_000, () => client["model-catalog"].$get()),
     createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json })).then((r) => r.repo),
     deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) })).then((r) => r.repo),
     discoverRepos: (refresh = false) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} })),

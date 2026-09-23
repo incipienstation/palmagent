@@ -6,7 +6,8 @@ import { SkillChips, SkillMenu, SkillTrigger, useSkillPicker } from "./SkillPick
 import { Popover, PopoverAnchor } from "./ui/popover";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
 import type { AgentKind } from "@palmagent/shared";
-import { DEFAULT_OPTION, effortsForModel, MODELS, PERMISSIONS } from "../api";
+import { DEFAULT_OPTION, PERMISSIONS } from "../api";
+import { effortChoices, modelChoices, useAgentCatalog } from "../model-catalog";
 import { useUpdateState } from "../update-state";
 import { useSendShortcut } from "../SendShortcutProvider";
 import { AttachmentMenu, AttachmentTray, type useImageAttachments } from "./Attachments";
@@ -30,8 +31,8 @@ export interface ComposerSettings {
 }
 
 function Configuration({ settings: s, description }: { settings: ComposerSettings; description: string }) {
-  const models = MODELS[s.agent].some((m) => m.value === s.model)
-    ? MODELS[s.agent] : [...MODELS[s.agent], { value: s.model, label: s.model }];
+  const catalog = useAgentCatalog(s.agent);
+  const models = modelChoices(catalog, s.model);
   return <FieldGroup className="gap-6">
     {s.onAgentChange && <Field>
       <FieldLabel>Agent</FieldLabel>
@@ -56,7 +57,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
       <FieldLabel htmlFor="composer-effort">Effort</FieldLabel>
       <Select value={s.effort} onValueChange={(v) => v && s.onEffortChange(v)}>
         <SelectTrigger id="composer-effort" className="w-auto min-w-32 rounded-full"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectGroup>{effortsForModel(s.agent, s.model).map((e) => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}</SelectGroup></SelectContent>
+        <SelectContent><SelectGroup>{effortChoices(catalog, s.model, s.effort).map((e) => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}</SelectGroup></SelectContent>
       </Select>
     </Field>
     <Field>
@@ -106,6 +107,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
+  const catalog = useAgentCatalog(settings.agent);
   const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy });
   const latest = useRef({ value, onChange }); latest.current = { value, onChange };
   const voice = useVoiceInput(settings.agent === "codex" ? skillContext : undefined, voiceScope, !!(disabled || busy), text => {
@@ -132,8 +134,8 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   }, [value, expanded]);
   const model = settings.model === DEFAULT_OPTION
     ? (settings.agent === "claude" ? "Claude" : "Codex")
-    : MODELS[settings.agent].find((m) => m.value === settings.model)?.label ?? settings.model;
-  const effort = settings.effort === DEFAULT_OPTION ? "" : effortsForModel(settings.agent, settings.model).find((e) => e.value === settings.effort)?.label ?? settings.effort;
+    : modelChoices(catalog, settings.model).find((m) => m.value === settings.model)?.label ?? settings.model;
+  const effort = settings.effort === DEFAULT_OPTION ? "" : effortChoices(catalog, settings.model, settings.effort).find((e) => e.value === settings.effort)?.label ?? settings.effort;
 
   return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
     className="rounded-3xl p-1"

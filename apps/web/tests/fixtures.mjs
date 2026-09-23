@@ -9,6 +9,25 @@
 
 const T = 1_700_000_000_000; // fixed epoch base; offsets keep group ordering stable
 
+// Runtime Codex model/list fixture. It intentionally has no retired aliases or
+// hard-coded frontend-only effort rules: the mock exercises the same response
+// shape the server projects from the installed App Server.
+export const modelCatalog = {
+  agent: "codex",
+  source: "runtime",
+  fetchedAt: T,
+  models: [
+    { value: "default", label: "default", efforts: ["default", "low", "medium", "high", "xhigh", "max", "ultra"].map(value => ({ value, label: value })) },
+    { value: "gpt-6-astra", label: "gpt-6-astra", efforts: ["default", "low", "medium", "high", "xhigh", "max", "ultra"].map(value => ({ value, label: value })) },
+    { value: "gpt-6-sol", label: "gpt-6-sol", efforts: ["default", "low", "medium", "high", "xhigh", "max", "ultra"].map(value => ({ value, label: value })) },
+    { value: "gpt-6-luna", label: "gpt-6-luna", efforts: ["default", "low", "medium", "high", "xhigh", "max"].map(value => ({ value, label: value })) },
+    { value: "gpt-5.6-sol", label: "gpt-5.6-sol", efforts: ["default", "low", "medium", "high", "xhigh", "max", "ultra"].map(value => ({ value, label: value })) },
+    { value: "gpt-5.6-terra", label: "gpt-5.6-terra", efforts: ["default", "low", "medium", "high", "xhigh", "max", "ultra"].map(value => ({ value, label: value })) },
+    { value: "gpt-5.6-luna", label: "gpt-5.6-luna", efforts: ["default", "low", "medium", "high", "xhigh", "max"].map(value => ({ value, label: value })) },
+    { value: "gpt-5.5", label: "gpt-5.5", efforts: ["default", "low", "medium", "high", "xhigh"].map(value => ({ value, label: value })) },
+  ],
+};
+
 // A deliberately long, space-free token used to stress overflow-wrap / the Radix
 // ScrollArea horizontal-overflow guard for long, unbroken content.
 const LONG_URL =

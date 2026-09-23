@@ -7,6 +7,7 @@ import test from "node:test";
 import { getRequestListener } from "@hono/node-server";
 import { AuthService } from "../src/auth.js";
 import { AccountLimitReader } from "../src/account-limits.js";
+import { defaultCodexModelCatalog } from "../src/model-catalog.js";
 import { nativeHome } from "../src/native-session.js";
 import { config } from "../src/config.js";
 import { Db } from "../src/db.js";
@@ -23,7 +24,7 @@ import { startSessionControl, sessionSocket } from "../src/session-control.js";
 import type { HttpDependencies } from "../src/http/types.js";
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDependencies, "updates" | "build"> = {}) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog">> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
@@ -32,8 +33,9 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDepend
   const auth = new AuthService(db, settings);
   const shutdown = new AbortController();
   const repoSettings = new SettingsStore(join(dir, "state"), settings.repoRoots);
+  const modelCatalog = extra.modelCatalog ?? { get: async () => defaultCodexModelCatalog() };
   const app = createApp({ db, hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
-    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service), ...extra });
+    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service), ...extra, modelCatalog });
   const cleanup: Array<() => Promise<void>> = [];
   t.after(async () => {
     shutdown.abort();
@@ -44,7 +46,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Pick<HttpDepend
     server.closeAllConnections();
     if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   });
-  return { dir, db, hub, service, auth, settings, repoSettings, shutdown, app, closeListener };
+  return { dir, db, hub, service, auth, settings, repoSettings, shutdown, modelCatalog, app, closeListener };
 }
 
 test("voice routes require authentication, reject non-Codex contexts and resolve the native home server-side", async t => {
@@ -64,6 +66,20 @@ test("voice routes require authentication, reject non-Codex contexts and resolve
   assert.equal((await f.app.request(`/api/voice/${id}/heartbeat`, { method: "POST", headers })).status, 410);
   assert.equal((await f.app.request(`/api/voice/${id}`, { method: "DELETE", headers })).status, 200);
   assert.equal((await f.app.request("/api/voice/not-an-id", { method: "DELETE", headers })).status, 400);
+});
+
+test("runtime model catalog is authenticated, scoped to the native Codex home, and not browser-cacheable", async t => {
+  const calls: string[] = [];
+  const f = fixture(t, true, { modelCatalog: { get: async (home) => { calls.push(home); return defaultCodexModelCatalog(); } } });
+  const now = Date.now();
+  f.db.createSession("catalog-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=catalog-session` };
+  assert.equal((await f.app.request("/api/model-catalog")).status, 401);
+  const response = await f.app.request("/api/model-catalog", { headers });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), defaultCodexModelCatalog());
+  assert.deepEqual(calls, [nativeHome("codex")]);
 });
 
 // Use the real Node adapter: cookies, streamed bodies and HEAD can differ from
@@ -317,7 +333,7 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
   const app = createApp({ db: f.db, hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
-    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service) });
+    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service), modelCatalog: f.modelCatalog });
   for (const path of ["/", "/sw.js", "/deep/link", "/assets/missing.js"]) {
     const response = await app.request(path);
     assert.equal(response.status, 200);

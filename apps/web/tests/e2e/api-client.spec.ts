@@ -99,3 +99,24 @@ test("typed reads deduplicate, invalidate on writes and reject responses from a 
   await api.listRepos(); assert.equal(reads, 5);
   invalidateClientReads(true);
 });
+
+test("runtime model catalog reads use the shared in-memory cache", async () => {
+  const { invalidateClientReads } = await import("../../src/read-cache");
+  invalidateClientReads(true);
+  let reads = 0;
+  const api = createApi({
+    version: () => "fixture", observeServerVersion: () => {},
+    beginBrowserWork: () => () => {}, onUnauthorized: () => assert.fail("unexpected 401"),
+  }, async (input) => {
+    assert.equal(String(input), "/api/model-catalog");
+    reads++;
+    return Response.json({ agent: "codex", source: "runtime", fetchedAt: 1, models: [{ value: "default", label: "default", efforts: [{ value: "default", label: "default" }] }] });
+  });
+  await Promise.all([api.modelCatalog(), api.modelCatalog()]);
+  assert.equal(reads, 1);
+  await api.modelCatalog();
+  assert.equal(reads, 1);
+  invalidateClientReads(true);
+  await api.modelCatalog();
+  assert.equal(reads, 2);
+});

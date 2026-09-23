@@ -7,6 +7,7 @@ import type { RoutineService } from "../routines.js";
 import type { TaskService } from "../service.js";
 import type { UpdateSettingsService } from "../update-settings.js";
 import type { SettingsStore } from "../settings.js";
+import type { CodexModelCatalogReader } from "../model-catalog.js";
 
 export interface HttpDependencies {
   terminals?: import("../terminal/service.js").TerminalService;
@@ -18,6 +19,7 @@ export interface HttpDependencies {
   auth: AuthService;
   push: PushService;
   routines: RoutineService;
+  modelCatalog: CodexModelCatalogReader;
   config: Pick<typeof config, "repoRoots" | "keepAliveMs" | "staticDir" | "cookieName">;
   build?: { version: string; sourceCommit: string; dirty: boolean };
   shutdown?: AbortSignal;
