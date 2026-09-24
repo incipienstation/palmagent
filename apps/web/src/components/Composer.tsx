@@ -1,7 +1,7 @@
 import { useVoiceInput } from "../use-voice-input";
 import { Alert } from "./ui/alert";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Check, ChevronDown, Loader2, Mic, Square } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Loader2, Mic, Settings2, Square } from "lucide-react";
 import { SkillChips, SkillMenu, SkillTrigger, useSkillPicker } from "./SkillPicker";
 import { Popover, PopoverAnchor } from "./ui/popover";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
@@ -184,17 +184,20 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     <InputGroupAddon align="inline-end" className="min-w-0 flex-1 justify-end gap-1">
       {voice.active && <VoiceWaveform levels={voice.meter} />}
       <Sheet open={configure && !settingsReadOnly} onOpenChange={setConfigure} repositionInputs={false} autoFocus>
-        {!voice.active && <SheetTrigger asChild>
-          <Button type="button" variant="ghost" disabled={disabled || busy || !!settingsReadOnly}
+        <SheetTrigger asChild>
+          <Button type="button" variant="ghost" size={voice.active ? "icon-lg" : "default"}
+            disabled={disabled || busy || !!settingsReadOnly}
             aria-label={settingsReadOnly ? "Current task settings" : "Configure task settings"}
-            title={settingsReadOnly ? `${model}${effort ? ` · ${effort}` : ""} · ${permission} — ${settingsReadOnly}` : `${model}${effort ? ` · ${effort}` : ""} · ${permission}`}
-            className="min-w-0 gap-1 rounded-full px-2">
-            <span className="truncate">{model}</span>
-            {effort && <span className="shrink-0 font-normal text-muted-foreground"> · {effort}</span>}
-            <span className="hidden shrink-0 font-normal text-muted-foreground sm:inline"> · {permission}</span>
-            {!settingsReadOnly && <ChevronDown data-icon="inline-end" />}
+            title={voice.active ? "Configure task settings" : settingsReadOnly ? `${model}${effort ? ` · ${effort}` : ""} · ${permission} — ${settingsReadOnly}` : `${model}${effort ? ` · ${effort}` : ""} · ${permission}`}
+            className={voice.active ? "shrink-0" : "min-w-0 gap-1 rounded-full px-2"}>
+            {voice.active ? <Settings2 /> : <>
+              <span className="truncate">{model}</span>
+              {effort && <span className="shrink-0 font-normal text-muted-foreground"> · {effort}</span>}
+              <span className="hidden shrink-0 font-normal text-muted-foreground sm:inline"> · {permission}</span>
+              {!settingsReadOnly && <ChevronDown data-icon="inline-end" />}
+            </>}
           </Button>
-        </SheetTrigger>}
+        </SheetTrigger>
         <SheetContent className="bottom-[var(--keyboard-inset,0px)] max-h-[calc(var(--app-height)-16px)] rounded-t-3xl"
           onCloseAutoFocus={(event) => {
             // Dismissal finishes after the closing animation. Do not steal
