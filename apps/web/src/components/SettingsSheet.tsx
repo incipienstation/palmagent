@@ -22,10 +22,9 @@ import { UpdateSettings } from "./UpdateSettings";
 import { RepoSettings } from "./RepoSettings";
 
 const themeLabels: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
-const modeLabels: Record<OutputMode, string> = { compact: "Compact", default: "Default", verbose: "Verbose" };
+const modeLabels: Record<OutputMode, string> = { compact: "Compact", verbose: "Verbose" };
 const modeDescriptions: Record<OutputMode, string> = {
   compact: "Focus on answers. Keep background activity folded.",
-  default: "Show answers with a short activity preview.",
   verbose: "Show all recorded activity in the conversation.",
 };
 
@@ -106,7 +105,6 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   <ToggleGroup type="single" value={mode} aria-labelledby={detailId} aria-describedby={`${detailId}-description`}
                     onValueChange={(value) => value && setMode(value as OutputMode)}>
                     <ToggleGroupItem value="compact" aria-label="Compact output">Compact</ToggleGroupItem>
-                    <ToggleGroupItem value="default" aria-label="Default output">Default</ToggleGroupItem>
                     <ToggleGroupItem value="verbose" aria-label="Verbose output">Verbose</ToggleGroupItem>
                   </ToggleGroup>
                   <FieldDescription id={`${detailId}-description`} className="text-xs">{modeDescriptions[mode]}</FieldDescription>

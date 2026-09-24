@@ -64,7 +64,6 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
         }
         failure.items.push(item);
         failure.completed = false;
-        if (mode === "default") group = undefined;
         continue;
       }
       if (item.kind === "result" && failure) failure.completed = true;
@@ -76,17 +75,15 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
           rows.push(group);
         }
         group.items.push(item);
-        if (item === latestProgress && (active || mode === "default") && item.kind === "assistant_text") group.preview = item.text;
+        if (item === latestProgress && active && item.kind === "assistant_text") group.preview = item.text;
       }
       if (!background) {
         rows.push({ type: "message", key: item.key, item });
-        if (mode === "default") group = undefined;
       }
       if (item.kind === "result" && !failed(item) && typeof p.result === "string" && p.result.trim() && !texts.has(p.result.trim())) {
         const answer: LogItem = { key: item.key, kind: "assistant_text", agent: item.event.agent, text: p.result, phase: "final" };
         rows.push({ type: "message", key: item.key, item: answer });
         texts.add(p.result.trim());
-        if (mode === "default") group = undefined;
       }
     }
     // Lifecycle/result-only bands do not deserve their own row. Retain them in
@@ -100,6 +97,13 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
       if (keep.has(group)) continue;
       const target = work.find((candidate) => candidate.key > group.key) ?? work.at(-1);
       if (target) target.items = [...target.items, ...group.items].sort((a, b) => a.key - b.key);
+    }
+    // A lifecycle-only active row can later merge into its first tool row.
+    // Keep the earliest member sequence as the React/Virtuoso key so streaming
+    // classification never remounts the disclosure and flashes its content.
+    for (const group of groups) {
+      if (!keep.has(group)) continue;
+      group.key = Math.min(...group.items.map((item) => item.key));
     }
     const visible = rows.slice(start).filter((row) => row.type !== "activity" || keep.has(row));
     rows.splice(start, rows.length - start, ...visible);

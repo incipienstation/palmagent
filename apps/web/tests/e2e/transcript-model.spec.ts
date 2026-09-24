@@ -26,7 +26,7 @@ test("questions, approvals, failures, images and repeated answers across turns s
     event(6, "result", { result: "Done" }), event(7, "status", { subtype: "followup", text: "Again" }),
     event(8, "result", { result: "Done" }), event(9, "result", { is_error: true, result: "Failed" }),
     event(10, "status", { subtype: "process_exit", code: 1 })];
-  for (const mode of ["compact", "default"] as const) {
+  for (const mode of ["compact"] as const) {
     const rows = presentTranscript(log, mode, false);
     expect(rows.filter((r) => r.type === "message").map((r) => r.key)).toEqual([3, 4, 5, 6, 7, 8]);
   }
@@ -44,7 +44,7 @@ test("call lifecycle updates count as one failed tool inside activity", () => {
   expect(rows).toHaveLength(1);
 });
 
-for (const mode of ["compact", "default"] as const) {
+for (const mode of ["compact"] as const) {
   test(`${mode}: repeated failures stay folded and terminal signals share one run summary`, () => {
     const log = [event(1, "status", { subtype: "turn_started" }),
       ...Array.from({ length: 12 }, (_, i) => event(i + 2, "tool_result", { tool_use_id: `tool-${i}`, exit_code: 1, output: "failed command" })),

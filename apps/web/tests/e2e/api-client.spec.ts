@@ -23,7 +23,7 @@ test("browser RPC preserves URL encoding, version headers, write tracking, and a
   assert.equal(calls[0].init.body, '{"title":"updated"}');
   assert.equal(new Headers(calls[0].init.headers).get("content-type"), "application/json");
   const signal = new AbortController().signal;
-  await api.taskHistory(id, 12, signal);
+  await api.taskHistory(id, 12, "full", signal);
   assert.equal(calls[1].url, `/api/tasks/${encodeURIComponent(id)}/history?before=12`);
   assert.equal(calls[1].init.signal, signal);
   await api.taskHistory(id);

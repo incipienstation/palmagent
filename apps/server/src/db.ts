@@ -6,7 +6,7 @@ import { dirname } from "node:path";
 import type {
   AgentEvent, AgentKind, AgentUsage, Permission, PermissionRequest, PrRef, PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, TaskState, TaskStatus,
 } from "@palmagent/shared";
-import { HISTORY_PAGE_EVENTS, makePrRef } from "@palmagent/shared";
+import { deferActivityEventDetails, HISTORY_PAGE_EVENTS, makePrRef } from "@palmagent/shared";
 import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 
 // SQLite holds metadata + the append-only event log only. Resume still reads the
@@ -553,21 +553,36 @@ export class Db {
     return (previous?.seq ?? 0) + 1;
   }
 
-  historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId)): import("@palmagent/shared").TaskHistoryResponse {
+  historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId), includeActivityDetails = true): import("@palmagent/shared").TaskHistoryResponse {
     const start = this.historyStart(taskId, before);
     const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
       WHERE e.task_id = ? AND e.seq >= ? AND e.seq < ? ORDER BY e.seq`)
       .all(taskId, start, before) as EventJoinRow[];
-    return { events: rows.map((row) => ({ seq: row.seq, event: rowToEvent(row).event })),
+    return { events: rows.map((row) => {
+      const event = rowToEvent(row).event;
+      if (includeActivityDetails) return { seq: row.seq, event };
+      const compact = deferActivityEventDetails(event);
+      return { seq: row.seq, ...compact };
+    }),
       before: start > 1 ? start : null, cursor };
+  }
+
+  activityDetails(taskId: string, from: number, through: number): import("@palmagent/shared").TaskActivityDetailsResponse {
+    const cursor = this.eventCursor(taskId);
+    const end = Math.min(through, cursor);
+    const rows = end < from ? [] : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+      FROM events e JOIN tasks t ON t.id = e.task_id
+      WHERE e.task_id = ? AND e.seq >= ? AND e.seq <= ? AND e.kind IN ('tool_call', 'tool_result') ORDER BY e.seq`)
+      .all(taskId, from, end) as EventJoinRow[];
+    return { events: rows.map((row) => ({ seq: row.seq, event: rowToEvent(row).event })), from, through: end, cursor };
   }
 
   // Capture the SSE resume boundary before selecting the page. The exclusive
   // SQL edge prevents a concurrent insert from leaking into REST beyond cursor.
-  latestHistoryPage(taskId: string): import("@palmagent/shared").TaskHistoryResponse {
+  latestHistoryPage(taskId: string, includeActivityDetails = true): import("@palmagent/shared").TaskHistoryResponse {
     const cursor = this.eventCursor(taskId);
-    return this.historyPage(taskId, cursor + 1, cursor);
+    return this.historyPage(taskId, cursor + 1, cursor, includeActivityDetails);
   }
 
   // ---- usage (per-agent aggregate over the result event log) ----

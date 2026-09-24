@@ -1,18 +1,19 @@
 import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentEvent, AgentEventKind, AgentKind, AssistantTextPayload, SseFrame, TaskHistoryResponse, TaskState } from "@palmagent/shared";
+import { deferActivityEventDetails, type AgentEvent, type AgentEventKind, type AgentKind, type AssistantTextPayload, type SseFrame, type TaskHistoryResponse, type TaskState } from "@palmagent/shared";
 import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
 import { api } from "../api";
 import { queryClient, taskHistoryKey, TASK_HISTORY_GC_TIME } from "../task-history-query";
+import { useOutputMode } from "../OutputModeProvider";
 import { connectSse, type ConnState } from "./sse";
 
 // The first event's durable sequence is the row key. Replacing a growing text
 // item preserves every other row's identity for memoized transcript rendering.
 export type LogItem =
-  | { key: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
-  | { key: number; kind: Exclude<AgentEventKind, "assistant_text">; event: AgentEvent };
+  | { key: number; endSeq?: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
+  | { key: number; endSeq?: number; kind: Exclude<AgentEventKind, "assistant_text">; event: AgentEvent; detailsDeferred?: boolean };
 export type { ConnState };
 
 interface TaskHistoryPage {
@@ -36,7 +37,7 @@ export interface TaskStream {
   task?: TaskState;
 }
 
-function append(items: LogItem[], event: AgentEvent, seq: number): void {
+function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferred = false): void {
   if (event.kind === "assistant_text") {
     const payload = (event.payload ?? {}) as Partial<AssistantTextPayload>;
     const text = typeof payload.text === "string" ? payload.text : "";
@@ -44,15 +45,31 @@ function append(items: LogItem[], event: AgentEvent, seq: number): void {
     const phase = payload.phase === "progress" || payload.phase === "final" ? payload.phase : undefined;
     const last = items.at(-1);
     if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && last.phase === phase) {
-      items[items.length - 1] = { ...last, text: last.text + text };
-    } else items.push({ key: seq, kind: "assistant_text", agent: event.agent, text, messageId, phase });
-  } else items.push({ key: seq, kind: event.kind, event });
+      items[items.length - 1] = { ...last, endSeq: seq, text: last.text + text };
+    } else items.push({ key: seq, endSeq: seq, kind: "assistant_text", agent: event.agent, text, messageId, phase });
+  } else items.push({ key: seq, endSeq: seq, kind: event.kind, event, ...(detailsDeferred ? { detailsDeferred: true } : {}) });
+}
+
+export function historyLogItems(events: TaskHistoryResponse["events"]): LogItem[] {
+  const items: LogItem[] = [];
+  for (const row of events) append(items, row.event, row.seq, row.detailsDeferred);
+  return items;
 }
 
 function pageItems(response: TaskHistoryResponse): TaskHistoryPage {
-  const items: LogItem[] = [];
-  for (const row of response.events) append(items, row.event, row.seq);
-  return { items, before: response.before, cursor: response.cursor };
+  return { items: historyLogItems(response.events), before: response.before, cursor: response.cursor };
+}
+
+function compactHistory(data: TaskHistoryData | undefined): TaskHistoryData | undefined {
+  if (!data) return;
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => {
+      if (item.kind === "assistant_text" || item.detailsDeferred) return item;
+      const compact = deferActivityEventDetails(item.event);
+      return compact.detailsDeferred ? { ...item, event: compact.event, detailsDeferred: true } : item;
+    }) })),
+  };
 }
 
 // Deploy handoff snapshots from the previous client stored one flat transcript.
@@ -74,16 +91,19 @@ function restoredHistory(value: unknown): TaskHistoryData | undefined {
 }
 
 export function useTaskStream(taskId: string): TaskStream {
-  const queryKey = useMemo(() => taskHistoryKey(taskId), [taskId]);
-  const initialData = useMemo(() => restoredHistory(readUpdateSnapshot(`history:${taskId}`)), [taskId]);
+  const { mode } = useOutputMode();
+  const queryKey = useMemo(() => taskHistoryKey(taskId, mode), [taskId, mode]);
+  const initialData = useMemo(() => mode === "compact"
+    ? compactHistory(restoredHistory(readUpdateSnapshot(`history:${taskId}`))) : undefined, [taskId, mode]);
   const history = useInfiniteQuery({
     queryKey,
-    queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, signal)),
+    queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, mode === "verbose" ? "full" : "summary", signal)),
     initialPageParam: null as number | null,
     getPreviousPageParam: (firstPage) => firstPage.before ?? undefined,
     getNextPageParam: () => undefined,
     initialData,
     initialDataUpdatedAt: initialData ? Date.now() : undefined,
+    placeholderData: (previousData) => previousData,
     // History changes flow through its scoped SSE connection. These defaults
     // are intentionally local to transcript queries, not application-wide.
     staleTime: Infinity,
@@ -100,6 +120,7 @@ export function useTaskStream(taskId: string): TaskStream {
   const loadingOlderRef = useRef<string | undefined>(undefined);
   const resumeLiveRef = useRef<() => void>(() => {});
   const loadEarlier = useCallback(() => {
+    if (history.isPlaceholderData) return;
     if (!history.data) {
       void history.refetch();
       return;
@@ -112,16 +133,16 @@ export function useTaskStream(taskId: string): TaskStream {
         resumeLiveRef.current();
       }
     });
-  }, [history.data, history.fetchPreviousPage, history.hasPreviousPage, history.refetch, taskId]);
+  }, [history.data, history.fetchPreviousPage, history.hasPreviousPage, history.isPlaceholderData, history.refetch, taskId]);
 
-  const historyReady = !!history.data;
+  const historyReady = !!history.data && !history.isPlaceholderData;
   useEffect(() => {
     if (!historyReady) return;
     const currentData = () => queryClient.getQueryData<TaskHistoryData>(queryKey);
     const initial = currentData();
     let lastSeq = initial?.pages.at(-1)?.cursor ?? 0;
     let pendingTask: TaskState | undefined;
-    let pendingEvents: Array<{ seq: number; event: AgentEvent }> = [];
+      let pendingEvents: Array<{ seq: number; event: AgentEvent; detailsDeferred?: boolean }> = [];
     let animation = 0;
     let disposed = false;
 
@@ -147,7 +168,7 @@ export function useTaskStream(taskId: string): TaskStream {
       pendingTask = undefined;
       if (events.length || task) updateLatestPage((page) => {
         const items = events.length ? [...page.items] : page.items;
-        for (const entry of events) append(items, entry.event, entry.seq);
+        for (const entry of events) append(items, entry.event, entry.seq, entry.detailsDeferred);
         return { ...page, items, cursor: Math.max(page.cursor, lastSeq), ...(task ? { task } : {}) };
       });
     };
@@ -157,7 +178,7 @@ export function useTaskStream(taskId: string): TaskStream {
     resumeLiveRef.current = schedule;
 
     const disconnect = connectSse(
-      `/api/stream?task=${encodeURIComponent(taskId)}`,
+      `/api/stream?task=${encodeURIComponent(taskId)}${mode === "compact" ? "&details=summary" : ""}`,
       (message) => {
         let frame: SseFrame;
         try { frame = JSON.parse(message.data) as SseFrame; } catch { return; }
@@ -178,7 +199,7 @@ export function useTaskStream(taskId: string): TaskStream {
         // Advance the reconnect cursor on receipt; publication may be batched to
         // the next frame or held until an older-page request finishes.
         lastSeq = seq;
-        pendingEvents.push({ seq, event: frame.event });
+        pendingEvents.push({ seq, event: frame.event, detailsDeferred: frame.detailsDeferred });
         schedule();
       },
       setConn,
@@ -193,8 +214,9 @@ export function useTaskStream(taskId: string): TaskStream {
       pendingEvents = [];
       pendingTask = undefined;
       resumeLiveRef.current = () => {};
+      if (mode === "compact") queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => compactHistory(data));
     };
-  }, [taskId, historyReady, queryKey]);
+  }, [taskId, historyReady, queryKey, mode]);
 
   const log = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data]);
   const cachedTask = history.data?.pages.at(-1)?.task;
