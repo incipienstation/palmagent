@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Scrolling up through older conversation history no longer remounts Activity rows and flashes them during page loads.
+
 ## 0.1.0-alpha.86
 
 ### Changed
