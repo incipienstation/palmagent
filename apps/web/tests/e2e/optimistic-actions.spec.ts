@@ -16,7 +16,7 @@ async function queueSetup(page: Page, messages: PendingMessage[] = []) {
   const task = { ...tasks.find(t => t.taskId === "t-run")!, messageQueue: { revision: 1, runId: "run-1", paused: false, messages } as MessageQueue };
   await page.route("**/api/tasks/t-run", route => route.fulfill({ json: { task } }));
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
   return task;
 }
 async function queueMenu(page: Page, text: string) {
@@ -220,7 +220,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
   await page.evaluate(() => { location.hash = "/routines"; });
   await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
   await page.evaluate(() => { location.hash = "/task/t-run"; });
-  await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
   await expect(pending).toContainText("Immediate delivery");
   task.messageQueue = { ...accepted, revision: 3, messages: [message] };
   await send(page, "t-run", { type: "tasks", tasks: [task] });
@@ -356,7 +356,7 @@ test("a lost send acknowledgment keeps the same id and original run when retried
   delayed.release(); await expect(page.getByTestId("toast")).toBeVisible();
   await page.evaluate(() => { location.hash = "/task/t-run"; });
   await expect(page.getByRole("textbox")).toHaveValue("Only deliver once");
-  await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);

@@ -129,12 +129,9 @@ export interface PushPayload {
 }
 
 // ---- SSE frames (the `data:` payload carried over text/event-stream) ----
-// Each frame is sent as a named SSE event. `event` frames also carry an `id:`
-// line — the global events.id on the inbox stream (`/api/stream`) or the
-// per-task seq on a scoped stream (`/api/stream?task=:id`) — so EventSource
-// replays via Last-Event-ID on reconnect. `tasks` frames carry no id (they are
-// state snapshots, not log entries) and a fresh one is sent on every connect.
-// An initial tail snapshot seeds id with history.after for native reconnects.
+// `event` frames carry an `id:` line with the global event id or scoped task
+// sequence. The server sends only events produced after each connection opens;
+// persisted history and reconnect gaps are read from REST.
 export interface SseEventFrame {
   type: "event";
   event: AgentEvent;
@@ -143,10 +140,10 @@ export interface SseEventFrame {
 export interface SseTasksFrame {
   type: "tasks";
   tasks: TaskState[];
-  // Initial scoped snapshot: replay ends at this per-task sequence (0 if empty).
-  replayThrough?: number;
+  // Durable per-task boundary captured when this connection subscribed (0 if empty).
+  // Clients load any missing events through this sequence using the REST history API.
+  historyThrough?: number;
   version?: string;
-  history?: { after: number; before: number | null };
 }
 // History pages use the same per-task sequence as the scoped SSE cursor.
 export interface TaskHistoryEvent {
@@ -158,9 +155,15 @@ export interface TaskHistoryEvent {
 export interface TaskHistoryResponse {
   events: TaskHistoryEvent[];
   before: number | null;
-  // Durable per-task high-water mark captured with the REST page. The client
-  // resumes SSE after this sequence so events written during the request replay.
+  // Durable per-task high-water mark captured with the REST page.
   cursor: number;
+}
+export interface TaskHistoryChangesResponse {
+  events: TaskHistoryEvent[];
+  after: number;
+  through: number;
+  // Cursor to use for the next bounded page, or null when caught up through `through`.
+  nextAfter: number | null;
 }
 export interface TaskActivityDetailsResponse {
   events: TaskHistoryEvent[];

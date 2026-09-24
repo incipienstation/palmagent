@@ -10,7 +10,7 @@ async function reply(page: Page, text: string, running = false) {
   await installScopedStream(page);
   await open(page, running ? "t-run-charts" : "t-idle-rich");
   const taskId = running ? "t-run-charts" : "t-idle-rich";
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 0 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
   await send(page, taskId, { type: "event", event: {
     taskId, agent: "codex", ts: 1, kind: "assistant_text", payload: { text, phase: "final", messageId: "image-reply" },
   } }, 1);
@@ -113,7 +113,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
     await installScopedStream(page);
     await open(page, taskId);
     const replay = async () => {
-      await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 0 });
+      await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
       await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 1, kind: "status",
         payload: { subtype: "followup", text: "Please inspect this image", images: 1,
           attachments: [{ id, mediaType: "image/png", size: png.length }] } } }, 1);

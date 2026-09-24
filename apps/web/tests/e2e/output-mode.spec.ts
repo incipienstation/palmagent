@@ -42,7 +42,7 @@ for (const mode of ["compact"] as const) {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await installScopedStream(page);
     await open(page, "t-run");
-    await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 0 });
+    await send(page, "t-run", { type: "tasks", tasks: [], historyThrough: 0 });
     let seq = 0;
     const emit = async (kind: string, payload: unknown) => send(page, "t-run", { type: "event", event: {
       taskId: "t-run", agent: "codex", ts: seq, kind, payload,
@@ -84,7 +84,7 @@ test("late classification preserves open activity and separate assistant message
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   await installScopedStream(page);
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [], historyThrough: 0 });
   let seq = 0;
   const emit = (kind: string, payload: unknown) => send(page, "t-run", { type: "event", event: {
     taskId: "t-run", agent: "claude", ts: seq, kind, payload,
@@ -110,7 +110,7 @@ for (const mode of ["compact"] as const) {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await installScopedStream(page);
     await open(page, "t-run");
-    await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 0 });
+    await send(page, "t-run", { type: "tasks", tasks: [], historyThrough: 0 });
     let seq = 0;
     const emit = (kind: string, payload: unknown) => send(page, "t-run", { type: "event", event: {
       taskId: "t-run", agent: "codex", ts: seq, kind, payload,

@@ -49,6 +49,7 @@ export type ApiSchema = {
   "/api/tasks/:id/attachments/:attachmentId": { $get: { input: { param: { id: string; attachmentId: string } }; output: Uint8Array<ArrayBuffer>; outputFormat: "body"; status: 200 } };
   "/api/tasks/:id/image": { $get: { input: Id & Query<{ path: string | string[] }>; output: Uint8Array<ArrayBuffer>; outputFormat: "body"; status: 200 } };
   "/api/tasks/:id/history": { $get: Endpoint<Id & Query<{ before?: string; details?: "summary" | "full" }>, Response.TaskHistoryResponse> };
+  "/api/tasks/:id/history/changes": { $get: Endpoint<Id & Query<{ after: string | string[]; through?: string; details?: "summary" | "full" }>, Response.TaskHistoryChangesResponse> };
   "/api/tasks/:id/history/details": { $get: Endpoint<Id & Query<{ from: string | string[]; through: string | string[] }>, Response.TaskActivityDetailsResponse> };
   "/api/tasks/:id/handoff": { $post: Endpoint<Id, SessionHandoffResponse> };
   "/api/tasks/:id/messages": { $post: Endpoint<Id & Json<SubmitMessage>, MessageQueue, 202> };

@@ -60,12 +60,20 @@ const historyCursor = z.string().regex(/^\d+$/).refine((value) => {
   const cursor = Number(value);
   return Number.isSafeInteger(cursor) && cursor >= 1;
 });
+const eventCursor = z.string().regex(/^\d+$/).refine((value) => {
+  const cursor = Number(value);
+  return Number.isSafeInteger(cursor) && cursor >= 0;
+});
 export const HistoryQuerySchema = z.object({ before: historyCursor.optional(), details: z.enum(["summary", "full"]).optional() });
+export const HistoryChangesQuerySchema = z.object({
+  after: eventCursor,
+  through: eventCursor.optional(),
+  details: z.enum(["summary", "full"]).optional(),
+});
 export const ActivityDetailsQuerySchema = z.object({ from: historyCursor, through: historyCursor });
 export const TaskImageQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
 export const StreamQuerySchema = z.object({
-  task: text.optional(), lastEventId: text.optional(),
-  tail: z.literal("1").optional(), snapshots: z.literal("1").optional(), details: z.enum(["summary", "full"]).optional(),
+  task: text.optional(), snapshots: z.literal("1").optional(), details: z.enum(["summary", "full"]).optional(),
 });
 export const PathQuerySchema = z.object({ path: text.optional() });
 export const DiscoverQuerySchema = z.object({ refresh: z.enum(["0", "1"]).optional() });

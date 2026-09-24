@@ -219,17 +219,18 @@ guess which text is safe to fold.
   `Permission`, `Repo`, REST DTOs, `SseFrame`, and shared branding). Nothing is
   redefined. Type-only imports are erased by esbuild; shared intentionally uses
   source exports, so it needs no separate build step here.
-- **`EventSource`, not fetch streaming.** On reconnect the browser resends
-  `Last-Event-ID`; the server replays events after it. Task detail starts at the
-  durable cursor returned by the latest REST history page, then uses the scoped
-  stream for new deltas and reconnect recovery. The per-task `seq` in each SSE
-  `id:` prevents gaps and duplicate rendering. The inbox requests `snapshots=1`
-  to omit unused event bodies.
+- **`EventSource`, not fetch streaming.** Each connection sends a task snapshot
+  with a durable event boundary. Task detail loads any gap through that boundary
+  from bounded REST history pages, then applies only events produced after the
+  stream subscribed. The per-task `seq` in each SSE `id:` orders live deltas;
+  persisted events and Activity details stay on REST. The inbox requests
+  `snapshots=1` to omit event bodies.
 - **Transcript rendering:** `GET /api/tasks/:id/history` returns the latest page;
   `?before=:seq` loads earlier pages. Pages target 200 events and include whole
   assistant messages so Markdown is never split at a page boundary. Compact pages
-  and scoped SSE frames retain Activity summaries while deferring tool inputs and
-  outputs; expanding a summary loads its details from REST. React Virtuoso
+  and live SSE frames retain Activity summaries while deferring tool inputs and
+  outputs; expanding a summary loads its details from REST. Reconnect gaps use
+  bounded `GET /api/tasks/:id/history/changes` pages. React Virtuoso
   renders nearby rows in the Radix scroll area; row expansion survives scrolling
   out of view, and live deltas publish once per animation frame. Long Markdown
   messages parse in a worker and reuse unchanged rendered blocks; worker failures
@@ -245,9 +246,9 @@ guess which text is safe to fold.
 - **Conversation history:** REST returns the latest whole-message page and older
   pages on demand. Compact and full history variants share a per-task TanStack
   Query infinite cache retained for up to five minutes, within a five-conversation /
-  4 MB serialized budget. Returning shows cached messages immediately; SSE resumes
-  after the REST page cursor and carries only new events. Activity details load on
-  expansion and then remain in a separately bounded cache. Oversized inactive
+  4 MB serialized budget. Returning shows cached messages immediately; REST fills
+  any gap to the new stream boundary, and SSE carries only new events. Activity
+  details load on expansion and then remain in a separately bounded cache. Oversized inactive
   conversations drop their oldest pages first. Authentication changes
   clear response and transcript caches.
 - **Service worker:** only the app shell is precached, with an offline navigation
@@ -262,10 +263,10 @@ guess which text is safe to fold.
 | Hashed JS, CSS, Markdown worker, icons | Workbox precache; hashed HTTP assets immutable |
 | HTML, service worker, manifest | HTTP revalidation; worker update bypasses HTTP cache |
 | Auth, push enrollment, task controls, settings | Network; API HTTP responses use no-store |
-| Task list and task state | SSE snapshots and sequence-based replay; no service-worker interception |
+| Task list and task state | SSE snapshots; no service-worker interception |
 | Latest and earlier transcript pages | REST, held in a bounded in-memory TanStack Query cache; Compact defers tool details |
 | Expanded Activity details | REST on expansion; bounded TanStack Query cache |
-| Live transcript deltas | Scoped SSE resumes after the REST snapshot cursor; Compact receives summary payloads |
+| Live transcript deltas | Scoped SSE sends only post-subscription events; REST fills reconnect gaps; Compact receives summary payloads |
 | Repositories (30s), routines (30s), usage (10s), model catalog (5m) | TanStack Query v5 in-memory cache with shared request deduplication and scoped invalidation |
 | Skills by task/repository context (10s) | Context-keyed TanStack Query cache; only fetched while the picker is open |
 | Routine run history | TanStack Query cache; agent history is fresh for 10s, script history is revalidated on open, and active runs poll every 3s |

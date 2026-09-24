@@ -9,17 +9,18 @@ export type ConnState = "connecting" | "open" | "reconnecting";
 // updating, the conn pill lies "open"). We fix that by re-dialing whenever the
 // page returns to the foreground or the network comes back online.
 //
-// Each re-dial passes the last seen event id as `?lastEventId=` so the server
-// replays only what was missed (cheap) — and it always resends a fresh `tasks`
-// snapshot on connect, which is what resyncs the inbox/detail after a gap. The
-// server prefers the Last-Event-ID *header* (used by EventSource's own native
-// reconnect) over the query param, so the two reconnect paths don't conflict.
+// Each re-dial gets a fresh task snapshot. Scoped clients use its durable
+// boundary to load any missed history from REST before applying new SSE events.
+export interface SseConnection {
+  reconnect: () => void;
+  close: () => void;
+}
+
 export function connectSse(
   baseUrl: string,
   onMessage: (e: MessageEvent) => void,
   onConn: (s: ConnState) => void,
-  getLastId: () => string | number | undefined,
-): () => void {
+): SseConnection {
   let es: EventSource | null = null;
   let stopped = false;
 
@@ -27,11 +28,7 @@ export function connectSse(
     if (stopped || streamsPaused()) return;
     es?.close();
     onConn("connecting");
-    const lastId = getLastId();
-    const url = lastId !== undefined && lastId !== ""
-      ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lastEventId=${encodeURIComponent(String(lastId))}`
-      : baseUrl;
-    es = new EventSource(url);
+    es = new EventSource(baseUrl);
     es.onopen = () => onConn("open");
     es.onerror = () => {
       onConn("reconnecting");
@@ -43,10 +40,8 @@ export function connectSse(
   };
 
   // Re-dial whenever the page returns to the foreground (or the network comes
-  // back). We can't trust readyState here: mobile often leaves a dead socket
-  // reporting OPEN, so a guard would skip exactly the stale case we're fixing.
-  // The re-dial is cheap — a fresh `tasks` snapshot plus replay only past the
-  // last event id — so unconditionally reconnecting on foreground is the safe call.
+  // back). Mobile can leave a dead socket reporting OPEN, so always obtain a
+  // fresh snapshot and let the scoped client reconcile the REST boundary.
   const onForeground = () => {
     if (document.visibilityState === "visible") open();
   };
@@ -59,11 +54,14 @@ export function connectSse(
   document.addEventListener("visibilitychange", onForeground);
   window.addEventListener("online", open);
 
-  return () => {
-    stopped = true;
-    offPause();
-    es?.close();
-    document.removeEventListener("visibilitychange", onForeground);
-    window.removeEventListener("online", open);
+  return {
+    reconnect: open,
+    close: () => {
+      stopped = true;
+      offPause();
+      es?.close();
+      document.removeEventListener("visibilitychange", onForeground);
+      window.removeEventListener("online", open);
+    },
   };
 }

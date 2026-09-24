@@ -196,7 +196,8 @@ async function run() {
     console.log("[test] repository selection survives without registering it automatically");
 
     // Keep an earlier conversation page and its reading position through an
-    // offline delay and transition. Stream reconnection must use its cursor.
+    // offline delay and transition. REST restores saved history; SSE starts at
+    // the live boundary and carries no history cursor in its URL.
     await page.evaluate(() => { localStorage.setItem("pref:output-mode", "verbose"); });
     await page.goto("/#/task/t-run");
     await page.reload();
@@ -241,7 +242,8 @@ async function run() {
       console.log("[test] conversation position", { expected: position, actual: await transcript.evaluate((el) => el.scrollTop), reconnects });
       throw error;
     });
-    assert(reconnects.some((url) => url.includes("lastEventId=440")), "restored history resumes its durable stream cursor");
+    assert(reconnects.length > 0, "the task stream reconnects after recovery");
+    assert(reconnects.every((url) => !new URL(url).searchParams.has("lastEventId")), "history cursors stay on REST");
     console.log("[test] earlier history, conversation position, and drafts survive offline recovery");
 
     // Manual installation also finishes automatically, with automatic updates

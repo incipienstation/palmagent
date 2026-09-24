@@ -9,7 +9,7 @@ async function reply(page: Page, text: string, running = false) {
   await installScopedStream(page);
   const taskId = running ? "t-run-charts" : "t-idle-rich";
   await open(page, taskId);
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 0 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
   await send(page, taskId, { type: "event", event: {
     taskId, agent: "codex", ts: 1, kind: "assistant_text", payload: { text, messageId: "mermaid-reply" },
   } }, 1);

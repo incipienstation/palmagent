@@ -113,6 +113,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal) => request(() => tasks.history.$get({
       param: idParam(id), query: { ...(before === undefined ? {} : { before: String(before) }), ...(details === "summary" ? { details } : {}) },
     }, { init: { signal } })),
+    taskHistoryChanges: (id: string, after: number, through: number, details: "summary" | "full" = "full", signal?: AbortSignal) => request(() => tasks.history.changes.$get({
+      param: idParam(id), query: { after: String(after), through: String(through), ...(details === "summary" ? { details } : {}) },
+    }, { init: { signal } })),
     taskActivityDetails: (id: string, from: number, through: number, signal?: AbortSignal) => request(() => tasks.history.details.$get({
       param: idParam(id), query: { from: String(from), through: String(through) },
     }, { init: { signal } })),

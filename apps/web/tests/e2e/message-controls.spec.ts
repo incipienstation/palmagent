@@ -27,7 +27,7 @@ async function setup(page: Page, idle = false) {
     await route.fulfill({ json: state });
   });
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, ...(idle ? { status: "idle" as const } : {}), messageQueue: state }], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, ...(idle ? { status: "idle" as const } : {}), messageQueue: state }], historyThrough: 0 });
   return { calls, state };
 }
 

@@ -178,14 +178,15 @@ spawn(process.execPath, ["--import", "tsx", ${JSON.stringify(join(serverDir, "sr
   return c;
 }
 
-async function replay(c, taskId, cursor, global = false) {
+async function observeStream(c, taskId, global = false) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1000);
   const ids = [];
   let buffer = "";
+  let snapshot;
   try {
     const response = await fetch(c.base + "/api/stream" + (global ? "" : "?task=" + taskId), {
-      headers: { "Last-Event-ID": String(cursor) }, signal: controller.signal,
+      headers: { "Last-Event-ID": "2" }, signal: controller.signal,
     });
     assert(response.ok);
     for await (const chunk of response.body) {
@@ -196,6 +197,11 @@ async function replay(c, taskId, cursor, global = false) {
         buffer = buffer.slice(end + 2);
         const match = /^id: (\d+)$/m.exec(frame);
         if (match) ids.push(Number(match[1]));
+        const data = /^data: (.+)$/m.exec(frame);
+        if (data) {
+          const parsed = JSON.parse(data[1]);
+          if (parsed.type === "tasks") snapshot = parsed;
+        }
       }
     }
   } catch (error) {
@@ -204,13 +210,13 @@ async function replay(c, taskId, cursor, global = false) {
     clearTimeout(timer);
     controller.abort();
   }
-  return ids;
+  return { ids, snapshot };
 }
 
 // Each case owns its environment, database, sockets and child process groups.
 describe("isolated lifecycle contracts", { concurrency: 2 }, () => {
 for (const agent of ["claude", "codex"]) {
-  test(`${agent}: web crash preserves CLI and replays events once`, options, async (t) => {
+  test(`${agent}: web crash preserves CLI and REST owns persisted event recovery`, options, async (t) => {
     const c = await harness(t);
     const task = await c.create(agent, "one");
     const child = await c.ready("one");
@@ -230,8 +236,18 @@ for (const agent of ["claude", "codex"]) {
     assert.equal(rows.filter((row) => row.kind === "result").length, 1);
     await c.restart();
     assert.deepEqual(c.rows(task.taskId), rows);
-    assert.deepEqual(await replay(c, task.taskId, 2), rows.filter((row) => row.seq > 2).map((row) => row.seq));
-    assert.deepEqual(await replay(c, task.taskId, 2, true), rows.filter((row) => row.id > 2).map((row) => row.id));
+    const through = rows.at(-1).seq;
+    const catchupResponse = await fetch(c.base + `/api/tasks/${task.taskId}/history/changes?after=2&through=${through}`);
+    assert.equal(catchupResponse.status, 200);
+    assert.equal(catchupResponse.headers.get("cache-control"), "no-store");
+    const catchup = await catchupResponse.json();
+    assert.deepEqual(catchup.events.map((row) => row.seq), rows.filter((row) => row.seq > 2).map((row) => row.seq));
+    const scoped = await observeStream(c, task.taskId);
+    assert.equal(scoped.snapshot.historyThrough, through);
+    assert.deepEqual(scoped.ids, [], "persisted rows are not replayed over scoped SSE");
+    const inbox = await observeStream(c, task.taskId, true);
+    assert.equal(inbox.snapshot.historyThrough, undefined);
+    assert.deepEqual(inbox.ids, [], "persisted rows are not replayed over inbox SSE");
   });
 
   test(`${agent}: graceful view restart preserves the same running process and session`, options, async (t) => {

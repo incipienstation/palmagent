@@ -17,8 +17,8 @@ export interface Inbox {
   loading: boolean;
 }
 
-// The inbox needs only fresh task snapshots, including after mobile reconnects.
-// Event replay is reserved for the selected session's scoped stream.
+// The inbox needs fresh task snapshots, including after mobile reconnects.
+// The selected session owns the scoped chat event stream.
 export function useInbox(): Inbox {
   const mutations = useTaskMutations();
   const [tasks, setTasks] = useState<TaskState[]>([]);
@@ -27,7 +27,7 @@ export function useInbox(): Inbox {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    return connectSse(
+    const connection = connectSse(
       "/api/stream?snapshots=1",
       (e) => {
         let frame: SseFrame;
@@ -52,8 +52,8 @@ export function useInbox(): Inbox {
         if (frame.type === "updates") updatesChanged();
       },
       setConn,
-      () => undefined,
     );
+    return () => connection.close();
   }, []);
 
   return { tasks: tasks.filter(task => !mutations.get(task.taskId)?.hidden).map(task => projectTask(task, mutations)!), conn, loading };

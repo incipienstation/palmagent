@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Returning to a conversation now fills transcript and Activity gaps over REST; SSE carries only new live output.
+
 ## 0.1.0-alpha.83
 
 ### Changed

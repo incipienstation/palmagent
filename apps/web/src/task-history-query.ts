@@ -12,6 +12,8 @@ const ACTIVITY_DETAILS_KEY = "task-activity-details";
 
 export const taskHistoryKey = (taskId: string, mode: "compact" | "verbose" = "compact") =>
   mode === "compact" ? [HISTORY_KEY, taskId] as const : [HISTORY_KEY, taskId, "full"] as const;
+export const taskHistoryChangesKey = (taskId: string, after: number, through: number, mode: "compact" | "verbose") =>
+  ["task-history-changes", taskId, after, through, mode] as const;
 // `from` identifies one Activity; its `through` watermark advances while live
 // and is refreshed into the same cache entry when the Activity grows.
 export const taskActivityDetailsKey = (taskId: string, from: number) =>
@@ -72,7 +74,7 @@ function pruneInactiveHistory(): void {
     .sort((a, b) => a.usedAt - b.usedAt);
 
   // Trim old pages from an oversized inactive chat first. The latest page
-  // remains the SSE resume point; its `before` cursor still loads older rows.
+  // retains the durable boundary for REST catch-up; `before` loads older rows.
   for (const entry of entries) {
     let pages = entry.data.pages;
     let pageParams = entry.data.pageParams;

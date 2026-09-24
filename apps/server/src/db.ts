@@ -10,9 +10,8 @@ import { deferActivityEventDetails, HISTORY_PAGE_EVENTS, makePrRef } from "@palm
 import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 
 // SQLite holds metadata + the append-only event log only. Resume still reads the
-// CLIs' local transcripts — there is no external session store. The event log
-// backs SSE replay (Last-Event-ID): `events.id` is the global monotonic id and
-// `events.seq` is per-task monotonic (for scoped streams).
+// CLIs' local transcripts — there is no external session store. `events.id` is
+// the global monotonic id and `events.seq` is per-task monotonic.
 
 export interface EventRow {
   id: number; // global, AUTOINCREMENT — SSE id on the inbox stream
@@ -504,7 +503,7 @@ export class Db {
     return ids;
   }
 
-  // ---- events (append-only log; backs SSE replay) ----
+  // ---- events (append-only log; backs REST history and live event publication) ----
   insertEvent(taskId: string, kind: string, payload: unknown, ts: number): { id: number; seq: number } {
     const info = this.insertEventStmt.run(taskId, taskId, kind, JSON.stringify(payload ?? null), ts);
     const id = Number(info.lastInsertRowid);
@@ -512,7 +511,7 @@ export class Db {
     return { id, seq };
   }
 
-  // Durable boundary between SSE replay and queued live events.
+  // Durable boundary used to separate REST catch-up from newly published events.
   eventCursor(taskId?: string): number {
     const row = taskId
       ? this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS cursor FROM events WHERE task_id = ?").get(taskId)
@@ -520,7 +519,7 @@ export class Db {
     return (row as { cursor: number }).cursor;
   }
 
-  // Replay for the inbox stream: rows whose global id is past Last-Event-ID.
+  // Query rows after a global event id; REST history remains task-scoped.
   eventsAfterGlobal(afterId: number, limit = 5000): EventRow[] {
     const rows = this.db.prepare(
       `SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
@@ -529,7 +528,7 @@ export class Db {
     ).all(afterId, limit) as EventJoinRow[];
     return rows.map(rowToEvent);
   }
-  // Replay for a scoped stream: a single task's rows past its Last-Event-ID (seq).
+  // Query rows after a task sequence for history checks and event inspection.
   eventsAfterSeq(taskId: string, afterSeq: number, limit = 5000): EventRow[] {
     const rows = this.db.prepare(
       `SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
@@ -568,6 +567,26 @@ export class Db {
       before: start > 1 ? start : null, cursor };
   }
 
+  // Bounded forward pagination closes gaps between a cached history cursor and
+  // the boundary attached to a new live stream. The caller keeps `through`
+  // fixed across pages so newly written events remain on the SSE side of it.
+  historyChanges(taskId: string, after: number, through?: number, includeActivityDetails = true): import("@palmagent/shared").TaskHistoryChangesResponse {
+    const cursor = this.eventCursor(taskId);
+    const end = Math.max(after, Math.min(through ?? cursor, cursor));
+    const rows = end <= after ? [] : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+      FROM events e JOIN tasks t ON t.id = e.task_id
+      WHERE e.task_id = ? AND e.seq > ? AND e.seq <= ? ORDER BY e.seq LIMIT ?`)
+      .all(taskId, after, end, HISTORY_PAGE_EVENTS + 1) as EventJoinRow[];
+    const hasMore = rows.length > HISTORY_PAGE_EVENTS;
+    const page = (hasMore ? rows.slice(0, HISTORY_PAGE_EVENTS) : rows).map((row) => {
+      const event = rowToEvent(row).event;
+      if (includeActivityDetails) return { seq: row.seq, event };
+      const compact = deferActivityEventDetails(event);
+      return { seq: row.seq, ...compact };
+    });
+    return { events: page, after, through: end, nextAfter: hasMore ? page.at(-1)!.seq : null };
+  }
+
   activityDetails(taskId: string, from: number, through: number): import("@palmagent/shared").TaskActivityDetailsResponse {
     const cursor = this.eventCursor(taskId);
     const end = Math.min(through, cursor);
@@ -578,8 +597,8 @@ export class Db {
     return { events: rows.map((row) => ({ seq: row.seq, event: rowToEvent(row).event })), from, through: end, cursor };
   }
 
-  // Capture the SSE resume boundary before selecting the page. The exclusive
-  // SQL edge prevents a concurrent insert from leaking into REST beyond cursor.
+  // Capture the durable boundary before selecting the page. The exclusive SQL
+  // edge prevents a concurrent insert from leaking beyond the returned cursor.
   latestHistoryPage(taskId: string, includeActivityDetails = true): import("@palmagent/shared").TaskHistoryResponse {
     const cursor = this.eventCursor(taskId);
     return this.historyPage(taskId, cursor + 1, cursor, includeActivityDetails);
