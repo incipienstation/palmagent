@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.80
+
 ### Fixed
 
 - Returning to a recent task conversation now restores its cached messages immediately. Older history loads over REST, live replies resume over SSE, and streamed Markdown stays visible while long messages are parsed.
