@@ -1,7 +1,7 @@
 # @palmagent/web
 
-Mobile-first, **installable** PWA that drives the Palmagent backend over
-**SSE (read) + REST (control)**. React + Vite + TypeScript, service worker via
+Mobile-first, **installable** PWA that uses **REST for conversation history and
+controls, and SSE for task state and live updates**. React + Vite + TypeScript, service worker via
 `vite-plugin-pwa` (Workbox). The event log renders normalized `AgentEvent` records. Account-limit views
 follow each provider's quota structure.
 
@@ -220,20 +220,19 @@ guess which text is safe to fold.
   redefined. Type-only imports are erased by esbuild; shared intentionally uses
   source exports, so it needs no separate build step here.
 - **`EventSource`, not fetch streaming.** On reconnect the browser resends
-  `Last-Event-ID`; the server replays everything after it. The scoped stream
-  additionally gates on the per-task `seq` (carried on the SSE `id:` line) so a
-  replayed event is never rendered twice — no gaps, no dupes.
-- **History and rendering:** the scoped stream requests a recent page with `tail=1`.
-  Its initial snapshot identifies the replay boundary and older-history cursor;
-  `GET /api/tasks/:id/history?before=:seq` loads earlier pages without changing the
-  live cursor. Pages target 200 events and include whole assistant messages so
-  Markdown is never split at a page boundary. React Virtuoso renders nearby rows
-  in the Radix scroll area;
-  row expansion survives scrolling out of view, and live events publish once per
-  animation frame. Active and long Markdown messages parse in a worker and reuse unchanged
-  rendered blocks; worker failures retain readable plain text. Task snapshots reuse
-  unchanged rows, and the inbox retains its search and reading position across navigation.
-  The inbox requests `snapshots=1` to omit unused event bodies.
+  `Last-Event-ID`; the server replays events after it. Task detail starts at the
+  durable cursor returned by the latest REST history page, then uses the scoped
+  stream for new deltas and reconnect recovery. The per-task `seq` in each SSE
+  `id:` prevents gaps and duplicate rendering. The inbox requests `snapshots=1`
+  to omit unused event bodies.
+- **Transcript rendering:** `GET /api/tasks/:id/history` returns the latest page;
+  `?before=:seq` loads earlier pages. Pages target 200 events and include whole
+  assistant messages so Markdown is never split at a page boundary. React Virtuoso
+  renders nearby rows in the Radix scroll area; row expansion survives scrolling
+  out of view, and live deltas publish once per animation frame. Long Markdown
+  messages parse in a worker and reuse unchanged rendered blocks; worker failures
+  retain readable plain text. Task snapshots reuse unchanged rows, and the inbox
+  retains its search and reading position across navigation.
 - **Client caching:** repositories and routines reuse successful reads in memory for
   30 seconds; usage and routine runs for 10 seconds. Concurrent reads share a
   request. Mutations invalidate before and after the request, including failed
@@ -241,11 +240,13 @@ guess which text is safe to fold.
   Foreground and online transitions expire REST reads and refresh mounted views. Task snapshots invalidate
   usage and run history. Authentication, settings, discovery, filesystem checks,
   live task state, and account limits always reach the network.
-- **Conversation navigation:** the last five visited transcripts are retained in
-  memory for up to five minutes, within a 4 MB serialized-size budget. Returning
-  shows the retained messages and resumes SSE after the last received sequence,
-  preserving loaded older pages. Oversized transcripts reload the recent tail.
-  Authentication changes clear response and transcript caches.
+- **Conversation history:** REST returns the latest whole-message page and older
+  pages on demand. A per-task TanStack Query infinite cache retains recent pages
+  in memory for up to five minutes, within a five-conversation / 4 MB serialized
+  budget. Returning shows cached messages immediately; SSE resumes after the
+  REST page cursor and carries only new events. Oversized inactive conversations
+  drop their oldest pages first. Authentication changes clear response and
+  transcript caches.
 - **Service worker:** only the app shell is precached, with an offline navigation
   fallback. API responses are never persisted or served as offline successes;
   an offline first load cannot authenticate. Upgrading removes the legacy API
@@ -258,8 +259,9 @@ guess which text is safe to fold.
 | Hashed JS, CSS, Markdown worker, icons | Workbox precache; hashed HTTP assets immutable |
 | HTML, service worker, manifest | HTTP revalidation; worker update bypasses HTTP cache |
 | Auth, push enrollment, task controls, settings | Network; API HTTP responses use no-store |
-| Task list and active transcript | SSE snapshots and sequence-based replay; no service-worker interception |
-| Earlier history pages | Retained with the bounded transcript; failed or aborted loads are retried |
+| Task list and task state | SSE snapshots and sequence-based replay; no service-worker interception |
+| Latest and earlier transcript pages | REST, held in a bounded in-memory TanStack Query cache; failed loads are retried |
+| Live transcript deltas | Scoped SSE resumes after the REST snapshot cursor |
 | Repositories, routines, usage, run history | Short memory reuse and concurrent request deduplication |
 | Discovery, path validation, filesystem browse | Network so external settings and filesystem changes remain authoritative |
 | Account limits | Network in the client; provider-scoped server cache owns freshness |

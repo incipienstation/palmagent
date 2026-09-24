@@ -30,8 +30,10 @@ async function clientTypeChecks(client: ReturnType<typeof hc<Api>>) {
   client.api.tasks[":id"].$get({ param: {} });
   // @ts-expect-error The schema requires a string title.
   client.api.tasks[":id"].$patch({ param: { id: "fixture" }, json: { title: 12 } });
-  // @ts-expect-error A history cursor is required and travels as query text.
-  client.api.tasks[":id"].history.$get({ param: { id: "fixture" }, query: {} });
+  const latestHistory = await client.api.tasks[":id"].history.$get({ param: { id: "fixture" }, query: {} });
+  if (latestHistory.ok) (await latestHistory.json()).cursor;
+  // @ts-expect-error A history cursor, when supplied, travels as query text.
+  client.api.tasks[":id"].history.$get({ param: { id: "fixture" }, query: { before: 12 } });
   // @ts-expect-error Image reads require an explicit local path.
   client.api.tasks[":id"].image.$get({ param: { id: "fixture" }, query: {} });
   // @ts-expect-error Unknown routes must not silently become fetch URLs.

@@ -149,7 +149,13 @@ export interface SseTasksFrame {
 }
 // History pages use the same per-task sequence as the scoped SSE cursor.
 export interface TaskHistoryEvent { seq: number; event: AgentEvent }
-export interface TaskHistoryResponse { events: TaskHistoryEvent[]; before: number | null }
+export interface TaskHistoryResponse {
+  events: TaskHistoryEvent[];
+  before: number | null;
+  // Durable per-task high-water mark captured with the REST page. The client
+  // resumes SSE after this sequence so events written during the request replay.
+  cursor: number;
+}
 export const HISTORY_PAGE_EVENTS = 200;
 export type SseFrame = SseEventFrame | SseTasksFrame | { type: "updates" };
 

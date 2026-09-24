@@ -33,6 +33,7 @@ test("large Markdown preserves cross-block references, tables, literal HTML and 
     "[Late reference][target]\n\n<script>window.markdownExecuted=true</script>\n\n" +
     "[Unsafe](javascript:alert(1))\n\n| A | B |\n|---|---|\n| one | two |\n\n```ts\nconst sample = 1;\n";
   await event(page, "t-run", 1, text);
+  await expect(page.getByText("Rendering message…", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "two", exact: true })).toBeVisible();
   await event(page, "t-run", 2, "```\n\n[target]: https://example.invalid/docs\n\nFinal streamed answer");
   await expect(page.getByRole("link", { name: "Late reference" })).toHaveAttribute("href", "https://example.invalid/docs");
@@ -55,6 +56,7 @@ test("unavailable Markdown workers retain readable content and later deltas", as
   await open(page, "t-run");
   await send(page, "t-run", { type: "tasks", tasks, replayThrough: 1 });
   await event(page, "t-run", 1, "Readable fallback ".repeat(300));
+  await expect(page.getByText("Rendering message…", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Readable fallback/)).toBeVisible();
   await event(page, "t-run", 2, " Last delta");
   await expect(page.getByText(/Last delta/)).toBeVisible();

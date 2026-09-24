@@ -8,6 +8,14 @@ test.use({ serviceWorkers: "block" });
 const source = tasks.find((t) => t.taskId === "t-idle-rich")!;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
 
+async function installHistory(page: import("@playwright/test").Page, kind: string, payload: unknown) {
+  await page.route("**/api/tasks/t-idle-rich/history*", (route) => route.fulfill({ json: {
+    events: [{ seq: 1, event: { taskId: source.taskId, agent: source.agent, ts: 0, kind, payload } }],
+    before: null,
+    cursor: 1,
+  } }));
+}
+
 test("mobile directory selection filters tasks and survives reload", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Wire the web QA harness")).toBeVisible();
@@ -59,9 +67,9 @@ test("handoff only releases on explicit action and offers a selectable native co
 });
 
 for (const owner of ["local", "returning"] as const) test(`${owner} ownership disables follow-up and archive while structured image outputs render`, async ({ page }) => {
+  await installHistory(page, "output_image", { mediaType: "image/png", data: png });
   await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body:
-    `data: ${JSON.stringify({ type: "tasks", tasks: [{ ...source, sessionControl: { owner, home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } }] })}\n\n` +
-    `id: 1\ndata: ${JSON.stringify({ type: "event", event: { taskId: source.taskId, agent: source.agent, kind: "output_image", ts: 0, payload: { mediaType: "image/png", data: png } } })}\n\n`,
+    `data: ${JSON.stringify({ type: "tasks", tasks: [{ ...source, sessionControl: { owner, home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } }] })}\n\n`,
   }));
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByRole("textbox")).toHaveCount(0);
@@ -99,9 +107,9 @@ test("a returned session requires a new release before showing its old shell com
 test("live preview is readable before handoff and enables input only when ownership transfers", async ({ page }) => {
   let owner: "returning" | "palmagent" = "returning";
   const current = () => ({ ...source, sessionControl: { owner, home: "/provider", transcript: "/provider/session.jsonl", cursor: 42, prefixHash: "fixture" } });
+  await installHistory(page, "assistant_text", { text: "Saved locally and visible before closing the CLI." });
   await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body:
-    `data: ${JSON.stringify({ type: "tasks", tasks: [current()] })}\n\n` +
-    `id: 1\ndata: ${JSON.stringify({ type: "event", event: { taskId: source.taskId, agent: source.agent, kind: "assistant_text", ts: 0, payload: { text: "Saved locally and visible before closing the CLI." } } })}\n\n`,
+    `data: ${JSON.stringify({ type: "tasks", tasks: [current()] })}\n\n`,
   }));
   await page.goto("/");
   const local = page.locator("section").filter({ has: page.getByRole("heading", { name: "Local sessions", exact: true }) });
@@ -125,9 +133,9 @@ test("live preview is readable before handoff and enables input only when owners
 
 test("a preview synchronization error retains visible history and explains why input is paused", async ({ page }) => {
   const task = { ...source, sessionControl: { owner: "returning", home: "/provider", transcript: "/provider/session.jsonl", cursor: 42, prefixHash: "fixture", error: "Native transcript changed before the synchronization cursor" } };
+  await installHistory(page, "assistant_text", { text: "Previously synchronized message" });
   await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body:
-    `data: ${JSON.stringify({ type: "tasks", tasks: [task] })}\n\n` +
-    `id: 1\ndata: ${JSON.stringify({ type: "event", event: { taskId: source.taskId, agent: source.agent, kind: "assistant_text", ts: 0, payload: { text: "Previously synchronized message" } } })}\n\n`,
+    `data: ${JSON.stringify({ type: "tasks", tasks: [task] })}\n\n`,
   }));
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByText("Previously synchronized message", { exact: true })).toBeVisible();

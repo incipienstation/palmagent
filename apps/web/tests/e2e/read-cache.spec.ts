@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { routines, routineRuns } from "../fixtures.mjs";
 import { ReadCache, readCache, invalidateClientReads } from "../../src/read-cache";
-import { HistoryCache, historyCache, type HistorySnapshot } from "../../src/history-cache";
+import { queryClient, taskHistoryKey } from "../../src/task-history-query";
 
 test("reads deduplicate, expire, retry failures and cannot refill after invalidation", async () => {
   let now = 0, calls = 0;
@@ -23,17 +23,18 @@ test("reads deduplicate, expire, retry failures and cannot refill after invalida
   expect(await cache.read("race", 10, load)).toBe(6);
 });
 
-test("history retains whole snapshots within time, count and size bounds", () => {
-  let now = 0;
-  const cache = new HistoryCache(1000, 2, () => now);
-  const snapshot: HistorySnapshot = { items: [], lastSeq: 12, before: 4 };
-  cache.set("a", snapshot); cache.set("b", snapshot);
-  expect(cache.get("a")).toBe(snapshot);
-  cache.set("c", snapshot); expect(cache.get("b")).toBeUndefined();
-  cache.set("a", { ...snapshot, items: [{ key: 1, kind: "assistant_text", agent: "codex", text: "x".repeat(1000) }] });
-  expect(cache.get("a")).toBeUndefined();
-  now = 300_001; expect(cache.get("c")).toBeUndefined();
-  cache.set("d", snapshot); cache.clear(); expect(cache.get("d")).toBeUndefined();
+test("inactive TanStack history stays within the transcript count and size budgets", async () => {
+  queryClient.clear();
+  const page = { items: [], before: null, cursor: 12 };
+  for (const id of ["a", "b", "c", "d", "e", "f"]) {
+    queryClient.setQueryData(taskHistoryKey(id), { pages: [page], pageParams: [null] });
+  }
+  await new Promise(resolve => setTimeout(resolve, 10));
+  expect(["a", "b", "c", "d", "e", "f"].filter(id => queryClient.getQueryData(taskHistoryKey(id)))).toHaveLength(5);
+  queryClient.setQueryData(taskHistoryKey("large"), { pages: [{ ...page, items: [{ key: 1, text: "x".repeat(2_100_000) }] }], pageParams: [null] });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  expect(queryClient.getQueryData(taskHistoryKey("large"))).toBeUndefined();
+  queryClient.clear();
 });
 
 test.describe("REST navigation reuse", () => {
@@ -126,10 +127,10 @@ test.describe("routine cache invalidation", () => {
 
 
 test("authentication changes clear both response and transcript caches", async () => {
-  historyCache.set("private-session", { items: [], lastSeq: 2, before: null });
+  queryClient.setQueryData(taskHistoryKey("private-session"), { pages: [{ items: [], cursor: 2, before: null }], pageParams: [null] });
   await readCache.read("/api/repos", 30_000, async () => "previous session");
   invalidateClientReads(true);
-  expect(historyCache.get("private-session")).toBeUndefined();
+  expect(queryClient.getQueryData(taskHistoryKey("private-session"))).toBeUndefined();
   expect(await readCache.read("/api/repos", 30_000, async () => "current session")).toBe("current session");
   invalidateClientReads(true);
 });

@@ -222,13 +222,14 @@ const server = createServer(async (req, res) => {
       if (historyMatch) {
         const id = decodeURIComponent(historyMatch[1]);
         const stream = events[id] ?? [];
-        const before = Number(url.searchParams.get("before"));
-        let start = Math.max(0, Math.min(stream.length, before - 1) - 200);
+        const requestedBefore = url.searchParams.get("before");
+        const cursor = requestedBefore === null ? stream.length : Number(requestedBefore) - 1;
+        let start = Math.max(0, Math.min(stream.length, cursor) - 200);
         while (start > 0 && stream[start]?.kind === "assistant_text" && stream[start - 1]?.kind === "assistant_text") start--;
         const agent = tasks.find((task) => task.taskId === id)?.agent ?? "codex";
-        return json(res, 200, { events: stream.slice(start, before - 1).map((event, i) => ({
+        return json(res, 200, { events: stream.slice(start, cursor).map((event, i) => ({
           seq: start + i + 1, event: { taskId: id, agent, ts: 0, ...event },
-        })), before: start > 0 ? start + 1 : null });
+        })), before: start > 0 ? start + 1 : null, cursor: stream.length });
       }
       if (pathname.startsWith("/api/tasks/")) {
         if (pathname.endsWith("/account-limits")) {

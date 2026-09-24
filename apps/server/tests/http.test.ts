@@ -310,7 +310,8 @@ test("SSE joins paginated replay to live output exactly once and releases slow o
       const next = await reader.read(); assert.equal(next.done, false);
       buffer += new TextDecoder().decode(next.value);
     }
-    assert.deepEqual(ids, Array.from({ length: target - 1 }, (_, i) => i + 2));
+    const firstId = 2; // Explicit cursors stay in the query until an event carries a real ID.
+    assert.deepEqual(ids, Array.from({ length: target - firstId + 1 }, (_, i) => i + firstId));
     await reader.cancel();
     assert.equal(subscribers, 0);
   }
@@ -437,6 +438,15 @@ test("recent history pages join live replay, and preserve whole messages", async
   f.db.insertEvent("t", "result", { usage: { input_tokens: 1234 } }, 1);
   for (let i = 2; i <= 1000; i++) f.db.insertEvent("t", "tool_result", { text: `row ${i}` }, i);
   await f.service.init();
+  const latest = await f.app.request("/api/tasks/t/history");
+  assert.equal(latest.status, 200);
+  assert.equal(latest.headers.get("cache-control"), "no-store");
+  const latestPage = await latest.json() as import("@palmagent/shared").TaskHistoryResponse;
+  assert.equal(latestPage.cursor, 1000);
+  assert.equal(latestPage.events.length, 200);
+  assert.equal(latestPage.events[0].seq, 801);
+  assert.equal(latestPage.before, 801);
+
   const response = await f.app.request("/api/stream?task=t&tail=1");
   const reader = response.body!.getReader();
   let buffer = new TextDecoder().decode((await reader.read()).value);
@@ -463,6 +473,7 @@ test("recent history pages join live replay, and preserve whole messages", async
     before = page.before;
   }
   assert.deepEqual(collected, Array.from({ length: 800 }, (_, i) => i + 1));
+  assert.equal((await f.app.request("/api/tasks/missing/history")).status, 404);
   assert.equal((await f.app.request("/api/tasks/missing/history?before=2")).status, 404);
   for (const value of ["", "0", "-1", "1.5", "NaN", "9007199254740992"]) {
     assert.equal((await f.app.request(`/api/tasks/t/history?before=${value}`)).status, 400);
@@ -482,10 +493,24 @@ test("recent history pages join live replay, and preserve whole messages", async
     const reader = resumed.body!.getReader();
     let chunk = new TextDecoder().decode((await reader.read()).value);
     assert.ok(!chunk.includes('"history"'));
-    while (!chunk.includes("id:")) chunk += new TextDecoder().decode((await reader.read()).value);
+    assert.match(chunk, /data: .*\"type\":\"tasks\"/);
+    assert.doesNotMatch(chunk, new RegExp(`id: ${cursor}\\ndata: .*\\"type\\":\\"tasks\\"`));
+    while (!new RegExp(`^id: ${cursor + 1}$`, "m").test(chunk)) chunk += new TextDecoder().decode((await reader.read()).value);
     assert.match(chunk, new RegExp(`id: ${cursor + 1}\\n`));
     await reader.cancel();
   }
+
+  // An event inserted after the REST page was captured is replayed from that
+  // cursor; the reconnect URL remains the fence until an event supplies an ID.
+  const racing = f.db.insertEvent("t", "tool_result", { text: "written after REST" }, 4000);
+  const caughtUp = await f.app.request(`/api/stream?task=t&lastEventId=${latestPage.cursor}`);
+  const caughtReader = caughtUp.body!.getReader();
+  let caught = new TextDecoder().decode((await caughtReader.read()).value);
+  while (!caught.includes(`id: ${racing.seq}\n`)) caught += new TextDecoder().decode((await caughtReader.read()).value);
+  assert.doesNotMatch(caught.slice(0, caught.indexOf('"type":"tasks"')), new RegExp(`id: ${latestPage.cursor}`));
+  assert.match(caught, /data: .*\"type\":\"tasks\"/);
+  assert.match(caught, new RegExp(`id: ${racing.seq}\\ndata: .*written after REST`));
+  await caughtReader.cancel();
 });
 
 test("snapshot-only inbox streams omit historical and live event bodies", async (t) => {

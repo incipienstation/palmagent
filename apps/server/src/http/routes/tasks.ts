@@ -46,9 +46,10 @@ export function taskRoutes({ service, db }: HttpDependencies) {
     .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;
       service.getTask(taskId);
-      const { before } = c.req.valid("query");
+      const { before: beforeText } = c.req.valid("query");
       c.header("cache-control", "no-store");
-      return c.json(db.historyPage(taskId, before), 200);
+      const before = beforeText === undefined ? undefined : Number(beforeText);
+      return c.json(before === undefined ? db.latestHistoryPage(taskId) : db.historyPage(taskId, before), 200);
     })
     .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))
