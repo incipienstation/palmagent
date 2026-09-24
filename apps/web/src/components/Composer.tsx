@@ -184,7 +184,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     <InputGroupAddon align="inline-end" className="min-w-0 flex-1 justify-end gap-1">
       {voice.active && <VoiceWaveform levels={voice.meter} />}
       <Sheet open={configure && !settingsReadOnly} onOpenChange={setConfigure} repositionInputs={false} autoFocus>
-        <SheetTrigger asChild>
+        {!voice.active && <SheetTrigger asChild>
           <Button type="button" variant="ghost" disabled={disabled || busy || !!settingsReadOnly}
             aria-label={settingsReadOnly ? "Current task settings" : "Configure task settings"}
             title={settingsReadOnly ? `${model}${effort ? ` · ${effort}` : ""} · ${permission} — ${settingsReadOnly}` : `${model}${effort ? ` · ${effort}` : ""} · ${permission}`}
@@ -194,7 +194,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
             <span className="hidden shrink-0 font-normal text-muted-foreground sm:inline"> · {permission}</span>
             {!settingsReadOnly && <ChevronDown data-icon="inline-end" />}
           </Button>
-        </SheetTrigger>
+        </SheetTrigger>}
         <SheetContent className="bottom-[var(--keyboard-inset,0px)] max-h-[calc(var(--app-height)-16px)] rounded-t-3xl"
           onCloseAutoFocus={(event) => {
             // Dismissal finishes after the closing animation. Do not steal
@@ -213,9 +213,9 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
           </div>
         </SheetContent>
       </Sheet>
-      {settings.agent === "codex" && <Button type="button" variant={voice.active ? "selected" : "ghost"} size="icon-lg"
+      {settings.agent === "codex" && <Button type="button" variant={voice.active ? "secondary" : "ghost"} size="icon-lg"
         className="shrink-0" aria-label={voice.active ? "Stop voice input" : "Start voice input"} title={voice.active ? "Stop voice input" : "Start voice input"}
-        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); voice.toggle(); }}>
+        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); setConfigure(false); voice.toggle(); }}>
         {voice.state === "starting" || voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
       {onStop && <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}

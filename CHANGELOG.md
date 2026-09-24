@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Composer model and effort controls are hidden during Codex dictation, and the recording stop control uses a secondary button treatment.
+
 ## 0.1.0-alpha.85
 
 ### Changed
