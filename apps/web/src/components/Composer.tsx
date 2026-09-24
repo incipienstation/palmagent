@@ -67,6 +67,14 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
   </FieldGroup>;
 }
 
+function VoiceWaveform({ levels }: { levels: number[] }) {
+  return <div aria-hidden="true" data-voice-waveform className="flex h-8 min-w-0 flex-1 items-center justify-center gap-[2px] overflow-hidden px-1">
+    {levels.map((level, index) => <span key={index}
+      className="h-full min-w-[2px] max-w-[3px] flex-1 rounded-full bg-muted-foreground/75 transition-[height] duration-75 motion-reduce:transition-none"
+      style={{ height: `${12 + Math.min(0.88, level) * 88}%` }} />)}
+  </div>;
+}
+
 export function Composer({ id, value, onChange, placeholder, label, action, onSend, onStop, stopping, busy, disabled, sendDisabled,
   attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange, voiceScope = id }: {
   id: string;
@@ -169,10 +177,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     </InputGroupAddon>}
     <InputGroupAddon align="inline-start" className="order-2 shrink-0">
       <AttachmentMenu open={menuOpen} onOpenChange={setMenuOpen} disabled={disabled || busy || attachments.preparing}
-        preparing={attachments.preparing} onAdd={(files) => void attachments.addFiles(files)} />
+        preparing={attachments.preparing} onAdd={(files) => void attachments.addFiles(files)}
+        voiceActive={voice.active} onCancelVoice={voice.cancel} />
       {skillContext && onSkillsChange && <SkillTrigger onClick={picker.trigger} disabled={disabled || busy} open={picker.open} />}
     </InputGroupAddon>
     <InputGroupAddon align="inline-end" className="min-w-0 flex-1 justify-end gap-1">
+      {voice.active && <VoiceWaveform levels={voice.meter} />}
       <Sheet open={configure && !settingsReadOnly} onOpenChange={setConfigure} repositionInputs={false} autoFocus>
         <SheetTrigger asChild>
           <Button type="button" variant="ghost" disabled={disabled || busy || !!settingsReadOnly}
@@ -205,7 +215,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       </Sheet>
       {settings.agent === "codex" && <Button type="button" variant={voice.active ? "selected" : "ghost"} size="icon-lg"
         className="shrink-0" aria-label={voice.active ? "Stop voice input" : "Start voice input"} title={voice.active ? "Stop voice input" : "Start voice input"}
-        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={voice.toggle}>
+        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); voice.toggle(); }}>
         {voice.state === "starting" || voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
       {onStop && <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}

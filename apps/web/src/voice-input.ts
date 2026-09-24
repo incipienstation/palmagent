@@ -3,6 +3,7 @@ import { api } from "./api";
 import { beginBrowserWork } from "./update-state";
 
 export type VoiceState = "idle" | "starting" | "listening" | "stopping";
+export const VOICE_METER_BARS = 17;
 
 // Only one microphone per page. This also covers two mounted composers.
 let current: VoiceInput | undefined;
@@ -25,7 +26,8 @@ export class VoiceInput {
   private seen = new Set<string>();
   constructor(private context: SkillContext, private insert: (text: string) => void,
     private status: (state: VoiceState) => void, private error: (message: string) => void,
-    private canInsert: () => boolean = () => true) {
+    private canInsert: () => boolean = () => true,
+    private meter: (levels: number[]) => void = () => {}) {
     current?.cancel(); current = this;
   }
 
@@ -51,9 +53,29 @@ export class VoiceInput {
       const analyser = this.audio.createAnalyser(); analyser.fftSize = 1024;
       this.audio.createMediaStreamSource(stream).connect(analyser);
       const wave = new Float32Array(analyser.fftSize);
+      const spectrum = new Uint8Array(analyser.frequencyBinCount);
       this.tick = setInterval(() => {
         if (!this.finishing) {
           analyser.getFloatTimeDomainData(wave);
+          const hasSpectrum = spectrum.length > 0 && typeof analyser.getByteFrequencyData === "function";
+          if (hasSpectrum) analyser.getByteFrequencyData(spectrum);
+          const levels = Array.from({ length: VOICE_METER_BARS }, (_, index) => {
+            if (hasSpectrum) {
+              const maxBin = Math.max(VOICE_METER_BARS, Math.floor(spectrum.length * 0.6));
+              const start = Math.floor((index / VOICE_METER_BARS) ** 2 * maxBin);
+              const end = Math.min(maxBin, Math.max(start + 1, Math.floor(((index + 1) / VOICE_METER_BARS) ** 2 * maxBin)));
+              let peak = 0;
+              for (let bin = start; bin < end; bin++) peak = Math.max(peak, spectrum[bin]);
+              return Math.max(0, Math.min(1, (peak - 24) / 170));
+            }
+            const start = Math.floor(index * wave.length / VOICE_METER_BARS);
+            const end = Math.floor((index + 1) * wave.length / VOICE_METER_BARS);
+            let energy = 0;
+            for (let sample = start; sample < end; sample++) energy += wave[sample] * wave[sample];
+            const rms = Math.sqrt(energy / Math.max(1, end - start));
+            return Math.min(1, rms * 28);
+          });
+          this.meter(levels);
           const rms = Math.sqrt(wave.reduce((sum, value) => sum + value * value, 0) / wave.length);
           if (rms > 0.01) this.lastVoice = performance.now();
         }
@@ -119,7 +141,7 @@ export class VoiceInput {
     this.channel?.close(); this.peer?.close(); void this.audio?.close().catch(() => {});
     if (this.id) void api.voice.stop(this.id).catch(() => {});
     if (current === this) current = undefined;
-    this.release(); this.status("idle");
+    this.release(); this.meter(Array(VOICE_METER_BARS).fill(0)); this.status("idle");
   }
   private fail(message: string) {
     if (this.closed) return;

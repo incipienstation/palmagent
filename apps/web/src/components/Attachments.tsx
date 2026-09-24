@@ -5,6 +5,7 @@ import type { ImageAttachment } from "@palmagent/shared";
 import { Camera, ImagePlus, Loader2, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
   attachmentPreviewUrl,
@@ -66,9 +67,10 @@ export function useImageAttachments(onError: (msg: string) => void, key = `image
   return { images, preparing, addFiles, onPaste, remove, clear, setImages };
 }
 
-export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd }: {
+export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd, voiceActive, onCancelVoice }: {
   open: boolean; onOpenChange: (open: boolean) => void; disabled?: boolean; preparing?: boolean;
   onAdd: (files: File[]) => void;
+  voiceActive?: boolean; onCancelVoice?: () => void;
 }) {
   const photos = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
@@ -78,11 +80,17 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd 
     if (files.length) onAdd(files);
   };
   return <>
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu open={open && !voiceActive} onOpenChange={next => onOpenChange(voiceActive ? false : next)}>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="ghost" size="icon-lg" className="shrink-0"
-          aria-label={preparing ? "Preparing images" : "Add attachments"} disabled={disabled}>
-          {preparing ? <Loader2 className="animate-spin" /> : <Plus />}
+          aria-label={voiceActive ? "Cancel voice input" : preparing ? "Preparing images" : "Add attachments"}
+          title={voiceActive ? "Cancel voice input" : preparing ? "Preparing images" : "Add attachments"}
+          aria-haspopup={voiceActive ? undefined : "menu"} aria-expanded={voiceActive ? undefined : open}
+          disabled={!voiceActive && disabled}
+          onClick={() => { if (voiceActive) onCancelVoice?.(); }}>
+          <span className={cn("inline-flex transition-transform duration-200 motion-reduce:transition-none", voiceActive && "rotate-45")}>
+            {preparing && !voiceActive ? <Loader2 className="animate-spin" /> : <Plus />}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" collisionPadding={12} className="w-56 max-w-[calc(100vw-24px)] rounded-3xl p-2"><DropdownMenuGroup>
