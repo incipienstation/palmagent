@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.81
+
 ### Changed
 
 - Repeated client reads now use TanStack Query v5 with resource-specific freshness,
