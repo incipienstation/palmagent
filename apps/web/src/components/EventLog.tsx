@@ -35,6 +35,7 @@ import { payload } from "../transcript";
 import { api } from "../api";
 import { queryClient, taskActivityDetailsKey, TASK_ACTIVITY_DETAILS_GC_TIME } from "../task-history-query";
 import { historyLogItems } from "../hooks/useTaskStream";
+import { prewarmMarkdown } from "../markdown-worker";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
 // strong text; machinery (tool_call/result/status/error/etc.) reads as a quieter,
@@ -405,6 +406,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
+  const lastScrollTop = useRef<number | undefined>(undefined);
   // Retain the beginning header after an update even if prefetch loaded every
   // page. Dropping it changes measured height and shifts the restored position.
   const hadEarlier = useRef(!!history.hasEarlier || !!saved.current?.hadEarlier);
@@ -418,13 +420,29 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
         const rect = item.getBoundingClientRect();
         return rect.bottom > bounds.top && rect.top < bounds.bottom;
       });
-    if (row) anchor.current = { key: row.dataset.rowKey!, offset: row.getBoundingClientRect().top - bounds.top };
+    if (row) {
+      anchor.current = { key: row.dataset.rowKey!, offset: row.getBoundingClientRect().top - bounds.top };
+    }
   }, []);
+  useLayoutEffect(() => { lastScrollTop.current = viewport.current?.scrollTop ?? 0; }, []);
   const onScrollPosition = useCallback((el: HTMLElement) => {
+    const previousTop = lastScrollTop.current;
+    lastScrollTop.current = el.scrollTop;
     if (restoring.current) return;
     following.current = el.scrollHeight - el.clientHeight - el.scrollTop < 80;
     captureAnchor();
-  }, [captureAnchor]);
+    if (previousTop === undefined || el.scrollTop >= previousTop) return;
+    const key = anchor.current?.key;
+    const index = rows.findIndex((row) => row.key === key);
+    if (index < 0) return;
+    const nearby = rows.slice(Math.max(0, index - 48), index).reverse();
+    const texts = nearby.flatMap((row) => {
+      if (row.type !== "message" || row.item.kind !== "assistant_text") return [];
+      const text = row.item.text;
+      return typeof text === "string" && text.length > 4000 ? [text] : [];
+    }).slice(0, 16);
+    prewarmMarkdown(texts);
+  }, [captureAnchor, rows]);
   // Check the reading position when the frame runs, not when a resize was
   // scheduled: a delayed size update must not pull a reader back to the bottom.
   const followBottom = useCallback(() => {

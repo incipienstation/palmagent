@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Upward scrolling into long conversation messages no longer reflows rows while Markdown is parsed.
+
 ## 0.1.0-alpha.88
 
 ### Changed
