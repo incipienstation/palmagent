@@ -260,9 +260,11 @@ guess which text is safe to fold.
 | HTML, service worker, manifest | HTTP revalidation; worker update bypasses HTTP cache |
 | Auth, push enrollment, task controls, settings | Network; API HTTP responses use no-store |
 | Task list and task state | SSE snapshots and sequence-based replay; no service-worker interception |
-| Latest and earlier transcript pages | REST, held in a bounded in-memory TanStack Query cache; failed loads are retried |
+| Latest and earlier transcript pages | REST, held in a bounded in-memory TanStack Query cache; failed loads can be retried from the conversation |
 | Live transcript deltas | Scoped SSE resumes after the REST snapshot cursor |
-| Repositories, routines, usage, run history | Short memory reuse and concurrent request deduplication |
+| Repositories (30s), routines (30s), usage (10s), model catalog (5m) | TanStack Query v5 in-memory cache with shared request deduplication and scoped invalidation |
+| Skills by task/repository context (10s) | Context-keyed TanStack Query cache; only fetched while the picker is open |
+| Routine run history | TanStack Query cache; agent history is fresh for 10s, script history is revalidated on open, and active runs poll every 3s |
 | Discovery, path validation, filesystem browse | Network so external settings and filesystem changes remain authoritative |
 | Account limits | Network in the client; provider-scoped server cache owns freshness |
 | Markdown rendering | Existing bounded content-keyed worker cache |

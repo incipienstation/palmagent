@@ -5,7 +5,7 @@ import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
 import { api } from "../api";
-import { queryClient, taskHistoryKey } from "../task-history-query";
+import { queryClient, taskHistoryKey, TASK_HISTORY_GC_TIME } from "../task-history-query";
 import { connectSse, type ConnState } from "./sse";
 
 // The first event's durable sequence is the row key. Replacing a growing text
@@ -84,6 +84,14 @@ export function useTaskStream(taskId: string): TaskStream {
     getNextPageParam: () => undefined,
     initialData,
     initialDataUpdatedAt: initialData ? Date.now() : undefined,
+    // History changes flow through its scoped SSE connection. These defaults
+    // are intentionally local to transcript queries, not application-wide.
+    staleTime: Infinity,
+    gcTime: TASK_HISTORY_GC_TIME,
+    retry: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   });
 
   useUpdateSnapshot(`history:${taskId}`, () => queryClient.getQueryData<TaskHistoryData>(queryKey));

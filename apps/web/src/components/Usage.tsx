@@ -1,5 +1,4 @@
-import { useForegroundRefresh } from "../hooks/useForegroundRefresh";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { AgentUsage } from "@palmagent/shared";
 import { BarChart3 } from "lucide-react";
 
@@ -7,7 +6,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError } from "../api";
+import { ApiError } from "../api";
+import { usageQueryOptions } from "../client-queries";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag } from "./chips";
 import { EmptyState } from "./EmptyState";
@@ -118,28 +118,11 @@ function UsageCardSkeleton() {
 }
 
 export function UsageView() {
-  const [usage, setUsage] = useState<AgentUsage[] | null>(null);
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
-  const [pending, setPending] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    setPending(true);
-    setError("");
-    api
-      .getUsage()
-      .then((data) => { if (active) setUsage(data); })
-      .catch((e) => {
-        if (active) setError(errMsg(e));
-      })
-      .finally(() => { if (active) setPending(false); });
-    return () => { active = false; };
-  }, [attempt]);
-
-  useForegroundRefresh(() => setAttempt(value => value + 1));
-
-  const loading = usage === null && pending;
+  const query = useQuery(usageQueryOptions());
+  const usage = query.data ?? null;
+  const error = query.error ? errMsg(query.error) : "";
+  const pending = query.isFetching;
+  const loading = query.isLoading;
   const isEmpty = usage !== null && usage.length === 0;
 
   return (
@@ -148,7 +131,7 @@ export function UsageView() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
         {error && <Alert variant="destructive" className="flex flex-col gap-2">
           <p>Couldn't load usage. {error}</p>
-          <Button variant="outline" disabled={pending} onClick={() => { setPending(true); setAttempt(value => value + 1); }}>Retry usage</Button>
+            <Button variant="outline" disabled={pending} onClick={() => { void query.refetch(); }}>Retry usage</Button>
         </Alert>}
 
         {loading && (

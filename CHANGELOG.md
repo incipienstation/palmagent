@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Repeated client reads now use TanStack Query v5 with resource-specific freshness,
+  shared request deduplication, scoped mutation invalidation, and session-bound
+  in-memory data. Routine history refreshes while a run is active; live task
+  updates continue over SSE.
+
 ## 0.1.0-alpha.80
 
 ### Fixed

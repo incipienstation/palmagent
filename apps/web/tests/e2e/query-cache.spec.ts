@@ -1,26 +1,41 @@
 import { test, expect } from "@playwright/test";
+import { queryOptions } from "@tanstack/react-query";
 import { routines, routineRuns } from "../fixtures.mjs";
-import { ReadCache, readCache, invalidateClientReads } from "../../src/read-cache";
+import { clientReadKeys } from "../../src/client-query-keys";
+import { invalidateClientReads } from "../../src/query-lifecycle";
 import { queryClient, taskHistoryKey } from "../../src/task-history-query";
 
-test("reads deduplicate, expire, retry failures and cannot refill after invalidation", async () => {
-  let now = 0, calls = 0;
-  const cache = new ReadCache(2, () => now);
-  const load = async () => ++calls;
-  expect(await Promise.all([cache.read("a", 10, load), cache.read("a", 10, load)])).toEqual([1, 1]);
-  now = 9; expect(await cache.read("a", 10, load)).toBe(1);
-  now = 10; expect(await cache.read("a", 10, load)).toBe(2);
-  let resolve!: (value: number) => void;
-  const pending = cache.read("race", 10, () => new Promise<number>(done => { resolve = done; }));
-  await Promise.resolve();
-  cache.invalidate();
-  expect(await cache.read("race", 10, load)).toBe(3);
-  resolve(99); await pending;
-  expect(await cache.read("race", 10, load)).toBe(3);
-  await expect(cache.read("error", 10, async () => { throw new Error("offline"); })).rejects.toThrow("offline");
-  expect(await cache.read("error", 10, load)).toBe(4);
-  await cache.read("third", 10, load);
-  expect(await cache.read("race", 10, load)).toBe(6);
+test("TanStack Query shares reads, scopes invalidation and clears cache on session changes", async () => {
+  let reads = 0;
+  const reposQueryOptions = () => queryOptions({
+    queryKey: clientReadKeys.repos(),
+    queryFn: async () => [{ id: `repo-${++reads}` }],
+    staleTime: 30_000,
+  });
+  queryClient.clear();
+  try {
+    const initial = await Promise.all([
+      queryClient.fetchQuery(reposQueryOptions()),
+      queryClient.fetchQuery(reposQueryOptions()),
+    ]);
+    expect(initial.map((repos) => repos[0]?.id)).toEqual(["repo-1", "repo-1"]);
+    expect(reads).toBe(1);
+    expect((await queryClient.fetchQuery(reposQueryOptions()))[0]?.id).toBe("repo-1");
+
+    queryClient.setQueryData(clientReadKeys.modelCatalog(), { cached: true });
+    await invalidateClientReads(false, ["repos"]);
+    expect((await queryClient.fetchQuery(reposQueryOptions()))[0]?.id).toBe("repo-2");
+    expect(queryClient.getQueryData(clientReadKeys.modelCatalog())).toEqual({ cached: true });
+    expect(reads).toBe(2);
+
+    queryClient.setQueryData(taskHistoryKey("private-session"), { pages: [], pageParams: [] });
+    await invalidateClientReads(true);
+    expect(queryClient.getQueryData(clientReadKeys.repos())).toBeUndefined();
+    expect(queryClient.getQueryData(clientReadKeys.modelCatalog())).toBeUndefined();
+    expect(queryClient.getQueryData(taskHistoryKey("private-session"))).toBeUndefined();
+  } finally {
+    queryClient.clear();
+  }
 });
 
 test("inactive TanStack history stays within the transcript count and size budgets", async () => {
@@ -123,14 +138,4 @@ test.describe("routine cache invalidation", () => {
     await expect.poll(() => historyReads).toBe(3);
     await expect.poll(() => listReads).toBe(previous + 1);
   });
-});
-
-
-test("authentication changes clear both response and transcript caches", async () => {
-  queryClient.setQueryData(taskHistoryKey("private-session"), { pages: [{ items: [], cursor: 2, before: null }], pageParams: [null] });
-  await readCache.read("/api/repos", 30_000, async () => "previous session");
-  invalidateClientReads(true);
-  expect(queryClient.getQueryData(taskHistoryKey("private-session"))).toBeUndefined();
-  expect(await readCache.read("/api/repos", 30_000, async () => "current session")).toBe("current session");
-  invalidateClientReads(true);
 });

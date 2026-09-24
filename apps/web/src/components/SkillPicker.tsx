@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction, type KeyboardEvent, type RefObject } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Square, X } from "lucide-react";
 import { SelectedSkillsSchema, type AvailableSkill, type SkillContext, type SkillSelection } from "@palmagent/shared";
-import { api } from "../api";
+import { skillsQueryOptions } from "../client-queries";
 import { useDraft } from "../hooks/useDraft";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -47,12 +48,11 @@ export function useSkillPicker({ value, onChange, context, onSelect, textarea, d
   const id = useId();
   const [caret, setCaret] = useState(-1);
   const [dismissed, setDismissed] = useState(false);
-  const [catalog, setCatalog] = useState<AvailableSkill[]>([]);
-  const [loading, setLoading] = useState(false), [error, setError] = useState(""), [warning, setWarning] = useState("");
-  const [reload, setReload] = useState(0), [active, setActive] = useState(0);
   const contextKey = JSON.stringify(context);
   const token = slashToken(value, caret);
   const open = !!context && !!onSelect && !!token && !dismissed && !disabled;
+  const skillsQuery = useQuery({ ...skillsQueryOptions(context), enabled: open });
+  const [active, setActive] = useState(0);
   useEffect(() => {
     const el = textarea.current;
     // A repository can finish loading after the user has already typed `/`.
@@ -60,16 +60,12 @@ export function useSkillPicker({ value, onChange, context, onSelect, textarea, d
     setCaret(el && document.activeElement === el && el.selectionStart === el.selectionEnd ? el.selectionStart : -1);
     setDismissed(false);
   }, [contextKey]);
-  useEffect(() => {
-    if (!open || !context) return;
-    let current = true;
-    setLoading(true); setError(""); setCatalog([]); setWarning("");
-    void api.skills(context).then(result => {
-      if (current) { setCatalog(result.skills); setWarning(result.warning ?? ""); }
-    }).catch(e => { if (current) setError(e instanceof Error ? e.message : "Could not load skills."); })
-      .finally(() => { if (current) setLoading(false); });
-    return () => { current = false; };
-  }, [open, contextKey, reload]);
+  const catalog = skillsQuery.data?.skills ?? [];
+  const loading = open && skillsQuery.isPending && skillsQuery.isFetching;
+  const error = skillsQuery.error && !skillsQuery.data
+    ? skillsQuery.error instanceof Error ? skillsQuery.error.message : "Could not load skills."
+    : "";
+  const warning = skillsQuery.data?.warning ?? "";
   const query = token?.query.toLocaleLowerCase() ?? "";
   const matches = catalog.filter(s => `${s.name} ${s.description} ${s.source}`.toLocaleLowerCase().includes(query));
   useEffect(() => setActive(0), [query, catalog]);
@@ -94,7 +90,7 @@ export function useSkillPicker({ value, onChange, context, onSelect, textarea, d
     return false;
   }
   return { id, open, matches, loading, error, warning, selected, pick, keyDown,
-    close: () => setDismissed(true), retry: () => setReload(n => n + 1),
+    close: () => setDismissed(true), retry: () => { void skillsQuery.refetch(); },
     cursor: (el: HTMLTextAreaElement, changed = false) => { setCaret(el.selectionStart === el.selectionEnd ? el.selectionStart : -1); if (changed) setDismissed(false); },
     trigger: () => {
       const el = textarea.current, start = el?.selectionStart ?? value.length, end = el?.selectionEnd ?? start;

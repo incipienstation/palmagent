@@ -1,5 +1,5 @@
 import type { CreateTerminalRequest } from "@palmagent/shared/terminals";
-import { cacheSession, invalidateClientReads, readCache } from "./read-cache";
+import { cacheSession, invalidateClientReads, type ClientReadScope } from "./query-lifecycle";
 import { hc } from "hono/client";
 import type { Api, ApiErrorResponse } from "@palmagent/shared/http";
 import type {
@@ -38,12 +38,12 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   // Hono owns paths, query encoding, bodies, and response types. Keep the product's
   // auth/update lifecycle around the typed call, including response consumption.
   async function request<T>(send: () => Promise<JsonResponse<T>>, opts?: {
-    write?: boolean; authProbe?: boolean; sessionChange?: boolean; cacheKey?: string; ttl?: number;
+    write?: boolean; authProbe?: boolean; sessionChange?: boolean; invalidates?: readonly ClientReadScope[];
   }): Promise<T> {
     const finish = opts?.write ? beginBrowserWork() : undefined;
     // Invalidate on both sides: reads racing a write cannot refill the cache,
     // including when a failed response leaves the write outcome uncertain.
-    if (opts?.write) invalidateClientReads(opts.sessionChange);
+    if (opts?.write) await invalidateClientReads(opts.sessionChange, opts.invalidates);
     const generation = cacheSession();
     const load = async () => {
       const res = await send();
@@ -66,16 +66,15 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       return value;
     };
     try {
-      return await (opts?.cacheKey ? readCache.read(opts.cacheKey, opts.ttl!, load) : load());
+      return await load();
     } finally {
-      if (opts?.write) invalidateClientReads(opts.sessionChange);
+      if (opts?.write) await invalidateClientReads(opts.sessionChange, opts.invalidates);
       finish?.();
     }
   }
-  const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false, sessionChange = false) => request(send, { write: true, authProbe, sessionChange });
-  // Only these catalog/summary reads opt in. Auth, live task state, settings,
-  // discovery, filesystem validation, history pages and quotas use the network.
-  const cached = <T>(key: string, ttl: number, send: () => Promise<JsonResponse<T>>) => request(send, { cacheKey: key, ttl });
+  const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false, sessionChange = false, invalidates: readonly ClientReadScope[] = []) =>
+    request(send, { write: true, authProbe, sessionChange, invalidates });
+  const requestOptions = (signal?: AbortSignal) => signal ? { init: { signal } } : undefined;
 
   const api = {
     voice: {
@@ -83,7 +82,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       heartbeat: (id: string) => request(() => client.voice[":id"].heartbeat.$post({ param: idParam(id) })),
       stop: (id: string) => request(() => client.voice[":id"].$delete({ param: idParam(id) }, { init: { keepalive: true } })),
     },
-    skills: (query: import("@palmagent/shared").SkillContext) => request(() => client.skills.$get({ query })),
+    skills: (query: import("@palmagent/shared").SkillContext, signal?: AbortSignal) => request(() => client.skills.$get({ query }, requestOptions(signal))),
     terminals: {
       list: (query: { taskId?: string; repoId?: string } = {}) => request(() => client.terminals.$get({ query })),
       create: (json: CreateTerminalRequest) => write(() => client.terminals.$post({ json })),
@@ -103,13 +102,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       get: () => request(() => client.settings.updates.$get()),
       change: (json: UpdateSettingsChange) => write(() => client.settings.updates.$patch({ json })),
     },
-    listRepos: (refresh = false) => {
-      if (refresh) readCache.invalidate(key => key === "/api/repos");
-      return cached("/api/repos", 30_000, () => client.repos.$get()).then((r) => r.repos);
-    },
-    modelCatalog: () => cached("/api/model-catalog", 300_000, () => client["model-catalog"].$get()),
-    createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json })).then((r) => r.repo),
-    deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) })).then((r) => r.repo),
+    listRepos: (signal?: AbortSignal) => request(() => client.repos.$get({}, requestOptions(signal))).then((r) => r.repos),
+    modelCatalog: (signal?: AbortSignal) => request(() => client["model-catalog"].$get({}, requestOptions(signal))),
+    createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json }), false, false, ["repos"]).then((r) => r.repo),
+    deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) }), false, false, ["repos"]).then((r) => r.repo),
     discoverRepos: (refresh = false) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} })),
     validateRepoPath: (path: string) => request(() => client.repos.validate.$get({ query: { path } })),
     listFs: (path?: string) => request(() => client.fs.list.$get({ query: { path } })),
@@ -119,7 +115,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
     createTask: (json: CreateTaskRequest) => write(() => client.tasks.$post({ json })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
-    getUsage: () => cached("/api/usage", 10_000, () => client.usage.$get()).then((r) => r.usage),
+    getUsage: (signal?: AbortSignal) => request(() => client.usage.$get({}, requestOptions(signal))).then((r) => r.usage),
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json })).then((r) => r.task),
     steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json })),
     approve: (id: string, json: ApproveRequest) => write(() => tasks.approve.$post({ param: idParam(id), json })).then((r) => r.task),
@@ -128,14 +124,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     stop: (id: string) => write(() => tasks.stop.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     cancel: (id: string) => write(() => tasks.cancel.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     archive: (id: string) => write(() => tasks.$delete({ param: idParam(id) })).then((r) => r.task),
-    listRoutines: () => cached("/api/routines", 30_000, () => client.routines.$get()).then((r) => r.routines),
-    createRoutine: (json: CreateRoutineRequest) => write(() => client.routines.$post({ json })).then((r) => r.routine),
-    updateRoutine: (id: string, json: UpdateRoutineRequest) => write(() => routines.$patch({ param: idParam(id), json })).then((r) => r.routine),
-    deleteRoutine: (id: string) => write(() => routines.$delete({ param: idParam(id) })).then((r) => r.routine),
-    runRoutine: (id: string) => write(() => routines.run.$post({ param: idParam(id) })).then((r) => r.routine),
-    stopRoutine: (id: string) => write(() => routines.stop.$post({ param: idParam(id) })).then(r => r.routine),
-    routineRuns: (id: string, fresh = false) => (fresh ? request(() => routines.runs.$get({ param: idParam(id) }))
-      : cached(`/api/routines/${encodeURIComponent(id)}/runs`, 10_000, () => routines.runs.$get({ param: idParam(id) }))).then((r) => r.runs),
+    listRoutines: (signal?: AbortSignal) => request(() => client.routines.$get({}, requestOptions(signal))).then((r) => r.routines),
+    createRoutine: (json: CreateRoutineRequest) => write(() => client.routines.$post({ json }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
+    updateRoutine: (id: string, json: UpdateRoutineRequest) => write(() => routines.$patch({ param: idParam(id), json }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
+    deleteRoutine: (id: string) => write(() => routines.$delete({ param: idParam(id) }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
+    runRoutine: (id: string) => write(() => routines.run.$post({ param: idParam(id) }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
+    stopRoutine: (id: string) => write(() => routines.stop.$post({ param: idParam(id) }), false, false, ["routines", "routineRuns"]).then(r => r.routine),
+    routineRuns: (id: string, signal?: AbortSignal) => request(() => routines.runs.$get({ param: idParam(id) }, requestOptions(signal))).then((r) => r.runs),
     auth: {
       me: () => request(() => client.auth.me.$get(), { authProbe: true }),
       loginOptions: () => write(() => client.auth.login.options.$post(), true),

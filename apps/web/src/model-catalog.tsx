@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { AgentKind, CodexModelCatalog, ModelCatalogChoice } from "@palmagent/shared";
-import { api } from "./api";
-import { useForegroundRefresh } from "./hooks/useForegroundRefresh";
+import { modelCatalogQueryOptions } from "./client-queries";
 
 export type CatalogSource = CodexModelCatalog["source"] | "static";
 
@@ -55,17 +55,8 @@ export function selectableEffort(catalog: AgentCatalog, model: string, effort: s
 const CatalogContext = createContext<AgentCatalog | null>(null);
 
 export function ModelCatalogProvider({ children }: { children: ReactNode }) {
-  const [codex, setCodex] = useState<AgentCatalog>(DEFAULT_CODEX_CATALOG);
-  const load = useCallback(async () => {
-    try {
-      setCodex(runtimeCatalog(await api.modelCatalog()));
-    } catch {
-      // Default-only remains usable, and an already loaded runtime catalog is
-      // retained until the server can refresh it successfully.
-    }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-  useForegroundRefresh(() => { void load(); });
+  const query = useQuery(modelCatalogQueryOptions());
+  const codex = query.data ? runtimeCatalog(query.data) : DEFAULT_CODEX_CATALOG;
   return <CatalogContext.Provider value={codex}>{children}</CatalogContext.Provider>;
 }
 

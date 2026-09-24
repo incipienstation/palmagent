@@ -1,41 +1,32 @@
-import { useForegroundRefresh } from "./useForegroundRefresh";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { Repo } from "@palmagent/shared";
-import { api } from "../api";
+import { reposQueryOptions } from "../client-queries";
 
-// Client-side repoId → Repo lookup, so a task card can show WHICH project it
-// belongs to. The task wire contract (TaskState) carries only `repoId`; the
-// human-friendly repo name lives on the Repo objects from GET /api/repos. This
-// is the same join the dispatch form and the routines screen already do — kept
-// out of the TaskState DTO so the server/daemon contract stays untouched.
-//
-// Fetched once on mount; `refresh()` re-pulls on demand (the inbox calls it when
-// a task references a repo we haven't seen yet — e.g. one registered since the
-// last fetch — so a freshly-dispatched task's chip self-heals).
-export function useRepos(): { repos: Map<string, Repo>; refresh: () => void; loading: boolean } {
-  const [repos, setRepos] = useState<Map<string, Repo>>(() => new Map());
-  const inFlight = useRef(false);
-  const [loading, setLoading] = useState(true);
+// Shared repoId → Repo lookup for task cards and repo pickers. One query key
+// keeps all screens on the same bounded, session-scoped server snapshot.
+export function useRepos(): {
+  repos: Map<string, Repo>;
+  refresh: () => Promise<Repo[]>;
+  loading: boolean;
+  loaded: boolean;
+  error: string;
+} {
+  const query = useQuery(reposQueryOptions());
+  const repos = useMemo(() => new Map((query.data ?? []).map((repo) => [repo.id, repo])), [query.data]);
+  const refresh = useCallback(async () => {
+    const result = await query.refetch();
+    if (result.error) throw result.error;
+    return result.data ?? [];
+  }, [query.refetch]);
 
-  const fetchRepos = useCallback((force = false) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    void api
-      .listRepos(force)
-      .then((list) => setRepos(new Map(list.map((r) => [r.id, r]))))
-      .catch(() => {
-        /* transient (offline/proxy blip) — keep the last good map; a later
-           refresh retries. A missing chip degrades gracefully (renders nothing). */
-      })
-      .finally(() => {
-        inFlight.current = false;
-        setLoading(false);
-      });
-  }, []);
-
-  const refresh = useCallback(() => fetchRepos(true), [fetchRepos]);
-  useEffect(() => fetchRepos(), [fetchRepos]);
-  useForegroundRefresh(() => fetchRepos());
-
-  return { repos, refresh, loading };
+  return {
+    repos,
+    refresh,
+    loading: query.isPending && query.isFetching,
+    loaded: query.data !== undefined,
+    error: query.data === undefined
+      ? query.error instanceof Error ? query.error.message : query.error ? "Could not load repositories." : ""
+      : "",
+  };
 }

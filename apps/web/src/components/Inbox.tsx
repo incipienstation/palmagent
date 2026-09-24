@@ -225,7 +225,7 @@ export const InboxView = memo(function InboxView({
     const missing = tasks.filter((t) => !repos.has(t.repoId) && !tried.current.has(t.repoId));
     if (missing.length === 0) return;
     for (const t of missing) tried.current.add(t.repoId);
-    refresh();
+    void refresh().catch(() => {});
   }, [tasks, repos, refresh, reposLoading]);
 
   const [selected, setSelected] = useState(readSelectedSpace);

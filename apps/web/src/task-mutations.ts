@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { api } from "./api";
-import { cacheSession, onCacheSessionReset } from "./read-cache";
+import { cacheSession, onCacheSessionReset } from "./query-lifecycle";
 import { toast } from "./components/ui/toaster";
 
 type Change = { title?: string; hidden?: boolean; pending: boolean; acknowledgedAt?: number };

@@ -1,4 +1,4 @@
-import { invalidateClientReads } from "./read-cache";
+import { invalidateClientReads } from "./query-lifecycle";
 import { createApi } from "./api-client";
 import { beginBrowserWork } from "./update-state";
 import { clientVersion, observeServerVersion } from "./pwa";

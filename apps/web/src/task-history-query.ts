@@ -1,5 +1,5 @@
-import { QueryClient } from "@tanstack/react-query";
-import { onCacheSessionReset } from "./read-cache";
+import { onCacheSessionReset } from "./query-lifecycle";
+import { queryClient } from "./query-client";
 
 export const TASK_HISTORY_GC_TIME = 5 * 60_000;
 const MAX_INACTIVE_TASKS = 5;
@@ -8,18 +8,7 @@ const HISTORY_KEY = "task-history";
 
 export const taskHistoryKey = (taskId: string) => [HISTORY_KEY, taskId] as const;
 
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: Infinity,
-      gcTime: TASK_HISTORY_GC_TIME,
-      retry: false,
-      refetchOnMount: false,
-      refetchOnReconnect: false,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+export { queryClient };
 
 type HistoryData = { pages: Array<{ items?: unknown[] }>; pageParams: unknown[] };
 type InactiveEntry = { key: readonly unknown[]; hash: string; data: HistoryData; usedAt: number; size: number };

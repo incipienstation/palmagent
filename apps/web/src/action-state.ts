@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { readUpdateSnapshot, useUpdateSnapshot } from "./update-state";
-import { cacheSession, onCacheSessionReset } from "./read-cache";
+import { cacheSession, onCacheSessionReset } from "./query-lifecycle";
 
 // Drafts involved in an in-flight action outlive their screen. Async rollback
 // updates this tab's current draft even if the user navigated away and back.

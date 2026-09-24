@@ -65,46 +65,23 @@ test("browser RPC keeps auth probes local and releases writes after every failur
   assert.equal(active, 0);
 });
 
-test("typed reads deduplicate, invalidate on writes and reject responses from a prior session", async () => {
-  const { readCache, invalidateClientReads } = await import("../../src/read-cache");
-  invalidateClientReads(true);
+test("typed API reads leave caching to TanStack Query", async () => {
   let reads = 0;
-  let writeFails = false;
-  let delayed: (() => void) | undefined;
-  let delay = false;
   const api = createApi({
     version: () => "fixture", observeServerVersion: () => {},
     beginBrowserWork: () => () => {}, onUnauthorized: () => {},
   }, async (_input, init) => {
     assert.equal(init?.cache, "no-store");
-    if (init?.method !== "GET") return Response.json({}, { status: writeFails ? 500 : 200 });
     reads++;
-    if (delay) await new Promise<void>(resolve => { delayed = resolve; });
     return Response.json({ repos: [{ id: String(reads) }] });
   });
   await Promise.all([api.listRepos(), api.listRepos()]);
-  assert.equal(reads, 1);
-  await api.listRepos(); assert.equal(reads, 1);
-  await api.createRepo({ path: "/fixture" });
-  await api.listRepos(); assert.equal(reads, 2);
-  writeFails = true;
-  await assert.rejects(api.createRepo({ path: "/fixture" }));
-  await api.listRepos(); assert.equal(reads, 3);
-  writeFails = false; delay = true;
-  const previous = api.listRepos(true);
-  await Promise.resolve(); await Promise.resolve();
-  assert.ok(delayed);
-  await api.auth.logout();
-  const rejected = assert.rejects(previous, { status: 401 });
-  delayed(); await rejected;
-  delay = false;
-  await api.listRepos(); assert.equal(reads, 5);
-  invalidateClientReads(true);
+  assert.equal(reads, 2);
+  assert.equal((await api.listRepos())[0]?.id, "3");
+  assert.equal(reads, 3);
 });
 
-test("runtime model catalog reads use the shared in-memory cache", async () => {
-  const { invalidateClientReads } = await import("../../src/read-cache");
-  invalidateClientReads(true);
+test("runtime model catalog API leaves cache behavior to TanStack Query", async () => {
   let reads = 0;
   const api = createApi({
     version: () => "fixture", observeServerVersion: () => {},
@@ -115,10 +92,7 @@ test("runtime model catalog reads use the shared in-memory cache", async () => {
     return Response.json({ agent: "codex", source: "runtime", fetchedAt: 1, models: [{ value: "default", label: "default", efforts: [{ value: "default", label: "default" }] }] });
   });
   await Promise.all([api.modelCatalog(), api.modelCatalog()]);
-  assert.equal(reads, 1);
-  await api.modelCatalog();
-  assert.equal(reads, 1);
-  invalidateClientReads(true);
-  await api.modelCatalog();
   assert.equal(reads, 2);
+  await api.modelCatalog();
+  assert.equal(reads, 3);
 });

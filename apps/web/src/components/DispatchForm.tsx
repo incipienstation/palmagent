@@ -1,10 +1,11 @@
 import { stopTaskTurn } from "../task-stop";
 import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { useRepoMutations } from "../repo-mutations";
+import { useRepos } from "../hooks/useRepos";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { useUpdateState } from "../update-state";
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import type { AgentKind, Permission, Repo } from "@palmagent/shared";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import type { AgentKind, Permission } from "@palmagent/shared";
 import { Plus } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
@@ -39,15 +40,17 @@ function errMsg(e: unknown): string {
 
 export function DispatchView() {
   const mounted = useRef(false);
+  const repoSelectionInitialized = useRef(false);
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const toastObstacle = useToastObstacle();
-  const [registeredRepos, setRepos] = useState<Repo[]>([]);
+  const { repos: registeredRepoMap, refresh: refreshRepos, loaded: reposLoaded, error: reposError } = useRepos();
   const repoMutations = useRepoMutations();
-  const repos = registeredRepos.filter(repo => !repoMutations.removed.has(repo.id));
+  const registeredRepos = useMemo(() => [...registeredRepoMap.values()], [registeredRepoMap]);
+  const repos = useMemo(() => registeredRepos.filter(repo => !repoMutations.removed.has(repo.id)), [registeredRepos, repoMutations.removed]);
   const [inheritedSpace, setInheritedSpace] = useState(readSelectedSpace);
   // Everything except title + prompt is a sticky preference: the form re-opens
-  // with the last-used choice rather than resetting each time (loadRepos still
-  // validates a stale repo id).
+  // with the last-used choice rather than resetting each time; the shared repo
+  // query validates a stale repo id once its data arrives.
   const [repoId, setRepoId] = usePersistedString<string>("pref:dispatch-repo", "");
   const [agent, setAgent] = usePersistedString<AgentKind>("pref:dispatch-agent", "claude");
   // Model/effort/permission are remembered PER AGENT: each agent keeps its own
@@ -81,24 +84,7 @@ export function DispatchView() {
   // place, so the toggle is hidden and never sent for it.
   const isGit = repos.find((r) => r.id === repoId)?.vcs === "git";
 
-  async function loadRepos(selectId?: string) {
-    try {
-      const list = await api.listRepos();
-      const byId = new Map(list.map((repo) => [repo.id, repo]));
-      const inheritedRepoId = selectId ? undefined : repoForSelectedSpace(inheritedSpace, byId);
-      setRepos(list);
-      setRepoId((cur) => {
-        if (selectId) return selectId; // just-added repo
-        if (inheritedRepoId && byId.has(inheritedRepoId)) return inheritedRepoId;
-        if (cur && list.some((r) => r.id === cur)) return cur; // keep valid selection
-        return list[0]?.id ?? "";
-      });
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }
-
-  const repoMap = new Map(repos.map((repo) => [repo.id, repo]));
+  const repoMap = useMemo(() => new Map(repos.map((repo) => [repo.id, repo])), [repos]);
   const inheritedRepoId = repoForSelectedSpace(inheritedSpace, repoMap);
   const inheritedName = inheritedSpace === ALL_SPACES ? "" : spaceName(inheritedSpace, repoMap);
   const contextDescription = inheritedName
@@ -106,9 +92,22 @@ export function DispatchView() {
     : "";
 
   useEffect(() => {
-    void loadRepos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!reposLoaded) return;
+    const inheritedRepoId = repoForSelectedSpace(inheritedSpace, repoMap);
+    if (!repoSelectionInitialized.current) {
+      repoSelectionInitialized.current = true;
+      setRepoId((current) => {
+        if (inheritedRepoId && repoMap.has(inheritedRepoId)) return inheritedRepoId;
+        if (current && repoMap.has(current)) return current;
+        return repos[0]?.id ?? "";
+      });
+      return;
+    }
+    setRepoId((current) => {
+      if (current && repoMap.has(current)) return current;
+      return repos[0]?.id ?? "";
+    });
+  }, [reposLoaded, inheritedSpace, repoMap, repos, setRepoId]);
 
   async function dispatch(e: FormEvent) {
     e.preventDefault();
@@ -186,7 +185,7 @@ export function DispatchView() {
           </div>
         </div>
         <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 px-3 pb-[calc(12px+var(--safe-bottom))]">
-          {error && <Alert variant="destructive">{error}</Alert>}
+          {(error || reposError) && <Alert variant="destructive">{error || reposError}</Alert>}
           <Composer skillContext={repoId ? { repoId, agent } : undefined} skills={skills} onSkillsChange={setSkills} id="dispatch-prompt" label="Prompt" value={prompt} onChange={setPrompt}
             placeholder="Work with Palmagent" action="Dispatch" busy={busy}
             onStop={busy ? () => void stopTaskTurn("dispatch") : undefined} stopping={!!activity.stopping}
@@ -212,9 +211,9 @@ export function DispatchView() {
         onClose={() => setPickerOpen(false)}
         onRegistered={(repo) => {
           setPickerOpen(false);
-          void loadRepos(repo.id);
+          setRepoId(repo.id);
         }}
-        onChanged={() => void loadRepos()}
+        onChanged={() => { void refreshRepos().catch((cause) => setError(errMsg(cause))); }}
       />
     </AppShell>
   );
