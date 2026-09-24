@@ -114,7 +114,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     validateRepoPath: (path: string) => request(() => client.repos.validate.$get({ query: { path } })),
     listFs: (path?: string) => request(() => client.fs.list.$get({ query: { path } })),
     listTasks: (status?: TaskStatus) => request(() => client.tasks.$get({ query: { status } })).then((r) => r.tasks),
-    taskHistory: (id: string, before: number, signal?: AbortSignal) => request(() => tasks.history.$get({ param: idParam(id), query: { before: String(before) } }, { init: { signal } })),
+    taskHistory: (id: string, before?: number, signal?: AbortSignal) => request(() => tasks.history.$get({ param: idParam(id), query: before === undefined ? {} : { before: String(before) } }, { init: { signal } })),
     getTask: (id: string) => request(() => tasks.$get({ param: idParam(id) })).then((r) => r.task),
     getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
     createTask: (json: CreateTaskRequest) => write(() => client.tasks.$post({ json })).then((r) => r.task),

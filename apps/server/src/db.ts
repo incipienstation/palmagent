@@ -553,14 +553,21 @@ export class Db {
     return (previous?.seq ?? 0) + 1;
   }
 
-  historyPage(taskId: string, before: number): import("@palmagent/shared").TaskHistoryResponse {
+  historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId)): import("@palmagent/shared").TaskHistoryResponse {
     const start = this.historyStart(taskId, before);
     const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
       WHERE e.task_id = ? AND e.seq >= ? AND e.seq < ? ORDER BY e.seq`)
       .all(taskId, start, before) as EventJoinRow[];
     return { events: rows.map((row) => ({ seq: row.seq, event: rowToEvent(row).event })),
-      before: start > 1 ? start : null };
+      before: start > 1 ? start : null, cursor };
+  }
+
+  // Capture the SSE resume boundary before selecting the page. The exclusive
+  // SQL edge prevents a concurrent insert from leaking into REST beyond cursor.
+  latestHistoryPage(taskId: string): import("@palmagent/shared").TaskHistoryResponse {
+    const cursor = this.eventCursor(taskId);
+    return this.historyPage(taskId, cursor + 1, cursor);
   }
 
   // ---- usage (per-agent aggregate over the result event log) ----

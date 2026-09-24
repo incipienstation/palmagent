@@ -50,7 +50,14 @@ export async function event(page: Page, taskId: string, seq: number, text: strin
     taskId, agent: "codex", ts: seq, kind: "assistant_text", payload: { text },
   } }, seq);
 }
-export async function open(page: Page, taskId: string) {
+export async function open(page: Page, taskId: string, options: { serverHistory?: boolean } = {}) {
+  if (!options.serverHistory) {
+    const escaped = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await page.route(new RegExp(`/api/tasks/${escaped}/history(?:\\?.*)?$`), async (route) => {
+      if (new URL(route.request().url()).searchParams.has("before")) return route.fallback();
+      await route.fulfill({ json: { events: [], before: null, cursor: 0 } });
+    });
+  }
   await page.goto(`/#/task/${taskId}`);
   await expect.poll(() => page.evaluate((id) =>
     (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);

@@ -32,14 +32,14 @@ test("validated JSON preserves empty bodies, missing content types, and safe err
   assert.equal(mutations, 3);
 });
 
-test("Hono RPC preserves encoded params and supplies coerced validated queries", async () => {
+test("Hono RPC preserves encoded params and validates history cursor strings", async () => {
   const app = new Hono().onError(handleError).get("/tasks/:id", params(IdParamsSchema), query(HistoryQuerySchema), (c) =>
     c.json({ id: c.req.valid("param").id, before: c.req.valid("query").before }, 200));
   const client = hc<typeof app>("http://localhost", { fetch: (input: string | Request | URL, init?: RequestInit) => app.request(input instanceof URL ? input.toString() : input, init) });
   const response = await client.tasks[":id"].$get({ param: { id: encodeURIComponent("id /?#한") }, query: { before: "12" } });
-  assert.deepEqual(await response.json(), { id: "id /?#한", before: 12 });
+  assert.deepEqual(await response.json(), { id: "id /?#한", before: "12" });
   const repeated = await app.request("/tasks/fixture?before=12&before=invalid");
-  assert.deepEqual(await repeated.json(), { id: "fixture", before: 12 });
+  assert.deepEqual(await repeated.json(), { id: "fixture", before: "12" });
   for (const before of ["0", "-1", "NaN", "9007199254740992"]) {
     assert.equal((await app.request(`/tasks/fixture?before=${before}`)).status, 400);
   }

@@ -186,6 +186,7 @@ type TranscriptRow = { key: string; seq: number } & (
   | { type: "failure"; failure: RunFailure; open: boolean }
 );
 type HistoryControls = {
+  hasHistory?: boolean;
   hasEarlier?: boolean;
   loadingEarlier?: boolean;
   historyError?: string;
@@ -304,7 +305,7 @@ function RunFailureSummary({ failure, open, toggle }: { failure: RunFailure; ope
 
 function HistoryHeader({ context }: { context?: HistoryControls }) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const { hasEarlier, loadingEarlier, historyError, loadEarlier } = context ?? {};
+  const { hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier } = context ?? {};
   useEffect(() => {
     const target = sentinel.current;
     const root = target?.closest("[data-radix-scroll-area-viewport]");
@@ -341,13 +342,13 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
     let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(observeWhenReady); });
     return () => { cancelAnimationFrame(frame); resize.disconnect(); observer?.disconnect(); };
   }, [hasEarlier, loadingEarlier, historyError, loadEarlier]);
-  if (!context?.hasEarlier && !context?.showBeginning) return <div className="h-3" />;
+  if (!context?.hasEarlier && !context?.showBeginning && !(historyError && !hasHistory)) return <div className="h-3" />;
   return <div ref={sentinel} className="flex flex-col gap-1 px-4 py-3 font-sans">
     {historyError ? <>
       <span role="alert" className="text-destructive">{historyError}</span>
-      <Button variant="ghost" onClick={loadEarlier}>Retry loading earlier messages</Button>
+      <Button variant="ghost" onClick={loadEarlier}>{hasHistory ? "Retry loading earlier messages" : "Retry loading conversation"}</Button>
     </> : <div role="status" className="h-6 text-center text-xs leading-6 text-muted-foreground">
-      {context.showBeginning ? "Beginning of conversation" : loadingEarlier ? "Loading earlier messages…" : null}
+      {context?.showBeginning ? "Beginning of conversation" : loadingEarlier ? hasHistory ? "Loading earlier messages…" : "Loading conversation…" : null}
     </div>}
   </div>;
 }

@@ -59,7 +59,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
-  const { log, conn, loadingHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
+  const { log, conn, loadingHistory, hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
   // when the long-lived inbox stream freezes in the background. Fall back to the
@@ -298,7 +298,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         <EventLog taskId={taskId} log={log} live={running} loading={loadingHistory}
           prompt={loadingHistory || hasEarlier ? undefined : task?.prompt}
-          hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier}
+          hasHistory={hasHistory} hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier}
           delivery={{ messages: pendingDeliveries, paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,
             resumeDisabled, onDelete: m => void queueAction(m, "delete"),
             onResume: () => void act("Resuming delivery…", async () => setQueueOverride(await api.resumeQueue(taskId))) }} />

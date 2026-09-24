@@ -100,7 +100,9 @@ function LongMarkdown({ text }: { text: string }) {
   }, []);
   useEffect(() => { parser.current?.parse(text); }, [text]);
   if (blocks === null) return <span className="whitespace-pre-wrap">{text}</span>;
-  if (!blocks) return <span className="text-muted-foreground" role="status">Rendering message…</span>;
+  // Keep the message visible while the worker parses its first long version.
+  // Replacing the transcript row with a placeholder caused a visible flash.
+  if (!blocks) return <span className="whitespace-pre-wrap">{text}</span>;
   return <>{blocks.map((source, index) => <ParsedBlock key={index} source={source} />)}</>;
 }
 
@@ -111,7 +113,7 @@ export const Markdown = memo(function Markdown({ children, trailing }: {
     "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
     trailing && "[&>p:nth-last-child(2)]:mb-0 [&>p:nth-last-child(2)]:inline",
   )}>
-    {trailing || children.length > 4000 ? <LongMarkdown text={children} /> :
+    {children.length > 4000 ? <LongMarkdown text={children} /> :
       <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={COMPONENTS}>{children}</ReactMarkdown>}
     {trailing}
   </div>;

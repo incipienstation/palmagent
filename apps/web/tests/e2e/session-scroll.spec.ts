@@ -1,16 +1,37 @@
 import { test, expect } from "@playwright/test";
-import { installScopedStream, send, event, open, viewport, expectBottom, type Harness } from "./_session-stream";
+import type { TaskHistoryEvent } from "@palmagent/shared";
+import { installScopedStream, open, send, event, viewport, expectBottom, type Harness } from "./_session-stream";
 
+test.use({ serviceWorkers: "block" });
 test.beforeEach(async ({ page }) => installScopedStream(page));
 
-test("opens delayed history at the bottom and preserves live follow and reading position", async ({ page }) => {
-  await open(page, "t-idle-rich");
-  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 3 });
-  await event(page, "t-idle-rich", 1, "Earlier history\n\n".repeat(100));
+function savedRows(): TaskHistoryEvent[] {
+  const row = (seq: number, kind: "assistant_text" | "tool_result", text: string): TaskHistoryEvent => ({
+    seq,
+    event: { taskId: "t-idle-rich", agent: "codex", ts: seq, kind,
+      payload: kind === "assistant_text" ? { text } : { output: text } },
+  });
+  return [
+    row(1, "assistant_text", "Earlier history\n\n".repeat(100)),
+    row(2, "tool_result", "Middle marker"),
+    row(3, "assistant_text", "Middle history\n\n".repeat(100)),
+    row(4, "tool_result", "Latest marker"),
+    row(5, "assistant_text", "Latest history"),
+  ];
+}
+
+test("delayed REST history paints at the bottom, then live output preserves follow and reading position", async ({ page }) => {
+  let release!: () => void;
+  let requested = false;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/tasks/t-idle-rich/history*", async route => {
+    requested = true;
+    await pending;
+    await route.fulfill({ json: { events: savedRows(), before: null, cursor: 5 } });
+  });
+  await page.goto("/#/task/t-idle-rich");
   await expect(page.getByText("Loading history…")).toBeVisible();
-  await expect(page.getByText(/Earlier history/)).toHaveCount(0);
-  await event(page, "t-idle-rich", 2, "Middle history\n\n".repeat(100));
-  await expect(page.getByText(/Middle history/)).toHaveCount(0);
+  expect(requested).toBe(true);
 
   // Inspect every painted frame once history becomes visible, rather than
   // accepting a view which eventually reaches the bottom after scrolling.
@@ -27,8 +48,13 @@ test("opens delayed history at the bottom and preserves live follow and reading 
     };
     requestAnimationFrame(sample);
   });
-  await event(page, "t-idle-rich", 3, "Latest history");
+  release();
+  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), "t-idle-rich")).toBe(true);
+  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 5 });
   await expect(page.getByText("Loading history…")).toHaveCount(0);
+  await expect(page.getByText(/Middle history/).first()).toBeVisible();
+  await expect(page.getByText("Latest history", { exact: true })).toBeVisible();
+  await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
   await expectBottom(page);
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { initialScrollSamples: number[] }).initialScrollSamples.length)).toBe(5);
@@ -36,66 +62,75 @@ test("opens delayed history at the bottom and preserves live follow and reading 
     (window as unknown as { initialScrollSamples: number[] }).initialScrollSamples);
   expect(samples.every((gap) => gap <= 1), `first visible frames: ${samples}`).toBe(true);
 
-  await event(page, "t-idle-rich", 4, "\n\nLive update\n\n".repeat(20));
+  await event(page, "t-idle-rich", 6, "\n\nLive update\n\n".repeat(20));
   await expect(page.getByText(/Live update/)).toHaveCount(20);
   await expectBottom(page);
-  await viewport(page).evaluate((el) => {
-    el.scrollTop = 100;
-    el.dispatchEvent(new Event("scroll"));
-  });
-  await event(page, "t-idle-rich", 5, "\n\nWhile reading");
-  await expect(page.getByText(/While reading/)).toHaveCount(1);
-  expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
+  await viewport(page).evaluate(el => { el.scrollTop = 100; el.dispatchEvent(new Event("scroll")); });
+  await event(page, "t-idle-rich", 7, "\n\nWhile reading");
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(await viewport(page).evaluate(el => el.scrollTop)).toBe(100);
+  await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(page.getByText(/While reading/)).toBeVisible();
+  await viewport(page).evaluate(el => { el.scrollTop = 100; el.dispatchEvent(new Event("scroll")); });
 
-  // Foreground reconnects keep the visible transcript and the reader's place.
+  // Foreground reconnects resume after the last event received by the client.
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 6 });
-  await event(page, "t-idle-rich", 5, "DUPLICATE");
-  await event(page, "t-idle-rich", 6, "\n\nReconnected update");
-  await expect(page.getByText(/Reconnected update/)).toHaveCount(1);
+  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 8 });
+  await event(page, "t-idle-rich", 7, "DUPLICATE");
+  await event(page, "t-idle-rich", 8, "\n\nReconnected update");
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(await viewport(page).evaluate(el => el.scrollTop)).toBe(100);
+  await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(page.getByText(/Reconnected update/)).toBeVisible();
   await expect(page.getByText(/DUPLICATE/)).toHaveCount(0);
-  expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
 
   // A direct session switch must not inherit the previous session's scroll lock.
+  await page.route("**/api/tasks/t-run/history*", route => route.fulfill({ json: { events: [], before: null, cursor: 0 } }));
   await page.evaluate(() => { location.hash = "/task/t-run"; });
-  await expect.poll(() => page.evaluate(() =>
-    (window as unknown as Harness).hasScopedStream("t-run"))).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as unknown as Harness).hasScopedStream("t-run"))).toBe(true);
   await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 1 });
   await expect(page.getByText(/Earlier history/)).toHaveCount(0);
   await event(page, "t-run", 1, "Other session\n\n".repeat(100));
   await expectBottom(page);
 });
 
-test("a reconnect during initial replay retains buffered history without duplicates", async ({ page }) => {
-  await open(page, "t-idle-rich");
-  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 3 });
-  await event(page, "t-idle-rich", 1, "Start\n\n");
-  await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 4 });
-  await event(page, "t-idle-rich", 1, "DUPLICATE");
-  await event(page, "t-idle-rich", 2, "Middle\n\n");
-  await event(page, "t-idle-rich", 3, "End\n\n");
+test("REST snapshot cursor starts SSE after saved events and empty history resumes from zero", async ({ page }) => {
+  let release!: () => void;
+  let reads = 0;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/tasks/t-idle-rich/history*", async route => {
+    reads++;
+    await pending;
+    const row: TaskHistoryEvent = { seq: 1, event: {
+      taskId: "t-idle-rich", agent: "codex", ts: 1, kind: "assistant_text", payload: { text: "Saved history" },
+    } };
+    await route.fulfill({ json: { events: [row], before: null, cursor: 1 } });
+  });
+  await page.goto("/#/task/t-idle-rich");
   await expect(page.getByText("Loading history…")).toBeVisible();
-  await event(page, "t-idle-rich", 4, "Caught up");
-  await expect(page.getByText("Start", { exact: true })).toHaveCount(1);
-  await expect(page.getByText("Caught up", { exact: true })).toHaveCount(1);
+  release();
+  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), "t-idle-rich")).toBe(true);
+  const urls = await page.evaluate(() => (window as unknown as Harness).scopedUrls);
+  expect(new URL(urls.at(-1)!).searchParams.get("lastEventId")).toBe("1");
+  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 2 });
+  await event(page, "t-idle-rich", 2, "First delta");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await send(page, "t-idle-rich", { type: "tasks", tasks: [], replayThrough: 3 });
+  await event(page, "t-idle-rich", 2, "DUPLICATE");
+  await event(page, "t-idle-rich", 3, "Second delta");
+  await expect(page.getByLabel("Session transcript")).toContainText("Saved historyFirst deltaSecond delta");
   await expect(page.getByText(/DUPLICATE/)).toHaveCount(0);
-});
+  expect(reads).toBe(1);
 
-test("empty history and older servers do not leave a loading state", async ({ page }) => {
-  await open(page, "t-run");
+  await page.route("**/api/tasks/t-run/history*", route => route.fulfill({ json: { events: [], before: null, cursor: 0 } }));
+  await page.evaluate(() => { location.hash = "/task/t-run"; });
+  await expect.poll(() => page.evaluate(() => (window as unknown as Harness).hasScopedStream("t-run"))).toBe(true);
+  const currentUrls = await page.evaluate(() => (window as unknown as Harness).scopedUrls);
+  expect(new URL(currentUrls.at(-1)!).searchParams.get("lastEventId")).toBe("0");
   await send(page, "t-run", { type: "tasks", tasks: [], replayThrough: 0 });
-  await expect(page.getByText("Loading history…")).toHaveCount(0);
   await event(page, "t-run", 1, "First live message");
   await expect(page.getByText("First live message")).toBeVisible();
-  await page.reload();
-  await expect.poll(() => page.evaluate(() =>
-    (window as unknown as Harness).hasScopedStream("t-run"))).toBe(true);
-  await send(page, "t-run", { type: "tasks", tasks: [] });
-  await event(page, "t-run", 1, "Legacy history");
-  await expect(page.getByText("Legacy history")).toBeVisible();
 });
-
 
 test("viewport resizing follows the bottom without moving a reader in older history", async ({ page }) => {
   await open(page, "t-idle-rich");
@@ -104,15 +139,13 @@ test("viewport resizing follows the bottom without moving a reader in older hist
   await expectBottom(page);
   await page.setViewportSize({ width: 360, height: 650 });
   await expectBottom(page);
-  // scrollTop changes immediately, but the browser dispatches scroll later.
-  // Wait for that event before simulating the subsequent keyboard resize.
-  await viewport(page).evaluate((el) => new Promise<void>((resolve) => {
+  await viewport(page).evaluate(el => new Promise<void>(resolve => {
     el.addEventListener("scroll", () => resolve(), { once: true });
     el.scrollTop = 100;
   }));
-  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
+  await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(100);
   await page.setViewportSize({ width: 360, height: 600 });
   await event(page, "t-idle-rich", 2, "A new streamed line\n\n");
   await expect(page.getByText(/A new streamed line/)).toHaveCount(1);
-  expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(100);
+  expect(await viewport(page).evaluate(el => el.scrollTop)).toBe(100);
 });

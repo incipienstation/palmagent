@@ -34,6 +34,9 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
       : undefined;
     // Seed EventSource's native reconnect cursor before the first history event.
     // This also preserves an empty session's explicit zero cursor on reconnect.
+    // Tail mode has no explicit query cursor, so seed its native reconnect ID.
+    // REST-backed clients keep their cursor in the URL until a real event frame
+    // supplies an ID; seeding a synthetic frame there would resemble a delta.
     const firstSnapshot = (history ? `id: ${history.after}\n` : "") + snapshot(taskId ? boundary : undefined, history);
     let pendingBytes = 0;
     const queue: string[] = [];

@@ -54,8 +54,13 @@ export const PushUnsubscribeSchema = z.object({ endpoint: required });
 export const DispatchSessionSchema = z.object({ agent, sessionId: required, cwd: required, home: required, waitPid: z.number().int().positive() });
 export const TaskStatusSchema = z.enum(["queued", "running", "awaiting_approval", "awaiting_input", "idle", "archived", "failed", "cancelled"]);
 export const TaskQuerySchema = z.object({ status: TaskStatusSchema.optional() });
-const cursor = z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
-export const HistoryQuerySchema = z.object({ before: cursor });
+// Omitting `before` requests the latest page. Supplying it walks backwards
+// through the durable transcript without mixing live stream events into history.
+const historyCursor = z.string().regex(/^\d+$/).refine((value) => {
+  const cursor = Number(value);
+  return Number.isSafeInteger(cursor) && cursor >= 1;
+});
+export const HistoryQuerySchema = z.object({ before: historyCursor.optional() });
 export const TaskImageQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
 export const StreamQuerySchema = z.object({
   task: text.optional(), lastEventId: text.optional(),
