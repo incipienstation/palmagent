@@ -614,12 +614,28 @@ for (const id of ["t-input", "t-await"]) test(`composer keeps Stop available on 
   await expect(page.getByRole("menuitem", { name: "Stop", exact: true })).toHaveCount(0);
 });
 
-test("a failed Stop can be retried without losing a follow-up draft", async ({ page }) => {
+test("a follow-up draft replaces Stop, and clearing it restores Stop", async ({ page }) => {
+  await queueSetup(page);
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  const input = composer.getByRole("textbox", { name: "Message", exact: true });
+  const stop = composer.getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeEnabled();
+  await input.fill("Keep this follow-up");
+  await expect(stop).toHaveCount(0);
+  await expect(composer.getByRole("button", { name: "Send now", exact: true })).toBeVisible();
+  await input.fill("   ");
+  await expect(stop).toBeEnabled();
+});
+
+test("a failed Stop can be retried while keeping the composer usable", async ({ page }) => {
   await queueSetup(page);
   await page.route("**/api/tasks/t-run/stop", route => route.fulfill({ status: 503, json: { error: "Stop unavailable" } }));
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Keep this follow-up");
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  await composer.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.getByTestId("toast")).toContainText("Stop unavailable");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
-  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Keep this follow-up");
+  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  const input = composer.getByRole("textbox", { name: "Message", exact: true });
+  await input.fill("Keep this follow-up");
+  await expect(input).toHaveValue("Keep this follow-up");
+  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
 });
