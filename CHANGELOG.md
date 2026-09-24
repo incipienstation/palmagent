@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The composer hides its settings control while Codex dictation is active and restores it when dictation ends.
+
 ## 0.1.0-alpha.87
 
 ### Fixed
