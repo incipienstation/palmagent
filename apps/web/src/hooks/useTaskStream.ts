@@ -93,8 +93,17 @@ function restoredHistory(value: unknown): TaskHistoryData | undefined {
 export function useTaskStream(taskId: string): TaskStream {
   const { mode } = useOutputMode();
   const queryKey = useMemo(() => taskHistoryKey(taskId, mode), [taskId, mode]);
-  const initialData = useMemo(() => mode === "compact"
-    ? compactHistory(restoredHistory(readUpdateSnapshot(`history:${taskId}`))) : undefined, [taskId, mode]);
+  const initialData = useMemo(() => {
+    const restored = restoredHistory(readUpdateSnapshot(`history:${taskId}`));
+    if (!restored) return undefined;
+    if (mode === "compact") return compactHistory(restored);
+    // A compact checkpoint intentionally omits tool payloads. Reuse a verbose
+    // checkpoint across a screen update so its loaded pages and scroll anchor
+    // survive, but fetch full history when the checkpoint contains summaries.
+    const hasDeferredDetails = restored.pages.some((page) => page.items.some((item) =>
+      item.kind !== "assistant_text" && item.detailsDeferred));
+    return hasDeferredDetails ? undefined : restored;
+  }, [taskId, mode]);
   const history = useInfiniteQuery({
     queryKey,
     queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, mode === "verbose" ? "full" : "summary", signal)),
