@@ -100,7 +100,7 @@ test("cancelling while permission is pending releases a later microphone grant",
   expect(calls.starts()).toBe(0);
 });
 
-test("changing runtime closes dictation and ignores late words", async ({ page }) => {
+test("settings disappear during dictation and return after it ends", async ({ page }) => {
   const calls = await microphone(page);
   await page.goto("/#/new");
   const configure = page.getByRole("button", { name: "Configure task settings" });
@@ -109,10 +109,14 @@ test("changing runtime closes dictation and ignores late words", async ({ page }
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft");
   await page.getByRole("button", { name: "Start voice input" }).click();
   await expect(page.getByText("Listening… tap the microphone to finish.")).toBeVisible();
+  await expect(configure).toHaveCount(0);
+  await page.getByRole("button", { name: "Stop voice input" }).click();
+  await expect.poll(calls.stops).toBe(1);
+  await expect(configure).toBeVisible();
+  await page.evaluate(() => (window as any).voiceTest.emit("late", "Do not append"));
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep my draft");
   await configure.click(); await page.getByRole("radio", { name: "claude", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await expect.poll(calls.stops).toBe(1);
-  await page.evaluate(() => (window as any).voiceTest.emit("late", "Do not append"));
   await expect(page.getByRole("button", { name: "Start voice input" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep my draft");
 });
