@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Stop is shown for an active task when the composer is empty. A follow-up draft keeps Send or Queue as the primary action; Stop remains available while a send is in flight.
+
 ## 0.1.0-alpha.81
 
 ### Changed

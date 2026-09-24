@@ -250,7 +250,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const sending = activity.label === "Sending message…" || activity.label === "Sending queued message…" || pendingDeliveries.some(m => m.status === "sending");
   const canStop = active || sending || activity.stopping;
   const hasDraft = !!compose.trim() || normalAtt.images.length > 0 || skills.length > 0;
-  const showSend = !canStop || (!busy && (hasDraft || deliveryMode === "queue"));
+  const composerHasDraft = edit
+    ? !!editText.trim() || editAtt.images.length > 0 || editSkills.length > 0
+    : hasDraft;
+  const showSend = !canStop || (!busy && (composerHasDraft || deliveryMode === "queue"));
+  const showStop = canStop && (!composerHasDraft || sending || !!activity.stopping);
   const canCancel = running || status === "queued";
   const canArchive = !localOwner && !active && status !== "archived";
 
@@ -343,7 +347,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
-            onStop={canStop ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
+            onStop={showStop ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
