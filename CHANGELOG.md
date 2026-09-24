@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.83
+
 ### Changed
 
 - Conversation output now defaults to Compact, with Compact and Verbose as the two detail modes. Collapsed Activity summaries fetch tool details only when expanded.
