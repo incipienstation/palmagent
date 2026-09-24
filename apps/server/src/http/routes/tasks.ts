@@ -1,8 +1,9 @@
 import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
 import { Hono } from "hono";
-import { AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../input.js";
 import type { HttpDependencies } from "../types.js";
+import { HttpError } from "../../service.js";
 import { TaskImageQuerySchema } from "@palmagent/shared/requests";
 import { readTaskImage } from "../../task-images.js";
 
@@ -43,13 +44,23 @@ export function taskRoutes({ service, db }: HttpDependencies) {
       const input = c.req.valid("json");
       return c.json({ task: service.rename(c.req.valid("param").id, input.title) }, 200);
     })
+    .get("/:id/history/details", params(IdParamsSchema), query(ActivityDetailsQuerySchema), (c) => {
+      const taskId = c.req.valid("param").id;
+      service.getTask(taskId);
+      const { from, through } = c.req.valid("query");
+      if (Number(from) > Number(through)) throw new HttpError(400, "through must be at least from");
+      c.header("cache-control", "no-store");
+      return c.json(db.activityDetails(taskId, Number(from), Number(through)), 200);
+    })
     .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;
       service.getTask(taskId);
-      const { before: beforeText } = c.req.valid("query");
+      const { before: beforeText, details } = c.req.valid("query");
       c.header("cache-control", "no-store");
       const before = beforeText === undefined ? undefined : Number(beforeText);
-      return c.json(before === undefined ? db.latestHistoryPage(taskId) : db.historyPage(taskId, before), 200);
+      const includeActivityDetails = details !== "summary";
+      return c.json(before === undefined ? db.latestHistoryPage(taskId, includeActivityDetails)
+        : db.historyPage(taskId, before, db.eventCursor(taskId), includeActivityDetails), 200);
     })
     .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))

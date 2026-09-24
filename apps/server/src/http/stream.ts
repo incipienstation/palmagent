@@ -1,4 +1,5 @@
 import type { SseTasksFrame } from "@palmagent/shared";
+import { deferActivityEventDetails } from "@palmagent/shared";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StreamQuerySchema } from "@palmagent/shared/requests";
@@ -20,7 +21,10 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
   const snapshotsOnly = query.snapshots === "1";
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new HttpError(400, "invalid event cursor");
   const idOf = (row: EventRow) => taskId ? row.seq : row.id;
-  const frame = (row: EventRow) => `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: row.event })}\n\n`;
+  const frame = (row: EventRow) => {
+    const compact = taskId && query.details === "summary" ? deferActivityEventDetails(row.event) : undefined;
+    return `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: compact?.event ?? row.event, ...(compact?.detailsDeferred ? { detailsDeferred: true } : {}) })}\n\n`;
+  };
   const snapshot = (replayThrough?: number, history?: SseTasksFrame["history"]) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), replayThrough, history, version: build?.version })}\n\n`;
 
   const response = streamSSE(c, async (stream) => {

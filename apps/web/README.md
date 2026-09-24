@@ -197,18 +197,18 @@ Back returns to the overview without losing a folder draft.
 
 Settings → Output detail controls the session transcript:
 
-- **Compact** collects background work per turn and previews only the latest known progress
-  while running. Configuration is available in Session details.
-- **Default** groups adjacent activity and keeps a two-line progress preview.
+- **Compact** is the default. It collects background work per turn and previews the latest
+  progress while running.
 - **Verbose** shows all recorded events.
 
 Account allowance and reset countdowns stay visible in every mode. Account Details shows
 the additional provider-specific quota windows.
 
-Activity expands to the full recorded output. In Compact and Default, individual tool failures
-stay inside Activity with a failure count in its summary. Run errors have one expandable
-notice per run; earlier errors use neutral styling after a follow-up or a successful terminal
-result. This preserves the diagnostic record without claiming that every cause was resolved.
+Compact Activity summaries load tool inputs and outputs from REST only when expanded. Live
+events continue over SSE. Individual tool failures stay inside Activity with a failure count
+in its summary. Run errors have one expandable notice per run; earlier errors use neutral
+styling after a follow-up or a successful terminal result. This preserves the diagnostic
+record without claiming that every cause was resolved.
 Questions, approval requests, final answers, and images stay visible. Older messages and
 providers without explicit progress/final metadata retain their prose; the client does not
 guess which text is safe to fold.
@@ -227,7 +227,9 @@ guess which text is safe to fold.
   to omit unused event bodies.
 - **Transcript rendering:** `GET /api/tasks/:id/history` returns the latest page;
   `?before=:seq` loads earlier pages. Pages target 200 events and include whole
-  assistant messages so Markdown is never split at a page boundary. React Virtuoso
+  assistant messages so Markdown is never split at a page boundary. Compact pages
+  and scoped SSE frames retain Activity summaries while deferring tool inputs and
+  outputs; expanding a summary loads its details from REST. React Virtuoso
   renders nearby rows in the Radix scroll area; row expansion survives scrolling
   out of view, and live deltas publish once per animation frame. Long Markdown
   messages parse in a worker and reuse unchanged rendered blocks; worker failures
@@ -241,12 +243,13 @@ guess which text is safe to fold.
   usage and run history. Authentication, settings, discovery, filesystem checks,
   live task state, and account limits always reach the network.
 - **Conversation history:** REST returns the latest whole-message page and older
-  pages on demand. A per-task TanStack Query infinite cache retains recent pages
-  in memory for up to five minutes, within a five-conversation / 4 MB serialized
-  budget. Returning shows cached messages immediately; SSE resumes after the
-  REST page cursor and carries only new events. Oversized inactive conversations
-  drop their oldest pages first. Authentication changes clear response and
-  transcript caches.
+  pages on demand. Compact and full history variants share a per-task TanStack
+  Query infinite cache retained for up to five minutes, within a five-conversation /
+  4 MB serialized budget. Returning shows cached messages immediately; SSE resumes
+  after the REST page cursor and carries only new events. Activity details load on
+  expansion and then remain in a separately bounded cache. Oversized inactive
+  conversations drop their oldest pages first. Authentication changes
+  clear response and transcript caches.
 - **Service worker:** only the app shell is precached, with an offline navigation
   fallback. API responses are never persisted or served as offline successes;
   an offline first load cannot authenticate. Upgrading removes the legacy API
@@ -260,8 +263,9 @@ guess which text is safe to fold.
 | HTML, service worker, manifest | HTTP revalidation; worker update bypasses HTTP cache |
 | Auth, push enrollment, task controls, settings | Network; API HTTP responses use no-store |
 | Task list and task state | SSE snapshots and sequence-based replay; no service-worker interception |
-| Latest and earlier transcript pages | REST, held in a bounded in-memory TanStack Query cache; failed loads can be retried from the conversation |
-| Live transcript deltas | Scoped SSE resumes after the REST snapshot cursor |
+| Latest and earlier transcript pages | REST, held in a bounded in-memory TanStack Query cache; Compact defers tool details |
+| Expanded Activity details | REST on expansion; bounded TanStack Query cache |
+| Live transcript deltas | Scoped SSE resumes after the REST snapshot cursor; Compact receives summary payloads |
 | Repositories (30s), routines (30s), usage (10s), model catalog (5m) | TanStack Query v5 in-memory cache with shared request deduplication and scoped invalidation |
 | Skills by task/repository context (10s) | Context-keyed TanStack Query cache; only fetched while the picker is open |
 | Routine run history | TanStack Query cache; agent history is fresh for 10s, script history is revalidated on open, and active runs poll every 3s |

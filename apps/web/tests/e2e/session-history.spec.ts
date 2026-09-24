@@ -77,7 +77,7 @@ test("prepending an older page preserves the visible message through simultaneou
   let release!: () => void;
   let requested = 0;
   const pending = new Promise<void>((resolve) => { release = resolve; });
-  await page.route("**/history?before=1801", async (route) => {
+  await page.route("**/history?before=1801*", async (route) => {
     requested++;
     await pending;
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
@@ -103,7 +103,7 @@ test("prepending an older page preserves the visible message through simultaneou
 
 test("a failed older page is retryable without replacing current history", async ({ page }) => {
   let attempts = 0;
-  await page.route("**/history?before=1801", (route) => {
+  await page.route("**/history?before=1801*", (route) => {
     attempts++;
     return attempts === 1 ? route.fulfill({ status: 503, json: { error: "History temporarily unavailable" } }) :
       route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
@@ -158,7 +158,7 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
   let requested = false;
-  await page.route("**/history?before=201", async (route) => {
+  await page.route("**/history?before=201*", async (route) => {
     requested = true; await pending;
     await route.fulfill({ json: { events: rows(1, 200), before: null, cursor: 400 } });
   });
@@ -210,7 +210,7 @@ test("expanded activity virtualizes its individual tool records and retains disc
       payload: seq % 2 ? { id: `tool-${seq}`, name: "bash", command: `echo ${seq}` } : { output: `Activity record ${seq}` } } };
   });
   await deliver(page, entries);
-  const disclosure = page.getByRole("button", { name: "Commands · 500 tools", exact: true });
+  const disclosure = page.getByRole("button", { name: "Activity · 500 tools", exact: true });
   await disclosure.click();
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("tool_result: Activity record 2", { exact: true })).toBeVisible();
@@ -223,13 +223,13 @@ test("expanded activity virtualizes its individual tool records and retains disc
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
 });
 
-for (const mode of ["compact", "default"]) {
+for (const mode of ["compact"]) {
   test(`${mode}: loading earlier activity preserves the visible message`, async ({ page }) => {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     let release!: () => void;
     let requested = false;
     const pending = new Promise<void>((resolve) => { release = resolve; });
-    await page.route("**/history?before=1801", async (route) => {
+    await page.route("**/history?before=1801*", async (route) => {
       requested = true; await pending;
       await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
     });
@@ -250,7 +250,7 @@ for (const mode of ["compact", "default"]) {
 
 test("near-top scrolling prefetches the next page before reaching the edge", async ({ page }) => {
   let requested = 0;
-  await page.route("**/history?before=1801", async (route) => {
+  await page.route("**/history?before=1801*", async (route) => {
     requested++;
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });
@@ -298,7 +298,7 @@ for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) 
   test(`early loading keeps continuous scrolling away from the unloaded edge at ${size.width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize(size);
     let requested = 0;
-    await page.route("**/history?before=1801", async (route) => {
+    await page.route("**/history?before=1801*", async (route) => {
       requested++;
       await new Promise((resolve) => setTimeout(resolve, 900));
       await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
@@ -350,7 +350,7 @@ for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) 
 test("early loading adapts to a resized viewport without another scroll gesture", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 520 });
   let requested = 0;
-  await page.route("**/history?before=1801", async (route) => {
+  await page.route("**/history?before=1801*", async (route) => {
     requested++;
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });

@@ -138,6 +138,7 @@ export interface PushPayload {
 export interface SseEventFrame {
   type: "event";
   event: AgentEvent;
+  detailsDeferred?: boolean;
 }
 export interface SseTasksFrame {
   type: "tasks";
@@ -148,12 +149,23 @@ export interface SseTasksFrame {
   history?: { after: number; before: number | null };
 }
 // History pages use the same per-task sequence as the scoped SSE cursor.
-export interface TaskHistoryEvent { seq: number; event: AgentEvent }
+export interface TaskHistoryEvent {
+  seq: number;
+  event: AgentEvent;
+  // Compact transcript pages retain summary fields and defer bulky tool input/output.
+  detailsDeferred?: boolean;
+}
 export interface TaskHistoryResponse {
   events: TaskHistoryEvent[];
   before: number | null;
   // Durable per-task high-water mark captured with the REST page. The client
   // resumes SSE after this sequence so events written during the request replay.
+  cursor: number;
+}
+export interface TaskActivityDetailsResponse {
+  events: TaskHistoryEvent[];
+  from: number;
+  through: number;
   cursor: number;
 }
 export const HISTORY_PAGE_EVENTS = 200;

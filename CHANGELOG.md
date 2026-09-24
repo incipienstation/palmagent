@@ -6,6 +6,15 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Conversation output now defaults to Compact, with Compact and Verbose as the two detail modes. Collapsed Activity summaries fetch tool details only when expanded.
+
+### Fixed
+
+- Streaming Activity disclosures keep stable row identities so late event classification does not remount and flash the row.
+- Verbose conversation checkpoints restore loaded history pages across app updates, preserving the reader's position.
+
 ## 0.1.0-alpha.82
 
 ### Changed

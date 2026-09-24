@@ -5,7 +5,7 @@ import { installScopedStream, open, send } from "./_scoped-stream";
 const ONLY_WHEN_EXPANDED = "zero 503s under the new nginx.conf";
 const viewport = (page: Page) => page.locator("[data-radix-scroll-area-viewport]").first();
 
-for (const mode of ["compact", "default", "verbose"] as const) {
+for (const mode of ["compact", "verbose"] as const) {
   test(`${mode}: output density and full record access on mobile`, async ({ page }) => {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await page.goto("/#/task/t-idle-nginx");
@@ -21,7 +21,6 @@ for (const mode of ["compact", "default", "verbose"] as const) {
     await expect(page.getByText(ONLY_WHEN_EXPANDED)).toBeVisible();
     await assertViewportLocked(page);
     expect(await viewport(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-    if (mode === "default") await expect(page).toHaveScreenshot("output-mode-expanded.png");
   });
 }
 
@@ -38,7 +37,7 @@ test("compact keeps account limits visible and configuration in session details"
   await assertViewportLocked(page);
 });
 
-for (const mode of ["compact", "default"] as const) {
+for (const mode of ["compact"] as const) {
   test(`${mode}: growing work stays folded, preserves reading state and summarizes tool failures`, async ({ page }) => {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await installScopedStream(page);
@@ -76,7 +75,7 @@ for (const mode of ["compact", "default"] as const) {
     await emit("assistant_text", { text: "Finished checking.", phase: "final", messageId: "final-1" });
     await emit("result", { result: "Finished checking." });
     await expect(page.getByText("Finished checking.", { exact: true })).toHaveCount(1);
-    await expect(page.locator("[data-progress-preview]")).toHaveCount(mode === "compact" ? 0 : 1);
+    await expect(page.locator("[data-progress-preview]")).toHaveCount(0);
     await assertViewportLocked(page);
   });
 }
@@ -106,7 +105,7 @@ test("late classification preserves open activity and separate assistant message
   await expect(page.locator("[data-progress-preview]")).toHaveCount(0);
 });
 
-for (const mode of ["compact", "default"] as const) {
+for (const mode of ["compact"] as const) {
   test(`${mode}: repeated tool failures and an interrupted run stay readable on mobile`, async ({ page }) => {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await installScopedStream(page);
