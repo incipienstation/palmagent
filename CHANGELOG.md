@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.86
+
 ### Changed
 
 - Composer model and effort labels collapse to a settings icon during Codex dictation, and the recording stop control uses a secondary button treatment.
