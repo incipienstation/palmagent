@@ -3,7 +3,7 @@ import { onUpdatesChanged } from "../update-events";
 import type { UpdateAction, UpdateSettingsChange, UpdateSettingsStatus } from "@palmagent/shared";
 import { api } from "../api";
 import { createOptimisticPreference } from "../optimistic-preference";
-import { onCacheSessionReset } from "../read-cache";
+import { onCacheSessionReset } from "../query-lifecycle";
 import { toast } from "../components/ui/toaster";
 
 type Action = UpdateAction["action"] | "load" | null;

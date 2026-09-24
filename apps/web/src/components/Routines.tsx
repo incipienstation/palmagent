@@ -1,8 +1,9 @@
-import { reloadRoutines, useRoutines } from "../hooks/useRoutines";
-import { useForegroundRefresh } from "../hooks/useForegroundRefresh";
+import { useQuery } from "@tanstack/react-query";
+import { useRepos } from "../hooks/useRepos";
+import { useRoutines } from "../hooks/useRoutines";
 import { useActionState } from "../action-state";
-import { useEffect, useState, type FormEvent } from "react";
-import type { AgentKind, Permission, Repo, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import type { AgentKind, Permission, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
 import { CalendarClock, ChevronRight, MoreVertical, Play, Plus, Trash2, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -42,7 +43,10 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
+import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
+import { clientReadKeys } from "../client-query-keys";
+import { routineRunsQueryOptions } from "../client-queries";
+import { queryClient } from "../query-client";
 import { effortChoices, selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
@@ -119,30 +123,21 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
   onStop: () => void;
   onDelete: () => void;
 }) {
-  const [history, setHistory] = useState<RoutineRun[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [historyError, setHistoryError] = useState("");
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyAttempt, setHistoryAttempt] = useState(0);
-
+  const runKind = r.kind === "script" ? "script" : "agent";
+  const historyQuery = useQuery({ ...routineRunsQueryOptions(r.id, runKind), enabled: showHistory });
+  const history = historyQuery.data ?? null;
+  const historyLoading = historyQuery.isFetching;
+  const historyError = historyQuery.error ? errMsg(historyQuery.error) : "";
+  const loadHistory = () => historyQuery.refetch();
+  const routineVersion = useRef({ id: r.id, updatedAt: r.updatedAt, lastRunAt: r.lastRunAt });
   useEffect(() => {
-    if (!showHistory || !history?.some(run => run.status === "running")) return;
-    const timer = setInterval(() => setHistoryAttempt(value => value + 1), 3000);
-    return () => clearInterval(timer);
-  }, [showHistory, history]);
-
-  const loadHistory = () => setHistoryAttempt(value => value + 1);
-  useForegroundRefresh(() => { if (showHistory) loadHistory(); });
-  useEffect(() => {
-    if (!showHistory) return;
-    let active = true;
-    setHistoryLoading(true); setHistoryError("");
-    void api.routineRuns(r.id, r.kind === "script")
-      .then(value => { if (active) setHistory(value); })
-      .catch(error => { if (active) setHistoryError(errMsg(error)); })
-      .finally(() => { if (active) setHistoryLoading(false); });
-    return () => { active = false; };
-  }, [showHistory, r.id, r.kind, r.updatedAt, r.lastRunAt, historyAttempt]);
+    const previous = routineVersion.current;
+    routineVersion.current = { id: r.id, updatedAt: r.updatedAt, lastRunAt: r.lastRunAt };
+    if (showHistory && previous.id === r.id && (previous.updatedAt !== r.updatedAt || previous.lastRunAt !== r.lastRunAt)) {
+      void queryClient.invalidateQueries({ queryKey: clientReadKeys.routineRuns(r.id, runKind), exact: true });
+    }
+  }, [showHistory, r.id, r.kind, r.updatedAt, r.lastRunAt, runKind]);
 
   function toggleHistory() { setShowHistory(value => !value); }
 
@@ -279,7 +274,8 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
 
 export function RoutinesView() {
   const { routines, actions, saving, stale, creating, error: mutationError, toggle, run, stop, remove, create: createRoutine } = useRoutines();
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const { repos, loading: reposLoading, loaded: reposLoaded, error: repoError } = useRepos();
+  const repoList = useMemo(() => [...repos.values()], [repos]);
   const [error, setError] = useState("");
   const busy = creating !== null;
   const [showForm, setShowForm] = useActionState(`routine:showForm`, false);
@@ -312,22 +308,10 @@ export function RoutinesView() {
   const [title, setTitle] = useDraft(`routine:title`);
   const [prompt, setPrompt] = useDraft(`routine:prompt`);
 
-  async function reload() {
-    try {
-      const [, rps] = await Promise.all([reloadRoutines(), api.listRepos()]);
-      setRepos(rps);
-      setRepoId((cur) => (cur && rps.some((r) => r.id === cur) ? cur : (rps[0]?.id ?? "")));
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }
-
   useEffect(() => {
-    void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useForegroundRefresh(() => { void reload(); });
+    if (!reposLoaded) return;
+    setRepoId((current) => current && repos.has(current) ? current : repoList[0]?.id ?? "");
+  }, [reposLoaded, repos, repoList, setRepoId]);
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -366,7 +350,7 @@ export function RoutinesView() {
     <AppShell>
       <AppBar title="Routines" />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
-        {(error || mutationError) && <Alert variant="destructive">{error || mutationError}</Alert>}
+        {(error || mutationError || repoError) && <Alert variant="destructive">{error || mutationError || repoError}</Alert>}
         {creating !== null && <Card role="status" className="p-4"><p className="truncate font-medium">{creating}</p><p className="text-sm text-muted-foreground">Creating routine…</p></Card>}
         {[...actions].some(([, action]) => action === "delete") && <p role="status" className="text-sm text-muted-foreground">Deleting routine…</p>}
 
@@ -424,15 +408,15 @@ export function RoutinesView() {
                 <Select
                   value={repoId}
                   onValueChange={(v) => v && setRepoId(v)}
-                  disabled={repos.length === 0}
+                  disabled={reposLoading || repoList.length === 0}
                 >
                   <SelectTrigger>
                     <SelectValue
-                      placeholder={repos.length === 0 ? "no repos registered" : "select a repo"}
+                      placeholder={repoList.length === 0 ? "no repos registered" : "select a repo"}
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {repos.map((r) => (
+                    {repoList.map((r) => (
                       <SelectItem key={r.id} value={r.id}>
                         {r.name}{" "}
                         <span className="text-muted-foreground">

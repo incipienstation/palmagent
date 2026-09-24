@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { MessageQueue, TaskState } from "@palmagent/shared";
-import { onCacheSessionReset } from "./read-cache";
+import { onCacheSessionReset } from "./query-lifecycle";
 import { beginBrowserWork } from "./update-state";
 
 export type QueuePreview = { apply: (queue: MessageQueue) => MessageQueue; id?: string; label: string; submission?: boolean };

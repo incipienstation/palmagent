@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { RepoSettingsChange, RepoSettingsStatus } from "@palmagent/shared";
 import { api } from "../api";
-import { cacheSession, onCacheSessionReset } from "../read-cache";
+import { cacheSession, onCacheSessionReset } from "../query-lifecycle";
 import { toast } from "../components/ui/toaster";
 
 let snapshot = { status: null as RepoSettingsStatus | null, busy: false, error: "", notice: "", adding: [] as string[] };

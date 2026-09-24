@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { cacheSession } from "./read-cache";
+import { cacheSession } from "./query-lifecycle";
 import { beginTaskStop, finishWhenStopped, observeTaskActivity } from "./task-activity";
 import { toast } from "./components/ui/toaster";
 

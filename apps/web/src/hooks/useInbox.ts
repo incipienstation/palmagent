@@ -1,6 +1,7 @@
 import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
-import { readCache } from "../read-cache";
+import { clientReadKeys } from "../client-query-keys";
+import { queryClient } from "../query-client";
 import { reconcileTasks } from "../task-snapshot";
 import { updatesChanged } from "../update-events";
 import { observeServerVersion } from "../pwa";
@@ -40,7 +41,10 @@ export function useInbox(): Inbox {
           const incoming = frame.tasks;
           incoming.forEach(task => { observeTaskMutation(task); observeTaskActivity(task); });
           const next = reconcileTasks(snapshot.current, incoming);
-          if (next !== snapshot.current) readCache.invalidate(key => key === "/api/usage" || key.endsWith("/runs"));
+          if (next !== snapshot.current) {
+            void queryClient.invalidateQueries({ queryKey: clientReadKeys.usage(), refetchType: "active" });
+            void queryClient.invalidateQueries({ queryKey: clientReadKeys.routineRunsAll(), refetchType: "active" });
+          }
           snapshot.current = next;
           setTasks(next);
           setLoading(false);

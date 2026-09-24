@@ -1,7 +1,7 @@
 import { useBackLayer } from "../hooks/useBackLayer";
 import { TerminalsView } from "./Terminals";
 import { useActionState } from "../action-state";
-import { cacheSession } from "../read-cache";
+import { cacheSession } from "../query-lifecycle";
 import { acceptMessageQueue, clearQueuePreview, beginTaskAction, useTaskActivity, type QueuePreview } from "../task-activity";
 import { stopTaskTurn } from "../task-stop";
 import { mutateTask, useTaskMutations } from "../task-mutations";
