@@ -109,7 +109,7 @@ function openSse(res) {
   });
   res.write(": connected\n\n");
 }
-const tasksFrame = (res, replayThrough, history) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, replayThrough, history })}\n\n`);
+const tasksFrame = (res, historyThrough) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, historyThrough })}\n\n`);
 
 const taskClients = new Set();
 
@@ -121,25 +121,9 @@ function handleStream(req, res, url) {
   openSse(res);
   taskClients.add(res);
   const stream = events[taskId] ?? [];
-  const cursor = Number(req.headers["last-event-id"] ?? url.searchParams.get("lastEventId") ?? 0);
-  const tail = taskId && url.searchParams.has("tail") && !url.searchParams.has("lastEventId") && !req.headers["last-event-id"];
-  let after = tail ? Math.max(0, stream.length - 200) : cursor;
-  while (tail && after > 0 && stream[after]?.kind === "assistant_text" && stream[after - 1]?.kind === "assistant_text") after--;
-  if (tail) res.write(`id: ${after}\n`);
-  tasksFrame(res, taskId ? stream.length : undefined, tail ? {
-    after, before: after > 0 ? after + 1 : null,
-  } : undefined);
-
-  if (taskId) {
-    // Replay the whole scoped stream immediately, stamping the per-task seq on
-    // the `id:` line in fixture order. Sending synchronously keeps the rendered
-    // log deterministic for snapshots (no inter-event timing to settle).
-    stream.forEach((ev, i) => {
-      if (i < after) return;
-      const event = { taskId, agent: tasks.find((t) => t.taskId === taskId).agent, ts: 0, ...ev };
-      res.write(`id: ${i + 1}\ndata: ${JSON.stringify({ type: "event", event })}\n\n`);
-    });
-  }
+  // Persisted rows are served by REST. This boundary marks the point after
+  // which newly produced events belong on the live stream.
+  tasksFrame(res, taskId ? stream.length : undefined);
 
   const keepAlive = setInterval(() => {
     try {

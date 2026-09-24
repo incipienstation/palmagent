@@ -11,7 +11,7 @@ test("Codex answers carry question identities and preserve input after delivery 
       { id: "first", question: "Choose", options: [{ label: "Yes" }] },
       { id: "second", question: "Choose", options: [] },
     ] } };
-  await send(page, task.taskId, { type: "tasks", tasks: [task], replayThrough: 0 });
+  await send(page, task.taskId, { type: "tasks", tasks: [task], historyThrough: 0 });
   await page.getByRole("button", { name: "Yes", exact: true }).click();
   await page.getByRole("button", { name: "Go to question 2", exact: true }).click();
   await page.getByPlaceholder("Or type a custom answer…").nth(1).fill("Custom answer");

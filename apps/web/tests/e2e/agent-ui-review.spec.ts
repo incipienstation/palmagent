@@ -19,7 +19,7 @@ for (const width of [360, 1280]) {
         await installScopedStream(page);
         const id = "t-idle-rich";
         await open(page, id);
-        await send(page, id, { type: "tasks", tasks: [], replayThrough: 0 });
+        await send(page, id, { type: "tasks", tasks: [], historyThrough: 0 });
         const frames = scenario === "code" ? [
           { kind: "assistant_text", payload: { text: 'The retry helper is ready.\n\n```typescript\nexport async function retry<T>(\n  run: () => Promise<T>,\n  attempts = 3,\n): Promise<T> {\n  for (let n = 1; ; n++) {\n    try { return await run(); }\n    catch (error) {\n      if (n >= attempts) throw error;\n    }\n  }\n}\n```', messageId: "review" } },
         ] : [

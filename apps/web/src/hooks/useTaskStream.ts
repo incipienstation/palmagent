@@ -5,7 +5,7 @@ import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
 import { api } from "../api";
-import { queryClient, taskHistoryKey, TASK_HISTORY_GC_TIME } from "../task-history-query";
+import { queryClient, taskHistoryChangesKey, taskHistoryKey, TASK_HISTORY_GC_TIME } from "../task-history-query";
 import { useOutputMode } from "../OutputModeProvider";
 import { connectSse, type ConnState } from "./sse";
 
@@ -74,7 +74,7 @@ function compactHistory(data: TaskHistoryData | undefined): TaskHistoryData | un
 
 // Deploy handoff snapshots from the previous client stored one flat transcript.
 // Lift it into an InfiniteData page so an update can paint immediately and then
-// continue from its saved SSE cursor.
+// continue from its durable history cursor.
 function restoredHistory(value: unknown): TaskHistoryData | undefined {
   if (!value || typeof value !== "object") return;
   const candidate = value as Partial<TaskHistoryData> & {
@@ -113,8 +113,8 @@ export function useTaskStream(taskId: string): TaskStream {
     initialData,
     initialDataUpdatedAt: initialData ? Date.now() : undefined,
     placeholderData: (previousData) => previousData,
-    // History changes flow through its scoped SSE connection. These defaults
-    // are intentionally local to transcript queries, not application-wide.
+    // Persisted history changes are reconciled from REST against the stream
+    // boundary. These defaults stay local to transcript queries.
     staleTime: Infinity,
     gcTime: TASK_HISTORY_GC_TIME,
     retry: false,
@@ -149,44 +149,136 @@ export function useTaskStream(taskId: string): TaskStream {
     if (!historyReady) return;
     const currentData = () => queryClient.getQueryData<TaskHistoryData>(queryKey);
     const initial = currentData();
-    let lastSeq = initial?.pages.at(-1)?.cursor ?? 0;
+    let appliedSeq = initial?.pages.at(-1)?.cursor ?? 0;
+    let receivedSeq = appliedSeq;
+    let catchupTarget = appliedSeq;
     let pendingTask: TaskState | undefined;
-      let pendingEvents: Array<{ seq: number; event: AgentEvent; detailsDeferred?: boolean }> = [];
+    let pendingEvents: Array<{ seq: number; event: AgentEvent; detailsDeferred?: boolean; bytes: number }> = [];
+    let pendingBytes = 0;
     let animation = 0;
     let disposed = false;
+    let recovering = false;
+    let catchupPromise: Promise<void> | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let catchupFailures = 0;
+    let overflowReconnectRequested = false;
+    let connection: ReturnType<typeof connectSse> | undefined;
+
+    const MAX_PENDING_EVENTS = 4096;
+    const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 
     const savedTask = initial?.pages.at(-1)?.task;
     setStreamTask(savedTask ? { taskId, task: savedTask } : undefined);
 
-    const updateLatestPage = (update: (page: TaskHistoryPage) => TaskHistoryPage) => {
-      queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => {
+    const updateLatestPage = (update: (page: TaskHistoryPage) => TaskHistoryPage): boolean => {
+      const updated = queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => {
         if (!data?.pages.length) return data;
         const index = data.pages.length - 1;
         const pages = data.pages.slice();
         pages[index] = update(pages[index]);
         return { ...data, pages };
       });
+      return !!updated?.pages.length;
     };
 
     const publish = () => {
       animation = 0;
       if (disposed) return;
-      const events = pendingEvents;
+      if (recovering) return;
+      const events = pendingEvents.sort((a, b) => a.seq - b.seq);
       pendingEvents = [];
+      pendingBytes = 0;
       const task = pendingTask;
       pendingTask = undefined;
-      if (events.length || task) updateLatestPage((page) => {
-        const items = events.length ? [...page.items] : page.items;
-        for (const entry of events) append(items, entry.event, entry.seq, entry.detailsDeferred);
-        return { ...page, items, cursor: Math.max(page.cursor, lastSeq), ...(task ? { task } : {}) };
-      });
+      const fresh = events.filter((entry) => entry.seq > appliedSeq);
+      if (fresh.length || task) {
+        const nextSeq = fresh.reduce((value, entry) => Math.max(value, entry.seq), appliedSeq);
+        if (updateLatestPage((page) => {
+          const items = fresh.length ? [...page.items] : page.items;
+          for (const entry of fresh) append(items, entry.event, entry.seq, entry.detailsDeferred);
+          return { ...page, items, cursor: Math.max(page.cursor, nextSeq), ...(task ? { task } : {}) };
+        })) appliedSeq = nextSeq;
+      }
+      receivedSeq = Math.max(receivedSeq, appliedSeq);
     };
     const schedule = () => {
-      if (!animation && loadingOlderRef.current !== taskId) animation = requestAnimationFrame(publish);
+      if (!recovering && !animation && loadingOlderRef.current !== taskId) animation = requestAnimationFrame(publish);
     };
     resumeLiveRef.current = schedule;
 
-    const disconnect = connectSse(
+    const beginCatchup = () => {
+      if (disposed || catchupPromise) return;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = undefined; }
+      if (appliedSeq >= catchupTarget) {
+        recovering = false;
+        schedule();
+        return;
+      }
+      recovering = true;
+      const running = (async () => {
+        try {
+          while (!disposed && appliedSeq < catchupTarget) {
+            const through = catchupTarget;
+            let after = appliedSeq;
+            while (!disposed && after < through) {
+              const key = taskHistoryChangesKey(taskId, after, through, mode);
+              let page;
+              try {
+                page = await queryClient.fetchQuery({
+                  queryKey: key,
+                  queryFn: ({ signal }) => api.taskHistoryChanges(taskId, after, through,
+                    mode === "compact" ? "summary" : "full", signal),
+                  staleTime: Number.POSITIVE_INFINITY,
+                  gcTime: TASK_HISTORY_GC_TIME,
+                  retry: false,
+                });
+              } finally {
+                queryClient.removeQueries({ queryKey: key, exact: true });
+              }
+              if (disposed) return;
+              if (page.after !== after || page.through !== through) throw new Error("History catch-up boundary changed");
+              const nextAfter = page.nextAfter ?? page.through;
+              if (nextAfter < after || nextAfter > through || (page.nextAfter !== null && nextAfter === after)) {
+                throw new Error("Invalid history catch-up cursor");
+              }
+              if (!updateLatestPage((historyPage) => {
+                const items = page.events.length ? [...historyPage.items] : historyPage.items;
+                for (const entry of page.events) append(items, entry.event, entry.seq, entry.detailsDeferred);
+                return { ...historyPage, items, cursor: Math.max(historyPage.cursor, nextAfter) };
+              })) throw new Error("History query disappeared during catch-up");
+              appliedSeq = nextAfter;
+              receivedSeq = Math.max(receivedSeq, appliedSeq);
+              after = nextAfter;
+            }
+            if (disposed) return;
+            if (after < through) throw new Error("History catch-up did not reach its boundary");
+          }
+          if (!disposed) {
+            recovering = false;
+            catchupFailures = 0;
+            overflowReconnectRequested = false;
+            schedule();
+          }
+        } catch {
+          // Keep live frames buffered behind a failed REST gap and retry with
+          // backoff; advancing either cursor here would lose durable events.
+          catchupFailures++;
+        }
+      })();
+      catchupPromise = running;
+      void running.finally(() => {
+        if (catchupPromise === running) catchupPromise = undefined;
+        if (recovering && !disposed && !retryTimer) {
+          const delay = Math.min(1000 * 2 ** Math.min(catchupFailures - 1, 4), 10_000);
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            beginCatchup();
+          }, delay);
+        }
+      });
+    };
+
+    connection = connectSse(
       `/api/stream?task=${encodeURIComponent(taskId)}${mode === "compact" ? "&details=summary" : ""}`,
       (message) => {
         let frame: SseFrame;
@@ -200,27 +292,41 @@ export function useTaskStream(taskId: string): TaskStream {
             if (loadingOlderRef.current === taskId) pendingTask = mine;
             else updateLatestPage((page) => ({ ...page, task: mine }));
           }
+          if (Number.isSafeInteger(frame.historyThrough) && frame.historyThrough! > appliedSeq) {
+            catchupTarget = Math.max(catchupTarget, frame.historyThrough!);
+            recovering = true;
+            overflowReconnectRequested = false;
+            beginCatchup();
+          }
           return;
         }
         if (frame.type !== "event") return;
         const seq = Number(message.lastEventId);
-        if (!Number.isSafeInteger(seq) || seq <= lastSeq) return;
-        // Advance the reconnect cursor on receipt; publication may be batched to
-        // the next frame or held until an older-page request finishes.
-        lastSeq = seq;
-        pendingEvents.push({ seq, event: frame.event, detailsDeferred: frame.detailsDeferred });
+        if (!Number.isSafeInteger(seq) || seq <= Math.max(appliedSeq, receivedSeq)) return;
+        receivedSeq = seq;
+        const bytes = JSON.stringify(frame.event).length * 2;
+        if (pendingEvents.length >= MAX_PENDING_EVENTS || pendingBytes + bytes > MAX_PENDING_BYTES) {
+          pendingEvents = [];
+          pendingBytes = 0;
+          if (!overflowReconnectRequested) {
+            overflowReconnectRequested = true;
+            connection?.reconnect();
+          }
+          return;
+        }
+        pendingEvents.push({ seq, event: frame.event, detailsDeferred: frame.detailsDeferred, bytes });
+        pendingBytes += bytes;
         schedule();
       },
       setConn,
-      // REST owns history. The stream resumes strictly after its durable fence,
-      // including zero for a conversation with no saved events yet.
-      () => lastSeq,
     );
     return () => {
       disposed = true;
-      disconnect();
+      connection?.close();
+      if (retryTimer) clearTimeout(retryTimer);
       cancelAnimationFrame(animation);
       pendingEvents = [];
+      pendingBytes = 0;
       pendingTask = undefined;
       resumeLiveRef.current = () => {};
       if (mode === "compact") queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => compactHistory(data));

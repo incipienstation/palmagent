@@ -28,7 +28,7 @@ test("Back restores the inbox search, completed-group state, and scroll position
 test("large Markdown preserves cross-block references, tables, literal HTML and streamed final text", async ({ page }) => {
   await installScopedStream(page);
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks, replayThrough: 1 });
+  await send(page, "t-run", { type: "tasks", tasks, historyThrough: 0 });
   const text = "Paragraph with **emphasis**.\n\n".repeat(180) +
     "[Late reference][target]\n\n<script>window.markdownExecuted=true</script>\n\n" +
     "[Unsafe](javascript:alert(1))\n\n| A | B |\n|---|---|\n| one | two |\n\n```ts\nconst sample = 1;\n";
@@ -54,7 +54,7 @@ test("unavailable Markdown workers retain readable content and later deltas", as
   await page.addInitScript(() => { window.Worker = class { constructor() { throw new Error("Worker unavailable"); } } as unknown as typeof Worker; });
   await installScopedStream(page);
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks, replayThrough: 1 });
+  await send(page, "t-run", { type: "tasks", tasks, historyThrough: 0 });
   await event(page, "t-run", 1, "Readable fallback ".repeat(300));
   await expect(page.getByText("Rendering message…", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Readable fallback/)).toBeVisible();
@@ -87,7 +87,7 @@ test.describe("long Markdown with the real service worker", () => {
   test("the parser is available offline before any long message has been opened", async ({ page, context }) => {
     await installScopedStream(page);
     await open(page, "t-run");
-    await send(page, "t-run", { type: "tasks", tasks, replayThrough: 0 });
+    await send(page, "t-run", { type: "tasks", tasks, historyThrough: 0 });
     await page.waitForFunction(() => !!navigator.serviceWorker.controller);
     await context.setOffline(true);
     await event(page, "t-run", 1, "## Offline Markdown\n\n" + "Offline **formatted** paragraph.\n\n".repeat(180));

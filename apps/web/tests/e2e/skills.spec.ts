@@ -86,7 +86,7 @@ test("queue editing keeps skill selection and transcript displays the source log
     state.revision++; await r.fulfill({ json: state });
   });
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, messageQueue: state }], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, messageQueue: state }], historyThrough: 0 });
   await page.getByRole("button", { name: /Queued message 1:/ }).click({ button: "right" });
   await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove palmagent:doctor skill" })).toBeVisible();

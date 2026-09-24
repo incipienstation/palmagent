@@ -24,7 +24,7 @@ for (const width of [360, 1280]) for (const echoFirst of [true, false]) {
       }] } });
     });
     await open(page, "t-run");
-    await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+    await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
     const text = "Write a short story";
     await page.getByRole("textbox").fill(text);
     await page.getByRole("button", { name: "Send now", exact: true }).click();
@@ -91,7 +91,7 @@ test("a rejected echoed message keeps recovery beside its single bubble", async 
     messageQueue: { revision: 2, runId: null, paused: true, messages: [message] } };
   await page.route("**/api/tasks/t-run", route => route.fulfill({ json: { task } }));
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
   await send(page, "t-run", { type: "event", event: { taskId: "t-run", agent: "codex", ts: 1,
     kind: "status", payload: { subtype: "steer", messageId: message.id, text: message.text },
   } }, 1);

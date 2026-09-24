@@ -33,7 +33,7 @@ async function installLatestHistory(page: Page, entries: TaskHistoryEvent[], bef
 async function recent(page: Page, mode = "verbose") {
   const reads = await installLatestHistory(page, rows(1801, 2000), 1801, 2000);
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 2000 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2000 });
   await expect(page.getByText(mode === "verbose" ? "tool_result: Tool 2000" : "History message 1999", { exact: true })).toBeVisible();
   await expectBottom(page);
   return reads;
@@ -164,7 +164,7 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
   });
   await installLatestHistory(page, rows(201, 400), 201, 400);
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 400 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 400 });
   await expect(page.getByText("tool_result: Tool 400", { exact: true })).toBeVisible();
   await expectBottom(page);
   await viewport(page).evaluate((el) => { el.scrollTop = 0; });
@@ -193,7 +193,7 @@ test("compact mode automatically skips consecutive pages of hidden status events
     } : { events: rows(1, 100), before: null, cursor: 400 } });
   });
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 400 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 400 });
   await expect(page.getByRole("button", { name: "Load earlier messages", exact: true })).toHaveCount(0);
   await expect(page.getByText("History message 99", { exact: true })).toBeVisible();
   expect(cursors).toEqual(["latest", "201", "101"]);
@@ -203,7 +203,7 @@ test("expanded activity virtualizes its individual tool records and retains disc
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "default"));
   await installLatestHistory(page, [], null, 0);
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 1000 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
   const entries: TaskHistoryEvent[] = Array.from({ length: 1000 }, (_, index) => {
     const seq = index + 1;
     return { seq, event: { taskId, agent: "codex", ts: seq, kind: seq % 2 ? "tool_call" : "tool_result",
@@ -271,7 +271,7 @@ test("short history fills the viewport automatically and stops at the beginning"
       cursor === "5" ? { events: rows(3, 4), before: 3, cursor: 6 } : { events: rows(1, 2), before: null, cursor: 6 } });
   });
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], replayThrough: 6 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 6 });
   await expect(page.getByRole("status").filter({ hasText: "Beginning of conversation" })).toHaveCount(1);
   await viewport(page).evaluate((el) => { el.scrollTop = 0; });
   await expect(page.getByText("History message 1", { exact: true })).toBeVisible();
@@ -287,7 +287,7 @@ test("returning to a conversation keeps messages and resumes only missed events"
   await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
   await expect(page.getByText("tool_result: Tool 2000", { exact: true })).toBeVisible();
   const urls = await page.evaluate(() => (window as unknown as Harness).scopedUrls);
-  expect(new URL(urls.at(-1)!).searchParams.get("lastEventId")).toBe("2000");
+  expect(new URL(urls.at(-1)!).searchParams.has("lastEventId")).toBe(false);
   expect(latestRequests()).toBe(1);
   await deliver(page, rows(2000, 2002));
   await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();

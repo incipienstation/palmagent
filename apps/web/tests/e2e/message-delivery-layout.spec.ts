@@ -17,7 +17,7 @@ for (const height of [780, 500]) test(`delivery recovery keeps the composer reac
   } satisfies MessageQueue };
   await page.route("**/api/tasks/t-run", route => route.fulfill({ json: { task } }));
   await open(page, "t-run");
-  await send(page, "t-run", { type: "tasks", tasks: [task], replayThrough: 0 });
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("My next draft");
   const sendButton = page.getByRole("button", { name: "Send now", exact: true });
   await expect(sendButton).toBeInViewport();

@@ -26,11 +26,14 @@ test("browser RPC preserves URL encoding, version headers, write tracking, and a
   await api.taskHistory(id, 12, "full", signal);
   assert.equal(calls[1].url, `/api/tasks/${encodeURIComponent(id)}/history?before=12`);
   assert.equal(calls[1].init.signal, signal);
+  await api.taskHistoryChanges(id, 4, 12, "summary", signal);
+  assert.equal(calls[2].url, `/api/tasks/${encodeURIComponent(id)}/history/changes?after=4&through=12&details=summary`);
+  assert.equal(calls[2].init.signal, signal);
   await api.taskHistory(id);
-  assert.equal(calls[2].url, `/api/tasks/${encodeURIComponent(id)}/history`);
+  assert.equal(calls[3].url, `/api/tasks/${encodeURIComponent(id)}/history`);
   await api.validateRepoPath("/space ?#한");
-  assert.equal(new URL(calls[3].url, "http://localhost").searchParams.get("path"), "/space ?#한");
-  assert.deepEqual(observed, ["fixture-server", "fixture-server", "fixture-server", "fixture-server"]);
+  assert.equal(new URL(calls[4].url, "http://localhost").searchParams.get("path"), "/space ?#한");
+  assert.deepEqual(observed, Array(5).fill("fixture-server"));
 });
 
 test("browser RPC keeps auth probes local and releases writes after every failure", async () => {

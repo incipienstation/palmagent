@@ -1,6 +1,6 @@
 import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
 import { Hono } from "hono";
-import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 import { HttpError } from "../../service.js";
@@ -51,6 +51,16 @@ export function taskRoutes({ service, db }: HttpDependencies) {
       if (Number(from) > Number(through)) throw new HttpError(400, "through must be at least from");
       c.header("cache-control", "no-store");
       return c.json(db.activityDetails(taskId, Number(from), Number(through)), 200);
+    })
+    .get("/:id/history/changes", params(IdParamsSchema), query(HistoryChangesQuerySchema), (c) => {
+      const taskId = c.req.valid("param").id;
+      service.getTask(taskId);
+      const { after: afterText, through: throughText, details } = c.req.valid("query");
+      const after = Number(afterText);
+      const through = throughText === undefined ? undefined : Number(throughText);
+      if (through !== undefined && through < after) throw new HttpError(400, "through must be at least after");
+      c.header("cache-control", "no-store");
+      return c.json(db.historyChanges(taskId, after, through, details !== "summary"), 200);
     })
     .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;
