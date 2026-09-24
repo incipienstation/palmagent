@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The composer shows a live waveform during Codex dictation, and its attachment button animates into a cancel control while recording.
+
 ## 0.1.0-alpha.84
 
 ### Fixed
