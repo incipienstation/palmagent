@@ -26,6 +26,16 @@ function toolActivityRows(from: number, to: number): TaskHistoryEvent[] {
     return { seq, event: { taskId, agent: "codex", ts: seq, kind, payload } };
   });
 }
+function longMarkdownRows(from: number, to: number): TaskHistoryEvent[] {
+  return Array.from({ length: to - from + 1 }, (_, i) => {
+    const seq = from + i;
+    const event: AgentEvent = seq % 2 ? {
+      taskId, agent: "codex", ts: seq, kind: "assistant_text",
+      payload: { text: `## History entry ${seq}\n\n${"Paragraph with **formatted text** and a [link](https://example.invalid).\n\n".repeat(500)}` },
+    } : { taskId, agent: "codex", ts: seq, kind: "tool_result", payload: { output: `Tool ${seq}` } };
+    return { seq, event };
+  });
+}
 async function deliver(page: Page, entries: TaskHistoryEvent[]) {
   await page.evaluate((entries) => {
     const harness = window as unknown as Harness;
@@ -146,6 +156,40 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
   expect(restored.connected).toBe(true);
   expect(restored.key).toBe("activity-1801");
   expect(Math.abs(restored.top - top)).toBeLessThanOrEqual(2);
+});
+
+test("fast upward scrolling formats long Markdown before it reaches the viewport", async ({ page }) => {
+  await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), route => route.fulfill({
+    json: { events: longMarkdownRows(1801, 1808), before: null, cursor: 1808 },
+  }));
+  await open(page, taskId, { serverHistory: true });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1808 });
+  await expectBottom(page);
+  await expect(page.getByText("tool_result: Tool 1808", { exact: true })).toBeVisible();
+  const target = page.locator('[data-message-key="1801"]');
+  await expect(target).toHaveCount(0);
+  const samples = await page.evaluate(() => new Promise<Array<{ formatted: boolean; height: number }>>((resolve) => {
+    const viewport = document.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")!;
+    const samples: Array<{ formatted: boolean; height: number }> = [];
+    const capture = () => {
+      const row = viewport.querySelector<HTMLElement>('[data-message-key="1801"]');
+      if (row) {
+        const rect = row.getBoundingClientRect();
+        const pane = viewport.getBoundingClientRect();
+        if (rect.bottom > pane.top && rect.top < pane.bottom) {
+          samples.push({ formatted: !!row.querySelector("h2"), height: rect.height });
+        }
+      }
+      if (viewport.scrollTop > 0) viewport.scrollTop = Math.max(0, viewport.scrollTop - 300);
+      if (viewport.scrollTop > 0 || samples.length < 60) requestAnimationFrame(capture);
+      else resolve(samples);
+    };
+    requestAnimationFrame(capture);
+  }));
+  await expect(page.getByRole("heading", { name: "History entry 1801", exact: true })).toBeVisible();
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.every(sample => sample.formatted)).toBe(true);
+  expect(samples.some(sample => sample.formatted)).toBe(true);
 });
 
 test("a failed older page is retryable without replacing current history", async ({ page }) => {

@@ -9,6 +9,7 @@ let nextId = 0;
 let active: Job | undefined;
 const clients = new Map<number, Client>();
 const pending = new Map<number, Job>();
+const warmClients = new Map<string, ReturnType<typeof markdownParser>>();
 // Bounded page-local cache avoids re-parsing when virtual rows remount.
 const cache = new Map<string, string[]>();
 let cacheSize = 0;
@@ -43,12 +44,17 @@ export function markdownParser(listener: Listener) {
             cache.delete(text);
           }
         }
-        const target = clients.get(data.id);
+        // Reuse an in-flight parse for every row showing the same Markdown.
         // Progressive results are useful during appends, but must never replace
-        // a newer cache hit or text that was rewritten rather than appended.
-        if (target && job.revision >= target.published && target.text.startsWith(job.text)) {
-          target.published = job.revision;
-          target.listener(data.blocks);
+        // newer text that was rewritten rather than extended.
+        const origin = clients.get(data.id);
+        for (const target of clients.values()) {
+          const exact = target.text === job.text;
+          const progressive = target === origin && job.revision >= target.published && target.text.startsWith(job.text);
+          if (exact || progressive) {
+            target.published = exact ? target.revision : job.revision;
+            target.listener(data.blocks);
+          }
         }
         pump();
       };
@@ -64,8 +70,30 @@ export function markdownParser(listener: Listener) {
         pending.delete(id); client.published = client.revision; listener(cached); return;
       }
       if (failed) { listener(null); return; }
-      pending.set(id, { id, text, revision: client.revision }); pump();
+      const alreadyParsing = active?.text === text || Array.from(pending.values()).some((job) => job.text === text);
+      if (!alreadyParsing) { pending.set(id, { id, text, revision: client.revision }); pump(); }
     },
     dispose() { clients.delete(id); pending.delete(id); },
   };
+}
+
+// Parse nearby offscreen history while the reader scrolls. Its result lands in
+// the same bounded cache used by mounted Markdown rows, avoiding a raw-text to
+// formatted-content height change when a virtual row enters the viewport.
+export function prewarmMarkdown(texts: string[]) {
+  const desired = new Set(texts.filter((text) => text.length > 4000 && !cache.has(text)).slice(0, 16));
+  for (const [text, parser] of warmClients) {
+    if (desired.has(text)) continue;
+    warmClients.delete(text);
+    parser.dispose();
+  }
+  for (const text of desired) {
+    if (warmClients.has(text)) continue;
+    const parser = markdownParser(() => {
+      warmClients.delete(text);
+      parser.dispose();
+    });
+    warmClients.set(text, parser);
+    parser.parse(text);
+  }
 }
