@@ -106,8 +106,9 @@ within the current compatibility line, retain plugins, and defer during active w
 The update skill coordinates a required plugin change through Codex's native manager.
 
 A pinned marketplace does not advance when npm `latest` or `next` changes. A plugin
-from a different `x.x.x` needs a compatible published release. See the root README
-for channel selection and compatibility behavior.
+from a different `x.x.x` needs a compatible published release. See the
+[user guide](../../docs/USER-GUIDE.md#choose-a-release-channel) for channel selection
+and compatibility behavior.
 
 ## Single source for skill bodies
 
