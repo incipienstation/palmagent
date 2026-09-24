@@ -15,6 +15,17 @@ function rows(from: number, to: number): TaskHistoryEvent[] {
     return { seq, event };
   });
 }
+function toolActivityRows(from: number, to: number): TaskHistoryEvent[] {
+  return Array.from({ length: to - from + 1 }, (_, i) => {
+    const seq = from + i;
+    const slot = i % 20;
+    const kind: AgentEvent["kind"] = slot === 0 ? "tool_call" : slot === 1 ? "tool_result" : "assistant_text";
+    const payload = kind === "tool_call" ? { id: `tool-${seq}`, name: "bash", command: `echo ${seq}` }
+      : kind === "tool_result" ? { tool_use_id: `tool-${seq - 1}`, output: `Tool ${seq}` }
+      : { text: `History paragraph ${seq}. `.repeat(18) };
+    return { seq, event: { taskId, agent: "codex", ts: seq, kind, payload } };
+  });
+}
 async function deliver(page: Page, entries: TaskHistoryEvent[]) {
   await page.evaluate((entries) => {
     const harness = window as unknown as Harness;
@@ -99,6 +110,42 @@ test("prepending an older page preserves the visible message through simultaneou
   await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
   await expect(page.getByText("tool_result: Tool 2020", { exact: true })).toHaveCount(0);
   expect(requested).toBe(1);
+});
+
+test("prepending older history keeps a cross-page Activity row mounted", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
+  let release!: () => void;
+  let requested = false;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has("before")) {
+      requested = true;
+      await pending;
+      await route.fulfill({ json: { events: toolActivityRows(1601, 1800), before: 1601, cursor: 2000 } });
+      return;
+    }
+    await route.fulfill({ json: { events: toolActivityRows(1801, 2000), before: 1801, cursor: 2000 } });
+  });
+  await open(page, taskId, { serverHistory: true });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2000 });
+  const activity = page.locator('[data-row-key="activity-1801"]');
+  await expect(page.getByText(/History paragraph 2000/)).toBeVisible();
+  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await expect(activity).toBeVisible();
+  await expect.poll(() => requested).toBe(true);
+  const top = (await activity.boundingBox())!.y;
+  await activity.evaluate((element) => Object.assign(window, { savedHistoryActivity: element }));
+
+  release();
+  await expect(page.getByRole("button", { name: "Activity · 20 tools", exact: true })).toBeVisible();
+  const restored = await page.evaluate(() => {
+    const element = (window as unknown as { savedHistoryActivity: HTMLElement }).savedHistoryActivity;
+    return { connected: element.isConnected, key: element.dataset.rowKey, top: element.getBoundingClientRect().y };
+  });
+  expect(restored.connected).toBe(true);
+  expect(restored.key).toBe("activity-1801");
+  expect(Math.abs(restored.top - top)).toBeLessThanOrEqual(2);
 });
 
 test("a failed older page is retryable without replacing current history", async ({ page }) => {

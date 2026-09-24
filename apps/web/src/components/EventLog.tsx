@@ -376,6 +376,14 @@ const TranscriptList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
 );
 const VIRTUAL_COMPONENTS = { Scroller: TranscriptScroller, List: TranscriptList, Header: HistoryHeader, Footer: () => <div className="h-2" /> };
 const rowKey = (_index: number, item: TranscriptRow) => item.key;
+function activityRowKey(activity: Activity, historyFloor?: number): string {
+  // Prepending an older page can extend this Activity backward. Keep its row
+  // identity on the first event from the initially loaded range; older-only
+  // groups use their newest member so subsequent prepends do not remount them.
+  const stableMember = historyFloor === undefined ? undefined
+    : activity.items.find((item) => item.key >= historyFloor)?.key ?? activity.items.at(-1)?.key;
+  return `activity-${stableMember ?? activity.key}`;
+}
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
@@ -547,6 +555,12 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
   const following = useRef(true);
   const [toggled, setToggled] = useUpdateState<Set<number>>(`transcript:${location.hash}:toggled`, () => new Set());
   const [openActivity, setOpenActivity] = useUpdateState<Set<number>>(`transcript:${location.hash}:open`, () => new Set());
+  const activityIdentity = useRef<{ taskId?: string; historyFloor?: number }>({ taskId });
+  if (activityIdentity.current.taskId !== taskId) activityIdentity.current = { taskId };
+  if (activityIdentity.current.historyFloor === undefined && log.length) {
+    activityIdentity.current.historyFloor = log[0].key;
+  }
+  const historyFloor = activityIdentity.current.historyFloor;
   const previousMode = useRef(mode);
   useEffect(() => {
     if (previousMode.current === mode) return;
@@ -594,7 +608,7 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
         });
       } else {
         const open = row.items.some((item) => openActivity.has(item.key));
-        rows.push({ key: `activity-${row.key}`, seq: row.key, type: "activity", activity: row, open });
+        rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, open });
       }
     }
     const pending = [...messages.values()].filter(message => !seen.has(message.id));
@@ -611,7 +625,7 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;
-  }, [log, mode, live, prompt, openActivity, toggled, delivery?.messages]);
+  }, [log, mode, live, prompt, openActivity, toggled, delivery?.messages, historyFloor]);
   const deferredActivities = useMemo(() => transcriptRows.flatMap((row) => {
     if (row.type !== "activity" || !row.open || !row.activity.items.some((item) => item.kind !== "assistant_text" && item.detailsDeferred) || !taskId) return [];
     const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);
