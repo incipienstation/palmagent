@@ -474,7 +474,12 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
-    const pause = () => { initialized.current = true; following.current = false; cancelAnimationFrame(scrollFrame.current); };
+    const pause = () => {
+      initialized.current = true;
+      following.current = false;
+      restoring.current = false;
+      cancelAnimationFrame(scrollFrame.current);
+    };
     const wheel = (event: WheelEvent) => { if (event.deltaY < 0) pause(); };
     let touchY: number | undefined;
     const touchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY; };
@@ -533,16 +538,26 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
         calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: -saved.offset }),
         done: () => {
           if (!active) return;
-          frame = requestAnimationFrame(() => {
+          let lastOffset: number | undefined;
+          let stable = 0, attempts = 0;
+          const settle = () => {
+            if (!active || !restoring.current) return;
             const el = viewport.current;
             const row = el?.querySelector<HTMLElement>(`[data-row-key="${saved.key}"]`);
             if (el && row) {
-              el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - saved.offset;
+              const offset = row.getBoundingClientRect().top - el.getBoundingClientRect().top;
+              stable = lastOffset !== undefined && Math.abs(offset - lastOffset) < 1 ? stable + 1 : 0;
+              lastOffset = offset;
+              // Virtuoso can issue one last measured scroll after its done
+              // callback. Wait for stable row coordinates before correcting.
+              if (++attempts < 20 && stable < 2) { frame = requestAnimationFrame(settle); return; }
+              el.scrollTop += offset - saved.offset;
               lastScrollTop.current = el.scrollTop;
             }
             restoring.current = false;
             captureAnchor();
-          });
+          };
+          frame = requestAnimationFrame(settle);
         },
       });
     });
