@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.92
+
 ### Changed
 
 - Voice dictation begins recording immediately and buffers audio on the device while its realtime connection starts. Canceling voice input discards the buffer.
