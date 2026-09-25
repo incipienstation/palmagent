@@ -461,10 +461,19 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   // scheduled: a delayed size update must not pull a reader back to the bottom.
   const followBottom = useCallback(() => {
     cancelAnimationFrame(scrollFrame.current);
-    scrollFrame.current = requestAnimationFrame(() => {
+    let previousHeight = -1, stable = 0, attempts = 0;
+    const follow = () => {
       const el = viewport.current;
-      if (el && initialized.current && following.current) el.scrollTop = el.scrollHeight;
-    });
+      if (!el || !initialized.current || !following.current) return;
+      const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
+      stable = previousHeight === el.scrollHeight && gap <= 1 ? stable + 1 : 0;
+      previousHeight = el.scrollHeight;
+      el.scrollTop = el.scrollHeight;
+      // DOM height can settle after Virtuoso's height callback. Follow through
+      // that final measurement; actual reading input cancels this frame chain.
+      if (++attempts < 8 && stable < 2) scrollFrame.current = requestAnimationFrame(follow);
+    };
+    scrollFrame.current = requestAnimationFrame(follow);
   }, []);
   // Let Virtuoso finish its initial positioning before our bottom follower can
   // write. Its early atBottom notification includes the empty, hidden list.
