@@ -9,7 +9,10 @@ const agent = z.enum(["claude", "codex"]);
 const text = z.string();
 const required = text.min(1);
 const settings = { permission: text.optional(), model: text.optional(), effort: text.optional() };
-export const ImageAttachmentSchema = z.object({ mediaType: text, data: text });
+const imageDimension = z.number().int().min(1).max(100_000);
+export const ImageAttachmentSchema = z.object({ mediaType: text, data: text,
+  width: imageDimension.optional(), height: imageDimension.optional() })
+  .refine(({ width, height }) => (width === undefined) === (height === undefined));
 const images = z.array(ImageAttachmentSchema).optional(); // decoded limits remain in the service
 export const CreateRepoSchema = z.object({ path: required, name: text.optional(), defaultBaseRef: text.optional() });
 export const CreateTaskSchema = z.object({
