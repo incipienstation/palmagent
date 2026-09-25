@@ -6,10 +6,10 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { VoiceSessions } from "../src/voice.js";
-import { VoiceStartSchema } from "@palmagent/shared";
+import { VoiceClientTimingsSchema, VoiceStartSchema, VoiceStopSchema } from "@palmagent/shared";
 
 function fixture(mode = "success", leaseMs = 45_000) {
-  const requests: any[] = []; const directories: string[] = []; const children: any[] = [];
+  const requests: any[] = []; const directories: string[] = []; const children: any[] = []; const timings: Record<string, string | number>[] = [];
   const sessions = new VoiceSessions((_home, cwd) => {
     directories.push(cwd);
     const child = Object.assign(new EventEmitter(), { pid: 1, exitCode: null, signalCode: null as string | null,
@@ -29,9 +29,9 @@ function fixture(mode = "success", leaseMs = 45_000) {
         }
       });
     } });
-    children.push(child); return child as unknown as ChildProcessWithoutNullStreams;
-  }, leaseMs, 1000);
-  return { sessions, requests, directories, children };
+    children.push(child); queueMicrotask(() => child.emit("spawn")); return child as unknown as ChildProcessWithoutNullStreams;
+  }, leaseMs, 1000, record => timings.push(record));
+  return { sessions, requests, directories, children, timings };
 }
 
 test("voice negotiates an isolated read-only thread and closes on an unexpected agent turn", async () => {
@@ -54,14 +54,38 @@ test("realtime acknowledgements are not success; errors and malformed frames fai
   for (const mode of ["error", "null"]) {
     const f = fixture(mode);
     await assert.rejects(f.sessions.start("/agent-home", "v=0"), error => error instanceof Error && /unavailable/.test(error.message) && !/private/.test(error.message));
+    const startup = f.timings.find(event => event.event === "server_startup");
+    assert.equal(startup?.outcome, "failed");
+    assert.equal(startup?.stage, "realtime_start");
+    assert.equal(JSON.stringify(f.timings).includes("private upstream detail"), false);
     await delay(0); assert.equal(existsSync(f.directories[0]), false); f.sessions.close();
   }
+});
+
+test("voice timings report startup phases and validated client durations without session content", async () => {
+  const f = fixture();
+  try {
+    const connection = await f.sessions.start("/agent-home", "v=0\r\noffer");
+    f.sessions.stop(connection.id, { outcome: "completed", audioContextResumeMs: 5.2, microphoneRequestMs: 12.4,
+      localOfferMs: 3, serverRequestMs: 250, remoteDescriptionMs: 4.1, tapToReadyMs: 300,
+      tapToFirstTranscriptMs: 850, voiceToFirstTranscriptMs: 130 });
+    const startup = f.timings.find(event => event.event === "server_startup");
+    const client = f.timings.find(event => event.event === "client_timing");
+    assert.equal(startup?.outcome, "ready"); assert.equal(startup?.stage, "ready");
+    assert.equal(typeof startup?.processSpawnMs, "number"); assert.equal(typeof startup?.initializeMs, "number");
+    assert.equal(typeof startup?.threadStartMs, "number"); assert.equal(typeof startup?.realtimeStartMs, "number");
+    assert.equal(client?.outcome, "completed"); assert.equal(client?.tapToReadyMs, 300);
+    assert.equal(client?.voiceToFirstTranscriptMs, 130);
+    const serialized = JSON.stringify(f.timings);
+    assert.equal(serialized.includes("offer"), false); assert.equal(serialized.includes("/agent-home"), false);
+    assert.equal(serialized.includes(f.directories[0]), false); assert.equal(serialized.includes("v=0"), false);
+  } finally { f.sessions.close(); }
 });
 
 test("cancelled negotiation, expired leases and shutdown release the owned processes", async () => {
   const pending = fixture("pending"); const abort = new AbortController();
   const result = pending.sessions.start("/agent-home", "v=0", abort.signal);
-  abort.abort(); await assert.rejects(result); pending.sessions.close();
+  abort.abort(); await assert.rejects(result); assert.equal(pending.timings[0]?.outcome, "cancelled"); pending.sessions.close();
   const f = fixture("success", 60);
   const connection = await f.sessions.start("/agent-home", "v=0");
   await delay(100); assert.throws(() => f.sessions.touch(connection.id), /ended/);
@@ -79,5 +103,8 @@ test("voice startup is bounded and validates browser signaling and environment r
       { context: { taskId: "t" }, sdp: "bad" }, { context: { taskId: "t" }, sdp: "v=0" + "x".repeat(65_536) }]) {
       assert.equal(VoiceStartSchema.safeParse(value).success, false);
     }
+    assert.equal(VoiceClientTimingsSchema.safeParse({ outcome: "completed", tapToReadyMs: 300 }).success, true);
+    assert.equal(VoiceStopSchema.safeParse({ timings: { outcome: "completed", transcript: "private text" } }).success, false);
+    assert.equal(VoiceClientTimingsSchema.safeParse({ outcome: "completed", tapToReadyMs: 600_001 }).success, false);
   } finally { f.sessions.close(); }
 });
