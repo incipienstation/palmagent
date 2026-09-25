@@ -40,6 +40,7 @@ export function AppBar({
   titleControl,
   back,
   conn,
+  overlaysContent,
   children,
 }: {
   title: string;
@@ -48,16 +49,24 @@ export function AppBar({
   back?: boolean;
   /** When provided, a small live-state dot renders beside the title. */
   conn?: ConnState;
+  /** Let a focused-screen transcript scroll underneath the AppBar. */
+  overlaysContent?: boolean;
   children?: ReactNode;
 }) {
   const navigation = useAppNavigation();
   const menu = navigation && <Button variant="ghost" size="icon-lg" className="shrink-0 rounded-full" aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
+  const surface = overlaysContent
+    ? "bg-linear-to-b from-background/90 via-background/55 to-transparent before:bg-background/90"
+    : "bg-background/95 before:bg-background";
   return (
-    // Paint the safe-area strip solid behind the translucent header.
-    <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/95 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']">
+    // Keep the safe-area strip mostly opaque while the header surface fades out below it.
+    <header
+      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:content-['']", surface, overlaysContent && "pointer-events-none")}
+      style={overlaysContent ? { marginBottom: "calc(-64px - var(--safe-top))" } : undefined}
+    >
       {!back && menu}
       {back && (
-        <Button variant="ghost" size="icon-lg" className="-ml-1.5 rounded-full" onClick={goBack} aria-label="Back">
+        <Button variant="ghost" size="icon-lg" className={cn("-ml-1.5 rounded-full", overlaysContent && "pointer-events-auto touch-pan-y")} onClick={goBack} aria-label="Back">
           <ChevronLeft className="size-6" />
         </Button>
       )}
@@ -66,7 +75,7 @@ export function AppBar({
         {conn && <LiveDot conn={conn} compact={Boolean(titleControl)} />}
       </h1>
       {back && children && menu ? (
-        <div role="group" aria-label="Header actions" className="-my-px inline-flex shrink-0 items-center rounded-full border border-border bg-card/90 backdrop-blur-md">
+        <div role="group" aria-label="Header actions" className="-my-px inline-flex shrink-0 items-center rounded-full border border-border bg-card/90 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">
           {children}
           {menu}
         </div>

@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Task conversations now show a translucent gradient header over the scrolling transcript.
+
 ## 0.1.0-alpha.94
 
 ### Changed
