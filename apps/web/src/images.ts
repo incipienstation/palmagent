@@ -28,8 +28,9 @@ export async function fileToAttachment(file: File | Blob): Promise<ImageAttachme
   const bitmap = await loadBitmap(file);
   const oversized = Math.max(bitmap.width, bitmap.height) > LONG_EDGE;
   if (!oversized && file.size <= PASSTHROUGH_BYTES && ACCEPTED.has(type)) {
+    const width = bitmap.width, height = bitmap.height;
     bitmap.close?.();
-    return { mediaType: type, data: await blobToBase64(file) };
+    return { mediaType: type, data: await blobToBase64(file), width, height };
   }
 
   const scale = oversized ? LONG_EDGE / Math.max(bitmap.width, bitmap.height) : 1;
@@ -47,7 +48,7 @@ export async function fileToAttachment(file: File | Blob): Promise<ImageAttachme
 
   const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", JPEG_QUALITY));
   if (!blob) throw new Error("image encode failed");
-  return { mediaType: "image/jpeg", data: await blobToBase64(blob) };
+  return { mediaType: "image/jpeg", data: await blobToBase64(blob), width: w, height: h };
 }
 
 // Rough request-body cost of the attachments (base64 chars ≈ bytes on the wire).

@@ -16,7 +16,8 @@ export interface AttachmentStorage {
 }
 const MAX_BYTES = 4.5 * 1024 * 1024;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-const reference = ({ id, mediaType, size }: AttachmentRecord): Attachment => ({ id, mediaType, size });
+const reference = ({ id, mediaType, size }: AttachmentRecord, image: ImageAttachment): Attachment => ({ id, mediaType, size,
+  ...(image.width && image.height ? { width: image.width, height: image.height } : {}) });
 
 /** Immutable private files with a task-scoped SQLite index. Only the index grants access. */
 export class LocalAttachmentStorage implements AttachmentStorage {
@@ -31,7 +32,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     if (!normalized) return undefined;
     const prepared = normalized.map(image => {
       const bytes = Buffer.from(image.data, "base64");
-      return { bytes, mediaType: image.mediaType as Attachment["mediaType"], digest: digest(bytes) };
+      return { bytes, mediaType: image.mediaType as Attachment["mediaType"], digest: digest(bytes), image };
     });
     ensurePrivateDirectory(this.directory);
     const created: string[] = [];
@@ -45,7 +46,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
             try {
               this.read(taskId, existing.id);
               this.db.setAttachmentLifecycle(existing.id, null, null);
-              return reference(existing);
+              return reference(existing, image.image);
             } catch (error) { if (!(error instanceof HttpError)) throw error; }
           }
           this.assertCapacity(image.bytes.length);
@@ -56,7 +57,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
           writePrivateFileAtomic(path, image.bytes);
           if (existing) this.db.setAttachmentLifecycle(existing.id, null, null);
           else this.db.insertAttachment(record);
-          return reference(record);
+          return reference(record, image.image);
         });
       });
     } catch (error) {

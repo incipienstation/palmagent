@@ -7,17 +7,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 export const ImageTaskContext = createContext<string | undefined>(undefined);
 export const ImageLinkContext = createContext(false);
 
-export function ImagePreview({ src = "", alt = "", title, onLoad }: {
-  src?: string; alt?: string; title?: string; onLoad?: () => void;
+const dimensionCache = new Map<string, { width: number; height: number }>();
+function rememberDimensions(src: string, width: number, height: number) {
+  if (src.startsWith("data:") || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) return;
+  dimensionCache.delete(src);
+  dimensionCache.set(src, { width, height });
+  if (dimensionCache.size > 256) dimensionCache.delete(dimensionCache.keys().next().value!);
+}
+
+export function ImagePreview({ src = "", alt = "", title, width, height, onLoad }: {
+  src?: string; alt?: string; title?: string; width?: number; height?: number; onLoad?: () => void;
 }) {
   const taskId = useContext(ImageTaskContext);
   const linked = useContext(ImageLinkContext);
   const resolved = previewSource(src, taskId);
-  return <Preview key={resolved} src={resolved} alt={alt} title={title} onLoad={onLoad} linked={linked} />;
+  const dimensions = width && height ? { width, height } : dimensionCache.get(resolved);
+  return <Preview key={resolved} src={resolved} alt={alt} title={title} dimensions={dimensions} onLoad={onLoad} linked={linked} />;
 }
 
-function Preview({ src, alt, title, onLoad, linked }: {
-  src: string; alt: string; title?: string; onLoad?: () => void; linked: boolean;
+function Preview({ src, alt, title, dimensions, onLoad, linked }: {
+  src: string; alt: string; title?: string; dimensions?: { width: number; height: number }; onLoad?: () => void; linked: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -38,8 +47,13 @@ function Preview({ src, alt, title, onLoad, linked }: {
     <span>{expired ? "Image expired" : "Image unavailable"}: {label}</span>
     {src && !expired && !linked && <Button type="button" variant="outline" size="sm" onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Retry image</Button>}
   </span>;
-  const image = <img key={attempt} src={src} alt={label} title={title} loading="lazy" decoding="async" referrerPolicy="no-referrer"
-    onLoad={onLoad} onError={() => { setFailed(true); onLoad?.(); }}
+  const image = <img key={attempt} src={src} alt={label} title={title} width={dimensions?.width} height={dimensions?.height}
+    loading="lazy" decoding="async" referrerPolicy="no-referrer"
+    onLoad={(event) => {
+      const img = event.currentTarget;
+      rememberDimensions(src, img.naturalWidth, img.naturalHeight);
+      onLoad?.();
+    }} onError={() => { setFailed(true); onLoad?.(); }}
     className="max-h-96 max-w-full rounded-lg object-contain" />;
   // A linked Markdown image keeps its existing link without nesting buttons.
   if (linked) return image;

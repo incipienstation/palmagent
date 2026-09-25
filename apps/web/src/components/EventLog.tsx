@@ -93,11 +93,12 @@ export function UserBubble({ text, meta, skills, attachments, images, onImageLoa
         {text}
         {!attachments?.length && !!images?.length && <div className="flex flex-wrap gap-2">
           {images.map((image, index) => <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
-            alt={`Attached image ${index + 1}`} onLoad={onImageLoad} />)}
+            alt={`Attached image ${index + 1}`} width={image.width} height={image.height} onLoad={onImageLoad} />)}
         </div>}
         {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
           {attachments.map((attachment, index) => <ImagePreview key={`${attachment.id}-${index}`}
-            src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`} onLoad={onImageLoad} />)}
+            src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`}
+            width={attachment.width} height={attachment.height} onLoad={onImageLoad} />)}
         </div>}
       </div>
     </div>
@@ -251,9 +252,10 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
   }
 
   if (item.kind === "output_image") {
-    const img = item.event.payload as { mediaType?: string; data?: string };
+    const img = item.event.payload as { mediaType?: string; data?: string; width?: number; height?: number };
     if (!img.data || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(img.mediaType ?? "")) return null;
-    return <figure className="my-3"><ImagePreview src={`data:${img.mediaType};base64,${img.data}`} alt="Session output" onLoad={onImageLoad} /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
+    return <figure className="my-3"><ImagePreview src={`data:${img.mediaType};base64,${img.data}`} alt="Session output"
+      width={img.width} height={img.height} onLoad={onImageLoad} /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
   }
   if (item.kind === "assistant_text") {
     return (

@@ -93,6 +93,7 @@ for (const agent of ["claude", "codex"] as const) test(`${agent} transcript sync
 test("structured image extraction bounds raster payloads and strips unsupported image bodies", () => {
   const out = extractOutputImages({ content: [{ type: "image", mimeType: "image/png", data: png }, { type: "tool_result", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }] }] });
   assert.equal(out.images.length, 2);
+  assert.deepEqual(out.images.map(({ width, height }) => [width, height]), [[1, 1], [1, 1]]);
   assert.equal(JSON.stringify(out.payload).includes(png), false);
   for (const [mimeType, data] of [["image/svg+xml", Buffer.from("<svg/>").toString("base64")], ["image/png", "YWJj"], ["image/png", "a".repeat(8_000_000)]]) {
     const result = extractOutputImages({ type: "image", mimeType, data });

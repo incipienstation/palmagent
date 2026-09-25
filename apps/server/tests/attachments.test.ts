@@ -22,6 +22,7 @@ function fixture(t: test.TestContext) {
 
 test("private attachments survive restart, deduplicate within a task, and reject cross-task reads", t => {
   const f = fixture(t), [ref] = f.storage.save("one", [image])!;
+  assert.deepEqual([ref.width, ref.height], [1, 1]);
   assert.deepEqual(f.storage.save("one", [image, image]), [ref, ref]);
   assert.equal(statSync(join(f.directory, ref.id)).mode & 0o777, 0o600);
   assert.equal(statSync(f.directory).mode & 0o777, 0o700);

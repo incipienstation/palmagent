@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Conversation images and Mermaid diagrams reserve their layout space while loading, reducing scroll jumps and flicker in older messages.
+
 ## 0.1.0-alpha.90
 
 ### Added

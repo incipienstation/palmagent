@@ -65,20 +65,27 @@ export function MermaidBlock({ source }: { source: string }) {
   }, [source, resolved]);
 
   const code = <pre className="overflow-x-auto p-3 font-mono text-[12.5px] leading-[18px] text-strong"><code>{source}</code></pre>;
-  return <div className="my-2 min-w-0 overflow-hidden rounded-md border border-border bg-muted">
+  // Keep the Markdown row at its final viewer height while Mermaid loads or
+  // falls back to source. Otherwise replacing a long fence changes the virtual
+  // row size during reverse scrolling.
+  const blockHeight = "calc(max(11rem, min(50dvh, 24rem)) + 8rem)";
+  return <div data-mermaid-block className="my-2 flex min-w-0 flex-col overflow-hidden rounded-md border border-border bg-muted"
+    style={{ height: blockHeight }}>
     {current?.url ? <>
-      <Suspense fallback={<p className="p-3 text-xs text-muted-foreground" role="status">Loading diagram controls…</p>}>
-        <MermaidViewport key={current.url} url={current.url} />
-      </Suspense>
-      <details className="border-t border-border">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <Suspense fallback={<p className="p-3 text-xs text-muted-foreground" role="status">Loading diagram controls…</p>}>
+          <MermaidViewport key={current.url} url={current.url} />
+        </Suspense>
+      </div>
+      <details className="max-h-40 shrink-0 overflow-y-auto border-t border-border">
         <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">Diagram source</summary>
         {code}
       </details>
     </> : <>
-      <p className="px-3 pt-2 text-xs text-muted-foreground" role="status">
+      <p className="shrink-0 px-3 pt-2 text-xs text-muted-foreground" role="status">
         {current ? "Diagram unavailable — showing source." : "Rendering diagram…"}
       </p>
-      {code}
+      <div className="min-h-0 flex-1 overflow-auto">{code}</div>
     </>}
   </div>;
 }

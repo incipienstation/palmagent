@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import type { AgentEvent, TaskHistoryEvent } from "@palmagent/shared";
 import { installScopedStream, open, send, viewport, expectBottom, type Harness } from "./_session-stream";
 
@@ -6,6 +7,8 @@ import { installScopedStream, open, send, viewport, expectBottom, type Harness }
 test.use({ serviceWorkers: "block" });
 
 const taskId = "t-idle-rich";
+const imageId = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
+const tallImage = readFileSync(new URL("./image-rendering.spec.ts-snapshots/image-preview-mobile-linux.png", import.meta.url));
 function rows(from: number, to: number): TaskHistoryEvent[] {
   return Array.from({ length: to - from + 1 }, (_, i) => {
     const seq = from + i;
@@ -190,6 +193,43 @@ test("fast upward scrolling formats long Markdown before it reaches the viewport
   expect(samples.length).toBeGreaterThan(0);
   expect(samples.every(sample => sample.formatted)).toBe(true);
   expect(samples.some(sample => sample.formatted)).toBe(true);
+});
+
+test("loading an older attachment keeps the reader's visible message in place", async ({ page }) => {
+  let requested = 0, release!: () => void;
+  const imageGate = new Promise<void>(resolve => { release = resolve; });
+  const entries: TaskHistoryEvent[] = [
+    { seq: 1801, event: { taskId, agent: "codex", ts: 1801, kind: "status", payload: { subtype: "followup", text: "Review this image", attachments: [
+      { id: imageId, mediaType: "image/png", size: tallImage.length, width: 360, height: 780 },
+    ] } } },
+    { seq: 1802, event: { taskId, agent: "codex", ts: 1802, kind: "assistant_text", payload: { text: "Keep this message in view." } } },
+    { seq: 1803, event: { taskId, agent: "codex", ts: 1803, kind: "tool_result", payload: { output: "End of history" } } },
+  ];
+  await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), route => route.fulfill({
+    json: { events: entries, before: null, cursor: 1803 },
+  }));
+  await page.route(`**/api/tasks/${taskId}/attachments/${imageId}`, async route => {
+    requested++;
+    await imageGate;
+    await route.fulfill({ contentType: "image/png", body: tallImage });
+  });
+  await open(page, taskId, { serverHistory: true });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1803 });
+  await expectBottom(page);
+
+  try {
+    await viewport(page).evaluate(el => { el.scrollTop = 0; });
+    const anchor = page.locator('[data-message-key="1802"]');
+    await expect(anchor).toBeVisible();
+    await expect.poll(() => requested).toBe(1);
+    const before = (await anchor.boundingBox())!.y;
+    release();
+    await expect.poll(() => page.getByRole("img", { name: "Attached image 1" }).evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(360);
+    const after = (await anchor.boundingBox())!.y;
+    expect(Math.abs(after - before)).toBeLessThanOrEqual(2);
+  } finally {
+    release();
+  }
 });
 
 test("a failed older page is retryable without replacing current history", async ({ page }) => {

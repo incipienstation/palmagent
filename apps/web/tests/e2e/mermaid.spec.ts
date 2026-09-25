@@ -25,6 +25,16 @@ async function screenshot(page: Page, name: string) {
 const fence = (source: string) => "```mermaid\n" + source + "\n```";
 const flow = "flowchart TD\n  A[Start] --> B[Render diagram]\n  B --> C[Done]";
 
+test("Mermaid parsing keeps the transcript row height stable", async ({ page }) => {
+  await reply(page, fence(flow));
+  const block = page.locator("[data-mermaid-block]");
+  await expect(block.getByText("Rendering diagram…")).toBeVisible();
+  const before = (await block.boundingBox())!.height;
+  await expect(page.getByRole("img", { name: "Mermaid diagram", exact: true })).toBeVisible();
+  const after = (await block.boundingBox())!.height;
+  expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+});
+
 for (const parser of ["static", "streaming", "long"] as const) {
   test(`${parser} Markdown renders Mermaid and preserves source and ordinary code`, async ({ page }) => {
     const errors: string[] = [];
