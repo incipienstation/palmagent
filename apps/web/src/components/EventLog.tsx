@@ -442,9 +442,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     const list = el.querySelector<HTMLElement>("[data-transcript-items]");
     if (list && getComputedStyle(list).visibility === "hidden") return;
     if (el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
-    // Newly appended or measured content can enlarge the gap without the
-    // reader moving. Detach only when the viewport actually moved upward.
-    else if (previousTop !== undefined && el.scrollTop < previousTop) following.current = false;
+    // A scroll event can come from Virtuoso's measurement correction. Only
+    // explicit upward input or scrollbar interaction detaches bottom following.
     captureAnchor();
     if (previousTop === undefined || el.scrollTop >= previousTop) return;
     const key = anchor.current?.key;
@@ -515,6 +514,11 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       touchY = next;
     };
     const key = (event: KeyboardEvent) => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause(); };
+    const root = el.closest("[data-transcript-root]");
+    const scrollbar = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest('[data-slot="scroll-area-scrollbar"]')) pause();
+    };
+    root?.addEventListener("pointerdown", scrollbar, { capture: true, passive: true });
     el.addEventListener("wheel", wheel, { passive: true });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: true });
@@ -524,6 +528,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       el.removeEventListener("touchstart", touchStart);
       el.removeEventListener("touchmove", touchMove);
       el.removeEventListener("keydown", key);
+      root?.removeEventListener("pointerdown", scrollbar, true);
     };
   }, []);
   useEffect(() => {
@@ -802,7 +807,7 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
     }
     return rows;
   }, [transcriptRows, activityQueryByRange]);
-  return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root className="relative min-h-0 flex-1 overflow-hidden">
+  return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
     {rows.length > 0 ? <VirtualTranscript rows={rows}
       liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">

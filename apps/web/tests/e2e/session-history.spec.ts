@@ -107,7 +107,7 @@ test("prepending an older page preserves the visible message through simultaneou
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });
   await recent(page);
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect.poll(() => requested).toBe(1);
   const anchor = page.locator('[data-message-key="1801"]');
   await expect(anchor).toBeVisible();
@@ -144,7 +144,7 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2000 });
   const activity = page.locator('[data-row-key="activity-1801"]');
   await expect(page.getByText(/History paragraph 2000/)).toBeVisible();
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect(activity).toBeVisible();
   await expect.poll(() => requested).toBe(true);
   const top = (await activity.boundingBox())!.y;
@@ -183,7 +183,10 @@ test("fast upward scrolling formats long Markdown before it reaches the viewport
           samples.push({ formatted: !!row.querySelector("h2"), height: rect.height });
         }
       }
-      if (viewport.scrollTop > 0) viewport.scrollTop = Math.max(0, viewport.scrollTop - 300);
+      if (viewport.scrollTop > 0) {
+        viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+        viewport.scrollTop = Math.max(0, viewport.scrollTop - 300);
+      }
       if (viewport.scrollTop > 0 || samples.length < 60) requestAnimationFrame(capture);
       else resolve(samples);
     };
@@ -286,7 +289,7 @@ test("loading an older attachment keeps the reader's visible message in place", 
   await expectBottom(page);
 
   try {
-    await viewport(page).evaluate(el => { el.scrollTop = 0; });
+    await viewport(page).evaluate(el => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     const anchor = page.locator('[data-message-key="1802"]');
     await expect(anchor).toBeVisible();
     await expect.poll(() => requested).toBe(1);
@@ -308,11 +311,11 @@ test("a failed older page is retryable without replacing current history", async
       route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });
   await recent(page);
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect(page.getByRole("alert")).toHaveText("History temporarily unavailable");
   await expect(page.getByText("History message 1801", { exact: true })).toBeVisible();
-  await viewport(page).evaluate((el) => { el.scrollTop = 100; });
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 100; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await page.waitForTimeout(200);
   expect(attempts).toBe(1);
   await page.getByRole("button", { name: "Retry loading earlier messages" }).click();
@@ -346,7 +349,7 @@ test("scrolling away and back preserves a tool row's collapsed override", async 
     }
     return true;
   })).toBe(true);
-  await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight / 2; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = el.scrollHeight / 2; });
   await expect(row).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
@@ -366,7 +369,7 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 400 });
   await expect(page.getByText("tool_result: Tool 400", { exact: true })).toBeVisible();
   await expectBottom(page);
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect.poll(() => requested).toBe(true);
   const anchor = page.locator('[data-message-key="201"]');
   const top = (await anchor.boundingBox())!.y;
@@ -418,7 +421,7 @@ test("expanded activity virtualizes its individual tool records and retains disc
   await expect(page.getByText("tool_result: Activity record 1000", { exact: true })).toBeVisible();
   expect(await page.locator("[data-row-key]").count()).toBeLessThan(40);
   await expect(disclosure).toHaveCount(0);
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
 });
 
@@ -433,7 +436,7 @@ for (const mode of ["compact"]) {
       await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
     });
     await recent(page, mode);
-    await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+    await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     await expect.poll(() => requested).toBe(true);
     const anchor = page.locator('[data-message-key="1801"]');
     await expect(anchor).toBeVisible();
@@ -455,7 +458,7 @@ test("near-top scrolling prefetches the next page before reaching the edge", asy
   });
   await recent(page);
   await expect(page.getByRole("button", { name: "Load earlier messages", exact: true })).toHaveCount(0);
-  await viewport(page).evaluate((el) => { el.scrollTop = 200; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 200; });
   await expect.poll(() => requested).toBe(1);
   await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
 });
@@ -472,7 +475,7 @@ test("short history fills the viewport automatically and stops at the beginning"
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 6 });
   await expect(page.getByRole("status").filter({ hasText: "Beginning of conversation" })).toHaveCount(1);
-  await viewport(page).evaluate((el) => { el.scrollTop = 0; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect(page.getByText("History message 1", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("history-beginning.png") });
   expect(cursors).toEqual(["latest", "5", "3"]);
@@ -504,7 +507,7 @@ for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) 
     });
     await recent(page);
     const metrics = await viewport(page).evaluate(async (el) => {
-      el.scrollTop = el.clientHeight * 2.5;
+      el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = el.clientHeight * 2.5;
       // Settle the test's initial jump before simulating a continuous drag.
       for (let frame = 0; frame < 4; frame++) {
         await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
@@ -554,7 +557,7 @@ test("early loading adapts to a resized viewport without another scroll gesture"
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });
   await recent(page);
-  await viewport(page).evaluate((el) => { el.scrollTop = 1700; });
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 1700; });
   await page.waitForTimeout(150);
   expect(requested).toBe(0);
   await page.setViewportSize({ width: 360, height: 1000 });

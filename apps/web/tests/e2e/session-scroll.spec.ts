@@ -66,13 +66,13 @@ test("delayed REST history paints at the bottom, then live output preserves foll
   await event(page, "t-idle-rich", 6, "\n\nLive update\n\n".repeat(20));
   await expect(page.getByText(/Live update/)).toHaveCount(20);
   await expectBottom(page);
-  await viewport(page).evaluate(el => { el.scrollTop = 100; el.dispatchEvent(new Event("scroll")); });
+  await viewport(page).evaluate(el => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 100; el.dispatchEvent(new Event("scroll")); });
   await event(page, "t-idle-rich", 7, "\n\nWhile reading");
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   expect(await viewport(page).evaluate(el => el.scrollTop)).toBe(100);
   await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
   await expect(page.getByText(/While reading/)).toBeVisible();
-  await viewport(page).evaluate(el => { el.scrollTop = 100; el.dispatchEvent(new Event("scroll")); });
+  await viewport(page).evaluate(el => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 100; el.dispatchEvent(new Event("scroll")); });
 
   // Foreground reconnects recover the durable gap over REST before resuming live output.
   let catchupAfter = -1;
@@ -168,7 +168,7 @@ test("viewport resizing follows the bottom without moving a reader in older hist
   await expectBottom(page);
   await viewport(page).evaluate(el => new Promise<void>(resolve => {
     el.addEventListener("scroll", () => resolve(), { once: true });
-    el.scrollTop = 100;
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 100;
   }));
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(100);
   await page.setViewportSize({ width: 360, height: 600 });
