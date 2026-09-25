@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.90
+
 ### Added
 
 - Voice dictation logs now separate client startup, app-server setup, and first-transcript timings without recording speech content.
