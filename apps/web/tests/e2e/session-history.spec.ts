@@ -238,8 +238,10 @@ for (const scenario of [
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     if (scenario.touch) {
       const cdp = await page.context().newCDPSession(page);
+      const headerRect = (await page.locator("header").boundingBox())!;
+      const headerBottom = headerRect.y + headerRect.height;
       for (let i = 0; i < 45; i++) {
-        const x = box.x + box.width / 2, y = box.y + 40;
+        const x = box.x + box.width / 2, y = Math.max(box.y + 40, headerBottom + 8);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
         for (let step = 1; step <= 6; step++) {
           await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + (box.height - 80) * step / 6 }] });

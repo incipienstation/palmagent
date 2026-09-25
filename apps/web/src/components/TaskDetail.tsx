@@ -263,9 +263,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     <div className={terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
     <AppShell>
       <Sheet>
-        <AppBar title={heading} back conn={conn} titleControl={
+        <AppBar title={heading} back conn={conn} overlaysContent titleControl={
           <SheetTrigger asChild>
-            <Button variant="ghost" size="title" aria-label={heading} aria-description="Open session details" title="Session details">
+            <Button variant="ghost" size="title" className="pointer-events-auto touch-pan-y" aria-label={heading} aria-description="Open session details" title="Session details">
               <span className="flex min-w-0 flex-col items-start gap-0.5">
                 <span className="flex w-full min-w-0 items-center gap-1"><span className="truncate">{heading}</span><ChevronDown className="size-3.5 shrink-0" /></span>
                 {task && <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}

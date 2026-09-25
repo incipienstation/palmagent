@@ -5,6 +5,10 @@ for (const width of [320, 1280]) {
   test(`task header preserves conversation space and details at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
     await page.goto("/#/task/t-idle-rich");
+    const header = page.locator("header").first();
+    expect(await header.evaluate(element => getComputedStyle(element).backgroundImage)).toContain("linear-gradient");
+    const transcript = page.locator("[data-radix-scroll-area-viewport]").first();
+    expect((await transcript.boundingBox())!.y).toBeLessThan((await header.boundingBox())!.height);
     const title = page.getByTitle("Session details", { exact: true });
     await expect(title).toBeVisible();
     await expect(page.locator("header").getByText("Done", { exact: true })).toBeVisible();
