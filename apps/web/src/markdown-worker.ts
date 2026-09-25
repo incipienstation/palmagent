@@ -1,3 +1,5 @@
+import { parseMarkdown } from "./markdown-parse";
+
 // One worker per page, with at most one parse in flight and one pending value
 // per mounted message. A token burst cannot build an unbounded worker queue.
 type Listener = (blocks: string[] | null) => void;
@@ -13,7 +15,29 @@ const warmClients = new Map<string, ReturnType<typeof markdownParser>>();
 // Bounded page-local cache avoids re-parsing when virtual rows remount.
 const cache = new Map<string, string[]>();
 let cacheSize = 0;
-export const cachedMarkdown = (text: string) => cache.get(text);
+export function cachedMarkdown(text: string) {
+  const blocks = cache.get(text);
+  if (blocks) { cache.delete(text); cache.set(text, blocks); }
+  return blocks;
+}
+function rememberMarkdown(text: string, blocks: string[] | null) {
+  if (!blocks || cache.has(text)) return;
+  cache.set(text, blocks);
+  cacheSize += text.length + blocks.join("").length;
+  while (cacheSize > 2_000_000 && cache.size) {
+    const [oldText, oldBlocks] = cache.entries().next().value!;
+    cacheSize -= oldText.length + oldBlocks.join("").length;
+    cache.delete(oldText);
+  }
+}
+// A completed message must have its final layout on its first mounted frame.
+// Nearby worker prewarming usually supplies this; a cold/evicted entry uses the
+// identical parser synchronously instead of replacing raw text after paint.
+export function staticMarkdown(text: string) {
+  const blocks = cachedMarkdown(text) ?? parseMarkdown(text);
+  rememberMarkdown(text, blocks);
+  return blocks;
+}
 function pump() {
   if (active || !pending.size || failed) return;
   active = pending.values().next().value!;
@@ -35,15 +59,7 @@ export function markdownParser(listener: Listener) {
       worker.onmessage = ({ data }: MessageEvent<{ id: number; blocks: string[] | null }>) => {
         const job = active!;
         active = undefined;
-        if (data.blocks && !cache.has(job.text)) {
-          cache.set(job.text, data.blocks);
-          cacheSize += job.text.length + data.blocks.join("").length;
-          while (cacheSize > 2_000_000 && cache.size) {
-            const [text, blocks] = cache.entries().next().value!;
-            cacheSize -= text.length + blocks.join("").length;
-            cache.delete(text);
-          }
-        }
+        rememberMarkdown(job.text, data.blocks);
         // Reuse an in-flight parse for every row showing the same Markdown.
         // Progressive results are useful during appends, but must never replace
         // newer text that was rewritten rather than extended.
@@ -65,7 +81,7 @@ export function markdownParser(listener: Listener) {
   return {
     parse(text: string) {
       client.text = text; client.revision++;
-      const cached = cache.get(text);
+      const cached = cachedMarkdown(text);
       if (cached) {
         pending.delete(id); client.published = client.revision; listener(cached); return;
       }

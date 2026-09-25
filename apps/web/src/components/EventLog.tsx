@@ -266,6 +266,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
         )}
       >
         <Markdown
+          streaming={live}
           trailing={
             live ? (
               <span className="ml-0.5 inline-block w-[7px] animate-blink bg-live align-text-bottom">
@@ -397,6 +398,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
 } & HistoryControls) {
   const virtuoso = useRef<VirtuosoHandle>(null);
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number; hadEarlier?: boolean }>(`scroll:${location.hash}`));
+  const initialized = useRef(!!saved.current);
   useUpdateSnapshot(`scroll:${location.hash}`, () => {
     let state: StateSnapshot | undefined;
     virtuoso.current?.getState((value) => { state = value; });
@@ -408,6 +410,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
+  const captureFrame = useRef(0);
   const lastScrollTop = useRef<number | undefined>(undefined);
   // Retain the beginning header after an update even if prefetch loaded every
   // page. Dropping it changes measured height and shifts the restored position.
@@ -426,12 +429,22 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       anchor.current = { key: row.dataset.rowKey!, offset: row.getBoundingClientRect().top - bounds.top };
     }
   }, []);
+  const captureAfterRender = useCallback(() => {
+    cancelAnimationFrame(captureFrame.current);
+    captureFrame.current = requestAnimationFrame(captureAnchor);
+  }, [captureAnchor]);
   useLayoutEffect(() => { lastScrollTop.current = viewport.current?.scrollTop ?? 0; }, []);
   const onScrollPosition = useCallback((el: HTMLElement) => {
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
     if (restoring.current) return;
-    following.current = el.scrollHeight - el.clientHeight - el.scrollTop < 80;
+    if (!initialized.current) return;
+    const list = el.querySelector<HTMLElement>("[data-transcript-items]");
+    if (list && getComputedStyle(list).visibility === "hidden") return;
+    if (el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
+    // Newly appended or measured content can enlarge the gap without the
+    // reader moving. Detach only when the viewport actually moved upward.
+    else if (previousTop !== undefined && el.scrollTop < previousTop) following.current = false;
     captureAnchor();
     if (previousTop === undefined || el.scrollTop >= previousTop) return;
     const key = anchor.current?.key;
@@ -454,7 +467,34 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       if (el && following.current) el.scrollTop = el.scrollHeight;
     });
   }, []);
-  useEffect(() => () => cancelAnimationFrame(scrollFrame.current), []);
+  useEffect(() => () => {
+    cancelAnimationFrame(scrollFrame.current);
+    cancelAnimationFrame(captureFrame.current);
+  }, []);
+  useEffect(() => {
+    const el = viewport.current;
+    if (!el) return;
+    const pause = () => { initialized.current = true; following.current = false; cancelAnimationFrame(scrollFrame.current); };
+    const wheel = (event: WheelEvent) => { if (event.deltaY < 0) pause(); };
+    let touchY: number | undefined;
+    const touchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY; };
+    const touchMove = (event: TouchEvent) => {
+      const next = event.touches[0]?.clientY;
+      if (next !== undefined && touchY !== undefined && next > touchY) pause();
+      touchY = next;
+    };
+    const key = (event: KeyboardEvent) => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause(); };
+    el.addEventListener("wheel", wheel, { passive: true });
+    el.addEventListener("touchstart", touchStart, { passive: true });
+    el.addEventListener("touchmove", touchMove, { passive: true });
+    el.addEventListener("keydown", key);
+    return () => {
+      el.removeEventListener("wheel", wheel);
+      el.removeEventListener("touchstart", touchStart);
+      el.removeEventListener("touchmove", touchMove);
+      el.removeEventListener("keydown", key);
+    };
+  }, []);
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
@@ -475,9 +515,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     previous.rows = rows;
   }
   const firstItemIndex = previous.first;
-  // Keep the actual visible message and its pixel offset while Virtuoso refines
-  // estimates for a prepended page. Its index API retries after row measurement.
-  // Live appends must not cancel this adjustment, so it depends on the first key.
+  // Resolve the old visible row through Virtuoso, then correct the final pixel
+  // offset against the DOM once its estimated prepend sizes have settled.
   const firstKey = rows[0].seq;
   const previousStart = useRef(firstKey);
   useLayoutEffect(() => {
@@ -488,13 +527,26 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     const index = rows.findIndex((row) => row.key === saved.key);
     if (index < 0) return;
     restoring.current = true;
-    const frame = requestAnimationFrame(() => {
+    let active = true;
+    let frame = requestAnimationFrame(() => {
       virtuoso.current?.scrollIntoView({ index, align: "start",
         calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: -saved.offset }),
-        done: () => { restoring.current = false; },
+        done: () => {
+          if (!active) return;
+          frame = requestAnimationFrame(() => {
+            const el = viewport.current;
+            const row = el?.querySelector<HTMLElement>(`[data-row-key="${saved.key}"]`);
+            if (el && row) {
+              el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - saved.offset;
+              lastScrollTop.current = el.scrollTop;
+            }
+            restoring.current = false;
+            captureAnchor();
+          });
+        },
       });
     });
-    return () => { cancelAnimationFrame(frame); restoring.current = false; };
+    return () => { active = false; cancelAnimationFrame(frame); restoring.current = false; };
   }, [firstKey]);
   // A disclosure changes measured height without prepending data. Keep the
   // interacted row in view while Virtuoso refines its estimates, including when
@@ -540,8 +592,12 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}
     totalListHeightChanged={followBottom}
-    itemsRendered={captureAnchor}
+    itemsRendered={captureAfterRender}
+    atBottomStateChange={(atBottom) => { if (atBottom) initialized.current = true; }}
     atBottomThreshold={80}
+    // A short tool row can precede a very tall answer. Reserve rows as well as
+    // pixels so that answer is measured before the reader crosses into it.
+    minOverscanItemCount={{ top: 3, bottom: 1 }}
     increaseViewportBy={{ top: 300, bottom: 200 }}
     computeItemKey={rowKey}
     components={VIRTUAL_COMPONENTS}

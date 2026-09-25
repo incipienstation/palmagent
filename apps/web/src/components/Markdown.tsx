@@ -1,9 +1,9 @@
-import { Fragment, memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { jsx, jsxs } from "react/jsx-runtime";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import { cachedMarkdown, markdownParser } from "../markdown-worker";
+import { cachedMarkdown, markdownParser, staticMarkdown } from "../markdown-worker";
 import { markdownUrlTransform } from "../image-source";
 import { ImageLinkContext, ImagePreview } from "./ImagePreview";
 import { MermaidBlock } from "./MermaidBlock";
@@ -84,13 +84,18 @@ const COMPONENTS = {
   td: ({ children }) => <td className="border border-border px-2 py-1 align-top">{children}</td>,
 } satisfies Components;
 
-// Small static messages remain synchronous. Active or long messages retain their last parsed
-// view while the worker processes newer text; unchanged blocks skip JSX and DOM work.
+// Completed messages render their final layout even on a cold cache. Streaming
+// messages retain parsed blocks while the worker processes newer text.
 const ParsedBlock = memo(function ParsedBlock({ source }: { source: string }) {
   return toJsxRuntime(JSON.parse(source), {
     Fragment, jsx, jsxs, components: COMPONENTS, ignoreInvalidStyle: true, passKeys: true, passNode: true,
   });
 });
+function StaticMarkdown({ text }: { text: string }) {
+  const blocks = useMemo(() => staticMarkdown(text), [text]);
+  return blocks ? <>{blocks.map((source, index) => <ParsedBlock key={index} source={source} />)}</>
+    : <span className="whitespace-pre-wrap">{text}</span>;
+}
 function LongMarkdown({ text }: { text: string }) {
   const [blocks, setBlocks] = useState<string[] | null | undefined>(() => cachedMarkdown(text));
   const parser = useRef<ReturnType<typeof markdownParser>>(undefined);
@@ -106,14 +111,14 @@ function LongMarkdown({ text }: { text: string }) {
   return <>{blocks.map((source, index) => <ParsedBlock key={index} source={source} />)}</>;
 }
 
-export const Markdown = memo(function Markdown({ children, trailing }: {
-  children: string; trailing?: ReactNode;
+export const Markdown = memo(function Markdown({ children, trailing, streaming = false }: {
+  children: string; trailing?: ReactNode; streaming?: boolean;
 }) {
   return <div className={cn(
     "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
     trailing && "[&>p:nth-last-child(2)]:mb-0 [&>p:nth-last-child(2)]:inline",
   )}>
-    {children.length > 4000 ? <LongMarkdown text={children} /> :
+    {children.length > 4000 ? streaming ? <LongMarkdown text={children} /> : <StaticMarkdown text={children} /> :
       <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={COMPONENTS}>{children}</ReactMarkdown>}
     {trailing}
   </div>;
