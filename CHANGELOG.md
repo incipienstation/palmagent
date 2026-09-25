@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.93
+
 ### Fixed
 
 - Scrolling upward through long conversations keeps completed Markdown formatted and measures nearby answers before they enter view, preventing text flashes and large position jumps when cached rendering data is missing.
