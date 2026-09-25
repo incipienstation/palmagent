@@ -21,7 +21,7 @@ test.describe("task detail", () => {
   });
 
   test("shows the dispatch prompt as a user bubble and a follow-up composer", async ({ page }) => {
-    await page.locator("[data-radix-scroll-area-viewport]").first().evaluate((el) => { el.scrollTop = 0; });
+    await page.locator("[data-radix-scroll-area-viewport]").first().evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     await expect(page.getByRole("group", { name: "Your message", exact: true })).toBeVisible();
     await expect(page.getByText("You", { exact: true })).toHaveCount(0);
     // idle task → follow-up composer is enabled.
@@ -56,11 +56,11 @@ test.describe("task detail", () => {
     page,
   }) => {
     // The markdown-rendered assistant prose sits at the TOP of the log, which
-    // auto-sticks to the bottom — scroll up to it (a real scroll so onScroll
-    // releases the stick) before checking parsed content and overflow.
+    // auto-sticks to the bottom. Express upward input before assigning an exact
+    // reading position for the content and overflow assertions.
     const viewport = page.locator("[data-radix-scroll-area-viewport]").first();
     await viewport.evaluate((el) => {
-      el.scrollTop = 0;
+      el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0;
       el.dispatchEvent(new Event("scroll"));
     });
     // Structural proof the markdown actually parsed (not raw `## ` / `|` text).

@@ -61,7 +61,7 @@ for (const mode of ["compact"] as const) {
     await page.keyboard.press("Enter");
     await expect(group).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
-    await viewport(page).evaluate((el) => { el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
+    await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
     await emit("tool_call", { id: "next-tool", name: "bash", command: "echo more" });
     await expect(group).toHaveAttribute("aria-expanded", "true");
     expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(50);

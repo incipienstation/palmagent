@@ -204,11 +204,11 @@ async function run() {
     const transcript = page.locator('[aria-label="Session transcript"]');
     await page.getByText("tool_result: Transition tool 440", { exact: true }).waitFor();
     const olderPage = page.waitForResponse((response) => response.url().includes("/history?before=241"));
-    await transcript.evaluate((el) => { el.scrollTop = 0; });
+    await transcript.evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     await olderPage;
     await page.waitForTimeout(400);
     const oldestPage = page.waitForResponse((response) => response.url().includes("/history?before=41"));
-    await transcript.evaluate((el) => { el.scrollTop = 350; });
+    await transcript.evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 350; });
     await oldestPage;
     // Early loading can exhaust history before the reader reaches its edge.
     // The beginning header must survive the update with the measured position.
