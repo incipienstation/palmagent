@@ -32,10 +32,14 @@ async function microphone(page: Page, mode = "ok") {
     };
     state.emit = (id: string, text: string) => state.channel.onmessage({ data: JSON.stringify({ type: "input_transcript.added", item: { id, text } }) });
   }, mode);
-  let starts = 0, stops = 0;
+  let starts = 0, stops = 0; const stopBodies: any[] = [];
   await page.route("**/api/voice", async route => { starts++; await route.fulfill({ json: { id: "11111111-1111-4111-8111-111111111111", sdp: "v=0\r\nanswer" } }); });
-  await page.route("**/api/voice/*", async route => { stops++; await route.fulfill({ json: { ok: true } }); });
-  return { starts: () => starts, stops: () => stops };
+  await page.route("**/api/voice/*", async route => {
+    stops++;
+    if (route.request().method() === "DELETE") stopBodies.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ok: true } });
+  });
+  return { starts: () => starts, stops: () => stops, stopBodies: () => stopBodies };
 }
 
 for (const width of [360, 1280]) test(`Codex alone shows microphone beside Send at ${width}px`, async ({ page }) => {
@@ -76,6 +80,12 @@ test("speech waits for silence, preserves edits, deduplicates and never submits"
   await expect(input).toHaveValue("Edited while listening Hello world. One more.");
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
   expect(calls.starts()).toBe(1); await expect.poll(calls.stops).toBe(1); expect(submissions).toBe(0);
+  const timing = calls.stopBodies()[0]?.timings;
+  expect(timing?.outcome).toBe("completed");
+  expect(typeof timing?.serverRequestMs).toBe("number");
+  expect(typeof timing?.tapToReadyMs).toBe("number");
+  expect(typeof timing?.tapToFirstTranscriptMs).toBe("number");
+  expect(timing).not.toHaveProperty("transcript");
 });
 
 test("permission rejection preserves the draft and returns the microphone to idle", async ({ page }) => {

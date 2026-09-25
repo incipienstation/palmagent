@@ -80,7 +80,8 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     voice: {
       start: (json: import("@palmagent/shared").VoiceStart, signal: AbortSignal) => request(() => client.voice.$post({ json }, { init: { signal } })),
       heartbeat: (id: string) => request(() => client.voice[":id"].heartbeat.$post({ param: idParam(id) })),
-      stop: (id: string) => request(() => client.voice[":id"].$delete({ param: idParam(id) }, { init: { keepalive: true } })),
+      stop: (id: string, timings: import("@palmagent/shared").VoiceClientTimings) => request(() =>
+        client.voice[":id"].$delete({ param: idParam(id), json: { timings } }, { init: { keepalive: true } })),
     },
     skills: (query: import("@palmagent/shared").SkillContext, signal?: AbortSignal) => request(() => client.skills.$get({ query }, requestOptions(signal))),
     terminals: {

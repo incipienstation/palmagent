@@ -1,9 +1,10 @@
-import type { SkillContext } from "@palmagent/shared";
+import type { SkillContext, VoiceClientTimings } from "@palmagent/shared";
 import { api } from "./api";
 import { beginBrowserWork } from "./update-state";
 
 export type VoiceState = "idle" | "starting" | "listening" | "stopping";
 export const VOICE_METER_BARS = 17;
+const elapsedMs = (start: number) => Math.round((performance.now() - start) * 10) / 10;
 
 // Only one microphone per page. This also covers two mounted composers.
 let current: VoiceInput | undefined;
@@ -23,6 +24,9 @@ export class VoiceInput {
   private pending = "";
   private lastVoice = performance.now();
   private lastText = performance.now();
+  private startedAt = 0;
+  private firstVoiceAt?: number;
+  private clientTimings: Partial<Omit<VoiceClientTimings, "outcome">> = {};
   private seen = new Set<string>();
   constructor(private context: SkillContext, private insert: (text: string) => void,
     private status: (state: VoiceState) => void, private error: (message: string) => void,
@@ -32,6 +36,7 @@ export class VoiceInput {
   }
 
   async start() {
+    this.startedAt = performance.now();
     this.status("starting");
     this.timers.push(setTimeout(() => this.fail("Voice input could not connect. Try again."), 25_000));
     try {
@@ -40,9 +45,13 @@ export class VoiceInput {
       }
       // Resume inside the button gesture for mobile audio policies.
       this.audio = new AudioContext();
+      const audioResumeAt = performance.now();
       await this.audio.resume();
+      this.clientTimings.audioContextResumeMs = elapsedMs(audioResumeAt);
       if (this.closed) return;
+      const microphoneRequestAt = performance.now();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      this.clientTimings.microphoneRequestMs = elapsedMs(microphoneRequestAt);
       if (this.closed) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
       const peer = this.peer = new RTCPeerConnection();
@@ -77,13 +86,18 @@ export class VoiceInput {
           });
           this.meter(levels);
           const rms = Math.sqrt(wave.reduce((sum, value) => sum + value * value, 0) / wave.length);
-          if (rms > 0.01) this.lastVoice = performance.now();
+          if (rms > 0.01) {
+            const now = performance.now();
+            this.firstVoiceAt ??= now;
+            this.lastVoice = now;
+          }
         }
         if (performance.now() - this.lastVoice >= 700 && performance.now() - this.lastText >= 800) this.flush();
       }, 50);
       const channel = this.channel = peer.createDataChannel("oai-events");
       channel.onopen = () => {
         if (this.closed || this.finishing) return;
+        this.clientTimings.tapToReadyMs = elapsedMs(this.startedAt);
         clearTimeout(this.timers[0]); this.status("listening");
       };
       channel.onmessage = event => {
@@ -94,18 +108,30 @@ export class VoiceInput {
         if (msg.type !== "input_transcript.added" || typeof msg.item?.text !== "string" || typeof msg.item.id !== "string") return;
         if (this.seen.has(msg.item.id)) return;
         if (this.seen.size >= 8192 || this.pending.length + msg.item.text.length > 32_000) return this.fail("Voice input reached its limit. Start the microphone again.");
+        if (this.clientTimings.tapToFirstTranscriptMs === undefined) {
+          this.clientTimings.tapToFirstTranscriptMs = elapsedMs(this.startedAt);
+          if (this.firstVoiceAt !== undefined) {
+            this.clientTimings.voiceToFirstTranscriptMs = Math.round((performance.now() - this.firstVoiceAt) * 10) / 10;
+          }
+        }
         this.seen.add(msg.item.id); this.pending += msg.item.text; this.lastText = performance.now();
       };
       channel.onclose = () => { if (!this.closed && !this.finishing) this.fail("Voice input disconnected. Start the microphone again."); };
       peer.onconnectionstatechange = () => {
         if (["failed", "disconnected", "closed"].includes(peer.connectionState) && !this.closed && !this.finishing) this.fail("Voice input disconnected. Start the microphone again.");
       };
+      const localOfferAt = performance.now();
       await peer.setLocalDescription(await peer.createOffer());
+      this.clientTimings.localOfferMs = elapsedMs(localOfferAt);
       if (this.closed) return;
+      const serverRequestAt = performance.now();
       const result = await api.voice.start({ context: this.context, sdp: peer.localDescription!.sdp }, this.controller.signal);
-      if (this.closed) { void api.voice.stop(result.id).catch(() => {}); return; }
+      this.clientTimings.serverRequestMs = elapsedMs(serverRequestAt);
+      if (this.closed) { void api.voice.stop(result.id, { outcome: "cancelled", ...this.clientTimings }).catch(() => {}); return; }
       this.id = result.id;
+      const remoteDescriptionAt = performance.now();
       await peer.setRemoteDescription({ type: "answer", sdp: result.sdp });
+      this.clientTimings.remoteDescriptionMs = elapsedMs(remoteDescriptionAt);
       if (this.closed) return;
       let checking = false;
       this.heartbeat = setInterval(() => {
@@ -131,20 +157,20 @@ export class VoiceInput {
     this.finishing = true; this.status("stopping");
     this.stream?.getTracks().forEach(track => track.stop());
     // Keep the data channel briefly to receive the last words after mic release.
-    this.timers.push(setTimeout(() => { this.flush(); this.cancel(); }, 2000));
+    this.timers.push(setTimeout(() => { this.flush(); this.cancel("completed"); }, 2000));
   }
-  cancel() {
+  cancel(outcome: VoiceClientTimings["outcome"] = "cancelled") {
     if (this.closed) return;
     this.closed = true; this.controller.abort();
     this.timers.forEach(clearTimeout); clearInterval(this.tick); clearInterval(this.heartbeat);
     this.stream?.getTracks().forEach(track => track.stop());
     this.channel?.close(); this.peer?.close(); void this.audio?.close().catch(() => {});
-    if (this.id) void api.voice.stop(this.id).catch(() => {});
+    if (this.id) void api.voice.stop(this.id, { outcome, ...this.clientTimings }).catch(() => {});
     if (current === this) current = undefined;
     this.release(); this.meter(Array(VOICE_METER_BARS).fill(0)); this.status("idle");
   }
   private fail(message: string) {
     if (this.closed) return;
-    this.flush(); this.cancel(); this.error(message);
+    this.flush(); this.cancel("failed"); this.error(message);
   }
 }
