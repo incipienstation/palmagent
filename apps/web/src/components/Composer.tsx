@@ -168,7 +168,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     />
     {(voice.error || voice.active) && <InputGroupAddon align="block-start" className="px-3">
       {voice.error ? <Alert variant="destructive">{voice.error}</Alert>
-        : <span role="status" className="text-xs text-muted-foreground">{voice.state === "starting" ? "Connecting microphone…" : voice.state === "stopping" ? "Finishing transcription…" : "Listening… tap the microphone to finish."}</span>}
+        : <span role="status" className="text-xs text-muted-foreground">{voice.state === "stopping" ? "Finishing transcription…" : "Recording… tap the microphone to finish."}</span>}
     </InputGroupAddon>}
     {!!skills?.length && <InputGroupAddon align="block-start" className="px-3 pt-2"><SkillChips skills={skills} disabled={disabled || busy} onRemove={() => onSkillsChange?.([])} /></InputGroupAddon>}
     {header && <InputGroupAddon align="block-start" className="px-3">{header}</InputGroupAddon>}
@@ -217,7 +217,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       {settings.agent === "codex" && <Button type="button" variant={voice.active ? "secondary" : "ghost"} size="icon-lg"
         className="shrink-0" aria-label={voice.active ? "Stop voice input" : "Start voice input"} title={voice.active ? "Stop voice input" : "Start voice input"}
         aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); setConfigure(false); voice.toggle(); }}>
-        {voice.state === "starting" || voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
+        {voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
       {onStop && <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
         disabled={stopping} onClick={onStop}>

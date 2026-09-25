@@ -2,9 +2,11 @@ import type { SkillContext, VoiceClientTimings } from "@palmagent/shared";
 import { api } from "./api";
 import { beginBrowserWork } from "./update-state";
 
-export type VoiceState = "idle" | "starting" | "listening" | "stopping";
+export type VoiceState = "idle" | "recording" | "stopping";
 export const VOICE_METER_BARS = 17;
 const elapsedMs = (start: number) => Math.round((performance.now() - start) * 10) / 10;
+const VOICE_BUFFER_MAX_SECONDS = 27;
+const VOICE_BUFFER_WORKLET_URL = new URL("voice-buffer-worklet.js", document.baseURI).href;
 
 // Only one microphone per page. This also covers two mounted composers.
 let current: VoiceInput | undefined;
@@ -15,9 +17,13 @@ export class VoiceInput {
   private release = beginBrowserWork();
   private stream?: MediaStream;
   private audio?: AudioContext;
+  private processor?: AudioWorkletNode;
   private peer?: RTCPeerConnection;
   private channel?: RTCDataChannel;
   private id?: string;
+  private connectionReady = false;
+  private bufferDrained = false;
+  private finishTimer?: ReturnType<typeof setTimeout>;
   private timers: ReturnType<typeof setTimeout>[] = [];
   private tick?: ReturnType<typeof setInterval>;
   private heartbeat?: ReturnType<typeof setInterval>;
@@ -37,7 +43,7 @@ export class VoiceInput {
 
   async start() {
     this.startedAt = performance.now();
-    this.status("starting");
+    this.status("recording");
     this.timers.push(setTimeout(() => this.fail("Voice input could not connect. Try again."), 25_000));
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection || !window.AudioContext) {
@@ -45,22 +51,52 @@ export class VoiceInput {
       }
       // Resume inside the button gesture for mobile audio policies.
       this.audio = new AudioContext();
+      const canBuffer = !!this.audio.audioWorklet?.addModule && typeof AudioWorkletNode !== "undefined" && !!this.audio.createMediaStreamDestination;
+      const workletReady = canBuffer
+        ? this.audio.audioWorklet!.addModule(VOICE_BUFFER_WORKLET_URL).then(
+          () => ({ ok: true as const }), error => ({ ok: false as const, error }),
+        )
+        : undefined;
       const audioResumeAt = performance.now();
       await this.audio.resume();
       this.clientTimings.audioContextResumeMs = elapsedMs(audioResumeAt);
       if (this.closed) return;
+      if (workletReady) {
+        const workletResult = await workletReady;
+        if (!workletResult.ok) throw new Error("Voice audio buffering could not start. Refresh and try again.");
+        if (this.closed) return;
+      }
       const microphoneRequestAt = performance.now();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       this.clientTimings.microphoneRequestMs = elapsedMs(microphoneRequestAt);
       if (this.closed) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
       const peer = this.peer = new RTCPeerConnection();
-      for (const track of stream.getTracks()) {
-        peer.addTrack(track, stream);
-        track.onended = () => { if (!this.finishing) this.fail("The microphone disconnected. Start it again."); };
-      }
+      for (const track of stream.getTracks()) track.onended = () => { if (!this.finishing) this.fail("The microphone disconnected. Start it again."); };
       const analyser = this.audio.createAnalyser(); analyser.fftSize = 1024;
-      this.audio.createMediaStreamSource(stream).connect(analyser);
+      const source = this.audio.createMediaStreamSource(stream);
+      source.connect(analyser);
+      if (canBuffer) {
+        const processor = this.processor = new AudioWorkletNode(this.audio, "palmagent-voice-buffer", {
+          numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit",
+          channelInterpretation: "speakers", outputChannelCount: [1],
+          processorOptions: { maxSeconds: VOICE_BUFFER_MAX_SECONDS },
+        });
+        this.bufferDrained = false;
+        const destination = this.audio.createMediaStreamDestination();
+        processor.port.onmessage = event => {
+          if (event.data?.type === "overflow") return this.fail("Voice input took too long to connect. Try again.");
+          if (event.data?.type === "drained") { this.bufferDrained = true; this.finishAfterBuffer(); }
+        };
+        source.connect(processor);
+        processor.connect(destination);
+        if (this.finishing) processor.port.postMessage({ type: "finish" });
+        for (const track of destination.stream.getAudioTracks()) peer.addTrack(track, destination.stream);
+      } else {
+        // Preserve voice input in older browsers; their WebRTC track streams live without a pre-connect buffer.
+        for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
+        this.bufferDrained = true;
+      }
       const wave = new Float32Array(analyser.fftSize);
       const spectrum = new Uint8Array(analyser.frequencyBinCount);
       this.tick = setInterval(() => {
@@ -96,9 +132,12 @@ export class VoiceInput {
       }, 50);
       const channel = this.channel = peer.createDataChannel("oai-events");
       channel.onopen = () => {
-        if (this.closed || this.finishing) return;
+        if (this.closed) return;
+        this.connectionReady = true;
         this.clientTimings.tapToReadyMs = elapsedMs(this.startedAt);
-        clearTimeout(this.timers[0]); this.status("listening");
+        clearTimeout(this.timers[0]);
+        this.processor?.port.postMessage({ type: "start" });
+        this.finishAfterBuffer();
       };
       channel.onmessage = event => {
         if (this.closed) return;
@@ -151,19 +190,27 @@ export class VoiceInput {
     const text = this.pending.trim(); this.pending = "";
     if (text) this.insert(text);
   }
+  private finishAfterBuffer() {
+    if (this.closed || !this.finishing || !this.connectionReady || !this.bufferDrained || this.finishTimer) return;
+    // Give the realtime service time to finalize the last buffered audio and transcript event.
+    this.finishTimer = setTimeout(() => { this.flush(); this.cancel("completed"); }, 2000);
+  }
   stop() {
     if (this.closed || this.finishing) return;
-    if (!this.id || this.channel?.readyState !== "open") return this.cancel();
+    if (!this.stream) return this.cancel();
     this.finishing = true; this.status("stopping");
     this.stream?.getTracks().forEach(track => track.stop());
-    // Keep the data channel briefly to receive the last words after mic release.
-    this.timers.push(setTimeout(() => { this.flush(); this.cancel("completed"); }, 2000));
+    this.processor?.port.postMessage({ type: "finish" });
+    if (!this.processor) this.bufferDrained = true;
+    this.finishAfterBuffer();
   }
   cancel(outcome: VoiceClientTimings["outcome"] = "cancelled") {
     if (this.closed) return;
     this.closed = true; this.controller.abort();
-    this.timers.forEach(clearTimeout); clearInterval(this.tick); clearInterval(this.heartbeat);
+    this.timers.forEach(clearTimeout); clearTimeout(this.finishTimer); clearInterval(this.tick); clearInterval(this.heartbeat);
     this.stream?.getTracks().forEach(track => track.stop());
+    this.processor?.port.postMessage({ type: "cancel" });
+    this.processor?.disconnect(); this.processor?.port.close();
     this.channel?.close(); this.peer?.close(); void this.audio?.close().catch(() => {});
     if (this.id) void api.voice.stop(this.id, { outcome, ...this.clientTimings }).catch(() => {});
     if (current === this) current = undefined;
