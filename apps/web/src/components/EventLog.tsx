@@ -438,10 +438,16 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
     if (restoring.current) return;
-    if (!initialized.current) return;
     const list = el.querySelector<HTMLElement>("[data-transcript-items]");
     if (list && getComputedStyle(list).visibility === "hidden") return;
-    if (el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
+    const atBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 80;
+    // Virtuoso reports atBottom while the initial list is still empty. Only
+    // finish initialization once its visible rows reach the actual DOM bottom.
+    if (!initialized.current) {
+      if (!list?.querySelector("[data-row-key]") || !atBottom) return;
+      initialized.current = true;
+    }
+    if (atBottom) following.current = true;
     // Newly appended or measured content can enlarge the gap without the
     // reader moving. Detach only when the viewport actually moved upward.
     else if (previousTop !== undefined && el.scrollTop < previousTop) following.current = false;
@@ -608,7 +614,6 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     followOutput={false}
     totalListHeightChanged={followBottom}
     itemsRendered={captureAfterRender}
-    atBottomStateChange={(atBottom) => { if (atBottom) initialized.current = true; }}
     atBottomThreshold={80}
     // A short tool row can precede a very tall answer. Reserve rows as well as
     // pixels so that answer is measured before the reader crosses into it.
