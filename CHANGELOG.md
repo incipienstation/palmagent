@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.94
+
 ### Changed
 
 - Task detail headers group their icon actions in a compact bordered capsule.
