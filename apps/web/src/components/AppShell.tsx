@@ -65,8 +65,17 @@ export function AppBar({
         {titleControl ?? <span className="min-w-0 truncate">{title}</span>}
         {conn && <LiveDot conn={conn} compact={Boolean(titleControl)} />}
       </h1>
-      {children}
-      {back && menu}
+      {back && children && menu ? (
+        <div role="group" aria-label="Header actions" className="-my-px inline-flex shrink-0 items-center rounded-full border border-border bg-card/90 backdrop-blur-md">
+          {children}
+          {menu}
+        </div>
+      ) : (
+        <>
+          {children}
+          {back && menu}
+        </>
+      )}
     </header>
   );
 }
