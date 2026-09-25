@@ -235,7 +235,7 @@ for (const scenario of [
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     if (scenario.touch) {
       const cdp = await page.context().newCDPSession(page);
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 45; i++) {
         const x = box.x + box.width / 2, y = box.y + 40;
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
         for (let step = 1; step <= 6; step++) {

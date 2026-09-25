@@ -438,16 +438,10 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
     if (restoring.current) return;
+    if (!initialized.current) return;
     const list = el.querySelector<HTMLElement>("[data-transcript-items]");
     if (list && getComputedStyle(list).visibility === "hidden") return;
-    const atBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 80;
-    // Virtuoso reports atBottom while the initial list is still empty. Only
-    // finish initialization once its visible rows reach the actual DOM bottom.
-    if (!initialized.current) {
-      if (!list?.querySelector("[data-row-key]") || !atBottom) return;
-      initialized.current = true;
-    }
-    if (atBottom) following.current = true;
+    if (el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
     // Newly appended or measured content can enlarge the gap without the
     // reader moving. Detach only when the viewport actually moved upward.
     else if (previousTop !== undefined && el.scrollTop < previousTop) following.current = false;
@@ -470,9 +464,35 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     cancelAnimationFrame(scrollFrame.current);
     scrollFrame.current = requestAnimationFrame(() => {
       const el = viewport.current;
-      if (el && following.current) el.scrollTop = el.scrollHeight;
+      if (el && initialized.current && following.current) el.scrollTop = el.scrollHeight;
     });
   }, []);
+  // Let Virtuoso finish its initial positioning before our bottom follower can
+  // write. Its early atBottom notification includes the empty, hidden list.
+  useLayoutEffect(() => {
+    if (initialized.current) return;
+    let frame = 0, stable = 0;
+    let previous: string | undefined;
+    const initialize = () => {
+      if (initialized.current) return;
+      const el = viewport.current;
+      const list = el?.querySelector<HTMLElement>("[data-transcript-items]");
+      if (el && list && getComputedStyle(list).visibility !== "hidden") {
+        const position = `${el.scrollTop}:${el.scrollHeight}:${el.clientHeight}`;
+        stable = previous === position ? stable + 1 : 0;
+        previous = position;
+        if (stable >= 2) {
+          initialized.current = true;
+          lastScrollTop.current = el.scrollTop;
+          followBottom();
+          return;
+        }
+      }
+      frame = requestAnimationFrame(initialize);
+    };
+    frame = requestAnimationFrame(initialize);
+    return () => cancelAnimationFrame(frame);
+  }, [followBottom]);
   useEffect(() => () => {
     cancelAnimationFrame(scrollFrame.current);
     cancelAnimationFrame(captureFrame.current);
