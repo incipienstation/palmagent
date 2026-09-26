@@ -44,13 +44,14 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
     });
     const offUpdates = taskId ? () => {} : hub.onUpdates(() => enqueue('data: {"type":"updates"}\n\n'));
     const offTasks = hub.onTasks(() => enqueue(snapshot()));
+    const offRead = taskId ? () => {} : hub.onReadChange(change => enqueue(`data: ${JSON.stringify(change)}\n\n`));
     const keepAlive = setInterval(() => enqueue(":keep-alive\n\n"), config.keepAliveMs);
     const abort = () => stream.abort();
     const close = () => {
       if (closed) return;
       closed = true;
       clearInterval(keepAlive);
-      offEvent(); offTasks(); offUpdates();
+      offEvent(); offTasks(); offUpdates(); offRead();
       shutdown?.removeEventListener("abort", abort);
       c.req.raw.signal.removeEventListener("abort", abort);
       queue.length = 0;

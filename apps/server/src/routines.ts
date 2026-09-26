@@ -6,6 +6,7 @@ import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { nextRun, parseCron, presetToCron } from "./cron.js";
 import { ApplicationError } from "./errors.js";
 import type { IdentifierGenerator, RoutineRepository, RoutineScriptExecution, RoutineScriptRunner, RoutineTaskUseCases } from "./application/ports.js";
+import type { TaskEventPublisher } from "./application/ports.js";
 
 // Routines: recurring agent tasks or scripts. Agent fires create a fresh task;
 // script fires run directly and record their result in routine history. A cadence is
@@ -27,6 +28,7 @@ export class RoutineService {
     private readonly tasks: RoutineTaskUseCases,
     private readonly ids: IdentifierGenerator,
     private readonly scriptRunner: RoutineScriptRunner,
+    private readonly events: Pick<TaskEventPublisher, "emitReadChange">,
   ) {}
 
   start(): void {
@@ -82,12 +84,16 @@ export class RoutineService {
         const runId = this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "running", note: manual ? "manual" : "scheduled" });
         const execution = this.scriptRunner.start(this.db, r, runId);
         this.scripts.set(r.id, execution);
-        void execution.done.finally(() => this.scripts.delete(r.id));
+        void execution.done.finally(() => {
+          this.scripts.delete(r.id);
+          this.events.emitReadChange({ type: "read-change", routineId: r.id });
+        });
       }
       r.lastRunAt = now;
       if (!manual) r.nextRunAt = r.schedule ? nextRun(r.schedule, now) : undefined;
       r.updatedAt = now;
       this.db.updateRoutine(r);
+      this.events.emitReadChange({ type: "read-change", routineId: r.id });
       return;
     }
     let taskId: string | undefined;
@@ -118,6 +124,7 @@ export class RoutineService {
     if (!manual) r.nextRunAt = r.schedule ? nextRun(r.schedule, now) : undefined;
     r.updatedAt = now;
     this.db.updateRoutine(r);
+    this.events.emitReadChange({ type: "read-change", routineId: r.id });
   }
 
   // ---- CRUD (REST layer calls these) ----
@@ -149,6 +156,7 @@ export class RoutineService {
       updatedAt: now,
     };
     this.db.insertRoutine(routine);
+    this.events.emitReadChange({ type: "read-change", routines: true });
     return routine;
   }
 
@@ -221,6 +229,7 @@ export class RoutineService {
     r.nextRunAt = r.enabled && r.preset !== "manual" && r.schedule ? nextRun(r.schedule, now) : undefined;
     r.updatedAt = now;
     this.db.updateRoutine(r);
+    this.events.emitReadChange({ type: "read-change", routines: true });
     return r;
   }
 
@@ -228,6 +237,7 @@ export class RoutineService {
     if (this.scripts.has(id)) throw new ApplicationError("conflict", "Wait for the running script before deleting this routine");
     const r = this.get(id);
     this.db.deleteRoutine(id);
+    this.events.emitReadChange({ type: "read-change", routines: true });
     return r;
   }
 

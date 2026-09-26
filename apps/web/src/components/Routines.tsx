@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRepos } from "../hooks/useRepos";
 import { useRoutines } from "../hooks/useRoutines";
 import { useActionState } from "../action-state";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
 import { CalendarClock, ChevronRight, MoreVertical, Play, Plus, Trash2, X } from "lucide-react";
 
@@ -44,9 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
-import { clientReadKeys } from "../client-query-keys";
 import { routineRunsQueryOptions } from "../client-queries";
-import { queryClient } from "../query-client";
 import { effortChoices, selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
@@ -128,17 +126,13 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
   const historyQuery = useQuery({ ...routineRunsQueryOptions(r.id, runKind), enabled: showHistory });
   const history = historyQuery.data ?? null;
   const historyLoading = historyQuery.isFetching;
-  const historyError = historyQuery.error ? errMsg(historyQuery.error) : "";
-  const loadHistory = () => historyQuery.refetch();
-  const routineVersion = useRef({ id: r.id, updatedAt: r.updatedAt, lastRunAt: r.lastRunAt });
+  const [lastHistoryError, setLastHistoryError] = useState("");
   useEffect(() => {
-    const previous = routineVersion.current;
-    routineVersion.current = { id: r.id, updatedAt: r.updatedAt, lastRunAt: r.lastRunAt };
-    if (showHistory && previous.id === r.id && (previous.updatedAt !== r.updatedAt || previous.lastRunAt !== r.lastRunAt)) {
-      void queryClient.invalidateQueries({ queryKey: clientReadKeys.routineRuns(r.id, runKind), exact: true });
-    }
-  }, [showHistory, r.id, r.kind, r.updatedAt, r.lastRunAt, runKind]);
-
+    if (historyQuery.error) setLastHistoryError(errMsg(historyQuery.error));
+    else if (historyQuery.isSuccess && !historyQuery.isFetching) setLastHistoryError("");
+  }, [historyQuery.error, historyQuery.isSuccess, historyQuery.isFetching]);
+  const historyError = historyQuery.error ? errMsg(historyQuery.error) : historyLoading ? lastHistoryError : "";
+  const loadHistory = () => historyQuery.refetch();
   function toggleHistory() { setShowHistory(value => !value); }
 
   return (

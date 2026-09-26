@@ -28,6 +28,8 @@ export const usageQueryOptions = () => queryOptions({
   staleTime: 10_000,
   gcTime: FIVE_MINUTES,
   retry: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
 });
 
 export const routinesQueryOptions = () => queryOptions({
@@ -36,6 +38,8 @@ export const routinesQueryOptions = () => queryOptions({
   staleTime: 30_000,
   gcTime: FIVE_MINUTES,
   retry: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
 });
 
 export const routineRunsQueryOptions = (routineId: string, kind: "agent" | "script") => queryOptions({
@@ -44,6 +48,8 @@ export const routineRunsQueryOptions = (routineId: string, kind: "agent" | "scri
   staleTime: kind === "script" ? 0 : 10_000,
   gcTime: FIVE_MINUTES,
   retry: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
   refetchInterval: (query) => query.state.data?.some((run) => run.status === "running") ? 3_000 : false,
 });
 
