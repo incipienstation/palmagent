@@ -1,6 +1,6 @@
 {
   "name": "palmagent",
-  "version": "0.1.0-alpha.99",
+  "version": "0.1.0-alpha.100",
   "private": true,
   "description": "Self-hosted agent dispatcher and operator tooling.",
   "packageManager": "pnpm@11.5.2",
