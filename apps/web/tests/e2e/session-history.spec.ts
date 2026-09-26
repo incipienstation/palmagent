@@ -375,8 +375,11 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
   await expect.poll(() => requested).toBe(true);
   const anchor = page.locator('[data-message-key="201"]');
   const top = (await anchor.boundingBox())!.y;
+  const inset = page.locator("[data-transcript-top-inset]");
+  const insetHeight = (await inset.boundingBox())!.height;
   release();
-  await expect(page.getByRole("status").filter({ hasText: "Beginning of conversation" })).toHaveCount(1);
+  await expect(page.getByText("Beginning of conversation", { exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await inset.boundingBox())!.height).toBe(insetHeight);
   await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
 });
 
@@ -465,7 +468,7 @@ test("near-top scrolling prefetches the next page before reaching the edge", asy
   await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
 });
 
-test("short history fills the viewport automatically and stops at the beginning", async ({ page }, testInfo) => {
+test("short history prefetch keeps its first message clear of the floating toolbar", async ({ page }, testInfo) => {
   const cursors: string[] = [];
   await page.route("**/history*", (route) => {
     const before = new URL(route.request().url()).searchParams.get("before");
@@ -476,11 +479,25 @@ test("short history fills the viewport automatically and stops at the beginning"
   });
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 6 });
-  await expect(page.getByRole("status").filter({ hasText: "Beginning of conversation" })).toHaveCount(1);
+  await expect(page.getByText("Beginning of conversation", { exact: true })).toHaveCount(0);
+  // Let every short page prepend and settle its anchor before measuring the true top.
+  await expect.poll(() => cursors).toEqual(["latest", "5", "3"]);
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
+  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBe(0);
   await expect(page.getByText("History message 1", { exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("history-beginning.png") });
-  expect(cursors).toEqual(["latest", "5", "3"]);
+  const prompt = page.locator('[data-row-key="prompt"]');
+  const inset = page.locator("[data-transcript-top-inset]");
+  const toolbar = page.locator("header").first();
+  const [promptBounds, insetBounds, toolbarBounds] = await Promise.all([
+    prompt.boundingBox(), inset.boundingBox(), toolbar.boundingBox(),
+  ]);
+  expect(promptBounds).not.toBeNull();
+  expect(insetBounds).not.toBeNull();
+  expect(toolbarBounds).not.toBeNull();
+  expect(insetBounds!.height).toBeGreaterThanOrEqual(toolbarBounds!.height + 12);
+  expect(promptBounds!.y).toBeGreaterThanOrEqual(toolbarBounds!.y + toolbarBounds!.height + 12);
+  await page.screenshot({ path: testInfo.outputPath("history-top-inset.png") });
 });
 
 

@@ -197,7 +197,6 @@ type HistoryControls = {
   loadingEarlier?: boolean;
   historyError?: string;
   loadEarlier?: () => void;
-  showBeginning?: boolean;
   onScrollPosition?: (element: HTMLElement) => void;
 };
 
@@ -350,14 +349,21 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
     let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(observeWhenReady); });
     return () => { cancelAnimationFrame(frame); resize.disconnect(); observer?.disconnect(); };
   }, [hasEarlier, loadingEarlier, historyError, loadEarlier]);
-  if (!context?.hasEarlier && !context?.showBeginning && !(historyError && !hasHistory)) return <div className="h-3" />;
-  return <div ref={sentinel} className="flex flex-col gap-1 px-4 py-3 font-sans">
+  // Keep the first message below the floating toolbar even when no older page
+  // remains. The fixed height also avoids anchor shifts as history exhausts.
+  return <div data-transcript-top-inset className={cn(
+    "relative font-sans",
+    historyError
+      ? "flex flex-col items-center gap-1 px-4 pt-[calc(80px+var(--safe-top))] pb-3"
+      : "h-[calc(80px+var(--safe-top))]",
+  )}>
+    <div ref={sentinel} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
     {historyError ? <>
       <span role="alert" className="text-destructive">{historyError}</span>
       <Button variant="ghost" onClick={loadEarlier}>{hasHistory ? "Retry loading earlier messages" : "Retry loading conversation"}</Button>
-    </> : <div role="status" className="h-6 text-center text-xs leading-6 text-muted-foreground">
-      {context?.showBeginning ? "Beginning of conversation" : loadingEarlier ? hasHistory ? "Loading earlier messages…" : "Loading conversation…" : null}
-    </div>}
+    </> : loadingEarlier ? <div role="status" className="absolute inset-x-0 bottom-0 h-4 text-center text-xs leading-4 text-muted-foreground">
+      {hasHistory ? "Loading earlier messages…" : "Loading conversation…"}
+    </div> : null}
   </div>;
 }
 // Let Virtuoso own scroll coordinates while Radix supplies the viewport and
@@ -397,12 +403,12 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
 } & HistoryControls) {
   const virtuoso = useRef<VirtuosoHandle>(null);
-  const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number; hadEarlier?: boolean }>(`scroll:${location.hash}`));
+  const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
   const initialized = useRef(!!saved.current);
   useUpdateSnapshot(`scroll:${location.hash}`, () => {
     let state: StateSnapshot | undefined;
     virtuoso.current?.getState((value) => { state = value; });
-    return state ? { state, following: following.current, first: indexing.current.first, hadEarlier: hadEarlier.current } : undefined;
+    return state ? { state, following: following.current, first: indexing.current.first } : undefined;
   });
   useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, []);
 
@@ -412,10 +418,6 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const scrollFrame = useRef(0);
   const captureFrame = useRef(0);
   const lastScrollTop = useRef<number | undefined>(undefined);
-  // Retain the beginning header after an update even if prefetch loaded every
-  // page. Dropping it changes measured height and shifts the restored position.
-  const hadEarlier = useRef(!!history.hasEarlier || !!saved.current?.hadEarlier);
-  hadEarlier.current ||= !!history.hasEarlier;
   const captureAnchor = useCallback(() => {
     const el = viewport.current;
     if (!el || restoring.current) return;
@@ -655,7 +657,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     increaseViewportBy={{ top: 300, bottom: 200 }}
     computeItemKey={rowKey}
     components={VIRTUAL_COMPONENTS}
-    context={{ ...history, onScrollPosition, showBeginning: hadEarlier.current && !history.hasEarlier }}
+    context={{ ...history, onScrollPosition }}
     itemContent={(_index, row) => <div className="flow-root px-4" data-row-key={row.key}
       data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
       {row.type === "working" ? <div className="mb-3 py-2"><WorkingLabel /></div> : row.type === "delivery" ?
