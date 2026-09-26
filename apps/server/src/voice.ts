@@ -4,9 +4,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { VoiceClientTimings, VoiceConnection } from "@palmagent/shared";
-import { HttpError } from "./errors.js";
+import { ApplicationError } from "./errors.js";
 
-const unavailable = () => new HttpError(503, "Voice input is unavailable. Check your Codex login and experimental voice support, then try again.");
+const unavailable = () => new ApplicationError("service_unavailable", "Voice input is unavailable. Check your Codex login and experimental voice support, then try again.");
 type VoiceTimingRecord = Record<string, string | number>;
 type VoiceTimingLogger = (record: VoiceTimingRecord) => void;
 const roundedMs = (duration: number) => Math.round(duration * 10) / 10;
@@ -29,7 +29,7 @@ export class VoiceSessions {
 
   start(home: string, sdp: string, signal?: AbortSignal): Promise<VoiceConnection> {
     if (this.closed) return Promise.reject(unavailable());
-    if (this.sessions.size >= 4) return Promise.reject(new HttpError(429, "Too many voice sessions. Stop another microphone first."));
+    if (this.sessions.size >= 4) return Promise.reject(new ApplicationError("too_many_requests", "Too many voice sessions. Stop another microphone first."));
     if (signal?.aborted) return Promise.reject(unavailable());
     const startAt = performance.now();
     const id = randomUUID();
@@ -125,7 +125,7 @@ export class VoiceSessions {
   }
   touch(id: string) {
     const session = this.sessions.get(id);
-    if (!session) throw new HttpError(410, "Voice input ended. Start the microphone again.");
+    if (!session) throw new ApplicationError("gone", "Voice input ended. Start the microphone again.");
     session.touch();
   }
   stop(id: string, timings?: VoiceClientTimings) {

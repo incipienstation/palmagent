@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { UpdateActionSchema, type UpdateAction, UpdateSettingsChangeSchema, UpdateSettingsCommandResultSchema, type UpdateSettingsChange, type UpdateSettingsState } from "@palmagent/shared/updates";
-import { HttpError } from "./service.js";
+import { ApplicationError } from "./errors.js";
 
 export interface UpdateSettingsService {
   status(): Promise<UpdateSettingsState>;
@@ -21,7 +21,7 @@ export function createUpdateSettingsService(options: { packageDir?: string; data
   async function command(change?: UpdateSettingsChange, action?: UpdateAction | { action: "resume" }): Promise<UpdateSettingsState> {
     const mutating = Boolean(change || action);
     if (!options.packageDir) {
-      if (mutating) throw new HttpError(409, "Update settings require an installed Palmagent package.");
+      if (mutating) throw new ApplicationError("conflict", "Update settings require an installed Palmagent package.");
       return unavailable("source-install");
     }
     const args = [join(options.packageDir, "cli.js"), "update-settings", change ? "set" : action?.action ?? "status",
@@ -41,14 +41,14 @@ export function createUpdateSettingsService(options: { packageDir?: string; data
     } catch {
       // Never forward subprocess stderr, command arguments, or private paths.
       if (!mutating) return unavailable("unavailable");
-      throw new HttpError(503, "Could not confirm the update setting. Refresh its status before trying again.");
+      throw new ApplicationError("service_unavailable", "Could not confirm the update setting. Refresh its status before trying again.");
     }
     if (!response.ok) {
       if (!mutating) return unavailable("unavailable");
-      if (response.error === "busy") throw new HttpError(409, "An installation or update is in progress. Try again after it finishes.");
-      if (response.error === "stale-update") throw new HttpError(409, "This update is no longer available or needs recovery. Check again before updating.");
-      if (response.error === "update-failed") throw new HttpError(503, "Could not complete the update request. Check its status before trying again.");
-      throw new HttpError(503, response.error === "unavailable"
+      if (response.error === "busy") throw new ApplicationError("conflict", "An installation or update is in progress. Try again after it finishes.");
+      if (response.error === "stale-update") throw new ApplicationError("conflict", "This update is no longer available or needs recovery. Check again before updating.");
+      if (response.error === "update-failed") throw new ApplicationError("service_unavailable", "Could not complete the update request. Check its status before trying again.");
+      throw new ApplicationError("service_unavailable", response.error === "unavailable"
         ? "Update settings are unavailable for this installation. Refresh its status."
         : "Could not save the update setting. Refresh its status before trying again.");
     }

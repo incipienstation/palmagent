@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./http-api": "./src/http-api.ts"
+  },
   "description": "Palmagent runtime server for normalized agent events, durable task state, SSE, and REST control.",
   "scripts": {
     "contracts": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
@@ -10,7 +13,7 @@
     "dev": "tsx src/server.ts",
     "runner": "tsx src/runner-daemon.ts",
     "smoke": "node scripts/runtime-smoke.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ../../scripts/check-architecture.mjs && tsc --noEmit",
     "start": "tsx src/server.ts"
   },
   "dependencies": {

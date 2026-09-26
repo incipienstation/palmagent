@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import type { SkillContext } from "@palmagent/shared";
 import { api } from "./api";
 import { clientReadKeys } from "./client-query-keys";
+import { taskActivityDetailsKey, TASK_ACTIVITY_DETAILS_GC_TIME } from "./task-history-query";
 
 const FIVE_MINUTES = 5 * 60_000;
 
@@ -54,5 +55,13 @@ export const skillsQueryOptions = (context?: SkillContext) => queryOptions({
   },
   staleTime: 10_000,
   gcTime: 60_000,
+  retry: false,
+});
+
+export const taskActivityDetailsQueryOptions = (taskId: string, from: number, through: number) => queryOptions({
+  queryKey: taskActivityDetailsKey(taskId, from),
+  queryFn: ({ signal }) => api.taskActivityDetails(taskId, from, through, signal),
+  staleTime: Infinity,
+  gcTime: TASK_ACTIVITY_DETAILS_GC_TIME,
   retry: false,
 });

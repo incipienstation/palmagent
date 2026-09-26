@@ -4,8 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Db } from "../src/db.js";
+import { LocalAttachmentStorage } from "../src/attachments.js";
 import { Hub } from "../src/hub.js";
 import { TaskService } from "../src/service.js";
+import { NodeIdentifierGenerator } from "../src/id-generator.js";
+import { LocalNativeSessionAdapter } from "../src/native-session-adapter.js";
+import { LocalRepositoryPaths } from "../src/repository-paths.js";
 import { ProcessSupervisor } from "../src/supervisor.js";
 import { WorktreeManager } from "../src/worktree.js";
 import { ExecutionBackend } from "../src/execution/client.js";
@@ -29,7 +33,7 @@ async function fixture(t: TestContext) {
   let backend: ExecutionBackend, service: TaskService;
   const start = async () => {
     backend = new ExecutionBackend(store.directory, "/opt/fixture", process.execPath, 1, () => {});
-    service = new TaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager());
+    service = new TaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), new LocalAttachmentStorage(db), new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
     await service.init();
     return service;
   };

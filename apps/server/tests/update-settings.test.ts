@@ -47,7 +47,7 @@ test("the web bridge invokes only its own CLI, validates input/output, and hides
   await assert.rejects(service.change({ channel: "preview", command: "unexpected" } as unknown as UpdateSettingsChange));
   assert.equal(readFileSync(join(root, "call.json"), "utf8"), call);
   response({ ok: false, error: "busy" });
-  await assert.rejects(service.change({ autoUpdate: true }), { status: 409 });
+  await assert.rejects(service.change({ autoUpdate: true }), { code: "conflict" });
   response({ ok: false, error: "save-failed", private: "/private/fixture" });
   await assert.rejects(service.change({ autoUpdate: false }), (error: Error) => !error.message.includes("/private/fixture"));
   response({ malformed: "private fixture value" });
@@ -55,7 +55,7 @@ test("the web bridge invokes only its own CLI, validates input/output, and hides
   await assert.rejects(service.change({ autoUpdate: true }), /Could not confirm/);
   const source = createUpdateSettingsService({ dataDir: root, dbPath: join(root, "db") });
   assert.deepEqual(await source.status(), { availability: "source-install", settings: null });
-  await assert.rejects(source.change({ autoUpdate: true }), { status: 409 });
+  await assert.rejects(source.change({ autoUpdate: true }), { code: "conflict" });
 });
 
 function installedFixture(t: test.TestContext) {

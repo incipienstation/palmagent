@@ -1,6 +1,6 @@
 import type { ApiErrorResponse } from "@palmagent/shared/http";
 import type { MiddlewareHandler } from "hono";
-import { HttpError } from "../service.js";
+import { ApplicationError } from "../errors.js";
 import { getCookie } from "hono/cookie";
 import type { HttpDependencies } from "./types.js";
 
@@ -58,7 +58,7 @@ export function requestAdmission({ shutdown }: HttpDependencies): MiddlewareHand
 // before parsing a write, preserving the existing admission/error precedence.
 export function requireSignIn(enabled: boolean, message: string): MiddlewareHandler {
   return async (_c, next) => {
-    if (!enabled) throw new HttpError(403, message);
+    if (!enabled) throw new ApplicationError("forbidden", message);
     await next();
   };
 }

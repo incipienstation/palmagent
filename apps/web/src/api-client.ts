@@ -1,7 +1,8 @@
 import type { CreateTerminalRequest } from "@palmagent/shared/terminals";
 import { cacheSession, invalidateClientReads, type ClientReadScope } from "./query-lifecycle";
 import { hc } from "hono/client";
-import type { Api, ApiErrorResponse } from "@palmagent/shared/http";
+import type { AppType } from "@palmagent/server/http-api";
+import type { ApiErrorResponse } from "@palmagent/shared/http";
 import type {
   AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
   CreateTaskRequest, FollowupRequest, MessageAction, PushSubscribeRequest,
@@ -26,7 +27,7 @@ interface ApiLifecycle {
 
 export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...args) => fetch(...args)) {
   const { observeServerVersion, beginBrowserWork, onUnauthorized } = lifecycle;
-  const client = hc<Api>("/", { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetcher(input, { ...init, cache: "no-store" }), headers: () => ({ "x-palmagent-version": lifecycle.version() }) }).api;
+  const client = hc<AppType>("/", { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetcher(input, { ...init, cache: "no-store" }), headers: () => ({ "x-palmagent-version": lifecycle.version() }) }).api;
   const tasks = client.tasks[":id"];
   const routines = client.routines[":id"];
   // hc substitutes path parameters verbatim; preserve the previous URL encoding.

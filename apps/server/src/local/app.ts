@@ -1,7 +1,7 @@
 import { CreateTerminal, RenameTerminal, TerminalId } from "@palmagent/shared/terminals";
 import { z } from "zod";
 import { params } from "../http/input.js";
-import { HttpError } from "../service.js";
+import { ApplicationError } from "../errors.js";
 import type { TerminalService } from "../terminal/service.js";
 import type { RoutineService } from "../routines.js";
 import { routineRoutes } from "../http/routes/routines.js";
@@ -18,7 +18,7 @@ export function createSessionApp(service: Pick<TaskService, "dispatchSession">, 
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
   app.use("*", bodyLimit({ maxSize: 16_384, onError: (c) => c.json({ error: "request body too large" }, 413) }));
-  const terminalService = () => { if (!terminals) throw new HttpError(503, "Terminals unavailable"); return terminals; };
+  const terminalService = () => { if (!terminals) throw new ApplicationError("service_unavailable", "Terminals unavailable"); return terminals; };
   const id = params(z.object({ id: TerminalId }));
   app.get("/terminals", c => c.json({ terminals: terminalService().list(), capabilities: terminalService().capabilities() }))
     .post("/terminals", jsonBody(CreateTerminal), async c => c.json({ terminal: await terminalService().create(c.req.valid("json")) }, 201))

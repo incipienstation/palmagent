@@ -6,12 +6,13 @@ import { Bot, Fingerprint } from "lucide-react";
 import { BRANDING } from "@palmagent/shared";
 
 import { Button } from "@/components/ui/button";
-import { api } from "../api";
+import { useAuthOperations } from "../hooks/remote-operations";
 import { AuthScreen, authErrorMessage } from "./AuthScreen";
 
 // Passkey sign-in. The browser offers any discoverable passkey for this RP, so a
 // single tap (+ biometric) authenticates — no username, no password.
 export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const authOperations = useAuthOperations();
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   useUpdateBlocker(busy);
@@ -23,9 +24,9 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const options = await api.auth.loginOptions();
+      const options = await authOperations.loginOptions();
       const assertion = await startAuthentication({ optionsJSON: options });
-      await api.auth.loginVerify(assertion);
+      await authOperations.loginVerify(assertion);
       onAuthenticated();
     } catch (e) {
       setError(authErrorMessage(e));

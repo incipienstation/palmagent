@@ -19,7 +19,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { api, ApiError } from "../api";
+import { ApiError } from "../api";
+import { useRepositoryBrowserOperations } from "../hooks/remote-operations";
 
 // Mobile-first "Add a repo" picker (bottom drawer). Tap-first by design: the
 // drawer opens keyboard-down showing discovered repos (zero typing for the
@@ -107,6 +108,7 @@ function Row(props: {
 }
 
 export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Props) {
+  const browser = useRepositoryBrowserOperations();
   const restoring = useRef(open && readUpdateSnapshot("picker:mode") !== undefined);
   const [mode, setMode] = useUpdateState<Mode>(`picker:mode`, "search");
   const [query, setQuery] = useUpdateState(`picker:query`, "");
@@ -152,7 +154,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   async function refresh(force: boolean) {
     setScanning(true);
     try {
-      const out = await api.discoverRepos(force);
+      const out = await browser.discover(force);
       setDiscovered(out.repos);
     } catch (e) {
       setError(errMsg(e));
@@ -180,7 +182,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
     setValidation(null);
     setPicked(null);
     try {
-      const v = await api.validateRepoPath(path);
+      const v = await browser.validatePath(path);
       setValidation(v);
       if (v.isGit && v.root) {
         setPicked({ path: v.root, name: v.root.split("/").pop() ?? v.root, branch: v.branch ?? "HEAD" });
@@ -209,7 +211,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
     setMode("browse");
     setError("");
     try {
-      const next = await api.listFs(path);
+      const next = await browser.listDirectory(path);
       if (request !== browseRequest.current) return;
       if (previous && previous.path !== next.path) setBrowseTrail(trail => [...trail, previous]);
       else if (!previous) setBrowseTrail([]);

@@ -1,22 +1,13 @@
 import { execFile } from "node:child_process";
 import { BRANDING } from "@palmagent/shared";
 import type { PrChecks, PrLifecycle, PrRef } from "@palmagent/shared";
+import type { PrStatusSink } from "./application/ports.js";
 
 // GitHub PR status, fetched out of band and merged back onto tasks. This is the
 // ONLY outbound network the web server makes; it is entirely fail-soft — with no
 // token or an unreachable API the PRs simply stay plain links at their pre-fetch
 // defaults (open/unknown). Nothing here can throw into the task loop.
 //
-// The sink decouples us from TaskService: it implements these two methods (and
-// passes itself to the constructor), so github.ts never imports the service.
-export interface PrStatusSink {
-  // Tasks with at least one PR worth refreshing (archived/cancelled excluded —
-  // their PRs are frozen). Returns a snapshot copy; we never mutate it.
-  tasksWithPrs(): { taskId: string; prs: PrRef[] }[];
-  // Merge fetched status (keyed by PR url) onto a task's PRs; persist + broadcast.
-  applyPrStatuses(taskId: string, patches: Map<string, Partial<PrRef>>): void;
-}
-
 const REFRESH_MS = 60_000; // how often non-terminal PRs are re-polled
 const REQUEST_TIMEOUT_MS = 8_000;
 const FAILED_CONCLUSIONS = new Set(["failure", "timed_out", "cancelled", "action_required", "stale"]);

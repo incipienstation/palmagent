@@ -1,7 +1,7 @@
 import { useUpdateBlocker } from "../update-state";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { api, setOnUnauthorized } from "../api";
+import { useAuthOperations } from "../hooks/remote-operations";
 import { navigate, useRoute } from "../router";
 import { Enroll } from "./Enroll";
 import { Login } from "./Login";
@@ -13,23 +13,24 @@ type Phase = "loading" | "authed" | "unauthed";
 // When the server doesn't enforce auth in development (me.required === false) the gate
 // is transparent. The #/enroll/<token> route always renders, authed or not.
 export function AuthGate({ children }: { children: ReactNode }) {
+  const authOperations = useAuthOperations();
   const route = useRoute();
   const [phase, setPhase] = useState<Phase>("loading");
   useUpdateBlocker(phase === "loading");
 
   useEffect(() => {
-    setOnUnauthorized(() => setPhase("unauthed"));
+    authOperations.setUnauthorizedHandler(() => setPhase("unauthed"));
     let alive = true;
-    api.auth.me().then(
+    authOperations.me().then(
       (me) => alive && setPhase(me.authenticated || !me.required ? "authed" : "unauthed"),
       // Offline first-load cannot verify the session — fall back to the login screen.
       () => alive && setPhase("unauthed"),
     );
     return () => {
       alive = false;
-      setOnUnauthorized(null);
+      authOperations.setUnauthorizedHandler(null);
     };
-  }, []);
+  }, [authOperations]);
 
   if (route.name === "enroll") {
     return (

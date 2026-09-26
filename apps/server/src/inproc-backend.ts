@@ -2,6 +2,8 @@ import { once } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { makeNdjsonSplitter } from "./ndjson.js";
 import type { ProcHandle, RunnerBackend, SpawnSpec } from "./types.js";
+import type { AgentKind } from "@palmagent/shared";
+import { getRunner } from "./runner.js";
 
 // The default backend: spawn the CLI as a direct child of THIS process, exactly
 // as Palmagent did before the runner daemon existed. Used by `pnpm dev` (one
@@ -10,6 +12,8 @@ import type { ProcHandle, RunnerBackend, SpawnSpec } from "./types.js";
 // recovery falls back to idle(interrupted), the pre-daemon behavior.
 export class InProcessBackend implements RunnerBackend {
   private children = new Set<ChildProcessWithoutNullStreams>();
+
+  agentRunner(agent: AgentKind) { return getRunner(agent); }
 
   async close(): Promise<void> {
     await Promise.all([...this.children].map(async (child) => {

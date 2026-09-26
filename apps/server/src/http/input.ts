@@ -1,14 +1,14 @@
 import type { MiddlewareHandler } from "hono";
 import { validator } from "hono/validator";
 import type { z } from "zod";
-import { HttpError } from "../service.js";
+import { ApplicationError } from "../errors.js";
 
 function parse<T extends z.ZodTypeAny>(schema: T, value: unknown): z.output<T> {
   const result = schema.safeParse(value);
   if (!result.success) {
     // Report fields and constraints, never echo submitted values.
     const issue = result.error.issues[0];
-    throw new HttpError(400, `invalid request: ${issue.path.join(".") || "body"} (${issue.code})`);
+    throw new ApplicationError("bad_request", `invalid request: ${issue.path.join(".") || "body"} (${issue.code})`);
   }
   return result.data;
 }
@@ -23,9 +23,9 @@ export function jsonBody<T extends z.ZodTypeAny>(schema: T): MiddlewareHandler<{
     const source = await c.req.text();
     let value: unknown;
     try { value = source ? JSON.parse(source) : {}; }
-    catch { throw new HttpError(400, "invalid JSON body"); }
+    catch { throw new ApplicationError("bad_request", "invalid JSON body"); }
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      throw new HttpError(400, "body must be a JSON object");
+      throw new ApplicationError("bad_request", "body must be a JSON object");
     }
     c.req.addValidatedData("json", parse(schema, value));
     await next();

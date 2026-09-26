@@ -10,11 +10,14 @@ import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { Db } from "../src/db.js";
 import { RoutineService } from "../src/routines.js";
+import { NodeIdentifierGenerator } from "../src/id-generator.js";
+import { LocalRoutineScriptRunner } from "../src/routine-script.js";
 import type { TaskService } from "../src/service.js";
 import { createSessionApp } from "../src/local/app.js";
 import { CreateRoutineSchema } from "@palmagent/shared/requests";
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
+const createRoutineService = (db: Db, tasks: TaskService) => new RoutineService(db, tasks, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner());
 
 function fixture(t: test.TestContext, git = false) {
   const dir = mkdtempSync(join(tmpdir(), "routine-test-"));
@@ -26,7 +29,7 @@ function fixture(t: test.TestContext, git = false) {
   db.insertRepo({ id: "space", name: "test", path: dir, vcs: git ? "git" : "none", defaultBaseRef: "HEAD", createdAt: 1 });
   const dispatched: unknown[] = [];
   const tasks = { updating: false, createTask: (request: unknown) => { dispatched.push(request); return { taskId: "task" }; } } as unknown as TaskService;
-  const service = new RoutineService(db, tasks);
+  const service = createRoutineService(db, tasks);
   t.after(async () => { await service.stop(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   const create = (command: string, timeoutSeconds = 5) => service.create({ repoId: "space", kind: "script", script: { command, timeoutSeconds }, preset: "manual" });
   return { dir, db, tasks, service, create, dispatched };
@@ -45,7 +48,7 @@ test("legacy routine migration preserves templates and history", t => {
   const path = join(dir, "state.db");
   const original = new Db(path);
   original.insertRepo({ id: "space", name: "test", path: dir, vcs: "none", defaultBaseRef: "HEAD", createdAt: 1 });
-  const service = new RoutineService(original, {} as TaskService);
+  const service = createRoutineService(original, {} as TaskService);
   const routine = service.create({ repoId: "space", agent: "codex", prompt: "Review", preset: "manual" });
   original.insertRoutineRun({ routineId: routine.id, firedAt: 1, status: "manual", taskId: "task" });
   original.close();
@@ -172,10 +175,12 @@ test("abrupt server death revokes the script lifetime pipe", async t => {
   const source = `
     import { Db } from './apps/server/src/db.ts';
     import { RoutineService } from './apps/server/src/routines.ts';
+    import { NodeIdentifierGenerator } from './apps/server/src/id-generator.ts';
+    import { LocalRoutineScriptRunner } from './apps/server/src/routine-script.ts';
     const dir = process.argv[1];
     const db = new Db(dir + '/state.db');
     db.insertRepo({id:'space',name:'test',path:dir,vcs:'none',defaultBaseRef:'HEAD',createdAt:1});
-    const routines = new RoutineService(db, {updating:false});
+    const routines = new RoutineService(db, {updating:false}, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner());
     const routine = routines.create({repoId:'space',kind:'script',script:{command:'touch started; sleep 2; touch orphan',timeoutSeconds:10},preset:'manual'});
     routines.runNow(routine.id);
   `;

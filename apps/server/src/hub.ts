@@ -1,5 +1,6 @@
 import type { TaskState } from "@palmagent/shared";
-import type { EventRow } from "./db.js";
+import type { EventRow } from "./application/models.js";
+import type { LiveEventStream } from "./application/ports.js";
 
 // In-process fan-out to connected SSE clients. The DB is the durable log (and
 // replay source); the Hub is only the live push. Each persisted event arrives
@@ -8,7 +9,7 @@ import type { EventRow } from "./db.js";
 type EventListener = (row: EventRow) => void;
 type TasksListener = (tasks: TaskState[]) => void;
 
-export class Hub {
+export class Hub implements LiveEventStream {
   private updateSubs = new Set<() => void>();
   onUpdates(listener: () => void): () => void {
     this.updateSubs.add(listener);
