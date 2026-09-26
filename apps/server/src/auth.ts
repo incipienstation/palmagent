@@ -14,8 +14,8 @@ import type {
 } from "@simplewebauthn/server";
 import { BRANDING } from "@palmagent/shared";
 import { config } from "./config.js";
-import type { Db } from "./db.js";
-import { HttpError } from "./service.js";
+import type { AuthRepository } from "./application/ports.js";
+import { ApplicationError } from "./errors.js";
 
 // In-app WebAuthn (passkey) auth. Unauthenticated API calls get plain 401 JSON
 // so a client can show an in-app login. One logical user, N passkeys.
@@ -62,7 +62,7 @@ const cookie = (name: string, value: string, maxAge: number): AuthCookie => ({ n
 export class AuthService {
   private challenges = new Map<string, ChallengeEntry>();
 
-  constructor(private readonly db: Db, private readonly settings = config) {}
+  constructor(private readonly db: AuthRepository, private readonly settings = config) {}
 
   get enabled(): boolean {
     return this.settings.authEnabled;
@@ -134,7 +134,7 @@ export class AuthService {
     const entry = id ? this.challenges.get(id) : undefined;
     if (!id || !entry || entry.kind !== kind || entry.expiresAt <= Date.now()) {
       if (id) this.challenges.delete(id);
-      throw new HttpError(400, "challenge expired — restart the passkey flow");
+      throw new ApplicationError("bad_request", "challenge expired — restart the passkey flow");
     }
     this.challenges.delete(id); // single use
     return entry;
@@ -156,7 +156,7 @@ export class AuthService {
     const sessionAuthorized = this.verifySession(credentials.sessionToken);
     const tokenValid = !!enrollToken && this.db.isEnrollTokenValid(enrollToken, Date.now());
     if (!sessionAuthorized && !tokenValid) {
-      throw new HttpError(403, "registration requires a valid enroll token (mint one with the host CLI)");
+      throw new ApplicationError("forbidden", "registration requires a valid enroll token (mint one with the host CLI)");
     }
     const existing = this.db.listCredentials();
     const options = await generateRegistrationOptions({
@@ -194,11 +194,11 @@ export class AuthService {
       requireUserVerification: false,
     });
     if (!verification.verified || !verification.registrationInfo) {
-      throw new HttpError(400, "passkey registration could not be verified");
+      throw new ApplicationError("bad_request", "passkey registration could not be verified");
     }
     // Burn the enroll token only now that registration actually succeeded.
     if (entry.enrollToken && !this.db.consumeEnrollToken(entry.enrollToken, Date.now())) {
-      throw new HttpError(400, "enroll token already used or expired");
+      throw new ApplicationError("bad_request", "enroll token already used or expired");
     }
     const cred = verification.registrationInfo.credential;
     const now = Date.now();
@@ -239,7 +239,7 @@ export class AuthService {
   ): Promise<{ setCookies: AuthCookie[] }> {
     const entry = this.takeChallenge(credentials, "auth");
     const cred = this.db.getCredential(response.id);
-    if (!cred) throw new HttpError(400, "unknown passkey");
+    if (!cred) throw new ApplicationError("bad_request", "unknown passkey");
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge: entry.challenge,
@@ -253,7 +253,7 @@ export class AuthService {
       },
       requireUserVerification: false,
     });
-    if (!verification.verified) throw new HttpError(401, "passkey assertion failed");
+    if (!verification.verified) throw new ApplicationError("unauthorized", "passkey assertion failed");
     this.db.bumpCredentialCounter(cred.credentialId, verification.authenticationInfo.newCounter, Date.now());
     return { setCookies: [this.issueSession(cred.label ?? undefined), cookie(CHALLENGE_COOKIE, "", 0)] };
   }

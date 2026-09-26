@@ -5,18 +5,17 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
 
 # Ship
 
-1. Review the complete task diff and commit it with a clear message. Resolve the maintainer's
-   approved public noreply email first. Set it for both author and committer when committing,
-   amending, or rebasing; rebases can restore a private default committer email. Inspect both
-   `%ae` and `%ce` on the complete new commit range before pushing.
+1. Review the complete task diff and commit it with a clear message. Preserve the intended author
+   and committer identities; do not change their email addresses solely to satisfy a domain rule.
+   Inspect both `%ae` and `%ce` on the complete new commit range before pushing.
 2. Push the `feature/*` branch and open a PR with **base = `develop`** (never `main` directly).
 3. For the task's non-draft PR into `develop`, wait for required CI checks on its current head
    to pass and for repository review requirements to be satisfied, then squash-merge automatically.
    No additional human confirmation is needed unless the user requested a draft, PR-only delivery,
    or an explicit merge hold. Confirm the PR base and head immediately before merging; use
-   `gh pr merge <pr-number> --squash --match-head-commit <verified-head-sha> --author-email <public-noreply-email>`.
-   GitHub can otherwise select the account's default email for the squash author. Verify the
-   merged commit's author/committer addresses too. While waiting, use a CLI watch or bounded polling
+   `gh pr merge <pr-number> --squash --match-head-commit <verified-head-sha>`. Verify the merged
+   commit's author/committer metadata reflects the intended PR identity; personal email domains are
+   permitted. While waiting, use a CLI watch or bounded polling
    with concise status output; inspect job logs when checks fail. Reuse collected evidence while
    its inputs remain unchanged, and retain the final base/head check above. If the head or base
    changes, update and reverify as needed. Resolve task-owned conflicts before merging; never

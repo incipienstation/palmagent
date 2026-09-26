@@ -46,8 +46,8 @@ before importing the next.
 
 ## Public-safety rule
 
-Treat every committed byte and commit as public material. Never commit secrets, personal
-email addresses, user-specific home paths, private domains or addresses, host inventories,
+Treat every committed byte and commit as public material. Never commit secrets, user-specific
+home paths, private domains or addresses, host inventories,
 production data, CLI transcripts, database files, or private-repository references. Replace
 environment-specific examples with explicit placeholders. Sanitize during import, not afterward.
 

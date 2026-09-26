@@ -9,7 +9,7 @@ import type {
   ValidateRepoPathResponse,
 } from "@palmagent/shared";
 import { expandHome } from "./paths.js";
-import { HttpError } from "./service.js";
+import { ApplicationError } from "./errors.js";
 import { detectDefaultBranch, gitToplevel } from "./worktree.js";
 
 // Backs the PWA's tap-first "Add a repo" picker: scan the configured roots for
@@ -106,13 +106,13 @@ export function listDirectory(rawPath: string, roots: string[]): FsListResponse 
   const path = resolve(expandHome(rawPath.trim()));
   const allowed = [homedir(), ...roots];
   if (!allowed.some((r) => path === r || path.startsWith(r + sep))) {
-    throw new HttpError(403, `browsing outside ${allowed.join(", ")} is not allowed`);
+    throw new ApplicationError("forbidden", `browsing outside ${allowed.join(", ")} is not allowed`);
   }
   let dirents;
   try {
     dirents = readdirSync(path, { withFileTypes: true });
   } catch {
-    throw new HttpError(404, `cannot list directory: ${path}`);
+    throw new ApplicationError("not_found", `cannot list directory: ${path}`);
   }
   const entries: FsEntry[] = dirents
     .filter((d) => d.isDirectory() && !d.name.startsWith(".") && !SKIP_DIRS.has(d.name))

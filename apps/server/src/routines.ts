@@ -1,13 +1,12 @@
 import { CreateRoutineSchema, UpdateRoutineSchema } from "@palmagent/shared/requests";
-import { runRoutineScript } from "./routine-script.js";
-import { randomBytes } from "node:crypto";
 import type {
   CreateRoutineRequest, Routine, RoutinePreset, RoutineRun, UpdateRoutineRequest,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { nextRun, parseCron, presetToCron } from "./cron.js";
-import type { Db } from "./db.js";
-import { HttpError, type TaskService } from "./service.js";
+import { ApplicationError } from "./errors.js";
+import type { IdentifierGenerator, RoutineRepository, RoutineScriptExecution, RoutineScriptRunner, RoutineTaskUseCases } from "./application/ports.js";
+import type { TaskEventPublisher } from "./application/ports.js";
 
 // Routines: recurring agent tasks or scripts. Agent fires create a fresh task;
 // script fires run directly and record their result in routine history. A cadence is
@@ -21,12 +20,15 @@ const TICK_MS = 15_000;
 
 export class RoutineService {
   private timer?: NodeJS.Timeout;
-  private scripts = new Map<string, ReturnType<typeof runRoutineScript>>();
+  private scripts = new Map<string, RoutineScriptExecution>();
   private stopping = false;
 
   constructor(
-    private readonly db: Db,
-    private readonly tasks: TaskService,
+    private readonly db: RoutineRepository,
+    private readonly tasks: RoutineTaskUseCases,
+    private readonly ids: IdentifierGenerator,
+    private readonly scriptRunner: RoutineScriptRunner,
+    private readonly events: Pick<TaskEventPublisher, "emitReadChange">,
   ) {}
 
   start(): void {
@@ -74,20 +76,24 @@ export class RoutineService {
   // in the routine's run history.
   private fire(r: Routine, now: number, manual = false): void {
     if (r.kind === "script") {
-      if (this.stopping || this.tasks.updating) throw new HttpError(503, "Palmagent is restarting");
+      if (this.stopping || this.tasks.updating) throw new ApplicationError("service_unavailable", "Palmagent is restarting");
       if (this.scripts.has(r.id) || this.scripts.size >= 4) {
-        if (manual) throw new HttpError(409, "A script is already running or all four script slots are busy");
+        if (manual) throw new ApplicationError("conflict", "A script is already running or all four script slots are busy");
         this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "skipped", note: "script already running or script capacity reached" });
       } else {
         const runId = this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "running", note: manual ? "manual" : "scheduled" });
-        const execution = runRoutineScript(this.db, r, runId);
+        const execution = this.scriptRunner.start(this.db, r, runId);
         this.scripts.set(r.id, execution);
-        void execution.done.finally(() => this.scripts.delete(r.id));
+        void execution.done.finally(() => {
+          this.scripts.delete(r.id);
+          this.events.emitReadChange({ type: "read-change", routineId: r.id });
+        });
       }
       r.lastRunAt = now;
       if (!manual) r.nextRunAt = r.schedule ? nextRun(r.schedule, now) : undefined;
       r.updatedAt = now;
       this.db.updateRoutine(r);
+      this.events.emitReadChange({ type: "read-change", routineId: r.id });
       return;
     }
     let taskId: string | undefined;
@@ -118,20 +124,21 @@ export class RoutineService {
     if (!manual) r.nextRunAt = r.schedule ? nextRun(r.schedule, now) : undefined;
     r.updatedAt = now;
     this.db.updateRoutine(r);
+    this.events.emitReadChange({ type: "read-change", routineId: r.id });
   }
 
   // ---- CRUD (REST layer calls these) ----
   create(req: CreateRoutineRequest): Routine {
     const parsed = CreateRoutineSchema.safeParse(req);
-    if (!parsed.success) throw new HttpError(400, parsed.error.message);
+    if (!parsed.success) throw new ApplicationError("bad_request", parsed.error.message);
     req = parsed.data;
-    if (!this.db.getRepo(req.repoId)) throw new HttpError(400, `no such repo: ${req.repoId}`);
+    if (!this.db.getRepo(req.repoId)) throw new ApplicationError("bad_request", `no such repo: ${req.repoId}`);
 
     const preset: RoutinePreset = req.preset ?? "custom";
     const now = Date.now();
     const { schedule, nextRunAt } = this.compile(preset, req, now);
     const routine: Routine = {
-      id: "rt" + randomBytes(4).toString("hex"),
+      id: this.ids.next("rt"),
       repoId: req.repoId,
       kind: req.kind ?? "agent",
       script: req.script ? { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? 300 } : undefined,
@@ -149,6 +156,7 @@ export class RoutineService {
       updatedAt: now,
     };
     this.db.insertRoutine(routine);
+    this.events.emitReadChange({ type: "read-change", routines: true });
     return routine;
   }
 
@@ -166,7 +174,7 @@ export class RoutineService {
       return { schedule: src.schedule!, nextRunAt: nextRun(src.schedule!, now) };
     }
     const cron = presetToCron(preset, src.hour, src.dayOfWeek);
-    if (!cron) throw new HttpError(400, `unknown preset: ${preset}`);
+    if (!cron) throw new ApplicationError("bad_request", `unknown preset: ${preset}`);
     return { schedule: cron, nextRunAt: nextRun(cron, now) };
   }
 
@@ -180,19 +188,19 @@ export class RoutineService {
 
   get(id: string): Routine {
     const r = this.db.getRoutine(id);
-    if (!r) throw new HttpError(404, `no such routine: ${id}`);
+    if (!r) throw new ApplicationError("not_found", `no such routine: ${id}`);
     return r;
   }
 
   update(id: string, req: UpdateRoutineRequest): Routine {
     const r = this.get(id);
     const parsed = UpdateRoutineSchema.safeParse(req);
-    if (!parsed.success) throw new HttpError(400, parsed.error.message);
+    if (!parsed.success) throw new ApplicationError("bad_request", parsed.error.message);
     req = parsed.data;
     if (r.kind === "script" && [req.prompt, req.permission, req.model, req.effort].some(field => field !== undefined)) {
-      throw new HttpError(400, "Script routines do not accept agent settings");
+      throw new ApplicationError("bad_request", "Script routines do not accept agent settings");
     }
-    if (req.script && r.kind !== "script") throw new HttpError(400, "Only script routines accept script settings");
+    if (req.script && r.kind !== "script") throw new ApplicationError("bad_request", "Only script routines accept script settings");
     if (req.script) r.script = { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? r.script?.timeoutSeconds ?? 300 };
     const now = Date.now();
     // Recompile the cadence when any cadence field is present in the patch.
@@ -209,7 +217,7 @@ export class RoutineService {
       r.schedule = schedule;
     }
     if (req.prompt !== undefined) {
-      if (!req.prompt) throw new HttpError(400, "prompt cannot be empty");
+      if (!req.prompt) throw new ApplicationError("bad_request", "prompt cannot be empty");
       r.prompt = req.prompt;
     }
     if (req.title !== undefined) r.title = req.title || undefined;
@@ -221,13 +229,15 @@ export class RoutineService {
     r.nextRunAt = r.enabled && r.preset !== "manual" && r.schedule ? nextRun(r.schedule, now) : undefined;
     r.updatedAt = now;
     this.db.updateRoutine(r);
+    this.events.emitReadChange({ type: "read-change", routines: true });
     return r;
   }
 
   remove(id: string): Routine {
-    if (this.scripts.has(id)) throw new HttpError(409, "Wait for the running script before deleting this routine");
+    if (this.scripts.has(id)) throw new ApplicationError("conflict", "Wait for the running script before deleting this routine");
     const r = this.get(id);
     this.db.deleteRoutine(id);
+    this.events.emitReadChange({ type: "read-change", routines: true });
     return r;
   }
 
@@ -239,7 +249,7 @@ export class RoutineService {
 
   async stopRun(id: string): Promise<Routine> {
     const r = this.get(id);
-    if (r.kind !== "script") throw new HttpError(400, "Stop agent runs from their task");
+    if (r.kind !== "script") throw new ApplicationError("bad_request", "Stop agent runs from their task");
     const execution = this.scripts.get(id);
     execution?.stop("interrupted by user");
     await execution?.done;
@@ -253,10 +263,10 @@ export class RoutineService {
 }
 
 function validateCron(expr: string | undefined): void {
-  if (!expr) throw new HttpError(400, "schedule (cron) is required");
+  if (!expr) throw new ApplicationError("bad_request", "schedule (cron) is required");
   try {
     parseCron(expr);
   } catch (e) {
-    throw new HttpError(400, `invalid cron: ${e instanceof Error ? e.message : String(e)}`);
+    throw new ApplicationError("bad_request", `invalid cron: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

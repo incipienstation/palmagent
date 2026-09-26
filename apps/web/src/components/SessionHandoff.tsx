@@ -2,12 +2,13 @@ import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { Copy, Terminal } from "lucide-react";
-import { api } from "../api";
+import { useTaskOperations } from "../hooks/remote-operations";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
 import { toast } from "./ui/toaster";
 
 export function SessionHandoff({ task }: { task: TaskState }) {
+  const taskOperations = useTaskOperations(task.taskId);
   const [command, setCommand] = useState("");
   const busy = Boolean(useTaskActivity(task.taskId).label);
   const commandRef = useRef<HTMLDivElement>(null);
@@ -22,7 +23,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
   async function prepare() {
     const finish = beginTaskAction(task.taskId, "Preparing shell handoff…");
     if (!finish) return;
-    try { const result = await api.handoff(task.taskId); setCommand(result.command); }
+    try { const result = await taskOperations.handoff(); setCommand(result.command); }
     catch (error) { toast({ title: error instanceof Error ? error.message : "Handoff failed", variant: "destructive" }); }
     finally { finish(); }
   }

@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
-import { api, ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
+import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
 import { navigate } from "../router";
@@ -33,12 +33,14 @@ import { useSkillDraft } from "./SkillPicker";
 import { Composer } from "./Composer";
 import { selectablePermission } from "./PermissionPicker";
 import { RepoPicker } from "./RepoPicker";
+import { useDispatchOperations } from "../hooks/remote-operations";
 
 function errMsg(e: unknown): string {
   return e instanceof ApiError || e instanceof Error ? e.message : String(e);
 }
 
 export function DispatchView() {
+  const dispatchOperations = useDispatchOperations();
   const mounted = useRef(false);
   const repoSelectionInitialized = useRef(false);
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -120,7 +122,7 @@ export function DispatchView() {
     });
     if (!finish) return;
     try {
-      const task = await api.createTask({
+      const task = await dispatchOperations.createTask({
         repoId,
         agent,
         prompt: prompt.trim() || (skills.length ? "Use the selected skill." : "See the attached image(s)."),

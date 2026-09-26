@@ -32,8 +32,8 @@ import { WorkingLabel } from "./WorkingLabel";
 import { ActivitySummary } from "./ActivitySummary";
 import { ApprovalRequest } from "./ApprovalCard";
 import { payload } from "../transcript";
-import { api } from "../api";
-import { queryClient, taskActivityDetailsKey, TASK_ACTIVITY_DETAILS_GC_TIME } from "../task-history-query";
+import { queryClient, taskActivityDetailsKey } from "../task-history-query";
+import { taskActivityDetailsQueryOptions } from "../client-queries";
 import { historyLogItems } from "../hooks/useTaskStream";
 import { prewarmMarkdown } from "../markdown-worker";
 
@@ -764,11 +764,7 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
     return [{ id: `${from}`, from, through }];
   }), [transcriptRows, taskId]);
   const activityQueries = useQueries({ queries: deferredActivities.map(({ from, through }) => ({
-    queryKey: taskActivityDetailsKey(taskId!, from),
-    queryFn: ({ signal }) => api.taskActivityDetails(taskId!, from, through, signal),
-    staleTime: Infinity,
-    gcTime: TASK_ACTIVITY_DETAILS_GC_TIME,
-    retry: false,
+    ...taskActivityDetailsQueryOptions(taskId!, from, through),
   })) });
   const activityFetchState = activityQueries.map((query) => `${query.fetchStatus}:${query.data?.through ?? ""}`).join("|");
   useEffect(() => {

@@ -4,6 +4,11 @@ import { terminalPlatform } from "./terminal/adapters.js";
 import { TerminalTickets } from "./terminal/gateway.js";
 import { dirname, join } from "node:path";
 import { AuthService } from "./auth.js";
+import { AccountLimitReader } from "./account-limits.js";
+import { LocalAttachmentStorage } from "./attachments.js";
+import { SkillDiscovery } from "./skills.js";
+import { VoiceSessions } from "./voice.js";
+import { readTaskImage } from "./task-images.js";
 import { config, validateConfig } from "./config.js";
 import { Db } from "./db.js";
 import { ExecutionBackend } from "./execution/client.js";
@@ -19,6 +24,10 @@ import type { RunnerBackend } from "./types.js";
 import { WorktreeManager } from "./worktree.js";
 import { isUpdateMaintenance } from "./update-maintenance.js";
 import { CodexModelCatalogService } from "./model-catalog.js";
+import { NodeIdentifierGenerator } from "./id-generator.js";
+import { LocalNativeSessionAdapter } from "./native-session-adapter.js";
+import { LocalRepositoryPaths } from "./repository-paths.js";
+import { LocalRoutineScriptRunner } from "./routine-script.js";
 
 async function selectBackend(): Promise<RunnerBackend> {
   if (config.executionRelease) {
@@ -47,29 +56,39 @@ export async function createRuntime() {
   const worktrees = new WorktreeManager();
   let backend: RunnerBackend | undefined;
   let terminalService: TerminalService | undefined;
+  let github: GithubService | undefined;
   try {
     const push = new PushService(db, config.vapidKeyPath ?? join(dirname(config.dbPath), "vapid.json"), config.pushSubject);
     backend = await selectBackend();
-    const service = new TaskService(db, hub, supervisor, backend, worktrees, push, () => isUpdateMaintenance(config.dbPath));
+    const attachments = new LocalAttachmentStorage(db, config.attachmentStorage);
+    const service = new TaskService(db, hub, supervisor, backend, worktrees, attachments,
+      new LocalRepositoryPaths(), new LocalNativeSessionAdapter(config.dbPath), new NodeIdentifierGenerator(),
+      push, () => isUpdateMaintenance(config.dbPath), {
+      model: { claude: config.claudeModel, codex: config.codexModel },
+      effort: { claude: config.claudeEffort, codex: config.codexEffort },
+    }, { read: readTaskImage }, {
+      list: query => terminalService?.list(query) ?? [],
+      cleanup: (cwd, taskId, removeWorktree) => terminalService
+        ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
+        : removeWorktree(),
+    }, taskId => github?.onNewPrs(taskId), new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader());
     const terminals = terminalService = new TerminalService(new TerminalStore(join(config.dataDir, "terminals")),
       terminalPlatform(Boolean(config.executionRelease && config.executionNode)).supervisor,
       { task: id => service.getTask(id), repo: id => db.getRepo(id), cleanup: id => service.cleanupTerminalWorktree(id), updating: () => service.updating },
       config.executionRelease ?? "", config.executionNode ?? "");
-    service.terminals = terminals;
     await service.init();
-    const routines = new RoutineService(db, service);
-    const github = new GithubService(service, config.githubToken);
-    service.attachGithub(github);
+    const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), hub);
+    github = new GithubService(service, config.githubToken);
     const auth = new AuthService(db);
     const modelCatalog = new CodexModelCatalogService();
     let closing: Promise<void> | undefined;
     return {
       db, hub, service, auth, push, routines, modelCatalog, config, terminals, terminalTickets: new TerminalTickets(),
-      start() { routines.start(); github.start(); terminals.start(); },
+      start() { routines.start(); github?.start(); terminals.start(); },
       close() {
         return closing ??= (async () => {
           service.beginShutdown();
-          await routines.stop(); github.stop(); push.close();
+          await routines.stop(); github?.stop(); push.close();
           await backend?.close?.();
           await terminals.close();
           db.close();

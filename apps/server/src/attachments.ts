@@ -2,18 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, statfsSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Attachment, ImageAttachment } from "@palmagent/shared";
-import type { Db } from "./db.js";
+import type { AttachmentRecord } from "./application/models.js";
+import type { AttachmentIndex, AttachmentStorage } from "./application/ports.js";
 import { ATTACHMENT_DEFAULTS, ATTACHMENT_MAINTENANCE_MS, type AttachmentPolicy } from "./attachment-policy.js";
-import { HttpError } from "./errors.js";
-import { rasterImage, rasterMediaType } from "./output-images.js";
+import { ApplicationError } from "./errors.js";
+import { rasterImage, rasterMediaType } from "./application/output-images.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "./private-files.js";
+import { sanitizeImages } from "./application/image-input.js";
 
-export interface AttachmentRecord extends Attachment { taskId: string; digest: string; unusedSince: number | null; expiredAt: number | null }
-export interface AttachmentStorage {
-  save(taskId: string, images?: readonly ImageAttachment[]): Attachment[] | undefined;
-  read(taskId: string, id: string): { bytes: Buffer; mediaType: string };
-  load(taskId: string, attachments?: readonly Attachment[]): ImageAttachment[] | undefined;
-}
 const MAX_BYTES = 4.5 * 1024 * 1024;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const reference = ({ id, mediaType, size }: AttachmentRecord, image: ImageAttachment): Attachment => ({ id, mediaType, size,
@@ -23,7 +19,7 @@ const reference = ({ id, mediaType, size }: AttachmentRecord, image: ImageAttach
 export class LocalAttachmentStorage implements AttachmentStorage {
   private readonly directory: string;
   private timer?: ReturnType<typeof setInterval>;
-  constructor(private readonly db: Db, private readonly policy: AttachmentPolicy = ATTACHMENT_DEFAULTS,
+  constructor(private readonly db: AttachmentIndex, private readonly policy: AttachmentPolicy = ATTACHMENT_DEFAULTS,
     private readonly now: () => number = Date.now) {
     this.directory = join(dirname(db.path), "attachments", basename(db.path));
   }
@@ -47,7 +43,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
               this.read(taskId, existing.id);
               this.db.setAttachmentLifecycle(existing.id, null, null);
               return reference(existing, image.image);
-            } catch (error) { if (!(error instanceof HttpError)) throw error; }
+            } catch (error) { if (!(error instanceof ApplicationError)) throw error; }
           }
           this.assertCapacity(image.bytes.length);
           const record: AttachmentRecord = existing ?? { id: randomUUID(), taskId, mediaType: image.mediaType,
@@ -63,15 +59,15 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     } catch (error) {
       for (const path of created) this.remove(path);
       if (["ENOSPC", "EDQUOT"].includes((error as NodeJS.ErrnoException).code ?? "")) {
-        throw new HttpError(507, "Not enough disk space for attachments. Free disk space, then retry.");
+        throw new ApplicationError("insufficient_storage", "Not enough disk space for attachments. Free disk space, then retry.");
       }
       throw error;
     }
   }
   read(taskId: string, id: string) {
     const record = this.db.attachment(taskId, id);
-    if (!record) throw new HttpError(404, "Attachment not found");
-    if (record.expiredAt !== null) throw new HttpError(410, "Attachment expired under the archived conversation retention policy");
+    if (!record) throw new ApplicationError("not_found", "Attachment not found");
+    if (record.expiredAt !== null) throw new ApplicationError("gone", "Attachment expired under the archived conversation retention policy");
     let fd: number | undefined;
     try {
       fd = openSync(join(this.directory, record.id), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -81,7 +77,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
       if (digest(bytes) !== record.digest || rasterMediaType(bytes) !== record.mediaType) throw new Error("Invalid stored attachment");
       return { bytes, mediaType: record.mediaType };
     } catch {
-      throw new HttpError(404, "Attachment unavailable");
+      throw new ApplicationError("not_found", "Attachment unavailable");
     } finally { if (fd !== undefined) closeSync(fd); }
   }
   load(taskId: string, attachments?: readonly Attachment[]): ImageAttachment[] | undefined {
@@ -106,7 +102,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     try {
       this.db.transaction(() => {
         const now = this.now();
-        const refs = new Map<string, ReturnType<Db["attachmentReferences"]>>();
+        const refs = new Map<string, { history: Set<string>; pending: Set<string> }>();
         for (const record of this.db.attachmentInventory()) {
           if (record.expiredAt !== null) continue;
           let taskRefs = refs.get(record.taskId);
@@ -141,10 +137,10 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     // Recheck each physical write, accounting for completed repairs and filesystem
     // activity since the preceding file. Atomic replacement needs a temporary copy.
     if (this.usedBytes() + bytes > this.policy.maxBytes) {
-      throw new HttpError(507, "Attachment storage is full. Free space or increase ATTACHMENT_MAX_BYTES, then retry.");
+      throw new ApplicationError("insufficient_storage", "Attachment storage is full. Free space or increase ATTACHMENT_MAX_BYTES, then retry.");
     }
     if (this.freeBytes() - bytes < this.policy.minFreeBytes) {
-      throw new HttpError(507, "Not enough disk space for attachments. Free disk space, then retry.");
+      throw new ApplicationError("insufficient_storage", "Not enough disk space for attachments. Free disk space, then retry.");
     }
   }
   private usedBytes(): number {
@@ -154,24 +150,9 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     try {
       const { bavail, bsize } = statfsSync(this.directory);
       return bavail * bsize;
-    } catch { throw new HttpError(507, "Cannot check attachment disk space. Check storage access, then retry."); }
+    } catch { throw new ApplicationError("insufficient_storage", "Cannot check attachment disk space. Check storage access, then retry."); }
   }
   private remove(path: string): void {
     try { unlinkSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
-}
-
-/** The same bounded input contract applies to every task and message entry point. */
-export function sanitizeImages(raw: unknown): ImageAttachment[] | undefined {
-  if (raw == null) return undefined;
-  if (!Array.isArray(raw)) throw new HttpError(400, "images must be an array");
-  if (!raw.length) return undefined;
-  if (raw.length > 8) throw new HttpError(400, "Too many images (max 8)");
-  return raw.map((value, index) => {
-    const mediaType = String(value?.mediaType ?? "");
-    const data = String(value?.data ?? "").replace(/^data:[^,]*,/, "").replace(/\s+/g, "");
-    const image = data.length * 0.75 <= MAX_BYTES ? rasterImage(mediaType, data) : undefined;
-    if (!image) throw new HttpError(400, `Invalid image content, type, or size at index ${index}`);
-    return image;
-  });
 }

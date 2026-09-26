@@ -1,16 +1,11 @@
-import { LocalAttachmentStorage, type AttachmentStorage } from "./attachments.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { MessageAction, MessageQueue, MessageSettings, PendingMessage, SubmitMessage } from "@palmagent/shared";
-import type { Db } from "./db.js";
+import type { MessageState } from "./application/models.js";
+import type { AttachmentStorage, MessageStateRepository } from "./application/ports.js";
+import { ApplicationError } from "./errors.js";
 
 const EDIT_MS = 60_000;
-interface StoredMessage extends PendingMessage { fingerprint: string; editToken?: string }
-export interface MessageState extends Omit<MessageQueue, "messages"> {
-  messages: StoredMessage[];
-  protocol?: "interactive";
-  initialMessageId?: string;
-  runtimeStarted?: boolean;
-}
+type StoredMessage = MessageState["messages"][number];
 interface Host {
   assertWritable(id: string): void;
   canStart(id: string): boolean;
@@ -19,14 +14,16 @@ interface Host {
   steer(id: string, message: PendingMessage): Promise<"delivered" | "rejected" | "unknown">;
   changed(id: string): void;
 }
-export class MessageConflict extends Error { readonly status = 409 }
+export class MessageConflict extends ApplicationError {
+  constructor(message: string) { super("conflict", message); }
+}
 const conflict = (s: string): never => { throw new MessageConflict(s); };
 
 // One controller owns ordering for both agents. Synchronous SQLite transitions
 // claim work before any asynchronous adapter call; callbacks always re-read it.
 export class MessageController {
   private timer: ReturnType<typeof setInterval>;
-  constructor(private db: Db, private host: Host, private attachments: AttachmentStorage = new LocalAttachmentStorage(db)) {
+  constructor(private db: MessageStateRepository, private host: Host, private attachments: AttachmentStorage) {
     this.timer = setInterval(() => { if (!this.db.isOpen) { this.close(); return; } for (const id of this.db.messageTaskIds()) this.pump(id); }, 1000);
     this.timer.unref();
   }

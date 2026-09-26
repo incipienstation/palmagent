@@ -4,17 +4,17 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { handleError } from "../src/http/errors.js";
 import { createSessionApp } from "../src/local/app.js";
-import { HttpError } from "../src/service.js";
+import { ApplicationError } from "../src/errors.js";
 
 const input = { agent: "codex", sessionId: "fixture", cwd: "/fixture", home: "/fixture", waitPid: 1 };
 
-test("local dispatch preserves domain error statuses and masks unexpected failures", async (t) => {
+test("local dispatch maps application error codes and masks unexpected failures", async (t) => {
   const logged = t.mock.method(console, "error", () => {});
-  for (const status of [400, 409, 503]) {
-    const app = createSessionApp({ dispatchSession() { throw new HttpError(status, "domain failure"); } });
+  for (const [code, status] of [["bad_request", 400], ["conflict", 409], ["service_unavailable", 503]] as const) {
+    const app = createSessionApp({ dispatchSession() { throw new ApplicationError(code, "application failure"); } });
     const response = await app.request("/dispatch", { method: "POST", body: JSON.stringify(input) });
     assert.equal(response.status, status);
-    assert.deepEqual(await response.json(), { error: "domain failure" });
+    assert.deepEqual(await response.json(), { error: "application failure", code });
   }
   assert.equal(logged.mock.callCount(), 0);
   const failure = new Error("private internal failure");

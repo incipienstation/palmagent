@@ -128,16 +128,16 @@ test("capacity charges actual files and unique content; quota failure rolls back
   const f = fixture(t), storage = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes });
   const [ref] = storage.save("one", [image, image])!;
   assert.deepEqual(storage.save("one", [image]), [ref]);
-  assert.throws(() => storage.save("two", [image]), { status: 507 });
+  assert.throws(() => storage.save("two", [image]), { code: "insufficient_storage" });
   assert.equal(f.db.attachmentIds().size, 1);
   assert.deepEqual(storage.load("one", [ref]), [image]);
   assert.equal(storage.save("two", undefined), undefined);
   f.db.deleteAttachment(ref.id);
   // Unindexed or failed-deletion files still consume real capacity.
-  assert.throws(() => storage.save("two", [image]), { status: 507 });
+  assert.throws(() => storage.save("two", [image]), { code: "insufficient_storage" });
   storage.prune();
   const different = { ...image, data: Buffer.concat([Buffer.from(image.data, "base64"), Buffer.from([0])]).toString("base64") };
-  assert.throws(() => storage.save("two", [image, different]), { status: 507 });
+  assert.throws(() => storage.save("two", [image, different]), { code: "insufficient_storage" });
   assert.equal(f.db.attachmentIds().size, 0);
   assert.deepEqual(readdirSync(f.directory), []);
   assert.equal(storage.save("two", [image])?.length, 1);
@@ -151,12 +151,12 @@ test("disk reserve rejects writes and queue submission without discarding an exi
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
     changed() {}, start() {}, async steer() { return "delivered"; } }, storage);
   t.after(() => c.close());
-  assert.throws(() => c.submit("two", { clientMessageId: randomUUID(), mode: "queue", text: "Keep draft", expectedRunId: null, images: [image] }), { status: 507 });
+  assert.throws(() => c.submit("two", { clientMessageId: randomUUID(), mode: "queue", text: "Keep draft", expectedRunId: null, images: [image] }), { code: "insufficient_storage" });
   assert.deepEqual(c.snapshot("two").messages, []);
   const entry = c.submit("two", { clientMessageId: randomUUID(), mode: "queue", text: "Original", expectedRunId: null }).messages[0];
   const token = randomUUID();
   c.action("two", entry.id, { action: "edit", token, version: 1 });
-  assert.throws(() => c.action("two", entry.id, { action: "save", token, version: 1, text: "New", images: [image] }), { status: 507 });
+  assert.throws(() => c.action("two", entry.id, { action: "save", token, version: 1, text: "New", images: [image] }), { code: "insufficient_storage" });
   assert.equal(c.snapshot("two").messages[0].text, "Original");
   assert.equal(f.db.readMessageState("two")?.messages[0].editToken, token);
 });
@@ -170,7 +170,7 @@ test("unused cleanup waits a full observed grace period, survives restart, and p
   assert.equal(storage.read("one", unused.id).bytes.length, bytes);
   f.restart(); storage = new LocalAttachmentStorage(f.db, policy, () => now);
   now++; storage.prune();
-  assert.throws(() => storage.read("one", unused.id), { status: 404 });
+  assert.throws(() => storage.read("one", unused.id), { code: "not_found" });
   assert.deepEqual(readdirSync(f.directory), [used.id]);
   now += 100_000; storage.prune();
   assert.deepEqual(storage.load("two", [used]), [image]);
@@ -200,7 +200,7 @@ test("pending and recoverable messages survive archived retention; cancelled ref
   }
   const state = f.db.readMessageState("one")!; state.messages[0].status = "cancelled"; f.db.writeMessageState("one", state);
   storage.prune(); now += 1000; storage.prune();
-  assert.throws(() => storage.read("one", ref.id), { status: 404 });
+  assert.throws(() => storage.read("one", ref.id), { code: "not_found" });
 });
 
 test("retention is opt-in, only expires archived history, and keeps durable tombstones", t => {
@@ -213,12 +213,12 @@ test("retention is opt-in, only expires archived history, and keeps durable tomb
   const enabled = new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
   now += 999; enabled.prune(); assert.deepEqual(enabled.load("one", [archived]), [image]);
   now++; enabled.prune();
-  assert.throws(() => enabled.read("one", archived.id), { status: 410 });
+  assert.throws(() => enabled.read("one", archived.id), { code: "gone" });
   assert.deepEqual(readdirSync(f.directory), [active.id]);
   assert.deepEqual(enabled.load("two", [active]), [image]);
   f.restart(); // Disabling retention must not turn an expired image into an unexplained 404.
-  assert.throws(() => f.storage.read("one", archived.id), { status: 410 });
-  assert.throws(() => f.storage.read("two", archived.id), { status: 404 });
+  assert.throws(() => f.storage.read("one", archived.id), { code: "gone" });
+  assert.throws(() => f.storage.read("two", archived.id), { code: "not_found" });
   assert.deepEqual(f.storage.save("one", [image]), [archived]);
   assert.deepEqual(f.storage.load("one", [archived]), [image]);
 });
@@ -231,7 +231,7 @@ test("periodic maintenance collects unused files and stops when the database clo
   const [ref] = storage.save("one", [image])!;
   storage.start(); now += 1000;
   t.mock.timers.tick(60 * 60 * 1000);
-  assert.throws(() => storage.read("one", ref.id), { status: 404 });
+  assert.throws(() => storage.read("one", ref.id), { code: "not_found" });
   f.db.close();
   assert.doesNotThrow(() => t.mock.timers.tick(60 * 60 * 1000));
 });
@@ -246,11 +246,11 @@ test("interrupted expiration denies access durably and charges bytes until delet
   const warning = t.mock.method(console, "warn", () => {});
   storage.prune();
   assert.equal(warning.mock.callCount(), 1);
-  assert.throws(() => storage.read("one", ref.id), { status: 410 });
+  assert.throws(() => storage.read("one", ref.id), { code: "gone" });
   assert.deepEqual(readFileSync(join(f.directory, ref.id)), Buffer.from(image.data, "base64"));
-  assert.throws(() => storage.save("two", [image]), { status: 507 });
+  assert.throws(() => storage.save("two", [image]), { code: "insufficient_storage" });
   failure.mock.restore(); f.restart();
-  assert.throws(() => f.storage.read("one", ref.id), { status: 410 });
+  assert.throws(() => f.storage.read("one", ref.id), { code: "gone" });
   assert.deepEqual(readdirSync(f.directory), []);
   assert.equal(new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes }).save("two", [image])?.length, 1);
 });
@@ -272,7 +272,7 @@ test("atomic repairs reserve a temporary copy and release its allocation before 
   const f = fixture(t), [ref] = f.storage.save("one", [image])!;
   writeFileSync(join(f.directory, ref.id), Buffer.alloc(bytes));
   const full = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes });
-  assert.throws(() => full.save("one", [image]), { status: 507 });
+  assert.throws(() => full.save("one", [image]), { code: "insufficient_storage" });
   const different = { ...image, data: Buffer.concat([Buffer.from(image.data, "base64"), Buffer.from([0])]).toString("base64") };
   const room = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes * 2 + 1 });
   const refs = room.save("one", [image, different])!;

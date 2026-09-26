@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalFrame, TerminalInput } from "@palmagent/shared/terminals";
 import { terminalInputChunks } from "@palmagent/shared/terminals";
-import { api } from "../api";
+import { useTerminalOperations } from "../hooks/remote-operations";
 import { Button } from "./ui/button";
 import "@xterm/xterm/css/xterm.css";
 
 export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id: string; initialCwd: string; readOnly: boolean; onEnableInput: () => void }) {
+  const terminalOperations = useTerminalOperations();
   const container = useRef<HTMLDivElement>(null);
   const input = useRef<(data: string) => void>(() => {});
   const termRef = useRef<Terminal | undefined>(undefined);
@@ -89,7 +90,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
         controls = false; setConnected(false); setWritable(false); setClaiming(false); clearTimeout(claimTimeout); setNotice(""); setState(attempts ? "Reconnecting… Input is paused." : "Connecting…");
         if (term) term.options.disableStdin = true;
         try {
-          const ticket = await api.terminals.ticket(id);
+          const ticket = await terminalOperations.ticket(id);
           if (disposed) return;
           const url = new URL("/api/terminals/" + encodeURIComponent(id) + "/stream", location.href);
           url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

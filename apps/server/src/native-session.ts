@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import type { AgentEvent, AgentKind, SessionControl, TaskState } from "@palmagent/shared";
 import { config } from "./config.js";
-import { extractOutputImages } from "./output-images.js";
+import { extractOutputImages } from "./application/output-images.js";
 
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 export const nativeHome = (agent: AgentKind) => resolve(agent === "claude"

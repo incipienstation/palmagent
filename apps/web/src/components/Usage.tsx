@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import type { AgentUsage } from "@palmagent/shared";
 import { BarChart3 } from "lucide-react";
 
@@ -120,7 +121,12 @@ function UsageCardSkeleton() {
 export function UsageView() {
   const query = useQuery(usageQueryOptions());
   const usage = query.data ?? null;
-  const error = query.error ? errMsg(query.error) : "";
+  const [lastError, setLastError] = useState("");
+  useEffect(() => {
+    if (query.error) setLastError(errMsg(query.error));
+    else if (query.isSuccess && !query.isFetching) setLastError("");
+  }, [query.error, query.isSuccess, query.isFetching]);
+  const error = query.error ? errMsg(query.error) : query.isFetching ? lastError : "";
   const pending = query.isFetching;
   const loading = query.isLoading;
   const isEmpty = usage !== null && usage.length === 0;
@@ -129,12 +135,13 @@ export function UsageView() {
     <AppShell>
       <AppBar title="Usage" />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
-        {error && <Alert variant="destructive" className="flex flex-col gap-2">
+        {error && <Alert variant="destructive" className="flex flex-col gap-2" aria-busy={pending}>
           <p>Couldn't load usage. {error}</p>
-            <Button variant="outline" disabled={pending} onClick={() => { void query.refetch(); }}>Retry usage</Button>
+          {pending && <span role="status">Retrying usage…</span>}
+          <Button variant="outline" disabled={pending} onClick={() => { void query.refetch(); }}>Retry usage</Button>
         </Alert>}
 
-        {loading && (
+        {loading && !error && (
           <>
             <UsageCardSkeleton />
             <UsageCardSkeleton />

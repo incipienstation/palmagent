@@ -2,7 +2,7 @@ import { deferActivityEventDetails } from "@palmagent/shared";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StreamQuerySchema } from "@palmagent/shared/requests";
-import type { EventRow } from "../db.js";
+import type { EventRow } from "../application/models.js";
 import type { z } from "zod";
 import type { HttpDependencies } from "./types.js";
 
@@ -11,7 +11,7 @@ import type { HttpDependencies } from "./types.js";
 const MAX_PENDING_BYTES = 64 * 1024 * 1024;
 const MAX_PENDING_FRAMES = 1024;
 
-export function sessionStream(c: Context, { db, hub, service, config, shutdown, build }: HttpDependencies, query: z.output<typeof StreamQuerySchema>) {
+export function sessionStream(c: Context, { hub, service, config, shutdown, build }: HttpDependencies, query: z.output<typeof StreamQuerySchema>) {
   const taskId = query.task || undefined;
   if (taskId) service.getTask(taskId);
   const snapshotsOnly = query.snapshots === "1";
@@ -26,7 +26,7 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
     // Capture a durable boundary and subscribe synchronously BEFORE the first
     // asynchronous write. Persisted events through this fence come from REST;
     // only events produced after subscription are published on this stream.
-    const boundary = db.eventCursor(taskId);
+    const boundary = service.eventCursor(taskId);
     const firstSnapshot = snapshot(taskId ? boundary : undefined);
     let pendingBytes = 0;
     const queue: string[] = [];
@@ -44,13 +44,14 @@ export function sessionStream(c: Context, { db, hub, service, config, shutdown, 
     });
     const offUpdates = taskId ? () => {} : hub.onUpdates(() => enqueue('data: {"type":"updates"}\n\n'));
     const offTasks = hub.onTasks(() => enqueue(snapshot()));
+    const offRead = taskId ? () => {} : hub.onReadChange(change => enqueue(`data: ${JSON.stringify(change)}\n\n`));
     const keepAlive = setInterval(() => enqueue(":keep-alive\n\n"), config.keepAliveMs);
     const abort = () => stream.abort();
     const close = () => {
       if (closed) return;
       closed = true;
       clearInterval(keepAlive);
-      offEvent(); offTasks(); offUpdates();
+      offEvent(); offTasks(); offUpdates(); offRead();
       shutdown?.removeEventListener("abort", abort);
       c.req.raw.signal.removeEventListener("abort", abort);
       queue.length = 0;

@@ -11,10 +11,10 @@ export function voiceRoutes({ service }: Pick<HttpDependencies, "service">) {
       const { context, sdp } = c.req.valid("json");
       return c.json(await service.startVoice(context, sdp, c.req.raw.signal), 200);
     })
-    .post("/:id/heartbeat", id, c => { service.voice.touch(c.req.valid("param").id); return c.json({ ok: true as const }, 200); })
+    .post("/:id/heartbeat", id, c => { service.touchVoice(c.req.valid("param").id); return c.json({ ok: true as const }, 200); })
     .delete("/:id", id, jsonBody(VoiceStopSchema), c => {
       const { timings } = c.req.valid("json");
-      service.voice.stop(c.req.valid("param").id, timings);
+      service.stopVoice(c.req.valid("param").id, timings);
       return c.json({ ok: true as const }, 200);
     });
 }

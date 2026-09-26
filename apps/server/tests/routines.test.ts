@@ -10,11 +10,15 @@ import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { Db } from "../src/db.js";
 import { RoutineService } from "../src/routines.js";
+import { NodeIdentifierGenerator } from "../src/id-generator.js";
+import { LocalRoutineScriptRunner } from "../src/routine-script.js";
+import { Hub } from "../src/hub.js";
 import type { TaskService } from "../src/service.js";
 import { createSessionApp } from "../src/local/app.js";
 import { CreateRoutineSchema } from "@palmagent/shared/requests";
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
+const createRoutineService = (db: Db, tasks: TaskService, hub = new Hub()) => new RoutineService(db, tasks, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), hub);
 
 function fixture(t: test.TestContext, git = false) {
   const dir = mkdtempSync(join(tmpdir(), "routine-test-"));
@@ -26,10 +30,11 @@ function fixture(t: test.TestContext, git = false) {
   db.insertRepo({ id: "space", name: "test", path: dir, vcs: git ? "git" : "none", defaultBaseRef: "HEAD", createdAt: 1 });
   const dispatched: unknown[] = [];
   const tasks = { updating: false, createTask: (request: unknown) => { dispatched.push(request); return { taskId: "task" }; } } as unknown as TaskService;
-  const service = new RoutineService(db, tasks);
+  const hub = new Hub();
+  const service = createRoutineService(db, tasks, hub);
   t.after(async () => { await service.stop(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   const create = (command: string, timeoutSeconds = 5) => service.create({ repoId: "space", kind: "script", script: { command, timeoutSeconds }, preset: "manual" });
-  return { dir, db, tasks, service, create, dispatched };
+  return { dir, db, hub, tasks, service, create, dispatched };
 }
 async function settled(service: RoutineService, id: string) {
   for (let i = 0; i < 200; i++) {
@@ -45,7 +50,7 @@ test("legacy routine migration preserves templates and history", t => {
   const path = join(dir, "state.db");
   const original = new Db(path);
   original.insertRepo({ id: "space", name: "test", path: dir, vcs: "none", defaultBaseRef: "HEAD", createdAt: 1 });
-  const service = new RoutineService(original, {} as TaskService);
+  const service = createRoutineService(original, {} as TaskService);
   const routine = service.create({ repoId: "space", agent: "codex", prompt: "Review", preset: "manual" });
   original.insertRoutineRun({ routineId: routine.id, firedAt: 1, status: "manual", taskId: "task" });
   original.close();
@@ -69,6 +74,25 @@ test("scripts execute without an agent, persist output and fail on nonzero exit"
   assert.ok(run.finishedAt); assert.equal(f.dispatched.length, 0);
   assert.equal(f.db.getRoutine(routine.id)?.script?.command, routine.script?.command);
   assert.equal(f.service.get(routine.id).nextRunAt, undefined);
+});
+
+test("routine read notifications follow stored run state and name only that routine", async t => {
+  const f = fixture(t);
+  const routine = f.create("printf done");
+  const changes: Array<{ routineId?: string; status?: string; output?: string }> = [];
+  f.hub.onReadChange(change => {
+    if (change.routineId) {
+      const run = f.db.listRoutineRuns(change.routineId)[0];
+      changes.push({ routineId: change.routineId, status: run?.status, output: run?.output });
+    }
+  });
+  f.service.runNow(routine.id);
+  await settled(f.service, routine.id);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(changes.map(change => change.routineId), [routine.id, routine.id]);
+  assert.equal(changes[0].status, "running");
+  assert.equal(changes[1].status, "succeeded");
+  assert.equal(changes[1].output, "done");
 });
 
 test("script creates files only in a retained isolated Git worktree", async t => {
@@ -172,10 +196,13 @@ test("abrupt server death revokes the script lifetime pipe", async t => {
   const source = `
     import { Db } from './apps/server/src/db.ts';
     import { RoutineService } from './apps/server/src/routines.ts';
+    import { NodeIdentifierGenerator } from './apps/server/src/id-generator.ts';
+    import { LocalRoutineScriptRunner } from './apps/server/src/routine-script.ts';
+    import { Hub } from './apps/server/src/hub.ts';
     const dir = process.argv[1];
     const db = new Db(dir + '/state.db');
     db.insertRepo({id:'space',name:'test',path:dir,vcs:'none',defaultBaseRef:'HEAD',createdAt:1});
-    const routines = new RoutineService(db, {updating:false});
+    const routines = new RoutineService(db, {updating:false}, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), new Hub());
     const routine = routines.create({repoId:'space',kind:'script',script:{command:'touch started; sleep 2; touch orphan',timeoutSeconds:10},preset:'manual'});
     routines.runNow(routine.id);
   `;

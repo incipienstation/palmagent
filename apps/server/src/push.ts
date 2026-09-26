@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import webpush from "web-push";
 import type { PushPayload, PushSubscriptionJson } from "@palmagent/shared";
-import type { Db } from "./db.js";
+import type { PushRepository } from "./application/ports.js";
 import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
 
 // Web Push. VAPID keys are generated once and persisted next to the DB so
@@ -18,7 +18,7 @@ export class PushService {
   private readonly enabled: boolean;
 
   constructor(
-    private readonly db: Db,
+    private readonly db: PushRepository,
     keyPath: string,
     subject: string | undefined,
   ) {
