@@ -82,8 +82,8 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
   const lowWindows = available.filter(({ limit }) => windowState(limit, now, stale).low && limit.resetsAt !== null);
   return <Sheet>
     <SheetTrigger asChild>
-      <Button variant="ghost" className="h-auto min-h-11 w-full justify-start rounded-xl px-1 py-1.5" aria-label="Account limit details" aria-describedby={summaryId}>
-        <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-1 text-left text-xs font-normal text-muted-foreground">
+      <Button variant="ghost" className="h-auto min-h-11 w-full justify-start rounded-xl px-1 py-1" aria-label="Account limit details" aria-describedby={summaryId}>
+        <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left text-xs font-normal text-muted-foreground">
           {primary && primary.id !== "codex" && <span className="truncate">{primary.name}</span>}
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {available.length > 0 ? <>
@@ -91,7 +91,7 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
               {available.map(({ name, limit }, index) => <WindowSummary key={index} name={name} limit={limit} now={now} stale={stale} />)}
             </> : <span>{report.agent === "claude" ? "Claude account limits" : "Codex account credits"}</span>}
           </span>
-          {lowWindows.map(({ name, limit }, index) => <span key={index} className="whitespace-normal text-destructive">
+          {lowWindows.map(({ name, limit }, index) => <span key={index} className="whitespace-normal leading-tight text-destructive">
             {name} low · Resets in {duration(limit.resetsAt! - now)}
           </span>)}
         </span>
