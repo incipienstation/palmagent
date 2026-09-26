@@ -45,7 +45,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const repoSettings = new SettingsStore(join(dir, "state"), settings.repoRoots);
   const modelCatalog = extra.modelCatalog ?? { get: async () => defaultCodexModelCatalog() };
   const app = createApp({ hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
-    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner()), ...extra, modelCatalog });
+    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), hub), ...extra, modelCatalog });
   const cleanup: Array<() => Promise<void>> = [];
   t.after(async () => {
     shutdown.abort();
@@ -344,7 +344,7 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
   const app = createApp({ hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
-    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner()), modelCatalog: f.modelCatalog });
+    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), f.hub), modelCatalog: f.modelCatalog });
   for (const path of ["/", "/sw.js", "/deep/link", "/assets/missing.js"]) {
     const response = await app.request(path);
     assert.equal(response.status, 200);
@@ -549,7 +549,24 @@ test("snapshot-only inbox streams omit historical and live event bodies", async 
   const next = new TextDecoder().decode((await reader.read()).value);
   assert.match(next, /"type":"tasks"/);
   assert.ok(!next.includes('"type":"event"'));
+  f.hub.emitReadChange({ type: "read-change", usage: true });
+  const readChange = new TextDecoder().decode((await reader.read()).value);
+  assert.match(readChange, /"type":"read-change","usage":true/);
   await reader.cancel();
+});
+
+test("display-only task edits leave reads alone; repo deletion signals persisted changes", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "archived", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  const changes: import("@palmagent/shared").SseReadChangeFrame[] = [];
+  f.hub.onReadChange(change => changes.push(change));
+  f.service.rename("t", "New title");
+  assert.deepEqual(changes, []);
+  f.service.deleteRepo("r");
+  assert.deepEqual(changes, [{ type: "read-change", usage: true, routines: true }]);
+  assert.deepEqual(f.service.usage(), []);
 });
 
 test("task images require a session and serve only bounded raster files inside the task directory", async (t) => {

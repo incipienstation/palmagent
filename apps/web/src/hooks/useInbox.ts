@@ -27,6 +27,16 @@ export function useInbox(): Inbox {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let seenSnapshot = false;
+    let recoverReads = false;
+    const refresh = (queryKey: readonly unknown[]) => {
+      void queryClient.invalidateQueries({ queryKey, refetchType: "active" }, { cancelRefetch: false });
+    };
+    const refreshReads = () => {
+      refresh(clientReadKeys.usage());
+      refresh(clientReadKeys.routines());
+      refresh(clientReadKeys.routineRunsAll());
+    };
     const connection = connectSse(
       "/api/stream?snapshots=1",
       (e) => {
@@ -41,17 +51,21 @@ export function useInbox(): Inbox {
           const incoming = frame.tasks;
           incoming.forEach(task => { observeTaskMutation(task); observeTaskActivity(task); });
           const next = reconcileTasks(snapshot.current, incoming);
-          if (next !== snapshot.current) {
-            void queryClient.invalidateQueries({ queryKey: clientReadKeys.usage(), refetchType: "active" });
-            void queryClient.invalidateQueries({ queryKey: clientReadKeys.routineRunsAll(), refetchType: "active" });
-          }
           snapshot.current = next;
           setTasks(next);
           setLoading(false);
+          if (seenSnapshot && recoverReads) refreshReads();
+          seenSnapshot = true;
+          recoverReads = false;
+        }
+        if (frame.type === "read-change") {
+          if (frame.usage) refresh(clientReadKeys.usage());
+          if (frame.routines || frame.routineId) refresh(clientReadKeys.routines());
+          if (frame.routineId) refresh(clientReadKeys.routineRunsFor(frame.routineId));
         }
         if (frame.type === "updates") updatesChanged();
       },
-      setConn,
+      state => { if (seenSnapshot && state !== "open") recoverReads = true; setConn(state); },
     );
     return () => connection.close();
   }, []);

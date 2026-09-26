@@ -77,7 +77,7 @@ export async function createRuntime() {
       { task: id => service.getTask(id), repo: id => db.getRepo(id), cleanup: id => service.cleanupTerminalWorktree(id), updating: () => service.updating },
       config.executionRelease ?? "", config.executionNode ?? "");
     await service.init();
-    const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner());
+    const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), hub);
     github = new GithubService(service, config.githubToken);
     const auth = new AuthService(db);
     const modelCatalog = new CodexModelCatalogService();

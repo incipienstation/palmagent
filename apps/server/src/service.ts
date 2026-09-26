@@ -324,6 +324,7 @@ export class TaskService implements PrStatusSink {
     if (this.terminalLifecycle?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
     if (this.db.hasRunningRoutine(id)) throw conflict("Stop this Space's running scripts before removing it");
     this.db.deleteRepo(id);
+    this.hub.emitReadChange({ type: "read-change", usage: true, routines: true });
     this.attachments.prune();
     // deleteRepo cascades to the repo's (archived) tasks in the DB; drop them
     // from the in-memory cache too so listTasks doesn't resurrect dead rows.
@@ -409,6 +410,7 @@ export class TaskService implements PrStatusSink {
         sessionControl: { owner: "local", home, transcript, cursor: 0, prefixHash: this.nativeSession.emptyTranscriptHash } };
       this.db.insertTask(task);
       this.cache.set(task.taskId, task);
+      this.hub.emitReadChange({ type: "read-change", usage: true });
     }
     const control = { ...task.sessionControl!, owner: "returning" as const, waitPid: req.waitPid, waitIdentity: identity, error: undefined };
     this.db.setSessionControl(task.taskId, control);
@@ -428,6 +430,7 @@ export class TaskService implements PrStatusSink {
         if (preview && synced.control.cursor === control.cursor && !control.error) continue;
         const updated = { ...task, sessionControl: synced.control };
         const rows = this.db.importSessionEvents(updated, synced.events);
+        if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
         this.refreshPrs(task);
         task.sessionControl = synced.control;
         if (rows.length) task.lastActivityAt = Date.now();
@@ -534,6 +537,7 @@ export class TaskService implements PrStatusSink {
       return this.attachments.save(taskId, images);
     });
     this.cache.set(taskId, task);
+    this.hub.emitReadChange({ type: "read-change", usage: true });
     this.broadcastTasks();
     // Emit the dispatch prompt into the event log (like followup/steer) so the
     // task view renders it from the live stream, not just the inbox snapshot —
@@ -908,6 +912,7 @@ export class TaskService implements PrStatusSink {
     // A restart cannot preserve the cursor while dropping an image from that line.
     const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: image }))];
     const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq);
+    if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
     if (event.kind === "tool_result") this.refreshPrs(task);
     task.lastActivityAt = now;
     for (const row of rows) this.hub.emitEvent(row);

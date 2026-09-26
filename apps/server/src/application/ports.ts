@@ -2,7 +2,7 @@ import type {
   AccountLimits, AgentEvent, AgentKind, AgentUsage, ImageAttachment, PermissionRequest, PrRef, PushPayload,
   PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, SkillCatalog, SkillContext, SkillSelection,
   TaskActivityDetailsResponse, TaskHistoryChangesResponse, TaskHistoryResponse, TaskState, TaskStatus,
-  VoiceClientTimings, VoiceConnection,
+  VoiceClientTimings, VoiceConnection, SseReadChangeFrame,
 } from "@palmagent/shared";
 import type { Attachment } from "@palmagent/shared";
 import type { AttachmentRecord, EventRow, MessageState, StoredCredential } from "./models.js";
@@ -144,12 +144,14 @@ export interface PrStatusSink {
 export interface TaskEventPublisher {
   emitEvent(row: EventRow): void;
   emitTasks(tasks: TaskState[]): void;
+  emitReadChange(change: SseReadChangeFrame): void;
 }
 
 export interface LiveEventStream extends TaskEventPublisher {
   onUpdates(listener: () => void): () => void;
   onEvent(listener: (row: EventRow) => void): () => void;
   onTasks(listener: (tasks: TaskState[]) => void): () => void;
+  onReadChange(listener: (change: SseReadChangeFrame) => void): () => void;
 }
 
 export interface TerminalTaskLifecycle {

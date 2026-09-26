@@ -1,8 +1,31 @@
-import { test, expect, type Locator } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { tasks, usage, repos } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
+
+async function controlInbox(page: Page) {
+  await page.addInitScript(() => {
+    const NativeEventSource = window.EventSource;
+    const control = window as Window & { inboxSnapshots?: number; sendInboxFrame?: (frame: unknown) => void };
+    window.EventSource = class extends NativeEventSource {
+      constructor(url: string | URL, init?: EventSourceInit) {
+        super(url, init);
+        if (!String(url).includes("snapshots=1")) return;
+        this.addEventListener("message", event => {
+          if (JSON.parse(event.data).type === "tasks") control.inboxSnapshots = (control.inboxSnapshots ?? 0) + 1;
+        });
+        control.sendInboxFrame = frame => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(frame) }));
+      }
+    };
+  });
+}
+
+async function sendInboxFrame(page: Page, frame: unknown) {
+  await page.evaluate(value => {
+    (window as Window & { sendInboxFrame: (frame: unknown) => void }).sendInboxFrame(value);
+  }, frame);
+}
 
 async function expectTouchTarget(button: Locator): Promise<void> {
   // Trial action waits for visibility and a stable box without clicking the control.
@@ -69,6 +92,73 @@ test("Usage and routine history recover from read failures without false empty r
   await expect(page.getByText("No runs yet.", { exact: true })).toHaveCount(0);
   failHistory = false;
   await page.getByRole("button", { name: "Retry history" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("No runs yet.", { exact: true })).toBeVisible();
+});
+
+test("usage ignores display snapshots, keeps Retry during automatic refresh, and recovers on reconnect", async ({ page }) => {
+  await controlInbox(page);
+  let requests = 0;
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/usage", async route => {
+    requests++;
+    if (requests === 2) await delayed;
+    await route.fulfill(requests === 1 || requests === 3
+      ? { status: 503, json: { error: "Temporarily unavailable" } }
+      : { json: { usage } });
+  });
+  await page.goto("/#/usage");
+  await expect(page.getByRole("alert")).toContainText("Couldn't load usage");
+  await page.waitForFunction(() => (window as Window & { inboxSnapshots?: number }).inboxSnapshots === 1);
+  await sendInboxFrame(page, { type: "tasks", tasks });
+  await sendInboxFrame(page, { type: "tasks", tasks: tasks.map(task => ({ ...task, title: "Display edit", prs: [] })) });
+  expect(requests).toBe(1);
+  await sendInboxFrame(page, { type: "read-change", usage: true });
+  await expect.poll(() => requests).toBe(2);
+  await expect(page.getByRole("alert")).toContainText("Couldn't load usage");
+  await expect(page.getByRole("button", { name: "Retry usage" })).toBeDisabled();
+  await expect(page.getByRole("status", { name: "" }).filter({ hasText: "Retrying usage" })).toBeVisible();
+  release();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("claude", { exact: true })).toBeVisible();
+
+  await sendInboxFrame(page, { type: "read-change", usage: true });
+  await expect.poll(() => requests).toBe(3);
+  await expect(page.getByRole("alert")).toContainText("Couldn't load usage");
+  await expect(page.getByText("claude", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Retry usage" }).click();
+  await expect.poll(() => requests).toBe(4);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.waitForFunction(() => (window as Window & { inboxSnapshots?: number }).inboxSnapshots === 4);
+  await expect.poll(() => requests).toBe(5);
+});
+
+test("routine history refresh is scoped and preserves its error during a slow recovery", async ({ page }) => {
+  await controlInbox(page);
+  let requests = 0;
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/routines/r-standup/runs", async route => {
+    requests++;
+    if (requests === 2) await delayed;
+    await route.fulfill(requests === 1
+      ? { status: 503, json: { error: "Temporarily unavailable" } }
+      : { json: { runs: [] } });
+  });
+  await page.goto("/#/routines");
+  await page.getByRole("button", { name: /History/ }).first().click();
+  await expect(page.getByRole("alert")).toContainText("Couldn't load history");
+  await page.waitForFunction(() => (window as Window & { inboxSnapshots?: number }).inboxSnapshots === 1);
+  await sendInboxFrame(page, { type: "read-change", routineId: "r-triage" });
+  expect(requests).toBe(1);
+  await sendInboxFrame(page, { type: "read-change", routineId: "r-standup" });
+  await expect.poll(() => requests).toBe(2);
+  await expect(page.getByRole("alert")).toContainText("Couldn't load history");
+  await expect(page.getByRole("button", { name: "Retry history" })).toBeDisabled();
+  release();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("No runs yet.", { exact: true })).toBeVisible();
 });

@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Usage and routine history now refresh when their underlying data changes, without extra requests from task display edits. Retry messages remain visible while a failed read is retried.
+
 ## 0.1.0-alpha.97
 
 ### Changed

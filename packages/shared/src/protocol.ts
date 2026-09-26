@@ -145,6 +145,14 @@ export interface SseTasksFrame {
   historyThrough?: number;
   version?: string;
 }
+// Sent after the corresponding durable read has changed. The inbox stream
+// carries these even when conversation event bodies are disabled.
+export interface SseReadChangeFrame {
+  type: "read-change";
+  usage?: true;
+  routines?: true;
+  routineId?: string;
+}
 // History pages use the same per-task sequence as the scoped SSE cursor.
 export interface TaskHistoryEvent {
   seq: number;
@@ -172,7 +180,7 @@ export interface TaskActivityDetailsResponse {
   cursor: number;
 }
 export const HISTORY_PAGE_EVENTS = 200;
-export type SseFrame = SseEventFrame | SseTasksFrame | { type: "updates" };
+export type SseFrame = SseEventFrame | SseTasksFrame | SseReadChangeFrame | { type: "updates" };
 
 // ---- auth (in-app WebAuthn / passkeys) ----
 // GET /api/auth/me. The WebAuthn options/response payloads (login/register) are

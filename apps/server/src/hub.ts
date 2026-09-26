@@ -1,4 +1,4 @@
-import type { TaskState } from "@palmagent/shared";
+import type { SseReadChangeFrame, TaskState } from "@palmagent/shared";
 import type { EventRow } from "./application/models.js";
 import type { LiveEventStream } from "./application/ports.js";
 
@@ -21,6 +21,7 @@ export class Hub implements LiveEventStream {
 
   private eventSubs = new Set<EventListener>();
   private tasksSubs = new Set<TasksListener>();
+  private readSubs = new Set<(change: SseReadChangeFrame) => void>();
 
   onEvent(l: EventListener): () => void {
     this.eventSubs.add(l);
@@ -29,6 +30,10 @@ export class Hub implements LiveEventStream {
   onTasks(l: TasksListener): () => void {
     this.tasksSubs.add(l);
     return () => this.tasksSubs.delete(l);
+  }
+  onReadChange(l: (change: SseReadChangeFrame) => void): () => void {
+    this.readSubs.add(l);
+    return () => this.readSubs.delete(l);
   }
 
   // One misbehaving subscriber (e.g. a write to a dead socket) must not break
@@ -49,6 +54,11 @@ export class Hub implements LiveEventStream {
       } catch {
         /* isolate this subscriber */
       }
+    }
+  }
+  emitReadChange(change: SseReadChangeFrame): void {
+    for (const l of this.readSubs) {
+      try { l(change); } catch { /* isolate subscribers */ }
     }
   }
 }
