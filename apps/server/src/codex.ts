@@ -133,6 +133,7 @@ export class CodexRunner implements AgentRunner {
     getSession: () => string | undefined,
     setSession: (s: string) => void,
   ): RunHandle {
+    let terminalSeen = false;
     const emitItem = (item: any, e: (raw: RawEvent) => void) => {
       const sessionId = getSession();
       switch (item?.type) {
@@ -160,7 +161,9 @@ export class CodexRunner implements AgentRunner {
           e({ taskId, kind: "tool_call", sessionId, payload: { id: item.id, name: item.type, status: item.status, item } });
           break;
         case "error":
-          e({ taskId, kind: "error", sessionId, payload: { message: item.message } });
+          // 0.157.1 also emits configuration warnings as error items before a
+          // successful turn. Terminal failures arrive as turn.failed/error.
+          e({ taskId, kind: "status", sessionId, payload: { subtype: "diagnostic", message: item.message } });
           break;
         default:
           e({ taskId, kind: "status", sessionId, payload: { subtype: item?.type ?? "item", item } });
@@ -190,9 +193,11 @@ export class CodexRunner implements AgentRunner {
           emitItem(ev.item, e);
           break;
         case "turn.completed":
+          terminalSeen = true;
           e({ taskId, kind: "result", sessionId, payload: { usage: ev.usage } });
           break;
         case "turn.failed":
+          terminalSeen = true;
           e({ taskId, kind: "error", sessionId, payload: { error: ev.error } });
           break;
         case "error":
@@ -210,6 +215,7 @@ export class CodexRunner implements AgentRunner {
     const done = new Promise<void>((resolve) => {
       proc.onExit((code) => {
         cleanup();
+        if (!terminalSeen) emit({ taskId, kind: "error", sessionId: getSession(), payload: { message: "Codex exited before a terminal turn result." } });
         emit({ taskId, kind: "status", sessionId: getSession(), payload: { subtype: "process_exit", code } });
         resolve();
       });

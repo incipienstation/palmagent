@@ -57,10 +57,8 @@ function message(agent: AgentKind, role: string, text: string) {
 }
 
 test("CLI compatibility ranges reject unknown, prerelease and out-of-lane versions", () => {
-  assert.equal(compatibleAgentCli("codex", "0.154.0"), true);
-  assert.equal(compatibleAgentCli("codex", "0.154.99"), true);
-  for (const version of ["0.155.0", "0.155.1", "0.155.99"]) assert.equal(compatibleAgentCli("codex", version), true);
-  for (const version of ["0.153.0", "0.156.0", "0.154.0-beta.1", "0.155.1-beta.1", "unknown", "1.0"]) assert.equal(compatibleAgentCli("codex", version), false);
+  assert.equal(compatibleAgentCli("codex", "0.157.1"), true);
+  for (const version of ["0.153.0", "0.154.0", "0.154.99", "0.155.0", "0.155.1", "0.156.0", "0.157.0", "0.157.2", "0.158.0", "0.157.1-beta.1", "unknown", "1.0"]) assert.equal(compatibleAgentCli("codex", version), false);
   assert.equal(compatibleAgentCli("claude", "2.1.268"), true);
   assert.equal(compatibleAgentCli("claude", "2.1.267"), false);
   assert.equal(compatibleAgentCli("claude", "2.2.0"), false);
