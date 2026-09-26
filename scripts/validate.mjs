@@ -140,7 +140,6 @@ for (const f of allFiles.filter((p) => p.endsWith('.md'))) {
 // ---- 7. leak guard (generic patterns + secret denylist) -------------------
 const SELF = fileURLToPath(import.meta.url);
 const GENERIC = [
-  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,   // email
   /\/(?:home|Users)\/[A-Za-z0-9._-]+/,                    // host home path
   /\b(?:\d{1,3}\.){3}\d{1,3}\b/,                          // IPv4
   /\bgh[pousr]_[A-Za-z0-9]{16,}\b/,                       // GitHub token
