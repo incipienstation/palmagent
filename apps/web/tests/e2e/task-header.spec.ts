@@ -2,49 +2,67 @@ import { test, expect } from "@playwright/test";
 import { assertViewportLocked } from "./_helpers";
 
 for (const width of [320, 1280]) {
-  test(`task header preserves conversation space and details at ${width}px`, async ({ page }) => {
+  test(`task conversation uses the compact reference header at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
     await page.goto("/#/task/t-idle-rich");
-    const header = page.locator("header").first();
-    expect(await header.evaluate(element => getComputedStyle(element).backgroundImage)).toContain("linear-gradient");
-    const transcript = page.locator("[data-radix-scroll-area-viewport]").first();
-    expect((await transcript.boundingBox())!.y).toBeLessThan((await header.boundingBox())!.height);
-    const title = page.getByTitle("Session details", { exact: true });
-    await expect(title).toBeVisible();
-    await expect(page.locator("header").getByText("Done", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Release to shell" })).toBeHidden();
-    expect((await title.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    const actions = page.getByRole("group", { name: "Header actions" });
-    await expect(actions).toBeVisible();
-    await expect(actions).toHaveCSS("border-top-style", "solid");
-    const taskActions = actions.getByRole("button", { name: "Task actions" });
-    const navigation = actions.getByRole("button", { name: "Open navigation" });
-    await expect(taskActions).toBeVisible();
-    await expect(navigation).toBeVisible();
-    expect((await taskActions.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    expect((await navigation.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    expect((await actions.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    await assertViewportLocked(page);
+    await expect(page.getByText("Harness scaffolded and passing.", { exact: true })).toBeVisible();
 
-    const composer = page.getByPlaceholder("Send a follow-up turn…");
-    await composer.fill("Keep my draft while checking this session");
-    await title.click();
+    const header = page.locator("header").first();
+    const title = header.getByRole("heading", { name: "Wire the web QA harness", exact: true });
+    await expect(title).toHaveClass(/sr-only/);
+    expect((await title.boundingBox())!.height).toBeLessThanOrEqual(1);
+    await expect(header.getByText("Done", { exact: true })).toHaveCount(0);
+
+    const navigation = header.getByRole("button", { name: "Open navigation", exact: true });
+    const actions = page.getByRole("group", { name: "Header actions" });
+    const compose = actions.getByRole("button", { name: "New task", exact: true });
+    const taskActions = actions.getByRole("button", { name: "Task actions", exact: true });
+    await expect(navigation).toBeVisible();
+    await expect(header.getByRole("button", { name: "Back", exact: true })).toHaveCount(0);
+    await expect(compose).toBeVisible();
+    await expect(taskActions).toBeVisible();
+    await expect(actions).toHaveCSS("border-top-style", "solid");
+    const actionBounds = (await actions.boundingBox())!;
+    expect(actionBounds.width).toBeGreaterThanOrEqual(88);
+    expect(actionBounds.width).toBeLessThanOrEqual(96);
+    for (const control of [navigation, compose, taskActions]) {
+      expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+
+    const fade = header.locator(":scope > div[aria-hidden='true']");
+    const fadeStyle = await fade.evaluate(element => ({
+      backgroundImage: getComputedStyle(element).backgroundImage,
+      backdropFilter: getComputedStyle(element).backdropFilter,
+      height: element.getBoundingClientRect().height,
+    }));
+    expect(fadeStyle.backgroundImage).toContain("linear-gradient");
+    expect(fadeStyle.backdropFilter).toBe("none");
+    expect(fadeStyle.height).toBeGreaterThan((await header.boundingBox())!.height);
+
+    const transcript = page.locator("[data-radix-scroll-area-viewport]").first();
+    const topImage = await fade.evaluate(element => getComputedStyle(element).backgroundImage);
+    const scrollRange = await transcript.evaluate(element => element.scrollHeight - element.clientHeight);
+    if (scrollRange > 0) {
+      await transcript.evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
+      expect(await transcript.evaluate(element => element.scrollTop)).toBe(0);
+      await transcript.evaluate(element => { element.scrollTop = element.scrollHeight; element.dispatchEvent(new Event("scroll")); });
+      expect(await transcript.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    }
+    const scrolledImage = await fade.evaluate(element => getComputedStyle(element).backgroundImage);
+    expect(scrolledImage).toBe(topImage);
+
+    await taskActions.click();
+    await page.getByRole("menuitem", { name: "Session details", exact: true }).click();
     const details = page.getByRole("dialog", { name: "Session details" });
     await expect(details.getByText("Branch", { exact: true })).toBeVisible();
     await expect(details.getByText("Model", { exact: true })).toBeVisible();
-    await expect(details.getByRole("link", { name: /Wire the web QA harness/ })).toBeVisible();
-    await details.getByRole("button", { name: "Release to shell" }).scrollIntoViewIfNeeded();
-    await expect(details.getByRole("button", { name: "Release to shell" })).toBeInViewport();
-    await assertViewportLocked(page);
     await page.keyboard.press("Escape");
-    await expect(title).toBeFocused();
-    await expect(composer).toHaveValue("Keep my draft while checking this session");
+    await expect(details).toBeHidden();
+    await expect(taskActions).toBeFocused();
 
-    // Reduced viewport approximates the space available above a phone keyboard.
-    await page.setViewportSize({ width, height: 480 });
-    await composer.focus();
-    await expect(composer).toBeInViewport();
-    await expect(page.getByText("Harness scaffolded and passing.", { exact: true })).toBeInViewport();
     await assertViewportLocked(page);
+    await compose.click();
+    await expect(page).toHaveURL(/#\/new$/);
+    await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
   });
 }

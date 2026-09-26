@@ -14,11 +14,13 @@ import { mutateTask, useTaskMutations, getRenameDraft, clearRenameDraft } from "
 
 // Both list and detail use the same editor; optional children are the detail's
 // existing lifecycle actions. Keep the menu and dialog as sibling overlays.
-export function SessionActionsMenu({ task, children, label = "Task actions", disabled = false }: {
+export function SessionActionsMenu({ task, children, label = "Task actions", renameDisabled = false, triggerRef }: {
   task: TaskState;
   children?: ReactNode;
   label?: string;
-  disabled?: boolean;
+  /** Keep read-only menu items available while a task action is pending. */
+  renameDisabled?: boolean;
+  triggerRef?: { current: HTMLButtonElement | null };
 }) {
   const mutations = useTaskMutations();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -29,7 +31,7 @@ export function SessionActionsMenu({ task, children, label = "Task actions", dis
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button ref={trigger} variant="ghost" size="icon" className="size-11 shrink-0" aria-label={label} disabled={disabled}>
+          <Button ref={node => { trigger.current = node; if (triggerRef) triggerRef.current = node; }} variant="ghost" size="icon" className="size-11 shrink-0" aria-label={label}>
             <MoreVertical />
           </Button>
         </DropdownMenuTrigger>
@@ -42,7 +44,7 @@ export function SessionActionsMenu({ task, children, label = "Task actions", dis
           }
         }}>
           <DropdownMenuGroup>
-            <DropdownMenuItem disabled={mutations.get(task.taskId)?.pending} onSelect={() => {
+            <DropdownMenuItem disabled={renameDisabled || mutations.get(task.taskId)?.pending} onSelect={() => {
               openingEditor.current = true;
               setInitialTitle(taskTitle(task));
             }}>

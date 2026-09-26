@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, openSessionDetails } from "./_helpers";
 
 test.describe("task detail", () => {
   test.beforeEach(async ({ page }) => {
@@ -29,9 +29,9 @@ test.describe("task detail", () => {
   });
 
 
-  test("the title opens session details listing every PR the task opened", async ({ page }) => {
+  test("the overflow opens session details listing every PR the task opened", async ({ page }) => {
     // Task links share the details sheet with configuration and handoff.
-    await page.getByTitle("Session details", { exact: true }).click();
+    await openSessionDetails(page);
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeVisible();
     // Every PR is listed by number + title, each linking out to GitHub.
     await expect(page.getByText("Mock SSE+REST server for tests")).toBeVisible();
@@ -42,14 +42,14 @@ test.describe("task detail", () => {
     );
   });
 
-  test("tapping the scrim dismisses session details and returns focus to the title", async ({ page }) => {
-    await page.getByTitle("Session details", { exact: true }).click();
+  test("tapping the scrim dismisses session details and returns focus to the overflow action", async ({ page }) => {
+    await openSessionDetails(page);
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeVisible();
     // Tap the overlay above the sheet — must close it (regression: a stop-propagation
     // wrapper around the sheet used to swallow vaul's overlay-dismiss click).
     await page.locator('[data-slot="sheet-overlay"]').click({ position: { x: 180, y: 80 } });
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeHidden();
-    await expect(page.getByTitle("Session details", { exact: true })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeFocused();
   });
 
   test("renders assistant markdown (heading, GFM table, list) — and the table never widens the pane", async ({

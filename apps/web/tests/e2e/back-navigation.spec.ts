@@ -58,8 +58,9 @@ for (const installed of [false, true]) {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await pageEntry(page);
       await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
-      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await back(page);
       await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+      await pageEntry(page);
       await forward(page);
       await expect(page).toHaveURL(new RegExp(task + "$"));
       await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -70,29 +71,31 @@ for (const installed of [false, true]) {
       const length = await page.evaluate(() => history.length);
       for (let i = 0; i < 2; i++) {
         await page.reload();
-        await expect(page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
         expect(await page.evaluate(() => history.length)).toBe(length);
       }
-      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await back(page);
       await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
       await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
     });
 
     test("direct task link has an in-app return to Tasks", async ({ page }) => {
       await page.goto("/" + task);
-      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+      await page.getByRole("button", { name: "Tasks", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
       await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
     });
 
-    test("reloading an open drawer does not leave a dead Back step", async ({ page }) => {
+    test("reloading an open drawer leaves the conversation navigable", async ({ page }) => {
       await openTask(page);
       await page.getByRole("button", { name: "Open navigation" }).click();
       await layerEntry(page);
       await page.reload();
-      await expect(page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
       await pageEntry(page);
-      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+      await page.getByRole("button", { name: "Tasks", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
     });
 

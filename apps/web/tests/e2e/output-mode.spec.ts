@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, openSessionDetails } from "./_helpers";
 import { installScopedStream, open, send } from "./_scoped-stream";
 
 const ONLY_WHEN_EXPANDED = "zero 503s under the new nginx.conf";
@@ -30,7 +30,7 @@ test("compact keeps account limits visible and configuration in session details"
   await expect(page.getByRole("button", { name: /Latest usage/ })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Task usage" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Account limits" }).getByText("72%", { exact: true })).toBeVisible();
-  await page.getByTitle("Session details", { exact: true }).click();
+  await openSessionDetails(page);
   const detail = page.getByRole("dialog");
   await expect(detail.getByText("Permission", { exact: true })).toBeVisible();
   await expect(detail.getByText("Model", { exact: true })).toBeVisible();
@@ -126,7 +126,11 @@ for (const mode of ["compact"] as const) {
     const { tasks } = await (await page.request.get("/api/tasks")).json();
     const task = tasks.find((task: { taskId: string }) => task.taskId === "t-run");
     await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "failed" }] });
-    await expect(page.getByText("Failed", { exact: true })).toBeVisible();
+    await openSessionDetails(page);
+    const sessionDetails = page.getByRole("dialog", { name: "Session details" });
+    await expect(sessionDetails.getByText("Failed", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sessionDetails).toBeHidden();
     const summary = page.locator("[data-run-failure]");
     await expect(summary).toHaveCount(1);
     await expect(summary).toHaveAttribute("aria-label", "Run interrupted");
@@ -152,7 +156,10 @@ for (const mode of ["compact"] as const) {
     await emit("assistant_text", { text: "Finished the remaining work.", phase: "final" });
     await emit("result", { result: "Finished the remaining work." });
     await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "idle" }] });
-    await expect(page.getByText("Done", { exact: true })).toBeVisible();
+    await openSessionDetails(page);
+    await expect(sessionDetails.getByText("Done", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sessionDetails).toBeHidden();
     await expect(summary).toHaveAttribute("aria-label", "Previous run interrupted");
     await expect(summary).toHaveAttribute("role", "group");
     await expect(page.getByText("Finished the remaining work.", { exact: true })).toBeVisible();

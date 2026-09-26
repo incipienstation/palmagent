@@ -34,57 +34,58 @@ export function AppShell({
   );
 }
 
-// Focused views preserve Back; navigation stays available on every app route.
+// Standard focused views preserve Back; conversations use a compact floating toolbar.
 export function AppBar({
   title,
-  titleControl,
   back,
   conn,
-  overlaysContent,
+  conversation,
   children,
 }: {
   title: string;
-  /** Optional accessible title trigger for focused-screen details. */
-  titleControl?: ReactNode;
   back?: boolean;
   /** When provided, a small live-state dot renders beside the title. */
   conn?: ConnState;
-  /** Let a focused-screen transcript scroll underneath the AppBar. */
-  overlaysContent?: boolean;
+  /** Minimal navigation and task actions over a scrolling conversation. */
+  conversation?: boolean;
   children?: ReactNode;
 }) {
   const navigation = useAppNavigation();
-  const menu = navigation && <Button variant="ghost" size="icon-lg" className="shrink-0 rounded-full" aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
-  const surface = overlaysContent
-    ? "bg-linear-to-b from-background/90 via-background/55 to-transparent before:bg-background/90"
-    : "bg-background/95 before:bg-background";
+  const menu = navigation && <Button variant="ghost" size="icon-lg" className={cn("shrink-0 rounded-full", conversation && "pointer-events-auto touch-pan-y border border-border bg-card/85 backdrop-blur-md relative z-10")} aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
   return (
-    // Keep the safe-area strip mostly opaque while the header surface fades out below it.
     <header
-      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:content-['']", surface, overlaysContent && "pointer-events-none")}
-      style={overlaysContent ? { marginBottom: "calc(-64px - var(--safe-top))" } : undefined}
+      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5", conversation ? "isolate justify-between pointer-events-none" : "bg-background/95 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']")}
+      style={conversation ? { marginBottom: "calc(-64px - var(--safe-top))" } : undefined}
     >
-      {!back && menu}
-      {back && (
-        <Button variant="ghost" size="icon-lg" className={cn("-ml-1.5 rounded-full", overlaysContent && "pointer-events-auto touch-pan-y")} onClick={goBack} aria-label="Back">
-          <ChevronLeft className="size-6" />
-        </Button>
-      )}
-      <h1 className="flex min-w-0 flex-1 items-center gap-2 truncate text-[17px] font-semibold text-strong">
-        {titleControl ?? <span className="min-w-0 truncate">{title}</span>}
-        {conn && <LiveDot conn={conn} compact={Boolean(titleControl)} />}
-      </h1>
-      {back && children && menu ? (
-        <div role="group" aria-label="Header actions" className="-my-px inline-flex shrink-0 items-center rounded-full border border-border bg-card/90 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">
-          {children}
-          {menu}
-        </div>
-      ) : (
-        <>
-          {children}
-          {back && menu}
-        </>
-      )}
+      {conversation && <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[calc(96px+var(--safe-top))] bg-linear-to-b from-background/70 via-background/35 to-transparent" />}
+      {conversation ? <>
+        {menu}
+        <h1 className="sr-only">{title}</h1>
+        {children && <div role="group" aria-label="Header actions" className="relative z-10 inline-flex shrink-0 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
+        {conn && <LiveDot conn={conn} visuallyHidden />}
+      </> : <>
+        {!back && menu}
+        {back && (
+          <Button variant="ghost" size="icon-lg" className="-ml-1.5 rounded-full" onClick={goBack} aria-label="Back">
+            <ChevronLeft className="size-6" />
+          </Button>
+        )}
+        <h1 className="flex min-w-0 flex-1 items-center gap-2 truncate text-[17px] font-semibold text-strong">
+          <span className="min-w-0 truncate">{title}</span>
+          {conn && <LiveDot conn={conn} />}
+        </h1>
+        {back && children && menu ? (
+          <div role="group" aria-label="Header actions" className="-my-px inline-flex shrink-0 items-center rounded-full border border-border bg-card/90 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">
+            {children}
+            {menu}
+          </div>
+        ) : (
+          <>
+            {children}
+            {back && menu}
+          </>
+        )}
+      </>}
     </header>
   );
 }
@@ -96,8 +97,9 @@ export function AppBar({
 // `reconnecting` surfaces, as an amber pulse dot + short label, so a connection
 // problem is the single thing that ever draws the eye here. The all-states
 // labeled form still lives in ConnPill (the Settings → Connection row).
-function LiveDot({ conn, compact = false }: { conn: ConnState; compact?: boolean }) {
+function LiveDot({ conn, compact = false, visuallyHidden = false }: { conn: ConnState; compact?: boolean; visuallyHidden?: boolean }) {
   if (conn !== "reconnecting") return null;
+  if (visuallyHidden) return <span role="status" title="Reconnecting…" className="sr-only">Reconnecting…</span>;
   return (
     <span role="status" title="Reconnecting…" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber">
       <span aria-hidden className="size-2 shrink-0 animate-pulse rounded-full bg-amber" />

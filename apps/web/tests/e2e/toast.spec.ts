@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, openSessionDetails } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 
@@ -135,7 +135,7 @@ test("copy feedback does not dismiss its parent sheet", async ({ page }) => {
     json: { command: "palmagent resume example-session" },
   }));
   await page.goto("/#/task/t-idle-rich");
-  await page.getByTitle("Session details", { exact: true }).click();
+  await openSessionDetails(page);
   await page.getByRole("button", { name: "Release to shell" }).click();
   await page.getByRole("button", { name: "Copy resume command" }).click();
   await expect(currentToast(page)).toBeVisible();

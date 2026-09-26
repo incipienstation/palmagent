@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, openSessionDetails } from "./_helpers";
 
 // Route-based session fixtures must not be bypassed by the installed SW.
 test.use({ serviceWorkers: "block" });
@@ -54,7 +54,7 @@ test("handoff only releases on explicit action and offers a selectable native co
     return route.fulfill({ json: { task: source, command } });
   });
   await page.goto("/#/task/t-idle-rich");
-  await page.getByTitle("Session details", { exact: true }).click();
+  await openSessionDetails(page);
   await expect(page.getByRole("heading", { name: "Resume in your shell" })).toBeVisible();
   expect(releases).toBe(0);
   await page.getByRole("button", { name: "Release to shell" }).click();
@@ -75,7 +75,11 @@ for (const owner of ["local", "returning"] as const) test(`${owner} ownership di
   await expect(page.getByRole("textbox")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Session output" })).toBeVisible();
   await expect.poll(() => page.getByRole("img", { name: "Session output" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
-  await expect(page.locator("header").getByText(owner === "local" ? "Local shell" : "Live preview", { exact: true })).toBeVisible();
+  await openSessionDetails(page);
+  const details = page.getByRole("dialog", { name: "Session details" });
+  await expect(details.getByText(owner === "local" ? "Local shell" : "Live preview", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
   await page.getByRole("button", { name: "Task actions" }).click();
   await expect(page.getByRole("menuitem", { name: "Rename" })).toBeEnabled();
   await expect(page.getByRole("menuitem", { name: "Archive" })).toBeDisabled();
@@ -93,7 +97,7 @@ test("a returned session requires a new release before showing its old shell com
     return route.fulfill({ json: { task: current(), command: "claude --resume sess-idle-0003" } });
   });
   await page.goto("/#/task/t-idle-rich");
-  await page.getByTitle("Session details", { exact: true }).click();
+  await openSessionDetails(page);
   await page.getByRole("button", { name: "Release to shell" }).click();
   await expect(page.getByRole("button", { name: "Copy resume command" })).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
@@ -139,10 +143,11 @@ test("a preview synchronization error retains visible history and explains why i
   }));
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByText("Previously synchronized message", { exact: true })).toBeVisible();
-  await expect(page.getByText("Sync issue", { exact: true })).toBeVisible();
   await expect(page.getByText(task.sessionControl.error, { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox")).toHaveCount(0);
-  await page.getByTitle("Session details", { exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText(task.sessionControl.error);
-  await expect(page.getByRole("button", { name: "Release to shell" })).toBeHidden();
+  await openSessionDetails(page);
+  const details = page.getByRole("dialog", { name: "Session details" });
+  await expect(details.getByText("Sync issue", { exact: true })).toBeVisible();
+  await expect(details).toContainText(task.sessionControl.error);
+  await expect(details.getByRole("button", { name: "Release to shell" })).toBeHidden();
 });
