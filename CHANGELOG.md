@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Composer notices and controls stay steady during brief task actions, empty composers keep their size
+  on focus, and Stop and Send/Queue remain exclusive while live task state catches up.
+
 ## 0.1.0-alpha.102
 
 ### Changed

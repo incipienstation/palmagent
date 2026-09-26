@@ -257,8 +257,9 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
   const composerHasDraft = edit
     ? !!editText.trim() || editAtt.images.length > 0 || editSkills.length > 0
     : hasDraft;
-  const showSend = !canStop || (!busy && (composerHasDraft || deliveryMode === "queue"));
-  const showStop = canStop && (!composerHasDraft || sending || !!activity.stopping);
+  // Pick one primary action so the Stop and Send/Queue branches cannot overlap.
+  // A send already in flight and a pending Stop retain Stop until live state catches up.
+  const primaryAction = edit ? "save" : activity.stopping || sending || canStop && !composerHasDraft ? "stop" : "send";
   const canCancel = running || status === "queued";
   const canArchive = !localOwner && !active && status !== "archived";
 
@@ -311,8 +312,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
-        <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
-          {activity.label && !(["Sending message…", "Sending queued message…"].includes(activity.label)) && <p role="status" className="text-xs text-muted-foreground">{activity.label}</p>}
+        <div ref={toastObstacle} className="relative flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+          <div className="pointer-events-none absolute inset-x-3 top-0 h-4 overflow-hidden" aria-live="polite">
+            {activity.label && !(["Sending message…", "Sending queued message…"].includes(activity.label)) &&
+              <p role="status" className="truncate text-xs leading-4 text-muted-foreground">{activity.label}</p>}
+          </div>
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
@@ -349,7 +353,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
-            onStop={showStop ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
+            onStop={primaryAction === "stop" ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
@@ -358,7 +362,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             </div>}
             controls={edit
               ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length)} onClick={() => void endEdit(true)}><Check /></Button>
-              : showSend ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
+              : primaryAction === "send" ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
             settings={{ agent: task.agent, model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
