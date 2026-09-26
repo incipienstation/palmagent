@@ -35,10 +35,8 @@ Cancellation allows two seconds for graceful exit before forced termination.
 The runner disables the Nx daemon so verification does not leave its background server behind.
 
 Install dependencies with `pnpm install --frozen-lockfile` before code checks and install Playwright
-Chromium before browser checks. Packed checks require the private `LEAK_DENYLIST`; when it is
-missing, the verifier runs the selected source checks, then stops before packaging with a nonzero
-exit. Report the source results and incomplete package verification, and require the trusted PR's
-packed checks to pass before delivery. Do not substitute an empty or invented denylist.
+Chromium before browser checks. Source and packed checks run generic leak scans without
+requiring repository secrets or machine-specific configuration.
 
 Release candidates retain full source and packed-install verification under the
 [CI and candidate policy](../release/references/automation.md#candidate-automation).

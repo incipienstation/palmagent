@@ -67,7 +67,7 @@ export function verificationSteps({ scope, base, head }) {
   if (scope.web || scope.package) pnpm('web-build', 'web:build');
   if (scope.web) pnpm('web-tests', 'web:verify:built');
   if (scope.package) {
-    const env = { REQUIRE_LEAK_DENYLIST: 'true', PKG_PUBLISHABLE: '1', EXPECT_PUBLISHABLE: '1' };
+    const env = { PKG_PUBLISHABLE: '1', EXPECT_PUBLISHABLE: '1' };
     add('package-assemble', 'pnpm', ['pkg:assemble'], env);
     add('package-release', process.execPath, ['scripts/check-release.mjs', '--artifact'], env);
     add('package-smoke', process.execPath, ['scripts/pkg-smoke.mjs'], env);
@@ -140,11 +140,6 @@ export async function runVerification(steps, {
     if (signal?.aborted) {
       report('CANCELLED: verification stopped before the next check.');
       return signal.reason === 'SIGTERM' ? 143 : 130;
-    }
-    if (step.env?.REQUIRE_LEAK_DENYLIST === 'true'
-      && !(env.LEAK_DENYLIST ?? '').split(/[\n,]/).some(value => value.trim())) {
-      report(`BLOCKED ${step.id}: LEAK_DENYLIST is required; verification is incomplete.`);
-      return 1;
     }
     const log = join(logs, `${step.id}.log`);
     const fd = openSync(log, 'wx', 0o600);

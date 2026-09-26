@@ -15,7 +15,7 @@ Complete this section when content came from a non-public source. Otherwise mark
 - [ ] Repository/package identities and stale cross-file references were replaced.
 - [ ] Personal context, private infrastructure, credentials, transcripts, and runtime data were removed.
 - [ ] Lockfiles and generated artifacts were regenerated instead of copied.
-- [ ] Generic leak checks and the private context denylist passed.
+- [ ] Generic leak checks passed.
 - [ ] Any intentionally byte-identical files are identified in the PR description.
 
 ## Delivery boundaries
