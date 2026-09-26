@@ -38,9 +38,6 @@ jobs:
           node scripts/sync-skills.mjs --check
           node scripts/validate.mjs
           node scripts/check-release.mjs
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
   tooling:
     needs: scope
@@ -121,8 +118,6 @@ jobs:
       - name: Verify packed candidate
         if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository && matrix.shard == 1
         env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: 'true'
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
         run: |

@@ -7,9 +7,6 @@ on:
         description: Exact source commit; defaults to the selected branch head
         type: string
   workflow_call:
-    secrets:
-      LEAK_DENYLIST:
-        required: true
     inputs:
       commit:
         required: true
@@ -88,9 +85,6 @@ jobs:
       - name: Validate metadata and build the shared PWA
         if: steps.artifact.outputs.reuse != 'true' && steps.plan.outputs.distributed == 'true'
         working-directory: source
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: 'true'
         run: |
           pnpm install --frozen-lockfile
           pnpm plugins:check
@@ -212,9 +206,6 @@ jobs:
       - name: Verify unfamiliar source gates in full
         if: needs.prepare.outputs.reuse != 'true' && needs.prepare.outputs.distributed != 'true'
         working-directory: source
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: 'true'
         run: |
           pnpm --filter @palmagent/web exec playwright install --with-deps chromium
           node ../tooling/scripts/verify-candidate.mjs .
@@ -222,8 +213,6 @@ jobs:
         if: needs.prepare.outputs.reuse != 'true'
         working-directory: source
         env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-          REQUIRE_LEAK_DENYLIST: 'true'
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
         run: |

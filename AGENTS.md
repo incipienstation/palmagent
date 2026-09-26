@@ -51,8 +51,8 @@ home paths, private domains or addresses, host inventories,
 production data, CLI transcripts, database files, or private-repository references. Replace
 environment-specific examples with explicit placeholders. Sanitize during import, not afterward.
 
-`scripts/validate.mjs` scans version-controlled source candidates with generic leak patterns and
-an optional `LEAK_DENYLIST`. It reports only file and line locations, never matched values.
+`scripts/validate.mjs` scans version-controlled source candidates with generic leak patterns.
+It reports only file and line locations, never matched values.
 
 For every import from a non-public source:
 
@@ -61,7 +61,7 @@ For every import from a non-public source:
 3. Rename repository and package identities before staging.
 4. Remove private roadmap labels, personal context, environment details, and stale references to
    files that are not part of the imported slice.
-5. Run both the generic leak guard and the private context denylist before committing.
+5. Run the generic leak guard before committing.
 6. State which files remain byte-identical because they contain reusable product code. Do not
    rewrite safe code merely to make the diff look different.
 

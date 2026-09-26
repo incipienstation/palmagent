@@ -239,7 +239,7 @@ async function main(): Promise<void> {
   writeFileSync(join(OUT, "README.md"), readme);
   cpSync(join(ROOT, "LICENSE"), join(OUT, "LICENSE"));
 
-  // Fail closed on secret or context-denylist matches in the assembled public
+  // Fail closed on secret matches in the assembled public
   // tarball surface. Output contains locations only, never matched values.
   console.log("[build-pkg] leak-scanning build/pkg …");
   execFileSync(

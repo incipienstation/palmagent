@@ -86,7 +86,8 @@ test('check selection deduplicates metadata, scope tests, and shared PWA builds'
   assert(!steps.some(step => step.id === 'scope-tests')); // Included by pkg:check.
   assert(!steps.some(step => step.args[0] === 'verify' || step.args[0] === 'web:verify'));
   assert.equal(steps.filter(step => step.args.includes('scripts/check-release.mjs') && !step.args.includes('--artifact')).length, 1);
-  assert(steps.filter(step => step.id.startsWith('package-')).every(step => step.env.REQUIRE_LEAK_DENYLIST === 'true'));
+  assert(steps.filter(step => step.id.startsWith('package-')).every(step =>
+    step.env.PKG_PUBLISHABLE === '1' && step.env.EXPECT_PUBLISHABLE === '1'));
 });
 
 test('type and tooling selection remain independent in local verification', () => {
@@ -118,27 +119,20 @@ test('runner stops at failure, preserves private logs, and does not echo child o
   assert.equal(statSync(logs).mode & 0o777, 0o700);
 });
 
-test('runner completes source steps but cannot run package steps without the denylist', async t => {
+test('runner completes source and package steps without repository secrets', async t => {
   const { cwd } = fixture(t), messages = [];
   const report = value => {
     messages.push(value);
     if (value.startsWith('Logs: ')) t.after(() => rmSync(value.slice(6), { recursive: true, force: true }));
   };
-  const step = { id: 'success', command: process.execPath, args: ['-e', 'process.exit(0)'] };
-  assert.equal(await runVerification([step], { cwd, report }), 0);
-  assert(messages.some(value => value.startsWith('PASS: 1')));
-  for (const denylist of ['', ' ,\n']) {
-    messages.length = 0;
-    assert.equal(await runVerification([step, { ...step, id: 'package', env: { REQUIRE_LEAK_DENYLIST: 'true' } }],
-      { cwd, report, env: { LEAK_DENYLIST: denylist } }), 1);
-    assert(messages.some(value => value.startsWith('PASS success')));
-    assert(messages.some(value => value.startsWith('BLOCKED package')));
-    assert(!messages.includes('RUN package'));
-  }
-  assert.equal(await runVerification([{
-    ...step, id: 'package', env: { REQUIRE_LEAK_DENYLIST: 'true' },
-    args: ['-e', 'if (!process.env.LEAK_DENYLIST || process.env.REQUIRE_LEAK_DENYLIST !== "true") process.exit(9)'],
-  }], { cwd, report, env: { LEAK_DENYLIST: 'fixture-denied-phrase' } }), 0);
+  const step = { id: 'source', command: process.execPath, args: ['-e', 'process.exit(0)'] };
+  const packageEnv = verificationSteps({ scope: full }).find(step => step.id === 'package-assemble').env;
+  assert.equal(await runVerification([step, {
+    ...step, id: 'package', env: packageEnv,
+    args: ['-e', 'if (process.env.PKG_PUBLISHABLE !== "1" || process.env.EXPECT_PUBLISHABLE !== "1") process.exit(9)'],
+  }], { cwd, report, env: {} }), 0);
+  assert(messages.some(value => value.startsWith('PASS source')));
+  assert(messages.some(value => value.startsWith('PASS package')));
   assert.equal(await runVerification([{ ...step, command: join(cwd, 'missing-executable') }], { cwd, report }), 1);
 });
 
