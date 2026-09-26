@@ -505,6 +505,34 @@ test("Codex runner normalizes JSONL, has no interactive channel, and cleans imag
   assert.equal(eventSubtype(capture.events.at(-1)?.event), "process_exit");
 });
 
+test("Codex diagnostic items do not fail successful turns, while terminal errors remain errors", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new CodexRunner().start(startArgs(), e => events.push(e), backend);
+  backend.proc.emit({ type: "thread.started", thread_id: "thread-1" });
+  backend.proc.emit({ type: "item.completed", item: { id: "warning", type: "error", message: "Unrecognized configuration setting." } });
+  backend.proc.emit({ type: "turn.started" });
+  backend.proc.emit({ type: "turn.completed", usage: {} });
+  assert.equal(events.some(e => e.kind === "error"), false);
+  assert.deepEqual(events[1].payload, { subtype: "diagnostic", message: "Unrecognized configuration setting." });
+  assert.equal(events.at(-1)?.kind, "result");
+  backend.proc.emit({ type: "error", message: "Provider connection failed" });
+  backend.proc.emit({ type: "turn.failed", error: { message: "Invalid model" } });
+  assert.deepEqual(events.slice(-2).map(e => e.kind), ["error", "error"]);
+  backend.proc.exit(1); await handle.done;
+});
+
+test("Codex exit without a terminal event is an error even after diagnostics and exit zero", async () => {
+  for (const reattach of [false, true]) {
+    const backend = new FakeBackend(), events: RawEvent[] = [];
+    const handle = new CodexRunner().start(startArgs({ reattach }), e => events.push(e), backend);
+    backend.proc.emit({ type: "item.completed", item: { type: "error", message: "Diagnostic" } });
+    backend.proc.exit(0); await handle.done;
+    assert.equal(events.at(-2)?.kind, "error");
+    assert.match((events.at(-2)?.payload as { message: string }).message, /before a terminal turn result/);
+    assert.equal(eventSubtype(events.at(-1)), "process_exit");
+  }
+});
+
 test("live smoke escalates to SIGKILL when a CLI ignores its timeout interrupt", async () => {
   const binDir = mkdtempSync(join(tmpdir(), "palmagent-smoke-bin-"));
   const fakeCodex = join(binDir, "codex");

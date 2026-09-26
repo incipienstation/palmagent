@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Codex compatibility now requires exactly 0.157.1, verified with authenticated execution and App Server turns. Earlier versions and untested newer patches are outside the declared range; upgrade Codex before using session handoff. See [verification scope](docs/CODEX-COMPATIBILITY.md).
+
+### Fixed
+
+- Codex configuration diagnostics are retained as status events instead of appearing as errors in otherwise successful execution turns. Terminal provider errors and exits without a terminal turn result remain errors.
+
 ## 0.1.0-alpha.96
 
 ### Changed

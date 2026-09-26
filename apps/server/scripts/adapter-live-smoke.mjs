@@ -32,6 +32,10 @@ try {
     assert(assistantText.includes(marker), "missing expected Claude text delta");
   }
   console.log(`${agent} adapter live smoke passed`);
+  if (agent === "codex" && process.argv.includes("--matrix")) {
+    const { codexLiveMatrix } = await import("./codex-live-matrix.mjs");
+    await codexLiveMatrix();
+  }
 } finally {
   rmSync(cwd, { recursive: true, force: true });
 }

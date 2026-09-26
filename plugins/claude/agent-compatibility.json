@@ -5,8 +5,8 @@
     "exclusiveMaximum": "2.2.0"
   },
   "codex": {
-    "range": ">=0.154.0 <0.156.0",
-    "minimum": "0.154.0",
-    "exclusiveMaximum": "0.156.0"
+    "range": ">=0.157.1 <0.157.2",
+    "minimum": "0.157.1",
+    "exclusiveMaximum": "0.157.2"
   }
 }
