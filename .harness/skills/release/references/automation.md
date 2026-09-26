@@ -36,9 +36,9 @@ candidates retain every source check using the compatible distributed gate below
 
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
-trusted PRs, but do not upload a staging artifact. Same-repository checks require
-the private-context denylist; fork PRs retain generic source leak checks without
-repository secrets or publishable package generation.
+trusted PRs, but do not upload a staging artifact. Source and package leak checks use
+generic patterns without repository secrets. Fork PRs retain generic source leak checks
+without publishable package generation.
 
 New PR revisions cancel superseded PR runs. Keep the required `validate` check
 and the rule requiring PRs to be current with their base branch before merge.
@@ -55,8 +55,8 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 
 1. Check out workflow tools separately from the exact 40-character product commit.
 2. Verify the version, release notes, and `develop` ancestry for Preview or `main` for Stable.
-3. Install frozen dependencies and run the full source gate with the private `LEAK_DENYLIST`
-   required. For known source gates, metadata checks and one PWA build precede separate
+3. Install frozen dependencies and run the full source gate, including generic leak checks.
+   For known source gates, metadata checks and one PWA build precede separate
    type/tooling, server, three browser-shard runners, and an independent service-worker runner.
    Browser runners, service-worker checks, and packaging download the same build artifact from
    this run; its name is retained in preparation outputs so rerunning failed jobs reuses the
@@ -72,7 +72,7 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
    channel, filename, SHA-256, repository, and producer run.
 6. Present version, commit, channel, checksum, notes, and the validation run in the job summary.
 
-The candidate receives read-only repository/Actions permissions and the leak denylist only;
+The candidate receives read-only repository/Actions permissions;
 it has no repository write permission, npm credential, OIDC permission, or host access. A rerun reuses the
 original artifact if present. Explicit `candidate_run` recovery must find the immutable artifact
 in an approved workflow on `develop`/`main`; an expired/missing artifact is not silently rebuilt.

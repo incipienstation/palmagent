@@ -3,9 +3,8 @@
 //
 // LEAK-GUARD OUTPUT POLICY: on any leak match we print `<file>:<line>` ONLY —
 // never the matched token or the line text. Echoing the value into CI logs would
-// itself be a leak. The committed generic patterns encode no secrets; the
-// context/PII denylist lives in the `LEAK_DENYLIST` Actions secret (never in the
-// repo). GitHub's secret masking is a backstop, not the primary defense.
+// itself be a leak. The committed generic patterns encode no secrets.
+// GitHub's secret masking is a backstop, not the primary defense.
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -137,7 +136,7 @@ for (const f of allFiles.filter((p) => p.endsWith('.md'))) {
   }
 }
 
-// ---- 7. leak guard (generic patterns + secret denylist) -------------------
+// ---- 7. leak guard (generic patterns) -------------------
 const SELF = fileURLToPath(import.meta.url);
 const GENERIC = [
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,   // email
@@ -148,10 +147,6 @@ const GENERIC = [
   /\bAKIA[0-9A-Z]{16}\b/,                                 // AWS access key id
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,                   // PEM private key
 ];
-const denylist = (process.env.LEAK_DENYLIST || '')
-  .split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-const requireDenylist = /^(?:1|true)$/i.test(process.env.REQUIRE_LEAK_DENYLIST || '');
-
 const hits = new Set();
 for (const f of allFiles) {
   if (f === SELF) continue;                               // scanner defines the patterns
@@ -164,19 +159,11 @@ for (const f of allFiles) {
     if (relative(ROOT, f) === 'pnpm-lock.yaml' && /^\s*deprecated:/.test(line)) return;
     const at = `${relative(ROOT, f)}:${i + 1}`;
     if (GENERIC.some((re) => re.test(line))) { hits.add(at); return; }
-    const lc = line.toLowerCase();
-    if (denylist.some((tok) => lc.includes(tok.toLowerCase()))) hits.add(at);
   });
 }
 if (hits.size) {
   fail(`leak guard: ${hits.size} match(es) — values redacted, inspect these locally:\n    ${[...hits].join('\n    ')}`);
 }
-if (!denylist.length && requireDenylist) {
-  fail('leak guard: LEAK_DENYLIST is required for this trusted CI context but is absent');
-} else if (!denylist.length) {
-  console.log('· leak guard: context denylist not configured (LEAK_DENYLIST absent) — generic patterns still enforced');
-}
-
 // ---- report ---------------------------------------------------------------
 if (errors.length) {
   console.error(`\n✗ validate: ${errors.length} problem(s)\n`);

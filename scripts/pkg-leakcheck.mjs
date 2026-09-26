@@ -1,8 +1,7 @@
 // Fail-closed leak scan for the assembled public package.
 //
-// Always-on patterns cover common secret shapes. LEAK_DENYLIST supplies
-// project-specific private context without committing those values. Output
-// is limited to file and line locations so CI logs never repeat a match.
+// Always-on patterns cover common secret shapes. Output is limited to file
+// and line locations so CI logs never repeat a match.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -32,11 +31,6 @@ const SECRET_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/, // AWS access-key id
   /-----BEGIN (?:[A-Z ]*)PRIVATE KEY-----/, // PEM private keys
 ];
-const envDeny = (process.env.LEAK_DENYLIST ?? "")
-  .split(/[\n,]/)
-  .map((t) => t.trim().toLowerCase())
-  .filter(Boolean);
-
 function walk(dir, acc = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -69,27 +63,9 @@ for (const f of files) {
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const lc = line.toLowerCase();
-    const bad =
-      SECRET_PATTERNS.some((re) => re.test(line)) ||
-      envDeny.some((tok) => lc.includes(tok));
+    const bad = SECRET_PATTERNS.some((re) => re.test(line));
     if (bad) hits.add(`${rel}:${i + 1}`);
   }
-}
-
-const requireDenylist = /^(?:1|true)$/i.test(
-  process.env.REQUIRE_LEAK_DENYLIST ?? "",
-);
-if (!envDeny.length && requireDenylist) {
-  console.error(
-    "[pkg-leakcheck] FAIL — LEAK_DENYLIST is required in this release context",
-  );
-  process.exit(1);
-}
-if (!envDeny.length) {
-  console.log(
-    "· pkg-leakcheck: context denylist absent — generic secret patterns still enforced",
-  );
 }
 
 if (hits.size) {

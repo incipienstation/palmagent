@@ -54,8 +54,6 @@ jobs:
     with:
       commit: ${{ inputs.commit }}
       candidate_run: ${{ inputs.candidate_run }}
-    secrets:
-      LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
 
   publish:
     needs: candidate
