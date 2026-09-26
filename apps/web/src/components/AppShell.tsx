@@ -38,35 +38,52 @@ export function AppShell({
 export function AppBar({
   title,
   back,
+  backLabel = "Back",
+  onBack,
   conn,
   conversation,
+  transparent,
+  compactHeader,
   children,
 }: {
   title: string;
   back?: boolean;
+  backLabel?: string;
+  onBack?: () => void;
   /** When provided, a small live-state dot renders beside the title. */
   conn?: ConnState;
   /** Minimal navigation and task actions over a scrolling conversation. */
   conversation?: boolean;
+  /** Static translucent header that overlays its view content. */
+  transparent?: boolean;
+  /** Let the header action replace the visible title on narrow views. */
+  compactHeader?: boolean;
   children?: ReactNode;
 }) {
   const navigation = useAppNavigation();
-  const menu = navigation && <Button variant="ghost" size="icon-lg" className={cn("shrink-0 rounded-full", conversation && "pointer-events-auto touch-pan-y border border-border bg-card/85 backdrop-blur-md relative z-10")} aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
+  const floating = conversation || transparent;
+  const menu = navigation && <Button variant="ghost" size="icon-lg" className={cn("shrink-0 rounded-full", floating && "pointer-events-auto touch-pan-y border border-border bg-card/85 backdrop-blur-md relative z-10")} aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
   return (
     <header
-      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5", conversation ? "isolate justify-between pointer-events-none" : "bg-background/95 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']")}
-      style={conversation ? { marginBottom: "calc(-64px - var(--safe-top))" } : undefined}
+      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5", floating ? "isolate justify-between pointer-events-none" : "bg-background/95 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']")}
+      style={floating ? { marginBottom: "calc(-64px - var(--safe-top))" } : undefined}
     >
-      {conversation && <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[calc(96px+var(--safe-top))] bg-linear-to-b from-background/70 via-background/35 to-transparent" />}
+      {floating && <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[calc(96px+var(--safe-top))] bg-linear-to-b from-background/70 via-background/35 to-transparent" />}
       {conversation ? <>
         {menu}
         <h1 className="sr-only">{title}</h1>
         {children && <div role="group" aria-label="Header actions" className="relative z-10 inline-flex shrink-0 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
         {conn && <LiveDot conn={conn} visuallyHidden />}
+      </> : compactHeader ? <>
+        {back && <Button variant="ghost" size="icon-lg" className="pointer-events-auto relative z-10 shrink-0 rounded-full border border-border bg-card/85 backdrop-blur-md touch-pan-y" onClick={onBack ?? goBack} aria-label={backLabel}><ChevronLeft className="size-6" /></Button>}
+        <h1 className="sr-only">{title}</h1>
+        {children && <div role="group" aria-label="Header actions" className="relative z-10 inline-flex min-w-0 flex-1 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
+        {menu}
+        {conn && <LiveDot conn={conn} visuallyHidden />}
       </> : <>
         {!back && menu}
         {back && (
-          <Button variant="ghost" size="icon-lg" className="-ml-1.5 rounded-full" onClick={goBack} aria-label="Back">
+          <Button variant="ghost" size="icon-lg" className={cn("-ml-1.5 rounded-full", floating && "pointer-events-auto relative z-10 border border-border bg-card/85 backdrop-blur-md touch-pan-y")} onClick={onBack ?? goBack} aria-label={backLabel}>
             <ChevronLeft className="size-6" />
           </Button>
         )}
