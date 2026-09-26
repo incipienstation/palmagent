@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentKind, AvailableSkill, SkillCatalog, SkillSelection } from "@palmagent/shared";
+import { skillId } from "./application/skill-id.js";
+export { skillId } from "./application/skill-id.js";
 
 export interface SkillEnvironment { agent: AgentKind; cwd: string; home: string }
 const object = (v: unknown): Record<string, any> => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, any> : {};
@@ -111,8 +112,4 @@ export class SkillDiscovery {
       return skill;
     });
   }
-}
-
-export function skillId(env: Pick<SkillEnvironment, "agent" | "home">, name: string, path?: string) {
-  return createHash("sha256").update(JSON.stringify([env.agent, env.home, name, path])).digest("hex");
 }

@@ -7,15 +7,23 @@ import test from "node:test";
 import { getRequestListener } from "@hono/node-server";
 import { AuthService } from "../src/auth.js";
 import { AccountLimitReader } from "../src/account-limits.js";
+import { SkillDiscovery } from "../src/skills.js";
+import { VoiceSessions } from "../src/voice.js";
 import { defaultCodexModelCatalog } from "../src/model-catalog.js";
 import { nativeHome } from "../src/native-session.js";
 import { config } from "../src/config.js";
 import { Db } from "../src/db.js";
+import { LocalAttachmentStorage } from "../src/attachments.js";
+import { readTaskImage } from "../src/task-images.js";
 import { Hub } from "../src/hub.js";
 import { InProcessBackend } from "../src/inproc-backend.js";
 import { PushService } from "../src/push.js";
 import { RoutineService } from "../src/routines.js";
+import { NodeIdentifierGenerator } from "../src/id-generator.js";
+import { LocalRoutineScriptRunner } from "../src/routine-script.js";
 import { TaskService } from "../src/service.js";
+import { LocalNativeSessionAdapter } from "../src/native-session-adapter.js";
+import { LocalRepositoryPaths } from "../src/repository-paths.js";
 import { ProcessSupervisor } from "../src/supervisor.js";
 import { WorktreeManager } from "../src/worktree.js";
 import { createApp, MAX_BODY_BYTES, MAX_IMAGE_BODY_BYTES } from "../src/http/app.js";
@@ -28,14 +36,16 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
-  const service = new TaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager());
+  const service = new TaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), new LocalAttachmentStorage(db),
+    new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
+    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader());
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: "https://localhost", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings);
   const shutdown = new AbortController();
   const repoSettings = new SettingsStore(join(dir, "state"), settings.repoRoots);
   const modelCatalog = extra.modelCatalog ?? { get: async () => defaultCodexModelCatalog() };
-  const app = createApp({ db, hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
-    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service), ...extra, modelCatalog });
+  const app = createApp({ hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
+    push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner()), ...extra, modelCatalog });
   const cleanup: Array<() => Promise<void>> = [];
   t.after(async () => {
     shutdown.abort();
@@ -54,7 +64,7 @@ test("voice routes require authentication, reject non-Codex contexts and resolve
   const repo = f.service.createRepo({ path: f.dir });
   const id = "11111111-1111-4111-8111-111111111111";
   const calls: string[] = [];
-  f.service.voice.start = async (home, sdp) => { calls.push(home); assert.equal(sdp, "v=0\r\noffer"); return { id, sdp: "v=0\r\nanswer" }; };
+  f.service.voice!.start = async (home, sdp) => { calls.push(home); assert.equal(sdp, "v=0\r\noffer"); return { id, sdp: "v=0\r\nanswer" }; };
   const now = Date.now(); f.db.createSession("voice-session", now, now + 60_000);
   const headers = { cookie: `${f.settings.cookieName}=voice-session`, "content-type": "application/json" };
   const payload = (agent: string) => JSON.stringify({ context: { repoId: repo.id, agent }, sdp: "v=0\r\noffer" });
@@ -333,8 +343,8 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(f.dir, "web/assets/app-hash.js"), "// asset");
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
-  const app = createApp({ db: f.db, hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
-    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service), modelCatalog: f.modelCatalog });
+  const app = createApp({ hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
+    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner()), modelCatalog: f.modelCatalog });
   for (const path of ["/", "/sw.js", "/deep/link", "/assets/missing.js"]) {
     const response = await app.request(path);
     assert.equal(response.status, 200);
@@ -597,7 +607,7 @@ test("browser terminal access fails closed when sign-in is disabled", async (t) 
 test("skill discovery is authenticated and bound to the task's provider home and worktree", async t => {
   const f = fixture(t, false);
   const seen: unknown[] = [];
-  f.service.skillDiscovery.list = async env => { seen.push(env); return { skills: [] }; };
+  f.service.skillCatalog!.list = async env => { seen.push(env); return { skills: [] }; };
   const now = Date.now();
   f.db.insertRepo({ id: "skills-repo", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: now });
   f.db.insertTask({ taskId: "skills-task", repoId: "skills-repo", agent: "codex", prompt: "Hello", status: "idle", interrupted: false,
@@ -620,7 +630,7 @@ test("stopping or cancelling during skill revalidation never starts a provider",
     const f = fixture(t, false);
     f.db.insertRepo({ id: "skills-race", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
     let reject!: (error: Error) => void;
-    f.service.skillDiscovery.resolve = () => new Promise((_resolve, fail) => { reject = fail; });
+    f.service.skillCatalog!.resolve = () => new Promise((_resolve, fail) => { reject = fail; });
     const task = f.service.createTask({ repoId: "skills-race", agent: "codex", prompt: "Check", skills: [{ id: "skill", name: "check", source: "repo" }] });
     assert.equal(task.status, "queued");
     f.service[action](task.taskId);
@@ -638,7 +648,7 @@ test("retrying an accepted skill message returns its receipt after plugin remova
   await f.service.init(); f.service.messages.pause("skill-retry-task");
   const skill = { id: "selected", name: "check", source: "repo" };
   let discoveries = 0;
-  f.service.skillDiscovery.resolve = async () => { if (++discoveries > 1) throw Error("Plugin removed"); return [skill]; };
+  f.service.skillCatalog!.resolve = async () => { if (++discoveries > 1) throw Error("Plugin removed"); return [skill]; };
   const request = { clientMessageId: "d882c3fc-d8c5-4df5-8f2b-3877de3d5823", mode: "queue", expectedRunId: null, text: "Check", skills: [skill] };
   const post = (body: unknown) => f.app.request("/api/tasks/skill-retry-task/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   assert.equal((await post(request)).status, 202);

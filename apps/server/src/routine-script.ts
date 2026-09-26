@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { Routine, RoutineRun } from "@palmagent/shared";
-import type { Db } from "./db.js";
+import type { RoutineRepository } from "./application/ports.js";
+import type { RoutineScriptRunner } from "./application/ports.js";
 import { WorktreeManager } from "./worktree.js";
 
 // The pipe is a lifetime lease: even an abrupt parent crash closes stdin and
@@ -17,7 +18,7 @@ child.on("exit", (code, signal) => { if (signal) console.error("terminated by " 
 
 // Scripts run as the installation owner, without an agent or an interactive shell.
 // Retain isolated worktrees: script output/files may be the user's result.
-export function runRoutineScript(db: Db, routine: Routine, runId: number): { stop: (reason?: string) => void; done: Promise<void> } {
+export function runRoutineScript(db: RoutineRepository, routine: Routine, runId: number): { stop: (reason?: string) => void; done: Promise<void> } {
   let stop = (_reason?: string) => {};
   const done = new Promise<void>((resolve) => {
     let worktreePath: string | undefined;
@@ -76,4 +77,11 @@ export function runRoutineScript(db: Db, routine: Routine, runId: number): { sto
     }
   });
   return { stop: reason => stop(reason), done };
+}
+
+/** Node process and worktree adapter for scheduled script use cases. */
+export class LocalRoutineScriptRunner implements RoutineScriptRunner {
+  start(repository: RoutineRepository, routine: Routine, runId: number) {
+    return runRoutineScript(repository, routine, runId);
+  }
 }

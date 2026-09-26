@@ -1,5 +1,3 @@
-import type { AttachmentRecord } from "./attachments.js";
-import type { MessageState } from "./message-controller.js";
 import Database from "better-sqlite3";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
 import { dirname } from "node:path";
@@ -8,16 +6,12 @@ import type {
 } from "@palmagent/shared";
 import { deferActivityEventDetails, HISTORY_PAGE_EVENTS, makePrRef } from "@palmagent/shared";
 import { ensurePrivateFile, ensurePrivateParent } from "./private-files.js";
+import type { AttachmentRecord, EventRow, MessageState, StoredCredential } from "./application/models.js";
+import type { AttachmentIndex, AuthRepository, MessageStateRepository, PushRepository, RoutineRepository, TaskRepository } from "./application/ports.js";
 
 // SQLite holds metadata + the append-only event log only. Resume still reads the
 // CLIs' local transcripts — there is no external session store. `events.id` is
 // the global monotonic id and `events.seq` is per-task monotonic.
-
-export interface EventRow {
-  id: number; // global, AUTOINCREMENT — SSE id on the inbox stream
-  seq: number; // per-task monotonic — SSE id on a scoped stream
-  event: AgentEvent;
-}
 
 type RepoRow = {
   id: string; name: string; path: string; vcs: string; default_base_ref: string; created_at: number;
@@ -46,7 +40,7 @@ type EventJoinRow = {
   agent: string; session_id: string | null;
 };
 
-export class Db {
+export class Db implements TaskRepository, AuthRepository, PushRepository, RoutineRepository, AttachmentIndex {
   private db: Database.Database;
   // Prepared in the constructor (after the schema exists), not as field
   // initializers — those run before `this.db` is assigned.
@@ -827,15 +821,6 @@ export class Db {
   }
 }
 
-export interface StoredCredential {
-  credentialId: string;
-  publicKey: string; // base64url-encoded COSE public key
-  counter: number;
-  transports?: string[];
-  label?: string | null;
-  createdAt: number;
-  lastUsedAt?: number | null;
-}
 type CredentialRow = {
   credential_id: string; public_key: string; counter: number; transports: string | null;
   label: string | null; created_at: number; last_used_at: number | null;

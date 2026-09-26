@@ -8,6 +8,7 @@ import { PERMISSIONS, type AnswerRequest, type QuestionRequest } from "@palmagen
 import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../src/claude.js";
 import { buildCodexArgv, CodexRunner } from "../src/codex.js";
 import { InProcessBackend } from "../src/inproc-backend.js";
+import { getRunner } from "../src/runner.js";
 import type {
   Emit,
   ProcHandle,
@@ -87,6 +88,8 @@ class FakeBackend implements RunnerBackend {
   constructor(proc = new FakeProc()) {
     this.proc = proc;
   }
+
+  agentRunner(agent: import("@palmagent/shared").AgentKind) { return getRunner(agent); }
 
   start(spec: SpawnSpec): ProcHandle {
     this.specs.push(spec);

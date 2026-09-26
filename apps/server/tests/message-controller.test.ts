@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Db } from "../src/db.js";
+import { LocalAttachmentStorage } from "../src/attachments.js";
 import { MessageController } from "../src/message-controller.js";
 
 function fixture(t: test.TestContext) {
@@ -21,7 +22,8 @@ function fixture(t: test.TestContext) {
     start(_id: string, m: { id: string; text: string }) { active = true; starts.push(m.text); controller.beginRun("t"); controller.delivered("t", m.id); },
     steer(_id: string, m: { text: string }) { steers.push(m.text); return new Promise<"delivered" | "unknown" | "rejected">(resolve => { receipt = resolve; }); },
   };
-  let controller = new MessageController(db, host);
+  const attachments = new LocalAttachmentStorage(db);
+  let controller = new MessageController(db, host, attachments);
   controller.beginRun("t");
   t.after(() => { controller.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   return { get c() { return controller; }, starts, steers,
@@ -31,7 +33,7 @@ function fixture(t: test.TestContext) {
     finish(failed = false) { active = false; controller.finish("t", failed); },
     writable(value: boolean) { writable = value; },
     receipt(value: "delivered" | "unknown" | "rejected") { receipt(value); },
-    restart(live: boolean) { controller.close(); controller = new MessageController(db, host); controller.recover("t", live); },
+    restart(live: boolean) { controller.close(); controller = new MessageController(db, host, attachments); controller.recover("t", live); },
   };
 }
 test("FIFO preserves individual prompts and settings through persistence", t => {

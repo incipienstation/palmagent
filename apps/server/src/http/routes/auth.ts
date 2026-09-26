@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { AuthenticationSchema, RegistrationSchema, RegisterOptionsSchema } from "@palmagent/shared/requests";
 import { CHALLENGE_COOKIE_NAME, type AuthCookie, type AuthCredentials } from "../../auth.js";
-import { HttpError } from "../../service.js";
+import { ApplicationError } from "../../errors.js";
 import { jsonBody } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 
@@ -46,7 +46,7 @@ export function authRoutes({ auth, config }: HttpDependencies) {
       return c.json({ ok: true }, 200);
     })
     .post("/enroll-token", (c) => {
-      if (auth.enabled && !auth.verifySession(credentials(c).sessionToken)) throw new HttpError(401, "unauthorized");
+      if (auth.enabled && !auth.verifySession(credentials(c).sessionToken)) throw new ApplicationError("unauthorized", "unauthorized");
       return c.json(auth.mintEnrollToken(), 201);
     });
 }

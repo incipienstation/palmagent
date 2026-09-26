@@ -1,7 +1,7 @@
-import { useEffect, useId, useState } from "react";
+import { useId } from "react";
 import { ChevronDown } from "lucide-react";
 import type { AccountLimits, AgentKind, CodexLimitBucket, LimitWindow } from "@palmagent/shared";
-import { api } from "../api";
+import { useTaskAccountLimits } from "../hooks/useTaskAccountLimits";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
@@ -121,27 +121,7 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
 }
 
 export function TaskStatusline({ taskId, agent }: { taskId: string; agent: AgentKind }) {
-  const [report, setReport] = useState<AccountLimits | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    let stopped = false, pending = false;
-    const refresh = async () => {
-      if (document.visibilityState === "hidden" || pending) return;
-      pending = true;
-      try {
-        const next = await api.getAccountLimits(taskId);
-        if (!stopped) { setReport(next); setFailed(false); setNow(Date.now()); }
-      } catch {
-        if (!stopped) { setReport(null); setFailed(true); }
-      } finally { pending = false; }
-    };
-    void refresh();
-    const timer = window.setInterval(() => { setNow(Date.now()); void refresh(); }, 30_000);
-    const visible = () => { setNow(Date.now()); void refresh(); };
-    document.addEventListener("visibilitychange", visible);
-    return () => { stopped = true; window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
-  }, [taskId]);
+  const { report, failed, now } = useTaskAccountLimits(taskId);
   return <section aria-label="Account limits" className="min-w-0">
     {report && report.agent === agent ? <LimitsView report={report} now={now} />
       : <span className="block px-1 py-1 text-xs text-muted-foreground">{failed ? "Limits unavailable" : "Checking limits…"}</span>}

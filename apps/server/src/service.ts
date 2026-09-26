@@ -1,36 +1,24 @@
-import { VoiceSessions } from "./voice.js";
-import { LocalAttachmentStorage, sanitizeImages } from "./attachments.js";
-import { SkillDiscovery, skillId, type SkillEnvironment } from "./skills.js";
-import type { SkillContext, SkillSelection } from "@palmagent/shared";
+import { sanitizeImages } from "./application/image-input.js";
+import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagent/shared";
+import { skillId } from "./application/skill-id.js";
 import { MessageController } from "./message-controller.js";
 import type { SubmitMessage, MessageAction } from "@palmagent/shared";
-import { randomBytes } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
 import type {
   DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PermissionRequest, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
-import { checkpointSession, emptyTranscriptHash, locateSession, nativeHome, processIdentity, resumeCommand, synchronizeSession } from "./native-session.js";
-import { extractOutputImages } from "./output-images.js";
-import { AccountLimitReader } from "./account-limits.js";
-import { realpathSync, readFileSync } from "node:fs";
-import { config } from "./config.js";
-import type { Db } from "./db.js";
-import type { GithubService } from "./github.js";
-import type { Hub } from "./hub.js";
-import type { PushService } from "./push.js";
-import { getRunner } from "./runner.js";
-import type { ProcessSupervisor } from "./supervisor.js";
+import { extractOutputImages } from "./application/output-images.js";
+import type {
+  AttachmentStorage, PrStatusSink, TaskAccountLimitReader, TaskDefaults, TaskEventPublisher, TaskImageReader,
+  IdentifierGenerator, NativeSessionOperations, RepositoryPathOperations, TaskPushNotifier, TaskRepository,
+  TaskSkillCatalog, TaskSkillEnvironment, TaskSupervisor, TaskVoiceOperations, TaskWorktreeManager, TerminalTaskLifecycle,
+} from "./application/ports.js";
 import type { RawEvent, RunHandle, RunnerBackend } from "./types.js";
-import { expandHome } from "./paths.js";
-import { detectDefaultBranch, gitToplevel, WorktreeManager } from "./worktree.js";
 
-import { HttpError } from "./errors.js";
-export { HttpError } from "./errors.js";
-const badRequest = (m: string) => new HttpError(400, m);
-const notFound = (m: string) => new HttpError(404, m);
-const conflict = (m: string) => new HttpError(409, m);
+import { ApplicationError } from "./errors.js";
+const badRequest = (m: string) => new ApplicationError("bad_request", m);
+const notFound = (m: string) => new ApplicationError("not_found", m);
+const conflict = (m: string) => new ApplicationError("conflict", m);
 
 interface TurnState {
   sawResult: boolean; // a terminal result event arrived (claude result / codex turn.completed)
@@ -40,26 +28,58 @@ interface TurnState {
 }
 
 // The state machine + persistence + lifecycle glue. Everything agent-specific
-// stays behind getRunner() — this file never branches on agent kind.
-export class TaskService {
-  terminals?: import("./terminal/service.js").TerminalService;
+// stays behind the injected execution backend — this file never branches on agent kind.
+export class TaskService implements PrStatusSink {
+
+  providerHome(agent: AgentKind): string { return this.nativeSession.home(agent); }
 
   cleanupTerminalWorktree(id: string) {
     const task = this.getTask(id);
     if (["cancelled", "archived"].includes(task.status)) this.cleanupWorktree(task);
   }
-  private accountLimitReader = new AccountLimitReader();
-
   accountLimits(taskId: string) {
     const task = this.getTask(taskId);
-    return this.accountLimitReader.get(task.agent, task.sessionControl?.home ?? nativeHome(task.agent));
+    if (!this.accountLimitReader) throw new ApplicationError("service_unavailable", "Account limits are unavailable");
+    return this.accountLimitReader.get(task.agent, task.sessionControl?.home ?? this.nativeSession.home(task.agent));
+  }
+
+  readAttachment(taskId: string, attachmentId: string) {
+    this.getTask(taskId);
+    return this.attachments.read(taskId, attachmentId);
+  }
+
+  async readTaskImage(taskId: string, requestedPath: string | string[]) {
+    const task = this.getTask(taskId);
+    if (!this.taskImages) throw new ApplicationError("service_unavailable", "Task image reading is unavailable");
+    return this.taskImages.read(task.worktreePath, requestedPath);
+  }
+
+  eventCursor(taskId?: string): number { return this.db.eventCursor(taskId); }
+
+  taskHistory(taskId: string, before?: number, includeActivityDetails = true) {
+    this.getTask(taskId);
+    return before === undefined
+      ? this.db.latestHistoryPage(taskId, includeActivityDetails)
+      : this.db.historyPage(taskId, before, this.db.eventCursor(taskId), includeActivityDetails);
+  }
+
+  taskHistoryChanges(taskId: string, after: number, through?: number, includeActivityDetails = true) {
+    this.getTask(taskId);
+    if (through !== undefined && through < after) throw badRequest("through must be at least after");
+    return this.db.historyChanges(taskId, after, through, includeActivityDetails);
+  }
+
+  taskActivityDetails(taskId: string, from: number, through: number) {
+    this.getTask(taskId);
+    if (from > through) throw badRequest("through must be at least from");
+    return this.db.activityDetails(taskId, from, through);
   }
 
   private shuttingDown = false;
   beginShutdown(): void {
     this.shuttingDown = true;
     this.messages.close();
-    this.voice.close();
+    this.voice?.close();
     this.attachments.close();
   }
 
@@ -73,52 +93,77 @@ export class TaskService {
   // persisted in a prior web-server life, so on replay they update in-memory
   // state but are NOT re-persisted/re-broadcast (exactly-once).
   private turnBaseline = new Map<string, number>();
-  // Optional GitHub PR-status fetcher (github.ts), attached after construction
-  // (it takes `this` as its sink). Absent when PR integration is not configured.
-  private github?: GithubService;
-
   readonly messages: MessageController;
-  readonly skillDiscovery = new SkillDiscovery();
-  readonly voice = new VoiceSessions();
   startVoice(context: SkillContext, sdp: string, signal?: AbortSignal) {
     const env = this.skillEnvironment(context);
     if (env.agent !== "codex") throw badRequest("Voice input is available only for Codex.");
-    if (this.shuttingDown || this.updating) throw new HttpError(503, "Voice input is unavailable while restarting.");
+    if (this.shuttingDown || this.updating) throw new ApplicationError("service_unavailable", "Voice input is unavailable while restarting.");
+    if (!this.voice) throw new ApplicationError("service_unavailable", "Voice input is unavailable");
     return this.voice.start(env.home, sdp, signal);
   }
-  private skillEnvironment(context: SkillContext): SkillEnvironment {
+  touchVoice(id: string): void {
+    if (!this.voice) throw new ApplicationError("service_unavailable", "Voice input is unavailable");
+    this.voice.touch(id);
+  }
+  stopVoice(id: string, timings?: VoiceClientTimings): void {
+    if (!this.voice) throw new ApplicationError("service_unavailable", "Voice input is unavailable");
+    this.voice.stop(id, timings);
+  }
+  resumeQueue(id: string) { return this.messages.resume(id); }
+  private skillEnvironment(context: SkillContext): TaskSkillEnvironment {
     if (context.taskId) {
       const task = this.getTask(context.taskId);
       if (!task.worktreePath) throw conflict("The task working directory is unavailable.");
-      return { agent: task.agent, cwd: task.worktreePath, home: task.sessionControl?.home ?? nativeHome(task.agent) };
+      return { agent: task.agent, cwd: task.worktreePath, home: task.sessionControl?.home ?? this.nativeSession.home(task.agent) };
     }
     if (!context.repoId || !context.agent) throw badRequest("Select a repository and agent.");
-    return { agent: context.agent, cwd: this.getRepo(context.repoId).path, home: nativeHome(context.agent) };
+    return { agent: context.agent, cwd: this.getRepo(context.repoId).path, home: this.nativeSession.home(context.agent) };
   }
   async availableSkills(context: SkillContext) {
     const env = this.skillEnvironment(context);
-    try { return await this.skillDiscovery.list(env); }
-    catch (error) { throw new HttpError(503, error instanceof Error ? error.message : "Skills are unavailable."); }
+    try {
+      if (!this.skillCatalog) throw new Error("Skill discovery is unavailable");
+      return await this.skillCatalog.list(env);
+    }
+    catch (error) { throw new ApplicationError("service_unavailable", error instanceof Error ? error.message : "Skills are unavailable."); }
   }
   async resolveSkills(context: SkillContext, skills?: SkillSelection[]) {
     if (!skills?.length) return undefined;
     const env = this.skillEnvironment(context);
-    try { return await this.skillDiscovery.resolve(env, skills); }
+    try {
+      if (!this.skillCatalog) throw new Error("Skill selection is unavailable");
+      return await this.skillCatalog.resolve(env, skills);
+    }
     catch (error) { throw conflict(error instanceof Error ? error.message : "Choose the skill again."); }
   }
 
-  readonly attachments: LocalAttachmentStorage;
+  readonly attachments: AttachmentStorage;
+  voice?: TaskVoiceOperations;
+  skillCatalog?: TaskSkillCatalog;
 
   constructor(
-    private readonly db: Db,
-    private readonly hub: Hub,
-    private readonly supervisor: ProcessSupervisor,
+    private readonly db: TaskRepository,
+    private readonly hub: TaskEventPublisher,
+    private readonly supervisor: TaskSupervisor,
     private readonly backend: RunnerBackend,
-    private readonly worktrees: WorktreeManager,
-    private readonly push?: PushService,
+    private readonly worktrees: TaskWorktreeManager,
+    attachments: AttachmentStorage,
+    private readonly repositoryPaths: RepositoryPathOperations,
+    private readonly nativeSession: NativeSessionOperations,
+    private readonly ids: IdentifierGenerator,
+    private readonly push?: TaskPushNotifier,
     private readonly maintenance: () => boolean = () => false,
+    private readonly defaults: TaskDefaults = { model: {}, effort: {} },
+    private readonly taskImages?: TaskImageReader,
+    private readonly terminalLifecycle?: TerminalTaskLifecycle,
+    private readonly requestPrRefresh?: (taskId: string) => void,
+    voice?: TaskVoiceOperations,
+    skillCatalog?: TaskSkillCatalog,
+    private readonly accountLimitReader?: TaskAccountLimitReader,
   ) {
-    this.attachments = new LocalAttachmentStorage(db, config.attachmentStorage);
+    this.attachments = attachments;
+    this.voice = voice;
+    this.skillCatalog = skillCatalog;
     this.messages = new MessageController(db, {
       assertWritable: (id) => {
         this.assertTaskAdmission();
@@ -154,7 +199,7 @@ export class TaskService {
         } catch { return "rejected"; }
       },
       changed: () => this.broadcastTasks(),
-    }, this.attachments);
+    }, attachments);
   }
 
   async resolveMessageSkills(id: string, req: SubmitMessage) {
@@ -181,7 +226,7 @@ export class TaskService {
   get updating(): boolean { return this.maintenance(); }
 
   private assertTaskAdmission(): void {
-    if (this.updating || this.shuttingDown) throw new HttpError(503, "Palmagent is updating. Try starting the task again shortly.");
+    if (this.updating || this.shuttingDown) throw new ApplicationError("service_unavailable", "Palmagent is updating. Try starting the task again shortly.");
   }
 
   // Hydrate from DB and run restart recovery. Turns still alive in the runner
@@ -250,26 +295,23 @@ export class TaskService {
   // ---- repos ----
   createRepo(req: CreateRepoRequest): Repo {
     if (!req?.path) throw badRequest("path is required");
-    const requested = resolve(expandHome(String(req.path).trim()));
-    const root = gitToplevel(requested);
-    if (!root && !isDirectory(requested)) {
-      throw badRequest(
-        existsSync(requested) ? `not a directory: ${requested}` : `no such directory: ${requested}`,
-      );
-    }
+    const inspected = this.repositoryPaths.inspect(req.path, req.defaultBaseRef);
+    if (!inspected.isGit && !inspected.isDirectory) throw badRequest(inspected.exists
+      ? `not a directory: ${inspected.path}`
+      : `no such directory: ${inspected.path}`);
     // Git paths snap to the work-tree root (registering /repo/sub must not
     // scatter hidden worktree directories inside subdirectories); a plain directory with no
     // git registers as-is (vcs "none" — tasks run in place, no worktree).
     // Dedupe by path — re-adding returns the existing entry.
-    const path = root ?? requested;
+    const path = inspected.path;
     const existing = this.db.listRepos().find((r) => r.path === path);
     if (existing) return existing;
     const repo: Repo = {
-      id: genId("r"),
-      name: req.name || basename(path),
+      id: this.ids.next("r"),
+      name: req.name || inspected.name,
       path,
-      vcs: root ? "git" : "none",
-      defaultBaseRef: root ? req.defaultBaseRef || detectDefaultBranch(root) : "",
+      vcs: inspected.isGit ? "git" : "none",
+      defaultBaseRef: inspected.defaultBaseRef,
       createdAt: Date.now(),
     };
     this.db.insertRepo(repo);
@@ -279,7 +321,7 @@ export class TaskService {
     const repo = this.getRepo(id);
     const live = [...this.cache.values()].filter((t) => t.repoId === id && t.status !== "archived");
     if (live.length) throw conflict(`repo has ${live.length} non-archived task(s) — archive them first`);
-    if (this.terminals?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
+    if (this.terminalLifecycle?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
     if (this.db.hasRunningRoutine(id)) throw conflict("Stop this Space's running scripts before removing it");
     this.db.deleteRepo(id);
     this.attachments.prune();
@@ -335,17 +377,17 @@ export class TaskService {
 
   handoff(id: string): SessionHandoffResponse {
     const task = this.getTask(id);
-    if (task.sessionControl?.owner === "local") return { task, command: resumeCommand(task, dirname(this.db.path)) };
+    if (task.sessionControl?.owner === "local") return { task, command: this.nativeSession.resumeCommand(task) };
     this.assertSessionOwnership(task);
     if (this.supervisor.has(id) || !["idle", "failed"].includes(task.status)) throw conflict("Stop the active turn and wait for it to finish before handing off");
     if (!task.sessionId) throw conflict("This task has no native session yet");
     let control: TaskState["sessionControl"];
-    try { control = checkpointSession(task); } catch (error) { throw conflict(error instanceof Error ? error.message : "Native session is unavailable"); }
+    try { control = this.nativeSession.checkpoint(task); } catch (error) { throw conflict(error instanceof Error ? error.message : "Native session is unavailable"); }
     this.messages.pause(id);
     this.db.setSessionControl(id, control);
     task.sessionControl = control;
     this.broadcastTasks();
-    return { task, command: resumeCommand(task, dirname(this.db.path)) };
+    return { task, command: this.nativeSession.resumeCommand(task) };
   }
 
   // This entry point is exposed only on the owner-only local control socket.
@@ -353,22 +395,18 @@ export class TaskService {
     this.assertTaskAdmission();
     if (!req || !["claude", "codex"].includes(req.agent) || typeof req.cwd !== "string" || typeof req.home !== "string") throw badRequest("agent, sessionId, cwd and provider home are required");
     let task = this.listTasks().find((t) => t.agent === req.agent && t.sessionId === req.sessionId);
-    if (realpathSync(req.home) !== realpathSync(task?.sessionControl?.home ?? nativeHome(req.agent))) throw conflict("The local CLI and Palmagent must use the same provider home");
-    const identity = processIdentity(req.waitPid);
-    if (!identity) throw conflict("The local CLI must still be running when requesting dispatch");
-    const argv = readFileSync(`/proc/${req.waitPid}/cmdline`, "utf8").split("\0");
-    if (!argv.slice(0, 2).some((arg) => basename(arg) === req.agent || basename(arg) === `${req.agent}.js`)) throw badRequest("waitPid must identify the native agent CLI");
-    const cwd = realpathSync(req.cwd);
-    const transcript = locateSession(req.agent, req.sessionId, cwd, req.home);
+    const { cwd, home, transcript, identity } = this.nativeSession.resolveDispatch(
+      req, task?.sessionControl?.home ?? this.nativeSession.home(req.agent),
+    );
     if (task) {
-      if (realpathSync(task.worktreePath!) !== cwd || !task.sessionControl || task.sessionControl.owner === "palmagent") throw conflict("This session is already controlled by Palmagent or has a different working directory");
+      if (this.nativeSession.realpath(task.worktreePath!) !== cwd || !task.sessionControl || task.sessionControl.owner === "palmagent") throw conflict("This session is already controlled by Palmagent or has a different working directory");
       if (task.sessionControl.owner === "returning" && (task.sessionControl.waitPid !== req.waitPid || task.sessionControl.waitIdentity !== identity)) throw conflict("A different local writer is already returning this session");
     } else {
       const now = Date.now();
       const repo = this.createRepo({ path: cwd });
-      task = { taskId: genId("t"), repoId: repo.id, agent: req.agent, prompt: "Imported local session", title: "Local session", status: "idle", interrupted: false,
+      task = { taskId: this.ids.next("t"), repoId: repo.id, agent: req.agent, prompt: "Imported local session", title: "Local session", status: "idle", interrupted: false,
         sessionId: req.sessionId, worktreePath: cwd, permission: DEFAULT_PERMISSION[req.agent], createdAt: now, updatedAt: now, lastActivityAt: now,
-        sessionControl: { owner: "local", home: realpathSync(req.home), transcript, cursor: 0, prefixHash: emptyTranscriptHash } };
+        sessionControl: { owner: "local", home, transcript, cursor: 0, prefixHash: this.nativeSession.emptyTranscriptHash } };
       this.db.insertTask(task);
       this.cache.set(task.taskId, task);
     }
@@ -385,8 +423,8 @@ export class TaskService {
       if (control?.owner !== "returning") continue;
       try {
         if (!control.waitPid || !control.waitIdentity) throw new Error("Missing local writer identity");
-        const preview = processIdentity(control.waitPid) === control.waitIdentity;
-        const synced = synchronizeSession(task, { preview });
+        const preview = this.nativeSession.processIdentity(control.waitPid) === control.waitIdentity;
+        const synced = this.nativeSession.synchronize(task, { preview });
         if (preview && synced.control.cursor === control.cursor && !control.error) continue;
         const updated = { ...task, sessionControl: synced.control };
         const rows = this.db.importSessionEvents(updated, synced.events);
@@ -407,9 +445,6 @@ export class TaskService {
   }
 
   // ---- GitHub PR status (github.ts implements the fetch; we are its sink) ----
-  attachGithub(gh: GithubService): void {
-    this.github = gh;
-  }
   // Tasks the refresher may still want to poll: at least one PR, and not retired
   // (archived/cancelled PRs are frozen). Returns the live PrRef arrays by reference
   // — github.ts only reads them, then hands patches back via applyPrStatuses.
@@ -462,7 +497,7 @@ export class TaskService {
     const repo = this.db.getRepo(req.repoId);
     if (!repo) throw badRequest(`no such repo: ${req.repoId}`);
 
-    const taskId = genId("t");
+    const taskId = this.ids.next("t");
     const now = Date.now();
     // Worktree isolation is opt-in (req.isolate): a git task that asks for it
     // gets its own worktree+branch — created first, so a failure aborts the task
@@ -473,7 +508,7 @@ export class TaskService {
       req.isolate && repo.vcs !== "none" ? this.worktrees.create(repo, taskId) : undefined;
     const skills = req.skills?.map(skill => {
       const path = wt && skill.path?.startsWith(repo.path + "/") ? wt.path + skill.path.slice(repo.path.length) : skill.path;
-      return { ...skill, path, id: skillId({ agent: req.agent, home: nativeHome(req.agent) }, skill.name, path) };
+      return { ...skill, path, id: skillId({ agent: req.agent, home: this.nativeSession.home(req.agent) }, skill.name, path) };
     });
     const task: TaskState = {
       taskId,
@@ -484,12 +519,12 @@ export class TaskService {
       skills,
       status: "queued",
       interrupted: false,
-      sessionControl: { owner: "palmagent", home: nativeHome(req.agent), transcript: "", cursor: 0, prefixHash: emptyTranscriptHash },
+      sessionControl: { owner: "palmagent", home: this.nativeSession.home(req.agent), transcript: "", cursor: 0, prefixHash: this.nativeSession.emptyTranscriptHash },
       branch: wt?.branch,
       worktreePath: wt?.path ?? repo.path,
       permission: req.permission ?? defaultPermission(req.agent),
-      model: req.model ?? defaultModel(req.agent),
-      effort: req.effort ?? defaultEffort(req.agent),
+      model: req.model ?? defaultModel(req.agent, this.defaults),
+      effort: req.effort ?? defaultEffort(req.agent, this.defaults),
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
@@ -719,7 +754,7 @@ export class TaskService {
 
   private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string, skills?: SkillSelection[]): void {
     if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
-    const runner = this.backend.agentRunner?.(task.agent) ?? getRunner(task.agent);
+    const runner = this.backend.agentRunner(task.agent);
     this.sessionMismatch.delete(task.taskId);
     this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
     // A brand-new turn starts a fresh stdout stream: baseline 0, nothing replayed.
@@ -764,7 +799,7 @@ export class TaskService {
   // prompt); the service replays through onRaw but suppresses already-persisted
   // events via the baseline. The turn keeps its slot (reclaim) and stays running.
   private reattachTurn(task: TaskState): void {
-    const runner = this.backend.agentRunner?.(task.agent) ?? getRunner(task.agent);
+    const runner = this.backend.agentRunner(task.agent);
     this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
     const baseline = this.db.getTaskRawSeq(task.taskId);
     this.turnBaseline.set(task.taskId, baseline);
@@ -886,7 +921,7 @@ export class TaskService {
     task.updatedAt = saved?.updatedAt ?? task.updatedAt;
     task.prUrl = prs?.[0]?.url;
     this.broadcastTasks();
-    this.github?.onNewPrs(task.taskId);
+    this.requestPrRefresh?.(task.taskId);
   }
 
   private finishTurn(task: TaskState): void {
@@ -973,8 +1008,8 @@ export class TaskService {
   // to the agent's default (clear the override), any other value = set it.
   // Returns whether anything actually changed.
   private applySettings(task: TaskState, model?: string, effort?: string, permission?: string): boolean {
-    const nextModel = model === undefined ? task.model : model === "" ? defaultModel(task.agent) : model;
-    const nextEffort = effort === undefined ? task.effort : effort === "" ? defaultEffort(task.agent) : effort;
+    const nextModel = model === undefined ? task.model : model === "" ? defaultModel(task.agent, this.defaults) : model;
+    const nextEffort = effort === undefined ? task.effort : effort === "" ? defaultEffort(task.agent, this.defaults) : effort;
     const nextPermission =
       permission === undefined ? task.permission : permission === "" ? defaultPermission(task.agent) : permission;
     if (nextModel === task.model && nextEffort === task.effort && nextPermission === task.permission) return false;
@@ -1012,7 +1047,7 @@ export class TaskService {
     const repo = this.db.getRepo(task.repoId);
     if (repo) {
       const remove = () => this.worktrees.remove(repo, { branch: task.branch!, path: task.worktreePath! });
-      if (this.terminals) this.terminals.store.cleanup(task.worktreePath, task.taskId, remove);
+      if (this.terminalLifecycle) this.terminalLifecycle.cleanup(task.worktreePath, task.taskId, remove);
       else remove();
     }
   }
@@ -1040,26 +1075,14 @@ function headline(task: TaskState): string {
   return t.length > 60 ? t.slice(0, 57) + "…" : t;
 }
 
-function defaultModel(agent: AgentKind): string | undefined {
-  return agent === "claude" ? config.claudeModel : config.codexModel;
+function defaultModel(agent: AgentKind, defaults: TaskDefaults): string | undefined {
+  return defaults.model[agent];
 }
 
-function defaultEffort(agent: AgentKind): string | undefined {
-  return agent === "claude" ? config.claudeEffort : config.codexEffort;
+function defaultEffort(agent: AgentKind, defaults: TaskDefaults): string | undefined {
+  return defaults.effort[agent];
 }
 
 function defaultPermission(agent: AgentKind): string {
   return DEFAULT_PERMISSION[agent];
-}
-
-function genId(prefix: string): string {
-  return prefix + randomBytes(4).toString("hex");
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
 }

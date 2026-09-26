@@ -3,7 +3,7 @@ import type { CreateTerminalRequest } from "@palmagent/shared/terminals";
 import { publicTerminal, TerminalStore } from "./store.js";
 import type { TerminalSupervisor } from "./platform.js";
 import type { Repo, TaskState } from "@palmagent/shared";
-import { HttpError } from "../service.js";
+import { ApplicationError } from "../errors.js";
 import { writePrivateFileAtomic } from "../private-files.js";
 import { join } from "node:path";
 
@@ -20,28 +20,29 @@ export class TerminalService {
   }
   get(id: string) {
     const record = this.store.get(id);
-    if (!record) throw new HttpError(404, "Terminal not found");
+    if (!record) throw new ApplicationError("not_found", "Terminal not found");
     return record;
   }
+  getPublic(id: string) { return publicTerminal(this.get(id)); }
   async create(input: CreateTerminalRequest) {
-    if (!this.capabilities().available) throw new HttpError(503, this.capabilities().reason ?? "Terminals are unavailable on this platform");
-    if (this.targets.updating()) throw new HttpError(409, "Installation maintenance is in progress");
+    if (!this.capabilities().available) throw new ApplicationError("service_unavailable", this.capabilities().reason ?? "Terminals are unavailable on this platform");
+    if (this.targets.updating()) throw new ApplicationError("conflict", "Installation maintenance is in progress");
     const existing = this.store.list().find(r => r.requestId === input.requestId);
     if (existing) {
-      if ("taskId" in input.target ? existing.taskId !== input.target.taskId : existing.repoId !== input.target.repoId || existing.taskId) throw new HttpError(409, "Request belongs to another target");
+      if ("taskId" in input.target ? existing.taskId !== input.target.taskId : existing.repoId !== input.target.repoId || existing.taskId) throw new ApplicationError("conflict", "Request belongs to another target");
       return publicTerminal(existing);
     }
     const task = "taskId" in input.target ? this.targets.task(input.target.taskId) : undefined;
-    if (task && ["cancelled", "archived"].includes(task.status)) throw new HttpError(409, "Open a terminal from an active task or its Space");
+    if (task && ["cancelled", "archived"].includes(task.status)) throw new ApplicationError("conflict", "Open a terminal from an active task or its Space");
     const repoId = task?.repoId ?? ("repoId" in input.target ? input.target.repoId : "");
     const repo = this.targets.repo(repoId);
-    if (!repo) throw new HttpError(404, "Space not found");
+    if (!repo) throw new ApplicationError("not_found", "Space not found");
     let cwd: string;
-    try { cwd = realpathSync(task?.worktreePath ?? repo.path); } catch { throw new HttpError(409, "Working directory is unavailable"); }
+    try { cwd = realpathSync(task?.worktreePath ?? repo.path); } catch { throw new ApplicationError("conflict", "Working directory is unavailable"); }
     let reserved;
     try { reserved = this.store.reserve({ requestId: input.requestId, taskId: task?.taskId, repoId, title: input.title ?? "Shell",
       initialCwd: cwd, cols: input.cols, rows: input.rows, release: this.release, node: this.node, directory: this.store.directory }); }
-    catch (error) { throw new HttpError(409, error instanceof Error ? error.message : "Terminal could not be reserved"); }
+    catch (error) { throw new ApplicationError("conflict", error instanceof Error ? error.message : "Terminal could not be reserved"); }
     if (reserved.created) await this.launch(reserved.record.id);
     return publicTerminal(this.get(reserved.record.id));
   }
@@ -52,7 +53,7 @@ export class TerminalService {
       await this.supervisor.launch(record);
     } catch {
       this.store.noteStartError(id, "launch_unconfirmed", "Shell launch could not be confirmed. Palmagent will retry this terminal; check the installation's terminal service.");
-      throw new HttpError(503, "Shell launch could not be confirmed. Check this terminal's status before opening another.");
+      throw new ApplicationError("service_unavailable", "Shell launch could not be confirmed. Check this terminal's status before opening another.");
     }
   }
   rename(id: string, title: string) { this.get(id); return publicTerminal(this.store.update(id, { title })); }

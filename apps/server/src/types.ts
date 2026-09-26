@@ -1,6 +1,8 @@
 // Backend-only interfaces. The data contracts (AgentEvent, TaskState, Repo, REST
 // DTOs, SSE frames) live in @palmagent/shared so the PWA can reuse them.
 import type { AgentEvent, AgentKind, AnswerRequest, ImageAttachment, Permission, PermissionRequest, QuestionRequest } from "@palmagent/shared";
+import type { RunHandle } from "./application/models.js";
+export type { RunHandle } from "./application/models.js";
 
 export interface StartArgs {
   taskId: string;
@@ -31,17 +33,6 @@ export interface StartArgs {
   // execution backend normally retains this in memory; the task copy lets the
   // web service render the request and re-seed in-process/daemon adapters.
   pendingApproval?: PermissionRequest;
-}
-
-// A live, in-flight turn. The process is held open only for its duration.
-export interface RunHandle {
-  send?: (text: string, images: ImageAttachment[] | undefined, messageId: string, skills?: import("@palmagent/shared").SkillSelection[]) => Promise<"delivered" | "rejected" | "unknown">;
-  steer: (text: string, images?: ImageAttachment[]) => boolean; // mid-turn message; false if the CLI can't inject one
-  interrupt: () => boolean; // graceful mid-turn stop; false if the CLI has no channel (caller falls back to cancel())
-  approve: (decision: string, scope?: string) => boolean; // false if the CLI has no approval channel
-  answer: (req: AnswerRequest) => boolean | Promise<boolean>; // true only after the provider write is confirmed
-  cancel: () => void; // SIGINT to the child
-  done: Promise<void>; // resolves when the child exits (turn over)
 }
 
 // Adapters emit events without `agent`/`ts`; the service stamps those. The
@@ -91,7 +82,7 @@ export interface RunnerBackend {
   readonly independent?: boolean;
   saveControl?(taskId: string, state: ExecutionControlState): void;
   loadControl?(taskId: string): ExecutionControlState | undefined;
-  agentRunner?(agent: AgentKind): AgentRunner;
+  agentRunner(agent: AgentKind): AgentRunner;
   // Disconnect this client / stop locally owned children; never stop daemon-owned turns.
   close?(): void | Promise<void>;
   // Optional connect step (DaemonBackend dials the socket). Resolves false if the

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
 import type { TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
-import { api } from "../api";
+import { useTerminalOperations } from "../hooks/remote-operations";
 import { useRepos } from "../hooks/useRepos";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -16,6 +16,7 @@ import { useUpdateState } from "../update-state";
 import { readSelectedSpace, readSelectedSpaceRepoId, repoForSelectedSpace, writeSelectedSpace } from "../space-context";
 
 export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; repoId?: string; onClose?: () => void }) {
+  const terminalOperations = useTerminalOperations();
   const { repos } = useRepos();
   const scope = "terminals:" + (taskId ?? repoId ?? "all");
   const [space, setSpace] = useUpdateState(scope + ":space", () => repoId ?? readSelectedSpaceRepoId() ?? "");
@@ -48,7 +49,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   useEffect(() => { requestId.current = undefined; }, [space, taskId]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
-    const result = await api.terminals.list(taskId ? { taskId } : space ? { repoId: space } : {});
+    const result = await terminalOperations.list(taskId ? { taskId } : space ? { repoId: space } : {});
     if (generation.current !== currentGeneration) return;
     setTerminals(result.terminals); setCapabilities(result.capabilities);
     setSelected(current => result.terminals.some(t => t.id === current) ? current : result.terminals.find(t => t.state === "running")?.id ?? result.terminals[0]?.id ?? "");
@@ -70,7 +71,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const create = () => act(async () => {
     if (!taskId && !space) return;
     requestId.current ??= crypto.randomUUID();
-    const result = await api.terminals.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
+    const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
     setSelected(result.terminal.id); requestId.current = undefined;
   });
   return <section className="flex h-app min-w-0 flex-1 flex-col bg-background" aria-label="Terminals">
@@ -109,7 +110,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
           </DropdownMenuContent>
         </DropdownMenu>}
       </div>
-      {renaming && active && <form className="flex gap-2" onSubmit={event => { event.preventDefault(); void act(async () => { await api.terminals.rename(active.id, title); setRenaming(false); }); }}>
+      {renaming && active && <form className="flex gap-2" onSubmit={event => { event.preventDefault(); void act(async () => { await terminalOperations.rename(active.id, title); setRenaming(false); }); }}>
         <Input aria-label="Terminal name" value={title} onChange={e => setTitle(e.target.value)} maxLength={80} autoFocus />
         <Button size="icon-lg" aria-label="Save terminal name" disabled={busy || !title.trim()}><Check /></Button>
       </form>}
@@ -136,7 +137,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         <AlertDialogDescription>This ends the shell and its child processes. To leave them running, return to the conversation instead.</AlertDialogDescription>
       </AlertDialogHeader><AlertDialogFooter>
         <AlertDialogCancel>Keep running</AlertDialogCancel>
-        <AlertDialogAction onClick={() => { setConfirm(false); if (active) void act(() => api.terminals.terminate(active.id)); }}>Terminate</AlertDialogAction>
+        <AlertDialogAction onClick={() => { setConfirm(false); if (active) void act(() => terminalOperations.terminate(active.id)); }}>Terminate</AlertDialogAction>
       </AlertDialogFooter></AlertDialogContent>
     </AlertDialog>
   </section>;
