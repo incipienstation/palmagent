@@ -15,7 +15,8 @@ test("Back restores the inbox search, completed-group state, and scroll position
   const top = await viewport(page).evaluate(el => el.scrollTop);
   await target.click();
   await expect(page).toHaveURL(/task\/t-idle-rich/);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.evaluate(() => history.back());
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("the");
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBeCloseTo(top, 0);
   await page.getByRole("button", { name: "Clear task search" }).click();

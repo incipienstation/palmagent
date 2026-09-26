@@ -115,7 +115,8 @@ test("restoring only the current history entry cannot wedge native exit or navig
   await hint(cdp);
   await page.getByText("Wire the web QA harness", { exact: true }).click();
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await page.close();
 });
@@ -131,7 +132,7 @@ test("page and layer navigation take priority over the native root exit watcher"
   await closeRequest(cdp);
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
   expect((await state(cdp)).text).toBe("");
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.evaluate(() => history.back());
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await closeRequest(cdp);
   await hint(cdp);

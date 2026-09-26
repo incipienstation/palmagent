@@ -117,7 +117,8 @@ test("a fresh launch with no previous document stays navigable after two Back ca
   await page.getByText("Wire the web QA harness", { exact: true }).click();
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
   await expect(exitHint(page)).toHaveCount(0);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 });
 

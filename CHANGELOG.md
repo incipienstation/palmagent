@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Task conversations now use a compact floating toolbar with a static, translucent fade over the transcript.
+
 ## 0.1.0-alpha.95
 
 ### Changed

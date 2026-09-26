@@ -19,3 +19,8 @@ export async function assertViewportLocked(page: Page): Promise<void> {
     "document scrolls vertically — the viewport lock is broken (only inner panes should scroll)",
   ).toBeLessThanOrEqual(1);
 }
+
+export async function openSessionDetails(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Task actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Session details", exact: true }).click();
+}

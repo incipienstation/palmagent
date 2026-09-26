@@ -13,7 +13,7 @@ import type { MessageQueue, PendingMessage, SubmitMessage } from "@palmagent/sha
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Check, ChevronDown, Trash2, X, Terminal } from "lucide-react";
+import { Archive, Check, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
 
 import {
   AlertDialog,
@@ -49,7 +49,7 @@ import { Alert } from "./ui/alert";
 import { SessionActionsMenu } from "./SessionActionsMenu";
 import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
-import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
 function errMsg(e: unknown): string {
   return e instanceof ApiError || e instanceof Error ? e.message : String(e);
@@ -57,6 +57,8 @@ function errMsg(e: unknown): string {
 
 export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const taskActionsTrigger = useRef<HTMLButtonElement>(null);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
   const { log, conn, loadingHistory, hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
@@ -262,24 +264,22 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     <div className={terminalOpen ? "mx-auto flex max-w-[1600px]" : undefined}>
     <div className={terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
     <AppShell>
-      <Sheet>
-        <AppBar title={heading} back conn={conn} overlaysContent titleControl={
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="title" className="pointer-events-auto touch-pan-y" aria-label={heading} aria-description="Open session details" title="Session details">
-              <span className="flex min-w-0 flex-col items-start gap-0.5">
-                <span className="flex w-full min-w-0 items-center gap-1"><span className="truncate">{heading}</span><ChevronDown className="size-3.5 shrink-0" /></span>
-                {task && <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
-              </span>
-            </Button>
-          </SheetTrigger>
-        }>
+      <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <AppBar title={heading} conn={conn} conversation>
+          <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate("/new")}>
+            <SquarePen />
+          </Button>
           {task && <>
-            <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} onTerminal={() => setTerminalOpen(true)}
+            <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} triggerRef={taskActionsTrigger} onTerminal={() => setTerminalOpen(true)}
+              onDetails={() => setDetailsOpen(true)}
               onCancel={() => act("Cancelling task…", () => api.cancel(taskId))}
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
           </>}
         </AppBar>
-        <SheetContent className="max-h-[85dvh]">
+        <SheetContent className="max-h-[85dvh]" onCloseAutoFocus={event => {
+          event.preventDefault();
+          taskActionsTrigger.current?.focus({ preventScroll: true });
+        }}>
           <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription className="break-words">{heading}</SheetDescription></SheetHeader>
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-2 text-sm [overflow-wrap:anywhere]">
             {task && <div className="flex flex-wrap items-center gap-2"><AgentTag agent={task.agent} /><StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} /><ConnPill conn={conn} /></div>}
@@ -376,6 +376,8 @@ function TaskActionsMenu({
   busy,
   canCancel,
   canArchive,
+  triggerRef,
+  onDetails,
   onCancel,
   onArchive,
   onTerminal,
@@ -384,6 +386,8 @@ function TaskActionsMenu({
   busy: boolean;
   canCancel: boolean;
   canArchive: boolean;
+  triggerRef: { current: HTMLButtonElement | null };
+  onDetails: () => void;
   onCancel: () => void;
   onArchive: () => void;
   onTerminal: () => void;
@@ -393,17 +397,18 @@ function TaskActionsMenu({
 
   return (
     <>
-      <SessionActionsMenu task={task} disabled={busy}>
-        <DropdownMenuItem onSelect={onTerminal}><Terminal />Open terminal</DropdownMenuItem>
+      <SessionActionsMenu task={task} renameDisabled={busy} triggerRef={triggerRef}>
+        <DropdownMenuItem onSelect={onDetails}><Info />Session details</DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} onSelect={onTerminal}><Terminal />Open terminal</DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
-          disabled={!canCancel || mutationPending}
+          disabled={busy || !canCancel || mutationPending}
           onSelect={() => setConfirm("cancel")}
         >
           <Trash2 />
           Cancel
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={!canArchive || mutationPending} onSelect={() => setConfirm("archive")}>
+        <DropdownMenuItem disabled={busy || !canArchive || mutationPending} onSelect={() => setConfirm("archive")}>
           <Archive className="text-faint" />
           Archive
         </DropdownMenuItem>

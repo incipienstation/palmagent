@@ -490,7 +490,13 @@ test("Stop stays pending after acceptance until the live run actually stops", as
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect.poll(() => calls).toBe(1);
   await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeDisabled();
+  const actions = page.getByRole("button", { name: "Task actions", exact: true });
+  await expect(actions).toBeEnabled();
+  await actions.click();
+  await expect(page.getByRole("menuitem", { name: "Session details", exact: true })).toBeEnabled();
+  await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeDisabled();
+  await expect(page.getByRole("menuitem", { name: "Open terminal", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "idle", interrupted: true, updatedAt: task.updatedAt + 1 }] });
   await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeEnabled();
