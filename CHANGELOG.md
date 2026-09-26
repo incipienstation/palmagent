@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The first message in a conversation now starts below the floating header with clear space.
+
+### Removed
+
+- Removed the redundant “Beginning of conversation” label from the transcript.
+
 ## 0.1.0-alpha.99
 
 ### Changed

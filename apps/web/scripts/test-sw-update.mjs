@@ -209,11 +209,13 @@ async function run() {
     await page.waitForTimeout(400);
     const oldestPage = page.waitForResponse((response) => response.url().includes("/history?before=41"));
     await transcript.evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 350; });
-    await oldestPage;
+    const oldestResponse = await oldestPage;
+    assert.equal((await oldestResponse.json()).before, null, "the oldest REST page closes history pagination");
     // Early loading can exhaust history before the reader reaches its edge.
-    // The beginning header must survive the update with the measured position.
-    await page.getByText("Beginning of conversation", { exact: true }).waitFor({ state: "attached" });
+    // Wait for its measured prepend to settle without a decorative end marker.
+    await page.getByText("Loading earlier messages…", { exact: true }).waitFor({ state: "detached" });
     await page.waitForTimeout(400);
+    assert.equal(await page.getByText("Beginning of conversation", { exact: true }).count(), 0);
     const position = await transcript.evaluate((el) => el.scrollTop);
     assert(position > 100);
     const draft = page.getByPlaceholder("Message the agent…");
@@ -234,7 +236,7 @@ async function run() {
     await conversationReload;
     await draft.waitFor();
     assert.equal(await draft.inputValue(), "Do not submit this conversation draft");
-    await page.getByText("Beginning of conversation", { exact: true }).waitFor({ state: "attached" });
+    assert.equal(await page.getByText("Beginning of conversation", { exact: true }).count(), 0);
     await page.waitForFunction((position) => {
       const el = document.querySelector('[aria-label="Session transcript"]');
       return el && Math.abs(el.scrollTop - position) <= 2;
