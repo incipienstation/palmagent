@@ -152,6 +152,8 @@ test("low allowance shows its reset, but expired or stale readings never show a 
   const report = { ...claude, fiveHour: { usedPercent: 95, resetsAt: reset } };
   const line = await show(page, report);
   await expect(line.getByText("5h low · Resets in 1h 40m")).toBeVisible();
+  const action = await line.getByRole("button", { name: "Account limit details" }).boundingBox();
+  expect(action!.height).toBe(44);
   await assertViewportLocked(page);
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: report }));
   await page.clock.fastForward(390000);
