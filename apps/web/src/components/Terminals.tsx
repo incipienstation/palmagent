@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
+import { Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
 import type { TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
 import { useTerminalOperations } from "../hooks/remote-operations";
 import { useRepos } from "../hooks/useRepos";
@@ -74,21 +74,29 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
     setSelected(result.terminal.id); requestId.current = undefined;
   });
+  const projectPicker = !taskId && <Select value={space} onValueChange={value => {
+    setSpace(value);
+    setSelected("");
+    const repo = repos.get(value);
+    if (repo) writeSelectedSpace(repo.path, repo.id);
+  }} disabled={busy}>
+    <SelectTrigger className="w-auto min-w-0 flex-1 rounded-full border-0 bg-transparent px-2" aria-label="Terminal project">
+      <SelectValue placeholder="Choose a project" />
+    </SelectTrigger>
+    <SelectContent><SelectGroup>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
+  </Select>;
   return <section className="flex h-app min-w-0 flex-1 flex-col bg-background" aria-label="Terminals">
-    {onClose ? <header className="flex shrink-0 items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2">
-      <Button variant="ghost" size="icon-lg" aria-label="Back to conversation" onClick={onClose}><ArrowLeft /></Button>
-      <h2 className="text-base font-semibold">Terminals</h2>
-    </header> : <AppBar title={space && repos.get(space) ? `Terminals · ${repos.get(space)!.name}` : "Terminals"} back />}
-    <div className="flex shrink-0 flex-col gap-2 px-3 pb-2">
-      {!taskId && <Select value={space} onValueChange={value => {
-        setSpace(value);
-        setSelected("");
-        const repo = repos.get(value);
-        if (repo) writeSelectedSpace(repo.path, repo.id);
-      }} disabled={busy}>
-        <SelectTrigger aria-label="Terminal project"><SelectValue placeholder="Choose a project" /></SelectTrigger>
-        <SelectContent><SelectGroup>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
-      </Select>}
+    <AppBar
+      title={space && repos.get(space) ? `Terminals · ${repos.get(space)!.name}` : "Terminals"}
+      back
+      backLabel={onClose ? "Back to conversation" : "Back"}
+      onBack={onClose}
+      transparent
+      compactHeader={!taskId}
+    >
+      {projectPicker && <><span className="shrink-0 pl-3 text-sm font-semibold">Terminals ·</span>{projectPicker}</>}
+    </AppBar>
+    <div className="flex shrink-0 flex-col gap-2 px-3 pt-[calc(64px+var(--safe-top))] pb-2">
       <div className="flex min-w-0 gap-2">
         <Select value={selected} onValueChange={value => { setSelected(value); setRenaming(false); }} disabled={!terminals.length || busy}>
           <SelectTrigger className="min-w-0 flex-1" aria-label="Select terminal"><SelectValue placeholder="No terminal yet" /></SelectTrigger>

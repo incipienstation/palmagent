@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Terminal screens now use a compact translucent header and adjustable text size that refits to the available space without horizontal panning.
+
 ## 0.1.0-alpha.101
 
 ### Changed

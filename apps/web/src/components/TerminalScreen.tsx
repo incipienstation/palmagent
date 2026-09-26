@@ -4,7 +4,12 @@ import type { TerminalFrame, TerminalInput } from "@palmagent/shared/terminals";
 import { terminalInputChunks } from "@palmagent/shared/terminals";
 import { useTerminalOperations } from "../hooks/remote-operations";
 import { Button } from "./ui/button";
+import { Minus, Plus } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
+
+const DEFAULT_FONT_SIZE = 14;
+const MIN_FONT_SIZE = 10;
+const MAX_FONT_SIZE = 24;
 
 export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id: string; initialCwd: string; readOnly: boolean; onEnableInput: () => void }) {
   const terminalOperations = useTerminalOperations();
@@ -14,11 +19,25 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
   const readOnlyRef = useRef(readOnly);
   const changeMode = useRef<(value: boolean) => void>(() => {});
   const claim = useRef<() => void>(() => {});
+  const reflow = useRef<() => void>(() => {});
   const [state, setState] = useState("Connecting…");
   const [notice, setNotice] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [writable, setWritable] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const fontSizeRef = useRef(DEFAULT_FONT_SIZE);
+  const changeFontSize = (value: number) => {
+    const next = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, value));
+    if (next === fontSizeRef.current) return;
+    fontSizeRef.current = next;
+    setFontSize(next);
+    const term = termRef.current;
+    if (term) {
+      term.options.fontSize = next;
+      requestAnimationFrame(reflow.current);
+    }
+  };
   useEffect(() => {
     if (readOnlyRef.current === readOnly) return;
     readOnlyRef.current = readOnly;
@@ -32,7 +51,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     let themeObserver: MutationObserver | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let claimTimeout: ReturnType<typeof setTimeout> | undefined;
-    let epoch = 0, controls = false, attempts = 0, ended = false, connection = 0;
+    let epoch = 0, controls = false, attempts = 0, ended = false, connection = 0, hasSnapshot = false;
     const transmit = (value: TerminalInput) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
     const write = (data: string) => { if (controls && !readOnlyRef.current) for (const chunk of terminalInputChunks(data)) transmit({ type: "input", epoch, data: chunk }); };
     input.current = write;
@@ -53,7 +72,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     void (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
       if (disposed || !container.current) return;
-      term = new Terminal({ cursorBlink: true, fontSize: 14, scrollback: 2000, disableStdin: true, allowProposedApi: true, screenReaderMode: true });
+      term = new Terminal({ cursorBlink: true, fontSize: fontSizeRef.current, scrollback: 2000, disableStdin: true, allowProposedApi: true, screenReaderMode: true });
       termRef.current = term;
       const fit = new FitAddon(); term.loadAddon(fit); term.open(container.current);
       const theme = () => {
@@ -79,9 +98,11 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
       for (const ident of [4, 10, 11, 12, 52]) term.parser.registerOscHandler(ident, () => true);
       term.onData(write);
       const resize = () => {
-        if (!term || !controls || !container.current?.clientWidth || !container.current.clientHeight) return;
-        fit.fit(); transmit({ type: "resize", epoch, cols: Math.max(2, Math.min(500, term.cols)), rows: Math.max(1, Math.min(200, term.rows)) });
+        if (!term || !hasSnapshot || !container.current?.clientWidth || !container.current.clientHeight) return;
+        fit.fit();
+        if (controls) transmit({ type: "resize", epoch, cols: Math.max(2, Math.min(500, term.cols)), rows: Math.max(1, Math.min(200, term.rows)) });
       };
+      reflow.current = resize;
       observer = new ResizeObserver(resize); observer.observe(container.current);
       async function connect() {
         if (disposed || ended) return;
@@ -105,13 +126,14 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
                 attempts = 0; term.reset(); term.resize(frame.cols, frame.rows);
                 await new Promise<void>(resolve => term!.write(frame.data, resolve));
                 if (disposed || version !== connection || socket?.readyState !== WebSocket.OPEN) return;
+                hasSnapshot = true; resize();
                 transmit({ type: "ack", seq: frame.seq }); setConnected(true);
                 setState("Connected");
               } else if (frame.type === "output") {
                 await new Promise<void>(resolve => term!.write(frame.data, resolve));
                 transmit({ type: "ack", seq: frame.seq });
               }
-              else if (frame.type === "resize") { term.resize(frame.cols, frame.rows); transmit({ type: "ack", seq: frame.seq }); }
+              else if (frame.type === "resize") { term.resize(frame.cols, frame.rows); if (!controls) resize(); transmit({ type: "ack", seq: frame.seq }); }
               else if (frame.type === "control") {
                 const lostInput = controls && !frame.writable;
                 epoch = frame.epoch; controls = frame.writable && !readOnlyRef.current; term.options.disableStdin = !controls;
@@ -147,18 +169,23 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     return () => {
       disposed = true; clearTimeout(retry); clearTimeout(claimTimeout); observer?.disconnect(); themeObserver?.disconnect();
       socket?.close(); term?.dispose(); termRef.current = undefined; input.current = () => {};
-      claim.current = () => {}; changeMode.current = () => {};
+      claim.current = () => {}; changeMode.current = () => {}; reflow.current = () => {};
     };
   }, [id]);
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div className="min-w-0 shrink-0 px-3 py-1">
-      <p role="status" className="truncate text-xs text-muted-foreground" title={"Started in " + initialCwd}>{readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
+    <div className="flex h-11 min-w-0 shrink-0 items-center justify-between gap-2 px-3">
+      <p role="status" className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={"Started in " + initialCwd}>{readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
+      <div role="group" aria-label="Terminal zoom" className="flex shrink-0 items-center gap-0.5">
+        <Button variant="ghost" size="icon-lg" aria-label="Zoom out" disabled={fontSize <= MIN_FONT_SIZE} onClick={() => changeFontSize(fontSize - 1)}><Minus /></Button>
+        <Button variant="ghost" size="icon-lg" aria-label="Reset terminal zoom" title="Reset terminal zoom" onClick={() => changeFontSize(DEFAULT_FONT_SIZE)}><span className="text-xs tabular-nums">{fontSize}px</span></Button>
+        <Button variant="ghost" size="icon-lg" aria-label="Zoom in" disabled={fontSize >= MAX_FONT_SIZE} onClick={() => changeFontSize(fontSize + 1)}><Plus /></Button>
+      </div>
     </div>
     {connected && !writable && <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-1">
       <p role="status" className="text-xs text-muted-foreground">{claiming ? "Enabling input…" : readOnly ? "Viewing terminal output" : notice}</p>
       <Button variant="outline" size="sm" disabled={claiming} onClick={() => { termRef.current?.focus(); if (readOnly) onEnableInput(); else claim.current(); }}>{claiming ? "Connecting…" : "Type here"}</Button>
     </div>}
-    <div ref={container} data-testid="terminal-screen" className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden bg-background p-2 text-foreground" />
+    <div ref={container} data-testid="terminal-screen" className="min-h-0 min-w-0 flex-1 touch-pan-y overflow-hidden overscroll-contain bg-background p-2 text-foreground" />
     <div className="flex shrink-0 gap-1 overflow-x-auto px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" aria-label="Terminal keys">
       {[["Ctrl+C", "\x03"], ["Tab", "\t"], ["Esc", "\x1b"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"]].map(([label, data]) =>
         <Button key={label} variant="secondary" className="shrink-0" disabled={!writable} onPointerDown={e => e.preventDefault()} onClick={() => { input.current(data); termRef.current?.focus(); }}>{label}</Button>)}
