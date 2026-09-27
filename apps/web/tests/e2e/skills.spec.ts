@@ -14,7 +14,7 @@ for (const route of ["new", "task/t-idle-rich"]) test(`slash selection is explic
   await page.route(route === "new" ? "**/api/tasks" : "**/api/tasks/t-idle-rich/messages", async r => {
     calls.push(r.request().postDataJSON()); await r.fulfill({ status: 400, json: { error: "Try again" } });
   });
-  await page.goto(`/#/${route}`);
+  await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
   const input = page.getByRole("textbox", { name: route === "new" ? "Prompt" : "Message", exact: true });
   await input.fill("/doctor");
   await expect(page.getByRole("option", { name: /palmagent:doctor/ })).toBeVisible();
@@ -40,7 +40,7 @@ test("slash picker protects IME, Enter, literal paths and Escape; button works o
   await catalogue(page);
   let sends = 0;
   await page.route("**/api/tasks", async r => { sends++; await r.fulfill({ status: 503, json: { error: "Try again" } }); });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   const input = page.getByRole("textbox", { name: "Prompt", exact: true });
   for (const literal of ["https://example.com/a", "./src", "/usr/local/bin", "text/path"]) {
     await input.fill(literal); await expect(page.getByRole("listbox", { name: "Available skills" })).toHaveCount(0);
@@ -66,7 +66,7 @@ test("loading failure is retryable and an unmatched slash never submits on Enter
   let attempts = 0, sends = 0;
   await page.route("**/api/skills?**", r => { attempts++; return r.fulfill(attempts === 1 ? { status: 503, json: { error: "Agent unavailable" } } : { json: { skills: [palm] } }); });
   await page.route("**/api/tasks", r => { sends++; return r.fulfill({ status: 503, json: { error: "Try again" } }); });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   const input = page.getByRole("textbox", { name: "Prompt", exact: true });
   await input.fill("/missing");
   await expect(page.getByRole("alert")).toHaveText("Agent unavailable");
@@ -101,7 +101,7 @@ test("queue editing keeps skill selection and transcript displays the source log
 for (const theme of ["light", "dark"]) for (const width of [360, 1280]) test(`picker fits ${width}px in ${theme} mode`, async ({ page }) => {
   await page.setViewportSize({ width, height: 850 });
   await catalogue(page);
-  await page.goto(`/?__theme=${theme}#/new`);
+  await page.goto(`/?__theme=${theme}#/new/space/repo-app`);
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("/");
   const menu = page.getByRole("listbox", { name: "Available skills" });
   await expect(menu).toBeVisible();
@@ -117,7 +117,7 @@ test("typing slash before repository discovery completes opens the correct catal
   let release!: () => void;
   const ready = new Promise<void>(resolve => { release = resolve; });
   await page.route("**/api/repos", async route => { await ready; await route.fulfill({ json: { repos } }); });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   const input = page.getByRole("textbox", { name: "Prompt", exact: true });
   await input.fill("/doctor");
   await expect(page.getByRole("option")).toHaveCount(0);

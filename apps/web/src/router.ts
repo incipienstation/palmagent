@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { navigationHash, subscribeNavigation } from "./navigation";
-export { navigate, goBack } from "./navigation";
+export { navigate, goBack, goBackTo } from "./navigation";
 
 // Minimal hash router — no dependency, free back-button support. Routes:
 //   #/                  inbox
@@ -11,8 +11,10 @@ export { navigate, goBack } from "./navigation";
 //   #/enroll/:token     passkey enrollment (host-CLI-minted link)
 export type Route =
   | { name: "inbox" }
+  | { name: "spaces" }
+  | { name: "space"; repoId: string }
   | { name: "terminals"; repoId?: string; taskId?: string }
-  | { name: "new" }
+  | { name: "new"; repoId?: string }
   | { name: "task"; id: string }
   | { name: "routines" }
   | { name: "usage" }
@@ -20,6 +22,11 @@ export type Route =
 
 function parse(hash: string): Route {
   const path = hash.replace(/^#/, "") || "/";
+  if (path === "/spaces") return { name: "spaces" };
+  const space = /^\/spaces\/(.+)$/.exec(path);
+  if (space) return { name: "space", repoId: decodeURIComponent(space[1]) };
+  const newTask = /^\/new\/space\/(.+)$/.exec(path);
+  if (newTask) return { name: "new", repoId: decodeURIComponent(newTask[1]) };
   if (path === "/terminals") return { name: "terminals" };
   const terminalTask = /^\/terminals\/task\/(.+)$/.exec(path);
   if (terminalTask) return { name: "terminals", taskId: decodeURIComponent(terminalTask[1]) };

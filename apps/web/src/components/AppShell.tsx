@@ -62,7 +62,7 @@ export function AppBar({
 }) {
   const navigation = useAppNavigation();
   const floating = conversation || transparent;
-  const menu = navigation && <Button variant="ghost" size="icon-lg" className={cn("shrink-0 rounded-full", floating && "pointer-events-auto touch-pan-y border border-border bg-card/85 backdrop-blur-md relative z-10")} aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
+  const menu = navigation && <Button variant="ghost" size="icon-lg" className={cn("shrink-0 rounded-full", navigation.desktopSidebar && "md:hidden", floating && "pointer-events-auto touch-pan-y border border-border bg-card/85 backdrop-blur-md relative z-10")} aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
   return (
     <header
       className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5", floating ? "isolate justify-between pointer-events-none" : "bg-background/95 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']")}
@@ -75,7 +75,7 @@ export function AppBar({
         {children && <div role="group" aria-label="Header actions" className="relative z-10 inline-flex shrink-0 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
         {conn && <LiveDot conn={conn} visuallyHidden />}
       </> : compactHeader ? <>
-        {back && <Button variant="ghost" size="icon-lg" className="pointer-events-auto relative z-10 shrink-0 rounded-full border border-border bg-card/85 backdrop-blur-md touch-pan-y" onClick={onBack ?? goBack} aria-label={backLabel}><ChevronLeft className="size-6" /></Button>}
+        {back && <Button variant="ghost" size="icon-lg" className="pointer-events-auto relative z-10 shrink-0 rounded-full border border-border bg-card/85 backdrop-blur-md touch-pan-y" onClick={onBack ?? (() => goBack())} aria-label={backLabel}><ChevronLeft className="size-6" /></Button>}
         <h1 className="sr-only">{title}</h1>
         {children && <div role="group" aria-label="Header actions" className="relative z-10 inline-flex min-w-0 flex-1 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
         {menu}
@@ -83,7 +83,7 @@ export function AppBar({
       </> : <>
         {!back && menu}
         {back && (
-          <Button variant="ghost" size="icon-lg" className={cn("-ml-1.5 rounded-full", floating && "pointer-events-auto relative z-10 border border-border bg-card/85 backdrop-blur-md touch-pan-y")} onClick={onBack ?? goBack} aria-label={backLabel}>
+          <Button variant="ghost" size="icon-lg" className={cn("-ml-1.5 rounded-full", floating && "pointer-events-auto relative z-10 border border-border bg-card/85 backdrop-blur-md touch-pan-y")} onClick={onBack ?? (() => goBack())} aria-label={backLabel}>
             <ChevronLeft className="size-6" />
           </Button>
         )}

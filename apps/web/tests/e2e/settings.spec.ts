@@ -4,7 +4,7 @@ import { assertViewportLocked } from "./_helpers";
 test.use({ serviceWorkers: "block" });
 
 async function openSettings(page: Page) {
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  if ((page.viewportSize()?.width ?? 360) < 768) await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(dialog).toBeVisible();

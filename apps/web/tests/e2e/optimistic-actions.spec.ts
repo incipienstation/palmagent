@@ -4,6 +4,11 @@ import { tasks, routines, repos, updateSettings } from "../fixtures.mjs";
 import { installScopedStream, open, send } from "./_scoped-stream";
 import { assertViewportLocked } from "./_helpers";
 
+// These flows start with a previously used Space; first-use selection is covered in spaces.spec.ts.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:dispatch-repo", "repo-app"));
+});
+
 test.use({ serviceWorkers: "block" });
 function gate() { let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; }); return { wait, release }; }
 async function settings(page: Page, section?: "Updates" | "Repository search paths") {
@@ -408,7 +413,7 @@ test("creation renders the first message, prevents duplicate submits, and preser
     if (route.request().method() !== "POST") return route.continue();
     calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Dispatcher unavailable" } });
   });
-  await page.goto("/#/new"); await page.getByRole("textbox", { name: "Prompt" }).fill("A task awaiting an id");
+  await page.goto("/#/new/space/repo-app"); await page.getByRole("textbox", { name: "Prompt" }).fill("A task awaiting an id");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page.getByRole("group", { name: "Your message" })).toContainText("A task awaiting an id");
   await expect(page.getByText("Working…", { exact: true })).toBeVisible();
@@ -416,7 +421,7 @@ test("creation renders the first message, prevents duplicate submits, and preser
   expect(calls).toBe(1); delayed.release();
   await expect(page.getByText("Delivery unconfirmed", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Check status", exact: true })).toBeEnabled();
-  expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBe("A task awaiting an id");
+  expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt:repo-app"))).toBe("A task awaiting an id");
 });
 
 test("archive leaves the inbox immediately and restores the task with a toast if it fails", async ({ page }) => {
@@ -428,7 +433,7 @@ test("archive leaves the inbox immediately and restores the task with a toast if
   await page.goto("/#/task/t-idle-rich"); await page.getByRole("button", { name: "Task actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await page.getByRole("button", { name: "Archive task", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Actions for Wire the web QA harness", exact: true })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: "Archiving task…" })).toBeVisible();
   expect(calls).toBe(1); delayed.release();
@@ -441,11 +446,11 @@ test("repository removal hides its row immediately and restores it on a server c
   await page.route("**/api/repos/discover*", route => route.fulfill({ json: { repos: repos.map(r => ({ ...r, branch: "main", lastActivityAt: 1 })) } }));
   await page.route("**/api/repos/repo-app", async route => { calls++; await delayed.wait; await route.fulfill({ status: 409, json: { error: "Repository has active tasks" } }); });
   page.on("dialog", dialog => void dialog.accept());
-  await page.goto("/#/new"); await page.getByRole("combobox", { name: "Working directory" }).click();
-  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
+  await page.goto("/#/new/space/repo-app"); await page.getByRole("combobox", { name: "Space" }).click();
+  await page.getByRole("option", { name: "Add Space", exact: true }).click();
   await page.getByRole("button", { name: "Remove sample-app", exact: true }).click();
   await expect(page.getByRole("option", { name: /sample-app/ })).toHaveCount(0);
-  await expect(page.getByRole("status").filter({ hasText: "Removing repository…" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Removing Space…" })).toBeVisible();
   expect(calls).toBe(1); delayed.release();
   await expect(page.getByRole("button", { name: "Remove sample-app", exact: true })).toBeVisible();
   await expect(page.getByTestId("toast")).toContainText("Repository has active tasks");
@@ -457,15 +462,15 @@ test("registration shows the pending path without exposing a fabricated reposito
     if (route.request().method() !== "POST") return route.fulfill({ json: { repos } });
     calls++; await delayed.wait; await route.fulfill({ status: 400, json: { error: "Directory unavailable" } });
   });
-  await page.goto("/#/new"); await page.getByRole("combobox", { name: "Working directory" }).click();
-  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
+  await page.goto("/#/new/space/repo-app"); await page.getByRole("combobox", { name: "Space" }).click();
+  await page.getByRole("option", { name: "Add Space", exact: true }).click();
   await page.getByRole("option", { name: "Browse folders…" }).click();
-  await page.getByRole("button", { name: "Choose outer-repo as repository" }).click();
-  await page.getByRole("button", { name: "Register", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "/projects/outer-repo · Registering…" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Registering…", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Choose outer-repo as Space" }).click();
+  await page.getByRole("button", { name: "Connect Space", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "/projects/outer-repo · Connecting…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connecting…", exact: true })).toBeDisabled();
   expect(calls).toBe(1); delayed.release();
-  await expect(page.getByRole("button", { name: "Register", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Connect Space", exact: true })).toBeEnabled();
   await expect(page.getByTestId("toast")).toContainText("Directory unavailable");
 });
 
@@ -568,7 +573,7 @@ test("a combined channel and automatic-update choice saves the channel before en
 test("successful dispatch clears the submitted attachments before the next task", async ({ page }) => {
   await page.route("**/api/tasks", route => route.request().method() === "POST"
     ? route.fulfill({ json: { task: tasks.find(t => t.taskId === "t-idle-rich") } }) : route.continue());
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
   await expect(page.getByAltText("attachment 1")).toBeVisible();
   await page.getByRole("button", { name: "Send now", exact: true }).click();
@@ -620,7 +625,7 @@ test("new task shows Stop before creation completes and stops the returned task"
     calls.push("create"); await delayed.wait; await route.fulfill({ json: { task } });
   });
   await page.route("**/api/tasks/t-run/stop", route => { calls.push("stop"); return route.fulfill({ json: { task: { ...task, status: "idle" } } }); });
-  await page.goto("/#/new"); await page.getByRole("textbox", { name: "Prompt" }).fill("Stop after creating");
+  await page.goto("/#/new/space/repo-app"); await page.getByRole("textbox", { name: "Prompt" }).fill("Stop after creating");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeEnabled(); await expect(stop.locator(".animate-spin")).toHaveCount(0);

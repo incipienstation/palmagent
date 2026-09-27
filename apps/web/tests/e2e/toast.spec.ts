@@ -2,6 +2,11 @@ import { test, expect, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
 import { assertViewportLocked, openSessionDetails } from "./_helpers";
 
+// These flows start with a previously used Space; first-use selection is covered in spaces.spec.ts.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:dispatch-repo", "repo-app"));
+});
+
 test.use({ serviceWorkers: "block" });
 
 const toastSelector = '[data-testid="toast"][data-front="true"][data-removed="false"]';
@@ -35,7 +40,7 @@ async function assertClearOfComposer(page: Page) {
 test("successful creation keeps the composer reachable without a success toast", async ({ page }) => {
   await page.route("**/api/tasks", route => route.request().method() === "POST"
     ? route.fulfill({ json: { task: tasks.find(t => t.taskId === "t-idle-rich") } }) : route.continue());
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Review the changes.");
   await page.getByRole("button", { name: "Send now", exact: true }).tap();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeVisible();
@@ -102,7 +107,7 @@ test("reduced motion keeps the toast readable and allows keyboard dismissal", as
 test("root exit hint stays above the new-task button and respects safe areas", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true }));
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await page.evaluate(() => {
     document.documentElement.style.setProperty("--safe-bottom", "34px");
     window.dispatchEvent(new Event("resize"));

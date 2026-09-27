@@ -270,14 +270,15 @@ export function navigate(path: string, opts?: { replace?: boolean }) {
   destination = { hash: path.startsWith("#") ? path : `#${path}`, replace: opts?.replace };
   schedule();
 }
-export function goBack() {
+export function goBack() { goBackTo("/"); }
+export function goBackTo(fallback: string) {
   if (traversing) return;
   if (layers.size) {
     // Opening and backing out in one event turn must still dismiss the layer.
     if (current.kind !== "layer") { const top = topLayer(); if (top) flushSync(() => top.dismiss()); return; }
   } else if (current.depth === 0) {
     // An in-app arrow always stays in Palmagent, even on a browser deep link.
-    if (current.hash !== "#/") navigate("/", { replace: true });
+    if (current.hash !== "#" + fallback) navigate(fallback, { replace: true });
     return;
   }
   traversing = true;

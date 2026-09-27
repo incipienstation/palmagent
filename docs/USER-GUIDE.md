@@ -28,12 +28,29 @@ Ask Palmagent to return to Stable to change the saved preference. An update that
 downgrade is refused; returning to an older release requires a separately planned rollback.
 A missing Stable release never falls back to Preview.
 
+## Spaces
+
+**All spaces** shows tasks across every connected Space. Open **Spaces** to search
+by name or folder, enter a Space, or connect another folder with **Add Space**.
+Spaces with the same name show a short folder qualifier. Full folder paths and
+**Terminals** are available in each Space's details.
+
+A Space includes all of its Worktree tasks. Use **Filters** inside the Space to
+narrow the list to a Worktree or status. Filtering changes the list, not the
+execution folder for a new task. Back restores the previous list's search and
+reading position. All spaces always remains the complete view.
+
 ## Start a chat
 
-Open **New task**, choose the working directory above the composer, and send your
-first message. The current Space supplies the directory when available. Use the
-same picker to add another directory; model, effort, permission, and optional Git
-worktree isolation are in the composer settings.
+Open **New task**, check the **Space** above the composer, and send your first
+message. Starting inside a Space selects it. From All spaces, the last-used Space
+is shown; without one, choose a Space explicitly. Use the same picker to add a
+Space. Model, effort, permission, and optional Git worktree isolation are in the
+composer settings.
+
+Drafts are saved separately for each Space. Changing the target carries your text
+and attachments; if that Space has a draft, choose which to keep. Skills stay saved
+with their original Space, with a reminder to select Skills for the new target.
 
 Your message appears immediately in the conversation, with **Stop** available while
 creation finishes. If creation cannot be confirmed, use **Check status** or **Retry**

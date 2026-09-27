@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Spaces now has a dedicated searchable directory, while All spaces always shows tasks across every Space. Each Space has its own task list, Worktree filters, folder details, and terminal entry point.
+- New tasks show their target Space explicitly and retain separate drafts per Space. Switching Spaces keeps text and attachments and asks before replacing an existing draft.
+
 ## 0.1.0-alpha.112
 
 ### Changed

@@ -52,7 +52,7 @@ async function terminalFixture(page: Page, options: { legacy?: boolean; occupied
   };
 }
 
-test("global terminals inherit the selected project context", async ({ page }) => {
+test("global terminals ignore a stale browsing scope; Space terminals use an explicit scope", async ({ page }) => {
   const requests: string[] = [];
   await page.addInitScript(() => localStorage.setItem("working-directory", "/projects/sample-app"));
   await page.route("**/api/terminals*", async (route) => {
@@ -61,7 +61,9 @@ test("global terminals inherit the selected project context", async ({ page }) =
     await route.fulfill({ json: { terminals: [], capabilities: { available: true, persistent: true } } });
   });
   await page.goto("/#/terminals");
-  await expect(page.getByRole("combobox", { name: "Terminal project" })).toHaveText("sample-app");
+  await expect.poll(() => requests.includes("all")).toBe(true);
+  await page.goto("/#/terminals/repo/repo-app");
+  await expect(page.getByRole("combobox", { name: "Terminal Space" })).toHaveText("sample-app");
   await expect.poll(() => requests.includes("repo-app")).toBe(true);
   await assertViewportLocked(page);
 });

@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { ApiError } from "../api";
 import { useRepositoryBrowserOperations } from "../hooks/remote-operations";
 
-// Mobile-first "Add a repo" picker (bottom drawer). Tap-first by design: the
+// Mobile-first "Add Space" picker (bottom drawer). Tap-first by design: the
 // drawer opens keyboard-down showing discovered repos (zero typing for the
 // common case), search is fuzzy so typos still match, out-of-root paths are
 // reached by tap navigation (Browse), and manual path entry is the last
@@ -108,6 +108,7 @@ function Row(props: {
 }
 
 export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Props) {
+  const closeRef = useRef<HTMLButtonElement>(null);
   const browser = useRepositoryBrowserOperations();
   const restoring = useRef(open && readUpdateSnapshot("picker:mode") !== undefined);
   const [mode, setMode] = useUpdateState<Mode>(`picker:mode`, "search");
@@ -235,7 +236,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
   async function removeRepo(repo: Repo) {
     if (mutations.removing.has(repo.id)) return;
-    if (!window.confirm(`Remove "${repo.name}" from the dispatcher?`)) return;
+    if (!window.confirm(`Remove "${repo.name}" from Palmagent? Its archived task history and routines will be deleted. The folder will be kept.`)) return;
     setError("");
     await removeRegisteredRepo(repo);
     onChanged();
@@ -243,41 +244,41 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
   return (
     <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
-      <DrawerContent className="h-[min(86dvh,680px)]">
+      <DrawerContent className="h-[min(86dvh,680px)]" onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus(); }}>
         <DrawerHeader>
           <div className="flex items-center gap-2">
             {mode !== "search" && (
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon-lg"
                 className="-ml-1.5 text-primary"
-                aria-label="Back to repo list"
+                aria-label="Back to Spaces"
                 onClick={backToSearch}
               >
                 <ChevronLeft className="size-5" />
               </Button>
             )}
-            <DrawerTitle>Add a repo</DrawerTitle>
+            <DrawerTitle>Add Space</DrawerTitle>
             <Button
               variant="outline"
-              size="icon-sm"
+              size="icon-lg"
               onClick={() => void refresh(true)}
               disabled={scanning}
-              aria-label="Rescan repos"
+              aria-label="Rescan folders"
             >
               <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
             </Button>
-            <Button variant="outline" size="icon-sm" onClick={onClose} aria-label="Close">
+            <Button ref={closeRef} variant="outline" size="icon-lg" onClick={onClose} aria-label="Close">
               <X className="size-3.5" />
             </Button>
           </div>
           <DrawerDescription className="sr-only">
-            Pick a discovered repository, browse folders, or enter a path manually.
+            Connect a discovered folder, browse folders, or enter a path manually.
           </DrawerDescription>
           {mode === "search" && (
             <Input
               type="search"
-              placeholder="Search repos…"
+              placeholder="Search folders…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               inputMode="search"
@@ -292,10 +293,10 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
         <div
           className="min-h-0 flex-1 overflow-y-auto pb-[calc(12px+var(--safe-bottom))]"
           role="listbox"
-          aria-label="Repositories"
+          aria-label="Folders"
         >
-          {mutations.removing.size > 0 && <p role="status" className="px-3.5 py-2 text-sm text-muted-foreground">Removing repository…</p>}
-          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-3.5 py-2 text-sm text-muted-foreground">{tilde(path)} · Registering…</p>)}
+          {mutations.removing.size > 0 && <p role="status" className="px-3.5 py-2 text-sm text-muted-foreground">Removing Space…</p>}
+          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-3.5 py-2 text-sm text-muted-foreground">{tilde(path)} · Connecting…</p>)}
           {error && (
             <Alert variant="destructive" className="mx-3.5 my-2.5 w-auto">
               {error}
@@ -314,13 +315,14 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                     title={
                       <>
                         {r.name}
-                        {reg && <span className="ml-2 text-[11px] font-medium text-green">✓ added</span>}
+                        {reg && <span className="ml-2 text-[11px] font-medium text-green">Connected</span>}
                       </>
                     }
                     sub={tilde(r.path)}
-                    disabled={!!reg || busy}
+                    disabled={busy}
                     selected={picked?.path === r.path}
                     onPress={() => {
+                      if (reg) { onRegistered(reg); return; }
                       setError("");
                       setValidation(null);
                       setPicked({ path: r.path, name: r.name, branch: r.branch });
@@ -329,7 +331,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                       reg && (
                         <Button
                           variant="outline"
-                          size="icon-sm"
+                          size="icon-lg"
                           className="border-destructive-border text-destructive"
                           aria-label={`Remove ${r.name}`}
                           onClick={() => void removeRepo(reg)}
@@ -343,7 +345,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               })}
               {results.length === 0 && !scanning && (
                 <div className="px-6 py-12 text-center text-sm text-faint">
-                  No repos match — try Browse or a manual path.
+                  No folders match — try Browse or a manual path.
                 </div>
               )}
               <Row icon={<FolderSearch />} title="Browse folders…" onPress={() => void openBrowse()} />
@@ -360,7 +362,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               {browse?.root && (
                 <Row
                   icon={<GitBranch />}
-                  title="Select this repo"
+                  title="Select this folder"
                   sub={tilde(browse.root)}
                   onPress={() => void pickPath(browse.root ?? "")}
                 />
@@ -386,7 +388,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                         type="button"
                         variant="outline"
                         className="shrink-0"
-                        aria-label={`Choose ${e.name} as repository`}
+                        aria-label={`Choose ${e.name} as Space`}
                         onClick={() => void pickPath(e.path)}
                       >
                         Choose
@@ -472,7 +474,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               </div>
             </div>
             <Button onClick={() => void register()} disabled={busy}>
-              {busy ? "Registering…" : registeredByPath.has(picked.path) ? "Use this repo" : "Register"}
+              {busy ? "Connecting…" : registeredByPath.has(picked.path) ? "Open Space" : "Connect Space"}
             </Button>
           </DrawerFooter>
         )}

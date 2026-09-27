@@ -3,6 +3,11 @@ import type { UpdateSettingsStatus } from "@palmagent/shared";
 import { updateSettings } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
 
+// These flows start with a previously used Space; first-use selection is covered in spaces.spec.ts.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:dispatch-repo", "repo-app"));
+});
+
 // Page route fixtures must not be bypassed by a service worker's own requests.
 test.use({ serviceWorkers: "block" });
 

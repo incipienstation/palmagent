@@ -48,7 +48,7 @@ test("the inbox distinguishes a pending snapshot, an empty list, and populated s
   await page.goto("/");
   await expect(page.getByTestId("inbox-content").getByRole("status")).toContainText("Loading tasks");
   await expect(page.getByText("No tasks yet", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Loading spaces…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Open Spaces" })).toBeEnabled();
   release();
   await expect(page.getByText("No tasks yet", { exact: true })).toBeVisible();
   await page.unroute("**/api/stream*");
@@ -193,8 +193,7 @@ test("task search stays within the selected Space", async ({ page }) => {
   }));
   await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream",
     body: `data: ${JSON.stringify({ type: "tasks", tasks: fixtureTasks })}\n\n` }));
-  await page.addInitScript(path => localStorage.setItem("working-directory", path), repos[0].path);
-  await page.goto("/");
+  await page.goto(`/#/spaces/${repos[0].id}`);
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("shared search phrase");
   await expect(page.getByText("Matching task 0", { exact: true })).toBeVisible();
   await expect(page.getByText("Matching task 1", { exact: true })).toHaveCount(0);

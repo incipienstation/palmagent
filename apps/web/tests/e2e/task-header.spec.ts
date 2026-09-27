@@ -62,7 +62,7 @@ for (const width of [320, 1280]) {
 
     await assertViewportLocked(page);
     await compose.click();
-    await expect(page).toHaveURL(/#\/new$/);
+    await expect(page).toHaveURL(/#\/new(?:\/space\/repo-app)?$/);
     await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
   });
 }

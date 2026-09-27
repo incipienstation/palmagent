@@ -25,10 +25,11 @@ for (const width of [360, 1280]) test(`pin syncs list, detail and navigation at 
   await expect(other.getByRole("menuitem", { name: "Unpin", exact: true })).toBeVisible();
   await other.keyboard.press("Escape");
   await page.reload();
-  await page.getByRole("button", { name: "Open navigation" }).click();
+  if (width < 768) await page.getByRole("button", { name: "Open navigation" }).click();
   const pinned = page.getByRole("region", { name: "Pinned", exact: true });
   await expect(pinned.getByRole("button", { name: title, exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog").getByRole("button", { name: title, exact: true })).toHaveCount(1);
+  const navigation = width < 768 ? page.getByRole("dialog") : page.getByRole("complementary", { name: "Space navigation" });
+  await expect(navigation.getByRole("button", { name: title, exact: true })).toHaveCount(1);
   await assertViewportLocked(page);
   await pinned.getByRole("button", { name: title, exact: true }).click();
   await expect(page).toHaveURL(/task\/t-idle-rich$/);
@@ -78,8 +79,8 @@ test("pins keep creation order within their status group and respect search and 
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("Wire the web");
   await expect(page.getByRole("button", { name: /^Actions for / })).toHaveCount(1);
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("");
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator('button[title="/projects/notes"]').click();
+  await page.getByRole("button", { name: "Open Spaces" }).click();
+  await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /notes/ }).click();
   await expect(page.getByRole("button", { name: `Actions for ${title}`, exact: true })).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Pinned", exact: true })).toHaveCount(0);
 });

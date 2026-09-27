@@ -16,32 +16,16 @@ async function installHistory(page: import("@playwright/test").Page, kind: strin
   } }));
 }
 
-test("mobile directory selection filters tasks and survives reload", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByText("Wire the web QA harness")).toBeVisible();
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await page.getByRole("button", { name: /^Worktrees/ }).click();
-  await page.getByRole("button", { name: /t-idle-rich/ }).click();
-  await expect(page.getByText("Wire the web QA harness")).toBeVisible();
-  await expect(page.getByText("Interrupted across a deploy")).toBeHidden();
+test("Space detail shows its connected folder on mobile and desktop", async ({ page }) => {
+  await page.goto("/#/spaces/repo-app");
+  await page.getByRole("button", { name: "Space details" }).click();
+  await expect(page.getByText("/projects/sample-app", { exact: true })).toBeVisible();
   await assertViewportLocked(page);
+  await page.getByRole("button", { name: "Close Space details" }).click();
   await page.reload();
-  await expect(page.getByText("Wire the web QA harness")).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Switch space:/ })).toContainText("t-idle-rich");
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await page.getByRole("button", { name: /All spaces/ }).click();
-  await expect(page.getByText("Interrupted across a deploy")).toBeVisible();
-});
-
-test("desktop directory navigation identifies each cwd without overflowing", async ({ page }) => {
+  await expect(page.getByRole("heading", { name: "sample-app", exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/");
-  const nav = page.getByRole("navigation", { name: "Spaces" });
-  await expect(nav).toBeVisible();
-  await nav.getByRole("button", { name: /^Worktrees/ }).click();
-  await nav.getByRole("button", { name: /t-idle-rich/ }).click();
-  await expect(page.getByText("Wire the web QA harness")).toBeVisible();
-  await expect(page.getByText("Interrupted across a deploy")).toBeHidden();
+  await expect(page.getByRole("complementary", { name: "Space navigation" })).toBeVisible();
   await assertViewportLocked(page);
   await expect(page).toHaveScreenshot("working-directories-desktop.png");
 });

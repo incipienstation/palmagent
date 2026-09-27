@@ -3,7 +3,7 @@ import { assertViewportLocked } from "./_helpers";
 
 test.describe("dispatch form", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/#/new");
+    await page.goto("/#/new/space/repo-app");
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await expect(page.getByLabel("Prompt")).toBeVisible();
   });
@@ -22,7 +22,7 @@ test.describe("dispatch form", () => {
     // Switch to the plain folder → the whole Isolation section disappears.
     await page.getByRole("combobox").filter({ hasText: "sample-app" }).click();
     await page.getByRole("option", { name: /notes/ }).click();
-    await expect(page.getByRole("combobox", { name: "Working directory" })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Space" })).toBeFocused();
     await page.getByLabel("Prompt").tap();
     await page.getByRole("button", { name: "Configure task settings" }).click();
     await expect(page.getByRole("switch", { name: "Isolated worktree" })).toHaveCount(0);
@@ -30,7 +30,7 @@ test.describe("dispatch form", () => {
 });
 
 test("Codex choices survive agent switches and reload, while unsupported effort resets", async ({ page }) => {
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt").fill("Check model efforts");
   await page.getByRole("button", { name: "Configure task settings" }).click();
   await page.getByRole("radio", { name: "codex", exact: true }).click();
@@ -74,7 +74,7 @@ for (const model of ["gpt-5.4", "gpt-5.4-mini", "gpt-6-astra"]) test(`stale save
     localStorage.setItem("pref:dispatch-model", JSON.stringify({ codex: model }));
     localStorage.setItem("pref:dispatch-effort", JSON.stringify({ codex: "minimal" }));
   }, model);
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt").fill("Use valid defaults");
   await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText(model === "gpt-6-astra" ? model : "Codex");
   const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/tasks");

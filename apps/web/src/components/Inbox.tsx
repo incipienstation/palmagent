@@ -1,13 +1,12 @@
 import { useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X, Terminal, Pin } from "lucide-react";
-import { createContext, memo, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X, Folder, Pin } from "lucide-react";
+import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { useUpdateState } from "../update-state";
 import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
 import { statusSection } from "@/lib/status";
@@ -15,25 +14,27 @@ import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
 import { reloadApp } from "../pwa";
-import { navigate } from "../router";
+import { goBackTo, navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag, RepoChip, StatusBadge } from "./chips";
-import { taskDirectory, WorkingDirectories } from "./WorkingDirectories";
+import { SpaceDetails, TaskFilters, type TaskFilter } from "./SpaceTools";
+import { useActionState } from "../action-state";
+import { Alert } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
 import { SessionActionsMenu } from "./SessionActionsMenu";
-import { ALL_SPACES, readSelectedSpace, spaceName, taskBelongsToSpace, writeSelectedSpace } from "../space-context";
+import { newTaskPath, taskDirectoryFor } from "../space-context";
 
 // repoId → Repo map for the rows, provided once by InboxView so each card can
 // resolve its project name without prop-drilling through StatusGroup.
 const ReposContext = createContext<Map<string, Repo>>(new Map());
+const ShowSpaceContext = createContext(true);
 
 // Attention-ordered grouping. Every status the backend can emit is represented
 // Empty groups stay out of the way; every non-empty state remains reachable.
 type InboxStatus = TaskStatus | "local";
-let lastQuery = "";
 const collapsedGroups = new Set<InboxStatus>();
 const GROUP_ORDER: InboxStatus[] = [
   "awaiting_input",
@@ -90,9 +91,10 @@ function previewOf(t: TaskState): string | null {
 // Secondary context stays below the title: project, state, and agent.
 function CardContextLine({ task }: { task: TaskState }) {
   const repos = useContext(ReposContext);
+  const showSpace = useContext(ShowSpaceContext);
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 pr-8">
-      <RepoChip repo={repos.get(task.repoId)} isolated={!!task.branch} />
+      {showSpace && <RepoChip repo={repos.get(task.repoId)} isolated={!!task.branch} />}
       <span className="flex shrink-0 items-center gap-2">
         <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
         <AgentTag agent={task.agent} />
@@ -208,10 +210,12 @@ export const InboxView = memo(function InboxView({
   tasks,
   conn,
   loading,
+  repoId,
 }: {
   tasks: TaskState[];
   conn: ConnState;
   loading?: boolean;
+  repoId?: string;
 }) {
   const mutations = useTaskMutations();
   const archiving = [...mutations.values()].some(change => change.hidden && change.pending);
@@ -220,7 +224,7 @@ export const InboxView = memo(function InboxView({
   // we join the human-friendly name client-side. If a task references a repo we
   // don't have yet (registered since the last fetch), refetch once — `tried`
   // bounds it to a single attempt per id so a deleted repo can't loop.
-  const { repos, refresh, loading: reposLoading } = useRepos();
+  const { repos, refresh, loading: reposLoading, error: reposError, loaded: reposLoaded } = useRepos();
   const tried = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (reposLoading) return;
@@ -230,18 +234,18 @@ export const InboxView = memo(function InboxView({
     void refresh().catch(() => {});
   }, [tasks, repos, refresh, reposLoading]);
 
-  const [selected, setSelected] = useState(readSelectedSpace);
-  const [query, setQuery] = useUpdateState("inbox:query", lastQuery);
-  useEffect(() => { lastQuery = query; }, [query]);
-  const selectDirectory = useCallback((path: string, repoId?: string) => {
-    setSelected(path);
-    writeSelectedSpace(path, repoId);
-    setQuery("");
-  }, [setQuery]);
+  const space = repoId ? repos.get(repoId) : undefined;
+  const scopeKey = repoId ?? "all";
+  const [query, setQuery] = useActionState(`inbox:${scopeKey}:query`, "");
+  const [directory, setDirectory] = useActionState(`inbox:${scopeKey}:directory`, "all");
+  const [statusFilter, setStatusFilter] = useActionState<TaskFilter>(`inbox:${scopeKey}:status`, "all");
   const searchInput = useRef<HTMLInputElement>(null);
   const search = query.trim().toLocaleLowerCase();
-  const scoped = selected === ALL_SPACES ? tasks : tasks.filter(task => taskBelongsToSpace(task, selected, repos));
-  const filtered = search ? scoped.filter(task => `${taskTitle(task)} ${task.prompt}`.toLocaleLowerCase().includes(search)) : scoped;
+  const scoped = repoId ? tasks.filter(task => task.repoId === repoId) : tasks;
+  const filtered = scoped.filter(task =>
+    (!repoId || directory === "all" || taskDirectoryFor(task, repos) === directory)
+    && (statusFilter === "all" || (statusFilter === "local" ? task.sessionControl && task.sessionControl.owner !== "palmagent" : task.status === statusFilter))
+    && (!search || `${taskTitle(task)} ${task.prompt} ${repos.get(task.repoId)?.name ?? ""}`.toLocaleLowerCase().includes(search)));
   const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
   const byStatus = new Map<InboxStatus, TaskState[]>();
   for (const t of filtered) {
@@ -254,30 +258,32 @@ export const InboxView = memo(function InboxView({
   for (const arr of byStatus.values()) arr.sort(compareTasks);
 
   const isEmpty = !loading && filtered.length === 0;
-  const selectedName = spaceName(selected, repos, tasks);
+  const selectedName = space?.name ?? "Space";
+  const missingSpace = !!repoId && reposLoaded && !space;
+  const newTask = () => navigate(newTaskPath(repoId));
 
   return (
-    <ReposContext.Provider value={repos}>
+    <ReposContext.Provider value={repos}><ShowSpaceContext.Provider value={!repoId}>
       <AppShell wide>
-        <AppBar title={selected === ALL_SPACES ? "Tasks" : `Tasks · ${selectedName}`} conn={conn} />
+        <AppBar title={repoId ? selectedName : "All spaces"} back={!!repoId} onBack={() => goBackTo("/spaces")} conn={conn}>
+          {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
+        </AppBar>
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <WorkingDirectories tasks={tasks} repos={repos} selected={selected} onSelect={selectDirectory} loading={loading} />
-        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${selected}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
           {/* The pb wrapper tracks the banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
           <div data-testid="inbox-content" className="pb-[calc(var(--banner-h,0px)+var(--safe-bottom)+88px)]">
-            {!loading && <div className="px-4 pt-2 pb-1">
+            {!repoId && <p className="px-4 pt-1 text-sm text-muted-foreground">Tasks across all your Spaces</p>}
+            {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
+            {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
+            {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
               <div className="flex gap-2">
-                <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder={selected === ALL_SPACES ? "Search tasks…" : `Search tasks in ${selectedName}…`} value={query}
+                <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query}
                   autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={event => setQuery(event.target.value)} />
-                {selected !== ALL_SPACES && <Button variant="ghost" size="icon-lg" aria-label="Open Space terminals" onClick={() => {
-                  const task = tasks.find(t => taskDirectory(t, repos) === selected && !["cancelled", "archived"].includes(t.status));
-                  const repo = [...repos.values()].find(r => r.path === selected);
-                  navigate(repo ? "/terminals/repo/" + encodeURIComponent(repo.id) : task ? "/terminals/task/" + encodeURIComponent(task.taskId) : "/terminals");
-                }}><Terminal /></Button>}
                 {query && <Button variant="ghost" size="icon-lg" aria-label="Clear task search" onClick={clearSearch}><X /></Button>}
               </div>
+              <TaskFilters repo={space} repos={repos} tasks={scoped} directory={directory} onDirectoryChange={setDirectory} status={statusFilter} onStatusChange={setStatusFilter} />
               {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
             </div>}
             {loading ? (
@@ -285,9 +291,9 @@ export const InboxView = memo(function InboxView({
             ) : isEmpty ? (
               <EmptyState
                 icon={search ? Search : InboxIcon}
-                title={search ? "No matching tasks" : selected === "all" ? "No tasks yet" : "No tasks in this directory"}
-                subtitle={search ? "Try another title or part of a prompt in this space." : "Send your first task to an agent and track it here."}
-                action={search ? { label: "Clear search", onClick: clearSearch } : { label: "Dispatch a task", onClick: () => navigate("/new") }}
+                title={search ? "No matching tasks" : directory !== "all" || statusFilter !== "all" ? "No tasks match these filters" : "No tasks yet"}
+                subtitle={search ? "Try another title or part of a prompt in this scope." : "Start a task and track it here."}
+                action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : { label: "New task", onClick: newTask }}
               />
             ) : (
               GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
@@ -301,12 +307,13 @@ export const InboxView = memo(function InboxView({
           className="fixed right-[max(16px,calc((100vw-1100px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--banner-h,0px))] z-20 h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
           ref={toastObstacle}
           aria-label="Dispatch new task"
-          onClick={() => navigate("/new")}
+          onClick={newTask}
+          disabled={!!repoId && (!space || reposLoading)}
         >
           <SquarePen className="size-5" />
           New task
         </Button>
       </AppShell>
-    </ReposContext.Provider>
+    </ShowSpaceContext.Provider></ReposContext.Provider>
   );
 });

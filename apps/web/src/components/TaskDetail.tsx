@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useTaskStream } from "../hooks/useTaskStream";
+import { newTaskPath } from "../space-context";
 import { navigate } from "../router";
 import { AppBar, AppShell, ConnPill } from "./AppShell";
 import { Composer } from "./Composer";
@@ -43,10 +44,10 @@ import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
-export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated }: { taskId?: string; task?: TaskState; onCreated?: (task: TaskState) => void }) {
+export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated, initialRepoId }: { initialRepoId?: string; taskId?: string; task?: TaskState; onCreated?: (task: TaskState) => void }) {
   const taskId = existingId ?? "new";
   const creating = !existingId;
-  const newChat = useNewChat(creating, onCreated);
+  const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
@@ -76,7 +77,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated 
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <AppBar title={heading} conn={creating ? undefined : conn} conversation>
-          <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate("/new")}>
+          <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
             <SquarePen />
           </Button>
           {task && <>

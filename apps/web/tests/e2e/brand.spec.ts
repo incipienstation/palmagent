@@ -40,7 +40,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     const primary = page.getByRole("dialog").getByRole("button", { name: "New task", exact: true });
     await expectReadable(primary);
-    const selected = page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Tasks", exact: true });
+    const selected = page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "All spaces", exact: true });
     await expectReadable(selected);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const selection = page.getByRole("radio", { name: "Compact output", exact: true });
@@ -62,12 +62,12 @@ for (const theme of ["light", "dark"] as const) {
 
   test(`${theme} form control focus borders use the Palm Teal token`, async ({ page }) => {
     await page.goto(`/?__theme=${theme}`);
-    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces" })).toBeVisible();
     await expectBrandFocusBorder(page.getByRole("searchbox", { name: "Search tasks" }), brand[theme].primary);
 
     await page.goto(`/?__theme=${theme}#/new`);
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
-    await expectBrandFocusBorder(page.getByRole("combobox", { name: "Working directory" }), brand[theme].primary);
+    await expectBrandFocusBorder(page.getByRole("combobox", { name: "Space" }), brand[theme].primary);
 
     await page.goto(`/?__theme=${theme}#/task/t-input`);
     await expect(page.getByText("The agent needs your input")).toBeVisible();

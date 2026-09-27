@@ -1,16 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import type { AgentKind, PendingMessage, Permission, TaskState } from "@palmagent/shared";
+import type { AgentKind, ImageAttachment, PendingMessage, Permission, TaskState } from "@palmagent/shared";
 import { Folder, GitBranch, Plus } from "lucide-react";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { useNewChatSubmission, type NewChatSubmission as Submission } from "../new-chat-state";
+import { peekActionState, useActionState } from "../action-state";
 import { cacheSession } from "../query-lifecycle";
 import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { stopTaskTurn } from "../task-stop";
 import { useRepoMutations } from "../repo-mutations";
 import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
-import { readSelectedSpace, repoForSelectedSpace, writeSelectedSpace } from "../space-context";
+import { navigate } from "../router";
+import { newTaskPath, spaceQualifier } from "../space-context";
 import { useUpdateState } from "../update-state";
-import { useDraft, usePersistedMapEntry, usePersistedString } from "./useDraft";
+import { readDraft, useDraft, usePersistedMapEntry, usePersistedString } from "./useDraft";
 import { useRepos } from "./useRepos";
 import { useDispatchOperations } from "./remote-operations";
 import { useImageAttachments } from "../components/Attachments";
@@ -19,6 +21,8 @@ import { useSkillDraft } from "../components/SkillPicker";
 import { selectablePermission } from "../components/PermissionPicker";
 import { RepoPicker } from "../components/RepoPicker";
 import type { DeliveryControls } from "../components/MessageDelivery";
+import { Button } from "../components/ui/button";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "../components/ui/drawer";
 import { Alert } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../components/ui/field";
@@ -26,16 +30,21 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Switch } from "../components/ui/switch";
 
 /** Creation is a phase of the conversation, with a retryable first message. */
-export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => void) {
+export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => void, initialRepoId?: string) {
   const operations = useDispatchOperations();
   const mounted = useRef(false);
   useLayoutEffect(() => { mounted.current = enabled; return () => { mounted.current = false; }; }, [enabled]);
   const { repos: registered, loaded, error: reposError, refresh } = useRepos();
   const mutations = useRepoMutations();
   const repos = useMemo(() => [...registered.values()].filter(repo => !mutations.removed.has(repo.id)), [registered, mutations.removed]);
-  const [inheritedSpace] = useState(readSelectedSpace);
   const initialized = useRef(false);
-  const [repoId, setRepoId] = usePersistedString<string>("pref:dispatch-repo", "");
+  const routeRepo = useRef(initialRepoId);
+  const [lastRepoId, saveRepoId] = usePersistedString<string>("pref:dispatch-repo", "");
+  const [repoId, setRepoId] = useState(initialRepoId ?? lastRepoId);
+  const [submission, setSubmission] = useNewChatSubmission();
+  const draftRepoId = submission?.request.repoId ?? repoId;
+  const promptKey = `draft:dispatch-prompt:${draftRepoId || "unassigned"}`;
+  const imagesKey = `images:#/new:${draftRepoId || "unassigned"}`;
   const [agent, setAgent] = usePersistedString<AgentKind>("pref:dispatch-agent", "claude");
   const [savedPermission, setPermission] = usePersistedMapEntry<Permission>("pref:dispatch-permission", agent, DEFAULT_PERMISSION[agent]);
   const permission = selectablePermission(agent, savedPermission);
@@ -45,12 +54,50 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const model = selectableModel(catalog, savedModel);
   const effort = selectableEffort(catalog, model, savedEffort);
   const [isolate, setIsolate] = usePersistedMapEntry<boolean>("pref:dispatch-isolate", repoId, false);
-  const [prompt, setPrompt] = useDraft("draft:dispatch-prompt");
-  const [skills, setSkills] = useSkillDraft(`draft:dispatch-skills:${repoId}:${agent}`);
+  const [legacyPrompt, setLegacyPrompt] = useDraft("draft:dispatch-prompt");
+  const [legacyImages, setLegacyImages] = useActionState<ImageAttachment[]>("images:#/new", []);
+  const [prompt, setPrompt] = useDraft(promptKey);
+  const [skills, setSkills] = useSkillDraft(`draft:dispatch-skills:${draftRepoId}:${agent}`);
   const [pickerOpen, setPickerOpen] = useUpdateState("dispatch:picker", false);
   const [error, setError] = useState("");
-  const att = useImageAttachments(setError, "images:#/new");
-  const [submission, setSubmission] = useNewChatSubmission();
+  const att = useImageAttachments(setError, imagesKey);
+  const [conflictingSpace, setConflictingSpace] = useState<string>();
+  const [spaceNotice, setSpaceNotice] = useActionState(`dispatch:space-notice:${draftRepoId}`, "");
+  const changingRoute = useRef(false);
+  const transfer = useRef<{ repoId: string; prompt: string; images: ImageAttachment[]; notice: string } | undefined>(undefined);
+  useLayoutEffect(() => {
+    const pending = transfer.current;
+    if (pending?.repoId === repoId) {
+      transfer.current = undefined;
+      setPrompt(pending.prompt); att.setImages(pending.images); setSkills([]); setSpaceNotice(pending.notice);
+    }
+    if (changingRoute.current) {
+      changingRoute.current = false;
+      navigate(newTaskPath(repoId), { replace: true });
+    }
+  }, [repoId]);
+  useEffect(() => {
+    // Preserve a pre-Spaces update checkpoint as one draft, including images.
+    if (enabled && loaded && (!repoId || repos.some(repo => repo.id === repoId))
+      && (legacyPrompt || legacyImages.length) && !prompt && !att.images.length) {
+      setPrompt(legacyPrompt); att.setImages(legacyImages);
+      setLegacyPrompt(""); setLegacyImages([]);
+    }
+    if (enabled && loaded && repos.some(repo => repo.id === repoId)) saveRepoId(repoId);
+  }, [enabled, loaded, repoId]);
+  function selectSpace(value: string, replace = false, saved = false) {
+    if (value === repoId) return;
+    const hasDraft = !!prompt.trim() || !!att.images.length || !!skills.length;
+    const targetPrompt = peekActionState<string>(`draft:dispatch-prompt:${value}`) ?? readDraft(`draft:dispatch-prompt:${value}`);
+    const targetImages = peekActionState<ImageAttachment[]>(`images:#/new:${value}`);
+    const targetSkills = peekActionState<string>(`draft:dispatch-skills:${value}:${agent}`) ?? readDraft(`draft:dispatch-skills:${value}:${agent}`);
+    if (hasDraft && !replace && !saved && (targetPrompt || targetImages?.length || targetSkills)) { setConflictingSpace(value); return; }
+    if (hasDraft && !saved) {
+      transfer.current = { repoId: value, prompt, images: att.images,
+        notice: skills.length ? "Your Skills are saved with the previous Space. Choose Skills available in this Space before sending." : "" };
+    }
+    setConflictingSpace(undefined); changingRoute.current = true; setRepoId(value);
+  }
   const [accepted, setAccepted] = useState<Submission | null>(null);
   const activity = useTaskActivity("dispatch");
   const busy = !!activity.kind;
@@ -67,17 +114,19 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const locked = busy || !!submission;
   useEffect(() => {
     if (!enabled || !loaded || locked) return;
-    if (!initialized.current) {
+    if (!initialized.current || routeRepo.current !== initialRepoId) {
       initialized.current = true;
-      const inherited = repoForSelectedSpace(inheritedSpace, new Map(repos.map(repo => [repo.id, repo])));
-      setRepoId(current => inherited || (repos.some(repo => repo.id === current) ? current : repos[0]?.id ?? ""));
-    } else setRepoId(current => repos.some(repo => repo.id === current) ? current : repos[0]?.id ?? "");
-  }, [enabled, loaded, repos, inheritedSpace, locked]);
+      routeRepo.current = initialRepoId;
+      setRepoId(current => initialRepoId
+        ? repos.some(repo => repo.id === initialRepoId) ? initialRepoId : ""
+        : repos.some(repo => repo.id === current) ? current : repos.length === 1 ? repos[0].id : "");
+    } else setRepoId(current => repos.some(repo => repo.id === current) ? current : "");
+  }, [enabled, loaded, repos, initialRepoId, locked]);
 
   async function submit(saved?: Submission, checkOnly = false) {
     if (busy) return;
     setError("");
-    if (!saved && !repos.some(repo => repo.id === repoId)) { setError("Choose a working directory first."); return; }
+    if (!saved && !repos.some(repo => repo.id === repoId)) { setError("Choose a Space first."); return; }
     const text = prompt.trim() || (skills.length ? "Use the selected skill." : att.images.length ? "See the attached image(s)." : "");
     if (!saved && !text) return;
     const next: Submission = saved ?? { draft: prompt, status: "sending", request: {
@@ -136,6 +185,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const composer: ComponentProps<typeof Composer> = {
     id: "dispatch-prompt", label: "Prompt", value: locked ? "" : prompt, onChange: setPrompt,
     placeholder: "Work with Palmagent", action: "Send now", onSend: () => void submit(), busy,
+    sendDisabled: !repos.some(repo => repo.id === repoId),
     disabled: !!submission && !busy, attachments: locked ? { ...att, images: [] } : att,
     skills: locked ? [] : skills, onSkillsChange: setSkills, skillContext: repoId ? { repoId, agent } : undefined,
     onStop: busy ? () => { setSubmission(current => current ? { ...current, stop: true } : current); void stopTaskTurn("dispatch"); } : undefined, stopping: !!activity.stopping,
@@ -150,25 +200,32 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
       </Field> },
   };
   const workspace = <div className="flex min-h-11 min-w-0 items-center gap-2">
-    <Select value={repoId} disabled={locked || !loaded} onValueChange={value => {
+    <Select value={submission?.request.repoId ?? repoId} disabled={locked || !loaded || att.preparing} onValueChange={value => {
       if (value === "__add__") { setPickerOpen(true); return; }
-      setRepoId(value);
-      const repo = repos.find(repo => repo.id === value);
-      if (repo) writeSelectedSpace(repo.path, repo.id);
+      selectSpace(value);
     }}>
-      <SelectTrigger aria-label="Working directory" className="min-h-11 min-w-0 flex-1 rounded-full">
-        <Folder className="size-4 shrink-0" /><SelectValue placeholder="Choose a working directory" />
+      <SelectTrigger aria-label="Space" className="min-h-11 min-w-0 flex-1 rounded-full">
+        <Folder className="size-4 shrink-0" /><SelectValue placeholder="Choose a Space" />
       </SelectTrigger>
       <SelectContent><SelectGroup>
-        {repos.map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name} <span className="text-muted-foreground">({repo.vcs === "none" ? "folder" : repo.defaultBaseRef})</span></SelectItem>)}
-        <SelectItem value="__add__"><Plus className="size-4" />Add working directory</SelectItem>
+        {repos.map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}{spaceQualifier(repo, registered) && <span className="text-muted-foreground"> · {spaceQualifier(repo, registered)}</span>}</SelectItem>)}
+        <SelectItem value="__add__"><Plus className="size-4" />Add Space</SelectItem>
       </SelectGroup></SelectContent>
     </Select>
     {isGit && isolate && <Badge variant="secondary"><GitBranch className="size-3" />Isolated</Badge>}
   </div>;
-  const notices = (error || reposError) && <Alert variant="destructive">{error || reposError}</Alert>;
-  const picker = <RepoPicker open={enabled && pickerOpen} repos={[...registered.values()]} onClose={() => setPickerOpen(false)}
-    onRegistered={repo => { setPickerOpen(false); setRepoId(repo.id); writeSelectedSpace(repo.path, repo.id); }}
-    onChanged={() => { void refresh().catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} />;
+  const notices = <>{(error || reposError) && <Alert variant="destructive">{error || reposError}</Alert>}{spaceNotice && !skills.length && <Alert>{spaceNotice}</Alert>}</>;
+  const picker = <><RepoPicker open={enabled && pickerOpen} repos={[...registered.values()]} onClose={() => setPickerOpen(false)}
+    onRegistered={repo => { setPickerOpen(false); selectSpace(repo.id); }}
+    onChanged={() => { void refresh().catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} />
+    <Drawer open={!!conflictingSpace} onOpenChange={open => { if (!open) setConflictingSpace(undefined); }}>
+      <DrawerContent><DrawerHeader><DrawerTitle>A draft is already saved in this Space</DrawerTitle><DrawerDescription>Your current draft will stay saved in its original Space.</DrawerDescription></DrawerHeader>
+        <div className="flex flex-col gap-2 px-5 pb-[calc(24px+var(--safe-bottom))]">
+          <Button onClick={() => selectSpace(conflictingSpace!, false, true)}>Open saved draft</Button>
+          <Button variant="outline" onClick={() => selectSpace(conflictingSpace!, true)}>Replace saved draft with current draft</Button>
+          <Button variant="ghost" onClick={() => setConflictingSpace(undefined)}>Cancel</Button>
+        </div>
+      </DrawerContent>
+    </Drawer></>;
   return { composer, workspace, notices, picker, delivery, preview };
 }
