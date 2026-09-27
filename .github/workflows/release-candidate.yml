@@ -138,7 +138,8 @@ jobs:
       - name: Install Chromium
         if: startsWith(matrix.lane, 'web-') || matrix.lane == 'sw'
         working-directory: source
-        run: pnpm --filter @palmagent/web exec playwright install --with-deps chromium
+        # Notification permission tests in browser shards require full Chromium.
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.lane == 'sw' && '--only-shell' || '' }} chromium
       - name: Verify exact source lane
         run: node tooling/scripts/verify-candidate.mjs source lane '${{ matrix.lane }}'
 
