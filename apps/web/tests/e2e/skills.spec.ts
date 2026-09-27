@@ -12,7 +12,7 @@ for (const route of ["new", "task/t-idle-rich"]) test(`slash selection is explic
   await catalogue(page);
   const calls: any[] = [];
   await page.route(route === "new" ? "**/api/tasks" : "**/api/tasks/t-idle-rich/messages", async r => {
-    calls.push(r.request().postDataJSON()); await r.fulfill({ status: 503, json: { error: "Try again" } });
+    calls.push(r.request().postDataJSON()); await r.fulfill({ status: 400, json: { error: "Try again" } });
   });
   await page.goto(`/#/${route}`);
   const input = page.getByRole("textbox", { name: route === "new" ? "Prompt" : "Message", exact: true });
@@ -30,6 +30,7 @@ for (const route of ["new", "task/t-idle-rich"]) test(`slash selection is explic
   await input.press("Control+Enter");
   await expect.poll(() => calls.length).toBe(1);
   expect(calls[0].skills).toEqual([{ id: palm.id, name: palm.name, source: palm.source, pluginId: palm.pluginId }]);
+  if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
   await expect(input).toBeEnabled();
   await expect(input).toHaveValue("Check HTTPS");
   await expect(page.getByRole("button", { name: "Remove palmagent:doctor skill" })).toBeVisible();

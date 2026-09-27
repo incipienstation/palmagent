@@ -19,7 +19,7 @@ export function useTaskOperations(taskId: string) {
 }
 
 export function useDispatchOperations() {
-  return useMemo(() => ({ createTask: (input: CreateTaskRequest) => api.createTask(input) }), []);
+  return useMemo(() => ({ createTask: (input: CreateTaskRequest) => api.createTask(input), getTask: (id: string) => api.getTask(id) }), []);
 }
 
 export function useRepositoryBrowserOperations() {

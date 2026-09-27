@@ -22,7 +22,7 @@ test("Back restores the inbox search, completed-group state, and scroll position
   await page.getByRole("button", { name: "Clear task search" }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("button", { name: "Dispatch new task" }).click();
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.goBack();
   await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveAttribute("aria-expanded", "false");
 });
 

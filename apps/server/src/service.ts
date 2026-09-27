@@ -504,6 +504,17 @@ export class TaskService implements PrStatusSink {
 
   // ---- task lifecycle ----
   createTask(req: CreateTaskRequest): TaskState {
+    // The first successful creation owns this ID durably. A retry after a lost
+    // response (including after a restart) must never start another agent turn.
+    const requestedId = req.clientRequestId ? `t_${req.clientRequestId}` : undefined;
+    const existing = requestedId ? this.db.getTask(requestedId) : undefined;
+    if (existing) {
+      if (existing.repoId !== req.repoId || existing.agent !== req.agent || existing.prompt !== req.prompt) {
+        throw badRequest("Creation request ID is already in use.");
+      }
+      if (!this.cache.has(existing.taskId)) this.cache.set(existing.taskId, existing);
+      return this.getTask(existing.taskId);
+    }
     this.assertTaskAdmission();
     if (req?.agent !== "claude" && req?.agent !== "codex") throw badRequest("agent must be 'claude' or 'codex'");
     if (!req.prompt) throw badRequest("prompt is required");
@@ -511,7 +522,7 @@ export class TaskService implements PrStatusSink {
     const repo = this.db.getRepo(req.repoId);
     if (!repo) throw badRequest(`no such repo: ${req.repoId}`);
 
-    const taskId = this.ids.next("t");
+    const taskId = requestedId ?? this.ids.next("t");
     const now = Date.now();
     // Worktree isolation is opt-in (req.isolate): a git task that asks for it
     // gets its own worktree+branch — created first, so a failure aborts the task
@@ -554,7 +565,7 @@ export class TaskService implements PrStatusSink {
     // task view renders it from the live stream, not just the inbox snapshot —
     // otherwise opening a fresh task before its snapshot lands shows no prompt.
     const nImages = images?.length ?? 0;
-    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, attachments, images: nImages || undefined });
+    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, attachments, images: nImages || undefined, ...(req.clientRequestId ? { messageId: req.clientRequestId } : {}) });
     void this.runTurn(task, req.prompt, undefined, images, undefined, skills); // new session
     return task;
   }

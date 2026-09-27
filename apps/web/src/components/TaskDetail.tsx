@@ -1,3 +1,4 @@
+import { useNewChat } from "../hooks/useNewChat";
 import { useTaskComposer } from "../hooks/useTaskComposer";
 import { isSendingAction } from "../task-activity";
 import { useBackLayer } from "../hooks/useBackLayer";
@@ -26,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useTaskStream } from "../hooks/useTaskStream";
+import { newTaskPath } from "../space-context";
 import { navigate } from "../router";
 import { AppBar, AppShell, ConnPill } from "./AppShell";
 import { Composer } from "./Composer";
@@ -42,13 +44,16 @@ import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
-export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; task?: TaskState }) {
+export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated, initialRepoId }: { initialRepoId?: string; taskId?: string; task?: TaskState; onCreated?: (task: TaskState) => void }) {
+  const taskId = existingId ?? "new";
+  const creating = !existingId;
+  const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
-  const { log, conn, loadingHistory, hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId);
+  const { log, conn, loadingHistory, hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId, !creating);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
   // when the long-lived inbox stream freezes in the background. Fall back to the
@@ -62,15 +67,17 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     displayedEffort, setModel, setEffort, permission, setPermission, primaryAction,
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
-  const heading = task ? taskTitle(task) : taskId;
+  const heading = creating ? "New task" : task ? taskTitle(task) : taskId;
+  const showingFirstMessage = !!newChat.preview && !(hasHistory && hasEarlier) && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
+  const firstDelivery = creating || showingFirstMessage;
 
   return (
     <div className={terminalOpen ? "mx-auto flex max-w-[1600px]" : undefined}>
     <div className={terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <AppBar title={heading} conn={conn} conversation>
-          <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate("/new")}>
+        <AppBar title={heading} conn={creating ? undefined : conn} conversation>
+          <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
             <SquarePen />
           </Button>
           {task && <>
@@ -104,10 +111,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
       <div className="flex min-h-0 flex-1 flex-col">
         {localOwner && <Alert className="mx-3 my-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
 
-        <EventLog taskId={taskId} log={log} live={running} loading={loadingHistory}
-          prompt={loadingHistory || hasEarlier ? undefined : task?.prompt}
+        <EventLog taskId={existingId} log={log} live={running} loading={loadingHistory && !firstDelivery}
+          empty={creating ? <p className="text-center font-sans text-lg text-muted-foreground">What should we work on?</p> : undefined}
+          prompt={firstDelivery || loadingHistory || hasEarlier ? undefined : task?.prompt}
           hasHistory={hasHistory} hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier}
-          delivery={{ messages: pendingDeliveries, paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,
+          delivery={creating ? newChat.delivery : { messages: [...(showingFirstMessage ? newChat.delivery.messages : []), ...pendingDeliveries], paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,
             resumeDisabled, onDelete: m => void queueAction(m, "delete"),
             onResume: () => void resume(true) }} />
 
@@ -118,7 +126,8 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             {activity.label && !isSendingAction(activity.kind) &&
               <p role="status" className="truncate text-xs leading-4 text-muted-foreground">{activity.label}</p>}
           </div>
-          {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
+          {creating && newChat.notices}
+          {creating ? newChat.workspace : task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
               key={`${taskId}:${task.pendingInput.requestId}`}
@@ -139,7 +148,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             onDelete={m => void queueAction(m, "delete")}
             onResume={() => void resume()} />}
 
-          {task && !localOwner && status !== "archived" && status !== "cancelled" && <Composer
+          {(creating || task && !localOwner && status !== "archived" && status !== "cancelled") && (creating ? <Composer {...newChat.composer} /> : <Composer
             skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
@@ -156,10 +165,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
               : primaryAction === "send" ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
-            settings={{ agent: task.agent, model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
-              permission, onPermissionChange: setPermission }} />}
+            settings={{ agent: task?.agent ?? "claude", model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
+              permission, onPermissionChange: setPermission }} />)}
         </div>
       </div>
+      {creating && newChat.picker}
     </AppShell>
     </div>
     {terminalOpen && <div className="min-w-0 flex-1 md:border-l"><TerminalsView taskId={taskId} onClose={() => setTerminalOpen(false)} /></div>}

@@ -10,11 +10,13 @@ export function isWaitingMessage(message: PendingMessage) {
 export type DeliveryControls = {
   messages: PendingMessage[]; paused: boolean; disabled: boolean; resumeDisabled: boolean;
   onDelete: (message: PendingMessage) => void; onResume: () => void;
+  recovery?: { retry: () => void; check: () => void };
+  pendingHint?: string;
 };
 
 // Normal delivery uses the transcript's Working label. Only actionable states
 // need extra UI, beside the message they describe rather than in the composer.
-export function MessageDelivery({ message, paused, disabled, resumeDisabled, onDelete, onResume }: Omit<DeliveryControls, "messages"> & {
+export function MessageDelivery({ message, paused, disabled, resumeDisabled, onDelete, onResume, recovery, pendingHint }: Omit<DeliveryControls, "messages"> & {
   message: PendingMessage;
 }) {
   const uncertain = message.status === "unknown";
@@ -23,13 +25,18 @@ export function MessageDelivery({ message, paused, disabled, resumeDisabled, onD
   if (uncertain || rejected) return <Alert className="mb-3 font-sans" variant={uncertain ? "warning" : "destructive"}>
     <p className="font-semibold">{uncertain ? "Delivery unconfirmed" : "Not sent"}</p>
     <p>{message.error ?? (uncertain ? "Delivery could not be confirmed." : "The agent could not accept this message.")}</p>
-    {uncertain && <p>Check the conversation before sending again. Dismissing this notice does not undo delivery.</p>}
-    <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onDelete(message)}>Dismiss delivery notice</Button>
+    {uncertain && !recovery && <p>Check the conversation before sending again. Dismissing this notice does not undo delivery.</p>}
+    {recovery ? <div className="flex flex-wrap gap-2">
+      {uncertain && <Button variant="ghost" disabled={disabled} onClick={recovery.check}>Check status</Button>}
+      <Button variant="secondary" disabled={disabled} onClick={recovery.retry}>Retry</Button>
+      {!uncertain && <Button variant="ghost" disabled={disabled} onClick={() => onDelete(message)}>Edit message</Button>}
+    </div> : <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onDelete(message)}>Dismiss delivery notice</Button>}
   </Alert>;
   if (waiting) return <div className="mb-3 flex flex-wrap items-center justify-end gap-2 font-sans">
     <span className="text-sm text-muted-foreground">Send paused</span>
     <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onDelete(message)}>Cancel send</Button>
     <Button variant="ghost" size="sm" disabled={disabled || resumeDisabled} onClick={onResume}>Resume delivery</Button>
   </div>;
-  return null;
+  return message.status === "sending" && pendingHint
+    ? <p role="status" className="mb-3 font-sans text-sm text-muted-foreground">{pendingHint}</p> : null;
 }

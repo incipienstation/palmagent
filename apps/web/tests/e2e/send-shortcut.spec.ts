@@ -17,7 +17,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
       const calls: Record<string, unknown>[] = [];
       await page.route(`**${path}`, async r => {
         calls.push(r.request().postDataJSON());
-        await r.fulfill({ status: 503, json: { error: "Try again" } });
+        await r.fulfill({ status: 400, json: { error: "Try again" } });
       });
       await page.goto(`/#/${route}`);
       const input = page.getByRole("textbox", { name: label, exact: true });
@@ -29,6 +29,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
       await input.press(key);
       await expect.poll(() => calls.length).toBe(1);
       expect(calls[0][route === "new" ? "prompt" : "text"]).toBe("Review this");
+      if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
       await expect(input).toBeEnabled();
       await expect(input).toHaveValue("Review this\n\n");
     });
@@ -38,7 +39,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
     const calls: unknown[] = [];
     await page.route(`**${path}`, async r => {
       calls.push(r.request().postDataJSON());
-      await r.fulfill({ status: 503, json: { error: "Try again" } });
+      await r.fulfill({ status: 400, json: { error: "Try again" } });
     });
     await page.goto(`/#/${route}`);
     const input = page.getByRole("textbox", { name: label, exact: true });
@@ -55,6 +56,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
     expect(calls).toHaveLength(0);
     await input.press("Enter");
     await expect.poll(() => calls.length).toBe(1);
+    if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
     await expect(input).toBeEnabled();
     await expect(input).toHaveValue("Keep this draft\n");
     await page.reload();
@@ -62,6 +64,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
     await input.fill("After reload");
     await input.press("Enter");
     await expect.poll(() => calls.length).toBe(2);
+    if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
     await expect(input).toBeEnabled();
     const restored = await settings(page);
     await expect(restored.getByRole("radio", { name: "Enter", exact: true })).toBeChecked();
