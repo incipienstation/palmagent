@@ -101,7 +101,7 @@ async function run() {
     await page.goto("/#/new");
     await page.getByLabel("Prompt").fill("Keep this unsent draft");
     await page.getByRole("button", { name: "Configure task settings" }).click();
-    await page.getByPlaceholder("short label").fill("Draft title");
+    await page.getByRole("switch", { name: "Isolated worktree", exact: true }).click();
     await page.getByRole("button", { name: "Done", exact: true }).click();
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
     await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "draft.png", mimeType: "image/png", buffer: png });
@@ -128,7 +128,7 @@ async function run() {
     });
     await page.getByAltText("attachment 1").waitFor();
     assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
-    assert.equal(await page.evaluate(() => localStorage.getItem("draft:dispatch-title")), "Draft title");
+    await page.getByText("Isolated", { exact: true }).waitFor();
     await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
     assert.deepEqual(await page.getByLabel("Prompt").evaluate((el) => [el.selectionStart, el.selectionEnd]), [4, 9]);
     assert(page.url().endsWith("/#/new"));
@@ -170,19 +170,20 @@ async function run() {
 
     await page.getByRole("button", { name: "Configure task settings" }).click();
     await page.getByRole("radio", { name: "opus", exact: true }).click();
-    await page.getByPlaceholder("short label").fill("Restored configuration");
+    await page.getByRole("switch", { name: "Isolated worktree", exact: true }).click();
     const configurationReload = page.waitForEvent("load", { timeout: 20_000 });
     await appendFile(SW_PATH, "\n// automatic-update-configuration\n");
     await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
     await configurationReload;
     await page.getByRole("heading", { name: "Configure", exact: true }).waitFor();
-    assert.equal(await page.getByPlaceholder("short label").inputValue(), "Restored configuration");
+    assert.equal(await page.getByRole("switch", { name: "Isolated worktree", exact: true }).isChecked(), false);
     assert.equal(await page.getByRole("radio", { name: "opus", exact: true }).getAttribute("aria-checked"), "true");
     await page.getByRole("button", { name: "Done", exact: true }).click();
     assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
     console.log("[test] open composer configuration survives an automatic update");
 
-    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("combobox", { name: "Working directory" }).click();
+    await page.getByRole("option", { name: "Add working directory", exact: true }).click();
     await page.getByRole("option", { name: "Browse folders…" }).click();
     await page.getByRole("button", { name: "Choose outer-repo as repository" }).click();
     await page.getByText("✓ git repo · branch main").waitFor();

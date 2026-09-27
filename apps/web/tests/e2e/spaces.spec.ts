@@ -137,5 +137,5 @@ test("project spaces include worktrees, reset search, and inherit into New task"
   await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
   await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Working directory" })).toHaveText("palmagent (main)");
-  await expect(page.getByText("Inherited from Space: palmagent", { exact: true })).toBeVisible();
+  await expect(page.getByText("Inherited from Space: palmagent", { exact: true })).toHaveCount(0);
 });

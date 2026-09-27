@@ -64,7 +64,7 @@ test("Codex choices survive agent switches and reload, while unsupported effort 
   await expect(effort).toHaveText("ultra");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/tasks");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
   expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-6-astra", effort: "ultra" });
 });
 
@@ -78,7 +78,7 @@ for (const model of ["gpt-5.4", "gpt-5.4-mini", "gpt-6-astra"]) test(`stale save
   await page.getByLabel("Prompt").fill("Use valid defaults");
   await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText(model === "gpt-6-astra" ? model : "Codex");
   const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/tasks");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
   const payload = (await request).postDataJSON();
   expect(payload.effort).toBeUndefined();
   expect(payload.model).toBe(model === "gpt-6-astra" ? model : undefined);

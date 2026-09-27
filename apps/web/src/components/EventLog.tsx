@@ -1,7 +1,7 @@
 import { SkillChips } from "./SkillPicker";
 import { AttachmentSchema, attachmentUrl, type Attachment, type PendingMessage, type ImageAttachment, SelectedSkillsSchema } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
-import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject } from "react";
+import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject, type ReactNode } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import {
   AlertTriangle,
@@ -678,8 +678,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   />;
 }
 
-export function EventLog({ log, live, prompt, taskId, loading = false, delivery, ...history }: {
-  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; loading?: boolean; delivery?: DeliveryControls;
+export function EventLog({ log, live, prompt, taskId, loading = false, delivery, empty, ...history }: {
+  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; loading?: boolean; delivery?: DeliveryControls; empty?: ReactNode;
 } & HistoryControls) {
   const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
@@ -816,7 +816,8 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
   }, [transcriptRows, activityQueryByRange]);
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
     {rows.length > 0 ? <VirtualTranscript rows={rows}
-      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> :
+      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> : empty ?
+      <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={history} /><div className="mb-1.5 text-faint">
           {loading ? "Loading history…" : log.length ? "No messages in this view." : "waiting for events…"}

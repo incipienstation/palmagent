@@ -5,10 +5,10 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 async function onScreen(control: Locator) {
   await expect(control).toBeInViewport({ ratio: 1 });
-  expect(await control.evaluate((el) => {
+  await expect.poll(() => control.evaluate((el) => {
     const r = el.getBoundingClientRect();
     return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
-  }), "control is hittable").toBe(true);
+  }), { message: "control is hittable after layout and overlay transitions settle" }).toBe(true);
 }
 
 for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar order and adjacent model/send controls at ${width}px`, async ({ page }) => {
@@ -20,7 +20,7 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
     const attachments = composer.getByRole("button", { name: "Add attachments" });
     const skills = composer.getByRole("button", { name: "Choose a skill" });
     const settings = composer.getByRole("button", { name: "Configure task settings" });
-    const action = composer.getByRole("button", { name: route === "new" ? "Dispatch" : "Send now", exact: true });
+    const action = composer.getByRole("button", { name: "Send now", exact: true });
     // Focus reveals the full toolbar even before the first character.
     await input.focus();
     await composer.evaluate(async el => {
@@ -63,7 +63,7 @@ for (const width of [320, 360, 1280]) test(`empty composers animate between one 
     await onScreen(input);
     const add = composer.getByRole("button", { name: "Add attachments" });
     await onScreen(add);
-    const action = composer.getByRole("button", { name: /^(Dispatch|Send now|Stop)$/ });
+    const action = composer.getByRole("button", { name: /^(Send now|Stop)$/ });
     const boxes = await Promise.all([add, action].map(el => el.boundingBox()));
     expect(boxes[0]!.y).toBe(boxes[1]!.y);
     expect(boxes[1]!.height).toBe(44);
@@ -152,11 +152,11 @@ test("composer controls stay reachable with a keyboard and long drafts", async (
   await page.goto("/#/new");
   const prompt = page.getByLabel("Prompt", { exact: true });
   await onScreen(prompt);
-  await expect(page.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
   await prompt.tap();
   await expect(prompt).toBeFocused();
   await onScreen(page.getByRole("button", { name: "Configure task settings" }));
-  await page.getByRole("heading", { name: "New task", exact: true }).tap();
+  await prompt.blur();
 
   // A reduced viewport represents the space left by a software keyboard.
   await page.setViewportSize({ width, height: 480 });
@@ -171,10 +171,10 @@ test("composer controls stay reachable with a keyboard and long drafts", async (
   await expect(page.getByRole("dialog")).toBeInViewport({ ratio: 1 });
   await page.getByRole("button", { name: "Done", exact: true }).tap();
   await prompt.fill("Keep this draft\n".repeat(20));
-  await page.getByRole("heading", { name: "New task", exact: true }).tap();
+  await prompt.blur();
   await expect(prompt).toHaveValue("Keep this draft\n".repeat(20));
   await onScreen(prompt);
-  await onScreen(page.getByRole("button", { name: "Dispatch", exact: true }));
+  await onScreen(page.getByRole("button", { name: "Send now", exact: true }));
   await assertViewportLocked(page);
 });
 
@@ -200,7 +200,7 @@ test("visual viewport keyboard resize keeps the composer visible without reflowi
 test("light mobile and desktop composers keep controls visible", async ({ page }) => {
   await page.goto("/?__theme=light#/new");
   await page.getByLabel("Prompt").fill("Review the changes");
-  await onScreen(page.getByRole("button", { name: "Dispatch", exact: true }));
+  await onScreen(page.getByRole("button", { name: "Send now", exact: true }));
   await page.setViewportSize({ width: 1280, height: 800 });
   await assertViewportLocked(page);
   await onScreen(page.getByRole("button", { name: "Configure task settings" }));
@@ -213,13 +213,13 @@ test("configuration choices survive reload without losing the prompt", async ({ 
   await page.getByRole("radio", { name: "opus", exact: true }).click();
   await page.getByRole("combobox", { name: "Effort", exact: true }).click();
   await page.getByRole("option", { name: "high", exact: true }).click();
-  await page.getByPlaceholder("short label").fill("Review");
+  await expect(page.getByPlaceholder("short label")).toHaveCount(0);
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
   await expect(page.getByLabel("Prompt")).toHaveValue("Review safely");
   await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText("opus · high");
   await page.getByRole("button", { name: "Configure task settings" }).click();
-  await expect(page.getByPlaceholder("short label")).toHaveValue("Review");
+  await expect(page.getByPlaceholder("short label")).toHaveCount(0);
   await expect(page.getByRole("radio", { name: "opus", exact: true })).toHaveAttribute("aria-checked", "true");
 });
 
@@ -244,7 +244,7 @@ test("permission picker mirrors each runtime CLI's native values", async ({ page
 
 for (const route of ["new", "task/t-idle-rich"]) test(`image-only submission and failed-send draft retention: ${route}`, async ({ page }) => {
   await page.goto(`/#/${route}`);
-  const action = page.getByRole("button", { name: route === "new" ? "Dispatch" : "Send now", exact: true });
+  const action = page.getByRole("button", { name: "Send now", exact: true });
   const fileChooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Add attachments" }).click();
   await page.getByRole("menuitem", { name: "Photos" }).click();
@@ -252,11 +252,12 @@ for (const route of ["new", "task/t-idle-rich"]) test(`image-only submission and
   await expect(page.getByAltText("attachment 1")).toBeVisible();
   await expect(action).toBeEnabled();
   const path = route === "new" ? "/api/tasks" : "/api/tasks/t-idle-rich/messages";
-  await page.route(`**${path}`, (r) => r.fulfill({ status: 503, json: { error: "Try again" } }));
+  await page.route(`**${path}`, (r) => r.fulfill({ status: 400, json: { error: "Try again" } }));
   const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === path);
   await action.click();
   const payload = (await request).postDataJSON();
   expect(payload.images).toHaveLength(1);
+  if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
   await expect(action).toBeEnabled();
   await expect(page.getByAltText("attachment 1")).toBeVisible();
   await page.getByRole("button", { name: "Remove image 1" }).click();
