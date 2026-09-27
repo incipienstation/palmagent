@@ -39,6 +39,8 @@ for (const width of [360, 1280]) for (const echoFirst of [true, false]) {
     await expect(stop).toBeEnabled();
     await expect(stop.locator(".animate-spin")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Send now", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("textbox")).not.toBeFocused();
+    await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveAttribute("data-expanded", "false");
     await expect(page.getByText(/Sending/)).toHaveCount(0);
     expect((await working.boundingBox())!.y).toBeGreaterThan((await bubble.boundingBox())!.y);
     await expect(working).toHaveCSS("animation-name", "tw-shimmer");

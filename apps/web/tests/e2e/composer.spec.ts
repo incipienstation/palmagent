@@ -21,8 +21,11 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
     const skills = composer.getByRole("button", { name: "Choose a skill" });
     const settings = composer.getByRole("button", { name: "Configure task settings" });
     const action = composer.getByRole("button", { name: route === "new" ? "Dispatch" : "Send now", exact: true });
-    // Check both the empty/unfocused and populated states: the settings must
-    // remain discoverable and Send must not absorb space between the two.
+    // Focus reveals the full toolbar even before the first character.
+    await input.focus();
+    await composer.evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    });
     for (const draft of ["", "Review this change"]) {
       if (draft) await input.fill(draft);
       await onScreen(settings);
@@ -46,20 +49,101 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
   }
 });
 
-test("focusing an empty composer does not resize its input or sticky footer", async ({ page }) => {
-  await page.goto("/#/task/t-run");
+for (const width of [320, 360, 1280]) test(`empty composers animate between one row and the full toolbar at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  for (const route of ["new", "task/t-run", "task/t-idle-interrupted"]) {
+    await page.goto(`/#/${route}`);
+    const composer = page.getByRole("group", { name: "Message composer", exact: true });
+    const input = composer.getByRole("textbox");
+    const height = () => composer.evaluate(el => el.getBoundingClientRect().height);
+    await expect(composer).toHaveAttribute("data-expanded", "false");
+    await expect.poll(height).toBe(54);
+    expect(await input.evaluate(el => el.scrollHeight)).toBe(44);
+    await expect(composer.getByRole("button", { name: /task settings/ })).toHaveCount(0);
+    await onScreen(input);
+    const add = composer.getByRole("button", { name: "Add attachments" });
+    await onScreen(add);
+    const action = composer.getByRole("button", { name: /^(Dispatch|Send now|Stop)$/ });
+    const boxes = await Promise.all([add, action].map(el => el.boundingBox()));
+    expect(boxes[0]!.y).toBe(boxes[1]!.y);
+    expect(boxes[1]!.height).toBe(44);
+    // Sample actual rendered heights, including a reversal before completion.
+    const frames = await input.evaluate(async el => {
+      const group = el.closest('[aria-label="Message composer"]')!;
+      const sample = async (duration: number) => {
+        const heights: number[] = [], start = performance.now();
+        while (performance.now() - start < duration) {
+          await new Promise(requestAnimationFrame);
+          heights.push(group.getBoundingClientRect().height);
+        }
+        return heights;
+      };
+      el.focus(); const opening = await sample(100);
+      const before = group.getBoundingClientRect().height;
+      el.blur();
+      await Promise.resolve();
+      const after = group.getBoundingClientRect().height;
+      const closing = await sample(260);
+      return { opening, closing, reversal: Math.abs(after - before) };
+    });
+    expect(frames.opening.some(h => h > 55 && h < 109)).toBe(true);
+    expect(frames.closing.some(h => h > 55 && h < 109)).toBe(true);
+    expect(frames.reversal).toBeLessThan(1);
+    await expect.poll(height).toBe(54);
+    await input.focus();
+    await expect.poll(height).toBe(110);
+    await expect(input).toBeFocused();
+    await expect(composer.getByRole("button", { name: /task settings/ })).toBeVisible();
+    await input.fill("Keep this draft"); await input.blur();
+    await expect.poll(height).toBe(110);
+    await input.fill("   "); await input.blur();
+    await expect.poll(height).toBe(54);
+    await expect(input).toHaveValue("   ");
+    await assertViewportLocked(page);
+  }
+});
+
+for (const layout of [false, true]) for (const draft of ["", "Keep me"]) test(`keyboard dismissal blurs and preserves draft (${layout ? "Android" : "Safari"}, ${!!draft})`, async ({ page }) => {
+  await page.goto("/#/task/t-idle-interrupted");
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
   const composer = page.getByRole("group", { name: "Message composer", exact: true });
-  const input = composer.getByRole("textbox", { name: "Message", exact: true });
-  const sizes = async () => composer.evaluate(el => ({
-    composer: el.getBoundingClientRect().height,
-    footer: el.parentElement!.getBoundingClientRect().height,
-    input: el.querySelector("textarea")!.getBoundingClientRect().height,
-  }));
-  const before = await sizes();
+  await input.fill(draft);
+  const viewport = async (height: number) => page.evaluate(({ height, layout }) => {
+    if (layout) Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, value: height });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("resize"));
+  }, { height, layout });
+  await viewport(730); await viewport(780);
+  await expect(input).toBeFocused(); // Browser chrome alone must not blur.
+  await viewport(480);
+  await expect(input).toBeFocused();
+  await viewport(780); // Android Back can leave the textarea focused natively.
+  await expect(input).not.toBeFocused();
+  await expect(input).toHaveValue(draft);
+  await expect(composer).toHaveAttribute("data-expanded", String(!!draft));
   await input.focus();
-  await expect.poll(sizes).toEqual(before);
+  await expect(input).toBeFocused(); // Physical keyboard: no occlusion required.
+  await page.evaluate(() => {
+    Object.defineProperty(window.visualViewport, "scale", { configurable: true, value: 2 });
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, value: 390 });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+    Object.defineProperty(window.visualViewport, "scale", { configurable: true, value: 1 });
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, value: 780 });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  });
+  await expect(input).toBeFocused();
+});
+
+test("reduced motion changes composer height without animation", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/new");
+  const input = page.getByLabel("Prompt", { exact: true });
+  await input.focus();
+  await expect(input).toHaveCSS("transition-duration", "0s");
+  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveCSS("height", "110px");
   await input.blur();
-  await expect.poll(sizes).toEqual(before);
+  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveCSS("height", "54px");
 });
 
 test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
@@ -141,6 +225,7 @@ test("configuration choices survive reload without losing the prompt", async ({ 
 
 test("permission picker mirrors each runtime CLI's native values", async ({ page }) => {
   await page.goto("/#/new");
+  await page.getByLabel("Prompt", { exact: true }).focus();
   await page.getByRole("button", { name: "Configure task settings" }).click();
 
   for (const value of ["plan", "auto", "acceptEdits", "manual", "dontAsk", "bypassPermissions"]) {

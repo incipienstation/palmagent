@@ -4,6 +4,8 @@ import type { MessageQueue } from "@palmagent/shared";
 import { installScopedStream, open, send } from "./_scoped-stream";
 
 async function hold(page: Page, button: Locator) {
+  // Filling the draft can still be moving the queue row during expansion.
+  await button.hover();
   const box = (await button.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down(); await page.waitForTimeout(520); await page.mouse.up();
@@ -36,6 +38,7 @@ test("running and queued-edit summaries show the applicable settings without cha
   const input = page.getByRole("textbox");
   const summary = page.getByRole("button", { name: "Current task settings" });
   const settings = page.getByRole("button", { name: "Configure task settings" });
+  await input.focus();
   await expect(summary).toBeVisible();
   await expect(summary).toBeDisabled();
   await expect(summary).toContainText("sonnet");
@@ -181,7 +184,9 @@ for (const focusDuringHold of [false, true]) {
       // A new deliberate input tap still dismisses the menu and focuses input.
       await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
       await expect(menu).toBeVisible();
-      await input.tap({ position: { x: 8, y: 10 } });
+      // The centre can sit behind the delivery popup when expanded; the left
+      // edge holds Attach in the compact row. Tap the exposed gap after it.
+      await input.tap({ position: { x: 50, y: 10 } });
       await expect(menu).toBeHidden();
       await expect(input).toBeFocused();
     } finally { await session.detach(); }

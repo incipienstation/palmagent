@@ -282,6 +282,59 @@
   }
 }
 
+/* The toolbar overlaps the empty input's row, then slides below it on focus.
+   Both stay in flow so the transcript follows the actual animated height.
+   Keep the textarea mounted and animate padding rather than reordering it. */
+.composer-input {
+  height: 44px;
+  transition: height 200ms ease-out, padding 200ms ease-out;
+}
+.composer-toolbar {
+  position: relative;
+  margin-top: 0;
+  transition: margin-top 200ms ease-out;
+}
+.composer-actions {
+  pointer-events: none;
+}
+.composer-actions > * {
+  pointer-events: auto;
+}
+.composer-skill,
+.composer-settings {
+  display: flex;
+  overflow: hidden;
+  opacity: 1;
+  transition: max-width 200ms ease-out, opacity 200ms ease-out, visibility 200ms;
+}
+.composer-skill { max-width: 44px; }
+.composer-settings { max-width: 100%; }
+.composer[data-expanded="false"] .composer-input {
+  padding-left: 56px;
+  padding-right: 56px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.composer[data-expanded="false"][data-voice="true"] .composer-input {
+  padding-right: 104px;
+}
+.composer[data-expanded="false"] .composer-toolbar {
+  margin-top: -44px;
+}
+.composer[data-expanded="false"] .composer-skill,
+.composer[data-expanded="false"] .composer-settings {
+  max-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-input, .composer-toolbar, .composer-skill, .composer-settings {
+    transition: none;
+  }
+}
+
 /* Task actions lock the composer while their request is pending. Keep its
    controls at a steady opacity so brief requests do not flash the whole bar. */
 .composer-pending button:disabled,
