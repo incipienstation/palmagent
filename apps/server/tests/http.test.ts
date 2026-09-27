@@ -762,3 +762,30 @@ test("pins persist, broadcast, keep stable order and clear on archive without ac
   assert.equal((await pin({ pinned: true })).status, 409);
   assert.equal((await pin({ pinned: false })).status, 200);
 });
+
+test("creation request IDs reconcile a lost response without another task or turn", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "creation-repo", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  let turns = 0;
+  // Count admission to the provider boundary without launching a native agent.
+  (f.service as unknown as { runTurn: () => Promise<void> }).runTurn = async () => { turns++; };
+  const input = { repoId: "creation-repo", agent: "codex", prompt: "First message", clientRequestId: "65ae4e67-cea2-4b86-a7ed-f4b2b654c620" };
+  const post = (body: unknown) => f.app.request("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const responses = await Promise.all([post(input), post(input)]);
+  const first = (await responses[0].json()).task;
+  const repeated = (await responses[1].json()).task;
+  assert.equal(responses[0].status, 201); assert.equal(responses[1].status, 201);
+  assert.equal(first.taskId, `t_${input.clientRequestId}`); assert.equal(repeated.taskId, first.taskId);
+  assert.equal(turns, 1); assert.equal(f.db.listTasks().length, 1);
+  assert.equal((await f.app.request(`/api/tasks/${first.taskId}`)).status, 200);
+  const history = f.service.taskHistory(first.taskId);
+  const dispatch = history.events.filter(row => row.event.kind === "status" && (row.event.payload as { subtype?: string })?.subtype === "dispatch");
+  assert.equal(dispatch.length, 1);
+  assert.equal((dispatch[0].event.payload as { messageId?: string }).messageId, input.clientRequestId);
+  assert.equal((await post({ ...input, prompt: "Different message" })).status, 400);
+  assert.equal((await post({ ...input, clientRequestId: "../invalid" })).status, 400);
+  assert.equal(turns, 1);
+  // Reconciliation uses durable task storage, not only the live service cache.
+  (f.service as unknown as { cache: Map<string, unknown> }).cache.clear();
+  assert.equal((await post(input)).status, 201); assert.equal(turns, 1);
+});

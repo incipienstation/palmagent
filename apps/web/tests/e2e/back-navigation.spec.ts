@@ -204,7 +204,8 @@ test("root exit protection runs only after all visible layers close", async ({ p
 
 test("repo picker Back retraces folders, returns to search, then closes", async ({ page }) => {
   await page.goto("/#/new");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("combobox", { name: "Working directory" }).click();
+  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
   await page.getByRole("option", { name: "Browse folders…" }).click();
   await expect(page.getByText("/projects", { exact: true })).toBeVisible();
   await page.getByRole("option", { name: /outer-repo/ }).click();
@@ -292,16 +293,17 @@ for (const reopen of [false, true]) {
     await page.goto("/");
     await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
     await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Submitted draft");
-    await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+    await page.getByRole("button", { name: "Send now", exact: true }).click();
     await expect.poll(() => requested).toBe(true);
-    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await page.goBack();
     await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
     if (reopen) {
       await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
       await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeDisabled();
     }
     release();
-    await expect(page.getByTestId("toast").filter({ hasText: "Dispatched" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBeNull();
+    await expect(page.getByTestId("toast")).toHaveCount(0);
     if (reopen) {
       await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("");

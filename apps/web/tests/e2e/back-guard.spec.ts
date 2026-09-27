@@ -154,29 +154,29 @@ test("replacing the exit hint with late request feedback resets the window", asy
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   let requested = false;
-  await page.route("**/api/tasks", async route => {
+  await page.route("**/api/tasks/t-idle-rich/messages", async route => {
     if (route.request().method() !== "POST") return route.continue();
     requested = true;
     await pending;
-    await route.fulfill({ status: 503, json: { error: "Delayed dispatch failure" } });
+    await route.fulfill({ status: 503, json: { error: "Delayed message failure" } });
   });
   await rootWithClock(page);
-  await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
-  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Pending task");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+  await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Pending task");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect.poll(() => requested).toBe(true);
   await pressBack(page);
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await pressBack(page);
   await expectFreshHint(page);
   const armedAt = await page.evaluate(() => Date.now());
-  const failed = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/api/tasks"));
+  const failed = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/api/tasks/t-idle-rich/messages"));
   release();
   await failed;
   await expect.poll(async () => {
     await page.clock.runFor(50);
     return exitHint(page).textContent();
-  }).toContain("Couldn't dispatch");
+  }).toContain("Delayed message failure");
   await page.clock.runFor(400);
   expect(await page.evaluate(() => Date.now()) - armedAt).toBeLessThan(1900);
   await pressBack(page);

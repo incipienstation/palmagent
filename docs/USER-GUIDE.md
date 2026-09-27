@@ -28,6 +28,19 @@ Ask Palmagent to return to Stable to change the saved preference. An update that
 downgrade is refused; returning to an older release requires a separately planned rollback.
 A missing Stable release never falls back to Preview.
 
+## Start a chat
+
+Open **New task**, choose the working directory above the composer, and send your
+first message. The current Space supplies the directory when available. Use the
+same picker to add another directory; model, effort, permission, and optional Git
+worktree isolation are in the composer settings.
+
+Your message appears immediately in the conversation, with **Stop** available while
+creation finishes. If creation cannot be confirmed, use **Check status** or **Retry**
+beside the message. Retry reconnects to the same creation attempt without starting a
+duplicate chat. A rejected message offers **Edit message**, preserving its text and
+attachments. Name the conversation afterward through its **⋮** menu.
+
 ## Routines
 
 Ask the Palmagent plugin, for example, “Run the report script every weekday at 9”

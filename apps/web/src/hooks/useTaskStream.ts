@@ -90,7 +90,7 @@ function restoredHistory(value: unknown): TaskHistoryData | undefined {
   };
 }
 
-export function useTaskStream(taskId: string): TaskStream {
+export function useTaskStream(taskId: string, enabled = true): TaskStream {
   const { mode } = useOutputMode();
   const queryKey = useMemo(() => taskHistoryKey(taskId, mode), [taskId, mode]);
   const initialData = useMemo(() => {
@@ -106,6 +106,7 @@ export function useTaskStream(taskId: string): TaskStream {
   }, [taskId, mode]);
   const history = useInfiniteQuery({
     queryKey,
+    enabled,
     queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, mode === "verbose" ? "full" : "summary", signal)),
     initialPageParam: null as number | null,
     getPreviousPageParam: (firstPage) => firstPage.before ?? undefined,
@@ -146,7 +147,7 @@ export function useTaskStream(taskId: string): TaskStream {
 
   const historyReady = !!history.data && !history.isPlaceholderData;
   useEffect(() => {
-    if (!historyReady) return;
+    if (!enabled || !historyReady) return;
     const currentData = () => queryClient.getQueryData<TaskHistoryData>(queryKey);
     const initial = currentData();
     let appliedSeq = initial?.pages.at(-1)?.cursor ?? 0;
@@ -331,7 +332,7 @@ export function useTaskStream(taskId: string): TaskStream {
       resumeLiveRef.current = () => {};
       if (mode === "compact") queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => compactHistory(data));
     };
-  }, [taskId, historyReady, queryKey, mode]);
+  }, [taskId, historyReady, queryKey, mode, enabled]);
 
   const log = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data]);
   const cachedTask = history.data?.pages.at(-1)?.task;

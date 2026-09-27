@@ -7,12 +7,11 @@ test.use({ serviceWorkers: "block" });
 const toastSelector = '[data-testid="toast"][data-front="true"][data-removed="false"]';
 const currentToast = (page: Page) => page.locator(toastSelector);
 
-async function dispatchError(page: Page, message = "Please try again.") {
-  await page.route("**/api/tasks", route => route.request().method() === "POST"
-    ? route.fulfill({ status: 503, json: { error: message } }) : route.continue());
-  await page.goto("/#/new");
-  await page.getByLabel("Prompt", { exact: true }).fill("Review the changes.");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).tap();
+async function sendError(page: Page, message = "Please try again.") {
+  await page.route("**/api/tasks/t-idle-rich/messages", route => route.fulfill({ status: 503, json: { error: message } }));
+  await page.goto("/#/task/t-idle-rich");
+  await page.getByLabel("Message", { exact: true }).fill("Review the changes.");
+  await page.getByRole("button", { name: "Send now", exact: true }).tap();
   await expect(currentToast(page)).toContainText(message);
 }
 
@@ -22,7 +21,7 @@ async function assertClearOfComposer(page: Page) {
     const composer = await page.getByRole("group", { name: "Message composer", exact: true }).boundingBox();
     return composer!.y - toast!.y - toast!.height;
   }).toBeGreaterThanOrEqual(0);
-  const send = page.getByRole("button", { name: /^(Dispatch|Send now)$/ });
+  const send = page.getByRole("button", { name: /^Send now$/ });
   // Draft growth and keyboard resize commit asynchronously. Require reachability
   // while feedback is still visible, so automatic dismissal cannot satisfy it.
   await expect.poll(() => send.evaluate((el, selector) => {
@@ -33,26 +32,24 @@ async function assertClearOfComposer(page: Page) {
   }, toastSelector)).toBe(true);
 }
 
-test("dispatch feedback leaves the composer reachable and dismisses automatically", async ({ page }) => {
+test("successful creation keeps the composer reachable without a success toast", async ({ page }) => {
   await page.route("**/api/tasks", route => route.request().method() === "POST"
     ? route.fulfill({ json: { task: tasks.find(t => t.taskId === "t-idle-rich") } }) : route.continue());
   await page.goto("/#/new");
   await page.getByLabel("Prompt", { exact: true }).fill("Review the changes.");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).tap();
-  await expect(currentToast(page)).toBeVisible();
+  await page.getByRole("button", { name: "Send now", exact: true }).tap();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeVisible();
-  await assertClearOfComposer(page);
-  await expect(currentToast(page)).toBeInViewport({ ratio: 1 });
-  await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 4000 });
+  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByTestId("toast")).toHaveCount(0);
 });
 
 test("errors wrap without covering input, including both keyboard resize models", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
-  await dispatchError(page, "The connection was interrupted. Your draft is still here; try sending it again when connected.");
+  await sendError(page, "The connection was interrupted. Your draft is still here; try sending it again when connected.");
   await assertClearOfComposer(page);
   const toast = currentToast(page);
   await expect(toast).toBeInViewport({ ratio: 1 });
-  await page.getByLabel("Prompt", { exact: true }).fill("A taller draft\n".repeat(6));
+  await page.getByLabel("Message", { exact: true }).fill("A taller draft\n".repeat(6));
   await assertClearOfComposer(page);
   // Android resizes the layout viewport; Safari can resize only the visual one.
   await page.setViewportSize({ width: 320, height: 480 });
@@ -69,15 +66,15 @@ test("errors wrap without covering input, including both keyboard resize models"
 });
 
 test("repeated errors replace the old toast and leave Send reachable", async ({ page }) => {
-  await dispatchError(page);
-  await page.getByRole("button", { name: "Dispatch", exact: true }).tap();
+  await sendError(page);
+  await page.getByRole("button", { name: "Send now", exact: true }).tap();
   await expect(page.locator('[data-testid="toast"][data-removed="false"]')).toHaveCount(1);
   await expect(page.getByTestId("toast")).toHaveCount(1);
   await assertClearOfComposer(page);
 });
 
 test("toast dismisses after a downward touch swipe", async ({ page, context }) => {
-  await dispatchError(page);
+  await sendError(page);
   await assertClearOfComposer(page);
   const toast = currentToast(page);
   await toast.click({ trial: true });
@@ -96,7 +93,7 @@ test("toast dismisses after a downward touch swipe", async ({ page, context }) =
 
 test("reduced motion keeps the toast readable and allows keyboard dismissal", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await dispatchError(page);
+  await sendError(page);
   await currentToast(page).focus();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("toast")).toHaveCount(0);
@@ -121,7 +118,7 @@ test("root exit hint stays above the new-task button and respects safe areas", a
 
 test("desktop toast keeps unbroken error text within the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await dispatchError(page, "Unavailable_".repeat(20));
+  await sendError(page, "Unavailable_".repeat(20));
   await assertClearOfComposer(page);
   await expect(currentToast(page)).toBeInViewport({ ratio: 1 });
   await assertViewportLocked(page);

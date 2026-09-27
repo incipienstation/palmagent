@@ -402,19 +402,21 @@ for (const save of [true, false]) test(`queue edit ${save ? "save" : "release"} 
   await expect(page.getByTestId("toast")).toContainText("Edit lease expired");
 });
 
-test("dispatch shows a pending task, prevents duplicate submits, and restores its draft", async ({ page }) => {
+test("creation renders the first message, prevents duplicate submits, and preserves recovery", async ({ page }) => {
   const delayed = gate(); let calls = 0;
   await page.route("**/api/tasks", async route => {
     if (route.request().method() !== "POST") return route.continue();
     calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Dispatcher unavailable" } });
   });
   await page.goto("/#/new"); await page.getByRole("textbox", { name: "Prompt" }).fill("A task awaiting an id");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Creating task…" })).toContainText("A task awaiting an id");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Your message" })).toContainText("A task awaiting an id");
+  await expect(page.getByText("Working…", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Prompt" })).toBeDisabled();
   expect(calls).toBe(1); delayed.release();
-  await expect(page.getByRole("textbox", { name: "Prompt" })).toBeEnabled();
-  await expect(page.getByRole("textbox", { name: "Prompt" })).toHaveValue("A task awaiting an id");
+  await expect(page.getByText("Delivery unconfirmed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check status", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBe("A task awaiting an id");
 });
 
 test("archive leaves the inbox immediately and restores the task with a toast if it fails", async ({ page }) => {
@@ -439,7 +441,8 @@ test("repository removal hides its row immediately and restores it on a server c
   await page.route("**/api/repos/discover*", route => route.fulfill({ json: { repos: repos.map(r => ({ ...r, branch: "main", lastActivityAt: 1 })) } }));
   await page.route("**/api/repos/repo-app", async route => { calls++; await delayed.wait; await route.fulfill({ status: 409, json: { error: "Repository has active tasks" } }); });
   page.on("dialog", dialog => void dialog.accept());
-  await page.goto("/#/new"); await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.goto("/#/new"); await page.getByRole("combobox", { name: "Working directory" }).click();
+  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
   await page.getByRole("button", { name: "Remove sample-app", exact: true }).click();
   await expect(page.getByRole("option", { name: /sample-app/ })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: "Removing repository…" })).toBeVisible();
@@ -454,7 +457,8 @@ test("registration shows the pending path without exposing a fabricated reposito
     if (route.request().method() !== "POST") return route.fulfill({ json: { repos } });
     calls++; await delayed.wait; await route.fulfill({ status: 400, json: { error: "Directory unavailable" } });
   });
-  await page.goto("/#/new"); await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.goto("/#/new"); await page.getByRole("combobox", { name: "Working directory" }).click();
+  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
   await page.getByRole("option", { name: "Browse folders…" }).click();
   await page.getByRole("button", { name: "Choose outer-repo as repository" }).click();
   await page.getByRole("button", { name: "Register", exact: true }).click();
@@ -567,7 +571,7 @@ test("successful dispatch clears the submitted attachments before the next task"
   await page.goto("/#/new");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
   await expect(page.getByAltText("attachment 1")).toBeVisible();
-  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page).toHaveURL(/task\/t-idle-rich$/);
   await page.evaluate(() => { location.hash = "/new"; });
   await expect(page.getByRole("textbox", { name: "Prompt" })).toHaveValue("");
@@ -617,7 +621,7 @@ test("new task shows Stop before creation completes and stops the returned task"
   });
   await page.route("**/api/tasks/t-run/stop", route => { calls.push("stop"); return route.fulfill({ json: { task: { ...task, status: "idle" } } }); });
   await page.goto("/#/new"); await page.getByRole("textbox", { name: "Prompt" }).fill("Stop after creating");
-  await page.getByRole("button", { name: "Dispatch", exact: true }).click();
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeEnabled(); await expect(stop.locator(".animate-spin")).toHaveCount(0);
   await stop.click(); await expect(stop).toBeDisabled();
