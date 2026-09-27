@@ -107,6 +107,11 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const [focused, setFocused] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   useKeyboardDismiss(textarea);
+  useLayoutEffect(() => {
+    // Removing a focused action (Send becoming Stop, for example) does not
+    // dispatch blur in every browser. Reconcile after DOM updates as well.
+    if (focused && !textarea.current?.parentElement?.contains(document.activeElement)) setFocused(false);
+  });
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
   const catalog = useAgentCatalog(settings.agent);
@@ -157,7 +162,10 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
 
   return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
     data-voice={settings.agent === "codex"}
-    onFocusCapture={() => { if (document.activeElement === textarea.current || expanded) setFocused(true); }}
+    onFocusCapture={event => {
+      // React also bubbles focus from portalled menus outside this surface.
+      if (event.currentTarget.contains(event.target)) setFocused(true);
+    }}
     onBlurCapture={event => {
       if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
     }}
