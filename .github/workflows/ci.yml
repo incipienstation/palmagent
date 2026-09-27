@@ -104,8 +104,33 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build the PWA once per runner
-        run: pnpm web:build
+      - name: Fingerprint PWA build inputs
+        id: pwa-key
+        run: node scripts/ci-web-cache.mjs key
+      - name: Restore exact PWA build
+        id: pwa-cache
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
+        with:
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          key: ${{ steps.pwa-key.outputs.key }}
+      - name: Validate restored PWA or discard it
+        id: pwa-restore
+        env:
+          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
+          PWA_CACHE_HIT: ${{ steps.pwa-cache.outputs.cache-hit }}
+        run: node scripts/ci-web-cache.mjs restore
+      - name: Build PWA on a cache miss
+        id: pwa-build
+        if: steps.pwa-restore.outputs.usable != 'true'
+        env:
+          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
+        run: node scripts/ci-web-cache.mjs build
       - name: Install Chromium
         if: needs.scope.outputs.web == 'true'
         # Notification permission tests in browser shards require full Chromium.
@@ -125,6 +150,24 @@ jobs:
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/candidate
+      - name: Save the tested PWA build
+        if: steps.pwa-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        with:
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          key: ${{ steps.pwa-key.outputs.key }}
+      - name: Report PWA cache outcome and build time
+        if: always()
+        env:
+          CACHE_STATE: ${{ steps.pwa-restore.outputs.state }}
+          RESTORE_OUTCOME: ${{ steps.pwa-cache.outcome }}
+          BUILD_SECONDS: ${{ steps.pwa-build.outputs.seconds }}
+          BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
+        run: node scripts/ci-web-cache.mjs summary
 
   validate:
     needs: [scope, tooling, server, web]
