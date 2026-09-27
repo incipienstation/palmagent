@@ -13,7 +13,7 @@ import type {
   Emit,
   ProcHandle,
   RawEvent,
-  RunnerBackend,
+  ProcessBackend,
   SpawnSpec,
   StartArgs,
 } from "../src/types.js";
@@ -80,7 +80,7 @@ class FakeProc implements ProcHandle {
   }
 }
 
-class FakeBackend implements RunnerBackend {
+class FakeBackend implements ProcessBackend {
   readonly proc: FakeProc;
   readonly specs: SpawnSpec[] = [];
   attachCalls: Array<{ turnId: string; fromSeq?: number }> = [];

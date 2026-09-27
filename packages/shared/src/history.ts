@@ -5,6 +5,7 @@ const TOOL_RESULT_SUMMARY_FIELDS = ["id", "tool_use_id", "status", "is_error", "
 
 /** Keep the fields needed for a collapsed Activity row and defer its full payload. */
 export function deferActivityEventDetails(event: AgentEvent): { event: AgentEvent; detailsDeferred: boolean } {
+  if (event.kind !== "tool_call" && event.kind !== "tool_result") return { event, detailsDeferred: false };
   const fields = event.kind === "tool_call" ? TOOL_CALL_SUMMARY_FIELDS
     : event.kind === "tool_result" ? TOOL_RESULT_SUMMARY_FIELDS : undefined;
   if (!fields) return { event, detailsDeferred: false };

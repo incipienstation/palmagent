@@ -1,14 +1,14 @@
 import type { AnswerRequest, AskQuestion, ImageAttachment, PermissionRequest } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { config } from "./config.js";
-import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
+import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
 // Claude's launch and stream protocol live here as executable integration code.
 // Keep the argument matrix and normalized-event behavior covered by the adapter
 // contract tests instead of duplicating them in a version-specific document.
 // Prompt is delivered as a stream-json user message on stdin (not the -p arg) so
 // the same channel can carry mid-turn steers. The process + stdio are owned by
-// the RunnerBackend (a separate daemon in production), so all of the below — argv,
+// the ProcessBackend (a separate daemon in production), so all of the below — argv,
 // the stdin steer/interrupt protocol, NDJSON parsing, and idle-stdin-close — lives
 // here in the web server and can be updated independently of the runner daemon.
 
@@ -76,7 +76,7 @@ export function buildClaudeUserMessage(text: string, images: readonly ImageAttac
 export class ClaudeRunner implements AgentRunner {
   readonly agent = "claude" as const;
 
-  start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
+  start(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
     const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach, resumeFromSeq, pendingInput, pendingApproval } = args;
     // `--permission-prompt-tool stdio` routes genuinely interactive requests to
     // the control channel; permission requests are surfaced through the same

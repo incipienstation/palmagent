@@ -196,22 +196,25 @@ export class AuthService {
     if (!verification.verified || !verification.registrationInfo) {
       throw new ApplicationError("bad_request", "passkey registration could not be verified");
     }
-    // Burn the enroll token only now that registration actually succeeded.
-    if (entry.enrollToken && !this.db.consumeEnrollToken(entry.enrollToken, Date.now())) {
-      throw new ApplicationError("bad_request", "enroll token already used or expired");
-    }
-    const cred = verification.registrationInfo.credential;
-    const now = Date.now();
-    this.db.insertCredential({
-      credentialId: cred.id,
-      publicKey: Buffer.from(cred.publicKey).toString("base64url"),
-      counter: cred.counter,
-      transports: cred.transports,
-      label: label?.slice(0, 64) || null,
-      createdAt: now,
-      lastUsedAt: now,
+    const session = this.db.transaction(() => {
+      // Burn the enroll token only now that registration actually succeeded.
+      if (entry.enrollToken && !this.db.consumeEnrollToken(entry.enrollToken, Date.now())) {
+        throw new ApplicationError("bad_request", "enroll token already used or expired");
+      }
+      const cred = verification.registrationInfo.credential;
+      const now = Date.now();
+      this.db.insertCredential({
+        credentialId: cred.id,
+        publicKey: Buffer.from(cred.publicKey).toString("base64url"),
+        counter: cred.counter,
+        transports: cred.transports,
+        label: label?.slice(0, 64) || null,
+        createdAt: now,
+        lastUsedAt: now,
+      });
+      return this.issueSession(label);
     });
-    return { setCookies: [this.issueSession(label), cookie(CHALLENGE_COOKIE, "", 0)] };
+    return { setCookies: [session, cookie(CHALLENGE_COOKIE, "", 0)] };
   }
 
   // ---- authentication (sign in) ----

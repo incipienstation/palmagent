@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import type { Routine, RoutineRun } from "@palmagent/shared";
-import type { RoutineRepository } from "./application/ports.js";
-import type { RoutineScriptRunner } from "./application/ports.js";
+import type { Repo, Routine } from "@palmagent/shared";
+import type { RoutineScriptExecution, RoutineScriptResult, RoutineScriptRunner } from "./application/ports.js";
 import { WorktreeManager } from "./worktree.js";
 
 // The pipe is a lifetime lease: even an abrupt parent crash closes stdin and
@@ -18,24 +17,12 @@ child.on("exit", (code, signal) => { if (signal) console.error("terminated by " 
 
 // Scripts run as the installation owner, without an agent or an interactive shell.
 // Retain isolated worktrees: script output/files may be the user's result.
-export function runRoutineScript(db: RoutineRepository, routine: Routine, runId: number): { stop: (reason?: string) => void; done: Promise<void> } {
+function runRoutineScript(cwd: string, script: NonNullable<Routine["script"]>, worktreePath?: string): RoutineScriptExecution {
   let stop = (_reason?: string) => {};
-  const done = new Promise<void>((resolve) => {
-    let worktreePath: string | undefined;
-    const finish = (result: Pick<RoutineRun, "status" | "exitCode" | "note" | "output">) => {
-      db.finishRoutineRun(runId, { ...result, worktreePath, finishedAt: Date.now() });
-      resolve();
-    };
+  const done = new Promise<RoutineScriptResult>((resolve) => {
+    const finish = (result: RoutineScriptResult) => resolve({ ...result, worktreePath, finishedAt: Date.now() });
     try {
-      const repo = db.getRepo(routine.repoId);
-      if (!repo || !routine.script) throw new Error("Script or space no longer exists");
-      let cwd = repo.path;
-      if (repo.vcs !== "none") {
-        worktreePath = new WorktreeManager().create(repo, `routine-${randomBytes(8).toString("hex")}`).path;
-        cwd = worktreePath;
-      }
-      db.finishRoutineRun(runId, { status: "running", worktreePath });
-      const child = spawn(process.execPath, ["--input-type=commonjs", "-e", watchdog, routine.script.command], {
+      const child = spawn(process.execPath, ["--input-type=commonjs", "-e", watchdog, script.command], {
         cwd, detached: true, stdio: ["pipe", "pipe", "pipe"],
       });
       let output = "", bytes = 0, truncated = false, reason: string | undefined, settled = false;
@@ -50,7 +37,7 @@ export function runRoutineScript(db: RoutineRepository, routine: Routine, runId:
         force = setTimeout(() => kill("SIGKILL"), 1000);
       };
       stop = (reason = "interrupted by server shutdown") => terminate(reason);
-      const timeout = setTimeout(() => terminate("script timed out"), routine.script.timeoutSeconds * 1000);
+      const timeout = setTimeout(() => terminate("script timed out"), script.timeoutSeconds * 1000);
       const collect = (chunk: Buffer) => {
         const remaining = Math.max(0, 64 * 1024 - bytes);
         output += chunk.subarray(0, remaining).toString("utf8");
@@ -81,7 +68,9 @@ export function runRoutineScript(db: RoutineRepository, routine: Routine, runId:
 
 /** Node process and worktree adapter for scheduled script use cases. */
 export class LocalRoutineScriptRunner implements RoutineScriptRunner {
-  start(repository: RoutineRepository, routine: Routine, runId: number) {
-    return runRoutineScript(repository, routine, runId);
+  prepare(repo: Repo, script: NonNullable<Routine["script"]>) {
+    const worktreePath = repo.vcs === "none" ? undefined
+      : new WorktreeManager().create(repo, `routine-${randomBytes(8).toString("hex")}`).path;
+    return { worktreePath, start: () => runRoutineScript(worktreePath ?? repo.path, script, worktreePath) };
   }
 }

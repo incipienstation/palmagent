@@ -5,7 +5,7 @@ import { admitExecutions, type ExecutionLauncher } from "./launch.js";
 import { watchExecutions } from "./wake.js";
 import { processIdentity } from "../native-session.js";
 import type { AgentKind } from "@palmagent/shared";
-import type { ExecutionControlState, AgentRunner, Emit, ProcHandle, RunHandle, RunnerBackend, SpawnSpec, StartArgs } from "../types.js";
+import type { ExecutionControlState, ExecutionRunner, Emit, RunHandle, RunnerBackend, StartArgs } from "../types.js";
 
 /** Replaceable view client. Closing it never closes provider stdin or signals a host. */
 export class ExecutionBackend implements RunnerBackend {
@@ -22,7 +22,7 @@ export class ExecutionBackend implements RunnerBackend {
   }
   saveControl(taskId: string, state: ExecutionControlState) { this.store.saveControl(taskId, state); }
   loadControl(taskId: string) { return this.store.loadControl(taskId) as ExecutionControlState | undefined; }
-  agentRunner(agent: AgentKind): AgentRunner {
+  agentRunner(agent: AgentKind): ExecutionRunner {
     return { agent, start: (args, emit) => this.open(agent, args, emit) };
   }
   private open(agent: AgentKind, args: StartArgs, emit: Emit): RunHandle {
@@ -60,8 +60,6 @@ export class ExecutionBackend implements RunnerBackend {
     for (const handle of this.handles.values()) handle.close();
     this.handles.clear(); this.store.close();
   }
-  start(_spec: SpawnSpec): ProcHandle { throw new Error("Execution hosts own provider process creation"); }
-  attach(): undefined { throw new Error("Execution hosts own provider protocol attachment"); }
 }
 
 class ExecutionHandle implements RunHandle {

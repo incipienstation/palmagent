@@ -1,3 +1,4 @@
+import { ResourceScope } from "./resource-scope.js";
 import { TerminalStore } from "./terminal/store.js";
 import { TerminalService } from "./terminal/service.js";
 import { terminalPlatform } from "./terminal/adapters.js";
@@ -36,12 +37,13 @@ async function selectBackend(): Promise<RunnerBackend> {
   }
   if (config.runnerSocket) {
     const daemon = new DaemonBackend(config.runnerSocket);
-    if (await daemon.init()) {
-      console.log(`[runner] using daemon backend at ${config.runnerSocket}`);
-      return daemon;
-    }
-    daemon.close();
-    throw new Error("Configured runner is unavailable; refusing to start agent processes in the web service");
+    try {
+      if (await daemon.init()) {
+        console.log(`[runner] using daemon backend at ${config.runnerSocket}`);
+        return daemon;
+      }
+      throw new Error("Configured runner is unavailable; refusing to start agent processes in the web service");
+    } catch (error) { daemon.close(); throw error; }
   }
   return new InProcessBackend();
 }
@@ -50,7 +52,9 @@ async function selectBackend(): Promise<RunnerBackend> {
 // HTTP app with isolated dependencies without starting the operational runtime.
 export async function createRuntime() {
   validateConfig();
+  const resources = new ResourceScope();
   const db = new Db(config.dbPath);
+  resources.defer(() => db.close());
   const hub = new Hub();
   const supervisor = new ProcessSupervisor(config.concurrency);
   const worktrees = new WorktreeManager();
@@ -59,8 +63,14 @@ export async function createRuntime() {
   let github: GithubService | undefined;
   try {
     const push = new PushService(db, config.vapidKeyPath ?? join(dirname(config.dbPath), "vapid.json"), config.pushSubject);
+    resources.defer(() => push.close());
     backend = await selectBackend();
+    const selectedBackend = backend;
+    resources.defer(() => selectedBackend.close?.());
     const attachments = new LocalAttachmentStorage(db, config.attachmentStorage);
+    resources.defer(() => attachments.close());
+    const voice = new VoiceSessions();
+    resources.defer(() => voice.close());
     const service = new TaskService(db, hub, supervisor, backend, worktrees, attachments,
       new LocalRepositoryPaths(), new LocalNativeSessionAdapter(config.dbPath), new NodeIdentifierGenerator(),
       push, () => isUpdateMaintenance(config.dbPath), {
@@ -71,29 +81,28 @@ export async function createRuntime() {
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
         : removeWorktree(),
-    }, taskId => github?.onNewPrs(taskId), new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader());
-    const terminals = terminalService = new TerminalService(new TerminalStore(join(config.dataDir, "terminals")),
+    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), new AccountLimitReader());
+    resources.onStop(() => service.beginShutdown());
+    const terminalStore = new TerminalStore(join(config.dataDir, "terminals"));
+    let terminalsOwnStore = false;
+    resources.defer(() => { if (!terminalsOwnStore) terminalStore.close(); });
+    const terminals = terminalService = new TerminalService(terminalStore,
       terminalPlatform(Boolean(config.executionRelease && config.executionNode)).supervisor,
       { task: id => service.getTask(id), repo: id => db.getRepo(id), cleanup: id => service.cleanupTerminalWorktree(id), updating: () => service.updating },
       config.executionRelease ?? "", config.executionNode ?? "");
+    terminalsOwnStore = true;
+    resources.defer(() => terminals.close());
     await service.init();
     const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(), hub);
+    resources.defer(() => routines.stop());
     github = new GithubService(service, config.githubToken);
+    resources.onStop(() => github?.stop());
     const auth = new AuthService(db);
     const modelCatalog = new CodexModelCatalogService();
-    let closing: Promise<void> | undefined;
     return {
       db, hub, service, auth, push, routines, modelCatalog, config, terminals, terminalTickets: new TerminalTickets(),
       start() { routines.start(); github?.start(); terminals.start(); },
-      close() {
-        return closing ??= (async () => {
-          service.beginShutdown();
-          await routines.stop(); github?.stop(); push.close();
-          await backend?.close?.();
-          await terminals.close();
-          db.close();
-        })();
-      },
+      close: () => resources.close(),
     };
-  } catch (error) { await backend?.close?.(); await terminalService?.close(); db.close(); throw error; }
+  } catch (error) { return resources.fail(error); }
 }

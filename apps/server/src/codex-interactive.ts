@@ -1,5 +1,6 @@
+import type { AgentEventKind, AgentEventPayloads } from "@palmagent/shared";
 import type { ImageAttachment, QuestionRequest } from "@palmagent/shared";
-import type { Emit, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
+import type { Emit, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
 export const codexInput = (text: string, images?: ImageAttachment[], skills?: StartArgs["skills"]) => [
   { type: "text", text: [...(skills ?? []).map(s => `$${s.name}`), text].join("\n"), text_elements: [] },
@@ -10,7 +11,7 @@ export const codexInput = (text: string, images?: ImageAttachment[], skills?: St
 // One app-server process per Palmagent run keeps the existing daemon ownership
 // boundary. Native turn completion closes stdin; a process exit by itself never
 // establishes success. The daemon's stdout replay reconstructs RPC/turn IDs.
-export function startCodexInteractive(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
+export function startCodexInteractive(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
   const { taskId, reattach } = args;
   let sessionId = args.resumeId;
   let turnId: string | undefined;
@@ -35,7 +36,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Runn
   }
   const write = (v: unknown) => proc.writeStdin(JSON.stringify(v) + "\n");
   const rpc = (id: string, method: string, params: unknown) => write({ jsonrpc: "2.0", id, method, params });
-  const event = (kind: RawEvent["kind"], payload: unknown, seq?: number) => emit({ taskId, sessionId, kind, payload }, seq);
+  const event = <K extends AgentEventKind>(kind: K, payload: AgentEventPayloads[K], seq?: number) => emit({ taskId, sessionId, kind, payload } as RawEvent, seq);
   const delivery = (messageId: string, seq?: number) => {
     event("status", { subtype: "message_delivered", messageId }, seq);
     const p = pending.get(messageId);

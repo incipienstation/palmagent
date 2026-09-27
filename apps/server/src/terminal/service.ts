@@ -93,5 +93,5 @@ export class TerminalService {
       try { this.targets.cleanup(entry.taskId); } catch { /* Retry after the next reconciliation. */ }
     }
   }
-  async close() { clearInterval(this.timer); await this.reconciliation; this.store.close(); }
+  async close() { clearInterval(this.timer); try { await this.reconciliation; } finally { this.store.close(); } }
 }

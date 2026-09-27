@@ -4,14 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import type { AgentEvent, TaskState } from "@palmagent/shared";
+import type { AgentEvent, AgentEventKind, AgentEventPayloads, TaskState } from "@palmagent/shared";
 import { makePrRef } from "@palmagent/shared";
 import { Db } from "../src/db.js";
 import { isPrCreate, PrEvidence } from "../src/pr-evidence.js";
 
 const url = "https://github.com/acme/sample-app/pull/42";
 const other = "https://github.com/acme/sample-app/pull/43";
-const event = (kind: AgentEvent["kind"], payload: unknown): AgentEvent => ({ taskId: "task", agent: "codex", ts: 1, kind, payload });
+const event = <K extends AgentEventKind>(kind: K, payload: AgentEventPayloads[K]): AgentEvent => ({ taskId: "task", agent: "codex", ts: 1, kind, payload } as AgentEvent);
 const call = (command: string, id = "call") => event("tool_call", { id, name: "bash", command, status: "completed" });
 const result = (output = url, id = "call", exit_code: number | null = 0) => event("tool_result", { tool_use_id: id, output, exit_code });
 

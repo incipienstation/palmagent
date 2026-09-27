@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Completed script routines retain their results for retry when storage is temporarily unavailable, without rerunning the script.
+- Failed task-state saves no longer leave the displayed status or settings ahead of storage, and passkey registration commits its enrollment and session together.
+- Startup and shutdown continue releasing remaining resources when an individual cleanup step fails.
+
 ## 0.1.0-alpha.102
 
 ### Changed

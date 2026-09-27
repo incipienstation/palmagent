@@ -4,7 +4,7 @@ import { skillId } from "./application/skill-id.js";
 import { MessageController } from "./message-controller.js";
 import type { SubmitMessage, MessageAction } from "@palmagent/shared";
 import type {
-  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PermissionRequest, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
+  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { extractOutputImages } from "./application/output-images.js";
@@ -467,7 +467,7 @@ export class TaskService implements PrStatusSink {
     const task = this.cache.get(taskId);
     if (!task?.prs?.length) return;
     let changed = false;
-    task.prs = task.prs.map((pr) => {
+    const prs = task.prs.map((pr) => {
       const patch = patches.get(pr.url);
       if (!patch) return pr;
       const next = { ...pr, ...patch };
@@ -478,9 +478,9 @@ export class TaskService implements PrStatusSink {
       return next;
     });
     if (!changed) return;
-    task.prUrl = task.prs[0]?.url;
-    task.updatedAt = Date.now();
-    this.db.setTaskPrs(taskId, task.prs, task.updatedAt);
+    const now = Date.now();
+    this.db.setTaskPrs(taskId, prs, now);
+    Object.assign(task, { prs, prUrl: prs[0]?.url, updatedAt: now });
     this.broadcastTasks();
   }
 
@@ -630,12 +630,12 @@ export class TaskService implements PrStatusSink {
       throw conflict("Approval delivery could not be confirmed. The request has been kept; check the conversation before trying again.");
     }
     const now = Date.now();
-    this.db.insertApproval(id, null, pending ? JSON.stringify({ request: pending, scope }) : scope ? JSON.stringify({ scope }) : null, decision, now);
-    if (pending) {
-      task.pendingApproval = undefined;
-      this.db.setTaskPendingApproval(id, undefined, now);
-    }
-    if (task.status === "awaiting_approval") this.transition(task, "running");
+    const status = task.status === "awaiting_approval" ? "running" : task.status;
+    this.commitTask(task, { pendingApproval: undefined, status, updatedAt: now }, () => {
+      this.db.insertApproval(id, null, pending ? JSON.stringify({ request: pending, scope }) : scope ? JSON.stringify({ scope }) : null, decision, now);
+      if (pending) this.db.setTaskPendingApproval(id, undefined, now);
+      this.db.setTaskStatus(id, status, task.interrupted, now);
+    });
     this.emitSynthetic(task, { subtype: "approval", decision, scope });
     return task;
   }
@@ -662,10 +662,12 @@ export class TaskService implements PrStatusSink {
 
   private resolveInput(task: TaskState, requestId: string): boolean {
     if (task.pendingInput?.requestId !== requestId) return false;
-    task.pendingInput = undefined;
-    this.db.setTaskPendingInput(task.taskId, undefined, Date.now());
-    if (task.status === "awaiting_input") this.transition(task, "running");
-    else this.broadcastTasks();
+    const now = Date.now();
+    const status = task.status === "awaiting_input" ? "running" : task.status;
+    this.commitTask(task, { pendingInput: undefined, status, updatedAt: now }, () => {
+      this.db.setTaskPendingInput(task.taskId, undefined, now);
+      this.db.setTaskStatus(task.taskId, status, task.interrupted, now);
+    });
     return true;
   }
 
@@ -783,7 +785,6 @@ export class TaskService implements PrStatusSink {
           effort: task.effort,
         },
         (raw, rawSeq) => this.onRaw(task, raw, rawSeq),
-        this.backend,
       );
     } catch (e) {
       // A synchronous spawn failure must release the slot, not leak it / wedge the task.
@@ -826,7 +827,6 @@ export class TaskService implements PrStatusSink {
         pendingApproval: task.pendingApproval,
       },
       (raw, rawSeq) => this.onRaw(task, raw, rawSeq),
-      this.backend,
     );
     this.supervisor.reclaim(task.taskId, handle);
     handle.done.then(() => this.finishTurn(task), () => this.finishTurn(task));
@@ -850,11 +850,12 @@ export class TaskService implements PrStatusSink {
     }
     const now = Date.now();
     const output = raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status" ? extractOutputImages(raw.payload) : { payload: raw.payload, images: [] };
-    const event = { ...raw, payload: output.payload, agent: task.agent, ts: now };
+    if (raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status") raw = { ...raw, payload: output.payload };
+    const event = { ...raw, agent: task.agent, ts: now };
 
     if (event.sessionId && task.sessionId !== event.sessionId) {
-      task.sessionId = event.sessionId; // capture claude session_id / codex thread_id
       this.db.setTaskSession(task.taskId, event.sessionId, now);
+      task.sessionId = event.sessionId; // capture claude session_id / codex thread_id
       this.broadcastTasks();
     }
 
@@ -887,25 +888,25 @@ export class TaskService implements PrStatusSink {
       if (subtype === "execution_started") this.transition(task, "running");
     }
     if (event.kind === "approval_request" && task.status === "running") {
-      const request = event.payload as PermissionRequest;
-      task.pendingApproval = request;
-      this.db.setTaskPendingApproval(task.taskId, request, now);
-      this.transition(task, "awaiting_approval");
+      const request = event.payload;
+      this.commitTask(task, { pendingApproval: request, status: "awaiting_approval", updatedAt: now }, () => {
+        this.db.setTaskPendingApproval(task.taskId, request, now);
+        this.db.setTaskStatus(task.taskId, "awaiting_approval", task.interrupted, now);
+      });
       this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
     }
     // AskUserQuestion (Claude): the turn is paused waiting for the user to answer.
     // Stash the question on the task (mem + DB) so the inbox/detail can render the
     // tap-to-answer UI, and notify the phone. The handle.answer() resumes the turn.
     if (event.kind === "question") {
-      const qr = event.payload as QuestionRequest;
-      task.pendingInput = qr;
-      this.db.setTaskPendingInput(task.taskId, qr, now);
-      if (task.status === "running") {
-        this.transition(task, "awaiting_input");
-        this.notifyPush(task, "needs your input", firstQuestionText(qr));
-      } else {
-        this.broadcastTasks();
-      }
+      const qr = event.payload;
+      const wasRunning = task.status === "running";
+      const status = wasRunning ? "awaiting_input" : task.status;
+      this.commitTask(task, { pendingInput: qr, status, updatedAt: now }, () => {
+        this.db.setTaskPendingInput(task.taskId, qr, now);
+        this.db.setTaskStatus(task.taskId, status, task.interrupted, now);
+      });
+      if (wasRunning) this.notifyPush(task, "needs your input", firstQuestionText(qr));
     }
 
     // Commit all images from this source line with the event and replay cursor.
@@ -941,13 +942,13 @@ export class TaskService implements PrStatusSink {
     const stopped = this.stopping.delete(task.taskId);
     // The turn is over — no question can be pending anymore (e.g. Stop while
     // awaiting_input, or the CLI declined). Clear it so the UI drops the answer form.
-    if (task.pendingInput) {
-      task.pendingInput = undefined;
-      this.db.setTaskPendingInput(task.taskId, undefined, Date.now());
-    }
-    if (task.pendingApproval) {
-      task.pendingApproval = undefined;
-      this.db.setTaskPendingApproval(task.taskId, undefined, Date.now());
+    if (task.pendingInput || task.pendingApproval) {
+      const now = Date.now();
+      this.db.transaction(() => {
+        this.db.setTaskPendingInput(task.taskId, undefined, now);
+        this.db.setTaskPendingApproval(task.taskId, undefined, now);
+      });
+      Object.assign(task, { pendingInput: undefined, pendingApproval: undefined });
     }
     // A steer that changed model/effort interrupted this turn on purpose so the
     // queued steer can resume with the new flags — its aborted result is not a
@@ -1008,6 +1009,12 @@ export class TaskService implements PrStatusSink {
   }
 
   // ---- helpers ----
+  private commitTask(task: TaskState, patch: Partial<TaskState>, persist: () => void): void {
+    this.db.transaction(persist);
+    Object.assign(task, patch);
+    this.broadcastTasks();
+  }
+
   // Apply a model / effort / permission override onto the task (persisted; every
   // turn reads them off the task). Per field: undefined = leave as-is, "" = reset
   // to the agent's default (clear the override), any other value = set it.
@@ -1018,22 +1025,18 @@ export class TaskService implements PrStatusSink {
     const nextPermission =
       permission === undefined ? task.permission : permission === "" ? defaultPermission(task.agent) : permission;
     if (nextModel === task.model && nextEffort === task.effort && nextPermission === task.permission) return false;
-    task.model = nextModel;
-    task.effort = nextEffort;
-    task.permission = nextPermission;
     const now = Date.now();
-    task.updatedAt = now;
-    this.db.setTaskSettings(task.taskId, task.model, task.effort, task.permission, now);
+    this.db.setTaskSettings(task.taskId, nextModel, nextEffort, nextPermission, now);
+    Object.assign(task, { model: nextModel, effort: nextEffort, permission: nextPermission, updatedAt: now });
     this.broadcastTasks();
     return true;
   }
 
   private transition(task: TaskState, status: TaskStatus, opts?: { interrupted?: boolean }): void {
     const now = Date.now();
-    task.status = status;
-    if (opts?.interrupted !== undefined) task.interrupted = opts.interrupted;
-    task.updatedAt = now;
-    this.db.setTaskStatus(task.taskId, status, task.interrupted, now);
+    const interrupted = opts?.interrupted ?? task.interrupted;
+    this.db.setTaskStatus(task.taskId, status, interrupted, now);
+    Object.assign(task, { status, interrupted, updatedAt: now });
     this.broadcastTasks();
   }
 

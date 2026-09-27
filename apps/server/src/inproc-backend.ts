@@ -1,19 +1,19 @@
 import { once } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { makeNdjsonSplitter } from "./ndjson.js";
-import type { ProcHandle, RunnerBackend, SpawnSpec } from "./types.js";
+import type { ProcHandle, ProcessBackend, RunnerBackend, SpawnSpec } from "./types.js";
 import type { AgentKind } from "@palmagent/shared";
-import { getRunner } from "./runner.js";
+import { bindRunner } from "./runner.js";
 
 // The default backend: spawn the CLI as a direct child of THIS process, exactly
 // as Palmagent did before the runner daemon existed. Used by `pnpm dev` (one
 // process, no socket). Because the child dies with this process,
 // `attach()` can never reattach and `listLive()` is always empty — restart
 // recovery falls back to idle(interrupted), the pre-daemon behavior.
-export class InProcessBackend implements RunnerBackend {
+export class InProcessBackend implements RunnerBackend, ProcessBackend {
   private children = new Set<ChildProcessWithoutNullStreams>();
 
-  agentRunner(agent: AgentKind) { return getRunner(agent); }
+  agentRunner(agent: AgentKind) { return bindRunner(agent, this); }
 
   async close(): Promise<void> {
     await Promise.all([...this.children].map(async (child) => {

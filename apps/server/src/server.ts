@@ -1,3 +1,4 @@
+import { ResourceScope } from "./resource-scope.js";
 import { installTerminalGateway } from "./terminal/gateway.js";
 import { terminalPlatform } from "./terminal/adapters.js";
 import { bindUpdateActivity } from "./update-activity.js";
@@ -16,27 +17,6 @@ import { SettingsStore } from "./settings.js";
 
 declare const __PALMAGENT_BUILD__: { version: string; sourceCommit: string; dirty: boolean };
 const build = typeof __PALMAGENT_BUILD__ === "undefined" ? undefined : __PALMAGENT_BUILD__;
-const runtime = await createRuntime();
-const shutdown = new AbortController();
-const updates = createUpdateSettingsService({
-  packageDir: build ? dirname(fileURLToPath(import.meta.url)) : undefined,
-  dataDir: runtime.config.dataDir, dbPath: runtime.config.dbPath,
-});
-const updateActivity = bindUpdateActivity(runtime.hub,
-  () => Boolean(build && readUpdateAccess(runtime.config.dataDir).pending), () => updates.resume());
-// Native file events deliver results from the independent updater. No status timer.
-const updateWatcher = build ? watch(runtime.config.dataDir, (_event, filename) => {
-  if (filename === updateAccessFile || filename === "update-result.json") runtime.hub.emitUpdates();
-}) : undefined;
-updateWatcher?.on("error", () => { updateWatcher.close(); });
-const settings = new SettingsStore(runtime.config.dataDir, runtime.config.repoRoots);
-const app = createApp({ ...runtime, settings, build, updates, shutdown: shutdown.signal });
-const server = createServer(getRequestListener(app.fetch));
-const closeTerminals = installTerminalGateway(server, { service: runtime.terminals, auth: runtime.auth, tickets: runtime.terminalTickets,
-  transport: terminalPlatform(true).transport, origin: runtime.config.authOrigin, cookieName: runtime.config.cookieName });
-let local: Server | undefined;
-let closing: Promise<void> | undefined;
-
 function closeServer(listener: Server): Promise<void> {
   if (!listener.listening) return Promise.resolve();
   return new Promise((resolve) => {
@@ -44,21 +24,40 @@ function closeServer(listener: Server): Promise<void> {
     listener.close(() => { clearTimeout(deadline); resolve(); });
   });
 }
-function close() {
-  return closing ??= (async () => {
-    updateActivity.close();
-    updateWatcher?.close();
-    closeTerminals();
-    shutdown.abort(); // stop admission and release SSE subscriptions first
-    await Promise.all([closeServer(server), ...(local ? [closeServer(local)] : [])]);
-    await runtime.close();
-  })();
-}
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => { void close().then(() => process.exit(0), (error) => { console.error(error); process.exit(1); }); });
-}
+const resources = new ResourceScope();
 try {
-  local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines);
+  const runtime = await createRuntime();
+  resources.defer(() => runtime.close());
+  const shutdown = new AbortController();
+  resources.onStop(() => shutdown.abort());
+  const updates = createUpdateSettingsService({
+    packageDir: build ? dirname(fileURLToPath(import.meta.url)) : undefined,
+    dataDir: runtime.config.dataDir, dbPath: runtime.config.dbPath,
+  });
+  const updateActivity = bindUpdateActivity(runtime.hub,
+    () => Boolean(build && readUpdateAccess(runtime.config.dataDir).pending), () => updates.resume());
+  resources.defer(() => updateActivity.close());
+  // Native file events deliver results from the independent updater. No status timer.
+  const updateWatcher = build ? watch(runtime.config.dataDir, (_event, filename) => {
+    if (filename === updateAccessFile || filename === "update-result.json") runtime.hub.emitUpdates();
+  }) : undefined;
+  resources.defer(() => updateWatcher?.close());
+  updateWatcher?.on("error", () => { updateWatcher.close(); });
+  const settings = new SettingsStore(runtime.config.dataDir, runtime.config.repoRoots);
+  const app = createApp({ ...runtime, settings, build, updates, shutdown: shutdown.signal });
+  const server = createServer(getRequestListener(app.fetch));
+  resources.defer(() => closeServer(server));
+  const closeTerminals = installTerminalGateway(server, { service: runtime.terminals, auth: runtime.auth, tickets: runtime.terminalTickets,
+    transport: terminalPlatform(true).transport, origin: runtime.config.authOrigin, cookieName: runtime.config.cookieName });
+
+  resources.onStop(closeTerminals);
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    const handler = () => { void resources.close().then(() => process.exit(0), error => { console.error(error); process.exit(1); }); };
+    process.once(signal, handler);
+    resources.defer(() => { process.off(signal, handler); });
+  }
+  const local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines);
+  resources.defer(() => closeServer(local));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(runtime.config.port, runtime.config.host, () => { server.off("error", reject); resolve(); });
@@ -66,4 +65,4 @@ try {
   runtime.start();
   void updateActivity.wake();
   console.log(`${BRANDING.productName} internal listener on ${runtime.config.host}:${runtime.config.port}  ·  TLS required at the public edge  ·  db=${runtime.config.dbPath}  ·  cap=${runtime.config.concurrency}`);
-} catch (error) { await close(); throw error; }
+} catch (error) { await resources.fail(error); }

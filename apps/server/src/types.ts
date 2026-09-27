@@ -39,7 +39,7 @@ export interface StartArgs {
 // optional rawSeq is the source NDJSON line's per-turn sequence — it never rides
 // the wire AgentEvent; the service uses it for exactly-once persistence on
 // reattach (drop events whose rawSeq <= the task's persisted high-water-mark).
-export type RawEvent = Omit<AgentEvent, "agent" | "ts">;
+export type RawEvent = { [K in AgentEvent["kind"]]: Omit<AgentEvent<K>, "agent" | "ts"> }[AgentEvent["kind"]];
 export type Emit = (e: RawEvent, rawSeq?: number) => void;
 
 export interface AgentRunner {
@@ -47,14 +47,12 @@ export interface AgentRunner {
   // The adapter spawns/reattaches through the backend (so process+stdio ownership
   // can live in a separate, deploy-surviving daemon) and keeps all CLI-specific
   // parsing/stdin logic here in the web server.
-  start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle;
+  start(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle;
 }
 
 // ---------------------------------------------------------------------------
-// RunnerBackend: the seam between the adapters (which own CLI knowledge) and
-// whoever owns the actual child processes + stdio. Two impls: InProcessBackend
-// (spawns locally in development) and DaemonBackend (proxies to
-// the long-lived runner daemon over a Unix socket — production survival).
+// ProcessBackend owns provider process I/O. RunnerBackend owns application
+// execution lifecycle and may delegate it to independent execution hosts.
 // ---------------------------------------------------------------------------
 
 export interface SpawnSpec {
@@ -78,19 +76,26 @@ export interface ProcHandle {
   kill(signal: NodeJS.Signals): void;
 }
 
+export interface ProcessBackend {
+  start(spec: SpawnSpec): ProcHandle;
+  attach(turnId: string, fromSeq?: number): ProcHandle | undefined;
+}
+
+export interface ExecutionRunner {
+  readonly agent: AgentKind;
+  start(args: StartArgs, emit: Emit): RunHandle;
+}
+
 export interface RunnerBackend {
   readonly independent?: boolean;
   saveControl?(taskId: string, state: ExecutionControlState): void;
   loadControl?(taskId: string): ExecutionControlState | undefined;
-  agentRunner(agent: AgentKind): AgentRunner;
+  agentRunner(agent: AgentKind): ExecutionRunner;
   // Disconnect this client / stop locally owned children; never stop daemon-owned turns.
   close?(): void | Promise<void>;
   // Optional connect step (DaemonBackend dials the socket). Resolves false if the
   // backend could not become ready (caller may fall back to InProcessBackend).
   init?(): Promise<boolean>;
-  start(spec: SpawnSpec): ProcHandle; // spawn a brand-new turn
-  // Reattach to a turn still running in the backend; undefined if it isn't live.
-  attach(turnId: string, fromSeq?: number): ProcHandle | undefined;
   listLive(): Promise<string[]>; // turnIds still alive — drives restart recovery
   // Tell the backend the turn is fully consumed so it can drop its replay buffer.
   release?(turnId: string): void;
