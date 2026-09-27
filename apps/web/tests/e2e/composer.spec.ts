@@ -23,6 +23,9 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
     const action = composer.getByRole("button", { name: route === "new" ? "Dispatch" : "Send now", exact: true });
     // Focus reveals the full toolbar even before the first character.
     await input.focus();
+    await composer.evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    });
     for (const draft of ["", "Review this change"]) {
       if (draft) await input.fill(draft);
       await onScreen(settings);
