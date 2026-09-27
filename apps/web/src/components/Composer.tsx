@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { PermissionPicker, permissionLabel } from "./PermissionPicker";
+import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
+import { cn } from "../lib/utils";
 
 export interface ComposerSettings {
   agent: AgentKind;
@@ -102,7 +104,14 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
 }) {
   const [configure, setConfigure] = useUpdateState(`composer:${id}:configure`, false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  useKeyboardDismiss(textarea);
+  useLayoutEffect(() => {
+    // Removing a focused action (Send becoming Stop, for example) does not
+    // dispatch blur in every browser. Reconcile after DOM updates as well.
+    if (focused && !textarea.current?.parentElement?.contains(document.activeElement)) setFocused(false);
+  });
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
   const catalog = useAgentCatalog(settings.agent);
@@ -113,19 +122,34 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     const next = draft + (draft && !/\s$/.test(draft) ? " " : "") + text;
     latest.current.value = next; latest.current.onChange(next);
   }, () => !composing.current);
-  const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0 && !skills?.length);
-  const expanded = voice.active || !!voice.error || !!skills?.length || picker.open || !!header || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
+  const hasDraft = !!value.trim() || attachments.images.length > 0 || !!skills?.length;
+  const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || !hasDraft;
+  const expanded = hasDraft || focused || voice.active || !!voice.error || picker.open || !!header || configure || menuOpen || attachments.preparing;
   useLayoutEffect(() => {
     const el = textarea.current;
     if (!el) return;
     const resize = () => {
+      // Measure without animating through zero. Resume from the current visual
+      // height so a focus reversal during the transition remains continuous.
+      const current = el.getBoundingClientRect().height;
+      const { paddingLeft, paddingRight } = getComputedStyle(el);
+      el.style.transition = "none";
       el.style.height = "0px";
-      el.style.height = `${Math.max(expanded ? 56 : 44, Math.min(el.scrollHeight, 144))}px`;
+      el.style.paddingLeft = el.style.paddingRight = "12px";
+      const target = expanded ? Math.max(56, Math.min(el.scrollHeight, 144)) : 44;
+      el.style.height = `${current}px`;
+      el.style.paddingLeft = paddingLeft;
+      el.style.paddingRight = paddingRight;
+      void el.offsetHeight;
+      el.style.transition = "";
+      el.style.paddingLeft = el.style.paddingRight = "";
+      el.style.height = `${target}px`;
     };
     resize();
+    let width = el.clientWidth;
     const observer = new ResizeObserver(() => {
       // Width changes can wrap text without a value change (rotation/split view).
-      if (el.dataset.width !== String(el.clientWidth)) { el.dataset.width = String(el.clientWidth); resize(); }
+      if (width !== el.clientWidth) { width = el.clientWidth; resize(); }
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -137,7 +161,15 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const permission = permissionLabel(settings.agent, settings.permission);
 
   return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
-    className={`rounded-3xl p-1${busy || stopping ? " composer-pending" : ""}`}>
+    data-voice={settings.agent === "codex"}
+    onFocusCapture={event => {
+      // React also bubbles focus from portalled menus outside this surface.
+      if (event.currentTarget.contains(event.target)) setFocused(true);
+    }}
+    onBlurCapture={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+    }}
+    className={cn("composer rounded-3xl p-1", (busy || stopping) && "composer-pending")}>
     <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
       onChange={(e) => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
       onSelect={e => picker.cursor(e.currentTarget)}
@@ -161,7 +193,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         else if (!controls) event.currentTarget.form?.requestSubmit();
       }}
       placeholder={placeholder} disabled={disabled || busy}
-      className="order-1 max-h-36 basis-full px-3 py-2.5"
+      className="composer-input order-1 max-h-36 basis-full px-3 py-2.5"
     />
     {(voice.error || voice.active) && <InputGroupAddon align="block-start" className="px-3">
       {voice.error ? <Alert variant="destructive">{voice.error}</Alert>
@@ -172,27 +204,29 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     {attachments.images.length > 0 && <InputGroupAddon align="block-start" className="px-3 pt-2">
       <AttachmentTray images={attachments.images} disabled={busy} onRemove={attachments.remove} />
     </InputGroupAddon>}
-    <InputGroupAddon align="inline-start" className="order-2 shrink-0">
+    <InputGroupAddon align="inline-start" className="composer-toolbar order-2 shrink-0">
       <AttachmentMenu open={menuOpen} onOpenChange={setMenuOpen} disabled={disabled || busy || attachments.preparing}
         preparing={attachments.preparing} onAdd={(files) => void attachments.addFiles(files)}
         voiceActive={voice.active} onCancelVoice={voice.cancel} />
-      {skillContext && onSkillsChange && <SkillTrigger onClick={picker.trigger} disabled={disabled || busy} open={picker.open} />}
+      {skillContext && onSkillsChange && <span className="composer-skill" inert={!expanded}>
+        <SkillTrigger onClick={picker.trigger} disabled={disabled || busy} open={picker.open} />
+      </span>}
     </InputGroupAddon>
-    <InputGroupAddon align="inline-end" className="min-w-0 flex-1 justify-end gap-1">
+    <InputGroupAddon align="inline-end" className="composer-toolbar composer-actions min-w-0 flex-1 justify-end gap-1">
       {voice.active && <VoiceWaveform levels={voice.meter} />}
       <Sheet open={configure && !settingsReadOnly} onOpenChange={setConfigure} repositionInputs={false} autoFocus>
-        {!voice.active && <SheetTrigger asChild>
+        {!voice.active && <span className="composer-settings min-w-0" inert={!expanded}><SheetTrigger asChild>
           <Button type="button" variant="ghost"
             disabled={disabled || busy || !!settingsReadOnly}
             aria-label={settingsReadOnly ? "Current task settings" : "Configure task settings"}
             title={settingsReadOnly ? `${model}${effort ? ` · ${effort}` : ""} · ${permission} — ${settingsReadOnly}` : `${model}${effort ? ` · ${effort}` : ""} · ${permission}`}
-            className="min-w-0 gap-1 rounded-full px-2">
+            className="max-w-full min-w-0 gap-1 rounded-full px-2">
             <span className="truncate">{model}</span>
             {effort && <span className="shrink-0 font-normal text-muted-foreground"> · {effort}</span>}
             <span className="hidden shrink-0 font-normal text-muted-foreground sm:inline"> · {permission}</span>
             {!settingsReadOnly && <ChevronDown data-icon="inline-end" />}
           </Button>
-        </SheetTrigger>}
+        </SheetTrigger></span>}
         <SheetContent className="bottom-[var(--keyboard-inset,0px)] max-h-[calc(var(--app-height)-16px)] rounded-t-3xl"
           onCloseAutoFocus={(event) => {
             // Dismissal finishes after the closing animation. Do not steal

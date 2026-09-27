@@ -206,6 +206,7 @@ test("cancelling while permission is pending releases a later microphone grant",
 test("settings disappear during dictation and return after it ends", async ({ page }) => {
   const calls = await microphone(page);
   await page.goto("/#/new");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).focus();
   const configure = page.getByRole("button", { name: "Configure task settings" });
   await configure.click(); await page.getByRole("radio", { name: "codex", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
