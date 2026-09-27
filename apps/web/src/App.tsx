@@ -6,6 +6,8 @@ import { AuthGate } from "./auth/AuthGate";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import { useInbox } from "./hooks/useInbox";
 import { useRoute } from "./router";
+import { SpacesView } from "./components/Spaces";
+import { useRepos } from "./hooks/useRepos";
 import { InboxView } from "./components/Inbox";
 import { DispatchView } from "./components/DispatchForm";
 import { RoutinesView } from "./components/Routines";
@@ -20,6 +22,7 @@ function AppInner() {
   // than one /api/stream). The task detail opens its own scoped stream on top.
   const { tasks, conn, loading } = useInbox();
   useAccessUpdates(conn);
+  const { repos } = useRepos();
 
   // Per-route browser/OS title (page-first + brand suffix). Centralized here so
   // the route → page-name map lives in one place; the task page reuses the same
@@ -35,14 +38,15 @@ function AppInner() {
           ? "Usage"
           : route.name === "task"
             ? active ? taskTitle(active) : "Task"
-            : "Tasks";
+            : route.name === "spaces" ? "Spaces" : route.name === "space" ? repos.get(route.repoId)?.name ?? "Space" : "All spaces";
   useDocumentTitle(pageTitle);
 
-  const view = route.name === "terminals" ? <TerminalsView key={route.taskId ?? route.repoId ?? "all"} repoId={route.repoId} taskId={route.taskId} /> : route.name === "new" ? <DispatchView />
+  const view = route.name === "terminals" ? <TerminalsView key={route.taskId ?? route.repoId ?? "all"} repoId={route.repoId} taskId={route.taskId} /> : route.name === "new" ? <DispatchView initialRepoId={route.repoId} />
     : route.name === "routines" ? <RoutinesView />
     : route.name === "usage" ? <UsageView />
     : route.name === "task" ? <TaskDetailView key={route.id} taskId={route.id} task={active} />
-    : <InboxView tasks={tasks} conn={conn} loading={loading} />;
+    : route.name === "spaces" ? <SpacesView tasks={tasks} conn={conn} loading={loading} />
+    : <InboxView key={route.name === "space" ? route.repoId : "all"} repoId={route.name === "space" ? route.repoId : undefined} tasks={tasks} conn={conn} loading={loading} />;
   return <AppNavigation tasks={tasks} conn={conn}>{view}</AppNavigation>;
 }
 

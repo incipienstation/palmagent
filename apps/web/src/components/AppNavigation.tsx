@@ -1,19 +1,21 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { BarChart3, Check, Clock3, Folder, Inbox, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
+import { BarChart3, Check, Clock3, Folder, Layers, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
 import { compareTasks } from "../lib/task-order";
 import { taskTitle } from "../lib/task-title";
+import { useRepos } from "../hooks/useRepos";
+import { newTaskPath, spacePath } from "../space-context";
+import { spaceActivity } from "./Spaces";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
 
 const NavigationContext = createContext<{
   openNavigation: (trigger: HTMLButtonElement) => void;
-  spacesOpen: boolean;
-  setSpacesOpen: (open: boolean) => void;
+  desktopSidebar: boolean;
 } | null>(null);
 
 export const useAppNavigation = () => useContext(NavigationContext);
@@ -24,7 +26,7 @@ export function AppNavigation({ tasks, conn, children }: {
   tasks: TaskState[]; conn: ConnState; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [spacesOpen, setSpacesOpen] = useState(false);
+  const { repos } = useRepos();
   const [settingsOpen, setSettingsOpen] = useUpdateState("settings:open", false);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const afterClose = useRef<(() => void) | null>(null);
@@ -37,7 +39,8 @@ export function AppNavigation({ tasks, conn, children }: {
     trigger.current = element;
     setOpen(true);
   }, []);
-  const context = useMemo(() => ({ openNavigation, spacesOpen, setSpacesOpen }), [openNavigation, spacesOpen]);
+  const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
+  const context = useMemo(() => ({ openNavigation, desktopSidebar }), [openNavigation, desktopSidebar]);
   const restoreFocus = () => {
     const target = trigger.current?.isConnected ? trigger.current : document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
     target?.focus();
@@ -45,16 +48,38 @@ export function AppNavigation({ tasks, conn, children }: {
   const go = (path: string) => { setOpen(false); navigate(path); };
   const showAfterClose = (action: () => void) => { afterClose.current = action; setOpen(false); };
   const destinations = [
-    { label: "Tasks", icon: Inbox, active: route.name === "inbox", onClick: () => go("/"), attention },
-    { label: "Spaces", icon: Folder, active: false, onClick: () => {
-      navigate("/"); showAfterClose(() => setSpacesOpen(true));
-    } },
+    { label: "All spaces", icon: Layers, active: route.name === "inbox", onClick: () => go("/"), attention },
+    { label: "Spaces", icon: Folder, active: route.name === "spaces", onClick: () => go("/spaces") },
     { label: "Routines", icon: Clock3, active: route.name === "routines", onClick: () => go("/routines") },
     { label: "Terminals", icon: Terminal, active: route.name === "terminals", onClick: () => go("/terminals") },
     { label: "Usage", icon: BarChart3, active: route.name === "usage", onClick: () => go("/usage") },
   ];
+  const navigationLinks = (
+        <nav aria-label="Main navigation" className="shrink-0 flex flex-col gap-1 px-3 pb-4">
+          {destinations.map(({ label, icon: Icon, active, onClick, attention: needsAttention }) => <Button key={label}
+            variant={active ? "selected" : "ghost"} className="h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium"
+            aria-label={label} aria-description={needsAttention ? "Tasks need attention" : undefined} aria-current={active ? "page" : undefined} onClick={onClick}>
+            <Icon className="size-5" /><span className="flex-1 text-left">{label}</span>
+            {needsAttention && <span className="size-2 rounded-full bg-amber" aria-label="Tasks need attention" />}
+            {active && <Check className="size-4" />}
+          </Button>)}
+        </nav>
+  );
+  const recentSpaces = [...repos.values()].sort((a, b) => spaceActivity(b.id, tasks).latest - spaceActivity(a.id, tasks).latest || a.name.localeCompare(b.name)).slice(0, 6);
+  const newTask = () => go(newTaskPath(route.name === "space" ? route.repoId : undefined));
   return <NavigationContext.Provider value={context}>
-    {children}
+    <div className={desktopSidebar ? "mx-auto flex max-w-[1360px]" : undefined}>
+      {desktopSidebar && <aside aria-label="Space navigation" className="hidden h-app w-60 shrink-0 flex-col border-r md:flex">
+        <p className="px-6 pb-5 pt-[calc(24px+var(--safe-top))] text-lg font-semibold">Palmagent</p>
+        {navigationLinks}
+        <div className="min-h-0 flex-1 overflow-y-auto px-3">
+          <h2 className="px-3 py-3 text-xs text-muted-foreground">Recent Spaces</h2>
+          {recentSpaces.map(repo => <Button key={repo.id} variant={route.name === "space" && route.repoId === repo.id ? "selected" : "ghost"} className="w-full justify-start px-3" aria-current={route.name === "space" && route.repoId === repo.id ? "page" : undefined} onClick={() => go(spacePath(repo.id))}><span className="truncate">{repo.name}</span></Button>)}
+        </div>
+        <div className="flex items-center gap-2 p-4 pb-[calc(16px+var(--safe-bottom))]"><Button onClick={newTask}><SquarePen data-icon="inline-start" />New task</Button><Button variant="ghost" size="icon-lg" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings /></Button></div>
+      </aside>}
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
     <Drawer direction="left" open={open} onOpenChange={setOpen} autoFocus>
       <DrawerContent side="left" onCloseAutoFocus={(event) => {
         event.preventDefault();
@@ -69,15 +94,8 @@ export function AppNavigation({ tasks, conn, children }: {
         </div>
         <DrawerDescription className="sr-only">Navigate your tasks, spaces, and settings.</DrawerDescription>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <nav aria-label="Main navigation" className="shrink-0 space-y-1 px-3 pb-4">
-          {destinations.map(({ label, icon: Icon, active, onClick, attention: needsAttention }) => <Button key={label}
-            variant={active ? "selected" : "ghost"} className="h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium"
-            aria-label={label} aria-description={needsAttention ? "Tasks need attention" : undefined} aria-current={active ? "page" : undefined} onClick={onClick}>
-            <Icon className="size-5" /><span className="flex-1 text-left">{label}</span>
-            {needsAttention && <span className="size-2 rounded-full bg-amber" aria-label="Tasks need attention" />}
-            {active && <Check className="size-4" />}
-          </Button>)}
-        </nav>
+        {navigationLinks}
+
         <div className="mx-5 border-t border-border" />
         {pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Pinned</h2>
@@ -100,7 +118,7 @@ export function AppNavigation({ tasks, conn, children }: {
         </div>
         </div>
         <div className="flex shrink-0 items-center gap-3 px-5 pt-3 pb-[calc(16px+var(--safe-bottom))]">
-          <Button className="rounded-full px-5" onClick={() => go("/new")}><SquarePen />New task</Button>
+          <Button className="rounded-full px-5" onClick={newTask}><SquarePen />New task</Button>
           <Button variant="ghost" size="icon-lg" className="ml-auto rounded-full" aria-label="Settings" onClick={() => showAfterClose(() => setSettingsOpen(true))}><Settings /></Button>
         </div>
       </DrawerContent>

@@ -26,7 +26,7 @@ import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
 import { useDraft, usePersistedMapEntry, usePersistedString } from "../hooks/useDraft";
 import { navigate } from "../router";
-import { ALL_SPACES, readSelectedSpace, repoForSelectedSpace, spaceName, writeSelectedSpace } from "../space-context";
+import { spaceQualifier } from "../space-context";
 import { AppBar, AppShell } from "./AppShell";
 import { useImageAttachments } from "./Attachments";
 import { useSkillDraft } from "./SkillPicker";
@@ -39,7 +39,7 @@ function errMsg(e: unknown): string {
   return e instanceof ApiError || e instanceof Error ? e.message : String(e);
 }
 
-export function DispatchView() {
+export function DispatchView({ initialRepoId }: { initialRepoId?: string }) {
   const dispatchOperations = useDispatchOperations();
   const mounted = useRef(false);
   const repoSelectionInitialized = useRef(false);
@@ -49,7 +49,6 @@ export function DispatchView() {
   const repoMutations = useRepoMutations();
   const registeredRepos = useMemo(() => [...registeredRepoMap.values()], [registeredRepoMap]);
   const repos = useMemo(() => registeredRepos.filter(repo => !repoMutations.removed.has(repo.id)), [registeredRepos, repoMutations.removed]);
-  const [inheritedSpace, setInheritedSpace] = useState(readSelectedSpace);
   // Everything except title + prompt is a sticky preference: the form re-opens
   // with the last-used choice rather than resetting each time; the shared repo
   // query validates a stale repo id once its data arrives.
@@ -87,34 +86,29 @@ export function DispatchView() {
   const isGit = repos.find((r) => r.id === repoId)?.vcs === "git";
 
   const repoMap = useMemo(() => new Map(repos.map((repo) => [repo.id, repo])), [repos]);
-  const inheritedRepoId = repoForSelectedSpace(inheritedSpace, repoMap);
-  const inheritedName = inheritedSpace === ALL_SPACES ? "" : spaceName(inheritedSpace, repoMap);
-  const contextDescription = inheritedName
-    ? inheritedRepoId === repoId ? `Inherited from Space: ${inheritedName}` : `Space context: ${inheritedName}`
-    : "";
 
   useEffect(() => {
     if (!reposLoaded) return;
-    const inheritedRepoId = repoForSelectedSpace(inheritedSpace, repoMap);
+    const inheritedRepoId = initialRepoId;
     if (!repoSelectionInitialized.current) {
       repoSelectionInitialized.current = true;
       setRepoId((current) => {
         if (inheritedRepoId && repoMap.has(inheritedRepoId)) return inheritedRepoId;
         if (current && repoMap.has(current)) return current;
-        return repos[0]?.id ?? "";
+        return repos.length === 1 ? repos[0].id : "";
       });
       return;
     }
     setRepoId((current) => {
       if (current && repoMap.has(current)) return current;
-      return repos[0]?.id ?? "";
+      return repos.length === 1 ? repos[0].id : "";
     });
-  }, [reposLoaded, inheritedSpace, repoMap, repos, setRepoId]);
+  }, [reposLoaded, initialRepoId, repoMap, repos, setRepoId]);
 
   async function dispatch(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (!repos.some(repo => repo.id === repoId)) return setError("Register and select a repo first.");
+    if (!repos.some(repo => repo.id === repoId)) return setError("Connect and select a Space first.");
     if (!prompt.trim() && att.images.length === 0 && !skills.length) return setError("Enter a prompt.");
     let createdTaskId: string | undefined;
     const finish = beginTaskAction("dispatch", "dispatch", undefined, async () => {
@@ -149,7 +143,7 @@ export function DispatchView() {
       // Transient REST failure → toast (the form stays put so the user can retry
       // without re-typing). Inline Alert is reserved for the pre-flight
       // validation guards above.
-      toast({ title: "Couldn't dispatch", description: e instanceof ApiError && e.status < 500 ? errMsg(e) : `${errMsg(e)} Check Tasks before retrying; creation could not be confirmed.`, variant: "destructive" });
+      toast({ title: "Couldn't dispatch", description: e instanceof ApiError && e.status < 500 ? errMsg(e) : `${errMsg(e)} Check All spaces before retrying; creation could not be confirmed.`, variant: "destructive" });
     } finally { finish(); }
   }
 
@@ -162,27 +156,22 @@ export function DispatchView() {
           <div className="flex flex-col gap-3 py-4">
             <p className="text-lg font-medium text-strong">What should we work on?</p>
             <Field>
-              <FieldLabel htmlFor="dispatch-repo">Working directory</FieldLabel>
+              <FieldLabel htmlFor="dispatch-repo">Space</FieldLabel>
               <div className="flex min-w-0 gap-2">
                 <Select value={repoId} onValueChange={(v) => {
                   if (!v) return;
                   setRepoId(v);
-                  const repo = repos.find((candidate) => candidate.id === v);
-                  if (repo) {
-                    setInheritedSpace(repo.path);
-                    writeSelectedSpace(repo.path, repo.id);
-                  }
                 }} disabled={repos.length === 0 || busy}>
                   <SelectTrigger id="dispatch-repo" className="min-w-0 flex-1 rounded-full">
-                    <SelectValue placeholder={repos.length === 0 ? "No repos registered" : "Select a repo"} />
+                    <SelectValue placeholder={repos.length === 0 ? "No Spaces connected" : "Select a Space"} />
                   </SelectTrigger>
                   <SelectContent><SelectGroup>{repos.map((r) => <SelectItem key={r.id} value={r.id}>
-                    {r.name} <span className="text-muted-foreground">({r.vcs === "none" ? "folder" : r.defaultBaseRef})</span>
+                    {r.name}{spaceQualifier(r, repoMap) && <span className="text-muted-foreground"> · {spaceQualifier(r, repoMap)}</span>}
                   </SelectItem>)}</SelectGroup></SelectContent>
                 </Select>
-                <Button type="button" variant="secondary" className="shrink-0 rounded-full" disabled={busy} onClick={() => setPickerOpen(true)}><Plus data-icon="inline-start" /> Add</Button>
+                <Button type="button" variant="secondary" className="shrink-0 rounded-full" disabled={busy} onClick={() => setPickerOpen(true)}><Plus data-icon="inline-start" /> Add Space</Button>
               </div>
-              {contextDescription && <FieldDescription>{contextDescription}</FieldDescription>}
+              {repoMap.has(repoId) && <FieldDescription>New task in {repoMap.get(repoId)!.name}</FieldDescription>}
             </Field>
           </div>
         </div>

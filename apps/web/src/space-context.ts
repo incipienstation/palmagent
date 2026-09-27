@@ -1,6 +1,20 @@
 import type { Repo, TaskState } from "@palmagent/shared";
 
 export const ALL_SPACES = "all";
+export const spacePath = (repoId: string) => `/spaces/${encodeURIComponent(repoId)}`;
+export const newTaskPath = (repoId?: string) => repoId ? `/new/space/${encodeURIComponent(repoId)}` : "/new";
+
+/** Distinguish duplicate names without exposing long paths in every row. */
+export function spaceQualifier(repo: Repo, repos: Map<string, Repo>): string | undefined {
+  if (![...repos.values()].some(other => other.id !== repo.id && other.name === repo.name)) return;
+  const parts = repo.path.split("/").filter(Boolean);
+  for (let length = 2; length <= parts.length; length++) {
+    const suffix = parts.slice(-length).join("/");
+    if (![...repos.values()].some(other => other.id !== repo.id && other.name === repo.name
+      && other.path.split("/").filter(Boolean).slice(-length).join("/") === suffix)) return suffix;
+  }
+  return repo.path;
+}
 export const SELECTED_SPACE_KEY = "working-directory";
 const SELECTED_SPACE_REPO_KEY = "working-directory-repo";
 

@@ -13,13 +13,13 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { AppBar } from "./AppShell";
 import { TerminalScreen } from "./TerminalScreen";
 import { useUpdateState } from "../update-state";
-import { readSelectedSpace, readSelectedSpaceRepoId, repoForSelectedSpace, writeSelectedSpace } from "../space-context";
+
 
 export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; repoId?: string; onClose?: () => void }) {
   const terminalOperations = useTerminalOperations();
   const { repos } = useRepos();
   const scope = "terminals:" + (taskId ?? repoId ?? "all");
-  const [space, setSpace] = useUpdateState(scope + ":space", () => repoId ?? readSelectedSpaceRepoId() ?? "");
+  const [space, setSpace] = useUpdateState(scope + ":space", () => repoId ?? "");
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [capabilities, setCapabilities] = useState<TerminalCapabilities>();
   const [selected, setSelected] = useUpdateState(scope + ":selected", "");
@@ -38,14 +38,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const [title, setTitle] = useUpdateState(scope + ":title", "");
   const requestId = useRef<string | undefined>(undefined);
   const generation = useRef(0);
-  useEffect(() => {
-    if (taskId || repoId || !repos.size) return;
-    const inherited = repoForSelectedSpace(readSelectedSpace(), repos);
-    if (inherited && inherited !== space) {
-      setSpace(inherited);
-      setSelected("");
-    }
-  }, [repos, repoId, setSelected, setSpace, space, taskId]);
+
   useEffect(() => { requestId.current = undefined; }, [space, taskId]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
@@ -74,11 +67,9 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
     setSelected(result.terminal.id); requestId.current = undefined;
   });
-  const projectPicker = !taskId && <Select value={space} onValueChange={value => {
+  const spacePicker = !taskId && <Select value={space} onValueChange={value => {
     setSpace(value);
     setSelected("");
-    const repo = repos.get(value);
-    if (repo) writeSelectedSpace(repo.path, repo.id);
   }} disabled={busy}>
     <SelectTrigger className="w-auto min-w-0 flex-1 rounded-full border-0 bg-transparent px-2" aria-label="Terminal project">
       <SelectValue placeholder="Choose a project" />
@@ -94,7 +85,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
       transparent
       compactHeader={!taskId}
     >
-      {projectPicker && <><span className="shrink-0 pl-3 text-sm font-semibold">Terminals ·</span>{projectPicker}</>}
+      {spacePicker && <><span className="shrink-0 pl-3 text-sm font-semibold">Terminals ·</span>{spacePicker}</>}
     </AppBar>
     <div className="flex shrink-0 flex-col gap-2 px-3 pt-[calc(64px+var(--safe-top))] pb-2">
       <div className="flex min-w-0 gap-2">
