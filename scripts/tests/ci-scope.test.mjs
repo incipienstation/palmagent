@@ -24,6 +24,19 @@ test('package READMEs do not hide code or make arbitrary Markdown static', () =>
   assert.deepEqual(classifyChanges(['packages/new/README.md']), all);
 });
 
+test('PR template changes are static without hiding code or executable GitHub configuration', () => {
+  const template = '.github/pull_request_template.md';
+  assert.deepEqual(classifyChanges([template]), none);
+  assert.deepEqual(classifyChanges([template, 'README.md']), none);
+  assert.deepEqual(classifyChanges([template, 'apps/web/src/app.tsx']),
+    { ...none, types: true, tooling: true, web: true });
+  for (const path of ['.github/workflows/ci.yml', '.github/actions/example/action.yml',
+    '.github/scripts/check.mjs', '.github/unknown.md', '.github/pull_request_template.md.js']) {
+    assert.deepEqual(classifyChanges([template, path]), all, path);
+  }
+  assert.deepEqual(classifyChanges([template], 'push'), all);
+});
+
 test('server, web, and shared changes select their runtime surfaces', () => {
   assert.deepEqual(classifyChanges(['apps/server/src/server.ts']), { ...none, types: true, tooling: true, server: true });
   assert.deepEqual(classifyChanges(['apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });

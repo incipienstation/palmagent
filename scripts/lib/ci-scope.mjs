@@ -21,6 +21,7 @@ const isStatic = (path) => /^(?:AGENTS|CLAUDE|README|CHANGELOG)\.md$/.test(path)
   || /^(?:apps\/(?:server|web)|packages\/shared)\/README\.md$/.test(path)
   || /^(?:docs|skills|plugins|\.harness\/skills)\/.+\.md$/.test(path)
   || /^\.(?:agents|claude)\/skills\/[a-z0-9-]+(?:\/SKILL\.md)?$/.test(path)
+  || path === '.github/pull_request_template.md'
   || ['.claude-plugin/marketplace.json', 'plugins/claude/.claude-plugin/plugin.json',
     'plugins/codex/.agents/plugins/marketplace.json',
     'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'].includes(path);
