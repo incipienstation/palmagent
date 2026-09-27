@@ -175,18 +175,31 @@ for (const focusDuringHold of [false, true]) {
       }
       await page.getByRole("radio", { name: "Queue", exact: true }).tap();
       await expect(menu).toBeHidden();
+      if (!focusDuringHold) {
+        // Close autofocus runs after the popover's exit animation.
+        await page.waitForTimeout(300);
+        await expect(page.getByRole("button", { name: "Add to queue", exact: true })).not.toBeFocused();
+        await expect(input).not.toBeFocused();
+        await expect(composer).toHaveAttribute("data-expanded", "false");
+      }
       await touchHold(page, page.getByRole("button", { name: "Add to queue", exact: true }));
       await expect(menu).toBeVisible();
       await page.getByRole("radio", { name: "Send now", exact: true }).tap();
       await expect(menu).toBeHidden();
+      if (!focusDuringHold) {
+        await page.waitForTimeout(300);
+        await expect(page.getByRole("button", { name: "Send now", exact: true })).not.toBeFocused();
+        await expect(input).not.toBeFocused();
+        await expect(composer).toHaveAttribute("data-expanded", "false");
+      }
       expect(calls).toHaveLength(0);
       expect(await page.evaluate(() => (window as any).vibrations)).toEqual([12, 6, 12, 6]);
       // A new deliberate input tap still dismisses the menu and focuses input.
       await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
       await expect(menu).toBeVisible();
-      // The centre can sit behind the delivery popup when expanded; the left
-      // edge holds Attach in the compact row. Tap the exposed gap after it.
-      await input.tap({ position: { x: 50, y: 10 } });
+      // Use the exposed input text area, beyond the attachment toolbar.
+      const tapX = await composer.getAttribute("data-expanded") === "true" ? 50 : 100;
+      await input.tap({ position: { x: tapX, y: 10 } });
       await expect(menu).toBeHidden();
       await expect(input).toBeFocused();
     } finally { await session.detach(); }
@@ -261,6 +274,7 @@ for (const draft of ["", "Keep the keyboard open"]) {
     await queue.press("ArrowDown");
     await expect(page.getByRole("radio", { name: "Queue", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
+    await expect(queue).toBeFocused();
     expect(calls).toHaveLength(0);
   });
 }

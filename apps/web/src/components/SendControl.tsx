@@ -11,8 +11,14 @@ export function SendControl({ mode, onMode, onSend, disabled, sendDisabled }: {
   onSend: () => void; disabled: boolean; sendDisabled: boolean;
 }) {
   const button = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
   const [open, setOpen] = useState(false);
-  const press = useLongPress(() => setOpen(true), () => { if (!sendDisabled) onSend(); }, disabled);
+  const press = useLongPress(() => {
+    // A touch hold can open this menu without focusing the compact composer.
+    // Restore trigger focus only when it owned focus before the menu opened.
+    returnFocus.current = document.activeElement === button.current;
+    setOpen(true);
+  }, () => { if (!sendDisabled) onSend(); }, disabled);
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverAnchor asChild>
       <Button ref={button} type="button" variant="ghost" size="icon-lg" className={cn("group relative shrink-0 touch-pan-y select-none [-webkit-touch-callout:none] active:bg-transparent", press.pressing && "scale-95")}
@@ -26,7 +32,7 @@ export function SendControl({ mode, onMode, onSend, disabled, sendDisabled }: {
     <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} onFocusOutside={press.onFocusOutside} onCloseAutoFocus={event => {
       event.preventDefault();
       // Exit animation can finish after the user has returned to their draft.
-      if (!(document.activeElement instanceof HTMLTextAreaElement)) button.current?.focus();
+      if (returnFocus.current && !(document.activeElement instanceof HTMLTextAreaElement)) button.current?.focus();
     }} side="top" align="end" className="w-64 p-2" aria-label="Message delivery">
       <ToggleGroup type="single" value={mode} aria-label="Message delivery mode" onValueChange={value => {
         if (value !== "send" && value !== "queue") return;
