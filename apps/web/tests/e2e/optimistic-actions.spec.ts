@@ -667,6 +667,10 @@ test("a queue action preserves the draft action and does not flash a spinner", a
   });
   const composer = page.getByRole("group", { name: "Message composer", exact: true });
   await composer.getByRole("textbox", { name: "Message", exact: true }).fill("Keep composing");
+  // Compare the settled draft layout, not a frame of its focus transition.
+  await composer.evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   const composerHeight = (await composer.boundingBox())!.height;
   await queueMenu(page, message.text);
   await page.getByRole("button", { name: "Remove from queue", exact: true }).click();

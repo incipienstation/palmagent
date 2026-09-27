@@ -182,7 +182,7 @@ for (const focusDuringHold of [false, true]) {
       // A new deliberate input tap still dismisses the menu and focuses input.
       await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
       await expect(menu).toBeVisible();
-      await input.tap({ position: { x: 8, y: 10 } });
+      await input.tap();
       await expect(menu).toBeHidden();
       await expect(input).toBeFocused();
     } finally { await session.detach(); }
