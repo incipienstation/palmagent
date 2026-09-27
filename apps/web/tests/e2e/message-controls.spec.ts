@@ -36,6 +36,7 @@ test("running and queued-edit summaries show the applicable settings without cha
   const input = page.getByRole("textbox");
   const summary = page.getByRole("button", { name: "Current task settings" });
   const settings = page.getByRole("button", { name: "Configure task settings" });
+  await input.focus();
   await expect(summary).toBeVisible();
   await expect(summary).toBeDisabled();
   await expect(summary).toContainText("sonnet");
