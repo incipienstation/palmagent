@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Account allowance summaries now use a 40px minimum row height, freeing space above the composer.
+
 ## 0.1.0-alpha.109
 
 ### Changed
