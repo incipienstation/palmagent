@@ -5,10 +5,10 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 async function onScreen(control: Locator) {
   await expect(control).toBeInViewport({ ratio: 1 });
-  expect(await control.evaluate((el) => {
+  await expect.poll(() => control.evaluate((el) => {
     const r = el.getBoundingClientRect();
     return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
-  }), "control is hittable").toBe(true);
+  }), { message: "control is hittable after layout and overlay transitions settle" }).toBe(true);
 }
 
 for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar order and adjacent model/send controls at ${width}px`, async ({ page }) => {
