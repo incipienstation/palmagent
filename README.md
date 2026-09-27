@@ -1,19 +1,50 @@
-# Palmagent
+<div align="center">
+  <img src="apps/web/public/logo.svg" width="76" height="76" alt="Palmagent" />
+  <h1>Palmagent</h1>
+  <p><strong>A mobile-first, self-hosted dispatcher for Claude Code and Codex.</strong></p>
+  <p>Start coding tasks, follow their progress, and pick up from your phone or desktop.</p>
+  <p>
+    <a href="https://github.com/incipienstation/palmagent/releases">
+      <img src="https://img.shields.io/github/v/release/incipienstation/palmagent?include_prereleases=true&amp;label=latest%20release&amp;color=0f766e" alt="Latest release" />
+    </a>
+    <a href="LICENSE">
+      <img src="https://img.shields.io/github/license/incipienstation/palmagent?color=0f766e" alt="MIT license" />
+    </a>
+  </p>
+  <p>
+    <a href="#quick-start">Get started</a> ·
+    <a href="docs/USER-GUIDE.md">User guide</a> ·
+    <a href="docs/HOST-INGRESS.md">Host setup</a> ·
+    <a href="#development">Development</a>
+  </p>
+</div>
 
-Palmagent is a self-hosted dispatcher for Claude Code and Codex. Use one mobile-first
-web app to start tasks, follow their progress, and continue work from your own host.
+## How it works
+
+```mermaid
+flowchart LR
+  client["Your phone or desktop"] --> palmagent["Palmagent<br/>on your host"]
+  palmagent --> claude["Claude Code"]
+  palmagent --> codex["Codex"]
+  claude --> repos["Your repositories"]
+  codex --> repos
+  classDef brand fill:#0f766e,stroke:#0f766e,color:#ffffff
+  class palmagent brand
+```
 
 ## What you can do
 
-- Run Claude Code and Codex tasks from one interface, with live updates and a [persistent message queue](docs/MESSAGES.md).
-- Find repositories in server-side [Spaces](docs/USER-GUIDE.md#space-search-paths) and schedule [routines](docs/USER-GUIDE.md#routines).
-- [Hand off native CLI sessions](docs/USER-GUIDE.md#sessions-and-working-directories), or use [persistent Task and Space shells](docs/terminals.md) in the web app.
-- Manage service setup, [release channels](docs/USER-GUIDE.md#choose-a-release-channel), and [updates](docs/USER-GUIDE.md#updates) through the Palmagent operator plugin.
+| Capability | What it does |
+| --- | --- |
+| **Coordinate coding tasks** | Run Claude Code and Codex from one interface, see live progress, and queue follow-up messages with the [persistent message queue](docs/MESSAGES.md). |
+| **Keep project context** | Find repositories through server-side [Spaces](docs/USER-GUIDE.md#space-search-paths) and schedule [routines](docs/USER-GUIDE.md#routines). |
+| **Move between app and CLI** | [Hand off native CLI sessions](docs/USER-GUIDE.md#sessions-and-working-directories) or use [persistent Task and Space shells](docs/terminals.md). |
+| **Manage from one place** | Use the Palmagent operator plugin to manage service setup, [release channels](docs/USER-GUIDE.md#choose-a-release-channel), and [updates](docs/USER-GUIDE.md#updates). |
 
 ## Quick start
 
-Install the Palmagent plugin for Claude Code or Codex from a published `v<version>` tag.
-Choose a stable release tag for Stable or a prerelease tag for Preview.
+Install the Palmagent plugin for Claude Code or Codex from a published `v<version>` tag. Use a
+stable release tag for Stable or a prerelease tag for Preview.
 
 ### Claude Code
 
@@ -30,31 +61,31 @@ codex plugin marketplace add '/abs/path/to/palmagent-v<version>/plugins/codex'
 codex plugin add palmagent@palmagent
 ```
 
-Keep the Codex checkout at its original path because it is the local marketplace source.
-See the [Codex plugin guide](plugins/codex/README.md) for version changes and recovery.
+Keep the Codex checkout at its original path because it is the local marketplace source. See the
+[Codex plugin guide](plugins/codex/README.md) for version changes and recovery.
 
-Start a new agent session after installing the plugin, then ask it to install Palmagent.
-Stable is the default channel for a new installation. To opt into Preview, ask the plugin:
-**“Use Preview for Palmagent.”**
+After installing, start a new agent session and ask it to install Palmagent. Stable is the default
+channel for a new installation. To opt into Preview, ask the plugin: **“Use Preview for Palmagent.”**
 
 ## Before you expose Palmagent
 
-Agent processes run on the Palmagent host with the service account's access to files and
-tools. Choose the server's repository paths and account access deliberately. The runtime
-binds to loopback; public access requires an HTTPS reverse proxy. See [host ingress and
-migration](docs/HOST-INGRESS.md) for setup and transport details.
+> [!IMPORTANT]
+> Agent processes run on the Palmagent host with the service account's access to files and tools.
+> Choose repository paths and account access deliberately. The runtime binds to loopback; public
+> access requires an HTTPS reverse proxy. See [host ingress and migration](docs/HOST-INGRESS.md) for
+> setup and transport details.
 
 ## Documentation
 
-| Topic | Guide |
+| Guide | Covers |
 | --- | --- |
-| Using Palmagent, configuring Spaces, routines, sessions, and updates | [User guide](docs/USER-GUIDE.md) |
-| Message delivery, queues, and recovery | [Message guide](docs/MESSAGES.md) |
-| Session ownership and application updates | [Session lifecycle](docs/SESSION-LIFECYCLE.md) |
-| Persistent Task and Space shells | [Shell access](docs/terminals.md) |
-| Selecting skills in messages | [Skill picker](docs/SKILLS.md) |
-| Host ingress and migration | [Host ingress](docs/HOST-INGRESS.md) |
-| Web app development and UI checks | [Web app guide](apps/web/README.md) |
+| [User guide](docs/USER-GUIDE.md) | Spaces, routines, sessions, release channels, and updates |
+| [Message delivery](docs/MESSAGES.md) | Queues, delivery behavior, and recovery |
+| [Session lifecycle](docs/SESSION-LIFECYCLE.md) | Session ownership and application updates |
+| [Persistent shells](docs/terminals.md) | Task and Space shell access |
+| [Skills](docs/SKILLS.md) | Selecting skills for messages |
+| [Host ingress](docs/HOST-INGRESS.md) | HTTPS access, setup, and migration |
+| [Web app development](apps/web/README.md) | Frontend development and UI checks |
 
 ## Development
 
@@ -68,8 +99,8 @@ pnpm install
 pnpm dev
 ```
 
-To run the web app during development, start `pnpm web:dev` in another terminal.
-Run `node scripts/verify-local.mjs` to select local checks for the complete change.
+To run the web app, start `pnpm web:dev` in another terminal. Run
+`node scripts/verify-local.mjs` to select checks for the complete change.
 
 ## License
 
