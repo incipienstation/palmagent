@@ -1,10 +1,7 @@
-import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
+import { readNdjsonQuery } from "./ndjson-query.js";
 import type { CodexModelCatalog, CodexModelCatalogModel, ModelCatalogChoice } from "@palmagent/shared";
 
-const MAX_RESPONSE_BYTES = 1_048_576;
 export const MODEL_CATALOG_TTL_MS = 300_000;
 export const MODEL_CATALOG_RETRY_MS = 30_000;
 const DEFAULT_CHOICE: ModelCatalogChoice = { value: "default", label: "default" };
@@ -75,85 +72,22 @@ export function parseCodexModelCatalog(value: unknown, fetchedAt = Date.now()): 
 
 // No prompt or turn is sent. Authentication remains inside the installed CLI.
 export async function readCodexModelCatalog(home: string, timeoutMs = 15_000): Promise<unknown> {
-  const cwd = await mkdtemp(join(tmpdir(), "palmagent-codex-catalog-"));
-  try {
-    return await new Promise((resolveResult, reject) => {
-      const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
-        cwd,
-        env: { ...process.env, CODEX_HOME: home },
-        stdio: ["pipe", "pipe", "ignore"],
-        detached: process.platform !== "win32",
-      });
-      const stop = (signal: NodeJS.Signals) => {
-        try {
-          if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
-          else child.kill(signal);
-        } catch { /* the reader has already exited */ }
-      };
-      let done = false;
-      let buffer = "";
-      let bytes = 0;
-      let result: unknown;
-      let failure: Error | undefined;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      let killTimer: ReturnType<typeof setTimeout> | undefined;
-      const finish = (error?: Error, value?: unknown) => {
-        if (done) return;
-        done = true;
-        failure = error;
-        result = value;
-        if (timer) clearTimeout(timer);
-        child.stdin.end();
-        stop("SIGTERM");
-        killTimer = setTimeout(() => stop("SIGKILL"), 1_000);
-        killTimer.unref();
-      };
-      const send = (value: unknown) => {
-        try { child.stdin.write(`${JSON.stringify(value)}\n`); }
-        catch { finish(new Error("Codex catalog channel closed")); }
-      };
-      const handle = (message: Record<string, unknown>) => {
-        if (message.id === 1) {
-          if (message.error) return finish(new Error("Codex catalog initialization failed"));
-          send({ method: "initialized" });
-          send({ method: "model/list", id: 2, params: { includeHidden: false } });
-        } else if (message.id === 2) {
-          if (message.error) return finish(new Error("Codex model catalog request failed"));
-          finish(undefined, message.result);
-        }
-      };
-      child.stdin.on("error", () => finish(new Error("Codex catalog channel closed")));
-      child.on("error", () => finish(new Error("Codex CLI unavailable")));
-      child.on("close", () => {
-        if (timer) clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        stop("SIGKILL");
-        if (!done || failure) reject(failure ?? new Error("Codex catalog CLI exited"));
-        else resolveResult(result);
-      });
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        if (done) return;
-        bytes += Buffer.byteLength(chunk);
-        if (bytes > MAX_RESPONSE_BYTES) return finish(new Error("Codex model catalog response too large"));
-        buffer += chunk;
-        let end: number;
-        while (!done && (end = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, end);
-          buffer = buffer.slice(end + 1);
-          try {
-            const message = record(JSON.parse(line));
-            handle(message);
-          } catch { /* ignore notifications and malformed lines until timeout */ }
-        }
-      });
-      timer = setTimeout(() => finish(new Error("Codex model catalog read timed out")), timeoutMs);
-      timer.unref();
-      send({ method: "initialize", id: 1, params: { clientInfo: { name: "palmagent", version: "1" }, capabilities: {} } });
-    });
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
+  return readNdjsonQuery({
+    command: "codex", args: ["app-server", "--listen", "stdio://"], env: { CODEX_HOME: home },
+    directoryPrefix: "palmagent-codex-catalog-", timeoutMs,
+    errors: { unavailable: "Codex CLI unavailable", channel: "Codex catalog channel closed",
+      timeout: "Codex model catalog read timed out", tooLarge: "Codex model catalog response too large", exited: "Codex catalog CLI exited" },
+    initialize: ({ send }) => send({ method: "initialize", id: 1, params: { clientInfo: { name: "palmagent", version: "1" }, capabilities: {} } }),
+    receive(message, { send, finish }) {
+      if (message.id === 1) {
+        if (message.error) return finish(new Error("Codex catalog initialization failed"));
+        send({ method: "initialized" });
+        send({ method: "model/list", id: 2, params: { includeHidden: false } });
+      } else if (message.id === 2) {
+        finish(message.error ? new Error("Codex model catalog request failed") : undefined, message.result);
+      }
+    },
+  });
 }
 
 export interface CodexModelCatalogReader {
