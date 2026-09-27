@@ -47,6 +47,12 @@ async function closeRequest(cdp: CDPSession) {
   await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 }
+async function browserBack(cdp: CDPSession) {
+  // Chromium handles the mouse Back button through its browser history path.
+  // Send its release without a pointer-down: a fresh page activation would
+  // clear history-skipping flags and hide the system-Back regression.
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", button: "back", buttons: 0, x: 0, y: 0 });
+}
 async function hint(cdp: CDPSession) {
   await expect.poll(async () => (await state(cdp)).text).toBe("Press back again to exit");
 }
@@ -152,6 +158,65 @@ test("dismissing the native hint immediately restores the first-Back condition",
   await hint(cdp);
   await page.close();
 });
+
+for (const reload of [false, true]) {
+  test(`checking updates retains native exit after nested Settings Back${reload ? " and checkpoint reload" : ""}`, async ({ context }) => {
+    await standalone(context);
+    const { page, cdp } = await launch(context);
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: "Updates", exact: true }).click();
+    await Promise.all([
+      page.waitForResponse(response => response.url().endsWith("/api/settings/updates")
+        && response.request().method() === "POST" && response.request().postDataJSON().action === "check"),
+      page.getByRole("button", { name: "Check again", exact: true }).click(),
+    ]);
+    if (reload) {
+      // Model the screen checkpoint written before an automatic update reload.
+      await page.evaluate(async () => {
+        const id = "settings-back-update";
+        await new Promise<void>((resolve, reject) => {
+          const request = indexedDB.open("palmagent-screen-state", 1);
+          request.onupgradeneeded = () => request.result.createObjectStore("checkpoints");
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction("checkpoints", "readwrite");
+            tx.objectStore("checkpoints").put({ route: location.hash, created: Date.now(),
+              values: { "settings:open": true, "settings:section": "updates" }, screen: { scroll: [] } }, id);
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = () => { db.close(); reject(tx.error); };
+          };
+        });
+        sessionStorage.setItem("palmagent:screen-checkpoint", id);
+      });
+      await cdp.send("Page.enable");
+      const loaded = new Promise<void>(resolve => cdp.once("Page.loadEventFired", () => resolve()));
+      await cdp.send("Page.reload");
+      await loaded;
+    }
+    const dialog = () => passive(cdp, `document.querySelector('[role="dialog"][data-state="open"] h2')?.textContent ?? ''`);
+    await expect.poll(dialog).toBe("Updates");
+    const before = await cdp.send("Page.getNavigationHistory");
+    // From here until the exit hint, use only passive reads and browser Back.
+    // JavaScript history.back() and page interaction bypass the original bug.
+    await browserBack(cdp);
+    await expect.poll(dialog).toBe("Settings");
+    await expect.poll(async () => (await cdp.send("Page.getNavigationHistory")).currentIndex).toBe(before.currentIndex);
+    await browserBack(cdp);
+    await expect.poll(async () => (await state(cdp)).guard).toBe("app");
+    await expect.poll(() => passive(cdp, `document.querySelectorAll('[role="dialog"]').length`)).toBe(0);
+    await closeRequest(cdp);
+    await hint(cdp);
+    await expect.poll(async () => (await state(cdp)).guard).toBe("app");
+    await expect.poll(async () => (await state(cdp)).text).toBe("");
+    await closeRequest(cdp);
+    await hint(cdp);
+    await closeRequest(cdp);
+    expect((await state(cdp)).guard).toBe("floor");
+    await page.close();
+  });
+}
 
 test("reloading the exposed legacy floor retains native exit without activation", async ({ context }) => {
   await standalone(context);

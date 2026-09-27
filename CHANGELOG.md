@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Back from Settings subpages, including Updates and screens restored after an update, no longer skips the app's history and bypasses the two-press exit confirmation.
+
 ## 0.1.0-alpha.103
 
 ### Fixed
