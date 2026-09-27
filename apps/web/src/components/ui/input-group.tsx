@@ -23,6 +23,14 @@ function InputGroupAddon({ align = "inline-start", className, ...props }: React.
   )} {...props} />;
 }
 
+const InputGroupInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
+  ({ className, ...props }, ref) => <input ref={ref} data-slot="input-group-control" className={cn(
+    "h-11 min-w-0 flex-1 border-0 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40 [&::-webkit-search-cancel-button]:appearance-none",
+    className,
+  )} {...props} />,
+);
+InputGroupInput.displayName = "InputGroupInput";
+
 const InputGroupTextarea = React.forwardRef<HTMLTextAreaElement, React.ComponentProps<"textarea">>(
   ({ className, ...props }, ref) => <textarea ref={ref} data-slot="input-group-control" className={cn(
     "min-w-0 flex-1 resize-none border-0 bg-transparent text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40",
@@ -31,4 +39,4 @@ const InputGroupTextarea = React.forwardRef<HTMLTextAreaElement, React.Component
 );
 InputGroupTextarea.displayName = "InputGroupTextarea";
 
-export { InputGroup, InputGroupAddon, InputGroupTextarea };
+export { InputGroup, InputGroupAddon, InputGroupInput, InputGroupTextarea };
