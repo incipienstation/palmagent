@@ -1,0 +1,192 @@
+name: PWA cache experiment
+
+on:
+  pull_request:
+    branches: [develop]
+    paths: [.github/workflows/web-cache-experiment.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-cache-experiment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Temporary experiment: identical checkout, browser coverage, and runner image.
+# Each variant waits for the previous one so its own runners do not compete.
+jobs:
+  baseline:
+    if: github.head_ref == 'feature/ci-web-cache'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, sw]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build PWA per runner
+        run: pnpm web:build
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      - name: Verify browser shard
+        if: matrix.shard != 'sw'
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/3
+      - name: Verify service worker
+        if: matrix.shard == 'sw'
+        run: node apps/web/scripts/test-sw-update.mjs
+
+  cold-build:
+    needs: baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      digest: ${{ steps.digest.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Restore exact PWA cache (forced cold namespace)
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/web/dist
+          # The immutable source SHA includes every source/config/lockfile/version.
+          # Run and attempt suffixes force one miss per repeat of this experiment.
+          key: pwa-experiment-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Require a genuine cache miss
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: test "$CACHE_HIT" != true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared PWA
+        run: pnpm web:build
+      - name: Hash complete output tree
+        id: digest
+        run: echo "value=$(find apps/web/dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        with:
+          path: apps/web/dist
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pwa-cold-${{ github.run_attempt }}
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  cold-test:
+    needs: cold-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, sw]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-cold-${{ github.run_attempt }}
+          path: apps/web/dist
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      - name: Verify browser shard
+        if: matrix.shard != 'sw'
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/3
+      - name: Verify service worker
+        if: matrix.shard == 'sw'
+        run: node apps/web/scripts/test-sw-update.mjs
+
+  warm-build:
+    needs: [cold-build, cold-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Restore exact PWA cache on a fresh runner
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/web/dist
+          key: pwa-experiment-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+      - name: Require an exact hit and byte-identical output tree
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+          EXPECTED_DIGEST: ${{ needs.cold-build.outputs.digest }}
+        run: |
+          test "$CACHE_HIT" = true
+          test -f apps/web/dist/index.html
+          test -f apps/web/dist/sw.js
+          test "$(find apps/web/dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)" = "$EXPECTED_DIGEST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pwa-warm-${{ github.run_attempt }}
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  warm-test:
+    needs: warm-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, sw]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-warm-${{ github.run_attempt }}
+          path: apps/web/dist
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      - name: Verify browser shard
+        if: matrix.shard != 'sw'
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/3
+      - name: Verify service worker
+        if: matrix.shard == 'sw'
+        run: node apps/web/scripts/test-sw-update.mjs
