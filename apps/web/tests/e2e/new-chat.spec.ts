@@ -168,3 +168,20 @@ test("slow creation adds a quiet hint while keeping the first message and Stop",
   await expect(page.getByText("Not sent", { exact: true })).toBeVisible();
   await expect(page.getByText("Preparing conversation…", { exact: true })).toHaveCount(0);
 });
+
+test("a failed initial history read keeps the accepted first message visible", async ({ page }) => {
+  await installScopedStream(page);
+  const task = { ...tasks.find(t => t.taskId === "t-run")!, prompt: "Keep the first message", title: undefined };
+  await page.route("**/api/tasks", route => route.request().method() === "POST"
+    ? route.fulfill({ status: 201, json: { task } }) : route.continue());
+  await page.route("**/api/tasks/t-run/history*", route => route.fulfill({ status: 503, json: { error: "History temporarily unavailable" } }));
+  await page.goto("/#/new");
+  await page.getByLabel("Prompt", { exact: true }).fill("Keep the first message");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect(page).toHaveURL(/task\/t-run$/);
+  await expect(page.getByRole("alert")).toContainText("History temporarily unavailable");
+  await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(1);
+  await expect(page.getByRole("group", { name: "Your message" })).toContainText("Keep the first message");
+  await expect(page.getByRole("button", { name: "Retry loading conversation", exact: true })).toBeEnabled();
+  await expect(composer(page)).toBeInViewport({ ratio: 1 });
+});

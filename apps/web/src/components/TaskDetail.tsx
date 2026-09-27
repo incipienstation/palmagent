@@ -67,7 +67,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated 
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
   const heading = creating ? "New task" : task ? taskTitle(task) : taskId;
-  const showingFirstMessage = !!newChat.preview && !hasEarlier && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
+  const showingFirstMessage = !!newChat.preview && !(hasHistory && hasEarlier) && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
   const firstDelivery = creating || showingFirstMessage;
 
   return (
