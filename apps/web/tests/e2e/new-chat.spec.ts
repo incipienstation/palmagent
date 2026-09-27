@@ -20,7 +20,7 @@ for (const width of [360, 1280]) test(`first send keeps the conversation and com
     await route.fulfill({ status: 201, json: { task } });
   });
   await page.route("**/api/tasks/t-run/history*", route => route.fulfill({ json: { events: [], cursor: 0, before: null } }));
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("First message");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "image.png", mimeType: "image/png", buffer: png });
   await page.screenshot({ path: `/tmp/palmagent-new-chat-draft-${width}.png` });
@@ -67,7 +67,7 @@ test("unknown creation checks its ID before retry and never changes the submitte
     checks.push(route.request().url());
     return route.fulfill({ status: 404, json: { error: "Not found" } });
   });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Keep this request");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "image.png", mimeType: "image/png", buffer: png });
   await page.getByRole("button", { name: "Send now", exact: true }).click();
@@ -89,19 +89,19 @@ test("a lost response reconnects to the created task without another POST", asyn
     return route.abort("failed");
   });
   await page.route(/\/api\/tasks\/t_[^/]+$/, route => route.fulfill({ json: { task: { ...tasks.find(t => t.taskId === "t-run"), taskId: `t_${id}` } } }));
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Reconnect me");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await page.getByRole("button", { name: "Check status", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`task/t_${id}$`));
   expect(writes).toBe(1);
-  expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt:repo-app"))).toBeNull();
 });
 
 test("definite rejection offers editing with attachments and settings preserved", async ({ page }) => {
   await page.route("**/api/tasks", route => route.request().method() === "POST"
     ? route.fulfill({ status: 400, json: { error: "Invalid working directory" } }) : route.continue());
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Edit after rejection");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "image.png", mimeType: "image/png", buffer: png });
   await page.getByRole("button", { name: "Configure task settings" }).click();
@@ -123,7 +123,7 @@ test("reload preserves an unresolved first message and retries the original ID a
     requests.push(route.request().postDataJSON());
     return route.fulfill({ status: 503, json: { error: "Connection interrupted" } });
   });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Survive reload");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "image.png", mimeType: "image/png", buffer: png });
   await page.getByRole("button", { name: "Send now", exact: true }).click();
@@ -140,10 +140,10 @@ test("reload preserves an unresolved first message and retries the original ID a
 test("an empty workspace list keeps registration reachable in the compact picker", async ({ page }) => {
   await page.route("**/api/repos", route => route.request().method() === "GET"
     ? route.fulfill({ json: { repos: [] } }) : route.continue());
-  await page.goto("/#/new");
-  await page.getByRole("combobox", { name: "Working directory" }).click();
-  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Add a repo", exact: true })).toBeVisible();
+  await page.goto("/#/new/space/repo-app");
+  await page.getByRole("combobox", { name: "Space" }).click();
+  await page.getByRole("option", { name: "Add Space", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Add Space", exact: true })).toBeVisible();
   await assertViewportLocked(page);
 });
 
@@ -156,7 +156,7 @@ test("slow creation adds a quiet hint while keeping the first message and Stop",
     await pending;
     await route.fulfill({ status: 400, json: { error: "Try again" } });
   });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("A slow start");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page.getByText("Preparing conversation…", { exact: true })).toHaveCount(0);
@@ -175,7 +175,7 @@ test("a failed initial history read keeps the accepted first message visible", a
   await page.route("**/api/tasks", route => route.request().method() === "POST"
     ? route.fulfill({ status: 201, json: { task } }) : route.continue());
   await page.route("**/api/tasks/t-run/history*", route => route.fulfill({ status: 503, json: { error: "History temporarily unavailable" } }));
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Keep the first message");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page).toHaveURL(/task\/t-run$/);

@@ -37,7 +37,7 @@ test.describe("root back-guard (standalone)", () => {
   test("first back stays in-app and exposes the history floor for native exit", async ({ page }) => {
     await fakeStandalone(page);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces" })).toBeVisible();
     // The guard covered its floor sentinel with a live entry on boot.
     expect(await page.evaluate(guardMarker)).toBe("app");
 
@@ -48,7 +48,7 @@ test.describe("root back-guard (standalone)", () => {
     // The exit hint shows while the original entry is exposed. The next native
     // Back can leave without requiring JavaScript to close the browser window.
     await expect(page.getByText("Press back again to exit", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces" })).toBeVisible();
     expect(await page.evaluate(guardMarker)).toBe("floor");
   });
 });
@@ -57,7 +57,7 @@ test.describe("root back-guard (plain browser tab)", () => {
   test("gate off — no sentinel installed when not standalone", async ({ page }) => {
     // No fakeStandalone: headless chromium reports display-mode: browser.
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces" })).toBeVisible();
     // The guard early-returns, so it never writes its history marker.
     expect(await page.evaluate(guardMarker)).toBeUndefined();
   });
@@ -75,11 +75,11 @@ async function rootWithClock(page: Page) {
   await fakeStandalone(page);
   await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await page.clock.pauseAt(new Date("2026-01-01T00:01:00Z"));
 }
 async function expectFreshHint(page: Page) {
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await expect(exitHint(page)).toContainText("Press back again to exit");
   expect(await page.evaluate(guardMarker)).toBe("floor");
 }
@@ -105,7 +105,7 @@ test("a fresh launch with no previous document stays navigable after two Back ca
   // Replace about:blank so the test does not supply an artificial exit target.
   const origin = new URL(test.info().project.use.baseURL!).origin;
   await page.evaluate(url => location.replace(url), origin);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   const cdp = await context.newCDPSession(page);
   expect((await cdp.send("Page.getNavigationHistory")).currentIndex).toBe(1);
   await page.evaluate(() => history.back());
@@ -118,8 +118,8 @@ test("a fresh launch with no previous document stays navigable after two Back ca
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
   await expect(exitHint(page)).toHaveCount(0);
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-  await page.getByRole("button", { name: "Tasks", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "All spaces", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
 });
 
 test("Escape dismissal resets the exit window before its deadline", async ({ page }) => {
@@ -166,7 +166,7 @@ test("replacing the exit hint with late request feedback resets the window", asy
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect.poll(() => requested).toBe(true);
   await pressBack(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await pressBack(page);
   await expectFreshHint(page);
   const armedAt = await page.evaluate(() => Date.now());
@@ -281,12 +281,12 @@ test("cold reopening at the exit floor also starts a fresh sequence", async ({ p
   await fakeStandalone(page);
   const origin = new URL(test.info().project.use.baseURL!).origin;
   await page.evaluate(url => location.replace(url), origin);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   for (let cycle = 0; cycle < 2; cycle++) {
     await page.evaluate(() => history.back());
     await expectFreshHint(page);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
     expect(await page.evaluate(guardMarker)).toBe("app");
     expect(await page.evaluate(() => history.length)).toBe(2);
     await expect(exitHint(page)).toHaveCount(0);

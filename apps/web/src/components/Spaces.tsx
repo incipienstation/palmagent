@@ -6,7 +6,7 @@ import { useRepos } from "../hooks/useRepos";
 import { useActionState } from "../action-state";
 import { useUpdateState } from "../update-state";
 import { navigate } from "../router";
-import { spacePath, spaceQualifier } from "../space-context";
+import { spaceActivity, spacePath, spaceQualifier } from "../space-context";
 import { reloadApp } from "../pwa";
 import { AppBar, AppShell } from "./AppShell";
 import { EmptyState } from "./EmptyState";
@@ -16,21 +16,6 @@ import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Skeleton } from "./ui/skeleton";
-
-export function spaceActivity(repoId: string, tasks: TaskState[]) {
-  const items = tasks.filter(task => task.repoId === repoId && task.status !== "archived");
-  const attention = items.filter(task => ["awaiting_input", "awaiting_approval"].includes(task.status)).length;
-  const running = items.filter(task => task.status === "running").length;
-  const queued = items.filter(task => task.status === "queued").length;
-  const latest = Math.max(0, ...items.map(task => task.lastActivityAt));
-  const summary = [
-    attention ? `${attention} need attention` : "",
-    running ? `${running} working` : queued ? `${queued} queued` : "",
-  ].filter(Boolean).join(" · ");
-  const minutes = Math.max(0, Math.floor((Date.now() - latest) / 60_000));
-  const time = minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
-  return { latest, summary: summary || (latest ? `Last active ${time}` : "No tasks yet") };
-}
 
 export function SpacesView({ tasks, conn, loading }: { tasks: TaskState[]; conn: ConnState; loading: boolean }) {
   const { repos, loading: reposLoading, error, refresh } = useRepos();

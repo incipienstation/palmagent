@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 
+// These flows start with a previously used Space; first-use selection is covered in spaces.spec.ts.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pref:dispatch-repo", "repo-app"));
+});
+
 const task = "#/task/t-idle-rich";
 async function standalone(page: Page) {
   await page.addInitScript(() => {
@@ -59,7 +64,7 @@ for (const installed of [false, true]) {
       await pageEntry(page);
       await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
       await back(page);
-      await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
       await pageEntry(page);
       await forward(page);
       await expect(page).toHaveURL(new RegExp(task + "$"));
@@ -75,15 +80,15 @@ for (const installed of [false, true]) {
         expect(await page.evaluate(() => history.length)).toBe(length);
       }
       await back(page);
-      await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
       await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
     });
 
     test("direct task link has an in-app return to Tasks", async ({ page }) => {
       await page.goto("/" + task);
       await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-      await page.getByRole("button", { name: "Tasks", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "All spaces", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
       await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
     });
 
@@ -95,8 +100,8 @@ for (const installed of [false, true]) {
       await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
       await pageEntry(page);
       await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-      await page.getByRole("button", { name: "Tasks", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "All spaces", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
     });
 
     test("drawer navigation cleans up its cover and preserves page Back/Forward", async ({ page }) => {
@@ -124,7 +129,7 @@ test("repeated Escape and close actions leave no extra Back steps", async ({ pag
     await pageEntry(page);
   }
   await back(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
 });
 
 test("Back cancels a nested destructive confirmation without running its action", async ({ page }) => {
@@ -156,17 +161,17 @@ test("Back closes an embedded terminal before leaving the conversation", async (
   await expect(page).toHaveURL(new RegExp(task + "$"));
   await pageEntry(page);
   await back(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
 });
 
 test("Back dismisses selectors and action menus without changing the page", async ({ page }) => {
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByRole("combobox").first().click();
   await expect(page.getByRole("listbox")).toBeVisible();
   await layerEntry(page);
   await back(page);
   await expect(page.getByRole("listbox")).toHaveCount(0);
-  await expect(page).toHaveURL(/#\/new$/);
+  await expect(page).toHaveURL(/#\/new(?:\/space\/repo-app)?$/);
   await pageEntry(page);
   await page.goto("/" + task);
   await page.getByRole("button", { name: "Task actions" }).click();
@@ -187,7 +192,7 @@ test("Forward does not resurrect a dismissed overlay", async ({ page }) => {
   await pageEntry(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await back(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
 });
 
 test("root exit protection runs only after all visible layers close", async ({ page }) => {
@@ -203,9 +208,9 @@ test("root exit protection runs only after all visible layers close", async ({ p
 });
 
 test("repo picker Back retraces folders, returns to search, then closes", async ({ page }) => {
-  await page.goto("/#/new");
-  await page.getByRole("combobox", { name: "Working directory" }).click();
-  await page.getByRole("option", { name: "Add working directory", exact: true }).click();
+  await page.goto("/#/new/space/repo-app");
+  await page.getByRole("combobox", { name: "Space" }).click();
+  await page.getByRole("option", { name: "Add Space", exact: true }).click();
   await page.getByRole("option", { name: "Browse folders…" }).click();
   await expect(page.getByText("/projects", { exact: true })).toBeVisible();
   await page.getByRole("option", { name: /outer-repo/ }).click();
@@ -219,7 +224,7 @@ test("repo picker Back retraces folders, returns to search, then closes", async 
   await expect(page.getByRole("option", { name: "Browse folders…" })).toBeVisible();
   await back(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page).toHaveURL(/#\/new$/);
+  await expect(page).toHaveURL(/#\/new(?:\/space\/repo-app)?$/);
 });
 
 test("Back dismisses the delivery popover and preserves the message draft", async ({ page }) => {
@@ -242,7 +247,7 @@ for (const installed of [false, true]) {
     await page.goto("/outside");
     if (installed) await standalone(page);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
     if (installed) {
       await back(page);
       await expect(page.getByText("Press back again to exit", { exact: true })).toBeVisible();
@@ -259,7 +264,7 @@ test("selecting the current destination closes navigation without a duplicate pa
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await pageEntry(page);
   await back(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
 });
 
 test("native hash navigation dismisses overlays and skips obsolete entries in both directions", async ({ page }) => {
@@ -296,13 +301,13 @@ for (const reopen of [false, true]) {
     await page.getByRole("button", { name: "Send now", exact: true }).click();
     await expect.poll(() => requested).toBe(true);
     await page.goBack();
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
     if (reopen) {
       await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
       await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeDisabled();
     }
     release();
-    await expect.poll(() => page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBeNull();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("draft:dispatch-prompt:repo-app"))).toBeNull();
     await expect(page.getByTestId("toast")).toHaveCount(0);
     if (reopen) {
       await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
@@ -311,7 +316,7 @@ for (const reopen of [false, true]) {
       await page.reload();
       await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("My next task draft");
     } else {
-      await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
       await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("");
     }
@@ -320,7 +325,7 @@ for (const reopen of [false, true]) {
 
 test("an update checkpoint from a hashless root restores its settings subpage", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   // Model the previous client's URL/history and its existing update checkpoint.
   await page.evaluate(async () => {
     history.replaceState(null, "", location.pathname);
@@ -347,5 +352,5 @@ test("an update checkpoint from a hashless root restores its settings subpage", 
   await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
   await back(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
 });

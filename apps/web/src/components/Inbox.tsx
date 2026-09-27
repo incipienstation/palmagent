@@ -276,7 +276,7 @@ export const InboxView = memo(function InboxView({
           <div data-testid="inbox-content" className="pb-[calc(var(--banner-h,0px)+var(--safe-bottom)+88px)]">
             {!repoId && <p className="px-4 pt-1 text-sm text-muted-foreground">Tasks across all your Spaces</p>}
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
-            {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Its task history is still available.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
+            {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
               <div className="flex gap-2">
                 <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query}

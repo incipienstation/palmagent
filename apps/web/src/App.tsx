@@ -20,7 +20,7 @@ import { ModelCatalogProvider } from "./model-catalog";
 function AppInner() {
   const route = useRoute();
   const [created, setCreated] = useState<TaskState>();
-  const routeKey = route.name === "task" ? route.id : route.name === "new" ? `new:${route.repoId ?? "all"}` : route.name;
+  const routeKey = route.name === "task" ? route.id : route.name;
   const [conversation, setConversation] = useState<{ key: number; route: string; taskId?: string }>({ key: 0, route: routeKey });
   if (conversation.route !== routeKey) setConversation({
     route: routeKey, key: conversation.key + (route.name === "new" ? 1 : 0),

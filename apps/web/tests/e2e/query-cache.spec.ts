@@ -66,12 +66,12 @@ test.describe("REST navigation reuse", () => {
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.evaluate(() => { location.hash = "/new"; });
     // The prompt renders before the repository request completes.
-    await expect(page.getByRole("combobox", { name: "Working directory" })).toBeEnabled();
+    await expect(page.getByRole("combobox", { name: "Space" })).toBeEnabled();
     const warm = reads;
     await page.evaluate(() => { location.hash = "/"; });
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.evaluate(() => { location.hash = "/new"; });
-    await expect(page.getByRole("combobox", { name: "Working directory" })).toBeEnabled();
+    await expect(page.getByRole("combobox", { name: "Space" })).toBeEnabled();
     expect(reads).toBe(warm);
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await page.evaluate(() => { location.hash = "/"; });

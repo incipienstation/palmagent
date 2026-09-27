@@ -7,6 +7,9 @@ import { cacheSession, onCacheSessionReset } from "./query-lifecycle";
 const values = new Map<string, unknown>();
 const listeners = new Set<() => void>();
 const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
+export function peekActionState<T>(key: string): T | undefined {
+  return (values.get(key) ?? readUpdateSnapshot<T>(key)) as T | undefined;
+}
 export function useActionState<T>(key: string, initial: T | (() => T)): [T, Dispatch<SetStateAction<T>>] {
   if (!values.has(key)) values.set(key, readUpdateSnapshot<T>(key) ?? (typeof initial === "function" ? (initial as () => T)() : initial));
   const value = useSyncExternalStore(subscribe, () => values.get(key) as T);

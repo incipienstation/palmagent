@@ -3,139 +3,192 @@ import { repos, tasks } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
-
-const root = "/projects/platform/clients/long-running-projects/customer-experience";
-const longName = "a-very-long-project-name-that-must-never-widen-the-phone-screen";
 const fixtureRepos = [
-  { ...repos[0], id: "main", name: "palmagent", path: `${root}/palmagent` },
-  { ...repos[0], id: "other", name: "palmagent", path: "/projects/experiments/palmagent" },
-  { ...repos[0], id: "long", name: longName, path: `${root}/${longName}` },
+  { ...repos[0], id: "main", name: "Palmagent", path: "/spaces/customer-experience/palmagent" },
+  { ...repos[0], id: "other", name: "Palmagent", path: "/spaces/experiments/palmagent" },
+  { ...repos[0], id: "long", name: "a-very-long-space-name-that-must-never-widen-the-phone-screen", path: "/spaces/long-space" },
 ];
 const fixtureTasks = [
-  { ...tasks[0], taskId: "main-task", repoId: "main", title: "Review the space picker", branch: undefined, worktreePath: undefined },
-  ...Array.from({ length: 12 }, (_, i) => ({
-    ...tasks[0], taskId: `work-${i}`, repoId: "main", title: `Worktree task ${i}`,
-    branch: `feature/session-${i}`, worktreePath: `${root}/palmagent/.palmagent/worktrees/session-${String(i).padStart(2, "0")}`,
-  })),
+  { ...tasks[0], taskId: "main-task", repoId: "main", title: "Review Space navigation", branch: undefined, worktreePath: undefined },
+  { ...tasks[0], taskId: "work", repoId: "main", title: "Worktree task", branch: "feature/navigation", worktreePath: "/spaces/customer-experience/palmagent/.worktrees/navigation" },
+  { ...tasks[0], taskId: "other-task", repoId: "other", title: "Separate Space task", branch: undefined, worktreePath: undefined },
 ];
-
-async function setup(page: Page) {
-  await page.route("**/api/repos", (route) => route.fulfill({ json: { repos: fixtureRepos } }));
-  await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: fixtureTasks })}\n\n` }));
-  await page.goto("/");
-  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
+async function setup(page: Page, path = "/") {
+  await page.route("**/api/repos", route => route.fulfill({ json: { repos: fixtureRepos } }));
+  await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: fixtureTasks })}\n\n` }));
+  await page.goto(path);
 }
+const mainSpace = (page: Page) => page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /customer-experience/ });
 
-// Check the overlay itself: overflow:hidden on the document can otherwise mask
-// a portaled menu that extends beyond the screen (the original regression).
-async function assertSheetFits(page: Page) {
-  await assertViewportLocked(page);
-  const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
-  const box = await dialog.boundingBox();
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
-  expect(await dialog.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  for (const row of await dialog.getByRole("button").all()) {
-    if (!await row.isVisible()) continue;
-    expect(await row.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  }
-}
-
-test("space selection survives reload and long paths fit a narrow phone", async ({ page }) => {
-  const width = 320;
-  await page.setViewportSize({ width, height: 780 });
+test("All spaces ignores legacy filters and Spaces has searchable, distinct rows", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.addInitScript(() => localStorage.setItem("working-directory", "/missing/old-worktree"));
   await setup(page);
-  const trigger = page.getByRole("button", { name: /^Switch space:/ });
-  await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
-  await expect(dialog.getByRole("button", { name: "Close spaces" })).toBeFocused();
-  await expect(dialog.getByRole("button", { name: /^Worktrees/ })).toHaveAttribute("aria-expanded", "false");
-  await expect(dialog.getByText(fixtureRepos[0].path, { exact: true })).toBeVisible();
-  await expect(dialog.getByText(fixtureRepos[1].path, { exact: true })).toBeVisible();
-  await assertSheetFits(page);
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByText("Separate Space task", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open Spaces" }).click();
+  await expect(page).toHaveURL(/#\/spaces$/);
+  const search = page.getByRole("searchbox", { name: "Search Spaces" });
+  await expect(search).not.toBeFocused();
+  await expect(page.getByRole("region", { name: "Spaces list" }).getByRole("button")).toHaveCount(3);
+  await expect(page.getByText(fixtureRepos[0].path, { exact: true })).toHaveCount(0);
+  await search.fill("experiments");
+  await expect(page.getByRole("region", { name: "Spaces list" }).getByRole("button")).toHaveCount(1);
+  await search.fill("not-found");
+  await expect(page.getByText("No Spaces found", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /All spaces.*Tasks across/ }).click();
+  await expect(page.getByText("Separate Space task", { exact: true })).toBeVisible();
+  await assertViewportLocked(page);
+});
 
-  // Search includes collapsed worktrees and the full, unabridged path.
-  await dialog.getByRole("searchbox", { name: "Search spaces" }).fill("session-11");
-  const result = dialog.getByRole("button", { name: /session-11.*1 tasks/ });
-  await expect(result).toBeVisible();
-  await assertSheetFits(page);
-  await result.click();
-  await expect(dialog).toBeHidden();
-  await expect(trigger).toContainText("session-11");
-  await expect(page.getByText("Worktree task 11", { exact: true })).toBeVisible();
-  await expect(page.getByText("Review the space picker", { exact: true })).toBeHidden();
+test("Space scope survives reload and search is restored when returning to the list", async ({ page }) => {
+  await setup(page);
+  await page.getByRole("button", { name: "Open Spaces" }).click();
+  await mainSpace(page).click();
+  await expect(page.getByText("Worktree task", { exact: true })).toBeVisible();
+  await expect(page.getByText("Separate Space task", { exact: true })).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Search tasks" }).fill("Worktree");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await mainSpace(page).click();
+  await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("Worktree");
   await page.reload();
-  await expect(trigger).toContainText("session-11");
-  await trigger.click();
-  await expect(dialog.getByRole("button", { name: /^Worktrees/ })).toHaveAttribute("aria-expanded", "true");
-  await dialog.getByRole("searchbox").fill("nothing-matches");
-  await expect(dialog.getByRole("status")).toContainText("No spaces found");
-  await dialog.getByRole("button", { name: "Clear search" }).click();
-  await expect(dialog.getByRole("searchbox")).toHaveValue("");
-  await dialog.getByRole("button", { name: /All spaces/ }).click();
-  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
-
-  await trigger.click();
-  await dialog.getByRole("button", { name: new RegExp(longName) }).click();
-  await expect(trigger).toContainText(longName);
-  expect(await trigger.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  await expect(page.getByText("No tasks in this directory")).toBeVisible();
-  await assertViewportLocked(page);
+  await expect(page.getByRole("heading", { name: /^Palmagent/, level: 1 })).toBeVisible();
+  await expect(page.getByText("Separate Space task", { exact: true })).toHaveCount(0);
 });
 
-test("space sheet scrolls with a short viewport and closes by keyboard with focus restored", async ({ page }) => {
-  await page.setViewportSize({ width: 360, height: 420 });
-  await setup(page);
-  const trigger = page.getByRole("button", { name: /^Switch space:/ });
-  await trigger.focus();
-  await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
-  await dialog.getByRole("searchbox").fill("session-11");
-  const result = dialog.getByRole("button", { name: /session-11.*1 tasks/ });
-  await result.scrollIntoViewIfNeeded();
-  await expect(result).toBeInViewport();
-  await assertSheetFits(page);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await expect(trigger).toBeFocused();
-});
-
-test("desktop space search and light mobile sheet keep paths readable", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await setup(page);
-  const nav = page.getByRole("navigation", { name: "Spaces", exact: true });
-  await nav.getByRole("searchbox").fill("experiments");
-  await nav.getByRole("button", { name: /palmagent.*experiments/ }).click();
-  await expect(page.getByText("No tasks in this directory")).toBeVisible();
-  await assertViewportLocked(page);
-  await page.setViewportSize({ width: 360, height: 780 });
-  await page.goto("/?__theme=light");
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await assertSheetFits(page);
-});
-
-test("project spaces include worktrees, reset search, and inherit into New task", async ({ page }) => {
+test("Worktree filters stay within a Space and new tasks have an explicit target", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:dispatch-repo", "other"));
-  await setup(page);
-  const trigger = page.getByRole("button", { name: /^Switch space:/ });
-  await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Spaces", exact: true });
-  const project = dialog.locator(`button[title="${fixtureRepos[0].path}"]`);
-  await project.click();
-  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
-  await expect(page.getByText("Worktree task 11", { exact: true })).toBeVisible();
+  await setup(page, "/#/spaces/main");
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Task filters" });
+  await expect(dialog.getByRole("button", { name: "Close filters" })).toBeFocused();
+  await dialog.getByRole("combobox", { name: "Worktree" }).click();
+  await page.getByRole("option", { name: "feature/navigation", exact: true }).click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Clear Worktree filter" })).toContainText("feature/navigation");
+  await expect(page.getByText("Review Space navigation", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Dispatch new task" }).click();
+  await expect(page).toHaveURL(/#\/new\/space\/main$/);
+  await expect(page.getByRole("combobox", { name: "Space", exact: true })).toContainText("customer-experience");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Preserve this draft");
+  await page.getByRole("combobox", { name: "Space", exact: true }).click();
+  await page.getByRole("option", { name: /experiments/ }).click();
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Preserve this draft");
+  expect(await page.evaluate(() => localStorage.getItem("working-directory"))).toBeNull();
+});
 
-  const search = page.getByRole("searchbox", { name: "Search tasks" });
-  await search.fill("Review the space picker");
-  await expect(page.getByText("Review the space picker", { exact: true })).toBeVisible();
-  await trigger.click();
-  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator(`button[title="${fixtureRepos[2].path}"]`).click();
-  await expect(search).toHaveValue("");
+test("Space information owns full paths and explicit terminal scope", async ({ page }) => {
+  const queries: string[] = [];
+  await page.route("**/api/terminals*", route => {
+    queries.push(new URL(route.request().url()).searchParams.get("repoId") ?? "all");
+    return route.fulfill({ json: { terminals: [], capabilities: { available: true, persistent: true } } });
+  });
+  await setup(page, "/#/spaces/main");
+  await page.getByRole("button", { name: "Space details" }).click();
+  const dialog = page.getByRole("dialog", { name: "Palmagent" });
+  await expect(dialog.getByText(fixtureRepos[0].path, { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Terminals", exact: true }).click();
+  await expect(page).toHaveURL(/#\/terminals\/repo\/main$/);
+  await expect.poll(() => queries.includes("main")).toBe(true);
+});
 
-  await trigger.click();
-  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator(`button[title="${fixtureRepos[0].path}"]`).click();
-  await page.getByRole("button", { name: "Dispatch new task", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Working directory" })).toHaveText("palmagent (main)");
-  await expect(page.getByText("Inherited from Space: palmagent", { exact: true })).toHaveCount(0);
+test("desktop uses one rail and empty, long-name Spaces fit a narrow phone", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await setup(page, "/#/spaces");
+  await expect(page.getByRole("complementary", { name: "Space navigation" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toHaveCount(1);
+  await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /a-very-long-space/ }).click();
+  await expect(page.getByText("No tasks yet", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 780 });
+  await assertViewportLocked(page);
+  await expect(page.getByRole("button", { name: "Dispatch new task" })).toBeEnabled();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await assertViewportLocked(page);
+});
+
+test("missing Space cannot silently fall back to another execution target", async ({ page }) => {
+  await setup(page, "/#/spaces/missing");
+  await expect(page.getByText(/This Space is no longer connected/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dispatch new task" })).toBeDisabled();
+  await page.goto("/#/new/space/missing");
+  await expect(page.getByRole("combobox", { name: "Space", exact: true })).toHaveText(/Choose a Space/);
+});
+
+test("neutral new tasks require a Space, then preserve the unassigned draft", async ({ page }) => {
+  await setup(page, "/#/new");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Choose the target explicitly");
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
+  await page.getByRole("combobox", { name: "Space", exact: true }).click();
+  await page.getByRole("option", { name: /customer-experience/ }).click();
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Choose the target explicitly");
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
+});
+
+test("Space drafts restore separately and switching cannot overwrite a saved draft without a choice", async ({ page }) => {
+  await setup(page, "/#/new/space/main");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Main draft");
+  await page.goto("/#/new/space/other");
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Other draft");
+  await page.getByRole("combobox", { name: "Space", exact: true }).click();
+  await page.getByRole("option", { name: /customer-experience/ }).click();
+  await expect(page.getByRole("dialog", { name: "A draft is already saved in this Space" })).toBeVisible();
+  await page.getByRole("button", { name: "Open saved draft", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Main draft");
+  await page.goto("/#/new/space/other");
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Other draft");
+});
+
+test("switching Spaces retains attachments and requires a choice before replacing a draft", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("draft:dispatch-prompt:other", "Saved target draft"));
+  await setup(page, "/#/new/space/main");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Draft with an image");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Add attachments" }).click();
+  await page.getByRole("menuitem", { name: "Photos" }).click();
+  await (await chooser).setFiles({ name: "draft.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
+  await expect(page.getByAltText("attachment 1")).toBeVisible();
+  await page.getByRole("combobox", { name: "Space", exact: true }).click();
+  await page.getByRole("option", { name: /experiments/ }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page).toHaveURL(/#\/new\/space\/main$/);
+  await expect(page.getByAltText("attachment 1")).toBeVisible();
+  await page.getByRole("combobox", { name: "Space", exact: true }).click();
+  await page.getByRole("option", { name: /experiments/ }).click();
+  await page.getByRole("button", { name: "Replace saved draft with current draft", exact: true }).click();
+  await expect(page).toHaveURL(/#\/new\/space\/other$/);
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Draft with an image");
+  await expect(page.getByAltText("attachment 1")).toBeVisible();
+  await page.goto("/#/new/space/main");
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Draft with an image");
+  await expect(page.getByAltText("attachment 1")).toBeVisible();
+});
+
+test("a pre-Spaces update checkpoint restores the prompt and attached image together", async ({ page }) => {
+  await setup(page, "/#/new");
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("palmagent-screen-state", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("checkpoints");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("checkpoints", "readwrite");
+      tx.objectStore("checkpoints").put({ route: "#/new", created: Date.now(), screen: { scroll: [] }, values: {
+        "pref:dispatch-repo": "main",
+        "draft:dispatch-prompt": "Draft from before Spaces",
+        "images:#/new": [{ mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", width: 1, height: 1 }],
+      } }, "legacy-space-draft");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+    sessionStorage.setItem("palmagent:screen-checkpoint", "legacy-space-draft");
+  });
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Space", exact: true })).toContainText("customer-experience");
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Draft from before Spaces");
+  await expect(page.getByAltText("attachment 1")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBeNull();
 });

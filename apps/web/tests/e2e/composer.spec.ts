@@ -14,7 +14,7 @@ async function onScreen(control: Locator) {
 for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar order and adjacent model/send controls at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   for (const route of ["new", "task/t-idle-rich"]) {
-    await page.goto(`/#/${route}`);
+    await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
     const composer = page.getByRole("group", { name: "Message composer", exact: true });
     const input = composer.getByRole("textbox");
     const attachments = composer.getByRole("button", { name: "Add attachments" });
@@ -52,7 +52,7 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
 for (const width of [320, 360, 1280]) test(`empty composers animate between one row and the full toolbar at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   for (const route of ["new", "task/t-run", "task/t-idle-interrupted"]) {
-    await page.goto(`/#/${route}`);
+    await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
     const composer = page.getByRole("group", { name: "Message composer", exact: true });
     const input = composer.getByRole("textbox");
     const height = () => composer.evaluate(el => el.getBoundingClientRect().height);
@@ -137,7 +137,7 @@ for (const layout of [false, true]) for (const draft of ["", "Keep me"]) test(`k
 
 test("reduced motion changes composer height without animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   const input = page.getByLabel("Prompt", { exact: true });
   await input.focus();
   await expect(input).toHaveCSS("transition-duration", "0s");
@@ -149,7 +149,7 @@ test("reduced motion changes composer height without animation", async ({ page }
 test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
   const width = 360;
   await page.setViewportSize({ width, height: 780 });
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   const prompt = page.getByLabel("Prompt", { exact: true });
   await onScreen(prompt);
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
@@ -198,7 +198,7 @@ test("visual viewport keyboard resize keeps the composer visible without reflowi
 });
 
 test("light mobile and desktop composers keep controls visible", async ({ page }) => {
-  await page.goto("/?__theme=light#/new");
+  await page.goto("/?__theme=light#/new/space/repo-app");
   await page.getByLabel("Prompt").fill("Review the changes");
   await onScreen(page.getByRole("button", { name: "Send now", exact: true }));
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -207,7 +207,7 @@ test("light mobile and desktop composers keep controls visible", async ({ page }
 });
 
 test("configuration choices survive reload without losing the prompt", async ({ page }) => {
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt").fill("Review safely");
   await page.getByRole("button", { name: "Configure task settings" }).click();
   await page.getByRole("radio", { name: "opus", exact: true }).click();
@@ -224,7 +224,7 @@ test("configuration choices survive reload without losing the prompt", async ({ 
 });
 
 test("permission picker mirrors each runtime CLI's native values", async ({ page }) => {
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).focus();
   await page.getByRole("button", { name: "Configure task settings" }).click();
 
@@ -243,7 +243,7 @@ test("permission picker mirrors each runtime CLI's native values", async ({ page
 });
 
 for (const route of ["new", "task/t-idle-rich"]) test(`image-only submission and failed-send draft retention: ${route}`, async ({ page }) => {
-  await page.goto(`/#/${route}`);
+  await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
   const action = page.getByRole("button", { name: "Send now", exact: true });
   const fileChooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Add attachments" }).click();
@@ -280,7 +280,7 @@ test("follow-up settings submit only changed overrides and allow resetting to de
 });
 
 test("Enter and IME composition keep writing without submitting", async ({ page }) => {
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   let sends = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().endsWith("/api/tasks")) sends++; });
   const prompt = page.getByLabel("Prompt");

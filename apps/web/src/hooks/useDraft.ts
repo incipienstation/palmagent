@@ -23,7 +23,7 @@ export function useDraft(key: string, initial = ""): [string, Dispatch<SetStateA
   })];
 }
 
-function readDraft(key: string): string | null {
+export function readDraft(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {

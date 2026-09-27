@@ -16,7 +16,7 @@ test("Back restores the inbox search, completed-group state, and scroll position
   await target.click();
   await expect(page).toHaveURL(/task\/t-idle-rich/);
   await page.evaluate(() => history.back());
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("the");
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBeCloseTo(top, 0);
   await page.getByRole("button", { name: "Clear task search" }).click();
@@ -71,15 +71,15 @@ test("each Space retains its own inbox reading position", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("searchbox", { name: "Search tasks" }).waitFor();
   await viewport(page).evaluate(el => { el.scrollTop = 600; });
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator('button[title="/projects/sample-app"]').click();
+  await page.getByRole("button", { name: "Open Spaces" }).click();
+  await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /sample-app/ }).click();
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(0);
   await viewport(page).evaluate(el => { el.scrollTop = 300; });
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await page.getByRole("dialog", { name: "Spaces", exact: true }).getByRole("button", { name: /All spaces/ }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: /All spaces.*Tasks across/ }).click();
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(600);
-  await page.getByRole("button", { name: /^Switch space:/ }).click();
-  await page.getByRole("dialog", { name: "Spaces", exact: true }).locator('button[title="/projects/sample-app"]').click();
+  await page.getByRole("button", { name: "Open Spaces" }).click();
+  await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /sample-app/ }).click();
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(300);
 });
 

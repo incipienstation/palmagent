@@ -30,7 +30,7 @@ async function state(cdp: CDPSession) {
     return { active: navigator.userActivation.hasBeenActive, guard: history.state?.__backGuard,
       length: history.length,
       text: hint?.textContent ?? '', index: window.navigation.currentEntry?.index ?? -1,
-      ready: [...document.querySelectorAll('h1,h2')].some(element => element.textContent === 'Tasks') };
+      ready: [...document.querySelectorAll('h1,h2')].some(element => element.textContent === 'All spaces') };
   })()`);
 }
 async function launch(context: BrowserContext) {
@@ -122,8 +122,8 @@ test("restoring only the current history entry cannot wedge native exit or navig
   await page.getByText("Wire the web QA harness", { exact: true }).click();
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-  await page.getByRole("button", { name: "Tasks", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "All spaces", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await page.close();
 });
 
@@ -139,7 +139,7 @@ test("page and layer navigation take priority over the native root exit watcher"
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
   expect((await state(cdp)).text).toBe("");
   await page.evaluate(() => history.back());
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
   await closeRequest(cdp);
   await hint(cdp);
   await page.close();

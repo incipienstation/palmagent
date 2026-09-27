@@ -98,7 +98,7 @@ async function run() {
     if (!swState.controller) throw new Error("SW is not controlling the page after install");
 
     // Two tabs have different drafts; activation in one must preserve both.
-    await page.goto("/#/new");
+    await page.goto("/#/new/space/repo-app");
     await page.getByLabel("Prompt").fill("Keep this unsent draft");
     await page.getByRole("button", { name: "Configure task settings" }).click();
     await page.getByRole("switch", { name: "Isolated worktree", exact: true }).click();
@@ -107,7 +107,7 @@ async function run() {
     await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "draft.png", mimeType: "image/png", buffer: png });
     await page.getByAltText("attachment 1").waitFor();
     const second = await ctx.newPage();
-    await second.goto("/#/new");
+    await second.goto("/#/new/space/repo-app");
     await second.getByLabel("Prompt").fill("Independent second-tab draft");
     await second.evaluate(() => document.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
 
@@ -131,7 +131,7 @@ async function run() {
     await page.getByText("Isolated", { exact: true }).waitFor();
     await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
     assert.deepEqual(await page.getByLabel("Prompt").evaluate((el) => [el.selectionStart, el.selectionEnd]), [4, 9]);
-    assert(page.url().endsWith("/#/new"));
+    assert(page.url().endsWith("/#/new/space/repo-app"));
     assert.equal(secondLoads, 0, "another tab must not reload during text composition");
     await second.bringToFront();
     const secondReload = second.waitForEvent("load", { timeout: 20_000 });
@@ -182,18 +182,18 @@ async function run() {
     assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
     console.log("[test] open composer configuration survives an automatic update");
 
-    await page.getByRole("combobox", { name: "Working directory" }).click();
-    await page.getByRole("option", { name: "Add working directory", exact: true }).click();
+    await page.getByRole("combobox", { name: "Space" }).click();
+    await page.getByRole("option", { name: "Add Space", exact: true }).click();
     await page.getByRole("option", { name: "Browse folders…" }).click();
-    await page.getByRole("button", { name: "Choose outer-repo as repository" }).click();
+    await page.getByRole("button", { name: "Choose outer-repo as Space" }).click();
     await page.getByText("✓ git repo · branch main").waitFor();
     const pickerReload = page.waitForEvent("load", { timeout: 20_000 });
     await appendFile(SW_PATH, "\n// automatic-update-picker\n");
     await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()));
     await pickerReload;
-    await page.getByRole("heading", { name: "Add a repo", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Add Space", exact: true }).waitFor();
     await page.getByText("✓ git repo · branch main").waitFor();
-    assert.equal(await page.getByRole("button", { name: "Register", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "Connect Space", exact: true }).count(), 1);
     console.log("[test] repository selection survives without registering it automatically");
 
     // Keep an earlier conversation page and its reading position through an

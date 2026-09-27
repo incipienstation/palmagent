@@ -4,13 +4,13 @@ import { assertViewportLocked } from "./_helpers";
 test.describe("inbox", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All spaces" })).toBeVisible();
     // Wait for the task snapshot to arrive over SSE (an idle task's title).
     await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   });
 
   test("sets the per-route document title (page-first + brand suffix)", async ({ page }) => {
-    await expect(page).toHaveTitle("Tasks · PalmAgent");
+    await expect(page).toHaveTitle("All spaces · PalmAgent");
   });
 
   test("renders every status group", async ({ page }) => {

@@ -19,7 +19,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
         calls.push(r.request().postDataJSON());
         await r.fulfill({ status: 400, json: { error: "Try again" } });
       });
-      await page.goto(`/#/${route}`);
+      await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
       const input = page.getByRole("textbox", { name: label, exact: true });
       await input.fill("Review this");
       await input.press("Enter");
@@ -41,7 +41,7 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
       calls.push(r.request().postDataJSON());
       await r.fulfill({ status: 400, json: { error: "Try again" } });
     });
-    await page.goto(`/#/${route}`);
+    await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
     const input = page.getByRole("textbox", { name: label, exact: true });
     await input.fill("Keep this draft");
     const options = await settings(page);
@@ -86,7 +86,7 @@ for (const shortcut of ["enter", "modifier-enter"]) {
       sends++;
       await r.fulfill({ status: 503, json: { error: "Try again" } });
     });
-    await page.goto("/#/new");
+    await page.goto("/#/new/space/repo-app");
     const input = page.getByRole("textbox", { name: "Prompt", exact: true });
     const key = shortcut === "enter" ? "Enter" : "Control+Enter";
     await input.fill("   ");
@@ -137,7 +137,7 @@ test("shortcut sends image-only messages once while a request is pending", async
 
 test("unrecognized stored shortcuts fall back to Cmd/Ctrl + Enter", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:send-shortcut", "unknown"));
-  await page.goto("/#/new");
+  await page.goto("/#/new/space/repo-app");
   const input = page.getByRole("textbox", { name: "Prompt", exact: true });
   await expect(input).toHaveAttribute("aria-keyshortcuts", "Meta+Enter Control+Enter");
 });

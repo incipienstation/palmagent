@@ -14,7 +14,6 @@ import { AppBar } from "./AppShell";
 import { TerminalScreen } from "./TerminalScreen";
 import { useUpdateState } from "../update-state";
 
-
 export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; repoId?: string; onClose?: () => void }) {
   const terminalOperations = useTerminalOperations();
   const { repos } = useRepos();
@@ -38,7 +37,6 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const [title, setTitle] = useUpdateState(scope + ":title", "");
   const requestId = useRef<string | undefined>(undefined);
   const generation = useRef(0);
-
   useEffect(() => { requestId.current = undefined; }, [space, taskId]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
@@ -67,14 +65,14 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
     setSelected(result.terminal.id); requestId.current = undefined;
   });
-  const spacePicker = !taskId && <Select value={space} onValueChange={value => {
-    setSpace(value);
+  const spacePicker = !taskId && <Select value={space || "__all__"} onValueChange={value => {
+    setSpace(value === "__all__" ? "" : value);
     setSelected("");
   }} disabled={busy}>
-    <SelectTrigger className="w-auto min-w-0 flex-1 rounded-full border-0 bg-transparent px-2" aria-label="Terminal project">
-      <SelectValue placeholder="Choose a project" />
+    <SelectTrigger className="w-auto min-w-0 flex-1 rounded-full border-0 bg-transparent px-2" aria-label="Terminal Space">
+      <SelectValue placeholder="Choose a Space" />
     </SelectTrigger>
-    <SelectContent><SelectGroup>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
+    <SelectContent><SelectGroup><SelectItem value="__all__">All spaces</SelectItem>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
   </Select>;
   return <section className="flex h-app min-w-0 flex-1 flex-col bg-background" aria-label="Terminals">
     <AppBar

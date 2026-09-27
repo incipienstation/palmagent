@@ -7,8 +7,7 @@ import { navigate, useRoute } from "../router";
 import { compareTasks } from "../lib/task-order";
 import { taskTitle } from "../lib/task-title";
 import { useRepos } from "../hooks/useRepos";
-import { newTaskPath, spacePath } from "../space-context";
-import { spaceActivity } from "./Spaces";
+import { newTaskPath, spaceActivity, spacePath } from "../space-context";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
@@ -65,6 +64,16 @@ export function AppNavigation({ tasks, conn, children }: {
           </Button>)}
         </nav>
   );
+  const pinnedNavigation = (pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
+          <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Pinned</h2>
+          {pinned.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
+            className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
+            aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
+            onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
+            <Pin data-icon="inline-start" /><span className="truncate">{taskTitle(task)}</span>
+          </Button>)}
+        </section>
+  );
   const recentSpaces = [...repos.values()].sort((a, b) => spaceActivity(b.id, tasks).latest - spaceActivity(a.id, tasks).latest || a.name.localeCompare(b.name)).slice(0, 6);
   const newTask = () => go(newTaskPath(route.name === "space" ? route.repoId : undefined));
   return <NavigationContext.Provider value={context}>
@@ -72,11 +81,14 @@ export function AppNavigation({ tasks, conn, children }: {
       {desktopSidebar && <aside aria-label="Space navigation" className="hidden h-app w-60 shrink-0 flex-col border-r md:flex">
         <p className="px-6 pb-5 pt-[calc(24px+var(--safe-top))] text-lg font-semibold">Palmagent</p>
         {navigationLinks}
-        <div className="min-h-0 flex-1 overflow-y-auto px-3">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {pinnedNavigation}
+          <div className="px-3">
           <h2 className="px-3 py-3 text-xs text-muted-foreground">Recent Spaces</h2>
           {recentSpaces.map(repo => <Button key={repo.id} variant={route.name === "space" && route.repoId === repo.id ? "selected" : "ghost"} className="w-full justify-start px-3" aria-current={route.name === "space" && route.repoId === repo.id ? "page" : undefined} onClick={() => go(spacePath(repo.id))}><span className="truncate">{repo.name}</span></Button>)}
+          </div>
         </div>
-        <div className="flex items-center gap-2 p-4 pb-[calc(16px+var(--safe-bottom))]"><Button onClick={newTask}><SquarePen data-icon="inline-start" />New task</Button><Button variant="ghost" size="icon-lg" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings /></Button></div>
+        <div className="flex items-center gap-2 p-4 pb-[calc(16px+var(--safe-bottom))]"><Button onClick={newTask}><SquarePen data-icon="inline-start" />New task</Button><Button variant="ghost" size="icon-lg" aria-label="Settings" onClick={event => { trigger.current = event.currentTarget; setSettingsOpen(true); }}><Settings /></Button></div>
       </aside>}
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -97,15 +109,7 @@ export function AppNavigation({ tasks, conn, children }: {
         {navigationLinks}
 
         <div className="mx-5 border-t border-border" />
-        {pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
-          <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Pinned</h2>
-          {pinned.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
-            className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
-            aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
-            onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
-            <Pin data-icon="inline-start" /><span className="truncate">{taskTitle(task)}</span>
-          </Button>)}
-        </section>}
+        {pinnedNavigation}
         <div className="px-3 py-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
           {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
