@@ -11,6 +11,9 @@ From the repository root, run the scoped verifier with the exact Node version in
 node scripts/verify-local.mjs
 ```
 
+`pnpm verify` runs the full local source gate. Build the PWA before reusing
+`web:verify:built` or `pkg:assemble` output.
+
 The verifier rejects a different Node version before running checks. Use `--plan` to inspect the
 selected checks without running them. Plans still refresh named refs; use `--base origin/main` or
 `--base <full-commit-sha>` when the default `origin/develop` is not the right comparison point.
@@ -35,8 +38,9 @@ and environment remain unchanged; rerun affected checks after changes or failure
 pass on the current PR head.
 
 If generated operator skills are out of sync, run `node scripts/sync-skills.mjs` and verify again.
-For repository-skill links, follow [AGENTS.md](../../../AGENTS.md#skill-sources). The leak guard
-prints only `file:line`; inspect those lines locally and remove or generalize unsafe content.
+For repository-skill links, follow [skill source guidance](../garden/SKILL.md#skill-sources).
+`scripts/validate.mjs` checks version-controlled source and prints only `file:line`; inspect those
+lines locally and remove or generalize unsafe content.
 
 For a verification-only request, report the result and stop. Continue to [ship](../ship/SKILL.md)
 only when completing an already authorized implementation task, honoring draft, PR-only, or

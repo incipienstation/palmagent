@@ -5,6 +5,11 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
 
 # Ship
 
+An authorized implementation includes merge, updating the primary local `develop`, and safe
+cleanup of its task worktree and local branch. Honor PR-only, draft, merge-hold, and worktree
+retention requests. For branch promotion, other `main` merges, merge-policy changes, or repository
+visibility changes, read [release](../release/SKILL.md) before acting.
+
 1. Review the complete diff and commit with a clear message. Preserve intended author and committer
    identities; inspect `%ae` and `%ce` across the new commit range.
 2. Push the `feature/*` branch and open a PR into `develop` (never directly into `main`).
@@ -17,9 +22,11 @@ description: Final stage of Palmagent's plan → start → verify → ship loop.
    use `gh pr merge <number> --squash --match-head-commit <verified-head-sha>`. Verify the merged
    commit identity and metadata. Never bypass failed checks, unresolved reviews, or protections with
    `--admin`.
-4. Report the merge commit and validation evidence. Follow
-   [release policy](../release/references/policy.md#branch-and-approval-flow) for Preview and Stable.
-   Do not require a staging deployment after a merge. Visibility remains a separate approval.
+4. Report the merge commit and validation evidence. Ordinary feature delivery ends with merge
+   and local cleanup; CI/CD handles eligible Preview publication. Do not load Release or wait for
+   Preview solely because a feature was merged. Release intervention uses the release skill;
+   explicit publication or host-verification requests retain their own scope. Do not require a
+   staging deployment after a merge.
 5. Keep the worktree while implementation or review is active. After merge, update local `develop`
    and clean up the task worktree and branch using the checks below.
 

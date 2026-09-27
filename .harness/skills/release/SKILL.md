@@ -1,6 +1,6 @@
 ---
 name: release
-description: Prepare, resume, publish, or recover a Palmagent prerelease or stable release using existing release automation and verified artifacts. Use for maintainer release work; installed-user updates belong to the operator update skill.
+description: Prepare, resume, publish, or recover a Palmagent prerelease or stable release using existing release automation and verified artifacts. Use for release intervention, branch promotion, hotfixes, merge-policy or repository-visibility changes; ordinary automatic Preview publication needs no agent workflow.
 ---
 
 # Release Palmagent
@@ -15,6 +15,21 @@ both the execution workflow and its supporting contracts. Read only the relevant
 | Stable/Preview, shared settings, compatibility, or installed-user update behavior | [Channels and updates](references/channels-and-updates.md) |
 
 Use the existing repository scripts and workflows. Run commands from the repository root.
+
+## Entry and approval boundaries
+
+Ordinary feature shipping does not invoke this skill for automatic Preview publication. Use it
+when changing release automation or policy, preparing Stable, or investigating and recovering
+publication. Installed-user updates use the operator update skill.
+
+Promote `develop` to `main` only through a reviewed PR with a merge commit. A requested Stable
+release includes that preparation under the policy below; other `main` merges require explicit
+approval. Repository visibility requires separate explicit approval. Never publish from a
+workstation. For promotion, hotfixes, merge-policy or visibility work, read
+[release policy](references/policy.md#environment-and-merge-model) before acting.
+
+For host operations and installed-artifact evidence, use
+[validation environments](../../../docs/STAGING.md) and the relevant operator skill.
 
 ## Resume from evidence
 

@@ -1,6 +1,6 @@
 ---
 name: garden
-description: Audit documentation, skills, and AGENTS.md for unnecessary or inconsistent context. Propose scoped cleanup and apply confirmed changes.
+description: Audit documentation, skills, and AGENTS.md for unnecessary or inconsistent context. Propose scoped cleanup, apply confirmed changes, and guide repository or operator skill authoring.
 ---
 
 # Garden
@@ -19,3 +19,15 @@ Optimize for useful, consistent context, not length alone.
 - Recheck approved findings against current files and follow the repository's [branching, delivery, and verification guidance](../../../AGENTS.md).
 - Preserve meaning and repair affected links. Do not change product decisions or implementation to resolve documentation gaps.
 - Leave newly discovered changes outside the approved scope untouched and report them separately.
+
+## Skill sources
+
+For skill authoring or edits, use these canonical sources:
+
+- Author repository-maintenance skills in `.harness/skills/<name>/SKILL.md`; add
+  `.agents/skills/<name>` and `.claude/skills/<name>` as relative directory symlinks to that source.
+  `pnpm plugins:check` validates them. Keep Claude-specific hooks and settings under `.claude/`.
+- Author operator skills in `skills/<name>/SKILL.md` and shared references in `skills/.shared/`.
+  Run `node scripts/sync-skills.mjs` to update Claude and Codex copies; never edit generated copies
+  by hand or add `SKILL.md` under `.shared/`. Keep platform manifests and Codex
+  `agents/openai.yaml` files platform-specific.

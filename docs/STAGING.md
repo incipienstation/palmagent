@@ -1,5 +1,8 @@
 # Validation environments
 
+For host operations, record the deployed commit or immutable artifact and verify runtime health
+separately from merge or CI status. Installations follow their saved channel and update settings.
+
 A staging environment is an ordinary Palmagent package installation configured for
 Preview and automatic updates. Maintainers use the same install, settings, update,
 and doctor flows as other operators. There is no staging-specific deployment command,
