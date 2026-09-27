@@ -6,6 +6,16 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.109
+
+### Changed
+
+- Codex CLI support now spans 0.154.0 through 0.157.1, retaining the existing 0.154/0.155 versions and adding 0.156/0.157. See the [verification scope](docs/CODEX-COMPATIBILITY.md).
+
+### Fixed
+
+- Codex configuration diagnostics remain status events instead of appearing as errors in successful turns. Terminal provider errors and exits without a terminal turn result remain errors.
+
 ## 0.1.0-alpha.108
 
 ### Changed
