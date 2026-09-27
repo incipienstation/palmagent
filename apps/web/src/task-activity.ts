@@ -3,8 +3,19 @@ import type { MessageQueue, TaskState } from "@palmagent/shared";
 import { onCacheSessionReset } from "./query-lifecycle";
 import { beginBrowserWork } from "./update-state";
 
+const actionLabels = {
+  send: "Sending message…", sendQueued: "Sending queued message…", enqueue: "Adding to queue…",
+  acquireEdit: "Preparing edit…", saveEdit: "Saving message…", releaseEdit: "Releasing edit…",
+  deleteQueued: "Removing message…", resumeQueue: "Resuming queue…", resumeDelivery: "Resuming delivery…",
+  cancel: "Cancelling task…", answer: "Sending answer…", skipQuestion: "Skipping question…",
+  approve: "Approving…", deny: "Denying…", handoff: "Preparing shell handoff…", dispatch: "Creating task…",
+  stop: "Stopping turn…",
+} as const;
+export type TaskActionKind = keyof typeof actionLabels;
+export const isSendingAction = (kind?: TaskActionKind) => kind === "send" || kind === "sendQueued";
+
 export type QueuePreview = { apply: (queue: MessageQueue) => MessageQueue; id?: string; label: string; submission?: boolean };
-interface Activity { token?: symbol; label?: string; preview?: QueuePreview; queue?: MessageQueue; settled?: Promise<void>; onStop?: () => Promise<void>; stopping?: symbol }
+interface Activity { kind?: TaskActionKind; token?: symbol; label?: string; preview?: QueuePreview; queue?: MessageQueue; settled?: Promise<void>; onStop?: () => Promise<void>; stopping?: symbol }
 const empty: Activity = {};
 const stopped = new Map<string, { finish: () => void; runId?: string | null }>();
 const latestTasks = new Map<string, TaskState>();
@@ -42,16 +53,16 @@ export function clearQueuePreview(id: string) {
   const previous = activities.get(id);
   if (previous) { activities.set(id, { ...previous, preview: undefined }); notify(); }
 }
-export function beginTaskAction(id: string, label: string, preview?: QueuePreview, onStop?: () => Promise<void>) {
-  if (activities.get(id)?.label) return;
+export function beginTaskAction(id: string, kind: TaskActionKind, preview?: QueuePreview, onStop?: () => Promise<void>, label: string = actionLabels[kind]) {
+  if (activities.get(id)?.kind) return;
   const finish = beginBrowserWork();
   const token = Symbol();
   let resolve!: () => void;
   const settled = new Promise<void>(done => { resolve = done; });
-  activities.set(id, { ...activities.get(id), label, preview, token, settled, onStop }); notify();
+  activities.set(id, { ...activities.get(id), kind, label, preview, token, settled, onStop }); notify();
   return () => {
     const previous = activities.get(id);
-    if (previous?.token === token) activities.set(id, { queue: previous.queue, ...(previous.stopping ? { stopping: previous.stopping, label: "Stopping turn…" } : {}) });
+    if (previous?.token === token) activities.set(id, { queue: previous.queue, ...(previous.stopping ? { stopping: previous.stopping, kind: "stop" as const, label: actionLabels.stop } : {}) });
     resolve(); finish(); notify();
   };
 }
@@ -62,7 +73,7 @@ export function beginTaskStop(id: string) {
   if (previous.stopping) return;
   const finish = beginBrowserWork();
   const token = Symbol();
-  activities.set(id, { ...previous, stopping: token, label: "Stopping turn…" }); notify();
+  activities.set(id, { ...previous, stopping: token, kind: "stop", label: actionLabels.stop }); notify();
   return {
     ready: previous.settled ?? Promise.resolve(),
     onStop: previous.onStop,

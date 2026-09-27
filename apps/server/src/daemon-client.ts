@@ -1,14 +1,14 @@
 import { connect, type Socket } from "node:net";
 import type { ClientMsg, ServerMsg } from "./daemon-protocol.js";
-import type { ProcHandle, RunnerBackend, SpawnSpec } from "./types.js";
+import type { ProcHandle, ProcessBackend, RunnerBackend, SpawnSpec } from "./types.js";
 import type { AgentKind } from "@palmagent/shared";
-import { getRunner } from "./runner.js";
+import { bindRunner } from "./runner.js";
 
 // Web-server side of the runner daemon: a single persistent Unix-socket
 // connection that proxies start/attach/stdin/signal and demuxes the daemon's
 // line/stderr/exit messages back to per-turn ProcHandle shims.
-export class DaemonBackend implements RunnerBackend {
-  agentRunner(agent: AgentKind) { return getRunner(agent); }
+export class DaemonBackend implements RunnerBackend, ProcessBackend {
+  agentRunner(agent: AgentKind) { return bindRunner(agent, this); }
   private sock: Socket | undefined;
   private connected = false;
   private buf = "";

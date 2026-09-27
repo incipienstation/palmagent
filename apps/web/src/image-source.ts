@@ -40,3 +40,11 @@ export function previewSource(value: string, taskId?: string): string {
     return `/api/tasks/${encodeURIComponent(taskId)}/image?${new URLSearchParams({ path })}`;
   } catch { return ""; }
 }
+
+/** Probe only generated local attachments; never fetch a Markdown remote URL. */
+export async function attachmentExpired(src: string, signal: AbortSignal): Promise<boolean> {
+  if (!/^\/api\/tasks\/[^/]+\/attachments\/[0-9a-f-]{36}$/.test(src)) return false;
+  const response = await fetch(src, { cache: "no-store", signal });
+  await response.body?.cancel();
+  return response.status === 410;
+}

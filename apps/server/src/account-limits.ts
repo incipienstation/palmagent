@@ -1,7 +1,4 @@
-import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readNdjsonQuery } from "./ndjson-query.js";
 import type { AccountLimits, AgentKind, ClaudeAccountLimits, CodexAccountLimits, CodexLimitBucket, LimitWindow } from "@palmagent/shared";
 
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -75,77 +72,34 @@ export function parseAccountLimits(agent: AgentKind, value: unknown, checkedAt: 
 // Claude's get_usage is experimental; unsupported versions fail closed. Its
 // skip_behaviors flag avoids scanning native transcripts for usage attribution.
 export async function readCliAccountLimits(agent: AgentKind, home: string, timeoutMs = 15_000): Promise<unknown> {
-  const cwd = await mkdtemp(join(tmpdir(), "palmagent-limits-"));
-  try {
-    return await new Promise((resolve, reject) => {
-      const args = agent === "codex" ? ["app-server"] : [
-        "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-        "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-        "--settings", '{"disableAllHooks":true}', "--tools", "", "--disable-slash-commands", "--no-chrome",
-      ];
-      const child = spawn(agent, args, { cwd, env: { ...process.env, [agent === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"]: home }, stdio: ["pipe", "pipe", "ignore"], detached: process.platform !== "win32" });
-      const stop = (signal: NodeJS.Signals) => {
-        // CLI launchers can leave descendants holding stdout after the wrapper
-        // exits. Bound the whole reader process group, never a task's process.
-        try {
-          if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
-          else child.kill(signal);
-        } catch { /* the reader has already exited */ }
-      };
-      let done = false, buffer = "", bytes = 0;
-      let result: unknown, failure: Error | undefined;
-      let killTimer: ReturnType<typeof setTimeout> | undefined;
-      const finish = (error?: Error, value?: unknown) => {
-        if (done) return;
-        done = true; result = value; failure = error;
-        clearTimeout(timer);
-        child.stdin.end();
-        stop("SIGTERM");
-        killTimer = setTimeout(() => stop("SIGKILL"), 1000);
-        killTimer.unref();
-      };
-      const timer = setTimeout(() => finish(new Error("Account limit read timed out")), timeoutMs);
-      const send = (value: unknown) => child.stdin.write(`${JSON.stringify(value)}\n`);
-      child.stdin.on("error", () => finish(new Error("Account limit channel closed")));
-      child.on("error", () => { failure = new Error("Account limit CLI unavailable"); });
-      child.on("close", () => {
-        clearTimeout(timer); clearTimeout(killTimer);
-        stop("SIGKILL");
-        if (!done || failure) reject(failure ?? new Error("Account limit CLI exited"));
-        else resolve(result);
-      });
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        if (done) return;
-        bytes += Buffer.byteLength(chunk);
-        if (bytes > 1_048_576) { finish(new Error("Account limit response too large")); return; }
-        buffer += chunk;
-        let end: number;
-        while (!done && (end = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-          let message: Record<string, unknown>;
-          try { message = record(JSON.parse(line)); } catch { continue; }
-          if (agent === "codex") {
-            if (message.id === 1) {
-              if (message.error) { finish(new Error("CLI initialization failed")); return; }
-              send({ method: "initialized" });
-              send({ method: "account/rateLimits/read", id: 2 });
-            } else if (message.id === 2) {
-              finish(message.error ? new Error("Account limit request failed") : undefined, message.result);
-            }
-          } else if (message.type === "control_response") {
-            const response = record(message.response);
-            if (response.request_id === "limits") finish(response.subtype !== "success" ? new Error("Account limit request failed") : undefined, response.response);
-          }
+  const args = agent === "codex" ? ["app-server"] : [
+    "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+    "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+    "--settings", '{"disableAllHooks":true}', "--tools", "", "--disable-slash-commands", "--no-chrome",
+  ];
+  return readNdjsonQuery({
+    command: agent, args, env: { [agent === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"]: home },
+    directoryPrefix: "palmagent-limits-", timeoutMs,
+    errors: { unavailable: "Account limit CLI unavailable", channel: "Account limit channel closed",
+      timeout: "Account limit read timed out", tooLarge: "Account limit response too large", exited: "Account limit CLI exited" },
+    initialize: ({ send }) => send(agent === "claude"
+      ? { type: "control_request", request_id: "limits", request: { subtype: "get_usage", skip_behaviors: true } }
+      : { method: "initialize", id: 1, params: { clientInfo: { name: "palmagent", version: "1" } } }),
+    receive(message, { send, finish }) {
+      if (agent === "codex") {
+        if (message.id === 1) {
+          if (message.error) return finish(new Error("CLI initialization failed"));
+          send({ method: "initialized" });
+          send({ method: "account/rateLimits/read", id: 2 });
+        } else if (message.id === 2) {
+          finish(message.error ? new Error("Account limit request failed") : undefined, message.result);
         }
-      });
-      send(agent === "claude"
-        ? { type: "control_request", request_id: "limits", request: { subtype: "get_usage", skip_behaviors: true } }
-        : { method: "initialize", id: 1, params: { clientInfo: { name: "palmagent", version: "1" } } });
-    });
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
+      } else if (message.type === "control_response") {
+        const response = record(message.response);
+        if (response.request_id === "limits") finish(response.subtype !== "success" ? new Error("Account limit request failed") : undefined, response.response);
+      }
+    },
+  });
 }
 
 // All sessions using the same provider home share one read, including failures.

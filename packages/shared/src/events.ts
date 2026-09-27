@@ -1,3 +1,5 @@
+import type { ImageAttachment } from "./requests.js";
+
 // Normalized event schema shared by both agents and reused by the web client.
 // The page only ever sees AgentEvent — it never knows whether it's talking to
 // Claude or Codex.
@@ -33,7 +35,7 @@ export type AgentEventKind =
 // When a Claude turn calls the AskUserQuestion tool, the headless CLI surfaces it
 // over the stream-json permission channel (--permission-prompt-tool stdio). The
 // adapter normalizes it into a "question" event so the page can render a tap-to-
-// answer UI agent-agnostically. Codex has no equivalent — this is Claude-only.
+// answer UI agent-agnostically. Codex questions are normalized to the same shape.
 export interface AskQuestionOption {
   label: string; // the choice the user taps; sent back to the CLI verbatim
   description?: string; // optional one-line explanation shown under the label
@@ -61,11 +63,26 @@ export interface PermissionRequest {
   reason?: string;
 }
 
-export interface AgentEvent {
-  taskId: string;
-  agent: AgentKind;
-  kind: AgentEventKind;
-  sessionId?: string; // claude session_id | codex thread_id
-  payload: unknown;
-  ts: number;
+/** Product-owned payloads are typed; provider tool and lifecycle data stay opaque. */
+export interface AgentEventPayloads {
+  assistant_text: AssistantTextPayload;
+  question: QuestionRequest;
+  approval_request: PermissionRequest;
+  output_image: ImageAttachment;
+  status: unknown;
+  tool_call: unknown;
+  tool_result: unknown;
+  result: unknown;
+  error: unknown;
 }
+
+export type AgentEvent<K extends AgentEventKind = AgentEventKind> = {
+  [Kind in K]: {
+    taskId: string;
+    agent: AgentKind;
+    kind: Kind;
+    sessionId?: string;
+    payload: AgentEventPayloads[Kind];
+    ts: number;
+  }
+}[K];

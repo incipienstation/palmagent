@@ -21,7 +21,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
     if (task.sessionControl?.owner !== "local") setCommand("");
   }, [task.taskId, task.sessionControl?.owner]);
   async function prepare() {
-    const finish = beginTaskAction(task.taskId, "Preparing shell handoff…");
+    const finish = beginTaskAction(task.taskId, "handoff");
     if (!finish) return;
     try { const result = await taskOperations.handoff(); setCommand(result.command); }
     catch (error) { toast({ title: error instanceof Error ? error.message : "Handoff failed", variant: "destructive" }); }

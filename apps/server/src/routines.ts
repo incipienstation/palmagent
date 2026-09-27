@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { nextRun, parseCron, presetToCron } from "./cron.js";
 import { ApplicationError } from "./errors.js";
-import type { IdentifierGenerator, RoutineRepository, RoutineScriptExecution, RoutineScriptRunner, RoutineTaskUseCases } from "./application/ports.js";
+import type { IdentifierGenerator, RoutineRepository, RoutineScriptResult, RoutineScriptRunner, RoutineTaskUseCases } from "./application/ports.js";
 import type { TaskEventPublisher } from "./application/ports.js";
 
 // Routines: recurring agent tasks or scripts. Agent fires create a fresh task;
@@ -20,7 +20,9 @@ const TICK_MS = 15_000;
 
 export class RoutineService {
   private timer?: NodeJS.Timeout;
-  private scripts = new Map<string, RoutineScriptExecution>();
+  private scripts = new Map<string, { stop(reason?: string): void; done: Promise<void> }>();
+  // Keep completed results until persistence recovers; never rerun the script.
+  private results = new Map<number, { routineId: string; result: RoutineScriptResult }>();
   private stopping = false;
 
   constructor(
@@ -50,7 +52,10 @@ export class RoutineService {
         }
       }
     }
-    this.timer = setInterval(() => this.tick(), TICK_MS);
+    this.timer = setInterval(() => {
+      try { this.tick(); }
+      catch { console.error("[routines] scheduler storage is unavailable; retrying on the next tick"); }
+    }, TICK_MS);
     this.timer.unref();
   }
 
@@ -60,9 +65,12 @@ export class RoutineService {
     this.timer = undefined;
     for (const run of this.scripts.values()) run.stop();
     await Promise.all([...this.scripts.values()].map(run => run.done));
+    this.persistResults();
+    if (this.results.size) throw new Error("Completed script results could not be persisted before shutdown");
   }
 
   private tick(): void {
+    this.persistResults();
     if (this.tasks.updating) return;
     const now = Date.now();
     for (const r of this.db.listRoutines()) {
@@ -77,22 +85,35 @@ export class RoutineService {
   private fire(r: Routine, now: number, manual = false): void {
     if (r.kind === "script") {
       if (this.stopping || this.tasks.updating) throw new ApplicationError("service_unavailable", "Palmagent is restarting");
-      if (this.scripts.has(r.id) || this.scripts.size >= 4) {
-        if (manual) throw new ApplicationError("conflict", "A script is already running or all four script slots are busy");
-        this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "skipped", note: "script already running or script capacity reached" });
-      } else {
-        const runId = this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "running", note: manual ? "manual" : "scheduled" });
-        const execution = this.scriptRunner.start(this.db, r, runId);
-        this.scripts.set(r.id, execution);
-        void execution.done.finally(() => {
-          this.scripts.delete(r.id);
-          this.events.emitReadChange({ type: "read-change", routineId: r.id });
-        });
+      const full = this.scripts.has(r.id) || this.scripts.size >= 4;
+      if (full && manual) throw new ApplicationError("conflict", "A script is already running or all four script slots are busy");
+      // Commit admission and cadence together before any process can execute.
+      const next = { ...r, lastRunAt: now, updatedAt: now,
+        nextRunAt: manual ? r.nextRunAt : r.schedule ? nextRun(r.schedule, now) : undefined };
+      const runId = this.db.transaction(() => {
+        this.db.updateRoutine(next);
+        return this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: full ? "skipped" : "running",
+          note: full ? "script already running or script capacity reached" : manual ? "manual" : "scheduled" });
+      });
+      if (!full) {
+        let worktreePath: string | undefined;
+        try {
+          const repo = this.db.getRepo(r.repoId);
+          if (!repo || !r.script) throw new Error("Script or space no longer exists");
+          const prepared = this.scriptRunner.prepare(repo, r.script);
+          worktreePath = prepared.worktreePath;
+          // Record the retained worktree before allowing the process to start.
+          this.db.finishRoutineRun(runId, { status: "running", worktreePath });
+          const execution = prepared.start();
+          const done = execution.done.then(
+            result => this.completeScript(runId, r.id, result),
+            error => this.completeScript(runId, r.id, { status: "failed", worktreePath, finishedAt: Date.now(), note: String(error) }),
+          ).finally(() => { this.scripts.delete(r.id); });
+          this.scripts.set(r.id, { stop: reason => execution.stop(reason), done });
+        } catch (error) {
+          this.completeScript(runId, r.id, { status: "failed", worktreePath, finishedAt: Date.now(), note: String(error) });
+        }
       }
-      r.lastRunAt = now;
-      if (!manual) r.nextRunAt = r.schedule ? nextRun(r.schedule, now) : undefined;
-      r.updatedAt = now;
-      this.db.updateRoutine(r);
       this.events.emitReadChange({ type: "read-change", routineId: r.id });
       return;
     }
@@ -125,6 +146,25 @@ export class RoutineService {
     r.updatedAt = now;
     this.db.updateRoutine(r);
     this.events.emitReadChange({ type: "read-change", routineId: r.id });
+  }
+
+  private completeScript(runId: number, routineId: string, result: RoutineScriptResult): void {
+    this.results.set(runId, { routineId, result });
+    this.persistResults();
+  }
+
+  private persistResults(): void {
+    for (const [runId, { routineId, result }] of this.results) {
+      try {
+        this.db.finishRoutineRun(runId, result);
+        this.results.delete(runId);
+      } catch {
+        console.error(`[routines] result ${runId} is awaiting persistence`);
+        continue;
+      }
+      try { this.events.emitReadChange({ type: "read-change", routineId }); }
+      catch { /* A read invalidation failure must not undo the durable result. */ }
+    }
   }
 
   // ---- CRUD (REST layer calls these) ----

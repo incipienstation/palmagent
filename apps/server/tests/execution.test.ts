@@ -75,7 +75,7 @@ for (const agent of ["claude", "codex"] as const) {
     const first = create("/opt/releases/one");
     const args = { taskId: "task", cwd: join(root, "repo"), prompt: JSON.stringify({ key: agent, mode: "answered-hold" }), interactive: true };
     const events: RawEvent[] = [];
-    first.agentRunner(agent).start(args, (event) => events.push(event), first);
+    first.agentRunner(agent).start(args, (event) => events.push(event));
     const marker = (suffix: string) => join(root, "control", agent + suffix);
     await until(() => existsSync(marker(".ready")), `provider starts ${logs}`);
     const original = JSON.parse(readFileSync(marker(".ready"), "utf8"));
@@ -87,7 +87,7 @@ for (const agent of ["claude", "codex"] as const) {
     process.kill(original.pid, 0);
     const second = create("/opt/releases/two");
     const replay: RawEvent[] = [];
-    const handle = second.agentRunner(agent).start({ ...args, reattach: true }, (event) => replay.push(event), second);
+    const handle = second.agentRunner(agent).start({ ...args, reattach: true }, (event) => replay.push(event));
     await until(() => replay.some((event) => JSON.stringify(event).includes(`${agent}:ping`)), "replay catches up");
     assert.equal(store.latest("task")!.id, execution.id);
     assert.equal(store.latest("task")!.release, "/opt/releases/one");
@@ -156,7 +156,7 @@ test("retained executions without skill capability reject selection before enque
   const old = store.reserve(request("legacy-skills"), "/opt/releases/previous", process.execPath);
   const backend = new ExecutionBackend(store.directory, "/opt/releases/current", process.execPath, 1, () => {});
   t.after(() => backend.close());
-  const handle = backend.agentRunner("codex").start({ taskId: "legacy-skills", cwd: "/tmp/legacy-skills", prompt: "", reattach: true }, () => {}, backend);
+  const handle = backend.agentRunner("codex").start({ taskId: "legacy-skills", cwd: "/tmp/legacy-skills", prompt: "", reattach: true }, () => {});
   const result = await handle.send!("Check", undefined, "skill-message", [{ id: "skill", name: "doctor", source: "repo" }]);
   assert.equal(result, "rejected");
   assert.deepEqual(store.pending(old.id), []);

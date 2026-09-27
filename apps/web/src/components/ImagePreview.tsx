@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { previewSource } from "../image-source";
+import { previewSource, attachmentExpired } from "../image-source";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
@@ -35,8 +35,8 @@ function Preview({ src, alt, title, dimensions, onLoad, linked }: {
     // Markdown URLs here, and never cache an expiration response offline.
     if (!failed || !/^\/api\/tasks\/[^/]+\/attachments\/[0-9a-f-]{36}$/.test(src)) return;
     const controller = new AbortController();
-    void fetch(src, { cache: "no-store", signal: controller.signal })
-      .then(response => { setExpired(response.status === 410); return response.body?.cancel(); })
+    void attachmentExpired(src, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setExpired(value); })
       .catch(() => {});
     return () => controller.abort();
   }, [failed, src]);

@@ -241,7 +241,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
 
   // The agent's question itself → a read-only record of what was asked.
   if (item.kind === "question") {
-    const qs = ((item.event.payload as { questions?: AskQuestion[] })?.questions) ?? [];
+    const qs = item.event.kind === "question" ? item.event.payload?.questions ?? [] : [];
     return <QuestionRecord questions={qs} />;
   }
 

@@ -79,7 +79,7 @@ export function DispatchView() {
   const [skills, setSkills] = useSkillDraft(`draft:dispatch-skills:${repoId}:${agent}`);
   const [pickerOpen, setPickerOpen] = useUpdateState(`dispatch:picker`, false);
   const activity = useTaskActivity("dispatch");
-  const busy = Boolean(activity.label);
+  const busy = Boolean(activity.kind);
   const [error, setError] = useState("");
   const att = useImageAttachments(setError);
   // Worktree isolation only applies to git repos — a plain folder always runs in
@@ -117,9 +117,9 @@ export function DispatchView() {
     if (!repos.some(repo => repo.id === repoId)) return setError("Register and select a repo first.");
     if (!prompt.trim() && att.images.length === 0 && !skills.length) return setError("Enter a prompt.");
     let createdTaskId: string | undefined;
-    const finish = beginTaskAction("dispatch", title.trim() || prompt.trim() || "New task", undefined, async () => {
+    const finish = beginTaskAction("dispatch", "dispatch", undefined, async () => {
       if (createdTaskId) await stopTaskTurn(createdTaskId);
-    });
+    }, title.trim() || prompt.trim() || "New task");
     if (!finish) return;
     try {
       const task = await dispatchOperations.createTask({

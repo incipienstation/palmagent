@@ -77,6 +77,7 @@ export interface AttachmentStorage {
 }
 
 export interface AuthRepository {
+  transaction<T>(work: () => T): T;
   countCredentials(): number;
   getSession(token: string): { token: string; createdAt: number; expiresAt: number } | undefined;
   deleteSession(token: string): void;
@@ -98,6 +99,7 @@ export interface PushRepository {
 }
 
 export interface RoutineRepository extends RepoRepository {
+  transaction<T>(work: () => T): T;
   interruptRoutineRuns(): void;
   listRoutines(): Routine[];
   updateRoutine(routine: Routine): void;
@@ -110,13 +112,19 @@ export interface RoutineRepository extends RepoRepository {
   finishRoutineRun(id: number, result: Pick<RoutineRun, "status" | "note" | "finishedAt" | "exitCode" | "output" | "worktreePath">): void;
 }
 
+export type RoutineScriptResult = Pick<RoutineRun, "status" | "note" | "finishedAt" | "exitCode" | "output" | "worktreePath">;
 export interface RoutineScriptExecution {
   stop(reason?: string): void;
-  done: Promise<void>;
+  done: Promise<RoutineScriptResult>;
+}
+
+export interface PreparedRoutineScript {
+  worktreePath?: string;
+  start(): RoutineScriptExecution;
 }
 
 export interface RoutineScriptRunner {
-  start(repository: RoutineRepository, routine: Routine, runId: number): RoutineScriptExecution;
+  prepare(repo: Repo, script: NonNullable<Routine["script"]>): PreparedRoutineScript;
 }
 
 export interface TaskAttachmentReader {

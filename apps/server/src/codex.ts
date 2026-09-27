@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ImageAttachment } from "@palmagent/shared";
-import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend, StartArgs } from "./types.js";
+import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
 // Codex's launch and JSONL protocol live here as executable integration code.
 // Keep the dispatch/resume matrix and normalized-event behavior covered by the
@@ -18,7 +18,7 @@ import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, RunnerBackend,
 // Images: both `exec` and `exec resume` take `-i/--image <FILE>` (verified on
 // 0.138.0) — base64 attachments are spilled to a temp dir, passed by path, and
 // the dir is removed when the child exits. Process + stdio are owned by the
-// RunnerBackend.
+// ProcessBackend.
 
 const IMG_EXT: Record<string, string> = {
   "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif",
@@ -94,7 +94,7 @@ export function buildCodexArgv(
 export class CodexRunner implements AgentRunner {
   readonly agent = "codex" as const;
 
-  start(args: StartArgs, emit: Emit, backend: RunnerBackend): RunHandle {
+  start(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
     if (args.interactive) return startCodexInteractive(args, emit, backend);
     const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach } = args;
     let sessionId: string | undefined = resumeId;
