@@ -18,4 +18,4 @@ description: Second stage of the plan → start → verify → ship loop. Start 
    before editing, as required by context discipline.
 3. Make the scoped change, following the repository's
    [skill source guidance](../garden/SKILL.md#skill-sources) when editing skills.
-4. Apply the public-safety rule while importing or writing every file. Then [verify](../verify/SKILL.md).
+4. Apply the public-safety rule when changing files. Then [verify](../verify/SKILL.md).
