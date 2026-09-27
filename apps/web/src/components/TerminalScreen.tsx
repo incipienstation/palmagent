@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type TouchEvent as ReactTouchEvent, useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalFrame, TerminalInput } from "@palmagent/shared/terminals";
 import { terminalInputChunks } from "@palmagent/shared/terminals";
@@ -27,6 +27,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
   const [connected, setConnected] = useState(false);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const fontSizeRef = useRef(DEFAULT_FONT_SIZE);
+  const pinchRef = useRef<{ distance: number; fontSize: number } | undefined>(undefined);
   const changeFontSize = (value: number) => {
     const next = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, value));
     if (next === fontSizeRef.current) return;
@@ -38,6 +39,27 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
       requestAnimationFrame(reflow.current);
     }
   };
+  const touchDistance = (touches: ReactTouchEvent<HTMLDivElement>["touches"]) => {
+    const first = touches.item(0), second = touches.item(1);
+    return first && second ? Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY) : 0;
+  };
+  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length === 2) {
+      const distance = touchDistance(event.touches);
+      pinchRef.current = distance ? { distance, fontSize: fontSizeRef.current } : undefined;
+    } else pinchRef.current = undefined;
+  };
+  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 2) { pinchRef.current = undefined; return; }
+    const pinch = pinchRef.current;
+    if (!pinch) return;
+    const scale = touchDistance(event.touches) / pinch.distance;
+    if (scale > 0) changeFontSize(Math.round(pinch.fontSize * scale));
+  };
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length < 2) pinchRef.current = undefined;
+  };
+  const handleTouchCancel = () => { pinchRef.current = undefined; };
   useEffect(() => {
     if (readOnlyRef.current === readOnly) return;
     readOnlyRef.current = readOnly;
@@ -185,7 +207,15 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
       <p role="status" className="text-xs text-muted-foreground">{claiming ? "Enabling input…" : readOnly ? "Viewing terminal output" : notice}</p>
       <Button variant="outline" size="sm" disabled={claiming} onClick={() => { termRef.current?.focus(); if (readOnly) onEnableInput(); else claim.current(); }}>{claiming ? "Connecting…" : "Type here"}</Button>
     </div>}
-    <div ref={container} data-testid="terminal-screen" className="min-h-0 min-w-0 flex-1 touch-pan-y overflow-hidden overscroll-contain bg-background p-2 text-foreground" />
+    <div
+      ref={container}
+      data-testid="terminal-screen"
+      className="min-h-0 min-w-0 flex-1 touch-pan-y overflow-hidden overscroll-contain bg-background p-2 text-foreground"
+      onTouchStartCapture={handleTouchStart}
+      onTouchMoveCapture={handleTouchMove}
+      onTouchEndCapture={handleTouchEnd}
+      onTouchCancelCapture={handleTouchCancel}
+    />
     <div className="flex shrink-0 gap-1 overflow-x-auto px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" aria-label="Terminal keys">
       {[["Ctrl+C", "\x03"], ["Tab", "\t"], ["Esc", "\x1b"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"]].map(([label, data]) =>
         <Button key={label} variant="secondary" className="shrink-0" disabled={!writable} onPointerDown={e => e.preventDefault()} onClick={() => { input.current(data); termRef.current?.focus(); }}>{label}</Button>)}

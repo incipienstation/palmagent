@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Pinching the terminal now adjusts its text size and refits the screen without introducing horizontal panning.
+
 ## 0.1.0-alpha.105
 
 ### Fixed
