@@ -175,10 +175,23 @@ for (const focusDuringHold of [false, true]) {
       }
       await page.getByRole("radio", { name: "Queue", exact: true }).tap();
       await expect(menu).toBeHidden();
+      if (!focusDuringHold) {
+        // Close autofocus runs after the popover's exit animation.
+        await page.waitForTimeout(300);
+        await expect(page.getByRole("button", { name: "Add to queue", exact: true })).not.toBeFocused();
+        await expect(input).not.toBeFocused();
+        await expect(composer).toHaveAttribute("data-expanded", "false");
+      }
       await touchHold(page, page.getByRole("button", { name: "Add to queue", exact: true }));
       await expect(menu).toBeVisible();
       await page.getByRole("radio", { name: "Send now", exact: true }).tap();
       await expect(menu).toBeHidden();
+      if (!focusDuringHold) {
+        await page.waitForTimeout(300);
+        await expect(page.getByRole("button", { name: "Send now", exact: true })).not.toBeFocused();
+        await expect(input).not.toBeFocused();
+        await expect(composer).toHaveAttribute("data-expanded", "false");
+      }
       expect(calls).toHaveLength(0);
       expect(await page.evaluate(() => (window as any).vibrations)).toEqual([12, 6, 12, 6]);
       // A new deliberate input tap still dismisses the menu and focuses input.
@@ -261,6 +274,7 @@ for (const draft of ["", "Keep the keyboard open"]) {
     await queue.press("ArrowDown");
     await expect(page.getByRole("radio", { name: "Queue", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
+    await expect(queue).toBeFocused();
     expect(calls).toHaveLength(0);
   });
 }
