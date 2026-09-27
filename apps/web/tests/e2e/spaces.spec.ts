@@ -100,6 +100,7 @@ test("desktop uses one rail and empty, long-name Spaces fit a narrow phone", asy
   await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /a-very-long-space/ }).click();
   await expect(page.getByText("No tasks yet", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 320, height: 780 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
   await assertViewportLocked(page);
   await expect(page.getByRole("button", { name: "Dispatch new task" })).toBeEnabled();
   await page.getByRole("button", { name: "Back", exact: true }).click();
