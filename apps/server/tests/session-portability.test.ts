@@ -173,12 +173,12 @@ test("a first local import preserves cwd, waits for exit, and fails closed on tr
   await once(writer, "spawn");
   f.defer(() => stopWriter(writer));
   const request = { agent: "codex" as const, sessionId: id, cwd: f.cwd, home: f.home, waitPid: writer.pid! };
-  assert.throws(() => service.dispatchSession({ ...request, home: f.cwd }), /same provider home/);
-  assert.throws(() => service.dispatchSession({ ...request, waitPid: process.pid }), /native agent CLI/);
-  const task = service.dispatchSession(request);
+  await assert.rejects(() => service.dispatchSession({ ...request, home: f.cwd }), /same provider home/);
+  await assert.rejects(() => service.dispatchSession({ ...request, waitPid: process.pid }), /native agent CLI/);
+  const task = await service.dispatchSession(request);
   assert.equal(task.worktreePath, f.cwd);
   assert.equal(task.branch, undefined, "importing a cwd does not grant worktree cleanup ownership");
-  assert.equal(service.dispatchSession(request).taskId, task.taskId, "repeating a pending request is idempotent");
+  assert.equal((await service.dispatchSession(request)).taskId, task.taskId, "repeating a pending request is idempotent");
   appendFileSync(f.transcript, line(message("codex", "user", "Local work")));
   appendFileSync(f.transcript, line({ type: "response_item", payload: { type: "function_call", name: "fixture", arguments: "{}", call_id: "call-1" } }));
   appendFileSync(f.transcript, line({ type: "response_item", payload: { type: "function_call_output", call_id: "call-1", output: [{ type: "image", mimeType: "image/png", data: png }] } }));
@@ -190,7 +190,7 @@ test("a first local import preserves cwd, waits for exit, and fails closed on tr
   const writer2 = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { argv0: "codex", stdio: "ignore" });
   await once(writer2, "spawn");
   f.defer(() => stopWriter(writer2));
-  service.dispatchSession({ ...request, waitPid: writer2.pid! });
+  await service.dispatchSession({ ...request, waitPid: writer2.pid! });
   const preserved = readFileSync(f.transcript);
   writeFileSync(f.transcript, line({ type: "session_meta", payload: { id, cwd: f.cwd } }));
   writer2.kill(); await once(writer2, "exit");

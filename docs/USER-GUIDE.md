@@ -58,6 +58,21 @@ beside the message. Retry reconnects to the same creation attempt without starti
 duplicate chat. A rejected message offers **Edit message**, preserving its text and
 attachments. Name the conversation afterward through its **⋮** menu.
 
+## Space base branches
+
+When registering a Git Space, leave **Base branch** blank to detect the remote's
+current default branch. Palmagent prefers `origin`, or the sole remote if it has
+another name. If that lookup is unavailable, it uses the cached remote default,
+then the current checkout. Detection uses locally available commits; it does not
+fetch branches. An explicit value overrides detection.
+
+Use **Settings → Space settings → Base branch** to change a registered Space's
+starting point. Enter a locally available branch or Git ref, such as `develop` or
+`origin/develop`. The saved choice is preserved across restarts and registration.
+Changes apply to future isolated tasks and routine runs. Existing tasks and the
+original checkout stay unchanged. Regular chats without isolation run in the
+original directory; plain folders have no base branch.
+
 ## Routines
 
 Ask the Palmagent plugin, for example, “Run the report script every weekday at 9”

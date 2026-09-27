@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Space settings let you change the base branch for future isolated tasks and routine runs. New Git spaces detect the remote default branch, with local fallback and an optional override.
+
 ## 0.1.0-alpha.113
 
 ### Changed

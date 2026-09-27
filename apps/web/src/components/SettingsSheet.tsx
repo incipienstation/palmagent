@@ -1,7 +1,7 @@
 import { useBackLayer } from "../hooks/useBackLayer";
 import { useSignOut } from "../auth/useSignOut";
 import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
-import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, Monitor, Moon, Sun, X } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, GitBranch, Monitor, Moon, Sun, X } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -19,6 +19,7 @@ import { useSendShortcut } from "../SendShortcutProvider";
 import { useUpdateState } from "../update-state";
 import { PushToggle } from "./PushToggle";
 import { UpdateSettings } from "./UpdateSettings";
+import { SpaceSettings } from "./SpaceSettings";
 import { RepoSettings } from "./RepoSettings";
 
 const themeLabels: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -42,6 +43,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const [section, setSection] = useUpdateState("settings:section", "general");
   const title = useRef<HTMLHeadingElement>(null);
   const searchPathsLink = useRef<HTMLButtonElement>(null);
+  const spaceSettingsLink = useRef<HTMLButtonElement>(null);
   const updatesLink = useRef<HTMLButtonElement>(null);
   const previousSection = useRef(section);
   const appearanceId = useId();
@@ -55,7 +57,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
     previousSection.current = section;
     if (!open || previous === section) return;
     if (section === "general") {
-      (previous === "spaces" ? searchPathsLink : updatesLink).current?.focus({ preventScroll: true });
+      (previous === "spaces" ? searchPathsLink : previous === "base-branches" ? spaceSettingsLink : updatesLink).current?.focus({ preventScroll: true });
     } else {
       title.current?.focus({ preventScroll: true });
     }
@@ -70,7 +72,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               <ArrowLeft />
             </Button>}
             <SheetTitle asChild className="flex-1 text-[22px] tracking-tight outline-none">
-              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Repository search paths" : "Updates"}</h2>
+              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Repository search paths" : section === "base-branches" ? "Space settings" : "Updates"}</h2>
             </SheetTitle>
             <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
           </div>
@@ -127,6 +129,13 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 
             <SettingsGroup label="Installation">
               <div className="flex flex-col">
+                <Button ref={spaceSettingsLink} variant="ghost" aria-label="Space settings" onClick={() => setSection("base-branches")}
+                  className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left">
+                  <GitBranch data-icon="inline-start" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Space settings</span><span className="text-xs font-normal text-muted-foreground">Base branches for isolated tasks & routines</span></span>
+                  <ChevronRight data-icon="inline-end" />
+                </Button>
+                <Separator />
                 <Button ref={searchPathsLink} variant="ghost" aria-label="Repository search paths" onClick={() => setSection("spaces")}
                   className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left hover:bg-accent">
                   <FolderSearch className="text-muted-foreground" />
@@ -169,6 +178,9 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
         </div>
         <div hidden={section !== "spaces"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "spaces" && "hidden")}>
           {open && <RepoSettings />}
+        </div>
+        <div hidden={section !== "base-branches"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "base-branches" && "hidden")}>
+          {open && <SpaceSettings />}
         </div>
         <div hidden={section !== "updates"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "updates" && "hidden")}>
           {open && <UpdateSettings />}

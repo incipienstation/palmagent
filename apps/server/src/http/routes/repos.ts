@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { CreateRepoSchema, DiscoverQuerySchema, IdParamsSchema, PathQuerySchema } from "@palmagent/shared/requests";
+import { CreateRepoSchema, UpdateRepoSchema, DiscoverQuerySchema, IdParamsSchema, PathQuerySchema } from "@palmagent/shared/requests";
 import { annotate, defaultBrowseRoot, discoverRepos, listDirectory, validateRepoPath } from "../../discover.js";
 import { jsonBody, query, params } from "../input.js";
 import type { HttpDependencies } from "../types.js";
@@ -19,6 +19,7 @@ export function repoRoutes({ service, settings }: HttpDependencies) {
       return c.json(listDirectory(c.req.valid("query").path || defaultBrowseRoot(roots), roots), 200);
     })
     .get("/repos", (c) => c.json({ repos: service.listRepos() }, 200))
-    .post("/repos", jsonBody(CreateRepoSchema), (c) => c.json({ repo: service.createRepo(c.req.valid("json")) }, 201))
+    .post("/repos", jsonBody(CreateRepoSchema), async (c) => c.json({ repo: await service.createRepo(c.req.valid("json")) }, 201))
+    .patch("/repos/:id", params(IdParamsSchema), jsonBody(UpdateRepoSchema), c => c.json({ repo: service.updateRepo(c.req.valid("param").id, c.req.valid("json")) }, 200))
     .delete("/repos/:id", params(IdParamsSchema), (c) => c.json({ repo: service.deleteRepo(c.req.valid("param").id) }, 200));
 }

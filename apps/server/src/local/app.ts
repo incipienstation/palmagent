@@ -28,6 +28,6 @@ export function createSessionApp(service: Pick<TaskService, "dispatchSession">, 
     app.route("/routines", routineRoutes({ routines }));
     app.get("/routine-spaces", c => c.json(routines.context()));
   }
-  return app.post("/dispatch", jsonBody(DispatchSessionSchema), (c) =>
-    c.json({ task: service.dispatchSession(c.req.valid("json")) }, 200));
+  return app.post("/dispatch", jsonBody(DispatchSessionSchema), async (c) =>
+    c.json({ task: await service.dispatchSession(c.req.valid("json")) }, 200));
 }

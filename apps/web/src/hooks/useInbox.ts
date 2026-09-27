@@ -59,6 +59,7 @@ export function useInbox(): Inbox {
           recoverReads = false;
         }
         if (frame.type === "read-change") {
+          if (frame.repos) refresh(clientReadKeys.repos());
           if (frame.usage) refresh(clientReadKeys.usage());
           if (frame.routines || frame.routineId) refresh(clientReadKeys.routines());
           if (frame.routineId) refresh(clientReadKeys.routineRunsFor(frame.routineId));

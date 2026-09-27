@@ -22,6 +22,10 @@ export function useDispatchOperations() {
   return useMemo(() => ({ createTask: (input: CreateTaskRequest) => api.createTask(input), getTask: (id: string) => api.getTask(id) }), []);
 }
 
+export function useSpaceOperations() {
+  return useMemo(() => ({ update: (id: string, baseRef: string) => api.updateRepo(id, { defaultBaseRef: baseRef }) }), []);
+}
+
 export function useRepositoryBrowserOperations() {
   return useMemo(() => ({
     discover: (refresh?: boolean) => api.discoverRepos(refresh),

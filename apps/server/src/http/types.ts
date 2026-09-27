@@ -15,7 +15,7 @@ export type HttpTaskUseCases = Pick<TaskService,
   | "createTask" | "resolveSkills" | "readAttachment" | "readTaskImage" | "rename" | "pin" | "taskActivityDetails"
   | "taskHistoryChanges" | "taskHistory" | "archive" | "handoff" | "resolveMessageSkills" | "submitMessage"
   | "messageAction" | "resumeQueue" | "followup" | "steer" | "approve" | "answer" | "stop" | "cancel"
-  | "listRepos" | "createRepo" | "deleteRepo" | "startVoice" | "touchVoice" | "stopVoice" | "eventCursor" | "providerHome"
+  | "listRepos" | "createRepo" | "updateRepo" | "deleteRepo" | "startVoice" | "touchVoice" | "stopVoice" | "eventCursor" | "providerHome"
 >;
 
 export type HttpDependencies = {

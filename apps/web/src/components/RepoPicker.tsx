@@ -17,6 +17,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { ApiError } from "../api";
@@ -136,6 +137,9 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   }, 160);
   useEffect(() => { if (!open) browseRequest.current++; }, [open]);
 
+  const [baseRef, setBaseRef] = useState("");
+  useEffect(() => { setBaseRef(""); }, [picked?.path]);
+
   const registeredByPath = useMemo(() => new Map(repos.map((r) => [r.path, r])), [repos]);
 
   // Search roots can change from another device or the CLI. Always fetch the
@@ -226,7 +230,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
     if (!picked || busy) return;
     setError("");
     try {
-      const repo = await registerRepo(picked.path);
+      const repo = await registerRepo(picked.path, picked.branch ? baseRef.trim() : undefined);
       if (repo) onRegistered(repo);
     } catch (e) {
       setError(errMsg(e));
@@ -473,6 +477,14 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                 {picked.branch ? `✓ git repo · branch ${picked.branch}` : "✓ plain folder · tasks run in place"}
               </div>
             </div>
+            {picked.branch && !registeredByPath.has(picked.path) && <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="register-base-branch">Base branch (optional)</FieldLabel>
+                <Input id="register-base-branch" value={baseRef} onChange={event => setBaseRef(event.target.value)}
+                  disabled={busy} placeholder="Automatic (remote default)" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+                <FieldDescription>Starting point for isolated tasks and routines. Leave blank to detect the remote default, with a local fallback.</FieldDescription>
+              </Field>
+            </FieldGroup>}
             <Button onClick={() => void register()} disabled={busy}>
               {busy ? "Connecting…" : registeredByPath.has(picked.path) ? "Open Space" : "Connect Space"}
             </Button>
