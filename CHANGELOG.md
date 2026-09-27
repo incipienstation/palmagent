@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.113
+
 ### Changed
 
 - Spaces now has a dedicated searchable directory, while All spaces always shows tasks across every Space. Each Space has its own task list, Worktree filters, folder details, and terminal entry point.
