@@ -49,10 +49,12 @@ Back only requests closure; it never confirms destructive actions. A consumer ma
 refuse closure during an in-flight save.
 
 One temporary history entry covers all open layers. Back closes the topmost layer
-and retains the page; remaining layers receive another cover. Closing through the
-UI removes the cover before a queued page navigation runs. Forward does not reopen
-dismissed surfaces. Reload discards the old cover before restoring any update
-checkpoint, whose open surfaces then register themselves normally.
+and retains the page; remaining layers reuse the existing cover with Forward.
+Never push a replacement cover while handling Back: Chromium can mark the
+document's history skippable and bypass both Settings and the exit floor.
+Closing through the UI removes the cover before a queued page navigation runs.
+Forward does not reopen dismissed surfaces. Reload steps back from the old cover before restoring any update
+checkpoint, whose open surfaces reuse that cover when they register again.
 
 Nested primitive surfaces inherit a higher priority through React context. Inline
 terminal panels use priority 50. Settings and repository-picker subpages use 150,
@@ -86,6 +88,10 @@ Its cold-launch and timeout checks use passive CDP reads and assert that user
 activation stays false; Playwright evaluation and locator helpers can otherwise
 hide the original failure by granting activation. These checks do not emulate
 the Android OS closing its app window.
+Nested Settings checks also use Chromium's browser Back path through a mouse
+Back-button release without a new pointer activation, including a modeled update
+checkpoint reload. JavaScript history traversal alone cannot detect native
+history skipping.
 Image-preview Back also runs in `image-rendering.spec.ts`. Native Android system
 exit and iOS edge gestures still require device testing; desktop Chromium's
 standalone emulation verifies application history behavior, not OS integration.

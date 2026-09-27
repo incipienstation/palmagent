@@ -59,7 +59,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
     edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue,
     queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status,
     running, awaiting, answering, composeMode, settingsReadOnly, displayedModel,
-    displayedEffort, setModel, setEffort, permission, setPermission, showSend, showStop,
+    displayedEffort, setModel, setEffort, permission, setPermission, primaryAction,
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
   const heading = task ? taskTitle(task) : taskId;
@@ -113,8 +113,11 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
-        <div ref={toastObstacle} className="flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
-          {activity.label && !isSendingAction(activity.kind) && <p role="status" className="text-xs text-muted-foreground">{activity.label}</p>}
+        <div ref={toastObstacle} className="relative flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+          <div className="pointer-events-none absolute inset-x-3 top-0 h-4 overflow-hidden" aria-live="polite">
+            {activity.label && !isSendingAction(activity.kind) &&
+              <p role="status" className="truncate text-xs leading-4 text-muted-foreground">{activity.label}</p>}
+          </div>
           {task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
           {answering && task?.pendingInput && (
             <QuestionCard
@@ -141,7 +144,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
             placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
-            onStop={showStop ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
+            onStop={primaryAction === "stop" ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
             header={edit && <div className="flex w-full items-center gap-2">
@@ -150,7 +153,7 @@ export function TaskDetailView({ taskId, task: inboxTask }: { taskId: string; ta
             </div>}
             controls={edit
               ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length)} onClick={() => void endEdit(true)}><Check /></Button>
-              : showSend ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
+              : primaryAction === "send" ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={() => void send()} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
             settings={{ agent: task.agent, model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,

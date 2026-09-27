@@ -502,6 +502,20 @@ test("Stop stays pending after acceptance until the live run actually stops", as
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeEnabled();
 });
 
+test("an idle Stop response stays pending until the live task snapshot catches up", async ({ page }) => {
+  const task = await queueSetup(page);
+  await page.route("**/api/tasks/t-run/stop", route => route.fulfill({
+    json: { task: { ...task, status: "idle", updatedAt: task.updatedAt + 1 } },
+  }));
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  const stop = composer.getByRole("button", { name: "Stop", exact: true });
+  await stop.click();
+  await expect(stop).toBeDisabled();
+  await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toBeVisible();
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "idle", updatedAt: task.updatedAt + 1 }] });
+  await expect(stop).toHaveCount(0);
+});
+
 for (const decision of ["approve", "deny"] as const) test(`${decision} waits for confirmation and restores controls on failure`, async ({ page }) => {
   const delayed = gate(); let calls = 0;
   await page.route("**/api/tasks/t-await/approve", async route => { calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Approval unavailable" } }); });
@@ -631,6 +645,43 @@ test("a follow-up draft replaces Stop, and clearing it restores Stop", async ({ 
   await expect(composer.getByRole("button", { name: "Send now", exact: true })).toBeVisible();
   await input.fill("   ");
   await expect(stop).toBeEnabled();
+});
+
+test("Stop and Queue remain exclusive when the composer is empty", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("delivery:t-run", "queue"));
+  await queueSetup(page);
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(composer.getByRole("button", { name: "Add to queue", exact: true })).toHaveCount(0);
+  await composer.getByRole("textbox", { name: "Message", exact: true }).fill("Queue this follow-up");
+  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  await expect(composer.getByRole("button", { name: "Add to queue", exact: true })).toBeVisible();
+});
+
+test("a queue action preserves the draft action and does not flash a spinner", async ({ page }) => {
+  await queueSetup(page, [structuredClone(message)]);
+  const delayed = gate();
+  await page.route(`**/api/tasks/t-run/messages/${message.id}`, async route => {
+    await delayed.wait;
+    await route.fulfill({ json: { revision: 2, paused: false, runId: "run-1", messages: [] } });
+  });
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  await composer.getByRole("textbox", { name: "Message", exact: true }).fill("Keep composing");
+  const composerHeight = (await composer.boundingBox())!.height;
+  await queueMenu(page, message.text);
+  await page.getByRole("button", { name: "Remove from queue", exact: true }).click();
+  await expect(composer).toHaveClass(/composer-pending/);
+  const notice = page.getByRole("status").filter({ hasText: "Removing message…" });
+  await expect(notice.locator("xpath=..")).toHaveCSS("position", "absolute");
+  await expect.poll(async () => (await composer.boundingBox())?.height).toBe(composerHeight);
+  const sendButton = composer.getByRole("button", { name: "Send now", exact: true });
+  await expect(sendButton).toBeDisabled();
+  await expect(sendButton).toHaveCSS("opacity", "1");
+  await expect(sendButton.locator(".animate-spin")).toHaveCount(0);
+  await expect(composer.getByRole("textbox")).toHaveCSS("opacity", "1");
+  delayed.release();
+  await expect(sendButton).toBeEnabled();
+  await expect(composer.getByRole("textbox")).toHaveValue("Keep composing");
 });
 
 test("a failed Stop can be retried while keeping the composer usable", async ({ page }) => {

@@ -205,8 +205,8 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const composerHasDraft = edit
     ? !!editText.trim() || editAtt.images.length > 0 || editSkills.length > 0
     : hasDraft;
-  const showSend = !canStop || (!busy && (composerHasDraft || deliveryMode === "queue"));
-  const showStop = canStop && (!composerHasDraft || sending || !!activity.stopping);
+  // Preserve one primary action through submission and delayed Stop snapshots.
+  const primaryAction = edit ? "save" : activity.stopping || sending || canStop && !composerHasDraft ? "stop" : "send";
   const canCancel = running || status === "queued";
   const canArchive = !localOwner && !active && status !== "archived";
 
@@ -216,5 +216,5 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     ...request, answers: skip ? request.answers.map(a => ({ ...a, selected: [], notes: undefined })) : request.answers,
   }), () => toast({ title: "Answer sent", variant: "success" }));
   const approve = (decision: "approve" | "deny") => act(decision === "approve" ? "approve" : "deny", () => taskOperations.approve({ decision }));
-  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission, setPermission, showSend, showStop, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
+  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
 }

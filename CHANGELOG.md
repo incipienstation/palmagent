@@ -12,6 +12,19 @@ An entry does not mean a version has been published.
 - Failed task-state saves no longer leave the displayed status or settings ahead of storage, and passkey registration commits its enrollment and session together.
 - Startup and shutdown continue releasing remaining resources when an individual cleanup step fails.
 
+## 0.1.0-alpha.104
+
+### Fixed
+
+- Back from Settings subpages, including Updates and screens restored after an update, no longer skips the app's history and bypasses the two-press exit confirmation.
+
+## 0.1.0-alpha.103
+
+### Fixed
+
+- Composer notices and controls stay steady during brief task actions, empty composers keep their size
+  on focus, and Stop and Send/Queue remain exclusive while live task state catches up.
+
 ## 0.1.0-alpha.102
 
 ### Changed

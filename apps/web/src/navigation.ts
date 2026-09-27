@@ -11,6 +11,7 @@ const key = "__palmagentNavigation";
 const layers = new Set<Layer>();
 const listeners = new Set<() => void>();
 let current: Entry;
+let layerCover: Entry | undefined;
 let visibleHash = "#/";
 let standalone = false;
 let suspended = false;
@@ -18,6 +19,7 @@ let stopNativeBack: (() => void) | undefined;
 let ready: Promise<void> | undefined;
 let finishBoot: (() => void) | undefined;
 let traversing = false;
+let restoringCover = false;
 let cleanup: -1 | 0 | 1 = 0;
 let lastIndex = 0;
 const endKey = "palmagent:navigation-end";
@@ -34,6 +36,7 @@ function readEntry(): Entry | undefined {
 }
 function write(entry: Entry, replace = false) {
   current = entry;
+  layerCover = entry.kind === "layer" ? entry : undefined;
   const state = { [key]: entry, ...(standalone && entry.depth === 0 && entry.kind !== "layer"
     ? { __backGuard: entry.kind === "floor" ? "floor" : "app" } : {}) };
   // Keep a hashless root byte-identical when only stamping metadata: older
@@ -60,6 +63,11 @@ function removeCover(direction: -1 | 1 = -1) {
   cleanup = direction;
   traversing = true;
   history.go(direction);
+}
+function restoreCover() {
+  restoringCover = true;
+  traversing = true;
+  history.forward();
 }
 function schedule() {
   if (scheduled) return;
@@ -143,7 +151,10 @@ function reconcile() {
   }
   if (layers.size && current.kind === "page") {
     disarmExit();
-    write({ ...current, kind: "layer", index: current.index + 1 });
+    const navigation = (window as Window & { navigation?: { canGoForward: boolean } }).navigation;
+    if (layerCover?.session === current.session && layerCover.index === current.index + 1
+      && layerCover.hash === current.hash && navigation?.canGoForward !== false) restoreCover();
+    else write({ ...current, kind: "layer", index: current.index + 1 });
   } else if (!layers.size && current.kind === "layer") {
     removeCover();
   }
@@ -156,6 +167,12 @@ function onPopState() {
   traversing = false;
   current = readEntry() ?? { ...previous, kind: "page", hash: hash(), index: previous.index + 1, depth: previous.depth + 1 };
   if (!readEntry()) write(current, true); // Adopt native hash links (including notification navigation).
+  if (restoringCover) {
+    restoringCover = false;
+    publish();
+    schedule();
+    return;
+  }
   if (cleaning) {
     if (current.kind === "layer") { removeCover(cleaning === 1 && current.index < lastIndex ? 1 : -1); return; }
     publish();
@@ -168,8 +185,11 @@ function onPopState() {
     && previous.index === current.index + 1 && previous.hash === current.hash) {
     const top = topLayer();
     if (top) flushSync(() => top.dismiss());
-    // Refused dismissals and remaining nested layers receive a new cover.
-    reconcile();
+    // Reuse the cover for remaining layers, including refused dismissals.
+    // Pushing a replacement during Back lets Chromium mark the whole document's
+    // history skippable, so the next native Back can leave before the exit hint.
+    if (layers.size) restoreCover();
+    else schedule();
     return;
   }
   if (current.kind === "layer") {
@@ -197,6 +217,7 @@ export function setupNavigation(): Promise<void> {
   if (ready) return ready;
   standalone = isStandalone();
   const saved = readEntry();
+  layerCover = saved?.kind === "layer" ? saved : undefined;
   const initialHash = hash();
   current = saved ?? { version: 1, session: crypto.randomUUID(), index: 0, depth: 0, hash: initialHash, kind: "page" };
   lastIndex = current.index;
