@@ -1,6 +1,6 @@
 import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
 import { Hono } from "hono";
-import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../input.js";
 import type { HttpDependencies } from "../types.js";
 import { TaskImageQuerySchema } from "@palmagent/shared/requests";
@@ -36,6 +36,8 @@ export function taskRoutes({ service }: HttpDependencies) {
       c.header("Cache-Control", "no-store");
       return c.json(await service.accountLimits(c.req.valid("param").id), 200);
     })
+    .patch("/:id/pin", params(IdParamsSchema), jsonBody(PinTaskSchema), (c) =>
+      c.json({ task: service.pin(c.req.valid("param").id, c.req.valid("json").pinned) }, 200))
     .patch("/:id", params(IdParamsSchema), jsonBody(RenameTaskSchema), (c) => {
       const input = c.req.valid("json");
       return c.json({ task: service.rename(c.req.valid("param").id, input.title) }, 200);

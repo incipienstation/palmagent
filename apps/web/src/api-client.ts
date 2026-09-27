@@ -124,6 +124,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     getTask: (id: string) => request(() => tasks.$get({ param: idParam(id) })).then((r) => r.task),
     getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
     createTask: (json: CreateTaskRequest) => write(() => client.tasks.$post({ json })).then((r) => r.task),
+    pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
     getUsage: (signal?: AbortSignal) => request(() => client.usage.$get({}, requestOptions(signal))).then((r) => r.usage),
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json })).then((r) => r.task),

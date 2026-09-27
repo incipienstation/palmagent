@@ -56,6 +56,17 @@ Palmagent plugin skills have a small Palmagent logo; other installed skills use 
 picker. See [selecting skills](SKILLS.md). Ask the plugin to manage routines, settings,
 session handoff, updates, or installation; users do not need to run its CLI directly.
 
+## Pin chats
+
+Choose **Pin** from a chat's **⋮** menu in the task list or conversation. Pinned
+chats appear above **Recent tasks** in navigation and first within each status
+group in the task list. Search and Space filters still apply to the task list.
+
+Pins are saved on the server and shared across devices. Their order stays fixed
+as new messages arrive. Choose **Unpin** to return a chat to recent-activity
+ordering; archiving a chat also removes its pin. Pinning does not start or stop
+agent work.
+
 ## Space search paths
 
 In **Settings → Space search paths**, add or remove folders where Palmagent

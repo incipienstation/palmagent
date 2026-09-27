@@ -16,6 +16,7 @@ export interface TaskRepository extends RepoRepository, MessageStateRepository, 
   listTasks(status?: TaskStatus): TaskState[];
   insertTask(task: TaskState): void;
   setSessionControl(id: string, control: TaskState["sessionControl"]): void;
+  setTaskPin(id: string, pinned: boolean, now: number): number | undefined;
   setTaskTitle(id: string, title: string, now: number): void;
   setTaskStatus(id: string, status: TaskStatus, interrupted: boolean, now: number): void;
   setTaskSession(id: string, sessionId: string, now: number): void;
