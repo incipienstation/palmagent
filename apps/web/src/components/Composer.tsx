@@ -100,7 +100,6 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   skills?: SkillSelection[];
   onSkillsChange?: (skills: SkillSelection[]) => void;
 }) {
-  const [focused, setFocused] = useState(false);
   const [configure, setConfigure] = useUpdateState(`composer:${id}:configure`, false);
   const [menuOpen, setMenuOpen] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -115,7 +114,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     latest.current.value = next; latest.current.onChange(next);
   }, () => !composing.current);
   const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || (!value.trim() && attachments.images.length === 0 && !skills?.length);
-  const expanded = voice.active || !!voice.error || !!skills?.length || picker.open || !!header || focused || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
+  const expanded = voice.active || !!voice.error || !!skills?.length || picker.open || !!header || configure || menuOpen || !!value || attachments.images.length > 0 || attachments.preparing;
   useLayoutEffect(() => {
     const el = textarea.current;
     if (!el) return;
@@ -138,9 +137,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const permission = permissionLabel(settings.agent, settings.permission);
 
   return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
-    className="rounded-3xl p-1"
-    onFocusCapture={() => setFocused(true)}
-    onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
+    className={`rounded-3xl p-1${busy || stopping ? " composer-pending" : ""}`}>
     <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
       onChange={(e) => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
       onSelect={e => picker.cursor(e.currentTarget)}

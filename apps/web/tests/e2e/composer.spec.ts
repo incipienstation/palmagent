@@ -46,6 +46,22 @@ for (const width of [360, 1280]) test(`dispatch and follow-up share toolbar orde
   }
 });
 
+test("focusing an empty composer does not resize its input or sticky footer", async ({ page }) => {
+  await page.goto("/#/task/t-run");
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  const input = composer.getByRole("textbox", { name: "Message", exact: true });
+  const sizes = async () => composer.evaluate(el => ({
+    composer: el.getBoundingClientRect().height,
+    footer: el.parentElement!.getBoundingClientRect().height,
+    input: el.querySelector("textarea")!.getBoundingClientRect().height,
+  }));
+  const before = await sizes();
+  await input.focus();
+  await expect.poll(sizes).toEqual(before);
+  await input.blur();
+  await expect.poll(sizes).toEqual(before);
+});
+
 test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
   const width = 360;
   await page.setViewportSize({ width, height: 780 });

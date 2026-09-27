@@ -282,6 +282,14 @@
   }
 }
 
+/* Task actions lock the composer while their request is pending. Keep its
+   controls at a steady opacity so brief requests do not flash the whole bar. */
+.composer-pending button:disabled,
+.composer-pending button[aria-disabled="true"],
+.composer-pending [data-slot="input-group-control"]:disabled {
+  opacity: 1;
+}
+
 /* Text-sized feedback. Centering uses translate independently of Sonner's
    transform so touch swipes follow the finger without losing alignment. */
 [data-sonner-toaster] [data-sonner-toast].compact-toast {
