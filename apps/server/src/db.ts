@@ -17,7 +17,7 @@ type RepoRow = {
   id: string; name: string; path: string; vcs: string; default_base_ref: string; created_at: number;
 };
 type TaskRow = {
-  id: string; repo_id: string; agent: string; title: string | null; prompt: string;
+  id: string; repo_id: string; agent: string; title: string | null; prompt: string; pinned_at: number | null;
   status: string; interrupted: number; session_id: string | null; branch: string | null;
   worktree_path: string | null; permission: string; model: string | null; effort: string | null;
   session_control: string | null;
@@ -279,6 +279,7 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
     `);
     // Additive migrations preserve existing native sessions and task events.
     const taskCols = (this.db.pragma("table_info(tasks)") as { name: string }[]).map((c) => c.name);
+    if (!taskCols.includes("pinned_at")) this.db.exec("ALTER TABLE tasks ADD COLUMN pinned_at INTEGER");
     if (!taskCols.includes("skills_json")) this.db.exec("ALTER TABLE tasks ADD COLUMN skills_json TEXT");
     if (!taskCols.includes("session_control")) this.db.exec("ALTER TABLE tasks ADD COLUMN session_control TEXT");
     if (!taskCols.includes("pr_url")) {
@@ -377,9 +378,9 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
   // ---- tasks ----
   insertTask(t: TaskState) {
     this.db.prepare(
-      `INSERT INTO tasks (id, repo_id, agent, title, prompt, status, interrupted, session_id,
+      `INSERT INTO tasks (id, repo_id, agent, title, pinned_at, prompt, status, interrupted, session_id,
          branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, pending_approval, session_control, skills_json, created_at, updated_at, last_activity_at)
-       VALUES (@id, @repo_id, @agent, @title, @prompt, @status, @interrupted, @session_id,
+       VALUES (@id, @repo_id, @agent, @title, @pinned_at, @prompt, @status, @interrupted, @session_id,
          @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @pending_approval, @session_control, @skills_json, @created_at, @updated_at, @last_activity_at)`,
     ).run(taskToRow(t));
   }
@@ -395,6 +396,14 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
   }
   setSessionControl(id: string, control: TaskState["sessionControl"]) {
     this.db.prepare("UPDATE tasks SET session_control = ? WHERE id = ?").run(JSON.stringify(control), id);
+  }
+  setTaskPin(id: string, pinned: boolean, now: number): number | undefined {
+    // Keep creation order even when two pins share a millisecond or the clock moves back.
+    const row = this.db.prepare(`UPDATE tasks SET pinned_at = CASE WHEN ? THEN
+      COALESCE(pinned_at, (SELECT MAX(?, COALESCE(MAX(pinned_at) + 1, ?)) FROM tasks))
+      ELSE NULL END, updated_at = ? WHERE id = ? RETURNING pinned_at`)
+      .get(pinned ? 1 : 0, now, now, now, id) as { pinned_at: number | null };
+    return row.pinned_at ?? undefined;
   }
   setTaskTitle(id: string, title: string, now: number) {
     this.db.prepare("UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
@@ -419,8 +428,8 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
   }
   setTaskStatus(id: string, status: TaskStatus, interrupted: boolean, now: number) {
     this.db.prepare(
-      `UPDATE tasks SET status = ?, interrupted = ?, updated_at = ? WHERE id = ?`,
-    ).run(status, interrupted ? 1 : 0, now, id);
+      `UPDATE tasks SET status = ?, interrupted = ?, updated_at = ?, pinned_at = CASE WHEN ? = 'archived' THEN NULL ELSE pinned_at END WHERE id = ?`,
+    ).run(status, interrupted ? 1 : 0, now, status, id);
   }
   setTaskSession(id: string, sessionId: string, now: number) {
     this.db.prepare(`UPDATE tasks SET session_id = ?, updated_at = ? WHERE id = ?`).run(sessionId, now, id);
@@ -870,6 +879,7 @@ function parsePrs(r: TaskRow): PrRef[] | undefined {
 function rowToTask(r: TaskRow): TaskState {
   return {
     taskId: r.id,
+    pinnedAt: r.pinned_at ?? undefined,
     repoId: r.repo_id,
     agent: r.agent as AgentKind,
     title: r.title ?? undefined,
@@ -897,6 +907,7 @@ function rowToTask(r: TaskRow): TaskState {
 function taskToRow(t: TaskState) {
   return {
     id: t.taskId,
+    pinned_at: t.pinnedAt ?? null,
     repo_id: t.repoId,
     agent: t.agent,
     title: t.title ?? null,

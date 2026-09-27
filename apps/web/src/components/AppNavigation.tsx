@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { BarChart3, Check, Clock3, Folder, Inbox, PanelLeftClose, Settings, SquarePen, Terminal } from "lucide-react";
+import { BarChart3, Check, Clock3, Folder, Inbox, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
+import { compareTasks } from "../lib/task-order";
 import { taskTitle } from "../lib/task-title";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
@@ -28,7 +29,8 @@ export function AppNavigation({ tasks, conn, children }: {
   const trigger = useRef<HTMLButtonElement | null>(null);
   const afterClose = useRef<(() => void) | null>(null);
   const route = useRoute();
-  const recent = useMemo(() => tasks.filter(task => task.status !== "archived")
+  const pinned = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt !== undefined).sort(compareTasks), [tasks]);
+  const recent = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt === undefined)
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20), [tasks]);
   const attention = tasks.some(task => task.status === "awaiting_input" || task.status === "awaiting_approval");
   const openNavigation = useCallback((element: HTMLButtonElement) => {
@@ -77,6 +79,15 @@ export function AppNavigation({ tasks, conn, children }: {
           </Button>)}
         </nav>
         <div className="mx-5 border-t border-border" />
+        {pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
+          <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Pinned</h2>
+          {pinned.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
+            className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
+            aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
+            onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
+            <Pin data-icon="inline-start" /><span className="truncate">{taskTitle(task)}</span>
+          </Button>)}
+        </section>}
         <div className="px-3 py-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
           {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}

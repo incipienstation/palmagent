@@ -720,3 +720,45 @@ test("attachment storage failure rolls back task creation", async t => {
   assert.deepEqual(f.service.listTasks(), []);
   assert.equal(f.db.attachmentIds().size, 0);
 });
+
+test("pins persist, broadcast, keep stable order and clear on archive without activity changes", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "pin-repo", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const taskId of ["pin-a", "pin-b"]) f.db.insertTask({ taskId, repoId: "pin-repo", agent: "codex", prompt: "Keep prompt", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 2, lastActivityAt: 3 });
+  await f.service.init();
+  const now = Date.now();
+  f.db.createSession("pin-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=pin-session`, "content-type": "application/json" };
+  const pin = (input: unknown, id = "pin-a", requestHeaders = headers) => f.app.request(`/api/tasks/${id}/pin`, { method: "PATCH", headers: requestHeaders, body: JSON.stringify(input) });
+  assert.equal((await pin({ pinned: true }, "pin-a", { ...headers, cookie: "" })).status, 401);
+  assert.equal((await pin({ pinned: true }, "pin-a", { ...headers, origin: "https://other.example" } as typeof headers)).status, 403);
+  for (const input of [{}, { pinned: null }, { pinned: 1 }, { pinned: "false" }]) assert.equal((await pin(input)).status, 400);
+  assert.equal((await pin({ pinned: true }, "missing")).status, 404);
+  let broadcasts = 0;
+  f.hub.onTasks(() => broadcasts++);
+  const before = structuredClone(f.service.getTask("pin-a"));
+  assert.equal((await pin({ pinned: true })).status, 200);
+  const first = f.service.getTask("pin-a").pinnedAt!;
+  assert(first >= now);
+  assert.equal((await pin({ pinned: true })).status, 200);
+  assert.equal(broadcasts, 1, "repeat pins are idempotent");
+  assert.deepEqual(f.service.getTask("pin-a"), { ...before, pinnedAt: first, updatedAt: f.service.getTask("pin-a").updatedAt });
+  await pin({ pinned: true }, "pin-b");
+  assert(f.service.getTask("pin-b").pinnedAt! > first);
+  f.service.rename("pin-a", "Renamed pin");
+  f.db.touchTask("pin-a", Date.now());
+  assert.equal(f.service.getTask("pin-a").pinnedAt, first);
+  const reopened = new Db(f.db.path);
+  try { assert.equal(reopened.getTask("pin-a")!.pinnedAt, first); }
+  finally { reopened.close(); }
+  assert.equal(f.db.eventCursor("pin-a"), 0);
+  await pin({ pinned: false });
+  assert.equal(f.service.getTask("pin-a").pinnedAt, undefined);
+  await pin({ pinned: true });
+  assert(f.service.getTask("pin-a").pinnedAt! > f.service.getTask("pin-b").pinnedAt!);
+  const archived = f.service.archive("pin-a");
+  assert.equal(archived.pinnedAt, undefined);
+  assert.equal(f.db.getTask("pin-a")!.pinnedAt, undefined);
+  assert.equal((await pin({ pinned: true })).status, 409);
+  assert.equal((await pin({ pinned: false })).status, 200);
+});

@@ -252,7 +252,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, updateSettings);
     }
     if (m === "PATCH" && pathname.startsWith("/api/tasks/")) {
-      const task = tasks.find((t) => t.taskId === decodeURIComponent(pathname.slice("/api/tasks/".length)));
+      const task = tasks.find((t) => t.taskId === decodeURIComponent(pathname.slice("/api/tasks/".length).replace(/\/pin$/, "")));
       if (!task) return json(res, 404, { error: "no such task" });
       let input;
       try {
@@ -260,6 +260,14 @@ const server = createServer(async (req, res) => {
         for await (const chunk of req) body += chunk;
         input = JSON.parse(body);
       } catch { return json(res, 400, { error: "invalid JSON" }); }
+      if (pathname.endsWith("/pin")) {
+        if (typeof input?.pinned !== "boolean") return json(res, 400, { error: "invalid pin" });
+        if (input.pinned && task.status === "archived") return json(res, 409, { error: "archived" });
+        task.pinnedAt = input.pinned ? task.pinnedAt ?? Math.max(Date.now(), ...tasks.map(t => (t.pinnedAt ?? 0) + 1)) : undefined;
+        task.updatedAt = Date.now();
+        for (const client of taskClients) tasksFrame(client);
+        return json(res, 200, { task });
+      }
       const title = typeof input?.title === "string" ? input.title.trim() : "";
       if (!title || title.length > 200 || /[\r\n]/.test(title)) return json(res, 400, { error: "invalid title" });
       task.title = title;

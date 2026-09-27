@@ -364,6 +364,17 @@ export class TaskService implements PrStatusSink {
     }
   }
 
+  pin(id: string, pinned: boolean): TaskState {
+    const task = this.getTask(id);
+    if (pinned && task.status === "archived") throw conflict("Archived tasks cannot be pinned");
+    if ((task.pinnedAt !== undefined) === pinned) return task;
+    const now = Date.now();
+    task.pinnedAt = this.db.setTaskPin(id, pinned, now);
+    task.updatedAt = now;
+    this.broadcastTasks();
+    return task;
+  }
+
   rename(id: string, title: string): TaskState {
     const task = this.getTask(id);
     if (task.title === title) return task;
@@ -1037,6 +1048,7 @@ export class TaskService implements PrStatusSink {
     const interrupted = opts?.interrupted ?? task.interrupted;
     this.db.setTaskStatus(task.taskId, status, interrupted, now);
     Object.assign(task, { status, interrupted, updatedAt: now });
+    if (status === "archived") task.pinnedAt = undefined;
     this.broadcastTasks();
   }
 

@@ -12,7 +12,7 @@ import type { LiveEventStream } from "../application/ports.js";
 /** HTTP adapters see only the use cases each route needs, never their implementations or persistence. */
 export type HttpTaskUseCases = Pick<TaskService,
   | "updating" | "executionProtocol" | "usage" | "availableSkills" | "listTasks" | "getTask" | "accountLimits"
-  | "createTask" | "resolveSkills" | "readAttachment" | "readTaskImage" | "rename" | "taskActivityDetails"
+  | "createTask" | "resolveSkills" | "readAttachment" | "readTaskImage" | "rename" | "pin" | "taskActivityDetails"
   | "taskHistoryChanges" | "taskHistory" | "archive" | "handoff" | "resolveMessageSkills" | "submitMessage"
   | "messageAction" | "resumeQueue" | "followup" | "steer" | "approve" | "answer" | "stop" | "cancel"
   | "listRepos" | "createRepo" | "deleteRepo" | "startVoice" | "touchVoice" | "stopVoice" | "eventCursor" | "providerHome"

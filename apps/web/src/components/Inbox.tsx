@@ -1,13 +1,14 @@
 import { useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X, Terminal } from "lucide-react";
+import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X, Terminal, Pin } from "lucide-react";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useUpdateState } from "../update-state";
+import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
 import { statusSection } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -104,6 +105,7 @@ function CardContextLine({ task }: { task: TaskState }) {
 function CardHeadline({ task }: { task: TaskState }) {
   return (
     <div className="flex items-start gap-2 pr-10">
+      {task.pinnedAt !== undefined && <Pin className="mt-1 size-4 shrink-0 text-muted-foreground" role="img" aria-label="Pinned" />}
       <span className="min-w-0 flex-1 line-clamp-2 text-base leading-6 font-medium text-strong [overflow-wrap:anywhere]">
         {taskTitle(task)}
       </span>
@@ -248,8 +250,8 @@ export const InboxView = memo(function InboxView({
     arr.push(t);
     byStatus.set(group, arr);
   }
-  // Most-recent first within each group.
-  for (const arr of byStatus.values()) arr.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  // Preserve status groups and filters, with stable pins first in each group.
+  for (const arr of byStatus.values()) arr.sort(compareTasks);
 
   const isEmpty = !loading && filtered.length === 0;
   const selectedName = spaceName(selected, repos, tasks);

@@ -1,7 +1,7 @@
 import { useUpdateState } from "../update-state";
 import type { TaskState } from "@palmagent/shared";
 import { RenameTaskSchema } from "@palmagent/shared/requests";
-import { MoreVertical, Pencil } from "lucide-react";
+import { MoreVertical, Pencil, Pin, PinOff } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,12 @@ export function SessionActionsMenu({ task, children, label = "Task actions", ren
           }
         }}>
           <DropdownMenuGroup>
+            {task.status !== "archived" && <DropdownMenuItem disabled={mutations.get(task.taskId)?.pending} onSelect={() => {
+              void mutateTask(task.taskId, { pinnedAt: task.pinnedAt === undefined ? Date.now() : null });
+            }}>
+              {task.pinnedAt === undefined ? <Pin /> : <PinOff />}
+              {task.pinnedAt === undefined ? "Pin" : "Unpin"}
+            </DropdownMenuItem>}
             <DropdownMenuItem disabled={renameDisabled || mutations.get(task.taskId)?.pending} onSelect={() => {
               openingEditor.current = true;
               setInitialTitle(taskTitle(task));

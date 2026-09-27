@@ -31,7 +31,7 @@ const galaxyS25 = {
 const baseURL = process.env.E2E_BASE_URL;
 const statefulURL = process.env.E2E_STATEFUL_URL;
 if (!baseURL || !statefulURL) throw new Error("Use node scripts/run-e2e.mjs to start isolated test servers.");
-const statefulSpecs = ["**/session-rename.spec.ts"];
+const statefulSpecs = ["**/session-rename.spec.ts", "**/session-pin.spec.ts"];
 
 export default defineConfig({
   testDir: "./tests/e2e",
