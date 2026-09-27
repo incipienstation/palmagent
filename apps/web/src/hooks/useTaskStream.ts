@@ -39,7 +39,7 @@ export interface TaskStream {
 
 function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferred = false): void {
   if (event.kind === "assistant_text") {
-    const payload = (event.payload ?? {}) as Partial<AssistantTextPayload>;
+    const payload = event.payload;
     const text = typeof payload.text === "string" ? payload.text : "";
     const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
     const phase = payload.phase === "progress" || payload.phase === "final" ? payload.phase : undefined;
