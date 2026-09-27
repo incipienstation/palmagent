@@ -197,9 +197,9 @@ for (const focusDuringHold of [false, true]) {
       // A new deliberate input tap still dismisses the menu and focuses input.
       await touchHold(page, page.getByRole("button", { name: "Send now", exact: true }));
       await expect(menu).toBeVisible();
-      // The centre can sit behind the delivery popup when expanded; the left
-      // edge holds Attach in the compact row. Tap the exposed gap after it.
-      await input.tap({ position: { x: 50, y: 10 } });
+      // Use the exposed input text area, beyond the attachment toolbar.
+      const tapX = await composer.getAttribute("data-expanded") === "true" ? 50 : 100;
+      await input.tap({ position: { x: tapX, y: 10 } });
       await expect(menu).toBeHidden();
       await expect(input).toBeFocused();
     } finally { await session.detach(); }
