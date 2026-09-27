@@ -4,7 +4,7 @@ import { skillId } from "./application/skill-id.js";
 import { MessageController } from "./message-controller.js";
 import type { SubmitMessage, MessageAction } from "@palmagent/shared";
 import type {
-  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
+  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { extractOutputImages } from "./application/output-images.js";
@@ -293,7 +293,7 @@ export class TaskService implements PrStatusSink {
   }
 
   // ---- repos ----
-  createRepo(req: CreateRepoRequest): Repo {
+  async createRepo(req: CreateRepoRequest): Promise<Repo> {
     if (!req?.path) throw badRequest("path is required");
     const inspected = this.repositoryPaths.inspect(req.path, req.defaultBaseRef);
     if (!inspected.isGit && !inspected.isDirectory) throw badRequest(inspected.exists
@@ -306,16 +306,36 @@ export class TaskService implements PrStatusSink {
     const path = inspected.path;
     const existing = this.db.listRepos().find((r) => r.path === path);
     if (existing) return existing;
+    const baseRef = inspected.isGit
+      ? req.defaultBaseRef?.trim() || await this.repositoryPaths.defaultBaseRef(path) : "";
+    if (inspected.isGit && req.defaultBaseRef && !this.repositoryPaths.validBaseRef(path, baseRef)) {
+      throw badRequest("Base branch must resolve to an existing local Git commit. Fetch the branch first if needed.");
+    }
+    // Remote discovery yields: another request may have registered the same path.
+    const registered = this.db.listRepos().find((r) => r.path === path);
+    if (registered) return registered;
     const repo: Repo = {
       id: this.ids.next("r"),
       name: req.name || inspected.name,
       path,
       vcs: inspected.isGit ? "git" : "none",
-      defaultBaseRef: inspected.defaultBaseRef,
+      defaultBaseRef: baseRef,
       createdAt: Date.now(),
     };
     this.db.insertRepo(repo);
+    this.hub.emitReadChange({ type: "read-change", repos: true });
     return repo;
+  }
+  updateRepo(id: string, req: UpdateRepoRequest): Repo {
+    const repo = this.getRepo(id);
+    if (repo.vcs === "none") throw badRequest("Plain folders do not have a base branch.");
+    const baseRef = req.defaultBaseRef.trim();
+    if (!this.repositoryPaths.validBaseRef(repo.path, baseRef)) {
+      throw badRequest("Base branch must resolve to an existing local Git commit. Fetch the branch first if needed.");
+    }
+    this.db.setRepoBaseRef(id, baseRef);
+    this.hub.emitReadChange({ type: "read-change", repos: true });
+    return { ...repo, defaultBaseRef: baseRef };
   }
   deleteRepo(id: string): Repo {
     const repo = this.getRepo(id);
@@ -403,7 +423,7 @@ export class TaskService implements PrStatusSink {
   }
 
   // This entry point is exposed only on the owner-only local control socket.
-  dispatchSession(req: DispatchSessionRequest): TaskState {
+  async dispatchSession(req: DispatchSessionRequest): Promise<TaskState> {
     this.assertTaskAdmission();
     if (!req || !["claude", "codex"].includes(req.agent) || typeof req.cwd !== "string" || typeof req.home !== "string") throw badRequest("agent, sessionId, cwd and provider home are required");
     let task = this.listTasks().find((t) => t.agent === req.agent && t.sessionId === req.sessionId);
@@ -415,7 +435,10 @@ export class TaskService implements PrStatusSink {
       if (task.sessionControl.owner === "returning" && (task.sessionControl.waitPid !== req.waitPid || task.sessionControl.waitIdentity !== identity)) throw conflict("A different local writer is already returning this session");
     } else {
       const now = Date.now();
-      const repo = this.createRepo({ path: cwd });
+      const repo = await this.createRepo({ path: cwd });
+      // Recheck ownership after remote discovery yielded to another import.
+      if (this.listTasks().some(t => t.agent === req.agent && t.sessionId === req.sessionId)) return this.dispatchSession(req);
+      this.assertTaskAdmission();
       task = { taskId: this.ids.next("t"), repoId: repo.id, agent: req.agent, prompt: "Imported local session", title: "Local session", status: "idle", interrupted: false,
         sessionId: req.sessionId, worktreePath: cwd, permission: DEFAULT_PERMISSION[req.agent], createdAt: now, updatedAt: now, lastActivityAt: now,
         sessionControl: { owner: "local", home, transcript, cursor: 0, prefixHash: this.nativeSession.emptyTranscriptHash } };

@@ -15,6 +15,7 @@ export const ImageAttachmentSchema = z.object({ mediaType: text, data: text,
   .refine(({ width, height }) => (width === undefined) === (height === undefined));
 const images = z.array(ImageAttachmentSchema).optional(); // decoded limits remain in the service
 export const CreateRepoSchema = z.object({ path: required, name: text.optional(), defaultBaseRef: text.optional() });
+export const UpdateRepoSchema = z.object({ defaultBaseRef: text.trim().min(1).max(255) });
 export const CreateTaskSchema = z.object({
   repoId: required, agent, prompt: text, skills: SelectedSkillsSchema, ...settings, title: text.optional(), images,
   clientRequestId: z.string().uuid().optional(), // stable across creation retries
@@ -103,6 +104,7 @@ export const RegistrationSchema = z.object({ response: z.object({ ...credential,
   publicKeyAlgorithm: z.number().optional(), publicKey: text.optional(), authenticatorData: text.optional(),
 }) }), label: text.optional() });
 
+export type UpdateRepoRequest = z.infer<typeof UpdateRepoSchema>;
 export type CreateRepoRequest = z.infer<typeof CreateRepoSchema>;
 export type ImageAttachment = z.infer<typeof ImageAttachmentSchema>;
 export type CreateTaskRequest = z.infer<typeof CreateTaskSchema>;

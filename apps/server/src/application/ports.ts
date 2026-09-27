@@ -43,6 +43,7 @@ export interface TaskDefaults {
 
 export interface RepoRepository {
   insertRepo(repo: Repo): void;
+  setRepoBaseRef(id: string, baseRef: string): void;
   getRepo(id: string): Repo | undefined;
   listRepos(): Repo[];
   deleteRepo(id: string): void;
@@ -221,6 +222,8 @@ export interface RepositoryPathInspection {
 
 export interface RepositoryPathOperations {
   inspect(path: string, defaultBaseRef?: string): RepositoryPathInspection;
+  defaultBaseRef(path: string): Promise<string>;
+  validBaseRef(path: string, baseRef: string): boolean;
 }
 
 export interface NativeSessionDispatch {

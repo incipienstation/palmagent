@@ -11,12 +11,12 @@ const listeners = new Set<() => void>();
 function publish() { snapshot = { removed: new Set(snapshot.removed), removing: new Set(snapshot.removing), registering: new Set(snapshot.registering) }; listeners.forEach(fn => fn()); }
 const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const useRepoMutations = () => useSyncExternalStore(subscribe, () => snapshot);
-export async function registerRepo(path: string): Promise<Repo | undefined> {
+export async function registerRepo(path: string, defaultBaseRef?: string): Promise<Repo | undefined> {
   if (snapshot.registering.has(path)) return;
   const generation = cacheSession();
   snapshot.registering.add(path); publish();
   try {
-    const actual = await api.createRepo({ path });
+    const actual = await api.createRepo({ path, ...(defaultBaseRef ? { defaultBaseRef } : {}) });
     if (generation === cacheSession()) {
       snapshot.removed.delete(actual.id);
       queryClient.setQueryData<Repo[]>(clientReadKeys.repos(), (current) => current

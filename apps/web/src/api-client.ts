@@ -7,7 +7,7 @@ import type {
   AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
   CreateTaskRequest, FollowupRequest, MessageAction, PushSubscribeRequest,
   RenameTaskRequest, RepoSettingsChange, SteerRequest, SubmitMessage, TaskStatus,
-  UpdateAction, UpdateRoutineRequest, UpdateSettingsChange,
+  UpdateAction, UpdateRepoRequest, UpdateRoutineRequest, UpdateSettingsChange,
 } from "@palmagent/shared";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
 
@@ -107,6 +107,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     listRepos: (signal?: AbortSignal) => request(() => client.repos.$get({}, requestOptions(signal))).then((r) => r.repos),
     modelCatalog: (signal?: AbortSignal) => request(() => client["model-catalog"].$get({}, requestOptions(signal))),
     createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json }), false, false, ["repos"]).then((r) => r.repo),
+    updateRepo: (id: string, json: UpdateRepoRequest) => write(() => client.repos[":id"].$patch({ param: idParam(id), json }), false, false, ["repos"]).then(r => r.repo),
     deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) }), false, false, ["repos"]).then((r) => r.repo),
     discoverRepos: (refresh = false) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} })),
     validateRepoPath: (path: string) => request(() => client.repos.validate.$get({ query: { path } })),

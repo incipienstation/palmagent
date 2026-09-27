@@ -61,7 +61,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
 
 test("voice routes require authentication, reject non-Codex contexts and resolve the native home server-side", async t => {
   const f = fixture(t);
-  const repo = f.service.createRepo({ path: f.dir });
+  const repo = await f.service.createRepo({ path: f.dir });
   const id = "11111111-1111-4111-8111-111111111111";
   const calls: string[] = [];
   f.service.voice!.start = async (home, sdp) => { calls.push(home); assert.equal(sdp, "v=0\r\noffer"); return { id, sdp: "v=0\r\nanswer" }; };
@@ -788,4 +788,47 @@ test("creation request IDs reconcile a lost response without another task or tur
   // Reconciliation uses durable task storage, not only the live service cache.
   (f.service as unknown as { cache: Map<string, unknown> }).cache.clear();
   assert.equal((await post(input)).status, 201); assert.equal(turns, 1);
+});
+
+test("Space base branch updates validate refs, persist, and affect only subsequent isolated worktrees", async t => {
+  const f = fixture(t);
+  const { execFileSync } = await import("node:child_process");
+  const git = (...args: string[]) => execFileSync("git", ["-C", f.dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  git("init", "-b", "main");
+  git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "--allow-empty", "-m", "main");
+  const main = git("rev-parse", "HEAD");
+  git("switch", "-c", "develop");
+  git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "--allow-empty", "-m", "develop");
+  const develop = git("rev-parse", "HEAD");
+  const now = Date.now(); f.db.createSession("base-ref-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=base-ref-session`, "content-type": "application/json" };
+  const created = await f.app.request("/api/repos", { method: "POST", headers, body: JSON.stringify({ path: f.dir, defaultBaseRef: "main" }) });
+  assert.equal(created.status, 201);
+  const { repo } = await created.json();
+  const worktrees = new WorktreeManager();
+  const before = worktrees.create(repo, "before");
+  const patch = (defaultBaseRef: string) => f.app.request(`/api/repos/${repo.id}`, { method: "PATCH", headers, body: JSON.stringify({ defaultBaseRef }) });
+  assert.equal((await f.app.request(`/api/repos/${repo.id}`, { method: "PATCH", body: JSON.stringify({ defaultBaseRef: "develop" }) })).status, 401);
+  for (const ref of ["", "missing", "--help"]) assert.equal((await patch(ref)).status, 400);
+  assert.equal(f.db.getRepo(repo.id)?.defaultBaseRef, "main");
+  assert.equal((await patch("develop")).status, 200);
+  const saved = f.db.getRepo(repo.id)!;
+  assert.equal(saved.defaultBaseRef, "develop");
+  assert.equal((await f.service.createRepo({ path: f.dir, defaultBaseRef: "main" })).defaultBaseRef, "develop", "registration never overwrites a saved choice");
+  const after = worktrees.create(saved, "after");
+  assert.equal(execFileSync("git", ["-C", before.path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), main);
+  assert.equal(execFileSync("git", ["-C", after.path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), develop);
+  assert.equal(git("branch", "--show-current"), "develop");
+  worktrees.remove(saved, before); worktrees.remove(saved, after);
+  f.db.insertRepo({ id: "folder", name: "folder", path: join(f.dir, "folder"), vcs: "none", defaultBaseRef: "", createdAt: now });
+  assert.equal((await f.app.request("/api/repos/folder", { method: "PATCH", headers, body: JSON.stringify({ defaultBaseRef: "main" }) })).status, 400);
+});
+
+test("concurrent automatic registrations deduplicate after asynchronous Git discovery", async t => {
+  const f = fixture(t, false);
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["-C", f.dir, "init", "-b", "main"], { stdio: "ignore" });
+  const [first, second] = await Promise.all([f.service.createRepo({ path: f.dir }), f.service.createRepo({ path: f.dir })]);
+  assert.equal(first.id, second.id);
+  assert.equal(f.db.listRepos().length, 1);
 });

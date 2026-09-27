@@ -341,6 +341,9 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
       `INSERT INTO repos (id, name, path, vcs, default_base_ref, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
     ).run(r.id, r.name, r.path, r.vcs, r.defaultBaseRef, r.createdAt);
   }
+  setRepoBaseRef(id: string, baseRef: string) {
+    this.db.prepare("UPDATE repos SET default_base_ref = ? WHERE id = ?").run(baseRef, id);
+  }
   getRepo(id: string): Repo | undefined {
     const row = this.db.prepare(`SELECT * FROM repos WHERE id = ?`).get(id) as RepoRow | undefined;
     return row && rowToRepo(row);
