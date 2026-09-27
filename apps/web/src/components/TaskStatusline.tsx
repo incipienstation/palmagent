@@ -82,7 +82,7 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
   const lowWindows = available.filter(({ limit }) => windowState(limit, now, stale).low && limit.resetsAt !== null);
   return <Sheet>
     <SheetTrigger asChild>
-      <Button variant="ghost" className="h-auto min-h-11 w-full justify-start rounded-xl px-1 py-1" aria-label="Account limit details" aria-describedby={summaryId}>
+      <Button variant="ghost" className="h-auto min-h-10 w-full justify-start rounded-xl px-1 py-0.5" aria-label="Account limit details" aria-describedby={summaryId}>
         <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left text-xs font-normal text-muted-foreground">
           {primary && primary.id !== "codex" && <span className="truncate">{primary.name}</span>}
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
