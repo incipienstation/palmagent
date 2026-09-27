@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.115
+
 ### Changed
 
 - Spaces uses text-first rows without initial badges. Mobile search stays at the bottom above the keyboard, while desktop search remains above the list.
