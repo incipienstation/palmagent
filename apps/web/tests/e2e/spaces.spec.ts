@@ -24,7 +24,7 @@ test("All spaces ignores legacy filters and Spaces has searchable, distinct rows
   await page.setViewportSize({ width: 320, height: 780 });
   await page.addInitScript(() => localStorage.setItem("working-directory", "/missing/old-worktree"));
   await setup(page);
-  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^All spaces(?: Reconnecting…)?$/, level: 1 })).toBeVisible();
   await expect(page.getByText("Separate Space task", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Open Spaces" }).click();
   await expect(page).toHaveURL(/#\/spaces$/);
@@ -192,4 +192,54 @@ test("a pre-Spaces update checkpoint restores the prompt and attached image toge
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Draft from before Spaces");
   await expect(page.getByAltText("attachment 1")).toBeVisible();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("draft:dispatch-prompt"))).toBeNull();
+});
+
+for (const width of [320, 360]) test(`mobile search stays reachable below the list and above the keyboard at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await setup(page, "/#/spaces");
+  const search = page.getByRole("searchbox", { name: "Search Spaces" });
+  const form = page.getByRole("search", { name: "Find a Space" });
+  await expect(search).not.toBeFocused();
+  await expect.poll(async () => (await search.boundingBox())!.y).toBeGreaterThan(690);
+  await search.tap();
+  await search.fill("experiments");
+  await page.evaluate(() => {
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, value: 420 });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  });
+  await expect.poll(async () => { const r = (await form.boundingBox())!; return r.y + r.height; }).toBeLessThanOrEqual(420);
+  await expect(search).toBeFocused();
+  await expect(page.getByRole("region", { name: "Spaces list" }).getByRole("button")).toHaveCount(1);
+  const clear = page.getByRole("button", { name: "Clear Space search" });
+  await expect(clear).toBeInViewport({ ratio: 1 });
+  await clear.tap();
+  await expect(search).toHaveValue("");
+  await expect(search).not.toBeFocused();
+  const last = page.getByRole("region", { name: "Spaces list" }).getByRole("button").last();
+  await last.scrollIntoViewIfNeeded();
+  await expect.poll(async () => { const row = (await last.boundingBox())!; return row.y + row.height - (await form.boundingBox())!.y; }).toBeLessThanOrEqual(1);
+  await search.tap();
+  await search.fill("Palmagent");
+  await search.press("Enter");
+  await expect(search).toHaveValue("Palmagent");
+  await expect(search).not.toBeFocused();
+  await page.setViewportSize({ width, height: 420 });
+  await assertViewportLocked(page);
+});
+
+test("desktop search stays above the list and resizing preserves the same query and input", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await setup(page, "/#/spaces");
+  const search = page.getByRole("searchbox", { name: "Search Spaces" });
+  const all = page.getByRole("button", { name: /All spaces.*Tasks across/ });
+  const box = (await search.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual((await all.boundingBox())!.y);
+  await search.fill("experiments");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expect(search).toHaveCount(1);
+  await expect(search).toHaveValue("experiments");
+  await expect.poll(async () => (await search.boundingBox())!.y).toBeGreaterThan(690);
+  await search.press("Escape");
+  await expect(search).toHaveValue("");
+  await assertViewportLocked(page);
 });
