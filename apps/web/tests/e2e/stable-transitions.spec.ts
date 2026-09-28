@@ -47,10 +47,12 @@ for (const mode of ["send", "queue"] as const) test(`a cold conversation keeps i
 
 test("path validation retains the confirmation area and ignores superseded responses", async ({ page }) => {
   const old = gate();
+  let oldFinished = false;
   await page.route("**/api/repos/validate?*", async route => {
     const path = new URL(route.request().url()).searchParams.get("path")!;
     if (path.endsWith("/old")) await old.wait;
     await route.fulfill({ json: { exists: true, isDir: true, isGit: true, root: path, resolved: path, branch: "main", suggestions: [] } });
+    if (path.endsWith("/old")) oldFinished = true;
   });
   await page.goto("/#/new/space/repo-app");
   await page.getByRole("combobox", { name: "Space", exact: true }).click();
@@ -65,11 +67,12 @@ test("path validation retains the confirmation area and ignores superseded respo
   await path.fill("/projects/old"); await requested;
   await expect(connect).toBeDisabled();
   expect(await node!.evaluate(el => el.isConnected)).toBe(true);
+  const cancelled = page.waitForEvent("requestfailed", request => new URL(request.url()).searchParams.get("path") === "/projects/old");
   await path.fill("/projects/new");
+  expect((await cancelled).failure()).not.toBeNull();
   await expect(connect).toBeEnabled();
   await expect(page.getByText("/projects/new", { exact: true })).toBeVisible();
-  const completed = page.waitForResponse("**/api/repos/validate?path=**old");
-  old.release(); await completed;
+  old.release(); await expect.poll(() => oldFinished).toBe(true);
   await expect(page.getByText("/projects/new", { exact: true })).toBeVisible();
   await expect(page.getByText("/projects/old", { exact: true })).toHaveCount(0);
 });

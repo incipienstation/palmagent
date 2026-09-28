@@ -78,7 +78,7 @@ test("errors without tools stay accessible and questions or steering do not impl
   expect(failure.previous).toBe(false);
   expect(runInterrupted(failure)).toBe(false);
   const next = presentTranscript([error, event(2, "status", { subtype: "turn_started" }),
-    event(3, "error", { message: "Codex exited before a terminal turn result." })], "compact", false);
+    event(3, "error", { code: "turn_result_missing", message: "Codex exited before a terminal turn result." })], "compact", false);
   const failures = next.filter((r) => r.type === "failure");
   expect(failures.map((r) => r.previous)).toEqual([true, false]);
   expect(runInterrupted(failures[1])).toBe(true);
