@@ -122,6 +122,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const [manualPath, setManualPath] = useUpdateState(`picker:manualPath`, "");
   const [validation, setValidation] = useUpdateState<ValidateRepoPathResponse | null>("picker:validation", null);
   const [validating, setValidating] = useState(false);
+  const validationRequest = useRef(0);
+  const [selectionReady, setSelectionReady] = useUpdateState("picker:selection-ready", true);
   // branch is unset for a plain folder (no git) — registered/run in place.
   const [picked, setPicked] = useUpdateState<{ path: string; name: string; branch?: string } | null>(`picker:picked`, null);
   const mutations = useRepoMutations();
@@ -135,7 +137,10 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
     setBrowse(browseTrail.at(-1)!);
     setBrowseTrail(browseTrail.slice(0, -1));
   }, 160);
-  useEffect(() => { if (!open) browseRequest.current++; }, [open]);
+  useEffect(() => {
+    if (!open) browseRequest.current++;
+    return () => { validationRequest.current++; window.clearTimeout(debounceRef.current); };
+  }, [open]);
 
   const [baseRef, setBaseRef] = useState("");
   useEffect(() => { setBaseRef(""); }, [picked?.path]);
@@ -146,10 +151,13 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   // current scan rather than offering persisted results from old settings.
   useEffect(() => {
     if (!open) return;
+    setValidating(false);
     if (!restoring.current) {
+      setSelectionReady(true);
       setMode("search"); setBrowseTrail([]); setQuery(""); setPicked(null);
       setValidation(null); setManualPath(""); setError("");
     }
+    if (restoring.current && !selectionReady && manualPath.trim()) void pickPath(manualPath);
     restoring.current = false;
     setDiscovered([]);
     void refresh(false);
@@ -182,12 +190,15 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   // already known-good so they confirm instantly. A non-git directory is still
   // pickable — it registers as a plain folder (tasks run in place).
   async function pickPath(path: string) {
+    window.clearTimeout(debounceRef.current);
     setError("");
-    setValidating(true);
+    const request = ++validationRequest.current;
+    setValidating(true); setSelectionReady(false);
     setValidation(null);
-    setPicked(null);
     try {
       const v = await browser.validatePath(path);
+      if (request !== validationRequest.current) return;
+      setSelectionReady(v.isDir);
       setValidation(v);
       if (v.isGit && v.root) {
         setPicked({ path: v.root, name: v.root.split("/").pop() ?? v.root, branch: v.branch ?? "HEAD" });
@@ -195,15 +206,16 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
         setPicked({ path: v.resolved, name: v.resolved.split("/").pop() ?? v.resolved });
       }
     } catch (e) {
-      setError(errMsg(e));
+      if (request === validationRequest.current) setError(errMsg(e));
     } finally {
-      setValidating(false);
+      if (request === validationRequest.current) setValidating(false);
     }
   }
 
   function onManualChange(v: string) {
     setManualPath(v);
-    setPicked(null);
+    validationRequest.current++;
+    setSelectionReady(false); setValidating(!!v.trim());
     setValidation(null);
     window.clearTimeout(debounceRef.current);
     if (!v.trim()) return;
@@ -227,7 +239,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   }
 
   async function register() {
-    if (!picked || busy) return;
+    if (!picked || busy || validating || !selectionReady) return;
     setError("");
     try {
       const repo = await registerRepo(picked.path, picked.branch ? baseRef.trim() : undefined);
@@ -326,6 +338,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                     disabled={busy}
                     selected={picked?.path === r.path}
                     onPress={() => {
+                      window.clearTimeout(debounceRef.current);
+                      validationRequest.current++; setValidating(false); setSelectionReady(true);
                       if (reg) { onRegistered(reg); return; }
                       setError("");
                       setValidation(null);
@@ -423,7 +437,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                 spellCheck={false}
                 autoFocus
               />
-              {validating && <div className="text-[13px] text-muted-foreground">Checking…</div>}
+              <div role="status" className="min-h-5 text-[13px] text-muted-foreground">{validating ? "Checking…" : ""}</div>
               {validation && !validation.isDir && (
                 <div className="text-[13px] text-destructive">
                   ✗ {validation.exists ? "Not a directory" : "No such directory"} — {tilde(validation.resolved)}
@@ -474,18 +488,18 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               </div>
               <PathText>{tilde(picked.path)}</PathText>
               <div className="mt-0.5 text-[13px] text-green">
-                {picked.branch ? `✓ git repo · branch ${picked.branch}` : "✓ plain folder · tasks run in place"}
+                {validating ? "Checking selected path…" : !selectionReady ? "Choose a valid directory to continue." : picked.branch ? `✓ git repo · branch ${picked.branch}` : "✓ plain folder · tasks run in place"}
               </div>
             </div>
             {picked.branch && !registeredByPath.has(picked.path) && <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="register-base-branch">Base branch (optional)</FieldLabel>
                 <Input id="register-base-branch" value={baseRef} onChange={event => setBaseRef(event.target.value)}
-                  disabled={busy} placeholder="Automatic (remote default)" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+                  disabled={busy || validating || !selectionReady} placeholder="Automatic (remote default)" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
                 <FieldDescription>Starting point for isolated tasks and routines. Leave blank to detect the remote default, with a local fallback.</FieldDescription>
               </Field>
             </FieldGroup>}
-            <Button onClick={() => void register()} disabled={busy}>
+            <Button onClick={() => void register()} disabled={busy || validating || !selectionReady}>
               {busy ? "Connecting…" : registeredByPath.has(picked.path) ? "Open Space" : "Connect Space"}
             </Button>
           </DrawerFooter>

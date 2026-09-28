@@ -23,6 +23,9 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const [capabilities, setCapabilities] = useState<TerminalCapabilities>();
   const [selected, setSelected] = useUpdateState(scope + ":selected", "");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const revision = useRef(0);
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [details, setDetails] = useState(false);
@@ -40,13 +43,16 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   useEffect(() => { requestId.current = undefined; }, [space, taskId]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
+    const currentRevision = ++revision.current;
     const result = await terminalOperations.list(taskId ? { taskId } : space ? { repoId: space } : {});
-    if (generation.current !== currentGeneration) return;
+    if (generation.current !== currentGeneration || revision.current !== currentRevision) return;
+    setLoaded(true); setError("");
     setTerminals(result.terminals); setCapabilities(result.capabilities);
     setSelected(current => result.terminals.some(t => t.id === current) ? current : result.terminals.find(t => t.state === "running")?.id ?? result.terminals[0]?.id ?? "");
   }, [taskId, space]);
   useEffect(() => {
     let live = true;
+    setLoaded(false);
     const load = () => { if (document.visibilityState !== "hidden") void refresh().catch(e => { if (live) setError(e.message); }); };
     load(); const timer = setInterval(load, 5000);
     return () => { live = false; generation.current++; clearInterval(timer); };
@@ -59,15 +65,26 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     catch (e) { setError(e instanceof Error ? e.message : "Terminal action failed"); }
     finally { setBusy(false); }
   }
-  const create = () => act(async () => {
-    if (!taskId && !space) return;
-    requestId.current ??= crypto.randomUUID();
-    const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
-    setSelected(result.terminal.id); requestId.current = undefined;
-  });
+  const create = async () => {
+    if (busy || (!taskId && !space)) return;
+    setCreating(true);
+    try {
+      await act(async () => {
+        requestId.current ??= crypto.randomUUID();
+        const currentGeneration = generation.current;
+        const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
+        if (generation.current !== currentGeneration) return;
+        // Publish the returned session and its selection together. An older
+        // poll must not remove it while the post-create refresh is in flight.
+        revision.current++;
+        setTerminals(current => [...current.filter(t => t.id !== result.terminal.id), result.terminal]);
+        setSelected(result.terminal.id); requestId.current = undefined;
+      });
+    } finally { setCreating(false); }
+  };
   const spacePicker = !taskId && <Select value={space || "__all__"} onValueChange={value => {
     setSpace(value === "__all__" ? "" : value);
-    setSelected("");
+    setSelected(""); setTerminals([]); setLoaded(false);
   }} disabled={busy}>
     <SelectTrigger className="w-auto min-w-0 flex-1 rounded-full border-0 bg-transparent px-2" aria-label="Terminal Space">
       <SelectValue placeholder="Choose a Space" />
@@ -88,7 +105,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     <div className="flex shrink-0 flex-col gap-2 px-3 pt-[calc(64px+var(--safe-top))] pb-2">
       <div className="flex min-w-0 gap-2">
         <Select value={selected} onValueChange={value => { setSelected(value); setRenaming(false); }} disabled={!terminals.length || busy}>
-          <SelectTrigger className="min-w-0 flex-1" aria-label="Select terminal"><SelectValue placeholder="No terminal yet" /></SelectTrigger>
+          <SelectTrigger className="min-w-0 flex-1" aria-label="Select terminal"><SelectValue placeholder={loaded ? "No terminal yet" : "Loading terminals…"} /></SelectTrigger>
           <SelectContent><SelectGroup>{terminals.map(t => <SelectItem key={t.id} value={t.id}>{t.title} · {t.state}</SelectItem>)}</SelectGroup></SelectContent>
         </Select>
         <Button variant="outline" size="icon-lg" aria-label="New terminal" disabled={busy || !capabilities?.available || (!taskId && !space)} onClick={() => void create()}><Plus /></Button>
@@ -111,7 +128,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         <Input aria-label="Terminal name" value={title} onChange={e => setTitle(e.target.value)} maxLength={80} autoFocus />
         <Button size="icon-lg" aria-label="Save terminal name" disabled={busy || !title.trim()}><Check /></Button>
       </form>}
-      {busy && <p role="status" className="text-xs text-muted-foreground">Updating terminal…</p>}
+      <p role="status" className="min-h-4 text-xs text-muted-foreground">{busy ? creating ? "Creating terminal…" : "Updating terminal…" : !loaded ? "Loading terminals…" : ""}</p>
       {error && <Alert variant="destructive">{error}</Alert>}
       {active?.state === "starting" && active.startError && capabilities?.available && <Alert variant="destructive">{active.startError}</Alert>}
       {capabilities && !capabilities.available && <Alert>{capabilities.reason ?? "Terminals are unavailable on this platform."}</Alert>}
@@ -119,8 +136,8 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     {active?.state === "running" ? <TerminalScreen key={active.id} id={active.id} initialCwd={active.initialCwd} readOnly={readOnly} onEnableInput={() => setReadOnly(false)} />
       : <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-5 text-center text-muted-foreground">
         <TerminalIcon aria-hidden="true" />
-        <p>{active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? active.startError ?? "This shell stopped unexpectedly. Open a new terminal to continue." : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : "Open a terminal to work in this directory."}</p>
-        {!active && <p className="text-sm">Terminals keep running when you leave this screen.</p>}
+        <p>{active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? active.startError ?? "This shell stopped unexpectedly. Open a new terminal to continue." : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : creating ? "Creating terminal…" : !loaded ? error ? "Could not load terminals." : "Loading terminals…" : "Open a terminal to work in this directory."}</p>
+        {!active && loaded && !creating && <p className="text-sm">Terminals keep running when you leave this screen.</p>}
       </div>}
     <Dialog open={details} onOpenChange={setDetails}>
       <DialogContent><DialogHeader><DialogTitle>Terminal details</DialogTitle>

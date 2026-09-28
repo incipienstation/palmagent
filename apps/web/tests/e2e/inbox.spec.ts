@@ -21,7 +21,7 @@ test.describe("inbox", () => {
     }
   });
 
-  test("pull-to-refresh triggers a page reload when no SW update is pending", async ({ page }) => {
+  test("pull-to-refresh updates data while retaining the list and search", async ({ page }) => {
     // Simulate pull-to-refresh: drag down from the top of the scroll pane
     // past THRESHOLD (64px at DAMP=0.5 → 128px of finger travel).
     const scrollArea = page.locator('.overscroll-contain:has([data-testid="inbox-content"])');
@@ -30,9 +30,10 @@ test.describe("inbox", () => {
     const x = box.x + box.width / 2;
     const startY = box.y + 10;
 
-    // The page.load event fires on a reload. Register before the gesture to
-    // avoid a race where the reload completes before we start listening.
-    const navPromise = page.waitForEvent("load", { timeout: 3000 });
+    await page.getByRole("searchbox", { name: "Search tasks" }).fill("QA");
+    const input = await page.getByRole("searchbox", { name: "Search tasks" }).elementHandle();
+    let loads = 0; page.on("load", () => loads++);
+    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks");
     await page.evaluate(
       ([sx, sy, ey]) => {
         const el = document.querySelector('.overscroll-contain:has([data-testid="inbox-content"])')!;
@@ -51,8 +52,10 @@ test.describe("inbox", () => {
       },
       [x, startY, startY + 150] as [number, number, number],
     );
-    // Resolves when the page navigates (reloads); times out if it never does.
-    await navPromise;
+    await refreshed;
+    await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("QA");
+    expect(await input!.evaluate(el => el.isConnected)).toBe(true);
+    expect(loads).toBe(0);
   });
 
 });

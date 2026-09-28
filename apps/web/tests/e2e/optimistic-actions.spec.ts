@@ -148,7 +148,7 @@ for (const action of ["run", "delete"] as const) test(`routine ${action} gives i
   await expect(page.getByTestId("toast")).toContainText("Routine action failed");
 });
 
-test("creating a routine shows a pending card and preserves its draft on failure", async ({ page }) => {
+test("creating a routine keeps its form mounted and preserves its draft on failure", async ({ page }) => {
   const delayed = gate(); let calls = 0;
   await page.route("**/api/routines", async route => {
     if (route.request().method() !== "POST") return route.fulfill({ json: { routines } });
@@ -157,7 +157,8 @@ test("creating a routine shows a pending card and preserves its draft on failure
   await page.goto("/#/routines"); await page.getByRole("button", { name: "New routine", exact: true }).click();
   await page.locator("form textarea").fill("A new scheduled task");
   await page.getByRole("button", { name: "Create routine", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Creating routine…" })).toContainText("A new scheduled task");
+  await expect(page.getByRole("button", { name: "Creating routine…" })).toBeDisabled();
+  await expect(page.locator("form")).toHaveAttribute("aria-busy", "true");
   await expect(page.locator("form textarea")).toBeDisabled();
   expect(calls).toBe(1); delayed.release();
   await expect(page.locator("form textarea")).toBeEnabled();
