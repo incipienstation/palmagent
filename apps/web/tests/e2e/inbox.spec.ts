@@ -59,20 +59,27 @@ test.describe("inbox", () => {
 
 for (const width of [320, 360, 1280]) test(`task search shares the inline-clear dock without overlapping New task at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
-  await page.goto("/#/spaces/repo-app");
+  await page.goto(width === 360 ? "/" : "/#/spaces/repo-app");
   const search = page.getByRole("searchbox", { name: "Search tasks" });
   const form = page.getByRole("search", { name: "Search tasks" });
   const create = page.getByRole("button", { name: "Dispatch new task" });
   await expect(search).toBeVisible();
   await expect(search).not.toBeFocused();
   const input = await search.elementHandle();
+  const scrollArea = page.locator('.overscroll-contain:has([data-testid="inbox-content"])');
+  const besideActionReachesList = async () => {
+    const action = (await create.boundingBox())!;
+    return scrollArea.evaluate((el, point) => el.contains(document.elementFromPoint(point.x, point.y)),
+      { x: action.x - 12, y: action.y + action.height / 2 });
+  };
   const initial = (await form.boundingBox())!;
   if (width < 768) {
     expect(initial.y).toBeGreaterThan(690);
     const action = (await create.boundingBox())!;
     expect(action.y + action.height).toBeLessThan(initial.y);
-    const list = (await page.locator('.overscroll-contain:has([data-testid="inbox-content"])').boundingBox())!;
-    expect(list.y + list.height).toBeLessThanOrEqual(action.y);
+    const list = (await scrollArea.boundingBox())!;
+    expect(list.y + list.height).toBeGreaterThan(action.y + action.height);
+    await expect.poll(besideActionReachesList).toBe(true);
   } else expect(initial.y).toBeLessThan(120);
   await search.fill("QA");
   const clear = page.getByRole("button", { name: "Clear task search" });
@@ -86,12 +93,14 @@ for (const width of [320, 360, 1280]) test(`task search shares the inline-clear 
   if (width < 768) {
     for (const height of [420, 780]) {
       await page.evaluate(height => {
+        document.documentElement.style.setProperty("--safe-bottom", height === 420 ? "34px" : "0px");
         Object.defineProperty(window.visualViewport, "height", { configurable: true, value: height });
         window.visualViewport!.dispatchEvent(new Event("resize"));
       }, height);
       await expect.poll(async () => { const box = (await form.boundingBox())!; return box.y + box.height; }).toBeLessThanOrEqual(height);
       const action = (await create.boundingBox())!;
       expect(action.y + action.height).toBeLessThan((await form.boundingBox())!.y);
+      await expect.poll(besideActionReachesList).toBe(true);
     }
     await expect(search).not.toBeFocused();
   } else {
@@ -104,5 +113,15 @@ for (const width of [320, 360, 1280]) test(`task search shares the inline-clear 
   await search.press("Escape");
   await expect(search).not.toBeFocused();
   await expect(search).toHaveValue("QA");
+  await clear.click();
+  await search.press("Escape");
+  await scrollArea.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  const lastRow = page.getByTestId("inbox-content").locator("section").last().locator("button").first();
+  await expect(lastRow).toBeInViewport({ ratio: 1 });
+  await expect.poll(async () => {
+    const row = (await lastRow.boundingBox())!;
+    return row.y + row.height - (await create.boundingBox())!.y;
+  }).toBeLessThanOrEqual(0);
+  await expect.poll(besideActionReachesList).toBe(true);
   await assertViewportLocked(page);
 });
