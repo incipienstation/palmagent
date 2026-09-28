@@ -53,8 +53,13 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   }, [taskId, space]);
   useEffect(() => {
     let live = true;
+    let pending = false;
     setLoaded(false);
-    const load = () => { if (document.visibilityState !== "hidden") void refresh().catch(e => { if (live) setError(e.message); }); };
+    const load = () => {
+      if (pending || document.visibilityState === "hidden") return;
+      pending = true;
+      void refresh().catch(e => { if (live) setError(e.message); }).finally(() => { pending = false; });
+    };
     load(); const timer = setInterval(load, 5000);
     return () => { live = false; generation.current++; clearInterval(timer); };
   }, [refresh]);

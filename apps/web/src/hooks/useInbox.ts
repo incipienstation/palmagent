@@ -3,7 +3,7 @@ import { cacheSession } from "../query-lifecycle";
 import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { clientReadKeys } from "../client-query-keys";
-import { queryClient } from "../query-client";
+import { refreshClientReads } from "../query-client";
 import { reconcileTasks } from "../task-snapshot";
 import { updatesChanged } from "../update-events";
 import { observeServerVersion } from "../pwa";
@@ -33,9 +33,10 @@ export function useInbox(): Inbox {
     let seenSnapshot = false;
     let recoverReads = false;
     const refresh = (queryKey: readonly unknown[]) => {
-      void queryClient.invalidateQueries({ queryKey, refetchType: "active" }, { cancelRefetch: false });
+      void refreshClientReads(queryKey);
     };
     const refreshReads = () => {
+      refresh(clientReadKeys.repos());
       refresh(clientReadKeys.usage());
       refresh(clientReadKeys.routines());
       refresh(clientReadKeys.routineRunsAll());

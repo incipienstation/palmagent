@@ -9,6 +9,33 @@ export const queryClient = new QueryClient();
 
 onCacheSessionReset(() => queryClient.clear());
 
+const pendingRefreshes = new WeakMap<object, Promise<void>>();
+
+// A read already in flight can predate a stream notification. Let it settle,
+// then read again; cancelRefetch:false alone would swallow that notification.
+// Coalesce bursts during each request, including the initial load, without
+// continually aborting slow reads. Removed/session-cleared queries stay gone.
+export async function refreshClientReads(queryKey: QueryKey): Promise<void> {
+  await Promise.all(queryClient.getQueryCache().findAll({ queryKey }).map(query => {
+    query.invalidate();
+    if (query.state.fetchStatus === "idle") {
+      return queryClient.refetchQueries({ queryKey: query.queryKey, exact: true, type: "active" });
+    }
+    const pending = pendingRefreshes.get(query);
+    if (pending) return pending;
+    const refresh = (async () => {
+      await query.promise?.catch(() => {});
+      // Release before starting the follow-up so changes during that request
+      // can schedule another read of their own.
+      pendingRefreshes.delete(query);
+      if (queryClient.getQueryCache().get(query.queryHash) !== query) return;
+      await queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true, refetchType: "active" }, { cancelRefetch: false });
+    })();
+    pendingRefreshes.set(query, refresh);
+    return refresh;
+  }));
+}
+
 onClientReadInvalidation((source, scopes) => {
   const queryKeys: QueryKey[] = scopes.map((scope): QueryKey => {
     switch (scope) {

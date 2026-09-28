@@ -9,6 +9,7 @@ export function useRepos(): {
   repos: Map<string, Repo>;
   refresh: () => Promise<Repo[]>;
   loading: boolean;
+  refreshing: boolean;
   loaded: boolean;
   error: string;
 } {
@@ -19,14 +20,14 @@ export function useRepos(): {
     if (result.error) throw result.error;
     return result.data ?? [];
   }, [query.refetch]);
+  const error = query.error instanceof Error ? query.error.message : query.error ? "Could not load Spaces." : "";
 
   return {
     repos,
     refresh,
     loading: query.isPending && query.isFetching,
+    refreshing: query.isFetching,
     loaded: query.data !== undefined,
-    error: query.data === undefined
-      ? query.error instanceof Error ? query.error.message : query.error ? "Could not load repositories." : ""
-      : "",
+    error: error && query.data !== undefined ? `Couldn't refresh Spaces. ${error}` : error,
   };
 }

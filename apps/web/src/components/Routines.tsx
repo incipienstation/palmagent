@@ -267,8 +267,8 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
 }
 
 export function RoutinesView() {
-  const { routines, actions, saving, stale, creating, error: mutationError, toggle, run, stop, remove, create: createRoutine } = useRoutines();
-  const { repos, loading: reposLoading, loaded: reposLoaded, error: repoError } = useRepos();
+  const { routines, actions, saving, stale, creating, error: mutationError, readError, refreshing, refresh, toggle, run, stop, remove, create: createRoutine } = useRoutines();
+  const { repos, loading: reposLoading, loaded: reposLoaded, error: repoError, refreshing: reposRefreshing, refresh: refreshRepos } = useRepos();
   const repoList = useMemo(() => [...repos.values()], [repos]);
   const [error, setError] = useState("");
   const busy = creating !== null;
@@ -340,7 +340,9 @@ export function RoutinesView() {
     <AppShell>
       <AppBar title="Routines" />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
-        {(error || mutationError || repoError) && <Alert variant="destructive">{error || mutationError || repoError}</Alert>}
+        {(error || mutationError) && <Alert variant="destructive">{error || mutationError}</Alert>}
+        {readError && <Alert variant="destructive"><p>{readError}</p><Button variant="outline" disabled={refreshing} onClick={() => void refresh()}>Retry routines</Button></Alert>}
+        {repoError && <Alert variant="destructive"><p>{repoError}</p><Button variant="outline" disabled={reposRefreshing} onClick={() => void refreshRepos().catch(() => {})}>Retry Spaces</Button></Alert>}
         {[...actions].some(([, action]) => action === "delete") && <p role="status" className="text-sm text-muted-foreground">Deleting routine…</p>}
 
         {loading && (

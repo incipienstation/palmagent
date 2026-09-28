@@ -565,7 +565,7 @@ test("display-only task edits leave reads alone; repo deletion signals persisted
   f.service.rename("t", "New title");
   assert.deepEqual(changes, []);
   f.service.deleteRepo("r");
-  assert.deepEqual(changes, [{ type: "read-change", usage: true, routines: true }]);
+  assert.deepEqual(changes, [{ type: "read-change", repos: true, usage: true, routines: true }]);
   assert.deepEqual(f.service.usage(), []);
 });
 
