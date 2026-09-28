@@ -1,5 +1,6 @@
 import { onStreamPause, streamsPaused } from "../stream-transition";
 import { probeAuth } from "../api";
+import { cacheSession, onCacheSessionReset } from "../query-lifecycle";
 
 export type ConnState = "connecting" | "open" | "reconnecting";
 
@@ -23,20 +24,24 @@ export function connectSse(
 ): SseConnection {
   let es: EventSource | null = null;
   let stopped = false;
+  const generation = cacheSession();
 
   const open = () => {
     if (stopped || streamsPaused()) return;
     es?.close();
     onConn("connecting");
-    es = new EventSource(baseUrl);
-    es.onopen = () => onConn("open");
-    es.onerror = () => {
+    const source = new EventSource(baseUrl);
+    es = source;
+    const current = () => !stopped && es === source && generation === cacheSession();
+    source.onopen = () => { if (current()) onConn("open"); };
+    source.onerror = () => {
+      if (!current()) return;
       onConn("reconnecting");
       // A dropped session looks identical to a network blip; probe to tell them
       // apart and flip to the login screen if we're actually logged out.
       void probeAuth();
     };
-    es.onmessage = onMessage;
+    source.onmessage = (message) => { if (current()) onMessage(message); };
   };
 
   // Re-dial whenever the page returns to the foreground (or the network comes
@@ -50,18 +55,23 @@ export function connectSse(
     if (paused) { es?.close(); onConn("reconnecting"); }
     else open();
   });
+  const close = () => {
+    stopped = true;
+    offPause();
+    offSession();
+    es?.close();
+    document.removeEventListener("visibilitychange", onForeground);
+    window.removeEventListener("online", open);
+  };
+  // Close immediately, before React unmounts the old session's views. Queued
+  // frames and foreground events must not reconnect or refill cleared caches.
+  const offSession = onCacheSessionReset(close);
   open();
   document.addEventListener("visibilitychange", onForeground);
   window.addEventListener("online", open);
 
   return {
     reconnect: open,
-    close: () => {
-      stopped = true;
-      offPause();
-      es?.close();
-      document.removeEventListener("visibilitychange", onForeground);
-      window.removeEventListener("online", open);
-    },
+    close,
   };
 }

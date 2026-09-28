@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Reconnecting while loading earlier conversation history preserves recovered messages and subsequent live replies.
+- Session changes clear the previous authenticated view and close its streams in every open tab. Delayed responses and screen-update checkpoints cannot restore the old session.
+
 ## 0.1.0-alpha.125
 
 ### Fixed

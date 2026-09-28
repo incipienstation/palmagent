@@ -110,7 +110,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
   useUpdateSnapshot(`history:${taskId}`, () => queryClient.getQueryData<TaskHistoryData>(queryKey));
   const [conn, setConn] = useState<ConnState>("connecting");
   const [streamTask, setStreamTask] = useState<{ taskId: string; task: TaskState }>();
-  const loadingOlderRef = useRef<string | undefined>(undefined);
+  const loadingOlderRef = useRef<{ taskId: string; settled: Promise<unknown> } | undefined>(undefined);
   const resumeLiveRef = useRef<() => void>(() => {});
   const loadEarlier = useCallback(() => {
     if (history.isPlaceholderData) return;
@@ -118,10 +118,11 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       void history.refetch();
       return;
     }
-    if (!history.hasPreviousPage || loadingOlderRef.current === taskId) return;
-    loadingOlderRef.current = taskId;
-    void history.fetchPreviousPage({ cancelRefetch: false }).finally(() => {
-      if (loadingOlderRef.current === taskId) {
+    if (!history.hasPreviousPage || loadingOlderRef.current?.taskId === taskId) return;
+    const loading = { taskId, settled: history.fetchPreviousPage({ cancelRefetch: false }).catch(() => {}) };
+    loadingOlderRef.current = loading;
+    void loading.settled.finally(() => {
+      if (loadingOlderRef.current === loading) {
         loadingOlderRef.current = undefined;
         resumeLiveRef.current();
       }
@@ -168,7 +169,8 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     const publish = () => {
       animation = 0;
       if (disposed) return;
-      if (recovering) return;
+      // Pagination may have started after this animation frame was queued.
+      if (recovering || loadingOlderRef.current?.taskId === taskId) return;
       const events = pendingEvents.sort((a, b) => a.seq - b.seq);
       pendingEvents = [];
       pendingBytes = 0;
@@ -186,7 +188,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       receivedSeq = Math.max(receivedSeq, appliedSeq);
     };
     const schedule = () => {
-      if (!recovering && !animation && loadingOlderRef.current !== taskId) animation = requestAnimationFrame(publish);
+      if (!recovering && !animation && loadingOlderRef.current?.taskId !== taskId) animation = requestAnimationFrame(publish);
     };
     resumeLiveRef.current = schedule;
 
@@ -218,6 +220,12 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
                 });
               } finally {
                 queryClient.removeQueries({ queryKey: key, exact: true });
+              }
+              // InfiniteQuery prepends against the pages captured when its
+              // request started. Let that write finish before adding catch-up
+              // events, just as we already defer live publication during it.
+              while (!disposed && loadingOlderRef.current?.taskId === taskId) {
+                await loadingOlderRef.current.settled;
               }
               if (disposed) return;
               if (page.after !== after || page.through !== through) throw new Error("History catch-up boundary changed");
@@ -273,7 +281,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
             observeTaskMutation(mine);
             observeTaskActivity(mine);
             setStreamTask({ taskId, task: mine });
-            if (loadingOlderRef.current === taskId) pendingTask = mine;
+            if (loadingOlderRef.current?.taskId === taskId) pendingTask = mine;
             else updateLatestPage((page) => ({ ...page, task: mine }));
           }
           if (Number.isSafeInteger(frame.historyThrough) && frame.historyThrough! > appliedSeq) {

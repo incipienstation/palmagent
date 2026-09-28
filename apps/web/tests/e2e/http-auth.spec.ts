@@ -42,14 +42,28 @@ test("real HTTPS passkey enrollment and login preserve session and challenge coo
     expect(cookies.some((cookie) => cookie.name === "wa_chal")).toBe(false);
     expect(cookies.find((cookie) => cookie.name === "palmagent_session")).toMatchObject({ secure: true, httpOnly: true, sameSite: "Lax" });
     expect((await context.request.get(`${ready.origin}/api/tasks`)).status()).toBe(200);
-    await page.evaluate(() => fetch("/api/auth/logout", { method: "POST" }));
+    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
+    const other = await context.newPage();
+    try {
+      await other.goto(ready.origin);
+      await expect(other.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+      const logout = page.waitForResponse(response => response.url().endsWith("/api/auth/logout"));
+      await page.getByRole("alertdialog").getByRole("button", { name: "Sign out", exact: true }).click();
+      expect((await logout).status()).toBe(200);
+      await expect(other.getByRole("button", { name: "Sign in with passkey" })).toBeVisible();
+      await expect(other.getByRole("button", { name: "Open navigation", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeVisible();
+    } finally { await other.close(); }
     expect((await context.request.get(`${ready.origin}/api/tasks`)).status()).toBe(401);
     expect((await context.request.post(`${ready.origin}/api/auth/register/options`, { data: { token: ready.token } })).status()).toBe(403);
-    await page.goto(ready.origin);
     const login = page.waitForResponse((response) => response.url().endsWith("/api/auth/login/verify"));
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
     const loggedIn = await login;
     expect(loggedIn.status(), await loggedIn.text()).toBe(200);
+    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
     expect((await loggedIn.headersArray()).filter((header) => header.name.toLowerCase() === "set-cookie")).toHaveLength(2);
     expect((await context.request.get(`${ready.origin}/api/tasks`)).status()).toBe(200);
     expect((await context.cookies(ready.origin)).some((cookie) => cookie.name === "wa_chal")).toBe(false);

@@ -44,10 +44,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     const finish = opts?.write ? beginBrowserWork() : undefined;
     // Invalidate on both sides: reads racing a write cannot refill the cache,
     // including when a failed response leaves the write outcome uncertain.
-    if (opts?.write) await invalidateClientReads(opts.sessionChange, opts.invalidates);
+    // Keep a pending sign-out on its current screen. Retire the session only
+    // when the auth write succeeds (or a 401 confirms it is already invalid).
+    if (opts?.write && !opts.sessionChange) await invalidateClientReads(false, opts.invalidates);
     const generation = cacheSession();
     const load = async () => {
       const res = await send();
+      if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
       observeServerVersion(res.headers.get("x-palmagent-version"));
       if (!res.ok) {
         if (res.status === 401) {
@@ -67,9 +70,11 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       return value;
     };
     try {
-      return await load();
+      const value = await load();
+      if (opts?.sessionChange) await invalidateClientReads(true);
+      return value;
     } finally {
-      if (opts?.write) await invalidateClientReads(opts.sessionChange, opts.invalidates);
+      if (opts?.write && !opts.sessionChange && generation === cacheSession()) await invalidateClientReads(false, opts.invalidates);
       finish?.();
     }
   }

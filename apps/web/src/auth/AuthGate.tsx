@@ -2,6 +2,7 @@ import { useUpdateBlocker } from "../update-state";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { useAuthOperations } from "../hooks/remote-operations";
+import { cacheSession, onCacheSessionReset } from "../query-lifecycle";
 import { navigate, useRoute } from "../router";
 import { Enroll } from "./Enroll";
 import { Login } from "./Login";
@@ -20,14 +21,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     authOperations.setUnauthorizedHandler(() => setPhase("unauthed"));
+    const offSession = onCacheSessionReset(() => setPhase("unauthed"));
+    const generation = cacheSession();
     let alive = true;
     authOperations.me().then(
-      (me) => alive && setPhase(me.authenticated || !me.required ? "authed" : "unauthed"),
+      (me) => alive && generation === cacheSession() && setPhase(me.authenticated || !me.required ? "authed" : "unauthed"),
       // Offline first-load cannot verify the session — fall back to the login screen.
-      () => alive && setPhase("unauthed"),
+      () => alive && generation === cacheSession() && setPhase("unauthed"),
     );
     return () => {
       alive = false;
+      offSession();
       authOperations.setUnauthorizedHandler(null);
     };
   }, [authOperations]);
