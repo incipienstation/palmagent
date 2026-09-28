@@ -115,7 +115,7 @@ export function AttachmentTray({ images, disabled, onRemove }: {
     <div className="flex gap-2 overflow-x-auto py-1">
       {images.map((img, i) => <span className="relative inline-flex shrink-0 pr-2 pt-2" key={i}>
         <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />
-        <Button type="button" variant="secondary" size="icon-lg" className="absolute top-0 right-0"
+        <Button type="button" variant="secondary" size="icon-sm" className="absolute top-0 right-0"
           aria-label={`Remove image ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
       </span>)}
     </div>
