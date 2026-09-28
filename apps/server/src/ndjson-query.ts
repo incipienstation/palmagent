@@ -12,7 +12,9 @@ interface QueryOptions {
   command: string;
   args: string[];
   env: NodeJS.ProcessEnv;
-  directoryPrefix: string;
+  /** Caller-owned project cwd, or an isolated temporary directory owned by this query. */
+  cwd?: string;
+  directoryPrefix?: string;
   timeoutMs: number;
   maxBytes?: number;
   errors: { unavailable: string; channel: string; timeout: string; tooLarge: string; exited: string };
@@ -22,7 +24,8 @@ interface QueryOptions {
 
 /** A bounded one-shot reader. Provider protocol and caching stay with the caller. */
 export async function readNdjsonQuery(options: QueryOptions): Promise<unknown> {
-  const cwd = await mkdtemp(join(tmpdir(), options.directoryPrefix));
+  const temporary = options.cwd === undefined;
+  const cwd = options.cwd ?? await mkdtemp(join(tmpdir(), options.directoryPrefix ?? "palmagent-query-"));
   try {
     return await new Promise((resolve, reject) => {
       const child = spawn(options.command, options.args, { cwd, env: { ...process.env, ...options.env },
@@ -79,5 +82,5 @@ export async function readNdjsonQuery(options: QueryOptions): Promise<unknown> {
       try { options.initialize(channel); }
       catch (error) { finish(error instanceof Error ? error : new Error("Query initialization failed")); }
     });
-  } finally { await rm(cwd, { recursive: true, force: true }); }
+  } finally { if (temporary) await rm(cwd, { recursive: true, force: true }); }
 }

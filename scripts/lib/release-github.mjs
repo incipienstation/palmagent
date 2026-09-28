@@ -1,3 +1,4 @@
+import { BRANDING, DISTRIBUTION } from './product.mjs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
@@ -52,7 +53,7 @@ export function githubPages(repository, path, field) {
 export async function registryMetadata(request = fetch) {
   // Publication decisions must not reuse a cached pre-upload packument. A unique
   // read URL also avoids extending negative visibility during bounded polling.
-  const response = await request(`https://registry.npmjs.org/palmagent?validation=${randomUUID()}`, {
+  const response = await request(`${DISTRIBUTION.npmRegistry}/${BRANDING.packageName}?validation=${randomUUID()}`, {
     signal: AbortSignal.timeout(30000), cache: 'no-store',
   });
   if (response.status === 404) return { versions: {}, 'dist-tags': {} };

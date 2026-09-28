@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+- Keep skill discovery failures contained and preserve project directories while using shared subprocess cleanup.
+- Fix IPv6 update/proxy checks and align runtime and installer configuration and state-directory resolution.
+- Share image, ingress, permission, task, terminal, routine, release, service-artifact, and preference policies while preserving installed identities and legacy data.
+
+
 ## 0.1.0-alpha.119
 
 ### Fixed

@@ -1,3 +1,5 @@
+import { ACTIVE_TASK_STATUSES } from "@palmagent/shared";
+import { connectionInfo } from "./connection.js";
 import { connect } from "node:net";
 import Database from "better-sqlite3";
 import type { InstallConfig } from "./config.js";
@@ -35,14 +37,14 @@ export function runnerIsIdle(socketPath: string): Promise<boolean> {
 /** The health response is an event-loop barrier: prior synchronous admissions
  * have finished and subsequent admissions see the maintenance marker. */
 export async function verifyUpdateIdle(cfg: InstallConfig): Promise<boolean> {
-  const response = await fetch(`http://${cfg.host}:${cfg.port}/api/health`, { signal: AbortSignal.timeout(5_000) });
+  const response = await fetch(`${connectionInfo(cfg).upstream}/api/health`, { signal: AbortSignal.timeout(5_000) });
   const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean };
   if (!response.ok || health.ok !== true || health.updateMaintenance !== true) {
     throw new Error("the running server does not support update maintenance");
   }
   const db = new Database(cfg.dbPath, { readonly: true, fileMustExist: true });
   try {
-    const row = db.prepare("SELECT count(*) AS count FROM tasks WHERE status IN ('running','awaiting_approval','awaiting_input','queued')").get() as { count: number };
+    const row = db.prepare(`SELECT count(*) AS count FROM tasks WHERE status IN (${ACTIVE_TASK_STATUSES.map(() => "?").join(",")})`).get(...ACTIVE_TASK_STATUSES) as { count: number };
     if (row.count !== 0) return false;
   } finally { db.close(); }
   return runnerIsIdle(cfg.runnerSocket);

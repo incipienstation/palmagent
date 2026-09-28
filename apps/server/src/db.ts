@@ -723,14 +723,15 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
   // ---- routine run history ----
   insertRoutineRun(run: Omit<RoutineRun, "id">): number {
     const result = this.db.prepare(
-      `INSERT INTO routine_runs (routine_id, fired_at, status, task_id, note)
-       VALUES (@routine_id, @fired_at, @status, @task_id, @note)`,
+      `INSERT INTO routine_runs (routine_id, fired_at, status, task_id, note, result_json)
+       VALUES (@routine_id, @fired_at, @status, @task_id, @note, @result_json)`,
     ).run({
       routine_id: run.routineId,
       fired_at: run.firedAt,
       status: run.status,
       task_id: run.taskId ?? null,
       note: run.note ?? null,
+      result_json: run.reason ? JSON.stringify({ reason: run.reason }) : null,
     });
     return Number(result.lastInsertRowid);
   }

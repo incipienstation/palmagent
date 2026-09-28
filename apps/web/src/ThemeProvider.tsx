@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { useStoredPreference } from "./hooks/useStoredPreference";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import brand from "./brand.json";
 
 // Light / dark theme system. The actual `.dark`-on-<html> + theme-color-meta is
@@ -52,17 +53,8 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(readInitialTheme);
+  const [theme, setTheme] = useStoredPreference<Theme>(STORAGE_KEY, readInitialTheme);
   const [resolved, setResolved] = useState<"light" | "dark">(() => (resolveIsDark(theme) ? "dark" : "light"));
-
-  const setTheme = useCallback((next: Theme) => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // ignore (private mode / no storage)
-    }
-    setThemeState(next);
-  }, []);
 
   // Apply on theme change + keep `resolved` accurate.
   useEffect(() => {

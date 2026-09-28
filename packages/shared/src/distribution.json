@@ -1,0 +1,9 @@
+{
+  "repositoryUrl": "https://github.com/incipienstation/palmagent",
+  "npmRegistry": "https://registry.npmjs.org",
+  "versionedManifests": [
+    "package.json",
+    "plugins/claude/.claude-plugin/plugin.json",
+    "plugins/codex/plugins/palmagent/.codex-plugin/plugin.json"
+  ]
+}

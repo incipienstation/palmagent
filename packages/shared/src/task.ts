@@ -3,15 +3,21 @@ import type { AgentKind, PermissionRequest, QuestionRequest } from "./events.js"
 // Task lifecycle. `idle` = turn done, no process held, resumable;
 // `interrupted` flags a turn that was cut short (usually recovered after a
 // restart) — the task is still resumable.
-export type TaskStatus =
-  | "queued" // accepted, waiting for a concurrency slot
-  | "running" // a child process is alive for the active turn
-  | "awaiting_approval" // paused on a provider permission request
-  | "awaiting_input" // paused on an AskUserQuestion — the agent needs the user to answer (Claude)
-  | "idle" // turn finished, no process held, resumable via follow-up
-  | "archived" // retired by the user; worktree removed
-  | "failed" // turn errored / nonzero exit
-  | "cancelled"; // SIGINT'd by the user; worktree removed
+export const TASK_STATUSES = [
+  "queued", // accepted, waiting for a concurrency slot
+  "running", // a child process is alive for the active turn
+  "awaiting_approval", // paused on a provider permission request
+  "awaiting_input", // paused on a provider question
+  "idle", // turn finished, no process held, resumable via follow-up
+  "archived", // retired by the user; worktree removed
+  "failed", // turn errored / nonzero exit
+  "cancelled", // interrupted by the user; worktree removed
+] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+export const ACTIVE_TASK_STATUSES: readonly TaskStatus[] = ["queued", "running", "awaiting_approval", "awaiting_input"];
+export const isActiveTaskStatus = (status: TaskStatus): boolean => ACTIVE_TASK_STATUSES.includes(status);
+export const isClosedTaskStatus = (status: TaskStatus): boolean => status === "cancelled" || status === "archived";
+export const needsTaskAttention = (status: TaskStatus): boolean => status === "awaiting_input" || status === "awaiting_approval";
 
 // How much autonomy the agent gets for a turn. PER-AGENT vocabulary (like model/
 // effort), carried as an opaque string on the wire; each adapter maps it to that
@@ -74,6 +80,7 @@ export interface RoutineRun {
   output?: string;
   worktreePath?: string;
   taskId?: string; // absent for "skipped" (or a fire that failed before dispatch)
+  reason?: "missed_while_down"; // stable scheduler reason; absent in older history
   note?: string; // error detail when a fire failed
 }
 

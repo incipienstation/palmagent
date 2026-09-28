@@ -1,3 +1,4 @@
+import { TERMINAL_POLICY } from "@palmagent/shared/terminals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
 import type { TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
@@ -125,7 +126,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         </DropdownMenu>}
       </div>
       {renaming && active && <form className="flex gap-2" onSubmit={event => { event.preventDefault(); void act(async () => { await terminalOperations.rename(active.id, title); setRenaming(false); }); }}>
-        <Input aria-label="Terminal name" value={title} onChange={e => setTitle(e.target.value)} maxLength={80} autoFocus />
+        <Input aria-label="Terminal name" value={title} onChange={e => setTitle(e.target.value)} maxLength={TERMINAL_POLICY.maxTitleLength} autoFocus />
         <Button size="icon-lg" aria-label="Save terminal name" disabled={busy || !title.trim()}><Check /></Button>
       </form>}
       <p role="status" className="min-h-4 text-xs text-muted-foreground">{busy ? creating ? "Creating terminal…" : "Updating terminal…" : !loaded ? "Loading terminals…" : ""}</p>

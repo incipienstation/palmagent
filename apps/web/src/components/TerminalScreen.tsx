@@ -1,3 +1,4 @@
+import { TERMINAL_POLICY, terminalSize } from "@palmagent/shared/terminals";
 import { type TouchEvent as ReactTouchEvent, useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalFrame, TerminalInput } from "@palmagent/shared/terminals";
@@ -94,7 +95,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     void (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
       if (disposed || !container.current) return;
-      term = new Terminal({ cursorBlink: true, fontSize: fontSizeRef.current, scrollback: 2000, disableStdin: true, allowProposedApi: true, screenReaderMode: true });
+      term = new Terminal({ cursorBlink: true, fontSize: fontSizeRef.current, scrollback: TERMINAL_POLICY.scrollback, disableStdin: true, allowProposedApi: true, screenReaderMode: true });
       termRef.current = term;
       const fit = new FitAddon(); term.loadAddon(fit); term.open(container.current);
       const theme = () => {
@@ -122,7 +123,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
       const resize = () => {
         if (!term || !hasSnapshot || !container.current?.clientWidth || !container.current.clientHeight) return;
         fit.fit();
-        if (controls) transmit({ type: "resize", epoch, cols: Math.max(2, Math.min(500, term.cols)), rows: Math.max(1, Math.min(200, term.rows)) });
+        if (controls) transmit({ type: "resize", epoch, ...terminalSize(term.cols, term.rows) });
       };
       reflow.current = resize;
       observer = new ResizeObserver(resize); observer.observe(container.current);

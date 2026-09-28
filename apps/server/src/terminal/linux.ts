@@ -1,3 +1,4 @@
+import { HOST_ARTIFACTS } from "../host-artifacts.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { userInfo } from "node:os";
@@ -34,7 +35,7 @@ export const ptyDriver: TerminalDriver = {
   },
 };
 export function linuxSupervisor(enabled: boolean, installed = () =>
-  existsSync("/usr/local/libexec/palmagent-terminal-control") && existsSync("/etc/systemd/system/palmagent-terminal@.service")): TerminalSupervisor {
+  existsSync(HOST_ARTIFACTS.terminal.helperPath) && existsSync(HOST_ARTIFACTS.terminal.templatePath)): TerminalSupervisor {
   return {
     get capabilities() {
       const available = enabled && installed();
@@ -45,21 +46,21 @@ export function linuxSupervisor(enabled: boolean, installed = () =>
     },
     async inspect() {
       const probeId = "00000000-0000-4000-8000-000000000000";
-      const loaded = await exec("systemctl", ["show", "palmagent-terminal@" + probeId + ".service", "--property=LoadState", "--value"], { timeout: 3000 });
+      const loaded = await exec("systemctl", ["show", HOST_ARTIFACTS.terminal.unitName(probeId), "--property=LoadState", "--value"], { timeout: 3000 });
       if (loaded.stdout.trim() !== "loaded") throw new Error("Terminal service template is not loaded; run palmagent setup");
-      try { await exec("sudo", ["-n", "-l", "/usr/local/libexec/palmagent-terminal-control", "start", probeId], { timeout: 3000 }); }
+      try { await exec("sudo", ["-n", "-l", HOST_ARTIFACTS.terminal.helperPath, "start", probeId], { timeout: 3000 }); }
       catch { throw new Error("Terminal service permissions are unavailable; run palmagent setup as the installation owner"); }
     },
     async launch(record) {
-      try { await exec("sudo", ["-n", "/usr/local/libexec/palmagent-terminal-control", "start", record.id], { timeout: 10_000 }); }
+      try { await exec("sudo", ["-n", HOST_ARTIFACTS.terminal.helperPath, "start", record.id], { timeout: 10_000 }); }
       catch { throw new Error("Terminal launch is unconfirmed. Check terminal status before retrying."); }
     },
     async terminate(record) {
-      try { await exec("sudo", ["-n", "/usr/local/libexec/palmagent-terminal-control", "stop", record.id], { timeout: 10_000 }); }
+      try { await exec("sudo", ["-n", HOST_ARTIFACTS.terminal.helperPath, "stop", record.id], { timeout: 10_000 }); }
       catch { throw new Error("Terminal termination could not be confirmed"); }
     },
     async alive(record) {
-      const result = await exec("systemctl", ["show", "--property=ActiveState", "--value", "palmagent-terminal@" + record.id + ".service"], { timeout: 3000 });
+      const result = await exec("systemctl", ["show", "--property=ActiveState", "--value", HOST_ARTIFACTS.terminal.unitName(record.id)], { timeout: 3000 });
       return !["inactive", "failed"].includes(result.stdout.trim());
     },
   };

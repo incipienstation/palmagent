@@ -1,3 +1,4 @@
+import { ROUTINE_POLICY } from "@palmagent/shared";
 import type { RoutinePreset } from "@palmagent/shared";
 
 // Minimal 5-field cron ("m h dom mon dow") — enough for Routines without a
@@ -10,9 +11,9 @@ import type { RoutinePreset } from "@palmagent/shared";
 // caller uses the raw cron the user typed). `hour` (0-23) and `dayOfWeek` (0-6,
 // Sun-Sat) fill in daily/weekly/weekdays; a missing/non-integer value falls back
 // to the default (9 / Monday), and an out-of-range number clamps into range.
-export function presetToCron(preset: RoutinePreset, hour = 9, dayOfWeek = 1): string | null {
-  const h = clampInt(hour, 0, 23, 9);
-  const d = clampInt(dayOfWeek, 0, 6, 1);
+export function presetToCron(preset: RoutinePreset, hour: number = ROUTINE_POLICY.defaultHour, dayOfWeek: number = ROUTINE_POLICY.defaultDayOfWeek): string | null {
+  const h = clampInt(hour, 0, 23, ROUTINE_POLICY.defaultHour);
+  const d = clampInt(dayOfWeek, 0, 6, ROUTINE_POLICY.defaultDayOfWeek);
   switch (preset) {
     case "hourly":
       return "0 * * * *";

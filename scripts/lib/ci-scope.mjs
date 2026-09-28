@@ -1,3 +1,4 @@
+import { DISTRIBUTION } from './product.mjs';
 import { execFileSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { versionPolicy } from './release-version.mjs';
@@ -43,7 +44,7 @@ export function classifyChanges(paths, eventName = 'pull_request') {
       scope.web = true;
     } else if (path.startsWith('packages/shared/')) {
       scope.server = scope.web = true;
-      if (path === 'packages/shared/src/branding.ts') scope.package = true;
+      if (['branding.ts', 'branding.json', 'distribution.ts', 'distribution.json', 'product-version.mjs', 'product-version.d.mts'].some(name => path === `packages/shared/src/${name}`)) scope.package = true;
     } else {
       // Packaging, workflow, tooling, root config, and unknown paths get the full gate.
       return full();
@@ -66,8 +67,7 @@ export function changedPaths(cwd, base, head) {
 // complete committed diff; branch names and the latest commit are not evidence.
 export function classifyPullRequest(cwd, base, head) {
   const paths = changedPaths(cwd, base, head);
-  const manifests = ['package.json', 'plugins/claude/.claude-plugin/plugin.json',
-    'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'];
+  const manifests = DISTRIBUTION.versionedManifests;
   if (!paths.includes('package.json') || paths.some((path) => path !== 'CHANGELOG.md' && !manifests.includes(path))) {
     return classifyChanges(paths);
   }

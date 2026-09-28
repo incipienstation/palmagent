@@ -1,3 +1,4 @@
+import { TERMINAL_POLICY } from "@palmagent/shared/terminals";
 import * as headless from "@xterm/headless";
 import * as serialize from "@xterm/addon-serialize";
 import { TerminalClientFrame, type TerminalFrame, type TerminalInput } from "@palmagent/shared/terminals";
@@ -22,7 +23,7 @@ export class TerminalHost {
   private tail = Promise.resolve();
   private acknowledgements = new Map<LocalChannel, number>();
   constructor(record: TerminalRecord, driver: TerminalDriver, shell: ShellResolver, private onExit: (code: number) => void) {
-    this.screen = new Terminal({ cols: record.cols, rows: record.rows, scrollback: 2000, allowProposedApi: true });
+    this.screen = new Terminal({ cols: record.cols, rows: record.rows, scrollback: TERMINAL_POLICY.scrollback, allowProposedApi: true });
     this.screen.loadAddon(this.serializer);
     this.process = driver.spawn(shell.resolve(), record.initialCwd, record.cols, record.rows);
     // Only the authoritative emulator answers terminal queries. Viewers never send replies.

@@ -1,0 +1,8 @@
+{
+  "productName": "Palmagent",
+  "displayName": "PalmAgent",
+  "packageName": "palmagent",
+  "cliName": "palmagent",
+  "unitBase": "palmagent",
+  "stateDirName": "palmagent"
+}

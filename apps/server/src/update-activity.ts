@@ -1,3 +1,4 @@
+import { isActiveTaskStatus } from "@palmagent/shared";
 import type { Hub } from "./hub.js";
 
 /** Task transitions wake a pending request. Time passing never does. */
@@ -20,7 +21,7 @@ export function bindUpdateActivity(hub: Hub, hasPending: () => boolean, resume: 
     finally { running = false; }
   }
   const off = hub.onTasks((tasks) => {
-    const idle = !tasks.some((task) => ["running", "queued", "awaiting_input", "awaiting_approval"].includes(task.status));
+    const idle = !tasks.some((task) => isActiveTaskStatus(task.status));
     if (idle && !wasIdle) void wake();
     wasIdle = idle;
   });

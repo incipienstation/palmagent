@@ -1,3 +1,4 @@
+import { HOST_ARTIFACTS } from "../host-artifacts.js";
 // Preflight (before install) + doctor (diagnose a running instance) checks.
 // Each returns structured results; the CLI prints them and the plugin layer can
 // reason over a fault. Runtime systemd calls are best-effort and
@@ -147,7 +148,7 @@ export function doctor(cfg: InstallConfig): Check[] {
     try {
       verifyActiveExecutionCompatibility(cfg);
       const probeId = "00000000-0000-4000-8000-000000000000";
-      const loaded = run("systemctl", ["show", "palmagent-execution@" + probeId + ".service", "--property=LoadState", "--value"]);
+      const loaded = run("systemctl", ["show", HOST_ARTIFACTS.execution.unitName(probeId), "--property=LoadState", "--value"]);
       if (!loaded.ok || loaded.stdout.trim() !== "loaded") throw new Error("Execution service template is unavailable");
       checks.push({ name: "independent executions", level: "ok", detail: "retained artifacts and execution contract verified" });
     } catch (error) {

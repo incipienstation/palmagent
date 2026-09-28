@@ -1,3 +1,4 @@
+import { installedHostArtifactPaths } from "../host-artifacts.js";
 import { applicationChecks, applicationIdentity, verifyApplication } from "./application-verification.js";
 import { installTerminalUnits } from "./terminal-units.js";
 // Application install / setup / update / uninstall orchestration.
@@ -835,10 +836,7 @@ export async function uninstall(flags: Flags): Promise<number> {
       sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
     }
     if (cfg.executionNode) {
-      for (const path of [join(SYSTEMD_DIR, "palmagent-execution@.service"), join(SYSTEMD_DIR, "palmagent-executions.slice"),
-        "/etc/sudoers.d/palmagent-executions", "/usr/local/libexec/palmagent-execution-start",
-        join(SYSTEMD_DIR, "palmagent-terminal@.service"), join(SYSTEMD_DIR, "palmagent-terminals.slice"),
-        "/etc/sudoers.d/palmagent-terminals", "/usr/local/libexec/palmagent-terminal-control"]) sudo(["rm", "-f", path]);
+      for (const path of installedHostArtifactPaths()) sudo(["rm", "-f", path]);
     }
     sudo(["systemctl", "daemon-reload"]);
     log.ok("application services removed; host proxy and TLS resources preserved for operator cleanup");

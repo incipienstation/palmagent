@@ -1,3 +1,5 @@
+import { LoopbackHost, Port, Concurrency, PushSubject } from "../config-fields.js";
+import { resolveStateDirectory } from "../paths.js";
 // Install configuration: resolve application systemd values from
 // `<data-dir>/install.env` (written by `install`). Persisted as
 // a simple KEY=VALUE env file the units/CLI both read, and parsed/validated with
@@ -105,27 +107,6 @@ const PublicDomain = z
   )
   .transform((value) => value.toLowerCase());
 
-const isLoopbackHost = (value: string): boolean =>
-  value === "localhost" ||
-  value === "::1" ||
-  /^127(?:\.\d{1,3}){3}$/.test(value);
-
-const LoopbackHost = z
-  .string()
-  .min(1)
-  .refine(
-    isLoopbackHost,
-    "HOST must be loopback; terminate public HTTPS at the host ingress",
-  );
-const Port = z.coerce.number().int().min(1).max(65_535);
-const Concurrency = z.coerce.number().int().min(1);
-const PushSubject = z
-  .string()
-  .regex(
-    /^(?:mailto:[^@\s]+@[^@\s]+\.[^@\s]+|https:\/\/\S+)$/,
-    "PUSH_SUBJECT must be a mailto: address or an https:// URL",
-  );
-
 // install.env schema (zod). Validates/coerces the file's values and applies the
 // safe operational + caps defaults. Identity (DOMAIN) and detected fields stay
 // optional here; the required-ness is enforced in loadConfig/gatherConfig.
@@ -213,7 +194,7 @@ export function authFromDomain(
 ): Pick<InstallConfig, "rpId" | "rpName" | "authOrigin"> {
   return {
     rpId: domain,
-    rpName: BRANDING.productName,
+    rpName: BRANDING.displayName,
     authOrigin: domain ? `https://${domain}` : "",
   };
 }
@@ -223,17 +204,7 @@ export function installEnvPath(dataDir: string): string {
 }
 
 export function resolveDataDir(requested?: string): string {
-  const value =
-    requested ??
-    process.env.DISPATCHER_DATA_DIR ??
-    join(homedir(), ".local", "state", BRANDING.stateDirName);
-  const expanded =
-    value === "~"
-      ? homedir()
-      : value.startsWith("~/")
-        ? join(homedir(), value.slice(2))
-        : value;
-  return resolve(expanded);
+  return resolveStateDirectory(BRANDING.stateDirName, requested);
 }
 
 /** The installer elevates individual host mutations; running the whole CLI as

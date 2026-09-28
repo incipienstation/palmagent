@@ -1,3 +1,4 @@
+import { HOST_ARTIFACTS } from "../host-artifacts.js";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, renameSync, openSync, closeSync, fsyncSync } from "node:fs";
@@ -6,7 +7,7 @@ import type { ExecutionRecord, ExecutionStore } from "./store.js";
 
 export type ExecutionLauncher = (record: ExecutionRecord) => void;
 export function launchExecution(record: ExecutionRecord): void {
-  const result = spawnSync("sudo", ["-n", "/usr/local/libexec/palmagent-execution-start", record.id], { encoding: "utf8", timeout: 10_000 });
+  const result = spawnSync("sudo", ["-n", HOST_ARTIFACTS.execution.helperPath, record.id], { encoding: "utf8", timeout: 10_000 });
   if (result.status !== 0) throw new Error("Execution launch could not be confirmed; the invocation remains reserved");
 }
 export function prepareLaunch(store: ExecutionStore, record: ExecutionRecord): void {

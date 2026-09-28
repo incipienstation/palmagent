@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { readNdjsonQuery } from "./ndjson-query.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentKind, AvailableSkill, SkillCatalog, SkillSelection } from "@palmagent/shared";
@@ -13,50 +13,38 @@ const text = (v: unknown, max = 200) => typeof v === "string" ? v.slice(0, max) 
 // servers just because somebody opens the picker. The native CLIs still own
 // enabled plugins, project trust and user-invocable skill visibility.
 export function readNativeSkills(env: SkillEnvironment, timeoutMs = 15_000): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const codex = env.agent === "codex";
-    const child = spawn(env.agent, codex ? ["app-server"] : [
+  const codex = env.agent === "codex";
+  return readNdjsonQuery({
+    command: env.agent, cwd: env.cwd,
+    args: codex ? ["app-server"] : [
       "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
       "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
       "--settings", '{"disableAllHooks":true}',
-    ], { cwd: env.cwd, env: { ...process.env, [codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: env.home }, stdio: ["pipe", "pipe", "pipe"] });
-    let settled = false, buffer = "", bytes = 0;
-    const finish = (error?: Error, result?: unknown) => {
-      if (settled) return; settled = true; clearTimeout(timer);
-      child.stdin.end(); child.kill("SIGTERM");
-      const kill = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); }, 1000); kill.unref();
-      child.once("exit", () => clearTimeout(kill));
-      error ? reject(error) : resolve(result);
-    };
-    const timer = setTimeout(() => finish(new Error("Skill discovery timed out. Try again.")), timeoutMs); timer.unref();
-    const send = (v: unknown) => child.stdin.write(JSON.stringify(v) + "\n");
-    child.stdin.on("error", () => finish(new Error("Skill discovery connection closed.")));
-    child.on("error", () => finish(new Error(`${env.agent} is unavailable in this execution environment.`)));
-    child.on("exit", () => finish(new Error("The agent exited before returning its skills.")));
-    child.stderr.resume();
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (data: string) => {
-      if (settled) return;
-      bytes += Buffer.byteLength(data);
-      if (bytes > 4_000_000) return finish(new Error("The skill catalogue is too large."));
-      buffer += data.toString();
-      let end: number;
-      while ((end = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-        let v: any; try { v = JSON.parse(line); } catch { continue; }
-        if (codex && v.id === 1) {
-          if (v.error) return finish(new Error("The installed Codex cannot discover skills."));
-          send({ method: "initialized", params: {} });
-          send({ id: 2, method: "skills/list", params: { cwds: [env.cwd], forceReload: true } });
-        } else if (codex && v.id === 2) {
-          finish(v.error ? new Error("The installed Codex cannot list skills.") : undefined, v.result);
-        } else if (!codex && v.type === "control_response" && v.response?.request_id === "skills") {
-          finish(v.response.subtype === "error" ? new Error("The installed Claude cannot list skills.") : undefined, v.response.response);
-        }
+    ],
+    env: { [codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: env.home },
+    timeoutMs, maxBytes: 4_000_000,
+    errors: {
+      unavailable: `${env.agent} is unavailable in this execution environment.`,
+      channel: "Skill discovery connection closed.", timeout: "Skill discovery timed out. Try again.",
+      tooLarge: "The skill catalogue is too large.", exited: "The agent exited before returning its skills.",
+    },
+    initialize({ send }) {
+      send(codex ? { id: 1, method: "initialize", params: { clientInfo: { name: "palmagent", version: "1" } } }
+        : { type: "control_request", request_id: "skills", request: { subtype: "initialize" } });
+    },
+    receive(v, { send, finish }) {
+      if (codex && v.id === 1) {
+        if (v.error) return finish(new Error("The installed Codex cannot discover skills."));
+        send({ method: "initialized", params: {} });
+        send({ id: 2, method: "skills/list", params: { cwds: [env.cwd], forceReload: true } });
+      } else if (codex && v.id === 2) {
+        finish(v.error ? new Error("The installed Codex cannot list skills.") : undefined, v.result);
+      } else if (!codex && v.type === "control_response") {
+        const response = object(v.response);
+        if (response.request_id === "skills") finish(response.subtype === "error"
+          ? new Error("The installed Claude cannot list skills.") : undefined, response.response);
       }
-    });
-    send(codex ? { id: 1, method: "initialize", params: { clientInfo: { name: "palmagent", version: "1" } } }
-      : { type: "control_request", request_id: "skills", request: { subtype: "initialize" } });
+    },
   });
 }
 

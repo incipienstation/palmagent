@@ -1,3 +1,4 @@
+import { ROUTINE_POLICY, routineRunReason } from "@palmagent/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRepos } from "../hooks/useRepos";
 import { useRoutines } from "../hooks/useRoutines";
@@ -44,7 +45,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { routineRunsQueryOptions } from "../client-queries";
-import { effortChoices, selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
+import { effortChoices, modelSelection, useAgentCatalog } from "../model-catalog";
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
@@ -197,7 +198,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
                         (["failed", "interrupted"].includes(run.status) ? "bg-destructive" : "bg-muted-foreground")
                       }
                     />
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{run.status === "skipped" && run.note === "missed while the server was down" ? "Skipped (server was down)" : RUN_LABEL[run.status]}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{run.status === "skipped" && routineRunReason(run) === "missed_while_down" ? "Skipped (server was down)" : RUN_LABEL[run.status]}</span>
                     <span className="shrink-0 text-faint">{fmtTime(run.firedAt)}</span>
                     {run.taskId && <ChevronRight className="size-3.5 shrink-0 text-faint" />}
                   </button>
@@ -276,7 +277,7 @@ export function RoutinesView() {
 
   const [kind, setKind] = useActionState<"agent" | "script">("routine:kind", "agent");
   const [command, setCommand] = useDraft("routine:command");
-  const [timeoutSeconds, setTimeoutSeconds] = useActionState("routine:timeout", 300);
+  const [timeoutSeconds, setTimeoutSeconds] = useActionState<number>("routine:timeout", ROUTINE_POLICY.defaultTimeoutSeconds);
 
   // create-form state
   const [repoId, setRepoId] = useActionState(`routine:repoId`, "");
@@ -289,15 +290,10 @@ export function RoutinesView() {
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
   const catalog = useAgentCatalog(agent);
-  const model = selectableModel(catalog, savedModel);
-  const effort = selectableEffort(catalog, model, savedEffort);
-  function setModel(value: string) {
-    saveModel(value);
-    setEffort(selectableEffort(catalog, value, effort));
-  }
+  const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
   const [preset, setPreset] = useActionState<RoutinePreset>(`routine:preset`, "daily");
-  const [hour, setHour] = useActionState(`routine:hour`, 9);
-  const [dayOfWeek, setDayOfWeek] = useActionState(`routine:dayOfWeek`, 1);
+  const [hour, setHour] = useActionState<number>(`routine:hour`, ROUTINE_POLICY.defaultHour);
+  const [dayOfWeek, setDayOfWeek] = useActionState<number>(`routine:dayOfWeek`, ROUTINE_POLICY.defaultDayOfWeek);
   const [cron, setCron] = useActionState(`routine:cron`, "0 9 * * *"); // only used when preset === "custom"
   const [title, setTitle] = useDraft(`routine:title`);
   const [prompt, setPrompt] = useDraft(`routine:prompt`);
@@ -576,7 +572,7 @@ export function RoutinesView() {
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="routine-timeout">Timeout (seconds)</FieldLabel>
-                  <Input id="routine-timeout" type="number" min={1} max={3600} required value={timeoutSeconds}
+                  <Input id="routine-timeout" type="number" min={1} max={ROUTINE_POLICY.maxTimeoutSeconds} required value={timeoutSeconds}
                     onChange={event => setTimeoutSeconds(Number(event.target.value))} />
                 </Field>
               </> : <div className="space-y-1.5">

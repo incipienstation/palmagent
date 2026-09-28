@@ -1,3 +1,4 @@
+import { permissionAlias } from "@palmagent/shared";
 import type { AgentKind } from "@palmagent/shared";
 import { Check } from "lucide-react";
 import { DEFAULT_PERMISSION, PERMISSION_CLI_FLAG, PERMISSIONS } from "../api";
@@ -10,13 +11,8 @@ export function selectablePermission(agent: AgentKind, value: string): string {
   return PERMISSIONS[agent].some((option) => option.value === value) ? value : DEFAULT_PERMISSION[agent];
 }
 
-const LEGACY_PERMISSION_VALUE: Record<AgentKind, Record<string, string>> = {
-  claude: { default: "auto", readonly: "plan", "auto-edit": "acceptEdits", full: "bypassPermissions" },
-  codex: { readonly: "read-only", "auto-edit": "workspace-write", full: "danger-full-access", "workspace-write-net": "workspace-write" },
-};
-
 export function permissionLabel(agent: AgentKind, value: string): string {
-  const nativeValue = LEGACY_PERMISSION_VALUE[agent][value] ?? value;
+  const nativeValue = permissionAlias(agent, value);
   return PERMISSIONS[agent].find((option) => option.value === nativeValue)?.label ?? value;
 }
 

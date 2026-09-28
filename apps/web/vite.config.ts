@@ -1,3 +1,4 @@
+import { isAllowedProxyTarget } from "../../packages/shared/src/network.ts";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -7,26 +8,14 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import brand from "./src/brand.json";
 
-// App-facing name for the browser tab + PWA manifest. Mirrors BRANDING.displayName
-// (packages/shared/src/branding.ts) — it is NOT imported here because Vite loads
-// this config through Node's ESM loader, which can't resolve the shared package's
-// source-only `.js`→`.ts` re-export chain (the app bundle resolves it fine). Keep
-// this string in sync with BRANDING.displayName on a rename (the UI brand, NOT the
-// operator-facing productName which stays "Palmagent" for the CLI).
-const APP_NAME = "PalmAgent";
+import branding from "../../packages/shared/src/branding.json";
+const APP_NAME = branding.displayName;
 
 // The backend speaks SSE (read) + REST (control) under /api on
 // :4000. In dev we proxy /api -> :4000 so EventSource + fetch hit the real
 // backend with same-origin URLs. Override the target with API_PROXY if needed.
 const API_TARGET = process.env.API_PROXY ?? "http://localhost:4000";
-const apiTargetUrl = new URL(API_TARGET);
-const loopbackTarget =
-  apiTargetUrl.hostname === "localhost" ||
-  apiTargetUrl.hostname === "::1" ||
-  /^127(?:\.\d{1,3}){3}$/.test(apiTargetUrl.hostname);
-if (apiTargetUrl.protocol !== "https:" && !(apiTargetUrl.protocol === "http:" && loopbackTarget)) {
-  throw new Error("API_PROXY must use HTTPS unless it targets loopback");
-}
+if (!isAllowedProxyTarget(new URL(API_TARGET))) throw new Error("API_PROXY must use HTTPS unless it targets loopback");
 
 export default defineConfig({
   define: { __PALMAGENT_WEB_VERSION__: JSON.stringify(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version) },

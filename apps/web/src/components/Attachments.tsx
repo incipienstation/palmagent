@@ -1,3 +1,4 @@
+import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
 import { useActionState } from "../action-state";
 import { beginBrowserWork } from "../update-state";
 import { useCallback, useRef, type ClipboardEvent } from "react";
@@ -15,8 +16,8 @@ import {
   MAX_ATTACHMENTS,
 } from "../images";
 
-// Default nginx client_max_body_size is 1m; warn before the proxy 413s.
-const WIRE_WARN_BYTES = 900_000;
+// Leave room for the prompt and JSON envelope before the shared upload cap.
+const WIRE_WARN_BYTES = INPUT_IMAGE_POLICY.maxWireBytes * 0.9;
 
 // Shared image-attachment state for a compose box: paste handler (the main
 // path — screenshots land on the clipboard), file picker fallback, previews.
@@ -118,6 +119,6 @@ export function AttachmentTray({ images, disabled, onRemove }: {
           aria-label={`Remove image ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
       </span>)}
     </div>
-    {attachmentsWireSize(images) > WIRE_WARN_BYTES && <p className="py-1 text-xs text-amber">Large attachments may be rejected by the proxy's upload limit.</p>}
+    {attachmentsWireSize(images) > WIRE_WARN_BYTES && <p className="py-1 text-xs text-amber">Large attachments are close to the upload limit.</p>}
   </div>;
 }

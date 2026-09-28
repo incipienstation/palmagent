@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { useStoredPreference } from "./hooks/useStoredPreference";
+import { createContext, useContext, type ReactNode } from "react";
 
 export type SendShortcut = "modifier-enter" | "enter";
 const STORAGE_KEY = "pref:send-shortcut";
@@ -17,15 +18,8 @@ const SendShortcutContext = createContext<{
 } | null>(null);
 
 export function SendShortcutProvider({ children }: { children: ReactNode }) {
-  const [shortcut, setShortcutState] = useState<SendShortcut>(readInitial);
-  const setShortcut = useCallback((next: SendShortcut) => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Keep the preference usable for this session when storage is unavailable.
-    }
-    setShortcutState(next);
-  }, []);
+  const [shortcut, setShortcut] = useStoredPreference<SendShortcut>(STORAGE_KEY, readInitial);
+
   return <SendShortcutContext.Provider value={{ shortcut, setShortcut }}>{children}</SendShortcutContext.Provider>;
 }
 

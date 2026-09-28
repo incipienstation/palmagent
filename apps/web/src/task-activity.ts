@@ -1,3 +1,4 @@
+import { isActiveTaskStatus } from "@palmagent/shared";
 import { useSyncExternalStore } from "react";
 import type { MessageQueue, TaskState } from "@palmagent/shared";
 import { onCacheSessionReset } from "./query-lifecycle";
@@ -19,7 +20,7 @@ interface Activity { kind?: TaskActionKind; token?: symbol; label?: string; prev
 const empty: Activity = {};
 const stopped = new Map<string, { finish: () => void; runId?: string | null }>();
 const latestTasks = new Map<string, TaskState>();
-const active = (task: TaskState) => ["queued", "running", "awaiting_input", "awaiting_approval"].includes(task.status);
+const active = (task: TaskState) => isActiveTaskStatus(task.status);
 export function observeTaskActivity(task: TaskState) {
   if (task.updatedAt < (latestTasks.get(task.taskId)?.updatedAt ?? -Infinity)) return;
   latestTasks.set(task.taskId, task);

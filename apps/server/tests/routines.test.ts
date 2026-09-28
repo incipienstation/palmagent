@@ -242,3 +242,16 @@ test("scheduled scripts skip overlaps, advance cadence and allow explicit stop",
   assert.equal(f.db.hasRunningRoutine("space"), false);
   assert.ok(f.service.runs(routine.id).some(run => run.status === "interrupted" && run.note === "interrupted by user"));
 });
+
+test("scheduler reasons survive storage and do not depend on display wording", async t => {
+  const { routineRunReason } = await import("@palmagent/shared");
+  const f = fixture(t);
+  const routine = f.create("true");
+  f.db.insertRoutineRun({ routineId: routine.id, firedAt: 1, status: "skipped",
+    reason: "missed_while_down", note: "Display wording can change" });
+  const run = f.db.listRoutineRuns(routine.id)[0];
+  assert.equal(run.reason, "missed_while_down");
+  assert.equal(routineRunReason(run), "missed_while_down");
+  assert.equal(routineRunReason({ note: "missed while the server was down" }), "missed_while_down");
+  assert.equal(routineRunReason({ note: "another skip" }), undefined);
+});

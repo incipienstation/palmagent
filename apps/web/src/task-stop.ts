@@ -1,3 +1,4 @@
+import { isActiveTaskStatus } from "@palmagent/shared";
 import { api } from "./api";
 import { cacheSession } from "./query-lifecycle";
 import { beginTaskStop, finishWhenStopped, observeTaskActivity } from "./task-activity";
@@ -13,7 +14,7 @@ export async function stopTaskTurn(taskId: string, runId?: string | null) {
     if (stop.onStop) { await stop.onStop(); stop.finish(); return; }
     const actual = await api.stop(taskId);
     if (generation !== cacheSession()) { stop.finish(); return; }
-    if (["queued", "running", "awaiting_input", "awaiting_approval"].includes(actual.status)) observeTaskActivity(actual);
+    if (isActiveTaskStatus(actual.status)) observeTaskActivity(actual);
     // Keep the local Stop pending until the live task snapshot catches up, even
     // when the HTTP response already says a queued task is idle.
     finishWhenStopped(taskId, stop.finish, actual.messageQueue?.runId ?? runId);

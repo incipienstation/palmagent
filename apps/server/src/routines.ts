@@ -1,3 +1,4 @@
+import { ROUTINE_POLICY } from "@palmagent/shared";
 import { CreateRoutineSchema, UpdateRoutineSchema } from "@palmagent/shared/requests";
 import type {
   CreateRoutineRequest, Routine, RoutinePreset, RoutineRun, UpdateRoutineRequest,
@@ -47,7 +48,7 @@ export class RoutineService {
         this.db.updateRoutine(r);
         if (skipped) {
           // Record-only (no catch-up): make the missed fire visible in history.
-          this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "skipped", note: "missed while the server was down" });
+          this.db.insertRoutineRun({ routineId: r.id, firedAt: now, status: "skipped", reason: "missed_while_down", note: "missed while the server was down" });
           console.log(`[routines] ${r.id} missed a run while down — skipped to next`);
         }
       }
@@ -85,8 +86,8 @@ export class RoutineService {
   private fire(r: Routine, now: number, manual = false): void {
     if (r.kind === "script") {
       if (this.stopping || this.tasks.updating) throw new ApplicationError("service_unavailable", "Palmagent is restarting");
-      const full = this.scripts.has(r.id) || this.scripts.size >= 4;
-      if (full && manual) throw new ApplicationError("conflict", "A script is already running or all four script slots are busy");
+      const full = this.scripts.has(r.id) || this.scripts.size >= ROUTINE_POLICY.scriptConcurrency;
+      if (full && manual) throw new ApplicationError("conflict", `A script is already running or all ${ROUTINE_POLICY.scriptConcurrency} script slots are busy`);
       // Commit admission and cadence together before any process can execute.
       const next = { ...r, lastRunAt: now, updatedAt: now,
         nextRunAt: manual ? r.nextRunAt : r.schedule ? nextRun(r.schedule, now) : undefined };
@@ -181,7 +182,7 @@ export class RoutineService {
       id: this.ids.next("rt"),
       repoId: req.repoId,
       kind: req.kind ?? "agent",
-      script: req.script ? { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? 300 } : undefined,
+      script: req.script ? { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? ROUTINE_POLICY.defaultTimeoutSeconds } : undefined,
       agent: req.agent ?? "claude",
       title: req.title,
       prompt: req.prompt ?? "",
@@ -241,7 +242,7 @@ export class RoutineService {
       throw new ApplicationError("bad_request", "Script routines do not accept agent settings");
     }
     if (req.script && r.kind !== "script") throw new ApplicationError("bad_request", "Only script routines accept script settings");
-    if (req.script) r.script = { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? r.script?.timeoutSeconds ?? 300 };
+    if (req.script) r.script = { ...req.script, timeoutSeconds: req.script.timeoutSeconds ?? r.script?.timeoutSeconds ?? ROUTINE_POLICY.defaultTimeoutSeconds };
     const now = Date.now();
     // Recompile the cadence when any cadence field is present in the patch.
     const cadenceChanged =
