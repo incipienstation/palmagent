@@ -90,7 +90,7 @@ test("speech waits for silence, preserves edits, deduplicates and never submits"
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("Original draft");
   await page.getByRole("button", { name: "Start voice input" }).click();
-  await expect(page.getByText("Recording… tap the microphone to finish.")).toBeVisible();
+  await expect(page.getByText("Recording…", { exact: true })).toBeAttached();
   await page.evaluate(() => { const v = (window as any).voiceTest; v.speaking = true; v.emit("one", " Hello"); v.emit("one", " Hello"); });
   await input.fill("Edited while listening");
   await page.waitForTimeout(1100);
@@ -100,7 +100,7 @@ test("speech waits for silence, preserves edits, deduplicates and never submits"
   await expect(input).toHaveValue("Edited while listening Hello world.");
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Stop voice input" }).click();
-  await expect(page.getByText("Finishing transcription…")).toBeVisible();
+  await expect(page.getByText("Finishing transcription…")).toBeAttached();
   // The data channel remains open while buffered audio and its final words drain.
   await page.evaluate(() => (window as any).voiceTest.emit("three", " One more."));
   await expect(input).toHaveValue("Edited while listening Hello world. One more.");
@@ -122,12 +122,12 @@ test("recording starts before connection and stop drains the client buffer", asy
   await page.goto("/#/task/t-idle-interrupted");
   const start = page.getByRole("button", { name: "Start voice input" });
   await start.click();
-  await expect(page.getByText("Recording… tap the microphone to finish.")).toBeVisible();
+  await expect(page.getByText("Recording…", { exact: true })).toBeAttached();
   const stop = page.getByRole("button", { name: "Stop voice input" });
   await expect(stop).toHaveAttribute("aria-pressed", "true");
   await expect.poll(calls.starts).toBe(1);
   await stop.click();
-  await expect(page.getByText("Finishing transcription…")).toBeVisible();
+  await expect(page.getByText("Finishing transcription…")).toBeAttached();
   await expect.poll(() => page.evaluate(() => (window as any).voiceTest.workletMessages.join(","))).toBe("finish");
 
   calls.allowStart();
@@ -212,7 +212,7 @@ test("settings disappear during dictation and return after it ends", async ({ pa
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft");
   await page.getByRole("button", { name: "Start voice input" }).click();
-  await expect(page.getByText("Recording… tap the microphone to finish.")).toBeVisible();
+  await expect(page.getByText("Recording…", { exact: true })).toBeAttached();
   await expect(configure).toHaveCount(0);
   await page.getByRole("button", { name: "Stop voice input" }).click();
   await expect.poll(calls.stops).toBe(1);
@@ -271,4 +271,79 @@ test("reduced motion keeps live volume history without sliding animation", async
   expect(await waveform.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0);
   await page.getByRole("button", { name: "Cancel voice input" }).click();
   await expect(waveform).toHaveCount(0);
+});
+
+for (const width of [360, 1280]) test(`empty dictation stays on one row and expands for transcription at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await microphone(page);
+  for (const route of ["task/t-idle-interrupted", "new/space/repo-app"]) {
+    await page.goto(`/#/${route}`);
+    const composer = page.getByRole("group", { name: "Message composer", exact: true });
+    const input = composer.locator("textarea");
+    await input.focus();
+    if (route.startsWith("new")) {
+      await page.getByRole("button", { name: "Configure task settings" }).click();
+      await page.getByRole("radio", { name: "codex", exact: true }).click();
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+    }
+    const originalInput = await input.elementHandle();
+    await input.fill("   ");
+    await page.getByRole("button", { name: "Start voice input" }).click();
+    await expect(input).toBeHidden();
+    await expect.poll(() => composer.evaluate(el => el.getBoundingClientRect().height)).toBe(54);
+    await expect(composer.getByRole("status")).toHaveText("Recording…");
+    await expect(composer.getByRole("status")).toHaveCSS("position", "absolute");
+    await expect(page.getByRole("button", { name: "Choose a skill" })).toHaveCount(0);
+    const cancel = page.getByRole("button", { name: "Cancel voice input" });
+    const stop = page.getByRole("button", { name: "Stop voice input" });
+    for (const control of [cancel, stop]) {
+      await expect(control).toBeInViewport({ ratio: 1 });
+      expect((await control.boundingBox())!.height).toBe(44);
+    }
+    expect((await cancel.boundingBox())!.y).toBe((await stop.boundingBox())!.y);
+    await page.evaluate(() => (window as any).voiceTest.emit("compact", "A spoken draft"));
+    await expect(input).toBeVisible();
+    await expect(input).toHaveValue("   A spoken draft");
+    expect(await originalInput!.evaluate(el => el.isConnected)).toBe(true);
+    await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
+    await input.fill("");
+    await expect(input).toBeHidden();
+    await stop.click();
+    await expect(composer.getByRole("status")).toHaveText("Finishing transcription…");
+    await expect.poll(() => composer.evaluate(el => el.getBoundingClientRect().height)).toBe(54);
+    await cancel.click();
+    await expect(input).toBeVisible();
+    expect(await originalInput!.evaluate(el => el.isConnected)).toBe(true);
+    await assertViewportLocked(page);
+  }
+});
+
+for (const draft of ["text", "image", "skill"]) test(`recording keeps a ${draft} draft visible`, async ({ page }) => {
+  await microphone(page);
+  await page.route("**/api/skills?**", route => route.fulfill({ json: { skills: [
+    { id: "check", name: "check", source: "repo", description: "Check changes" },
+  ] } }));
+  await page.goto("/#/task/t-idle-interrupted");
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  await input.focus();
+  if (draft === "text") await input.fill("Keep my draft");
+  if (draft === "skill") {
+    await input.fill("/check");
+    await page.getByRole("option", { name: /check/ }).click();
+    await expect(input).toHaveValue("");
+  }
+  if (draft === "image") {
+    await page.getByRole("button", { name: "Add attachments" }).click();
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("menuitem", { name: "Photos" }).click();
+    await (await chooser).setFiles({ name: "image.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
+    await expect(page.getByAltText("attachment 1")).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Start voice input" }).click();
+  await expect(input).toBeVisible();
+  if (draft === "text") await expect(input).toHaveValue("Keep my draft");
+  if (draft === "image") await expect(page.getByAltText("attachment 1")).toBeVisible();
+  if (draft === "skill") await expect(page.getByRole("button", { name: "Remove check skill" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel voice input" }).click();
+  await expect(input).toBeVisible();
 });

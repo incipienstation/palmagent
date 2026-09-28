@@ -329,6 +329,11 @@
   visibility: hidden;
   pointer-events: none;
 }
+/* The textarea leaves the layout immediately during empty dictation. Do not
+   slide its controls through the removed row while recording starts. */
+.composer[data-voice-active="true"] .composer-toolbar {
+  transition: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .composer-input, .composer-toolbar, .composer-skill, .composer-settings {
     transition: none;
