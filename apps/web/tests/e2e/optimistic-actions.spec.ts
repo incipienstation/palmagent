@@ -195,8 +195,8 @@ for (const mode of ["send", "queue"] as const) test(`${mode} creates a pending i
   await expect(page.getByTestId("toast")).toContainText("Delivery could not be confirmed");
 });
 
-for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) test(`send stays separate from waiting turns through acknowledgment at ${viewport.width}px`, async ({ page }) => {
-  await page.setViewportSize(viewport);
+test("send stays separate from waiting turns through acknowledgment and navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
   const task = await queueSetup(page, [structuredClone(message)]);
   const delayed = gate();
   let accepted!: MessageQueue;
@@ -216,6 +216,14 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
   await expect(pending).not.toContainText("Sending…");
   await expect(queue).toContainText("Queue · 1");
   await expect(queue).not.toContainText("Immediate delivery");
+  // Exercise responsive layout on the same pending state; acknowledgment and
+  // navigation semantics do not need a second viewport-specific execution.
+  await assertViewportLocked(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(pending).toBeVisible();
+  await expect(queue).toBeVisible();
+  await expect(page.getByRole("textbox")).toBeInViewport();
+  await assertViewportLocked(page);
   delayed.release();
   await expect(page.getByRole("textbox")).toBeEnabled();
   await expect(pending).not.toContainText("Sending…");

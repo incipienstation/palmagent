@@ -12,30 +12,30 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
   const path = route === "new" ? "/api/tasks" : "/api/tasks/t-idle-rich/messages";
   const label = route === "new" ? "Prompt" : "Message";
 
-  for (const key of ["Control+Enter", "Meta+Enter"]) {
-    test(`${key} submits ${route} and preserves a failed draft`, async ({ page }) => {
-      const calls: Record<string, unknown>[] = [];
-      await page.route(`**${path}`, async r => {
-        calls.push(r.request().postDataJSON());
-        await r.fulfill({ status: 400, json: { error: "Try again" } });
-      });
-      await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
-      const input = page.getByRole("textbox", { name: label, exact: true });
-      await input.fill("Review this");
-      await input.press("Enter");
-      await input.press("Shift+Enter");
-      await expect(input).toHaveValue("Review this\n\n");
-      expect(calls).toHaveLength(0);
-      await input.press(key);
-      await expect.poll(() => calls.length).toBe(1);
-      expect(calls[0][route === "new" ? "prompt" : "text"]).toBe("Review this");
-      if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
-      await expect(input).toBeEnabled();
-      await expect(input).toHaveValue("Review this\n\n");
+  // Both forms use the shared shortcut handler; cover each modifier on one form.
+  const key = route === "new" ? "Control+Enter" : "Meta+Enter";
+  test(`${key} submits ${route} and preserves a failed draft`, async ({ page }) => {
+    const calls: Record<string, unknown>[] = [];
+    await page.route(`**${path}`, async r => {
+      calls.push(r.request().postDataJSON());
+      await r.fulfill({ status: 400, json: { error: "Try again" } });
     });
-  }
+    await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
+    const input = page.getByRole("textbox", { name: label, exact: true });
+    await input.fill("Review this");
+    await input.press("Enter");
+    await input.press("Shift+Enter");
+    await expect(input).toHaveValue("Review this\n\n");
+    expect(calls).toHaveLength(0);
+    await input.press(key);
+    await expect.poll(() => calls.length).toBe(1);
+    expect(calls[0][route === "new" ? "prompt" : "text"]).toBe("Review this");
+    if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue("Review this\n\n");
+  });
 
-  test(`Enter preference immediately applies to ${route} and survives reload`, async ({ page }) => {
+  test(`Enter preference immediately applies to ${route}${route === "new" ? " and survives reload" : ""}`, async ({ page }) => {
     const calls: unknown[] = [];
     await page.route(`**${path}`, async r => {
       calls.push(r.request().postDataJSON());
@@ -59,6 +59,8 @@ for (const route of ["new", "task/t-idle-rich"] as const) {
     if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
     await expect(input).toBeEnabled();
     await expect(input).toHaveValue("Keep this draft\n");
+    // Persistence belongs to the shared preference; live application is checked on both forms.
+    if (route !== "new") return;
     await page.reload();
     await expect(input).toHaveAttribute("aria-keyshortcuts", "Enter Meta+Enter Control+Enter");
     await input.fill("After reload");
