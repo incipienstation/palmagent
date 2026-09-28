@@ -8,7 +8,6 @@ export const INPUT_IMAGE_POLICY = {
 } as const;
 export const ImageDimensionSchema = z.number().int().min(1).max(INPUT_IMAGE_POLICY.maxDimension);
 
-
 /** A durable image reference; never contains a filesystem path or image bytes. */
 export const AttachmentSchema = z.object({
   id: z.string().uuid(),

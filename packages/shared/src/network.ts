@@ -11,7 +11,6 @@ export function httpOrigin(host: string, port: number): string {
   const address = normalizeHost(host);
   return `http://${address.includes(":") ? `[${address}]` : address}:${port}`;
 }
-export function isAllowedProxyTarget(target: string): boolean {
-  const url = new URL(target);
+export function isAllowedProxyTarget(url: { protocol: string; hostname: string }): boolean {
   return url.protocol === "https:" || url.protocol === "http:" && isLoopbackHost(url.hostname);
 }

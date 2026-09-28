@@ -6,6 +6,8 @@
 // NB: the root package.json name is a private workspace literal. A publishable
 // CLI manifest must derive its package name from BRANDING.packageName.
 
+// productName is the operator-facing name; displayName is the UI/PWA and WebAuthn RP name.
+// packageName, cliName, unitBase and stateDirName preserve installed identity.
 // JSON lets build tooling consume the same names without a TypeScript loader.
 import branding from "./branding.json" with { type: "json" };
 export const BRANDING = branding;

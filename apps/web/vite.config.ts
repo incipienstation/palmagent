@@ -15,7 +15,7 @@ const APP_NAME = branding.displayName;
 // :4000. In dev we proxy /api -> :4000 so EventSource + fetch hit the real
 // backend with same-origin URLs. Override the target with API_PROXY if needed.
 const API_TARGET = process.env.API_PROXY ?? "http://localhost:4000";
-if (!isAllowedProxyTarget(API_TARGET)) throw new Error("API_PROXY must use HTTPS unless it targets loopback");
+if (!isAllowedProxyTarget(new URL(API_TARGET))) throw new Error("API_PROXY must use HTTPS unless it targets loopback");
 
 export default defineConfig({
   define: { __PALMAGENT_WEB_VERSION__: JSON.stringify(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version) },

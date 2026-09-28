@@ -10,12 +10,12 @@ import { validateInstallInput } from "../src/cli/config.js";
 test("listener addresses and URL hosts share IPv6 loopback rules", () => {
   for (const host of ["localhost", [127, 0, 0, 1].join("."), [127, 2, 3, 4].join("."), "::1", "[::1]"]) {
     assert.ok(isLoopbackHost(host));
-    assert.ok(isAllowedProxyTarget(httpOrigin(host, 4100)));
+    assert.ok(isAllowedProxyTarget(new URL(httpOrigin(host, 4100))));
     assert.equal(validateInstallInput({ domain: "example.com", host, port: 4100, concurrency: 8, pushSubject: "" }).host, host.replace(/[\[\]]/g, ""));
   }
   for (const host of [[127, 999, 0, 1].join("."), "example.com", "::2"]) assert.equal(isLoopbackHost(host), false);
-  assert.equal(isAllowedProxyTarget("http://example.com"), false);
-  assert.equal(isAllowedProxyTarget("https://example.com"), true);
+  assert.equal(isAllowedProxyTarget(new URL("http://example.com")), false);
+  assert.equal(isAllowedProxyTarget(new URL("https://example.com")), true);
   assert.equal(httpOrigin("::1", 4100), "http://[::1]:4100");
 });
 test("state directory precedence is explicit, installation env, XDG, then home", () => {

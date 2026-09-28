@@ -56,8 +56,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useStoredPreference<Theme>(STORAGE_KEY, readInitialTheme);
   const [resolved, setResolved] = useState<"light" | "dark">(() => (resolveIsDark(theme) ? "dark" : "light"));
 
-
-
   // Apply on theme change + keep `resolved` accurate.
   useEffect(() => {
     applyTheme(theme);
