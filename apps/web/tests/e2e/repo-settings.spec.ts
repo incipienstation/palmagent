@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import type { RepoSettingsStatus } from "@palmagent/shared";
-import { assertViewportLocked } from "./_helpers";
+import { captureForReview, assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 
@@ -36,7 +36,7 @@ test("search settings add and remove paths, disable discovery, and restore insta
   await section.getByRole("button", { name: "Remove " + longPath, exact: true }).scrollIntoViewIfNeeded();
   expect(await page.locator('[data-slot="settings-scroll"]:visible').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   await assertViewportLocked(page);
-  await page.screenshot({ path: test.info().outputPath("repo-settings-mobile.png") });
+  await captureForReview(page, "repo-settings-mobile.png");
   await section.getByRole("button", { name: "Remove /projects", exact: true }).click();
   await section.getByRole("button", { name: "Remove " + longPath, exact: true }).click();
   await expect(section.getByText(/Automatic search is off/)).toBeVisible();

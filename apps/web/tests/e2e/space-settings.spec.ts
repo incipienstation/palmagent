@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { repos } from "../fixtures.mjs";
-import { assertViewportLocked } from "./_helpers";
+import { captureForReview, assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
@@ -35,7 +35,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
     await expect(save).toBeDisabled();
     expect(writes).toEqual([{ defaultBaseRef: "missing" }, { defaultBaseRef: "develop" }]);
     await assertViewportLocked(page);
-    await page.screenshot({ path: test.info().outputPath(`space-settings-${viewport.width}.png`) });
+    await captureForReview(page, `space-settings-${viewport.width}.png`);
     await page.reload(); await open();
     await expect(input).toHaveValue("develop");
     await page.getByRole("button", { name: "Back to settings", exact: true }).click();

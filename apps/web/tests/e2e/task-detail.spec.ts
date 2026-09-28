@@ -25,7 +25,7 @@ test.describe("task detail", () => {
     await expect(page.getByPlaceholder(/Send a follow-up turn/)).toBeVisible();
   });
 
-  test("the overflow opens session details listing every PR the task opened", async ({ page }) => {
+  test("session details lists PRs and restores focus after scrim dismissal", async ({ page }) => {
     // Task links share the details sheet with configuration and handoff.
     await openSessionDetails(page);
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeVisible();
@@ -36,11 +36,6 @@ test.describe("task detail", () => {
       "href",
       "https://github.com/acme/sample-app/pull/42",
     );
-  });
-
-  test("tapping the scrim dismisses session details and returns focus to the overflow action", async ({ page }) => {
-    await openSessionDetails(page);
-    await expect(page.getByRole("heading", { name: "Pull requests" })).toBeVisible();
     // Tap the overlay above the sheet — must close it (regression: a stop-propagation
     // wrapper around the sheet used to swallow vaul's overlay-dismiss click).
     await page.locator('[data-slot="sheet-overlay"]').click({ position: { x: 180, y: 80 } });

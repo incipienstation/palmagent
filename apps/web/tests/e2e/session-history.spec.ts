@@ -1,3 +1,4 @@
+import { captureForReview } from "./_helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import type { AgentEvent, TaskHistoryEvent } from "@palmagent/shared";
@@ -97,7 +98,7 @@ test("recent history and thousands of live events keep mounted rows bounded", as
   expect(olderRequests).toBe(0);
 });
 
-test("prepending an older page preserves the visible message through simultaneous live output", async ({ page }, testInfo) => {
+test("prepending an older page preserves the visible message through simultaneous live output", async ({ page }) => {
   let release!: () => void;
   let requested = 0;
   const pending = new Promise<void>((resolve) => { release = resolve; });
@@ -113,7 +114,7 @@ test("prepending an older page preserves the visible message through simultaneou
   await expect(anchor).toBeVisible();
   const top = (await anchor.boundingBox())!.y;
   await expect(page.getByRole("status").filter({ hasText: "Loading earlier messages…" })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("history-loading.png") });
+  await captureForReview(page, "history-loading.png");
   await deliver(page, rows(2001, 2020));
   release();
   await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
@@ -468,7 +469,7 @@ test("near-top scrolling prefetches the next page before reaching the edge", asy
   await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
 });
 
-test("short history prefetch keeps its first message clear of the floating toolbar", async ({ page }, testInfo) => {
+test("short history prefetch keeps its first message clear of the floating toolbar", async ({ page }) => {
   const cursors: string[] = [];
   await page.route("**/history*", (route) => {
     const before = new URL(route.request().url()).searchParams.get("before");
@@ -497,7 +498,7 @@ test("short history prefetch keeps its first message clear of the floating toolb
   expect(toolbarBounds).not.toBeNull();
   expect(insetBounds!.height).toBeGreaterThanOrEqual(toolbarBounds!.height + 12);
   expect(promptBounds!.y).toBeGreaterThanOrEqual(toolbarBounds!.y + toolbarBounds!.height + 12);
-  await page.screenshot({ path: testInfo.outputPath("history-top-inset.png") });
+  await captureForReview(page, "history-top-inset.png");
 });
 
 

@@ -79,6 +79,9 @@ node apps/web/scripts/run-e2e.mjs --grep 'draft'  # from the repository root
   focused region to a whole-screen baseline. Retained baselines live in
   `tests/e2e/*-snapshots/`; regenerate only for intentional changes and inspect
   the diff. A screenshot of the current design is not itself a stable contract.
+- Diagnostic screenshots without baseline comparisons are opt-in via
+  `VISUAL_REVIEW_DIR=/path/to/review-output`. Normal runs still capture failures
+  and execute visual snapshot assertions.
 - The repository's `pnpm verify` gate runs this suite and the service-worker
   update smoke before a PWA change can be delivered.
 - Read-only tests share a mock server and use up to two workers. Rename tests run

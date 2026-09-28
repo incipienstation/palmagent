@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, type Page } from "@playwright/test";
 
 // The load-bearing mobile-layout invariant this whole app is built around
@@ -23,4 +25,12 @@ export async function assertViewportLocked(page: Page): Promise<void> {
 export async function openSessionDetails(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Task actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Session details", exact: true }).click();
+}
+
+// Diagnostic captures are for manual review, not assertions in the CI gate.
+export async function captureForReview(page: Page, filename: string): Promise<void> {
+  const directory = process.env.VISUAL_REVIEW_DIR;
+  if (!directory) return;
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: join(directory, filename) });
 }
