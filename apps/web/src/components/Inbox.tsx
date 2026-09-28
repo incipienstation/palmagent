@@ -274,9 +274,10 @@ export const InboxView = memo(function InboxView({
         <div className="relative flex min-h-0 flex-1 flex-col">
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
           placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} />
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
-          {/* Desktop retains a floating action; mobile controls stay in flow. */}
-          <div data-testid="inbox-content" className="pb-4 md:pb-22">
+          {/* Let the final row scroll fully above the floating action. */}
+          <div data-testid="inbox-content" className="pb-22">
             {!repoId && <p className="px-4 pt-1 text-sm text-muted-foreground">Tasks across all your Spaces</p>}
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
@@ -300,9 +301,8 @@ export const InboxView = memo(function InboxView({
             )}
           </div>
         </PullToRefresh>
-        <div className="order-1 flex shrink-0 justify-end px-4 pt-2 pb-2 md:absolute md:right-4 md:bottom-5 md:z-20 md:p-0">
         <Button
-          className="h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
+          className="absolute right-4 bottom-5 z-20 h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
           ref={toastObstacle}
           aria-label="Dispatch new task"
           onClick={newTask}
