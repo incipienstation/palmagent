@@ -14,6 +14,9 @@ test("short filter sheets align content and actions above the safe area", async 
   const status = sheet.getByRole("combobox", { name: "Status" });
   const done = sheet.getByRole("button", { name: "Done", exact: true });
   await expect(done).toBeInViewport({ ratio: 1 });
+  await sheet.evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   const [heading, field, action] = await Promise.all([title, status, done].map(el => el.boundingBox()));
   expect(field!.x).toBeCloseTo(heading!.x, 0);
   expect(action!.x).toBeCloseTo(field!.x, 0);
