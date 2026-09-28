@@ -7,7 +7,7 @@ import { useActionState } from "../action-state";
 import { useUpdateState } from "../update-state";
 import { navigate } from "../router";
 import { spaceActivity, spacePath, spaceQualifier } from "../space-context";
-import { reloadApp } from "../pwa";
+
 import { AppBar, AppShell } from "./AppShell";
 import { EmptyState } from "./EmptyState";
 import { PullToRefresh } from "./PullToRefresh";
@@ -17,7 +17,7 @@ import { Button } from "./ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
 import { Skeleton } from "./ui/skeleton";
 
-export function SpacesView({ tasks, conn, loading }: { tasks: TaskState[]; conn: ConnState; loading: boolean }) {
+export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskState[]; conn: ConnState; loading: boolean; onRefresh: () => Promise<void> }) {
   const { repos, loading: reposLoading, error, refresh } = useRepos();
   const [query, setQuery] = useActionState("spaces:query", "");
   const [adding, setAdding] = useUpdateState("spaces:adding", false);
@@ -54,7 +54,7 @@ export function SpacesView({ tasks, conn, loading }: { tasks: TaskState[]; conn:
         {(query || searching) && <Button type="button" variant="secondary" size="icon-lg" className="size-12 shrink-0 rounded-full"
           aria-label={query ? "Clear Space search" : "Close Space search"} onClick={closeSearch}><X /></Button>}
       </form>
-      <PullToRefresh className="min-h-0 flex-1" scrollKey={!pending ? `spaces:${query}` : undefined} onRefresh={reloadApp}>
+      <PullToRefresh className="min-h-0 flex-1" scrollKey={!pending ? `spaces:${query}` : undefined} onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
       <div className="flex flex-col gap-4 px-4 pt-2 pb-4 md:px-6">
         <Button variant="secondary" className="h-auto min-h-20 w-full justify-start gap-3 rounded-2xl px-4 py-3" onClick={() => navigate("/")}>
           <Layers data-icon="inline-start" />

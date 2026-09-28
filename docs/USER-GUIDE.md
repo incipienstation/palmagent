@@ -40,6 +40,9 @@ narrow the list to a Worktree or status. Filtering changes the list, not the
 execution folder for a new task. Back restores the previous list's search and
 reading position. All spaces always remains the complete view.
 
+Pull down on Tasks or Spaces to refresh their data in place. Search, filters, and
+the current screen stay available; a failed refresh keeps the existing list.
+
 ## Start a chat
 
 Open **New task**, check the **Space** above the composer, and send your first

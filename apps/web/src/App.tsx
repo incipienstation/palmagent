@@ -36,7 +36,7 @@ function AppInner() {
   // The single inbox stream lives for the whole app session, independent of the
   // current view, so the task list stays live everywhere (and we never open more
   // than one /api/stream). The task detail opens its own scoped stream on top.
-  const { tasks, conn, loading } = useInbox();
+  const { tasks, conn, loading, refresh } = useInbox();
   useAccessUpdates(conn);
   const { repos } = useRepos();
 
@@ -63,8 +63,8 @@ function AppInner() {
     : route.name === "routines" ? <RoutinesView />
     : route.name === "usage" ? <UsageView />
     : route.name === "task" || route.name === "new" ? <TaskDetailView key={route.name === "new" || route.id === conversation.taskId ? `new-${conversation.key}` : route.id} taskId={route.name === "task" ? route.id : undefined} initialRepoId={route.name === "new" ? route.repoId : undefined} task={active} onCreated={onCreated} />
-    : route.name === "spaces" ? <SpacesView tasks={tasks} conn={conn} loading={loading} />
-    : <InboxView key={route.name === "space" ? route.repoId : "all"} repoId={route.name === "space" ? route.repoId : undefined} tasks={tasks} conn={conn} loading={loading} />;
+    : route.name === "spaces" ? <SpacesView tasks={tasks} conn={conn} loading={loading} onRefresh={refresh} />
+    : <InboxView key={route.name === "space" ? route.repoId : "all"} repoId={route.name === "space" ? route.repoId : undefined} tasks={tasks} conn={conn} loading={loading} onRefresh={refresh} />;
   return <AppNavigation tasks={tasks} conn={conn}>{view}</AppNavigation>;
 }
 

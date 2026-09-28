@@ -108,7 +108,7 @@ async function runAction(id: string, action: Action) {
   }
 }
 
-async function create(input: Parameters<typeof api.createRoutine>[0]): Promise<boolean> {
+async function create(input: Parameters<typeof api.createRoutine>[0]): Promise<Routine | false> {
   if (creating !== null) return false;
   const generation = cacheSession();
   creating = input.title || input.script?.command || input.prompt || "Routine";
@@ -119,7 +119,7 @@ async function create(input: Parameters<typeof api.createRoutine>[0]): Promise<b
     if (generation !== cacheSession()) return false;
     queryClient.setQueryData<Routine[]>(clientReadKeys.routines(), (current) => current
       ? [...current.filter((routine) => routine.id !== actual.id), actual] : [actual]);
-    return true;
+    return actual;
   } catch (cause) {
     if (generation === cacheSession()) {
       fail(cause instanceof ApiError && cause.status < 500

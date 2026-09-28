@@ -67,7 +67,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     displayedEffort, setModel, setEffort, permission, setPermission, primaryAction,
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
-  const heading = creating ? "New task" : task ? taskTitle(task) : taskId;
+  const heading = creating ? "New task" : task ? taskTitle(task) : "Conversation";
   const showingFirstMessage = !!newChat.preview && !(hasHistory && hasEarlier) && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
   const firstDelivery = creating || showingFirstMessage;
 
@@ -148,7 +148,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             onDelete={m => void queueAction(m, "delete")}
             onResume={() => void resume()} />}
 
-          {(creating || task && !localOwner && status !== "archived" && status !== "cancelled") && (creating ? <Composer {...newChat.composer} /> : <Composer
+          {(creating || !localOwner && status !== "archived" && status !== "cancelled") && (creating ? <Composer {...newChat.composer} /> : <Composer
             skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}

@@ -1,3 +1,5 @@
+import { api } from "../api";
+import { cacheSession } from "../query-lifecycle";
 import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { clientReadKeys } from "../client-query-keys";
@@ -15,6 +17,7 @@ export interface Inbox {
   tasks: TaskState[];
   conn: ConnState;
   loading: boolean;
+  refresh: () => Promise<void>;
 }
 
 // The inbox needs fresh task snapshots, including after mobile reconnects.
@@ -71,5 +74,15 @@ export function useInbox(): Inbox {
     return () => connection.close();
   }, []);
 
-  return { tasks: tasks.filter(task => !mutations.get(task.taskId)?.hidden).map(task => projectTask(task, mutations)!), conn, loading };
+  const refresh = async () => {
+    const generation = cacheSession();
+    const previous = snapshot.current;
+    const incoming = await api.listTasks();
+    if (generation !== cacheSession() || snapshot.current !== previous) return;
+    incoming.forEach(task => { observeTaskMutation(task); observeTaskActivity(task); });
+    const next = reconcileTasks(snapshot.current, incoming);
+    snapshot.current = next; setTasks(next); setLoading(false);
+  };
+
+  return { refresh, tasks: tasks.filter(task => !mutations.get(task.taskId)?.hidden).map(task => projectTask(task, mutations)!), conn, loading };
 }

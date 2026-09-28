@@ -14,7 +14,7 @@ const DAMP = 0.5; // resistance: finger travel → visual travel
 // Custom pull-to-refresh. index.css locks the document to the viewport and an
 // installed PWA has no native overscroll gesture, so we synthesize one on the
 // inner scroll pane: drag down from the top past a threshold and `onRefresh`
-// fires (typically a deploy-aware reload). Visuals are driven imperatively via
+// refreshes the data in place. Visuals are driven imperatively via
 // refs — not React state — so a long list never re-renders mid-touchmove. Touch
 // listeners are attached natively so touchmove can be non-passive (preventDefault
 // is needed to suppress the browser's own scroll/bounce while we own the pull).
@@ -24,7 +24,7 @@ export function PullToRefresh({
   className,
   children,
 }: {
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   scrollKey?: string;
   className?: string;
   children: ReactNode;
@@ -35,6 +35,7 @@ export function PullToRefresh({
   const onRefreshRef = useRef(onRefresh);
   onRefreshRef.current = onRefresh;
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -61,7 +62,8 @@ export function PullToRefresh({
     let armed = false; // gesture began at the top of the pane
     let pulling = false; // currently dragging down past the top
     let offset = 0;
-    let busy = false; // refresh fired — ignore further input (page is reloading)
+    let busy = false;
+    let disposed = false;
 
     const paint = (px: number, animate: boolean) => {
       content.style.transition = animate ? "transform 200ms ease" : "";
@@ -107,19 +109,16 @@ export function PullToRefresh({
       if (pulling && offset >= THRESHOLD) {
         busy = true;
         setRefreshing(true);
-        paint(THRESHOLD, true);
-        onRefreshRef.current(); // typically reloads — this component then unmounts
-        // reloadApp() is usually synchronous (window.location.reload), but when a
-        // SW update is pending, updateSW() resolves async. The translateY stays at
-        // THRESHOLD during that window, shrinking the visible scroll area and making
-        // the bottom of the list unreachable. Reset after 500ms if still mounted.
-        setTimeout(() => {
-          if (busy) {
-            paint(0, true);
-            setRefreshing(false);
-            busy = false;
-          }
-        }, 500);
+        // Release the content immediately so a slow refresh cannot hide the
+        // bottom of the list. Progress floats above the unchanged viewport.
+        paint(0, true);
+        setError("");
+        Promise.resolve().then(() => onRefreshRef.current()).catch(() => {
+          if (!disposed) setError("Could not refresh. Pull down to retry.");
+        }).finally(() => {
+          if (disposed) return;
+          paint(0, true); setRefreshing(false); busy = false;
+        });
       } else if (pulling) {
         paint(0, true);
       }
@@ -132,6 +131,7 @@ export function PullToRefresh({
     el.addEventListener("touchend", onEnd, { passive: true });
     el.addEventListener("touchcancel", onEnd, { passive: true });
     return () => {
+      disposed = true;
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
@@ -150,9 +150,13 @@ export function PullToRefresh({
               <RefreshCw className={cn("size-4 text-primary", refreshing && "animate-spin")} />
             </span>
           </div>
+          {error && <p role="alert" className="px-4 py-2 text-sm text-destructive">{error}</p>}
           {children}
         </div>
       </ScrollAreaPrimitive.Viewport>
+      {refreshing && <div role="status" className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+        <span className="rounded-full bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm">Refreshing…</span>
+      </div>}
       <ScrollBar />
     </ScrollAreaPrimitive.Root>
   );

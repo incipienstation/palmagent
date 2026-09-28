@@ -13,7 +13,7 @@ import { statusSection } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
-import { reloadApp } from "../pwa";
+
 import { goBackTo, navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { AgentTag, RepoChip, StatusBadge } from "./chips";
@@ -210,11 +210,13 @@ export const InboxView = memo(function InboxView({
   tasks,
   conn,
   loading,
+  onRefresh,
   repoId,
 }: {
   tasks: TaskState[];
   conn: ConnState;
   loading?: boolean;
+  onRefresh: () => Promise<void>;
   repoId?: string;
 }) {
   const mutations = useTaskMutations();
@@ -270,7 +272,7 @@ export const InboxView = memo(function InboxView({
         </AppBar>
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={reloadApp}>
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
           {/* The pb wrapper tracks the banner + FAB clearance; it is the
               parent of the status <section>s (the inbox FAB/--banner-h contract). */}
           <div data-testid="inbox-content" className="pb-[calc(var(--banner-h,0px)+var(--safe-bottom)+88px)]">
