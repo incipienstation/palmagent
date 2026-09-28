@@ -68,11 +68,11 @@ export function MermaidBlock({ source }: { source: string }) {
   // Keep the Markdown row at its final viewer height while Mermaid loads or
   // falls back to source. Otherwise replacing a long fence changes the virtual
   // row size during reverse scrolling.
-  const blockHeight = "calc(max(11rem, min(50dvh, 24rem)) + 8rem)";
+  const blockHeight = "calc(clamp(10rem, 30dvh, 16rem) + 2.25rem)";
   return <div data-mermaid-block className="my-2 flex min-w-0 flex-col overflow-hidden rounded-md border border-border bg-muted"
     style={{ height: blockHeight }}>
     {current?.url ? <>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1">
         <Suspense fallback={<p className="p-3 text-xs text-muted-foreground" role="status">Loading diagram controls…</p>}>
           <MermaidViewport key={current.url} url={current.url} />
         </Suspense>
