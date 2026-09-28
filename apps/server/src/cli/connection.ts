@@ -10,6 +10,6 @@ export function connectionInfo(cfg: Pick<InstallConfig, "host" | "port" | "authO
     rpId: cfg.rpId,
     upstream: httpOrigin(cfg.host, cfg.port),
     healthPath: "/api/health",
-    proxy: HOST_INGRESS_REQUIREMENTS, httpOrigin,
+    proxy: HOST_INGRESS_REQUIREMENTS,
   } as const;
 }

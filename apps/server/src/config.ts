@@ -89,7 +89,7 @@ const authEnabled =
 const rpId = env.AUTH_RP_ID ?? (authEnabled ? "" : "localhost");
 
 // Persistent state dir (XDG): DISPATCHER_DATA_DIR > $XDG_STATE_HOME/<name> > ~/.local/state/<name>.
-const dataDir = resolveStateDirectory(BRANDING.stateDirName, undefined, env);
+const dataDir = resolveStateDirectory(BRANDING.stateDirName, env.DISPATCHER_DATA_DIR, { XDG_STATE_HOME: env.XDG_STATE_HOME });
 
 const palmagentDbPath = join(dataDir, "palmagent.db");
 const legacyDbPath = join(dataDir, "dispatcher.db");

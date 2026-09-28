@@ -1,15 +1,16 @@
+import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
 import type { ImageAttachment } from "@palmagent/shared";
 import { rasterImage } from "./output-images.js";
 import { ApplicationError } from "../errors.js";
 
-const MAX_BYTES = 4.5 * 1024 * 1024;
+const MAX_BYTES = INPUT_IMAGE_POLICY.maxBytes;
 
 /** Shared bounded input contract for every task and message entry point. */
 export function sanitizeImages(raw: unknown): ImageAttachment[] | undefined {
   if (raw == null) return undefined;
   if (!Array.isArray(raw)) throw new ApplicationError("bad_request", "images must be an array");
   if (!raw.length) return undefined;
-  if (raw.length > 8) throw new ApplicationError("bad_request", "Too many images (max 8)");
+  if (raw.length > INPUT_IMAGE_POLICY.maxCount) throw new ApplicationError("bad_request", `Too many images (max ${INPUT_IMAGE_POLICY.maxCount})`);
   return raw.map((value, index) => {
     const mediaType = String(value?.mediaType ?? "");
     const data = String(value?.data ?? "").replace(/^data:[^,]*,/, "").replace(/\s+/g, "");

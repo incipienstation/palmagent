@@ -75,3 +75,14 @@ test('shared files cannot accidentally become another discoverable skill', (t) =
   assert.throws(() => syncSkills(root), /supporting files only/);
   assert.equal(existsSync(join(root, targets[0], 'install/SKILL.md')), false);
 });
+
+test('runtime ingress contract is checked and copied into every standalone renderer layout', (t) => {
+  const { root, write, targets } = fixture(t);
+  const policy = JSON.stringify({ maxBodyBytes: 48_000_000 });
+  write('packages/shared/src/ingress-policy.json', policy);
+  assert.ok(syncSkills(root, { check: true }).drift.includes('skills/.shared/ingress-policy.json'));
+  assert.equal(existsSync(join(root, 'skills/.shared/ingress-policy.json')), false);
+  syncSkills(root);
+  for (const base of ['skills', ...targets]) assert.equal(readFileSync(join(root, base, '.shared/ingress-policy.json'), 'utf8'), policy);
+  assert.deepEqual(syncSkills(root, { check: true }).drift, []);
+});

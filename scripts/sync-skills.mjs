@@ -28,14 +28,17 @@ export function syncSkills(root, { check = false } = {}) {
     : [];
   if (!names.length) throw new Error('no canonical skills found under skills/<name>/SKILL.md');
 
-  const shared = sharedFiles(canonical);
+  // Runtime contracts are projected into each standalone operator package.
+  const contracts = new Map(['ingress-policy.json'].map(name => [join('.shared', name), join(root, 'packages/shared/src', name)])
+    .filter(([, source]) => existsSync(source)));
+  const shared = [...new Set([...sharedFiles(canonical), ...contracts.keys()])];
   // Inventory before writes so invalid supporting entries cannot cause a partial sync.
   const inventories = targets.map(sharedFiles);
   const files = [...names.map((name) => join(name, 'SKILL.md')), ...shared];
   const drift = [];
   for (const file of files) {
-    const source = readFileSync(join(canonical, file));
-    for (const base of targets) {
+    const source = readFileSync(contracts.get(file) ?? join(canonical, file));
+    for (const base of contracts.has(file) ? [canonical, ...targets] : targets) {
       const destination = join(base, file);
       if (check) {
         if (!existsSync(destination) || !readFileSync(destination).equals(source)) {

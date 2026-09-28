@@ -1,3 +1,4 @@
+import { codexSandbox } from "@palmagent/shared";
 import type { AgentEventKind, AgentEventPayloads } from "@palmagent/shared";
 import type { ImageAttachment, QuestionRequest } from "@palmagent/shared";
 import type { Emit, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
@@ -21,13 +22,12 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
   const questions = new Map<string, QuestionRequest>();
   if (reattach && args.pendingInput) questions.set(args.pendingInput.requestId, args.pendingInput);
   const permission = args.permission;
-  const sandbox = permission === "read-only" || permission === "readonly" ? "read-only"
-    : permission === "danger-full-access" || permission === "full" ? "danger-full-access" : "workspace-write";
+  const { mode: sandbox, network } = codexSandbox(permission);
   const proc = reattach ? backend.attach(taskId, 0) : backend.start({
     turnId: taskId, command: "codex", cwd: args.cwd,
     argv: ["app-server", "--listen", "stdio://", "-c", 'approval_policy="never"',
       "-c", `sandbox_mode=${JSON.stringify(sandbox)}`,
-      ...(permission === "workspace-write-net" ? ["-c", "sandbox_workspace_write.network_access=true"] : [])],
+      ...(network ? ["-c", "sandbox_workspace_write.network_access=true"] : [])],
     ...(args.providerHome ? { env: { CODEX_HOME: args.providerHome } } : {}),
   });
   if (!proc) {

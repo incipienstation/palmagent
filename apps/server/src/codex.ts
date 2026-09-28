@@ -1,3 +1,4 @@
+import { codexSandbox } from "@palmagent/shared";
 import { startCodexInteractive } from "./codex-interactive.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -43,24 +44,6 @@ function spillImages(images: ImageAttachment[] | undefined): { argv: string[]; c
 // approval_policy is always "never" (headless). Accepts native values AND the
 // legacy shared enum (readonly|auto-edit|full); unknown → the safe default
 // (workspace-write). See PERMISSIONS in @palmagent/shared.
-interface CodexSandbox {
-  mode: string; // sandbox_mode: read-only | workspace-write | danger-full-access
-  network?: boolean; // workspace-write only → sandbox_workspace_write.network_access
-}
-const SANDBOX: Record<string, CodexSandbox> = {
-  "read-only": { mode: "read-only" },
-  "workspace-write": { mode: "workspace-write" },
-  "workspace-write-net": { mode: "workspace-write", network: true },
-  "danger-full-access": { mode: "danger-full-access" },
-  // legacy shared-enum values (pre per-agent permissions)
-  readonly: { mode: "read-only" },
-  "auto-edit": { mode: "workspace-write" },
-  full: { mode: "danger-full-access" },
-};
-function codexSandbox(permission?: string): CodexSandbox {
-  return SANDBOX[permission ?? ""] ?? SANDBOX["workspace-write"];
-}
-
 type CodexLaunchArgs = Pick<StartArgs, "prompt" | "resumeId" | "permission" | "model" | "effort">;
 
 export function buildCodexArgv(

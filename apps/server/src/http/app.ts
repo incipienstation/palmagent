@@ -1,3 +1,4 @@
+import { HOST_INGRESS_REQUIREMENTS } from "@palmagent/shared";
 import { voiceRoutes } from "./routes/voice.js";
 import { terminalRoutes } from "./routes/terminals.js";
 import { Hono } from "hono";
@@ -23,7 +24,7 @@ import type { HttpDependencies } from "./types.js";
 export const MAX_BODY_BYTES = 1024 * 1024;
 // Only task creation, messages (including queue edits), follow-up and steering
 // accept base64 images. Decoded image/count limits remain in the service.
-export const MAX_IMAGE_BODY_BYTES = 48_000_000;
+export const MAX_IMAGE_BODY_BYTES = HOST_INGRESS_REQUIREMENTS.maxBodyBytes;
 const IMAGE_BODY_PATH = /^\/api\/tasks(?:\/[^/]+\/(?:messages(?:\/[^/]+)?|followup|steer))?$/;
 export function createApp(deps: HttpDependencies) {
   const { service, config } = deps;

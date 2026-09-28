@@ -1,3 +1,4 @@
+import { ImageDimensionSchema } from "./attachments.js";
 import { SelectedSkillsSchema } from "./skills.js";
 import { z } from "zod";
 export { UpdateSettingsChangeSchema } from "./updates.js";
@@ -9,7 +10,7 @@ const agent = z.enum(["claude", "codex"]);
 const text = z.string();
 const required = text.min(1);
 const settings = { permission: text.optional(), model: text.optional(), effort: text.optional() };
-const imageDimension = z.number().int().min(1).max(100_000);
+const imageDimension = ImageDimensionSchema;
 export const ImageAttachmentSchema = z.object({ mediaType: text, data: text,
   width: imageDimension.optional(), height: imageDimension.optional() })
   .refine(({ width, height }) => (width === undefined) === (height === undefined));

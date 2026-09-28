@@ -54,3 +54,19 @@ export const DEFAULT_PERMISSION: Record<AgentKind, string> = {
 export function defaultPermission(agent: AgentKind): string {
   return DEFAULT_PERMISSION[agent];
 }
+
+const LEGACY_PERMISSION: Record<AgentKind, Record<string, string>> = {
+  claude: { default: "auto", readonly: "plan", "auto-edit": "acceptEdits", full: "bypassPermissions" },
+  codex: { readonly: "read-only", "auto-edit": "workspace-write", full: "danger-full-access", "workspace-write-net": "workspace-write" },
+};
+/** Alias projection for display; unknown values remain visible. */
+export function permissionAlias(agent: AgentKind, value: string): string {
+  return LEGACY_PERMISSION[agent][value] ?? value;
+}
+export function normalizePermission(agent: AgentKind, value?: string): string {
+  const native = permissionAlias(agent, value ?? "");
+  return PERMISSIONS[agent].some(option => option.value === native) ? native : DEFAULT_PERMISSION[agent];
+}
+export function codexSandbox(permission?: string): { mode: string; network?: boolean } {
+  return { mode: normalizePermission("codex", permission), ...(permission === "workspace-write-net" ? { network: true } : {}) };
+}

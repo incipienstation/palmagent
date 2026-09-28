@@ -1,5 +1,5 @@
 import type { AnswerRequest, AskQuestion, ImageAttachment, PermissionRequest } from "@palmagent/shared";
-import { DEFAULT_PERMISSION } from "@palmagent/shared";
+import { normalizePermission } from "@palmagent/shared";
 import { config } from "./config.js";
 import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
@@ -18,21 +18,7 @@ const IDLE_CLOSE_MS = 1500; // grace after `result` before we close stdin → pr
 // (values verbatim). Accepts the native modes AND the legacy shared enum
 // (readonly|auto-edit|full) persisted before per-agent permissions; anything
 // unknown falls back to the agent default. See PERMISSIONS in @palmagent/shared.
-const PERMISSION_MODE: Record<string, string> = {
-  plan: "plan",
-  auto: "auto",
-  acceptEdits: "acceptEdits",
-  manual: "manual",
-  dontAsk: "dontAsk",
-  bypassPermissions: "bypassPermissions",
-  // Older settings called the provider default "default".
-  default: "auto",
-  // legacy shared-enum values (pre per-agent permissions)
-  readonly: "plan",
-  "auto-edit": "acceptEdits",
-  full: "bypassPermissions",
-};
-const permissionMode = (p?: string): string => PERMISSION_MODE[p ?? ""] ?? PERMISSION_MODE[DEFAULT_PERMISSION.claude];
+const permissionMode = (permission?: string) => normalizePermission("claude", permission);
 
 type ClaudeLaunchArgs = Pick<StartArgs, "permission" | "model" | "effort" | "resumeId">;
 type ClaudeUserMessage = {

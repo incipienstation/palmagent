@@ -1,3 +1,4 @@
+import { IMAGE_MEDIA_TYPES, INPUT_IMAGE_POLICY } from "@palmagent/shared";
 // Client-side image attachment prep: paste/file → ImageAttachment (base64).
 // Big images are downscaled to Claude's optimal long edge and re-encoded as
 // JPEG so a screenshot stays well under the proxy/body limits; small ones are
@@ -7,9 +8,9 @@ import type { ImageAttachment } from "@palmagent/shared";
 const LONG_EDGE = 1568; // Claude's documented optimal max long edge
 const PASSTHROUGH_BYTES = 350_000; // below this (and within LONG_EDGE) keep the original bytes
 const JPEG_QUALITY = 0.8;
-export const MAX_ATTACHMENTS = 8;
+export const MAX_ATTACHMENTS = INPUT_IMAGE_POLICY.maxCount;
 
-const ACCEPTED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const ACCEPTED = new Set<string>(IMAGE_MEDIA_TYPES);
 
 // Files from a paste event's clipboard (screenshots arrive as image/png files).
 export function imageFilesFromClipboard(dt: DataTransfer | null): File[] {

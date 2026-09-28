@@ -1,3 +1,4 @@
+import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, statfsSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -10,7 +11,7 @@ import { rasterImage, rasterMediaType } from "./application/output-images.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "./private-files.js";
 import { sanitizeImages } from "./application/image-input.js";
 
-const MAX_BYTES = 4.5 * 1024 * 1024;
+const MAX_BYTES = INPUT_IMAGE_POLICY.maxBytes;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const reference = ({ id, mediaType, size }: AttachmentRecord, image: ImageAttachment): Attachment => ({ id, mediaType, size,
   ...(image.width && image.height ? { width: image.width, height: image.height } : {}) });
