@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { api } from "../api";
+import { invalidateClientReads } from "../query-lifecycle";
 import { toast } from "../components/ui/toaster";
 let pending = false;
 const listeners = new Set<() => void>();
@@ -10,7 +11,7 @@ async function signOut() {
   pending = true; publish();
   try { await api.auth.logout(); window.location.reload(); }
   catch (error) {
-    try { const actual = await api.auth.me(); if (actual.required && !actual.authenticated) { window.location.reload(); return; } }
+    try { const actual = await api.auth.me(); if (actual.required && !actual.authenticated) { await invalidateClientReads(true); window.location.reload(); return; } }
     catch { /* Keep the page when session verification is unavailable. */ }
     toast({ title: "Couldn't sign out", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
   } finally { pending = false; publish(); }

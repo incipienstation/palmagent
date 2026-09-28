@@ -142,7 +142,7 @@ for (const first of ["catch-up", "older page"] as const) {
       await catchupPending;
       await route.fulfill({ json: { events: rows(2001, 2001), after: 2000, through: 2001, nextAfter: null } });
     });
-    await recent(page);
+    const latestReads = await recent(page);
     await viewport(page).evaluate(el => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     await expect.poll(() => olderRequests).toBe(1);
     await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2001 });
@@ -153,14 +153,21 @@ for (const first of ["catch-up", "older page"] as const) {
     await (await firstResponse).finished();
     // Let the completed response update the query before the second writer.
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const secondResponse = page.waitForResponse(response => first === "catch-up"
+      ? response.url().includes("/history?before=1801") : response.url().includes("/history/changes?"));
     (first === "catch-up" ? releaseOlder : releaseCatchup)();
+    await (await secondResponse).finished();
     await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-    // Pagination's loading state ends before Virtuoso commits its prepend anchor.
-    await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBeGreaterThan(1000);
     await deliver(page, rows(2002, 2002));
-    await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    // Reopen the cached conversation at the bottom. Its retained data must be
+    // correct independently of Virtuoso's asynchronous prepend scroll correction.
+    await page.evaluate(() => { location.hash = "/"; });
+    await expect(page.locator('[aria-label="Session transcript"]')).toHaveCount(0);
+    await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
     await expect(page.getByText("History message 2001", { exact: true })).toBeVisible();
     await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();
+    expect(latestReads()).toBe(1);
     // Duplicate frames cannot re-add a recovered event after its cursor advances.
     await deliver(page, rows(2001, 2002));
     await expect(page.getByText("History message 2001", { exact: true })).toHaveCount(1);

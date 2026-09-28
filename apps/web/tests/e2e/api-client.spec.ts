@@ -124,3 +124,23 @@ for (const operation of ["read", "logout"] as const) {
     assert.equal(active, 0);
   });
 }
+
+test("auth writes retire the session only after confirmed success", async () => {
+  let response = Promise.withResolvers<Response>();
+  const api = createApi({
+    version: () => "fixture", observeServerVersion: () => {},
+    beginBrowserWork: () => () => {}, onUnauthorized: () => assert.fail("unexpected 401"),
+  }, () => response.promise);
+  const generation = cacheSession();
+  const failed = api.auth.logout();
+  assert.equal(cacheSession(), generation);
+  response.resolve(Response.json({ error: "unavailable" }, { status: 503 }));
+  await assert.rejects(failed, { status: 503 });
+  assert.equal(cacheSession(), generation);
+  response = Promise.withResolvers<Response>();
+  const successful = api.auth.logout();
+  assert.equal(cacheSession(), generation);
+  response.resolve(Response.json({ ok: true }));
+  await successful;
+  assert.equal(cacheSession(), generation + 1);
+});
