@@ -69,3 +69,11 @@ test("maintenance releases normally and a reused PID cannot retain an old window
   writeFileSync(maintenancePath(dbPath), "malformed");
   assert.equal(isUpdateMaintenance(dbPath), true, "unreadable ownership must fail closed");
 });
+
+test("update idle verification formats an IPv6 listener as a URL", async (t) => {
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    assert.equal(new URL(input).origin, "http://[::1]:4100");
+    return Response.json({ ok: true, updateMaintenance: false });
+  });
+  await assert.rejects(verifyUpdateIdle({ host: "::1", port: 4100 } as InstallConfig), /maintenance/);
+});

@@ -1,16 +1,14 @@
-import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { BRANDING } from "@palmagent/shared";
 import { ATTACHMENT_DEFAULTS } from "./attachment-policy.js";
-import { expandHome } from "./paths.js";
+import { expandHome, resolveStateDirectory } from "./paths.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const isLoopbackHost = (value: string): boolean =>
-  value === "localhost" || value === "::1" || /^127(?:\.\d{1,3}){3}$/.test(value);
+import { LoopbackHost, Port, Concurrency, PushSubject } from "./config-fields.js";
 
 // Declarative env schema (zod). Parsed ONCE at import: it coerces + validates the
 // operational knobs and applies universally-safe defaults. It deliberately does
@@ -22,17 +20,13 @@ const isLoopbackHost = (value: string): boolean =>
 // default (unset ⇒ push disabled); repo-scan roots have no default (unset ⇒ off).
 const Env = z
   .object({
-    PORT: z.coerce.number().int().positive().default(4000),
-    HOST: z
-      .string()
-      .min(1)
-      .refine(isLoopbackHost, "HOST must be loopback; terminate public HTTPS at the reverse proxy")
-      .default("localhost"),
+    PORT: Port.default(4000),
+    HOST: LoopbackHost.default("localhost"),
     ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().safe().default(ATTACHMENT_DEFAULTS.maxBytes),
     ATTACHMENT_MIN_FREE_BYTES: z.coerce.number().int().nonnegative().safe().default(ATTACHMENT_DEFAULTS.minFreeBytes),
     ATTACHMENT_UNUSED_GRACE_HOURS: z.coerce.number().int().min(1).max(8760).default(24),
     ATTACHMENT_RETENTION_DAYS: z.coerce.number().int().min(0).max(36500).default(0),
-    DISPATCH_CONCURRENCY: z.coerce.number().int().min(1).default(8),
+    DISPATCH_CONCURRENCY: Concurrency.default(8),
     SSE_KEEPALIVE_MS: z.coerce.number().int().positive().default(15000),
     AUTH_SESSION_TTL_MS: z.coerce.number().int().positive().default(30 * 24 * 60 * 60 * 1000),
     AUTH_COOKIE_NAME: z.string().min(1).default("palmagent_session"),
@@ -48,10 +42,7 @@ const Env = z
     AUTH_ENABLED: z.string().optional(),
     AUTH_DISABLED: z.string().optional(),
     // Web Push (VAPID) contact. Optional, NO default — unset ⇒ push disabled.
-    PUSH_SUBJECT: z
-      .string()
-      .regex(/^(mailto:|https:\/\/)/, "PUSH_SUBJECT must be a mailto: or https:// URL")
-      .optional(),
+    PUSH_SUBJECT: PushSubject.optional(),
     // Paths. The data dir anchors DB + VAPID keys; everything is optional/derived.
     DISPATCHER_DATA_DIR: z.string().min(1).optional(),
     XDG_STATE_HOME: z.string().min(1).optional(),
@@ -98,11 +89,7 @@ const authEnabled =
 const rpId = env.AUTH_RP_ID ?? (authEnabled ? "" : "localhost");
 
 // Persistent state dir (XDG): DISPATCHER_DATA_DIR > $XDG_STATE_HOME/<name> > ~/.local/state/<name>.
-const dataDir = env.DISPATCHER_DATA_DIR
-  ? resolve(env.DISPATCHER_DATA_DIR)
-  : env.XDG_STATE_HOME
-    ? join(resolve(env.XDG_STATE_HOME), BRANDING.stateDirName)
-    : join(homedir(), ".local", "state", BRANDING.stateDirName);
+const dataDir = resolveStateDirectory(BRANDING.stateDirName, undefined, env);
 
 const palmagentDbPath = join(dataDir, "palmagent.db");
 const legacyDbPath = join(dataDir, "dispatcher.db");
