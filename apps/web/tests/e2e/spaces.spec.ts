@@ -214,6 +214,8 @@ for (const width of [320, 360]) test(`mobile search stays reachable below the li
   await expect(clear).toBeInViewport({ ratio: 1 });
   await clear.tap();
   await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await page.getByRole("button", { name: "Close Space search" }).tap();
   await expect(search).not.toBeFocused();
   const last = page.getByRole("region", { name: "Spaces list" }).getByRole("button").last();
   await last.scrollIntoViewIfNeeded();
@@ -240,6 +242,51 @@ test("desktop search stays above the list and resizing preserves the same query 
   await expect(search).toHaveValue("experiments");
   await expect.poll(async () => (await search.boundingBox())!.y).toBeGreaterThan(690);
   await search.press("Escape");
-  await expect(search).toHaveValue("");
+  await expect(search).toHaveValue("experiments");
+  await expect(search).not.toBeFocused();
   await assertViewportLocked(page);
+});
+
+for (const layout of [false, true]) for (const query of ["", "experiments", "   "]) test(`Space search preserves its query on keyboard dismissal (${layout ? "Android" : "Safari"}, ${JSON.stringify(query)})`, async ({ page }) => {
+  await setup(page, "/#/spaces");
+  const search = page.getByRole("searchbox", { name: "Search Spaces" });
+  await search.fill(query);
+  const viewport = async (height: number) => page.evaluate(({ height, layout }) => {
+    if (layout) Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, value: height });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("resize"));
+  }, { height, layout });
+  await viewport(730); await viewport(780);
+  await expect(search).toBeFocused();
+  await viewport(480);
+  await expect(search).toBeFocused();
+  await viewport(780);
+  await expect(search).not.toBeFocused();
+  await expect(search).toHaveValue(query);
+  await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Clear Space search" })).toHaveCount(query.trim() ? 1 : 0);
+  await search.focus();
+  await expect(search).toBeFocused();
+});
+
+test("Space search clearing keeps editing active and closing preserves filters", async ({ page }) => {
+  await setup(page, "/#/spaces");
+  const search = page.getByRole("searchbox", { name: "Search Spaces" });
+  await search.fill("not-found");
+  await page.getByRole("button", { name: "Clear search", exact: true }).tap();
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await search.fill("experiments");
+  await search.press("Enter");
+  await expect(search).not.toBeFocused();
+  await expect(search).toHaveValue("experiments");
+  await page.getByRole("button", { name: "Clear Space search" }).tap();
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await search.press("Tab");
+  await expect(page.getByRole("button", { name: "Close Space search" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
+  await expect(search).not.toBeFocused();
 });

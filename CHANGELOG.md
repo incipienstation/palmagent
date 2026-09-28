@@ -6,11 +6,16 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Spaces search leaves editing mode when the mobile keyboard closes without losing the query. Clearing a search keeps the input ready for typing, and whitespace-only input is treated as empty.
+
 ## 0.1.0-alpha.116
 
 ### Changed
 
 - Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/d2b879abf24da8fcef8307e0c355fae941381eb1...b1425882e1646fad4051ee94e24f15d240cf06f8) for details.
+
 
 ## 0.1.0-alpha.115
 
