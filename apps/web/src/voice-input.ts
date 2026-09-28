@@ -3,7 +3,8 @@ import { api } from "./api";
 import { beginBrowserWork } from "./update-state";
 
 export type VoiceState = "idle" | "recording" | "stopping";
-export const VOICE_METER_BARS = 17;
+export const VOICE_METER_BARS = 128;
+export const VOICE_METER_INTERVAL_MS = 100;
 const elapsedMs = (start: number) => Math.round((performance.now() - start) * 10) / 10;
 const VOICE_BUFFER_MAX_SECONDS = 27;
 const VOICE_BUFFER_WORKLET_URL = new URL("voice-buffer-worklet.js", document.baseURI).href;
@@ -98,30 +99,19 @@ export class VoiceInput {
         this.bufferDrained = true;
       }
       const wave = new Float32Array(analyser.fftSize);
-      const spectrum = new Uint8Array(analyser.frequencyBinCount);
+      const history = Array<number>(VOICE_METER_BARS).fill(0);
+      let lastMeterAt = performance.now();
       this.tick = setInterval(() => {
         if (!this.finishing) {
           analyser.getFloatTimeDomainData(wave);
-          const hasSpectrum = spectrum.length > 0 && typeof analyser.getByteFrequencyData === "function";
-          if (hasSpectrum) analyser.getByteFrequencyData(spectrum);
-          const levels = Array.from({ length: VOICE_METER_BARS }, (_, index) => {
-            if (hasSpectrum) {
-              const maxBin = Math.max(VOICE_METER_BARS, Math.floor(spectrum.length * 0.6));
-              const start = Math.floor((index / VOICE_METER_BARS) ** 2 * maxBin);
-              const end = Math.min(maxBin, Math.max(start + 1, Math.floor(((index + 1) / VOICE_METER_BARS) ** 2 * maxBin)));
-              let peak = 0;
-              for (let bin = start; bin < end; bin++) peak = Math.max(peak, spectrum[bin]);
-              return Math.max(0, Math.min(1, (peak - 24) / 170));
-            }
-            const start = Math.floor(index * wave.length / VOICE_METER_BARS);
-            const end = Math.floor((index + 1) * wave.length / VOICE_METER_BARS);
-            let energy = 0;
-            for (let sample = start; sample < end; sample++) energy += wave[sample] * wave[sample];
-            const rms = Math.sqrt(energy / Math.max(1, end - start));
-            return Math.min(1, rms * 28);
-          });
-          this.meter(levels);
           const rms = Math.sqrt(wave.reduce((sum, value) => sum + value * value, 0) / wave.length);
+          const now = performance.now();
+          if (now - lastMeterAt >= VOICE_METER_INTERVAL_MS) {
+            history.shift();
+            history.push(Math.min(1, rms * 28));
+            this.meter([...history]);
+            lastMeterAt = now;
+          }
           if (rms > 0.01) {
             const now = performance.now();
             this.firstVoiceAt ??= now;

@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Voice input shows recent microphone volume scrolling left, with new speech appearing on the right.
+
 ## 0.1.0-alpha.122
 
 ### Changed
