@@ -28,7 +28,7 @@ function rgb(hex: string): string {
 async function expectBrandFocusBorder(control: Locator, color: string): Promise<void> {
   await control.focus();
   await expect(control).toBeFocused();
-  await expect.poll(() => control.evaluate(element => getComputedStyle(element).borderTopColor)).toBe(rgb(color));
+  await expect.poll(() => control.evaluate(element => getComputedStyle(element.closest('[data-slot="input-group"]') ?? element).borderTopColor)).toBe(rgb(color));
 }
 
 for (const theme of ["light", "dark"] as const) {
