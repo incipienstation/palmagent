@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetBody, SheetContent, SheetHeaderRow, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
@@ -65,24 +65,23 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
-      <SheetContent className="h-[min(680px,90dvh)] max-h-[90dvh] max-w-[640px]" onCloseAutoFocus={onCloseAutoFocus}>
-        <SheetHeader className="shrink-0 gap-0 px-5 pt-1 pb-4">
-          <div className="flex min-h-11 items-center gap-2">
+      <SheetContent size="panel" onCloseAutoFocus={onCloseAutoFocus}>
+        <SheetHeader>
+          <SheetHeaderRow>
             {!home && <Button variant="ghost" size="icon-lg" aria-label="Back to settings" onClick={() => setSection("general")}>
               <ArrowLeft />
             </Button>}
-            <SheetTitle asChild className="flex-1 text-[22px] tracking-tight outline-none">
+            <SheetTitle asChild className="outline-none">
               <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Repository search paths" : section === "base-branches" ? "Space settings" : "Updates"}</h2>
             </SheetTitle>
             <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
-          </div>
-          <SheetDescription className={home ? "text-[13px]" : "sr-only"}>
+          </SheetHeaderRow>
+          <SheetDescription className={home ? undefined : "sr-only"}>
             {home ? "Preferences and installation" : section === "spaces" ? "Manage folders searched for repositories on this installation." : "Manage Palmagent updates on this installation."}
           </SheetDescription>
         </SheetHeader>
-        <Separator />
 
-        <div hidden={!home} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-2", !home && "hidden")}>
+        <SheetBody hidden={!home} data-slot="settings-scroll" className={cn(!home && "hidden")}>
           <div className="flex flex-col gap-6">
             <SettingsGroup label="On this device">
               <FieldGroup className="gap-0 rounded-xl border border-border bg-background/50 px-3.5">
@@ -175,16 +174,16 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               </AlertDialogContent>
             </AlertDialog>
           </div>
-        </div>
-        <div hidden={section !== "spaces"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "spaces" && "hidden")}>
+        </SheetBody>
+        <SheetBody hidden={section !== "spaces"} data-slot="settings-scroll" className={cn(section !== "spaces" && "hidden")}>
           {open && <RepoSettings />}
-        </div>
-        <div hidden={section !== "base-branches"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "base-branches" && "hidden")}>
+        </SheetBody>
+        <SheetBody hidden={section !== "base-branches"} data-slot="settings-scroll" className={cn(section !== "base-branches" && "hidden")}>
           {open && <SpaceSettings />}
-        </div>
-        <div hidden={section !== "updates"} data-slot="settings-scroll" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2", section !== "updates" && "hidden")}>
+        </SheetBody>
+        <SheetBody hidden={section !== "updates"} data-slot="settings-scroll" className={cn(section !== "updates" && "hidden")}>
           {open && <UpdateSettings />}
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

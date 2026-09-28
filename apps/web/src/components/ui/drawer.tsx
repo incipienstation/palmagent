@@ -40,21 +40,23 @@ function DrawerContent({
   className,
   children,
   side = "bottom",
+  size = "content",
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left" }) {
+}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left"; size?: "content" | "panel" }) {
   return (
     <DrawerPortal>
       <DrawerOverlay />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(
-          "fixed z-50 flex flex-col bg-card",
-          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : "inset-x-0 bottom-0 mx-auto h-auto w-full max-w-[720px] rounded-t-3xl border border-b-0 border-input",
+          "fixed z-50 flex min-h-0 flex-col bg-card",
+          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : "inset-x-0 bottom-0 mx-auto h-auto max-h-[min(90dvh,calc(var(--app-height,100dvh)-16px))] w-full max-w-[720px] rounded-t-3xl border border-b-0 border-border pb-[var(--safe-bottom,0px)]",
+          side === "bottom" && size === "panel" && "h-[680px]",
           className,
         )}
         {...props}
       >
-        {side === "bottom" && <div className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />}
+        {side === "bottom" && <div aria-hidden="true" className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />}
         {children}
       </DrawerPrimitive.Content>
     </DrawerPortal>
@@ -65,10 +67,21 @@ function DrawerHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="drawer-header"
-      className={cn("flex flex-col gap-2.5 border-b border-border px-3.5 pt-1 pb-3", className)}
+      className={cn("flex shrink-0 flex-col gap-1 px-4 pt-2 pb-1", className)}
       {...props}
     />
   );
+}
+
+// Use a row for titles with navigation or close controls; long titles wrap.
+function DrawerHeaderRow({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="drawer-header-row" className={cn("flex min-h-11 min-w-0 items-center gap-2", className)} {...props} />;
+}
+
+// Only the body scrolls. The content owns the viewport cap and safe-area inset,
+// so short sheets fit their content and long sheets keep their actions reachable.
+function DrawerBody({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="drawer-body" className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-4", className)} {...props} />;
 }
 
 function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
@@ -76,7 +89,7 @@ function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="drawer-footer"
       className={cn(
-        "flex flex-col gap-2.5 border-t border-border bg-card px-3.5 pt-2.5 pb-[calc(12px+var(--safe-bottom))]",
+        "flex shrink-0 flex-col gap-2 px-4 pt-1 pb-4",
         className,
       )}
       {...props}
@@ -88,7 +101,7 @@ function DrawerTitle({ className, ...props }: React.ComponentProps<typeof Drawer
   return (
     <DrawerPrimitive.Title
       data-slot="drawer-title"
-      className={cn("flex-1 text-base font-semibold text-strong", className)}
+      className={cn("min-w-0 flex-1 text-base font-semibold text-strong [overflow-wrap:anywhere]", className)}
       {...props}
     />
   );
@@ -101,7 +114,7 @@ function DrawerDescription({
   return (
     <DrawerPrimitive.Description
       data-slot="drawer-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-muted-foreground [overflow-wrap:anywhere]", className)}
       {...props}
     />
   );
@@ -115,6 +128,8 @@ export {
   DrawerClose,
   DrawerContent,
   DrawerHeader,
+  DrawerHeaderRow,
+  DrawerBody,
   DrawerFooter,
   DrawerTitle,
   DrawerDescription,

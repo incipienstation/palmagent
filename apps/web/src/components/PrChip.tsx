@@ -2,7 +2,7 @@ import type { PrRef } from "@palmagent/shared";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 // Per-PR status → dot color + label + an "urgency" rank. Color comes from the
@@ -100,7 +100,7 @@ function PrSheet({ prs, open, onOpenChange }: { prs: PrRef[]; open: boolean; onO
           <SheetTitle>Pull requests</SheetTitle>
           <SheetDescription>{prs.length} opened in this task</SheetDescription>
         </SheetHeader>
-        <PrList prs={prs} />
+        <SheetBody><PrList prs={prs} /></SheetBody>
       </SheetContent>
     </Sheet>
   );
@@ -109,7 +109,7 @@ function PrSheet({ prs, open, onOpenChange }: { prs: PrRef[]; open: boolean; onO
 // Shared with Session details so task links do not open a second sheet.
 export function PrList({ prs }: { prs: PrRef[] }) {
   return (
-    <ul className="flex max-h-[60vh] flex-col overflow-y-auto px-2 pb-1">
+    <ul className="flex flex-col">
       {prs.map((pr) => {
         const tone = prTone(pr);
         return (

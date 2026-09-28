@@ -42,7 +42,7 @@ import { Alert } from "./ui/alert";
 import { SessionActionsMenu } from "./SessionActionsMenu";
 import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
 export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated, initialRepoId }: { initialRepoId?: string; taskId?: string; task?: TaskState; onCreated?: (task: TaskState) => void }) {
   const taskId = existingId ?? "new";
@@ -87,12 +87,12 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
           </>}
         </AppBar>
-        <SheetContent className="max-h-[85dvh]" onCloseAutoFocus={event => {
+        <SheetContent onCloseAutoFocus={event => {
           event.preventDefault();
           taskActionsTrigger.current?.focus({ preventScroll: true });
         }}>
           <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription className="break-words">{heading}</SheetDescription></SheetHeader>
-          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-2 text-sm [overflow-wrap:anywhere]">
+          <SheetBody className="flex flex-col gap-4 text-sm [overflow-wrap:anywhere]">
             {task && <div className="flex flex-wrap items-center gap-2"><AgentTag agent={task.agent} /><StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} /><ConnPill conn={conn} /></div>}
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
               {task?.worktreePath && <><dt>Directory</dt><dd>{task.worktreePath}</dd></>}
@@ -104,7 +104,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             </dl>
             {!!task?.prs?.length && <section aria-label="Pull requests"><h3 className="text-sm font-semibold">Pull requests</h3><PrList prs={task.prs} /></section>}
             {task?.sessionId && <><Separator /><SessionHandoff task={task} /></>}
-          </div>
+          </SheetBody>
         </SheetContent>
       </Sheet>
 

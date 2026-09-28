@@ -38,7 +38,7 @@ test.describe("task detail", () => {
     );
     // Tap the overlay above the sheet — must close it (regression: a stop-propagation
     // wrapper around the sheet used to swallow vaul's overlay-dismiss click).
-    await page.locator('[data-slot="sheet-overlay"]').click({ position: { x: 180, y: 80 } });
+    await page.locator('[data-slot="drawer-overlay"]').click({ position: { x: 180, y: 80 } });
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeFocused();
   });

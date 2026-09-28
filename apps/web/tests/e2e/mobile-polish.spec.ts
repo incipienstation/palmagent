@@ -170,7 +170,7 @@ test("Settings controls remain reachable while scrolling on a narrow phone", asy
   const settings = page.getByRole("button", { name: "Settings", exact: true });
   await expectTouchTarget(settings);
   await settings.click();
-  const header = page.locator('[data-slot="sheet-header"]');
+  const header = page.locator('[data-slot="drawer-header"]');
   for (const name of ["Repository search paths", "Updates"]) {
     await page.getByRole("button", { name, exact: true }).click();
     const back = page.getByRole("button", { name: "Back to settings" });

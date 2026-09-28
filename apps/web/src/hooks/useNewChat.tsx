@@ -22,7 +22,7 @@ import { selectablePermission } from "../components/PermissionPicker";
 import { RepoPicker } from "../components/RepoPicker";
 import type { DeliveryControls } from "../components/MessageDelivery";
 import { Button } from "../components/ui/button";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "../components/ui/drawer";
+import { Drawer, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle, DrawerDescription } from "../components/ui/drawer";
 import { Alert } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../components/ui/field";
@@ -219,11 +219,11 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     onChanged={() => { void refresh().catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} />
     <Drawer open={!!conflictingSpace} onOpenChange={open => { if (!open) setConflictingSpace(undefined); }}>
       <DrawerContent><DrawerHeader><DrawerTitle>A draft is already saved in this Space</DrawerTitle><DrawerDescription>Your current draft will stay saved in its original Space.</DrawerDescription></DrawerHeader>
-        <div className="flex flex-col gap-2 px-5 pb-[calc(24px+var(--safe-bottom))]">
+        <DrawerFooter className="pt-3">
           <Button onClick={() => selectSpace(conflictingSpace!, false, true)}>Open saved draft</Button>
           <Button variant="outline" onClick={() => selectSpace(conflictingSpace!, true)}>Replace saved draft with current draft</Button>
           <Button variant="ghost" onClick={() => setConflictingSpace(undefined)}>Cancel</Button>
-        </div>
+        </DrawerFooter>
       </DrawerContent>
     </Drawer></>;
   return { composer, workspace, notices, picker, delivery, preview };
