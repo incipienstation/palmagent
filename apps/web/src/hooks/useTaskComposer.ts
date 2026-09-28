@@ -123,7 +123,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const active = running || status === "queued" || awaiting || needsInput;
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
-  const composeMode: "steer" | "followup" | null = localOwner || status === "archived" || status === "cancelled" ? null : running
+  const composeMode: "steer" | "followup" | null = !task || localOwner || status === "archived" || status === "cancelled" ? null : running
     ? "steer"
     : status === "idle" || status === "failed" || deliveryMode === "queue"
       ? "followup"

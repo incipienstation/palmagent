@@ -24,7 +24,7 @@ test("terminal creation uses its response without an empty frame or waiting for 
   refresh.release();
 });
 
-test("a cold conversation keeps its composer through the first snapshot", async ({ page }) => {
+for (const mode of ["send", "queue"] as const) test(`a cold conversation keeps its ${mode} composer through the first snapshot`, async ({ page }) => {
   const delayed = gate();
   await page.route("**/api/stream?*", async route => { await delayed.wait; await route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: [task], historyThrough: 0 })}\n\n` }); });
   const task = tasks.find(task => task.taskId === "t-idle") ?? tasks.find(task => task.status === "idle")!;
@@ -32,12 +32,14 @@ test("a cold conversation keeps its composer through the first snapshot", async 
     await delayed.wait;
     await route.fulfill({ json: { events: [], cursor: 0, before: null, task } });
   });
+  await page.addInitScript(({ id, mode }) => { localStorage.setItem(`delivery:${id}`, mode); localStorage.setItem(`draft:compose:${id}`, "Saved draft"); }, { id: task.taskId, mode });
   await page.goto(`/#/task/${task.taskId}`);
   await expect(page.getByRole("heading", { name: "Conversation", exact: true })).toBeVisible();
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeVisible();
+  await expect(composer).toBeDisabled();
   const node = await composer.elementHandle();
-  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: mode === "send" ? "Send now" : "Add to queue", exact: true })).toBeDisabled();
   delayed.release();
   await expect(page.getByRole("heading", { name: "Conversation", exact: true })).toHaveCount(0);
   expect(await node!.evaluate(el => el.isConnected)).toBe(true);
