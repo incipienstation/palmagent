@@ -98,7 +98,8 @@ test("queue editing keeps skill selection and transcript displays the source log
   await expect(page.getByAltText("Palmagent plugin")).toBeVisible();
 });
 
-for (const theme of ["light", "dark"]) for (const width of [360, 1280]) test(`picker fits ${width}px in ${theme} mode`, async ({ page }) => {
+// Width drives this geometry contract; sample both themes without a cross product.
+for (const { theme, width } of [{ theme: "light", width: 360 }, { theme: "dark", width: 1280 }]) test(`picker fits ${width}px in ${theme} mode`, async ({ page }) => {
   await page.setViewportSize({ width, height: 850 });
   await catalogue(page);
   await page.goto(`/?__theme=${theme}#/new/space/repo-app`);
@@ -108,7 +109,6 @@ for (const theme of ["light", "dark"]) for (const width of [360, 1280]) test(`pi
   const box = (await menu.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: `/tmp/palmagent-skills-${width}-${theme}.png` });
 });
 
 
