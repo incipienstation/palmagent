@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Previously rendered Mermaid diagrams appear immediately when revisiting a conversation or scrolling back to them, with a bounded cache cleared on session changes.
+
 ## 0.1.0-alpha.127
 
 ### Fixed
