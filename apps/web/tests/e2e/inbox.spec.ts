@@ -9,11 +9,8 @@ test.describe("inbox", () => {
     await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   });
 
-  test("sets the per-route document title (page-first + brand suffix)", async ({ page }) => {
+  test("sets the inbox title and renders every status group within the viewport", async ({ page }) => {
     await expect(page).toHaveTitle("All spaces · PalmAgent");
-  });
-
-  test("renders every status group", async ({ page }) => {
     await assertViewportLocked(page);
     // Nothing the backend can emit may silently vanish from the inbox.
     for (const label of ["Needs your answer", "Needs your approval", "Working now", "Up next", "Done", "Failed", "Cancelled", "Archived"]) {

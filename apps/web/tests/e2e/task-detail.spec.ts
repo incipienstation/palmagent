@@ -9,7 +9,7 @@ test.describe("task detail", () => {
     await expect(page.getByText("Harness scaffolded and passing.")).toBeVisible();
   });
 
-  test("the event log never overflows horizontally, even with a long unbroken URL", async ({ page }) => {
+  test("event log wraps long URLs and shows the prompt with a follow-up composer", async ({ page }) => {
     // Guards against Radix ScrollArea widening the document:
     // a long, space-free token must wrap inside the pane, never widen it.
     const overflow = await page.evaluate(() => {
@@ -18,16 +18,12 @@ test.describe("task detail", () => {
       return log.scrollWidth - log.clientWidth;
     });
     expect(overflow, "event log pane overflows horizontally").toBeLessThanOrEqual(1);
-  });
-
-  test("shows the dispatch prompt as a user bubble and a follow-up composer", async ({ page }) => {
     await page.locator("[data-radix-scroll-area-viewport]").first().evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     await expect(page.getByRole("group", { name: "Your message", exact: true })).toBeVisible();
     await expect(page.getByText("You", { exact: true })).toHaveCount(0);
     // idle task → follow-up composer is enabled.
     await expect(page.getByPlaceholder(/Send a follow-up turn/)).toBeVisible();
   });
-
 
   test("the overflow opens session details listing every PR the task opened", async ({ page }) => {
     // Task links share the details sheet with configuration and handoff.
