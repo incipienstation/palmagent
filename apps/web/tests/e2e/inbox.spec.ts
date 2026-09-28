@@ -59,3 +59,53 @@ test.describe("inbox", () => {
   });
 
 });
+
+for (const width of [320, 360, 1280]) test(`task search shares the inline-clear dock without overlapping New task at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await page.goto("/#/spaces/repo-app");
+  const search = page.getByRole("searchbox", { name: "Search tasks" });
+  const form = page.getByRole("search", { name: "Search tasks" });
+  const create = page.getByRole("button", { name: "Dispatch new task" });
+  await expect(search).toBeVisible();
+  await expect(search).not.toBeFocused();
+  const input = await search.elementHandle();
+  const initial = (await form.boundingBox())!;
+  if (width < 768) {
+    expect(initial.y).toBeGreaterThan(690);
+    const action = (await create.boundingBox())!;
+    expect(action.y + action.height).toBeLessThan(initial.y);
+    const list = (await page.locator('.overscroll-contain:has([data-testid="inbox-content"])').boundingBox())!;
+    expect(list.y + list.height).toBeLessThanOrEqual(action.y);
+  } else expect(initial.y).toBeLessThan(120);
+  await search.fill("QA");
+  const clear = page.getByRole("button", { name: "Clear task search" });
+  expect(await clear.evaluate(el => el.closest('[data-slot="input-group"]') !== null)).toBe(true);
+  expect((await form.boundingBox())!.width).toBe(initial.width);
+  await clear.click();
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await expect(clear).toHaveCount(0);
+  await search.fill("QA");
+  if (width < 768) {
+    for (const height of [420, 780]) {
+      await page.evaluate(height => {
+        Object.defineProperty(window.visualViewport, "height", { configurable: true, value: height });
+        window.visualViewport!.dispatchEvent(new Event("resize"));
+      }, height);
+      await expect.poll(async () => { const box = (await form.boundingBox())!; return box.y + box.height; }).toBeLessThanOrEqual(height);
+      const action = (await create.boundingBox())!;
+      expect(action.y + action.height).toBeLessThan((await form.boundingBox())!.y);
+    }
+    await expect(search).not.toBeFocused();
+  } else {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await expect.poll(async () => (await form.boundingBox())!.y).toBeGreaterThan(690);
+  }
+  await expect(search).toHaveValue("QA");
+  expect(await input!.evaluate(el => el.isConnected)).toBe(true);
+  await search.focus();
+  await search.press("Escape");
+  await expect(search).not.toBeFocused();
+  await expect(search).toHaveValue("QA");
+  await assertViewportLocked(page);
+});
