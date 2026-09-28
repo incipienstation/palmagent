@@ -1,3 +1,4 @@
+import { useRequestScope } from "../hooks/request-scope";
 import { useBackLayer } from "../hooks/useBackLayer";
 import { registerRepo, removeRepo as removeRegisteredRepo, useRepoMutations } from "../repo-mutations";
 import { toast } from "./ui/toaster";
@@ -119,12 +120,13 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const [discovered, setDiscovered] = useState<DiscoveredRepo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [browseTrail, setBrowseTrail] = useUpdateState<FsListResponse[]>("picker:browse-trail", []);
-  const browseRequest = useRef(0);
+  const browseRequest = useRequestScope(open);
+  const discoveryRequest = useRequestScope(open);
   const [browse, setBrowse] = useUpdateState<FsListResponse | null>("picker:browse", null);
   const [manualPath, setManualPath] = useUpdateState(`picker:manualPath`, "");
   const [validation, setValidation] = useUpdateState<ValidateRepoPathResponse | null>("picker:validation", null);
   const [validating, setValidating] = useState(false);
-  const validationRequest = useRef(0);
+  const validationRequest = useRequestScope(open);
   const [selectionReady, setSelectionReady] = useUpdateState("picker:selection-ready", true);
   // branch is unset for a plain folder (no git) — registered/run in place.
   const [picked, setPicked] = useUpdateState<{ path: string; name: string; branch?: string } | null>(`picker:picked`, null);
@@ -136,17 +138,14 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const busy = mutations.registering.size > 0;
   const [error, setError] = useState("");
   const debounceRef = useRef<number | undefined>(undefined);
-  const backToSearch = () => { browseRequest.current++; setMode("search"); setBrowseTrail([]); };
+  const backToSearch = () => { browseRequest.cancel(); setMode("search"); setBrowseTrail([]); };
   useBackLayer(open && mode !== "search", backToSearch, 150);
   useBackLayer(open && mode === "browse" && browseTrail.length > 0, () => {
-    browseRequest.current++;
+    browseRequest.cancel();
     setBrowse(browseTrail.at(-1)!);
     setBrowseTrail(browseTrail.slice(0, -1));
   }, 160);
-  useEffect(() => {
-    if (!open) browseRequest.current++;
-    return () => { validationRequest.current++; window.clearTimeout(debounceRef.current); };
-  }, [open]);
+  useEffect(() => () => window.clearTimeout(debounceRef.current), [open]);
 
   const [baseRef, setBaseRef] = useState("");
   useEffect(() => { setBaseRef(""); }, [picked?.path]);
@@ -171,14 +170,16 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   }, [open]);
 
   async function refresh(force: boolean) {
+    if (!open) return;
+    const request = discoveryRequest.begin();
     setScanning(true);
     try {
-      const out = await browser.discover(force);
-      setDiscovered(out.repos);
+      const out = await browser.discover(force, request.signal);
+      if (request.isCurrent()) setDiscovered(out.repos);
     } catch (e) {
-      setError(errMsg(e));
+      if (request.isCurrent()) setError(errMsg(e));
     } finally {
-      setScanning(false);
+      if (request.isCurrent()) setScanning(false);
     }
   }
 
@@ -198,12 +199,12 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   async function pickPath(path: string) {
     window.clearTimeout(debounceRef.current);
     setError("");
-    const request = ++validationRequest.current;
+    const request = validationRequest.begin();
     setValidating(true); setSelectionReady(false);
     setValidation(null);
     try {
-      const v = await browser.validatePath(path);
-      if (request !== validationRequest.current) return;
+      const v = await browser.validatePath(path, request.signal);
+      if (!request.isCurrent()) return;
       setSelectionReady(v.isDir);
       setValidation(v);
       if (v.isGit && v.root) {
@@ -212,15 +213,15 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
         setPicked({ path: v.resolved, name: v.resolved.split("/").pop() ?? v.resolved });
       }
     } catch (e) {
-      if (request === validationRequest.current) setError(errMsg(e));
+      if (request.isCurrent()) setError(errMsg(e));
     } finally {
-      if (request === validationRequest.current) setValidating(false);
+      if (request.isCurrent()) setValidating(false);
     }
   }
 
   function onManualChange(v: string) {
     setManualPath(v);
-    validationRequest.current++;
+    validationRequest.cancel();
     setSelectionReady(false); setValidating(!!v.trim());
     setValidation(null);
     window.clearTimeout(debounceRef.current);
@@ -229,18 +230,18 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   }
 
   async function openBrowse(path?: string) {
-    const request = ++browseRequest.current;
+    const request = browseRequest.begin();
     const previous = mode === "browse" ? browse : null;
     setMode("browse");
     setError("");
     try {
-      const next = await browser.listDirectory(path);
-      if (request !== browseRequest.current) return;
+      const next = await browser.listDirectory(path, request.signal);
+      if (!request.isCurrent()) return;
       if (previous && previous.path !== next.path) setBrowseTrail(trail => [...trail, previous]);
       else if (!previous) setBrowseTrail([]);
       setBrowse(next);
     } catch (e) {
-      if (request === browseRequest.current) setError(errMsg(e));
+      if (request.isCurrent()) setError(errMsg(e));
     }
   }
 
@@ -342,7 +343,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                     selected={picked?.path === r.path}
                     onPress={() => {
                       window.clearTimeout(debounceRef.current);
-                      validationRequest.current++; setValidating(false); setSelectionReady(true);
+                      validationRequest.cancel(); setValidating(false); setSelectionReady(true);
                       if (reg) { onRegistered(reg); return; }
                       setError("");
                       setValidation(null);

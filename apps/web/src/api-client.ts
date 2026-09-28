@@ -109,9 +109,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json }), false, false, ["repos"]).then((r) => r.repo),
     updateRepo: (id: string, json: UpdateRepoRequest) => write(() => client.repos[":id"].$patch({ param: idParam(id), json }), false, false, ["repos"]).then(r => r.repo),
     deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) }), false, false, ["repos"]).then((r) => r.repo),
-    discoverRepos: (refresh = false) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} })),
-    validateRepoPath: (path: string) => request(() => client.repos.validate.$get({ query: { path } })),
-    listFs: (path?: string) => request(() => client.fs.list.$get({ query: { path } })),
+    discoverRepos: (refresh = false, signal?: AbortSignal) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} }, requestOptions(signal))),
+    validateRepoPath: (path: string, signal?: AbortSignal) => request(() => client.repos.validate.$get({ query: { path } }, requestOptions(signal))),
+    listFs: (path?: string, signal?: AbortSignal) => request(() => client.fs.list.$get({ query: { path } }, requestOptions(signal))),
     listTasks: (status?: TaskStatus) => request(() => client.tasks.$get({ query: { status } })).then((r) => r.tasks),
     taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal) => request(() => tasks.history.$get({
       param: idParam(id), query: { ...(before === undefined ? {} : { before: String(before) }), ...(details === "summary" ? { details } : {}) },
