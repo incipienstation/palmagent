@@ -116,11 +116,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     latest.current.value = next; latest.current.onChange(next);
   }, () => !composing.current);
   const hasDraft = !!value.trim() || attachments.images.length > 0 || !!skills?.length;
+  const compactVoice = voice.active && !hasDraft;
   const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || !hasDraft;
   const expanded = hasDraft || focused || voice.active || !!voice.error || picker.open || !!header || configure || menuOpen || attachments.preparing;
   useLayoutEffect(() => {
     const el = textarea.current;
-    if (!el) return;
+    if (!el || compactVoice) return;
     const resize = () => {
       // Measure without animating through zero. Resume from the current visual
       // height so a focus reversal during the transition remains continuous.
@@ -146,7 +147,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [value, expanded]);
+  }, [value, expanded, compactVoice]);
   const model = settings.model === DEFAULT_OPTION
     ? (settings.agent === "claude" ? "Claude" : "Codex")
     : modelChoices(catalog, settings.model).find((m) => m.value === settings.model)?.label ?? settings.model;
@@ -154,7 +155,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const permission = permissionLabel(settings.agent, settings.permission);
 
   return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
-    data-voice={settings.agent === "codex"}
+    data-voice={settings.agent === "codex"} data-voice-active={voice.active}
     onFocusCapture={event => {
       // React also bubbles focus from portalled menus outside this surface.
       if (event.currentTarget.contains(event.target)) setFocused(true);
@@ -185,12 +186,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         if (onSend) onSend();
         else if (!controls) event.currentTarget.form?.requestSubmit();
       }}
-      placeholder={placeholder} disabled={disabled || busy}
+      hidden={compactVoice} placeholder={placeholder} disabled={disabled || busy}
       className="composer-input order-1 max-h-36 basis-full px-3 py-2.5"
     />
-    {(voice.error || voice.active) && <InputGroupAddon align="block-start" className="px-3">
-      {voice.error ? <Alert variant="destructive">{voice.error}</Alert>
-        : <span role="status" className="text-xs text-muted-foreground">{voice.state === "stopping" ? "Finishing transcription…" : "Recording… tap the microphone to finish."}</span>}
+    {voice.active && <span role="status" className="sr-only">{voice.state === "stopping" ? "Finishing transcription…" : "Recording…"}</span>}
+    {voice.error && <InputGroupAddon align="block-start" className="px-3">
+      <Alert variant="destructive">{voice.error}</Alert>
     </InputGroupAddon>}
     {!!skills?.length && <InputGroupAddon align="block-start" className="px-3 pt-2"><SkillChips skills={skills} disabled={disabled || busy} onRemove={() => onSkillsChange?.([])} /></InputGroupAddon>}
     {header && <InputGroupAddon align="block-start" className="px-3">{header}</InputGroupAddon>}
@@ -201,7 +202,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       <AttachmentMenu open={menuOpen} onOpenChange={setMenuOpen} disabled={disabled || busy || attachments.preparing}
         preparing={attachments.preparing} onAdd={(files) => void attachments.addFiles(files)}
         voiceActive={voice.active} onCancelVoice={voice.cancel} />
-      {skillContext && onSkillsChange && <span className="composer-skill" inert={!expanded}>
+      {!voice.active && skillContext && onSkillsChange && <span className="composer-skill" inert={!expanded}>
         <SkillTrigger onClick={picker.trigger} disabled={disabled || busy} open={picker.open} />
       </span>}
     </InputGroupAddon>
@@ -240,7 +241,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       </Sheet>
       {settings.agent === "codex" && <Button type="button" variant={voice.active ? "secondary" : "ghost"} size="icon-lg"
         className="shrink-0" aria-label={voice.active ? "Stop voice input" : "Start voice input"} title={voice.active ? "Stop voice input" : "Start voice input"}
-        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); setConfigure(false); voice.toggle(); }}>
+        aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); setConfigure(false); picker.close(); voice.toggle(); }}>
         {voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
       {onStop && <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}

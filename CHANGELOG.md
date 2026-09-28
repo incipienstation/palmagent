@@ -8,6 +8,8 @@ An entry does not mean a version has been published.
 
 ### Changed
 
+- Voice recording uses a single row when the draft is empty and removes redundant on-screen instructions.
+
 - Voice input shows recent microphone volume scrolling left, with new speech appearing on the right.
 
 ## 0.1.0-alpha.122
