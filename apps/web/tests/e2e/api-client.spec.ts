@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "@playwright/test";
 import { createApi, ApiError } from "../../src/api-client";
+import { cacheSession, resetClientSession } from "../../src/query-lifecycle";
 
 test("browser RPC preserves URL encoding, version headers, write tracking, and abort signals", async () => {
   let active = 0;
@@ -99,3 +100,27 @@ test("runtime model catalog API leaves cache behavior to TanStack Query", async 
   await api.modelCatalog();
   assert.equal(reads, 3);
 });
+
+for (const operation of ["read", "logout"] as const) {
+  test(`a delayed ${operation} 401 cannot invalidate a newer session`, async () => {
+    let complete!: (response: Response) => void;
+    let sent!: () => void;
+    let active = 0, unauthorized = 0;
+    const sending = new Promise<void>(resolve => { sent = resolve; });
+    const response = new Promise<Response>(resolve => { complete = resolve; });
+    const api = createApi({
+      version: () => "fixture", observeServerVersion: () => {},
+      beginBrowserWork: () => { active++; return () => { active--; }; },
+      onUnauthorized: () => { unauthorized++; },
+    }, async () => { sent(); return response; });
+    const pending = operation === "read" ? api.getTask("fixture") : api.auth.logout();
+    await sending;
+    resetClientSession();
+    const current = cacheSession();
+    complete(Response.json({ error: "unauthorized" }, { status: 401 }));
+    await assert.rejects(pending, /Session changed/);
+    assert.equal(cacheSession(), current);
+    assert.equal(unauthorized, 0);
+    assert.equal(active, 0);
+  });
+}

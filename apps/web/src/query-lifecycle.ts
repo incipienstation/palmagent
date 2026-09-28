@@ -6,7 +6,10 @@ const resetListeners = new Set<() => void>();
 const invalidationListeners = new Set<(source: ClientReadInvalidationSource, scopes: readonly ClientReadScope[]) => void | Promise<void>>();
 export const cacheSession = () => sessionGeneration;
 
-export function onCacheSessionReset(listener: () => void): void { resetListeners.add(listener); }
+export function onCacheSessionReset(listener: () => void): () => void {
+  resetListeners.add(listener);
+  return () => { resetListeners.delete(listener); };
+}
 export function onClientReadInvalidation(listener: (source: ClientReadInvalidationSource, scopes: readonly ClientReadScope[]) => void | Promise<void>): void {
   invalidationListeners.add(listener);
 }

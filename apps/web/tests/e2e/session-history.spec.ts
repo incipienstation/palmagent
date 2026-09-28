@@ -126,6 +126,48 @@ test("prepending an older page preserves the visible message through simultaneou
   expect(requested).toBe(1);
 });
 
+for (const first of ["catch-up", "older page"] as const) {
+  test(`reconnect catch-up survives pagination when ${first} completes first`, async ({ page }) => {
+    let releaseOlder!: () => void, releaseCatchup!: () => void;
+    let olderRequests = 0, catchupRequests = 0;
+    const olderPending = new Promise<void>(resolve => { releaseOlder = resolve; });
+    const catchupPending = new Promise<void>(resolve => { releaseCatchup = resolve; });
+    await page.route("**/history?before=1801*", async route => {
+      olderRequests++;
+      await olderPending;
+      await route.fulfill({ json: { events: rows(1601, 1800), before: null, cursor: 2000 } });
+    });
+    await page.route(/\/history\/changes(?:\?.*)?$/, async route => {
+      catchupRequests++;
+      await catchupPending;
+      await route.fulfill({ json: { events: rows(2001, 2001), after: 2000, through: 2001, nextAfter: null } });
+    });
+    await recent(page);
+    await viewport(page).evaluate(el => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
+    await expect.poll(() => olderRequests).toBe(1);
+    await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2001 });
+    await expect.poll(() => catchupRequests).toBe(1);
+    const firstResponse = page.waitForResponse(response => first === "catch-up"
+      ? response.url().includes("/history/changes?") : response.url().includes("/history?before=1801"));
+    (first === "catch-up" ? releaseCatchup : releaseOlder)();
+    await (await firstResponse).finished();
+    // Let the completed response update the query before the second writer.
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    (first === "catch-up" ? releaseOlder : releaseCatchup)();
+    await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+    // Pagination's loading state ends before Virtuoso commits its prepend anchor.
+    await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBeGreaterThan(1000);
+    await deliver(page, rows(2002, 2002));
+    await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect(page.getByText("History message 2001", { exact: true })).toBeVisible();
+    await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();
+    // Duplicate frames cannot re-add a recovered event after its cursor advances.
+    await deliver(page, rows(2001, 2002));
+    await expect(page.getByText("History message 2001", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toHaveCount(1);
+  });
+}
+
 test("prepending older history keeps a cross-page Activity row mounted", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   let release!: () => void;

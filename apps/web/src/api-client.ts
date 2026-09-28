@@ -48,6 +48,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     const generation = cacheSession();
     const load = async () => {
       const res = await send();
+      if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
       observeServerVersion(res.headers.get("x-palmagent-version"));
       if (!res.ok) {
         if (res.status === 401) {
@@ -69,7 +70,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     try {
       return await load();
     } finally {
-      if (opts?.write) await invalidateClientReads(opts.sessionChange, opts.invalidates);
+      if (opts?.write && generation === cacheSession()) await invalidateClientReads(opts.sessionChange, opts.invalidates);
       finish?.();
     }
   }

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { cacheSession, onCacheSessionReset } from "./query-lifecycle";
 
 // Checkpoints are per tab and exist only for a controlled screen replacement.
 // IndexedDB accommodates image drafts without localStorage's small string quota.
@@ -80,11 +81,12 @@ async function transaction<T>(operation: (store: IDBObjectStore) => IDBRequest<T
 }
 
 export async function restoreUpdateState(): Promise<void> {
+  const generation = cacheSession();
   let id: string | null;
   try { id = sessionStorage.getItem(marker); } catch { return; }
   if (!id) return;
   const checkpoint = await transaction((store) => store.get(id)) as Checkpoint | undefined;
-  if (checkpoint && checkpoint.route === location.hash && Date.now() - checkpoint.created < 24 * 60 * 60_000) {
+  if (generation === cacheSession() && checkpoint && checkpoint.route === location.hash && Date.now() - checkpoint.created < 24 * 60 * 60_000) {
     restored = checkpoint.values;
     restoredScreen = checkpoint.screen;
   }
@@ -92,6 +94,19 @@ export async function restoreUpdateState(): Promise<void> {
   sessionStorage.removeItem(marker);
   void transaction((store) => store.delete(id!)).catch(() => {});
 }
+onCacheSessionReset(() => {
+  // A screen-update checkpoint belongs to the authenticated view that created
+  // it. Never restore its transcript after that session has been invalidated.
+  restored = {};
+  restoredScreen = undefined;
+  values.clear();
+  browserStateChanged();
+  try {
+    const id = sessionStorage.getItem(marker);
+    sessionStorage.removeItem(marker);
+    if (id) void transaction((store) => store.delete(id)).catch(() => {});
+  } catch { /* Storage may be unavailable; in-memory state is already cleared. */ }
+});
 export async function checkpointBrowserState(): Promise<boolean> {
   const before = revision;
   const checkpoint: Checkpoint = { route: location.hash, created: Date.now(), values: { ...restored, ...Object.fromEntries([...values].map(([key, read]) => [key, read()])) }, screen: captureScreen() };
