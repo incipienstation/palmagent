@@ -13,6 +13,15 @@ Guidance for coding agents maintaining the Palmagent repository.
   test logs outside the repository and inspect relevant excerpts.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
 
+## Product UI
+
+- Make actions discoverable through familiar controls, clear visual states, and direct feedback.
+  Prefer improving the interaction over adding persistent instructions for gestures or basic controls.
+- Keep gesture shortcuts optional: provide visible, keyboard-accessible controls with accessible
+  names. Retain concise labels and feedback needed to understand state, errors, or consequences.
+- Embedded previews should preserve the surrounding content's scrolling. Put gestures that compete
+  with reading, such as diagram zoom and pan, in an explicitly opened viewer.
+
 ## Public safety
 
 Treat every committed byte and commit as public. Never include secrets, personal paths, private

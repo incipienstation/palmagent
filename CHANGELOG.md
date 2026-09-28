@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Mermaid diagrams use compact previews that let conversations scroll normally. Double-click a preview or use its fullscreen button to zoom and pan, with controls replacing gesture instructions.
+
 ## 0.1.0-alpha.123
 
 ### Changed
