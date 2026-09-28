@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.119
+
 ### Fixed
 
 - New task floats above the bottom search field without reserving a full-width strip that cuts off the task list. The final task can scroll fully above the button.
