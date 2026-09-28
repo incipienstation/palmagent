@@ -58,3 +58,25 @@ test("both adapters invoke selected skills explicitly without altering stored us
   assert.equal(start.prompt, "Check HTTPS");
   assert.equal(ExecutionCommandSchema.parse({ kind: "send", messageId: "m", text: "Check", skills: [skill] }).kind, "send");
 });
+
+test("native discovery tolerates non-object records and preserves its project directory", async (t) => {
+  const { mkdtempSync, writeFileSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readNativeSkills } = await import("../src/skills.js");
+  const directory = mkdtempSync(join(tmpdir(), "palmagent-skills-"));
+  const previousPath = process.env.PATH;
+  t.after(() => { process.env.PATH = previousPath; rmSync(directory, { recursive: true, force: true }); });
+  process.env.PATH = `${directory}:${previousPath}`;
+  const marker = join(directory, "project-marker");
+  writeFileSync(marker, "caller-owned");
+  writeFileSync(join(directory, "codex"), `#!${process.execPath}\nprocess.stdin.resume();
+process.stdout.write('null\\n[]\\n42\\ninvalid\\n');
+process.stdout.write(JSON.stringify({id:2,result:{cwd:process.cwd()}})+'\\n');
+setInterval(()=>{},1000);\n`, { mode: 0o700 });
+  assert.deepEqual(await readNativeSkills({ agent: "codex", cwd: directory, home: directory }), { cwd: directory });
+  assert.ok(existsSync(marker), "query cleanup must not delete the caller's cwd");
+  writeFileSync(join(directory, "codex"), `#!${process.execPath}\nprocess.stdout.write('null\\n');\n`, { mode: 0o700 });
+  await assert.rejects(readNativeSkills({ agent: "codex", cwd: directory, home: directory }), /exited before returning/);
+  assert.ok(existsSync(marker));
+});
