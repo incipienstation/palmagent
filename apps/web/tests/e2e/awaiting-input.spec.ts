@@ -64,17 +64,14 @@ test.describe("awaiting input (AskUserQuestion)", () => {
     await expect(page.getByText("The agent needs your input")).toBeVisible();
   });
 
-  test("viewport is locked (no document scroll, no horizontal overflow)", async ({ page }) => {
-    await assertViewportLocked(page);
-  });
-
   // The regression this guards: a tall QuestionCard (many questions) used to stack
   // them into one vertical column that grew up and buried the session output above,
   // and could clip the Skip/Send actions off-screen (the document never scrolls).
   // Multiple questions now page HORIZONTALLY — one per swipeable slide — so the
   // panel tracks a single question, and the actions stay reachable. Q2's options
   // sit off to the RIGHT at the same vertical band as Q1, not stacked below it.
-  test("multiple questions page horizontally; actions stay on-screen", async ({ page }) => {
+  test("multiple questions page horizontally; viewport stays locked and actions stay on-screen", async ({ page }) => {
+    await assertViewportLocked(page);
     const { width: vw, height: vh } = page.viewportSize()!;
     const q1 = await page.getByRole("button", { name: /Tailwind utilities/ }).boundingBox();
     const q2 = await page.getByRole("button", { name: /Notifications/ }).boundingBox();
