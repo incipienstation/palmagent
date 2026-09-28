@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from "react";
 
 // Android can resize both viewports; Safari only resizes the visual viewport.
 // Remember the unoccluded height before focus instead of relying on their gap.
-export function useKeyboardDismiss(input: RefObject<HTMLTextAreaElement | null>) {
+export function useKeyboardDismiss(input: RefObject<HTMLInputElement | HTMLTextAreaElement | null>) {
   useEffect(() => {
     const el = input.current;
     if (!el || !window.matchMedia("(pointer: coarse)").matches) return;
