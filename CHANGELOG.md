@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.125
+
 ### Fixed
 
 - Space discovery ignores cancelled and stale responses when the picker is closed or reopened.
