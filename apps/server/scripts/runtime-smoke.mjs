@@ -21,6 +21,7 @@ for (const name of [
   "AUTH_RP_ID",
   "DISPATCHER_DB",
   "DISPATCHER_DATA_DIR",
+  "XDG_STATE_HOME",
   "HOST",
   "NODE_ENV",
   "PORT",
@@ -115,6 +116,22 @@ async function assertConfigContract() {
     dbPath,
   });
 
+  const invalidPort = await runNode('import("./src/config.ts")', {
+    ...sanitizedEnv, AUTH_DISABLED: "1", DISPATCHER_DATA_DIR: tempDir, PORT: "70000",
+  });
+  assert.notEqual(invalidPort.code, 0, "an out-of-range runtime port was accepted");
+  assert.match(invalidPort.stderr, /PORT/);
+
+  const xdg = await runNode(
+    'Promise.all([import("./src/config.ts"), import("./src/cli/config.ts")]).then(([{ config }, { resolveDataDir }]) =>' +
+      'console.log(JSON.stringify({ runtime: config.dbPath, cli: resolveDataDir() })))',
+    { ...sanitizedEnv, AUTH_DISABLED: "1", XDG_STATE_HOME: tempDir },
+  );
+  assert.equal(xdg.code, 0, xdg.stderr);
+  assert.deepEqual(JSON.parse(xdg.stdout.trim()), {
+    runtime: join(tempDir, "palmagent", "palmagent.db"), cli: join(tempDir, "palmagent"),
+  });
+
   const rejected = await runNode('import("./src/config.ts")', {
     ...sanitizedEnv,
     AUTH_DISABLED: "1",
@@ -140,7 +157,7 @@ async function assertConfigContract() {
     PUSH_SUBJECT: "http://example.invalid",
   });
   assert.notEqual(plaintextPushSubject.code, 0, "a plaintext PUSH_SUBJECT was accepted");
-  assert.match(plaintextPushSubject.stderr, /PUSH_SUBJECT must be a mailto: or https:\/\//);
+  assert.match(plaintextPushSubject.stderr, /PUSH_SUBJECT must be a mailto: address or an https:\/\//);
 }
 
 function startTypeScript(entry, env) {
