@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { useStoredPreference } from "./hooks/useStoredPreference";
+import { createContext, useContext, type ReactNode } from "react";
 
 // Compact groups background work per turn; Verbose exposes all recorded events.
 // Questions, run errors, final answers and unclassified legacy prose stay visible.
@@ -28,15 +29,8 @@ type OutputModeContextValue = {
 const OutputModeContext = createContext<OutputModeContextValue | null>(null);
 
 export function OutputModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<OutputMode>(readInitial);
-  const setMode = useCallback((next: OutputMode) => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // ignore (private mode / no storage) — a non-persisted mode still works for the session
-    }
-    setModeState(next);
-  }, []);
+  const [mode, setMode] = useStoredPreference<OutputMode>(STORAGE_KEY, readInitial);
+
   return <OutputModeContext.Provider value={{ mode, setMode }}>{children}</OutputModeContext.Provider>;
 }
 

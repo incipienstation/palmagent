@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { BRANDING, DISTRIBUTION } from "./lib/product.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,7 @@ const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const rootPackage = readJson("package.json");
 const version = String(rootPackage.version ?? "");
 
-if (rootPackage.name !== "palmagent")
+if (rootPackage.name !== BRANDING.packageName)
   fail("root package name must be palmagent");
 if (rootPackage.private !== true) fail("root workspace must remain private");
 if (!semver.test(version) || version === "0.0.0") {
@@ -30,10 +31,7 @@ for (const path of [
     fail(path + " must stay at internal version 0.0.0");
 }
 
-for (const path of [
-  "plugins/claude/.claude-plugin/plugin.json",
-  "plugins/codex/plugins/palmagent/.codex-plugin/plugin.json",
-]) {
+for (const path of DISTRIBUTION.versionedManifests.filter(path => path !== "package.json")) {
   const plugin = readJson(path);
   if (plugin.version !== version) {
     fail(path + " version must match root version " + version);
@@ -57,7 +55,7 @@ if (process.argv.includes("--artifact")) {
     fail(path + " is missing; run pnpm pkg:build first");
   } else {
     const artifact = readJson(path);
-    if (artifact.name !== "palmagent")
+    if (artifact.name !== BRANDING.packageName)
       fail("artifact package name must be palmagent");
     if (artifact.version !== version)
       fail("artifact version must match root version");

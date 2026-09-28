@@ -1,10 +1,8 @@
+import { DISTRIBUTION } from './product.mjs';
 import { execFileSync } from 'node:child_process';
 import { compareVersions, RELEASE_VERSION, versionPolicy } from './release-version.mjs';
 
-export const preparationFiles = [
-  'package.json', 'plugins/claude/.claude-plugin/plugin.json',
-  'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json', 'CHANGELOG.md',
-];
+export const preparationFiles = [...DISTRIBUTION.versionedManifests, 'CHANGELOG.md'];
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
 // Release eligibility is independent of CI scope: shipped operator Markdown is product code.

@@ -8,7 +8,7 @@ import { cacheSession } from "../query-lifecycle";
 import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { stopTaskTurn } from "../task-stop";
 import { useRepoMutations } from "../repo-mutations";
-import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
+import { modelSelection, useAgentCatalog } from "../model-catalog";
 import { navigate } from "../router";
 import { newTaskPath, spaceQualifier } from "../space-context";
 import { useUpdateState } from "../update-state";
@@ -51,8 +51,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:dispatch-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:dispatch-effort", agent, DEFAULT_OPTION);
   const catalog = useAgentCatalog(agent);
-  const model = selectableModel(catalog, savedModel);
-  const effort = selectableEffort(catalog, model, savedEffort);
+  const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
   const [isolate, setIsolate] = usePersistedMapEntry<boolean>("pref:dispatch-isolate", repoId, false);
   const [legacyPrompt, setLegacyPrompt] = useDraft("draft:dispatch-prompt");
   const [legacyImages, setLegacyImages] = useActionState<ImageAttachment[]>("images:#/new", []);
@@ -191,7 +190,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     onStop: busy ? () => { setSubmission(current => current ? { ...current, stop: true } : current); void stopTaskTurn("dispatch"); } : undefined, stopping: !!activity.stopping,
     description: "Your choices are remembered for this agent.",
     settings: { agent, onAgentChange: setAgent, model,
-      onModelChange: value => { saveModel(value); setEffort(selectableEffort(catalog, value, effort)); },
+      onModelChange: setModel,
       effort, onEffortChange: setEffort, permission, onPermissionChange: setPermission,
       children: isGit && <Field orientation="horizontal">
         <FieldContent><FieldLabel htmlFor="dispatch-isolation">Isolated worktree</FieldLabel>

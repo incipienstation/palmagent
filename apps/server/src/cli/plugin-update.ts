@@ -1,3 +1,4 @@
+import { BRANDING, DISTRIBUTION } from "@palmagent/shared";
 // Native managers own their installation records. Never edit their caches or
 // settings; retain exact marketplace checkouts and a private recovery receipt.
 import { existsSync, readFileSync } from "node:fs";
@@ -11,8 +12,8 @@ import { readPluginVersions, type PluginVersion, type UpdatePlan } from "./updat
 import { run } from "./sh.js";
 import { compatiblePlugin, compareProductVersions } from "./release-policy.js";
 
-const id = "palmagent@palmagent";
-const repository = "https://github.com/incipienstation/palmagent.git";
+const id = `${BRANDING.packageName}@${BRANDING.packageName}`;
+const repository = `${DISTRIBUTION.repositoryUrl}.git`;
 const version = z.string().regex(/^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/);
 const codexInventory = z.object({ installed: z.array(z.object({
   pluginId: z.string(), version: z.string(), enabled: z.boolean(), installPolicy: z.string(),

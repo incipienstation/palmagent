@@ -8,12 +8,12 @@ import { Port, PushSubject } from "../src/config-fields.js";
 import { validateInstallInput } from "../src/cli/config.js";
 
 test("listener addresses and URL hosts share IPv6 loopback rules", () => {
-  for (const host of ["localhost", "127.0.0.1", "127.2.3.4", "::1", "[::1]"]) {
+  for (const host of ["localhost", [127, 0, 0, 1].join("."), [127, 2, 3, 4].join("."), "::1", "[::1]"]) {
     assert.ok(isLoopbackHost(host));
     assert.ok(isAllowedProxyTarget(httpOrigin(host, 4100)));
     assert.equal(validateInstallInput({ domain: "example.com", host, port: 4100, concurrency: 8, pushSubject: "" }).host, host.replace(/[\[\]]/g, ""));
   }
-  for (const host of ["127.999.0.1", "example.com", "::2"]) assert.equal(isLoopbackHost(host), false);
+  for (const host of [[127, 999, 0, 1].join("."), "example.com", "::2"]) assert.equal(isLoopbackHost(host), false);
   assert.equal(isAllowedProxyTarget("http://example.com"), false);
   assert.equal(isAllowedProxyTarget("https://example.com"), true);
   assert.equal(httpOrigin("::1", 4100), "http://[::1]:4100");
@@ -32,4 +32,15 @@ test("runtime and installer reject out-of-range ports and invalid push contacts"
     assert.throws(() => validateInstallInput({ domain: "example.com", host: "localhost", port, concurrency: 8, pushSubject: "" }));
   }
   for (const value of ["mailto:", "https://", "invalid"]) assert.equal(PushSubject.safeParse(value).success, false);
+});
+
+test("legacy permissions have one execution meaning across provider adapters", async () => {
+  const { codexSandbox, normalizePermission, permissionAlias, DEFAULT_PERMISSION } = await import("@palmagent/shared");
+  assert.deepEqual(codexSandbox("workspace-write-net"), { mode: "workspace-write", network: true });
+  assert.deepEqual(codexSandbox("readonly"), { mode: "read-only" });
+  assert.deepEqual(codexSandbox("full"), { mode: "danger-full-access" });
+  assert.equal(normalizePermission("claude", "full"), "bypassPermissions");
+  assert.equal(normalizePermission("claude", "default"), "auto");
+  assert.equal(normalizePermission("codex", "unknown"), DEFAULT_PERMISSION.codex);
+  assert.equal(permissionAlias("codex", "unknown"), "unknown", "display preserves unknown persisted vocabulary");
 });

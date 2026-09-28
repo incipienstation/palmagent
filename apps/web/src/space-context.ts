@@ -1,3 +1,4 @@
+import { needsTaskAttention } from "@palmagent/shared";
 import type { Repo, TaskState } from "@palmagent/shared";
 
 export const spacePath = (repoId: string) => `/spaces/${encodeURIComponent(repoId)}`;
@@ -21,7 +22,7 @@ export function taskDirectoryFor(task: TaskState, repos: Map<string, Repo>): str
 
 export function spaceActivity(repoId: string, tasks: TaskState[]) {
   const items = tasks.filter(task => task.repoId === repoId && task.status !== "archived");
-  const attention = items.filter(task => ["awaiting_input", "awaiting_approval"].includes(task.status)).length;
+  const attention = items.filter(task => needsTaskAttention(task.status)).length;
   const running = items.filter(task => task.status === "running").length;
   const queued = items.filter(task => task.status === "queued").length;
   const latest = Math.max(0, ...items.map(task => task.lastActivityAt));

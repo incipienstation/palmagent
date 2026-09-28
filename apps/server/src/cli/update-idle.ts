@@ -1,3 +1,4 @@
+import { ACTIVE_TASK_STATUSES } from "@palmagent/shared";
 import { connectionInfo } from "./connection.js";
 import { connect } from "node:net";
 import Database from "better-sqlite3";
@@ -43,7 +44,7 @@ export async function verifyUpdateIdle(cfg: InstallConfig): Promise<boolean> {
   }
   const db = new Database(cfg.dbPath, { readonly: true, fileMustExist: true });
   try {
-    const row = db.prepare("SELECT count(*) AS count FROM tasks WHERE status IN ('running','awaiting_approval','awaiting_input','queued')").get() as { count: number };
+    const row = db.prepare(`SELECT count(*) AS count FROM tasks WHERE status IN (${ACTIVE_TASK_STATUSES.map(() => "?").join(",")})`).get(...ACTIVE_TASK_STATUSES) as { count: number };
     if (row.count !== 0) return false;
   } finally { db.close(); }
   return runnerIsIdle(cfg.runnerSocket);

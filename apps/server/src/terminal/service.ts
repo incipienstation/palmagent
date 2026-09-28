@@ -1,3 +1,4 @@
+import { isClosedTaskStatus } from "@palmagent/shared";
 import { realpathSync } from "node:fs";
 import type { CreateTerminalRequest } from "@palmagent/shared/terminals";
 import { publicTerminal, TerminalStore } from "./store.js";
@@ -33,7 +34,7 @@ export class TerminalService {
       return publicTerminal(existing);
     }
     const task = "taskId" in input.target ? this.targets.task(input.target.taskId) : undefined;
-    if (task && ["cancelled", "archived"].includes(task.status)) throw new ApplicationError("conflict", "Open a terminal from an active task or its Space");
+    if (task && isClosedTaskStatus(task.status)) throw new ApplicationError("conflict", "Open a terminal from an active task or its Space");
     const repoId = task?.repoId ?? ("repoId" in input.target ? input.target.repoId : "");
     const repo = this.targets.repo(repoId);
     if (!repo) throw new ApplicationError("not_found", "Space not found");

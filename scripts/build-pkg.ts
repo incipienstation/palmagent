@@ -28,6 +28,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AGENT_CLI_COMPATIBILITY } from "../packages/shared/src/compatibility.js";
 import { BRANDING } from "../packages/shared/src/branding.js";
+import { DISTRIBUTION } from "../packages/shared/src/distribution.js";
 
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = join(ROOT, "apps", "server");
@@ -147,10 +148,10 @@ async function main(): Promise<void> {
     keywords: ["self-hosted", "agent", "claude", "codex", "pwa"],
     repository: {
       type: "git",
-      url: "git+https://github.com/incipienstation/palmagent.git",
+      url: `git+${DISTRIBUTION.repositoryUrl}.git`,
     },
-    homepage: "https://github.com/incipienstation/palmagent#readme",
-    bugs: { url: "https://github.com/incipienstation/palmagent/issues" },
+    homepage: `${DISTRIBUTION.repositoryUrl}#readme`,
+    bugs: { url: `${DISTRIBUTION.repositoryUrl}/issues` },
     // Hard block against accidental publish until launch (PKG_PUBLISHABLE=1).
     private: !publishable,
     bin: { [BRANDING.cliName]: "./cli.js" },

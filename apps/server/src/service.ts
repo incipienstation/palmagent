@@ -1,3 +1,4 @@
+import { isClosedTaskStatus } from "@palmagent/shared";
 import { sanitizeImages } from "./application/image-input.js";
 import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagent/shared";
 import { skillId } from "./application/skill-id.js";
@@ -35,7 +36,7 @@ export class TaskService implements PrStatusSink {
 
   cleanupTerminalWorktree(id: string) {
     const task = this.getTask(id);
-    if (["cancelled", "archived"].includes(task.status)) this.cleanupWorktree(task);
+    if (isClosedTaskStatus(task.status)) this.cleanupWorktree(task);
   }
   accountLimits(taskId: string) {
     const task = this.getTask(taskId);
@@ -169,7 +170,7 @@ export class TaskService implements PrStatusSink {
         this.assertTaskAdmission();
         const task = this.getTask(id);
         this.assertSessionOwnership(task);
-        if (["cancelled", "archived"].includes(task.status)) throw conflict("This task is closed.");
+        if (isClosedTaskStatus(task.status)) throw conflict("This task is closed.");
       },
       canStart: (id) => {
         const task = this.cache.get(id);
@@ -722,7 +723,7 @@ export class TaskService implements PrStatusSink {
   stop(id: string): TaskState {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
-    if (task.status === "cancelled" || task.status === "archived") {
+    if (isClosedTaskStatus(task.status)) {
       throw conflict(`cannot stop a ${task.status} task`);
     }
     this.messages.pause(id);
@@ -749,7 +750,7 @@ export class TaskService implements PrStatusSink {
   cancel(id: string): TaskState {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
-    if (task.status === "cancelled" || task.status === "archived") return task; // idempotent
+    if (isClosedTaskStatus(task.status)) return task; // idempotent
     this.messages.pause(id);
     this.pendingSteer.delete(id); this.persistControl(id);
     const handle = this.supervisor.get(id);
@@ -796,7 +797,7 @@ export class TaskService implements PrStatusSink {
         this.emitSynthetic(task, { subtype: "error", message });
         this.transition(task, "failed"); this.messages.rejectBeforeStart(task.taskId, message); return;
       }
-      if (this.shuttingDown || this.messages.state(task.taskId).runId !== runId || ["cancelled", "archived"].includes(task.status)) {
+      if (this.shuttingDown || this.messages.state(task.taskId).runId !== runId || isClosedTaskStatus(task.status)) {
         this.supervisor.release(task.taskId); return;
       }
     }

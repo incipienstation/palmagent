@@ -1,3 +1,4 @@
+import { isActiveTaskStatus } from "@palmagent/shared";
 import { useEffect, useRef } from "react";
 import type { MessageQueue, PendingMessage, SubmitMessage, TaskState, AnswerRequest } from "@palmagent/shared";
 import { useActionState } from "../action-state";
@@ -5,7 +6,7 @@ import { cacheSession } from "../query-lifecycle";
 import { acceptMessageQueue, clearQueuePreview, beginTaskAction, useTaskActivity, isSendingAction, type QueuePreview, type TaskActionKind } from "../task-activity";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
-import { selectableEffort, selectableModel, useAgentCatalog } from "../model-catalog";
+import { modelSelection, useAgentCatalog } from "../model-catalog";
 import { useDraft, usePersistedString } from "./useDraft";
 import { useTaskOperations } from "./remote-operations";
 import { useImageAttachments } from "../components/Attachments";
@@ -32,12 +33,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const selectorVersion = useRef<string>(undefined);
   const [savedModel, saveModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
   const [savedEffort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
-  const model = selectableModel(catalog, savedModel);
-  const effort = selectableEffort(catalog, model, savedEffort);
-  function setModel(value: string) {
-    saveModel(value);
-    setEffort(selectableEffort(catalog, value, effort));
-  }
+  const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
   // Permission has no DEFAULT_OPTION (always a concrete value); clamp the task's
   // stored value to a valid option for its agent (a legacy value shows the agent
   // default in the picker). A change applies to the next turn, like model/effort.
@@ -120,7 +116,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const displayedEffort = settingsReadOnly ? (editedSettings?.effort ?? task?.effort) || DEFAULT_OPTION : effort;
   const awaiting = status === "awaiting_approval";
   const needsInput = status === "awaiting_input";
-  const active = running || status === "queued" || awaiting || needsInput;
+  const active = status !== undefined && isActiveTaskStatus(status);
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
   const composeMode: "steer" | "followup" | null = !task || localOwner || status === "archived" || status === "cancelled" ? null : running

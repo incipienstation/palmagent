@@ -194,7 +194,7 @@ export function authFromDomain(
 ): Pick<InstallConfig, "rpId" | "rpName" | "authOrigin"> {
   return {
     rpId: domain,
-    rpName: BRANDING.productName,
+    rpName: BRANDING.displayName,
     authOrigin: domain ? `https://${domain}` : "",
   };
 }

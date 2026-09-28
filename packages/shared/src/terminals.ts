@@ -1,17 +1,25 @@
 import { z } from "zod";
 
+export const TERMINAL_POLICY = {
+  minCols: 2, maxCols: 500, minRows: 1, maxRows: 200,
+  maxTitleLength: 80, inputChunkLength: 16_384, scrollback: 2000,
+} as const;
+export function terminalSize(cols: number, rows: number) {
+  return { cols: Math.max(TERMINAL_POLICY.minCols, Math.min(TERMINAL_POLICY.maxCols, cols)),
+    rows: Math.max(TERMINAL_POLICY.minRows, Math.min(TERMINAL_POLICY.maxRows, rows)) };
+}
 export const TERMINAL_PROTOCOL = 1;
 export const TERMINAL_STARTUP_TIMEOUT_MS = 30_000;
 export type TerminalStartError = "services_unavailable" | "launch_unconfirmed" | "startup_timeout" | "host_exited" | "initialization_failed";
 export const TerminalId = z.string().uuid();
-export const TerminalSize = z.object({ cols: z.number().int().min(2).max(500), rows: z.number().int().min(1).max(200) });
+export const TerminalSize = z.object({ cols: z.number().int().min(TERMINAL_POLICY.minCols).max(TERMINAL_POLICY.maxCols), rows: z.number().int().min(TERMINAL_POLICY.minRows).max(TERMINAL_POLICY.maxRows) });
 export const CreateTerminal = TerminalSize.extend({
   requestId: z.string().uuid(),
   target: z.union([z.object({ taskId: z.string().min(1).max(200) }).strict(), z.object({ repoId: z.string().min(1).max(200) }).strict()]),
-  title: z.string().trim().min(1).max(80).optional(),
+  title: z.string().trim().min(1).max(TERMINAL_POLICY.maxTitleLength).optional(),
 }).strict();
 export type CreateTerminalRequest = z.infer<typeof CreateTerminal>;
-export const RenameTerminal = z.object({ title: z.string().trim().min(1).max(80) }).strict();
+export const RenameTerminal = z.object({ title: z.string().trim().min(1).max(TERMINAL_POLICY.maxTitleLength) }).strict();
 export const TerminalQuery = z.object({ taskId: z.string().optional(), repoId: z.string().optional() });
 export type TerminalState = "starting" | "running" | "closing" | "exited" | "lost";
 export interface TerminalSession {
@@ -21,7 +29,7 @@ export interface TerminalSession {
 export interface TerminalCapabilities { available: boolean; persistent: boolean; reason?: string }
 export const TerminalClientFrame = z.discriminatedUnion("type", [
   z.object({ type: z.literal("attach"), ticket: z.string().min(1).max(200), protocol: z.literal(1) }).strict(),
-  z.object({ type: z.literal("input"), epoch: z.number().int().nonnegative(), data: z.string().max(16_384) }).strict(),
+  z.object({ type: z.literal("input"), epoch: z.number().int().nonnegative(), data: z.string().max(TERMINAL_POLICY.inputChunkLength) }).strict(),
   TerminalSize.extend({ type: z.literal("resize"), epoch: z.number().int().nonnegative() }).strict(),
   // Omission preserves explicit takeover for existing browsers and CLI attachments.
   z.object({ type: z.literal("claim-control"), ifAvailable: z.boolean().optional() }).strict(),
@@ -32,7 +40,7 @@ export type TerminalInput = Exclude<z.infer<typeof TerminalClientFrame>, { type:
 /** Keep large pastes within the frame limit without splitting a Unicode pair. */
 export function* terminalInputChunks(data: string): Generator<string> {
   while (data.length) {
-    let length = Math.min(data.length, 16_384);
+    let length = Math.min(data.length, TERMINAL_POLICY.inputChunkLength);
     const last = data.charCodeAt(length - 1);
     if (length < data.length && last >= 0xd800 && last <= 0xdbff) length--;
     yield data.slice(0, length);

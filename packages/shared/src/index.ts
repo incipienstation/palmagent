@@ -21,3 +21,9 @@ export * from "./voice.js";
 export * from "./model-catalog.js";
 
 export * from "./network.js";
+
+export * from "./routine-policy.js";
+
+export * from "./product-version.mjs";
+
+export * from "./distribution.js";

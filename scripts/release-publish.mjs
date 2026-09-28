@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { BRANDING, DISTRIBUTION } from './lib/product.mjs';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -65,7 +66,7 @@ export async function publishPackage(identity, { run, registryVersion, env, slee
 }
 
 async function registryVersion(version) {
-  const response = await fetch(`https://registry.npmjs.org/palmagent/${encodeURIComponent(version)}`, { signal: AbortSignal.timeout(15000) });
+  const response = await fetch(`${DISTRIBUTION.npmRegistry}/${BRANDING.packageName}/${encodeURIComponent(version)}`, { signal: AbortSignal.timeout(15000) });
   if (response.status === 404) return null;
   assert(response.ok, 'npm registry lookup failed');
   return response.json();

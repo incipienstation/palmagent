@@ -64,3 +64,14 @@ export function useAgentCatalog(agent: AgentKind): AgentCatalog {
   const codex = useContext(CatalogContext);
   return agent === "codex" ? codex ?? DEFAULT_CODEX_CATALOG : CLAUDE_CATALOG;
 }
+
+/** Selection transitions are shared; each form owns its storage and reset semantics. */
+export function modelSelection(catalog: AgentCatalog, savedModel: string, savedEffort: string,
+  saveModel: (value: string) => void, saveEffort: (value: string) => void) {
+  const model = selectableModel(catalog, savedModel);
+  const effort = selectableEffort(catalog, model, savedEffort);
+  return { model, effort, setModel(value: string) {
+    saveModel(value);
+    saveEffort(selectableEffort(catalog, value, effort));
+  } };
+}

@@ -1,14 +1,11 @@
 #!/usr/bin/env node
+import { DISTRIBUTION } from './lib/product.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareVersions, versionPolicy } from './lib/release-version.mjs';
 
-const manifests = [
-  'package.json',
-  'plugins/claude/.claude-plugin/plugin.json',
-  'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json',
-];
+const manifests = DISTRIBUTION.versionedManifests;
 
 export function prepareVersion(cwd, version, { apply = false, development = false } = {}) {
   const policy = versionPolicy(version);

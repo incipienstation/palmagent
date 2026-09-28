@@ -1,3 +1,5 @@
+import { TASK_STATUSES } from "./task.js";
+import { ROUTINE_POLICY } from "./routine-policy.js";
 import { ImageDimensionSchema } from "./attachments.js";
 import { SelectedSkillsSchema } from "./skills.js";
 import { z } from "zod";
@@ -37,8 +39,8 @@ const cadence = {
   dayOfWeek: z.number().int().min(0).max(6).optional(),
 };
 export const RoutineScriptSchema = z.object({
-  command: text.trim().min(1).max(16_000),
-  timeoutSeconds: z.number().int().min(1).max(3600).optional(),
+  command: text.trim().min(1).max(ROUTINE_POLICY.maxCommandLength),
+  timeoutSeconds: z.number().int().min(1).max(ROUTINE_POLICY.maxTimeoutSeconds).optional(),
 });
 export const CreateRoutineSchema = z.object({ repoId: required, agent: agent.optional(), prompt: required.optional(),
   kind: z.enum(["agent", "script"]).optional(), script: RoutineScriptSchema.optional(),
@@ -59,7 +61,7 @@ export const PushSubscriptionSchema = z.object({ endpoint: required, expirationT
 export const PushSubscribeSchema = z.object({ subscription: PushSubscriptionSchema });
 export const PushUnsubscribeSchema = z.object({ endpoint: required });
 export const DispatchSessionSchema = z.object({ agent, sessionId: required, cwd: required, home: required, waitPid: z.number().int().positive() });
-export const TaskStatusSchema = z.enum(["queued", "running", "awaiting_approval", "awaiting_input", "idle", "archived", "failed", "cancelled"]);
+export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export const TaskQuerySchema = z.object({ status: TaskStatusSchema.optional() });
 // Omitting `before` requests the latest page. Supplying it walks backwards
 // through the durable transcript without mixing live stream events into history.

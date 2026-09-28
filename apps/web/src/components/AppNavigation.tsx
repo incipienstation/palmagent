@@ -1,3 +1,4 @@
+import { needsTaskAttention } from "@palmagent/shared";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { BarChart3, Check, Clock3, Folder, Layers, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
@@ -33,7 +34,7 @@ export function AppNavigation({ tasks, conn, children }: {
   const pinned = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt !== undefined).sort(compareTasks), [tasks]);
   const recent = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt === undefined)
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20), [tasks]);
-  const attention = tasks.some(task => task.status === "awaiting_input" || task.status === "awaiting_approval");
+  const attention = tasks.some(task => needsTaskAttention(task.status));
   const openNavigation = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
     setOpen(true);
