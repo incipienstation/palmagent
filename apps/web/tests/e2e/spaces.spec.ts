@@ -198,7 +198,7 @@ for (const width of [320, 360]) test(`mobile search stays reachable below the li
   await page.setViewportSize({ width, height: 780 });
   await setup(page, "/#/spaces");
   const search = page.getByRole("searchbox", { name: "Search Spaces" });
-  const form = page.getByRole("search", { name: "Find a Space" });
+  const form = page.getByRole("search", { name: "Search Spaces" });
   await expect(search).not.toBeFocused();
   await expect.poll(async () => (await search.boundingBox())!.y).toBeGreaterThan(690);
   await search.tap();
@@ -212,10 +212,12 @@ for (const width of [320, 360]) test(`mobile search stays reachable below the li
   await expect(page.getByRole("region", { name: "Spaces list" }).getByRole("button")).toHaveCount(1);
   const clear = page.getByRole("button", { name: "Clear Space search" });
   await expect(clear).toBeInViewport({ ratio: 1 });
+  expect(await clear.evaluate(el => el.closest('[data-slot="input-group"]') !== null)).toBe(true);
   await clear.tap();
   await expect(search).toHaveValue("");
   await expect(search).toBeFocused();
-  await page.getByRole("button", { name: "Close Space search" }).tap();
+  await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
+  await search.press("Escape");
   await expect(search).not.toBeFocused();
   const last = page.getByRole("region", { name: "Spaces list" }).getByRole("button").last();
   await last.scrollIntoViewIfNeeded();
@@ -284,9 +286,13 @@ test("Space search clearing keeps editing active and closing preserves filters",
   await page.getByRole("button", { name: "Clear Space search" }).tap();
   await expect(search).toHaveValue("");
   await expect(search).toBeFocused();
+  await search.fill("experiments");
   await search.press("Tab");
-  await expect(page.getByRole("button", { name: "Close Space search" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Clear Space search" })).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await search.press("Escape");
   await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
   await expect(search).not.toBeFocused();
 });

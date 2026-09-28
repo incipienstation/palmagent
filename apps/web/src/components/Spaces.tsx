@@ -1,8 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import type { Repo, TaskState } from "@palmagent/shared";
-import { ChevronRight, Folder, Layers, Plus, Search, X } from "lucide-react";
+import { ChevronRight, Folder, Layers, Plus, Search } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
-import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
 import { useRepos } from "../hooks/useRepos";
 import { useActionState } from "../action-state";
 import { useUpdateState } from "../update-state";
@@ -15,7 +14,7 @@ import { PullToRefresh } from "./PullToRefresh";
 import { RepoPicker } from "./RepoPicker";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
+import { ListSearch } from "./ListSearch";
 import { Skeleton } from "./ui/skeleton";
 
 export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskState[]; conn: ConnState; loading: boolean; onRefresh: () => Promise<void> }) {
@@ -23,11 +22,6 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
   const [query, setQuery] = useActionState("spaces:query", "");
   const [adding, setAdding] = useUpdateState("spaces:adding", false);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [focused, setFocused] = useState(false);
-  useKeyboardDismiss(searchRef);
-  useLayoutEffect(() => {
-    if (focused && !searchRef.current?.closest("form")?.contains(document.activeElement)) setFocused(false);
-  });
   // Freeze the initial activity order while browsing; live counters can update
   // without moving the row under a pointer. Newly connected Spaces append.
   const order = useRef<string[]>([]);
@@ -38,29 +32,15 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
     return sorted.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
   }, [repos, tasks, loading]);
   const needle = query.trim().toLocaleLowerCase();
-  const hasQuery = !!needle;
   const matches = rows.filter(repo => `${repo.name} ${repo.path}`.toLocaleLowerCase().includes(needle));
   const pending = reposLoading || loading;
   const clear = () => { setQuery(""); searchRef.current?.focus(); };
-  const closeSearch = () => { setFocused(false); searchRef.current?.blur(); };
   return <AppShell wide>
     <AppBar title="Spaces" conn={conn}>
       <Button variant="ghost" size="icon-lg" aria-label="Add Space" onClick={() => setAdding(true)}><Plus /></Button>
     </AppBar>
     <div className="flex min-h-0 flex-1 flex-col">
-      <form role="search" aria-label="Find a Space" className="order-last flex shrink-0 items-center gap-2 px-4 pt-3 pb-[max(12px,var(--safe-bottom))] md:order-first md:px-6 md:py-2"
-        onSubmit={event => { event.preventDefault(); searchRef.current?.blur(); }}
-        onFocus={() => setFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
-        <InputGroup className="h-12 flex-1 flex-nowrap gap-3 rounded-full px-4" onClick={() => searchRef.current?.focus()}>
-          <InputGroupInput ref={searchRef} type="search" aria-label="Search Spaces" placeholder="Search Spaces…" value={query}
-            onChange={event => setQuery(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} enterKeyHint="search"
-            onKeyDown={event => { if (event.key === "Escape" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); closeSearch(); } }} />
-          <InputGroupAddon><Search aria-hidden="true" className="size-5 text-muted-foreground" /></InputGroupAddon>
-        </InputGroup>
-        {(hasQuery || focused) && <Button type="button" variant="secondary" size="icon-lg" className="size-12 shrink-0 rounded-full"
-          aria-label={hasQuery ? "Clear Space search" : "Close Space search"}
-          onPointerDown={event => event.preventDefault()} onClick={hasQuery ? clear : closeSearch}><X /></Button>}
-      </form>
+      <ListSearch inputRef={searchRef} label="Search Spaces" clearLabel="Clear Space search" placeholder="Search Spaces…" value={query} onChange={setQuery} />
       <PullToRefresh className="min-h-0 flex-1" scrollKey={!pending ? `spaces:${query}` : undefined} onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
       <div className="flex flex-col gap-4 px-4 pt-2 pb-4 md:px-6">
         <Button variant="secondary" className="h-auto min-h-20 w-full justify-start gap-3 rounded-2xl px-4 py-3" onClick={() => navigate("/")}>

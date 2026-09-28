@@ -1,12 +1,12 @@
 import { useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, X, Folder, Pin } from "lucide-react";
+import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, Folder, Pin } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
+import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
 import { statusSection } from "@/lib/status";
@@ -271,20 +271,16 @@ export const InboxView = memo(function InboxView({
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+        <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
+          placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} />
         <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
-          {/* The pb wrapper tracks the banner + FAB clearance; it is the
-              parent of the status <section>s (the inbox FAB/--banner-h contract). */}
-          <div data-testid="inbox-content" className="pb-[calc(var(--banner-h,0px)+var(--safe-bottom)+88px)]">
+          {/* Desktop retains a floating action; mobile controls stay in flow. */}
+          <div data-testid="inbox-content" className="pb-4 md:pb-22">
             {!repoId && <p className="px-4 pt-1 text-sm text-muted-foreground">Tasks across all your Spaces</p>}
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
-              <div className="flex gap-2">
-                <Input ref={searchInput} type="search" aria-label="Search tasks" placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query}
-                  autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={event => setQuery(event.target.value)} />
-                {query && <Button variant="ghost" size="icon-lg" aria-label="Clear task search" onClick={clearSearch}><X /></Button>}
-              </div>
               <TaskFilters repo={space} repos={repos} tasks={scoped} directory={directory} onDirectoryChange={setDirectory} status={statusFilter} onStatusChange={setStatusFilter} />
               {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
             </div>}
@@ -304,9 +300,9 @@ export const InboxView = memo(function InboxView({
             )}
           </div>
         </PullToRefresh>
-        </div>
+        <div className="order-1 flex shrink-0 justify-end px-4 pt-2 pb-2 md:absolute md:right-4 md:bottom-5 md:z-20 md:p-0">
         <Button
-          className="fixed right-[max(16px,calc((100vw-1100px)/2+16px))] bottom-[calc(20px+var(--safe-bottom)+var(--banner-h,0px))] z-20 h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
+          className="h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
           ref={toastObstacle}
           aria-label="Dispatch new task"
           onClick={newTask}
@@ -315,6 +311,8 @@ export const InboxView = memo(function InboxView({
           <SquarePen className="size-5" />
           New task
         </Button>
+        </div>
+        </div>
       </AppShell>
     </ShowSpaceContext.Provider></ReposContext.Provider>
   );

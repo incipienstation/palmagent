@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Tasks and Spaces share a mobile bottom search field with an inline clear button. Search stays above the keyboard, and New task remains reachable above the search field.
+
 ## 0.1.0-alpha.117
 
 ### Fixed
