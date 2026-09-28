@@ -15,7 +15,7 @@ import { Button } from "./ui/button";
 import { Field, FieldGroup, FieldLabel } from "./ui/field";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "./ui/input-group";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetFooter, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { PermissionPicker, permissionLabel } from "./PermissionPicker";
 import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
@@ -227,22 +227,22 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
             {!settingsReadOnly && <ChevronDown data-icon="inline-end" />}
           </Button>
         </SheetTrigger></span>}
-        <SheetContent className="bottom-[var(--keyboard-inset,0px)] max-h-[calc(var(--app-height)-16px)] rounded-t-3xl"
+        <SheetContent className="bottom-[var(--keyboard-inset,0px)]"
           onCloseAutoFocus={(event) => {
             // Dismissal finishes after the closing animation. Do not steal
             // focus if the user has already returned to their draft.
             if (document.activeElement === textarea.current) event.preventDefault();
           }}>
-          <SheetHeader className="shrink-0 pb-4 text-center">
+          <SheetHeader>
             <SheetTitle>Configure</SheetTitle>
             <SheetDescription>{settings.onAgentChange ? "Settings for this new task." : "Settings for the next message."}</SheetDescription>
           </SheetHeader>
-          <div className="min-h-0 overflow-y-auto overscroll-contain px-5 pb-5" data-slot="settings-scroll" data-vaul-no-drag>
+          <SheetBody data-slot="settings-scroll" data-vaul-no-drag>
             <Configuration settings={settings} description={description} />
-          </div>
-          <div className="shrink-0 px-5 pt-3">
-            <Button type="button" className="w-full rounded-full" onClick={() => setConfigure(false)}>Done</Button>
-          </div>
+          </SheetBody>
+          <SheetFooter>
+            <Button type="button" onClick={() => setConfigure(false)}>Done</Button>
+          </SheetFooter>
         </SheetContent>
       </Sheet>
       {settings.agent === "codex" && <Button type="button" variant={voice.active ? "secondary" : "ghost"} size="icon-lg"

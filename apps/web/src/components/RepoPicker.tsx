@@ -2,7 +2,7 @@ import { useBackLayer } from "../hooks/useBackLayer";
 import { registerRepo, removeRepo as removeRegisteredRepo, useRepoMutations } from "../repo-mutations";
 import { toast } from "./ui/toaster";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DiscoveredRepo, FsListResponse, Repo, ValidateRepoPathResponse } from "@palmagent/shared";
 import { ArrowUp, ChevronLeft, Folder, FolderSearch, GitBranch, Keyboard, RefreshCw, X } from "lucide-react";
 
@@ -10,7 +10,9 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
+  DrawerBody,
   DrawerContent,
+  DrawerHeaderRow,
   DrawerDescription,
   DrawerFooter,
   DrawerHeader,
@@ -89,7 +91,7 @@ function Row(props: {
     <div className={cn("flex items-center gap-1 border-b border-border pr-2.5", props.selected && "bg-accent")}>
       <button
         type="button"
-        className="min-h-14 min-w-0 flex-1 px-3.5 py-2 text-left active:bg-accent disabled:opacity-55"
+        className="min-h-14 min-w-0 flex-1 px-4 py-2 text-left active:bg-accent disabled:opacity-55"
         onClick={props.onPress}
         disabled={props.disabled}
         role="option"
@@ -126,6 +128,10 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const [selectionReady, setSelectionReady] = useUpdateState("picker:selection-ready", true);
   // branch is unset for a plain folder (no git) — registered/run in place.
   const [picked, setPicked] = useUpdateState<{ path: string; name: string; branch?: string } | null>(`picker:picked`, null);
+  const selectionRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (picked) selectionRef.current?.scrollIntoView({ block: "nearest" });
+  }, [picked?.path]);
   const mutations = useRepoMutations();
   const busy = mutations.registering.size > 0;
   const [error, setError] = useState("");
@@ -260,9 +266,9 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
   return (
     <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
-      <DrawerContent className="h-[min(86dvh,680px)]" onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus(); }}>
+      <DrawerContent size="panel" onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus(); }}>
         <DrawerHeader>
-          <div className="flex items-center gap-2">
+          <DrawerHeaderRow>
             {mode !== "search" && (
               <Button
                 variant="ghost"
@@ -287,7 +293,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
             <Button ref={closeRef} variant="outline" size="icon-lg" onClick={onClose} aria-label="Close">
               <X className="size-3.5" />
             </Button>
-          </div>
+          </DrawerHeaderRow>
           <DrawerDescription className="sr-only">
             Connect a discovered folder, browse folders, or enter a path manually.
           </DrawerDescription>
@@ -306,15 +312,12 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
           )}
         </DrawerHeader>
 
-        <div
-          className="min-h-0 flex-1 overflow-y-auto pb-[calc(12px+var(--safe-bottom))]"
-          role="listbox"
-          aria-label="Folders"
-        >
-          {mutations.removing.size > 0 && <p role="status" className="px-3.5 py-2 text-sm text-muted-foreground">Removing Space…</p>}
-          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-3.5 py-2 text-sm text-muted-foreground">{tilde(path)} · Connecting…</p>)}
+        <DrawerBody className="px-0">
+          <div role="listbox" aria-label="Folders">
+          {mutations.removing.size > 0 && <p role="status" className="px-4 py-2 text-sm text-muted-foreground">Removing Space…</p>}
+          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-4 py-2 text-sm text-muted-foreground">{tilde(path)} · Connecting…</p>)}
           {error && (
-            <Alert variant="destructive" className="mx-3.5 my-2.5 w-auto">
+            <Alert variant="destructive" className="mx-4 my-2.5 w-auto">
               {error}
             </Alert>
           )}
@@ -373,7 +376,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
           {mode === "browse" && (
             <>
-              <div className="px-3.5 pt-2.5 pb-1 font-mono text-xs break-all text-muted-foreground">
+              <div className="px-4 pt-2.5 pb-1 font-mono text-xs break-all text-muted-foreground">
                 {tilde(browse?.path ?? "")}
               </div>
               {browse?.parent && <Row icon={<ArrowUp />} title="Up" onPress={() => void openBrowse(browse.parent)} />}
@@ -422,7 +425,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
           )}
 
           {mode === "manual" && (
-            <div className="flex flex-col gap-2 px-3.5 py-3">
+            <div className="flex flex-col gap-2 px-4 py-3">
               <Label htmlFor="manual-path">Absolute path (or ~/…)</Label>
               <Input
                 id="manual-path"
@@ -473,10 +476,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               )}
             </div>
           )}
-        </div>
-
-        {picked && (
-          <DrawerFooter>
+          </div>
+          {picked && <div ref={selectionRef} className="flex flex-col gap-3 px-4 pt-4">
             <div>
               <div className="flex items-center gap-2 font-semibold text-strong">
                 {picked.branch ? (
@@ -499,6 +500,11 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                 <FieldDescription>Starting point for isolated tasks and routines. Leave blank to detect the remote default, with a local fallback.</FieldDescription>
               </Field>
             </FieldGroup>}
+          </div>}
+        </DrawerBody>
+
+        {picked && (
+          <DrawerFooter>
             <Button onClick={() => void register()} disabled={busy || validating || !selectionReady}>
               {busy ? "Connecting…" : registeredByPath.has(picked.path) ? "Open Space" : "Connect Space"}
             </Button>

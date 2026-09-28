@@ -5,7 +5,7 @@ import { navigate } from "../router";
 import { taskDirectoryFor } from "../space-context";
 import { statusLabel } from "../lib/status";
 import { Button } from "./ui/button";
-import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer";
+import { Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeaderRow, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer";
 import { Field, FieldGroup, FieldLabel } from "./ui/field";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
@@ -29,10 +29,10 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild><Button variant="outline" className="rounded-full"><SlidersHorizontal data-icon="inline-start" />Filters</Button></DrawerTrigger>
       <DrawerContent onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
-        <DrawerHeader><div className="flex items-center gap-2"><DrawerTitle>Task filters</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close filters" onClick={() => setOpen(false)}><X /></Button></div>
+        <DrawerHeader><DrawerHeaderRow><DrawerTitle>Task filters</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close filters" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
           <DrawerDescription>{repo ? `Tasks in ${repo.name}. Worktree filters only change this list.` : "Tasks across all your Spaces."}</DrawerDescription>
         </DrawerHeader>
-        <FieldGroup className="px-5 pb-[calc(24px+var(--safe-bottom))]">
+        <DrawerBody><FieldGroup>
           <Field><FieldLabel htmlFor="space-status-filter">Status</FieldLabel>
             <Select value={status} onValueChange={value => onStatusChange(value as TaskFilter)}>
               <SelectTrigger id="space-status-filter"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>
@@ -50,8 +50,8 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
               </SelectGroup></SelectContent>
             </Select>
           </Field>}
-          <Button onClick={() => setOpen(false)}>Done</Button>
-        </FieldGroup>
+        </FieldGroup></DrawerBody>
+        <DrawerFooter><Button onClick={() => setOpen(false)}>Done</Button></DrawerFooter>
       </DrawerContent>
     </Drawer>
     {directory !== "all" && <Button variant="secondary" className="min-w-0 max-w-full rounded-full" onClick={() => onDirectoryChange("all")} aria-label="Clear Worktree filter">
@@ -67,14 +67,14 @@ export function SpaceDetails({ repo }: { repo: Repo }) {
   return <Drawer open={open} onOpenChange={setOpen}>
     <DrawerTrigger asChild><Button variant="ghost" size="icon-lg" aria-label="Space details"><MoreHorizontal /></Button></DrawerTrigger>
     <DrawerContent onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
-      <DrawerHeader><div className="flex min-w-0 items-center gap-2"><DrawerTitle className="min-w-0 break-words">{repo.name}</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close Space details" onClick={() => setOpen(false)}><X /></Button></div>
+      <DrawerHeader><DrawerHeaderRow><DrawerTitle className="min-w-0 break-words">{repo.name}</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close Space details" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
         <DrawerDescription>Space information and tools.</DrawerDescription>
       </DrawerHeader>
-      <div className="flex flex-col gap-4 px-5 pb-[calc(24px+var(--safe-bottom))]">
+      <DrawerBody className="flex flex-col gap-4">
         <Button variant="outline" className="justify-start" onClick={() => { setOpen(false); navigate("/terminals/repo/" + encodeURIComponent(repo.id)); }}><Terminal data-icon="inline-start" />Terminals</Button>
         <div><p className="text-sm font-medium">Connected folder</p><p className="mt-1 break-all text-sm text-muted-foreground">{repo.path}</p></div>
         <p className="text-sm text-muted-foreground">This Space includes tasks in all of its Worktrees.</p>
-      </div>
+      </DrawerBody>
     </DrawerContent>
   </Drawer>;
 }

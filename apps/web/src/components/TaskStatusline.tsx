@@ -4,7 +4,7 @@ import type { AccountLimits, AgentKind, CodexLimitBucket, LimitWindow } from "@p
 import { useTaskAccountLimits } from "../hooks/useTaskAccountLimits";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 
 function duration(ms: number): string {
   const minutes = Math.max(1, Math.ceil(ms / 60_000));
@@ -98,12 +98,12 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
         <ChevronDown data-icon="inline-end" className="text-muted-foreground" />
       </Button>
     </SheetTrigger>
-    <SheetContent className="max-h-[80dvh] overflow-y-auto">
+    <SheetContent>
       <SheetHeader>
         <SheetTitle>{report.agent === "claude" ? "Claude" : "Codex"} account limits</SheetTitle>
         <SheetDescription>Shared across sessions using this account. Checked {new Date(report.checkedAt).toLocaleTimeString()}. Updates every five minutes.</SheetDescription>
       </SheetHeader>
-      <div className="flex flex-col gap-4 p-4">
+      <SheetBody className="flex flex-col gap-4">
         {stale && <p className="text-sm text-muted-foreground">These limits are outdated. Reconnect to get a fresh report.</p>}
         {report.agent === "claude" ? <>
           {report.fiveHour && <WindowLine name="5h" limit={report.fiveHour} now={now} stale={stale} />}
@@ -115,7 +115,7 @@ function LimitsView({ report, now }: { report: AccountLimits; now: number }) {
           <CodexWindows bucket={bucket} now={now} stale={stale} />
           {bucket.credits && <p className="text-xs">{bucket.credits.unlimited ? "Unlimited credits" : bucket.credits.balance !== null ? `Credits: ${bucket.credits.balance}` : "Credits available"}</p>}
         </div>)}
-      </div>
+      </SheetBody>
     </SheetContent>
   </Sheet>;
 }
