@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.126
+
 ### Fixed
 
 - Reconnecting while loading earlier conversation history preserves recovered messages and subsequent live replies.
