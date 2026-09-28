@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.117
+
 ### Fixed
 
 - Spaces search leaves editing mode when the mobile keyboard closes without losing the query. Clearing a search keeps the input ready for typing, and whitespace-only input is treated as empty.
