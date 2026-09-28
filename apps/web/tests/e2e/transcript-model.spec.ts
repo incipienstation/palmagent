@@ -92,3 +92,29 @@ test("a successful terminal result quiets earlier errors without claiming their 
   expect(runInterrupted(failure)).toBe(false);
   expect(rows.filter((r) => r.type === "message").map((r) => r.key)).toEqual([3]);
 });
+
+test("interruption is determined by code, independent of provider wording", () => {
+  for (const message of ["Reworded error", ""]) {
+    const item = event(1, "error", { code: "turn_result_missing", message });
+    expect(runInterrupted({ type: "failure", key: 1, previous: false, items: [item] })).toBe(true);
+  }
+  const textOnly = event(1, "error", { message: "Codex exited before a terminal turn result." });
+  expect(runInterrupted({ type: "failure", key: 1, previous: false, items: [textOnly] })).toBe(false);
+});
+
+test("old flat and paged update checkpoints migrate once while preserving cursors and keys", async () => {
+  const { restoredHistory } = await import("../../src/history-checkpoint");
+  const old = { ...event(7, "error", { message: "Codex exited before a terminal turn result.", extra: true }) };
+  if (old.kind !== "assistant_text") old.event.agent = "codex";
+  for (const input of [
+    { items: [old], lastSeq: 9, before: 7 },
+    { pages: [{ items: [old], cursor: 9, before: 7 }], pageParams: [null] },
+  ]) {
+    const migrated = restoredHistory(input)!;
+    expect(migrated.pages[0].cursor).toBe(9);
+    expect(migrated.pages[0].before).toBe(7);
+    expect(migrated.pages[0].items[0]).toMatchObject({ key: 7, event: { payload: { code: "turn_result_missing", extra: true } } });
+    expect(restoredHistory(migrated)).toEqual(migrated);
+  }
+  expect(old).not.toHaveProperty("event.payload.code");
+});

@@ -525,13 +525,14 @@ test("Codex diagnostic items do not fail successful turns, while terminal errors
 });
 
 test("Codex exit without a terminal event is an error even after diagnostics and exit zero", async () => {
-  for (const reattach of [false, true]) {
+  for (const interactive of [false, true]) for (const reattach of [false, true]) {
     const backend = new FakeBackend(), events: RawEvent[] = [];
-    const handle = new CodexRunner().start(startArgs({ reattach }), e => events.push(e), backend);
+    const handle = new CodexRunner().start(startArgs({ reattach, interactive }), e => events.push(e), backend);
     backend.proc.emit({ type: "item.completed", item: { type: "error", message: "Diagnostic" } });
     backend.proc.exit(0); await handle.done;
     assert.equal(events.at(-2)?.kind, "error");
     assert.match((events.at(-2)?.payload as { message: string }).message, /before a terminal turn result/);
+    assert.equal((events.at(-2)?.payload as { code: string }).code, "turn_result_missing");
     assert.equal(eventSubtype(events.at(-1)), "process_exit");
   }
 });

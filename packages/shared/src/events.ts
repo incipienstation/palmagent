@@ -4,6 +4,9 @@ import type { ImageAttachment } from "./requests.js";
 // The page only ever sees AgentEvent — it never knows whether it's talking to
 // Claude or Codex.
 
+/** Stable normalized error meaning, independent of provider-facing message text. */
+export const TURN_RESULT_MISSING = "turn_result_missing";
+
 export type AgentKind = "claude" | "codex";
 
 // Optional presentation metadata. Missing phase means unclassified prose and

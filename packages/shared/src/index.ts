@@ -27,3 +27,5 @@ export * from "./routine-policy.js";
 export * from "./product-version.mjs";
 
 export * from "./distribution.js";
+
+export * from "./event-migrations.js";
