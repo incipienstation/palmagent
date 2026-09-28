@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.121
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/99d7998c3c3d61558e724ffd8015192ea1ec7241...a05307d47a3f71e4bc67367456f073410b47c755) for details.
+
 ## 0.1.0-alpha.120
 
 - Keep skill discovery failures contained and preserve project directories while using shared subprocess cleanup.
