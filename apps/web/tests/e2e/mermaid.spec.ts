@@ -26,6 +26,65 @@ async function screenshot(page: Page, name: string) {
 const fence = (source: string) => "```mermaid\n" + source + "\n```";
 const flow = "flowchart TD\n  A[Start] --> B[Render diagram]\n  B --> C[Done]";
 
+test("revisiting a conversation reuses its diagram without another rendering placeholder", async ({ page }) => {
+  const taskId = await reply(page, fence(flow));
+  const diagram = page.getByRole("img", { name: "Mermaid diagram", exact: true });
+  await expect(diagram).toBeVisible();
+  const src = await diagram.getAttribute("src");
+  await page.evaluate(() => { location.hash = "/spaces"; });
+  await expect(diagram).toHaveCount(0);
+  await page.evaluate(taskId => {
+    const states: string[] = [];
+    Object.assign(window, { diagramPlaceholders: states });
+    new MutationObserver(() => {
+      if (document.body.textContent?.includes("Rendering diagram…")) states.push("rendering");
+    }).observe(document.body, { childList: true, subtree: true });
+    location.hash = `/task/${taskId}`;
+  }, taskId);
+  await expect(diagram).toBeVisible();
+  await expect(diagram).toHaveAttribute("src", src!);
+  expect(await page.evaluate(() => (window as unknown as { diagramPlaceholders: string[] }).diagramPlaceholders)).toEqual([]);
+});
+
+test("identical mounted diagrams reuse the same SVG", async ({ page }) => {
+  await reply(page, fence(flow) + "\n\n" + fence(flow));
+  const diagrams = page.getByRole("img", { name: "Mermaid diagram", exact: true });
+  await expect(diagrams).toHaveCount(2);
+  const sources = await diagrams.evaluateAll(images => images.map(image => image.getAttribute("src")));
+  expect(sources[0]).toBe(sources[1]);
+});
+
+test("signing into a new session renders diagrams again instead of reusing the old cache", async ({ page }) => {
+  const taskId = await reply(page, fence(flow));
+  const diagram = page.getByRole("img", { name: "Mermaid diagram", exact: true });
+  await expect(diagram).toBeVisible();
+  const previous = await diagram.getAttribute("src");
+  await page.route(`**/api/tasks/${taskId}/history?*`, route => route.fulfill({ json: {
+    events: [{ seq: 1, event: { taskId, agent: "codex", ts: 1, kind: "assistant_text", payload: { text: fence(flow) } } }],
+    before: null, cursor: 1,
+  } }));
+  await page.route("**/api/auth/login/options", route => route.fulfill({ json: { challenge: "Y2hhbGxlbmdl" } }));
+  await page.route("**/api/auth/login/verify", route => route.fulfill({ json: { verified: true } }));
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.credentials, "get", { configurable: true, value: async () => ({
+      id: "test-credential", rawId: new Uint8Array([1]).buffer, type: "public-key",
+      response: { authenticatorData: new Uint8Array([1]).buffer, clientDataJSON: new Uint8Array([1]).buffer, signature: new Uint8Array([1]).buffer },
+      getClientExtensionResults: () => ({}),
+    }) });
+  });
+  const other = await page.context().newPage();
+  try {
+    await other.goto(new URL("/manifest.webmanifest", page.url()).href);
+    await other.evaluate(() => {
+      const channel = new BroadcastChannel("palmagent-cache");
+      channel.postMessage("session"); channel.close();
+    });
+    await page.getByRole("button", { name: "Sign in with passkey" }).click();
+    await expect(diagram).toBeVisible();
+    await expect(diagram).not.toHaveAttribute("src", previous!);
+  } finally { await other.close(); }
+});
+
 test("Mermaid parsing keeps the transcript row height stable", async ({ page }) => {
   await reply(page, fence(flow));
   const block = page.locator("[data-mermaid-block]");
@@ -85,6 +144,7 @@ test("multiple diagrams, theme changes, and wide mobile content remain contained
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(diagrams).toHaveCount(2);
   await expect(diagrams.first()).not.toHaveAttribute("src", light!);
+  await expect(diagrams.first()).toHaveAttribute("src", dark!);
   await screenshot(page, "mermaid-desktop-dark");
 });
 
