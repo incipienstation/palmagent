@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { migrateEventData } from "./event-migrations.js";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
 import { dirname } from "node:path";
 import type {
@@ -54,6 +55,7 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.migrate();
+    migrateEventData(this.db);
     this.initializePrEvidence();
     this.insertEventStmt = this.db.prepare(
       `INSERT INTO events (task_id, seq, kind, payload_json, ts)

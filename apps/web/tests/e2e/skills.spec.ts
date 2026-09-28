@@ -112,16 +112,19 @@ for (const { theme, width } of [{ theme: "light", width: 360 }, { theme: "dark",
 });
 
 
-test("typing slash before repository discovery completes opens the correct catalogue", async ({ page }) => {
+test("Space route loads the correct catalogue before repository discovery completes", async ({ page }) => {
   await catalogue(page);
   let release!: () => void;
   const ready = new Promise<void>(resolve => { release = resolve; });
+  // The Space URL supplies the context even while repository discovery is pending.
   await page.route("**/api/repos", async route => { await ready; await route.fulfill({ json: { repos } }); });
   await page.goto("/#/new/space/repo-app");
   const input = page.getByRole("textbox", { name: "Prompt", exact: true });
   await input.fill("/doctor");
-  await expect(page.getByRole("option")).toHaveCount(0);
+  await expect(page.getByRole("option", { name: /palmagent:doctor/ })).toBeVisible();
+  const discovered = page.waitForResponse("**/api/repos");
   release();
+  await discovered;
   await expect(page.getByRole("option", { name: /palmagent:doctor/ })).toBeVisible();
   await expect(input).toBeFocused();
 });

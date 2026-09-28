@@ -1,4 +1,4 @@
-import { codexSandbox } from "@palmagent/shared";
+import { TURN_RESULT_MISSING, codexSandbox } from "@palmagent/shared";
 import type { AgentEventKind, AgentEventPayloads } from "@palmagent/shared";
 import type { ImageAttachment, QuestionRequest } from "@palmagent/shared";
 import type { Emit, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
@@ -138,7 +138,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
     clearTimeout(startup);
     for (const p of pending.values()) { clearTimeout(p.timer); p.resolve("unknown"); }
     pending.clear(); questions.clear();
-    if (!completed) event("error", { message: "Codex exited before a terminal turn result." });
+    if (!completed) event("error", { code: TURN_RESULT_MISSING, message: "Codex exited before a terminal turn result." });
     event("status", { subtype: "process_exit", code }); resolve();
   }));
   if (!reattach) rpc("initialize", "initialize", { clientInfo: { name: "palmagent", version: "1.0.0" }, capabilities: {} });

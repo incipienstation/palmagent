@@ -1,3 +1,4 @@
+import { TURN_RESULT_MISSING } from "@palmagent/shared";
 import type { AssistantPhase } from "@palmagent/shared";
 import type { LogItem } from "./hooks/useTaskStream";
 import type { OutputMode } from "./OutputModeProvider";
@@ -27,7 +28,7 @@ export type TranscriptRow = Activity | RunFailure | { type: "message"; key: numb
 export function runInterrupted(failure: RunFailure): boolean {
   return !failure.completed && failure.items.some((item) => item.kind === "result" ||
     (item.kind === "status" && payload(item).subtype === "process_exit") ||
-    payload(item).message === "Codex exited before a terminal turn result.");
+    (item.kind === "error" && payload(item).code === TURN_RESULT_MISSING));
 }
 
 // This is a view over the retained stream, never a destructive filter. Explicit

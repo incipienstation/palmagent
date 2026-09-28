@@ -28,9 +28,9 @@ export function useSpaceOperations() {
 
 export function useRepositoryBrowserOperations() {
   return useMemo(() => ({
-    discover: (refresh?: boolean) => api.discoverRepos(refresh),
-    validatePath: (path: string) => api.validateRepoPath(path),
-    listDirectory: (path?: string) => api.listFs(path),
+    discover: (refresh?: boolean, signal?: AbortSignal) => api.discoverRepos(refresh, signal),
+    validatePath: (path: string, signal?: AbortSignal) => api.validateRepoPath(path, signal),
+    listDirectory: (path?: string, signal?: AbortSignal) => api.listFs(path, signal),
   }), []);
 }
 

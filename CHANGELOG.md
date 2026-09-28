@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Space discovery ignores cancelled and stale responses when the picker is closed or reopened.
+- Interrupted Codex turns use a stable error code. Existing event history and restored PWA transcript checkpoints are migrated without changing their ordering or message text.
+
 ## 0.1.0-alpha.124
 
 ### Changed

@@ -1,3 +1,4 @@
+import { restoredHistory } from "../history-checkpoint";
 import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deferActivityEventDetails, type AgentEvent, type AgentEventKind, type AgentKind, type AssistantTextPayload, type SseFrame, type TaskHistoryResponse, type TaskState } from "@palmagent/shared";
@@ -22,7 +23,7 @@ interface TaskHistoryPage {
   cursor: number;
   task?: TaskState;
 }
-type TaskHistoryData = InfiniteData<TaskHistoryPage, number | null>;
+export type TaskHistoryData = InfiniteData<TaskHistoryPage, number | null>;
 
 export interface TaskStream {
   log: LogItem[];
@@ -69,24 +70,6 @@ function compactHistory(data: TaskHistoryData | undefined): TaskHistoryData | un
       const compact = deferActivityEventDetails(item.event);
       return compact.detailsDeferred ? { ...item, event: compact.event, detailsDeferred: true } : item;
     }) })),
-  };
-}
-
-// Deploy handoff snapshots from the previous client stored one flat transcript.
-// Lift it into an InfiniteData page so an update can paint immediately and then
-// continue from its durable history cursor.
-function restoredHistory(value: unknown): TaskHistoryData | undefined {
-  if (!value || typeof value !== "object") return;
-  const candidate = value as Partial<TaskHistoryData> & {
-    items?: LogItem[]; lastSeq?: number; before?: number | null; task?: TaskState;
-  };
-  if (Array.isArray(candidate.pages) && Array.isArray(candidate.pageParams) && candidate.pages.length) {
-    return candidate as TaskHistoryData;
-  }
-  if (!Array.isArray(candidate.items) || typeof candidate.lastSeq !== "number") return;
-  return {
-    pages: [{ items: candidate.items, before: candidate.before ?? null, cursor: candidate.lastSeq, task: candidate.task }],
-    pageParams: [null],
   };
 }
 

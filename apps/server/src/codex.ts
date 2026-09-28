@@ -1,4 +1,4 @@
-import { codexSandbox } from "@palmagent/shared";
+import { TURN_RESULT_MISSING, codexSandbox } from "@palmagent/shared";
 import { startCodexInteractive } from "./codex-interactive.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -198,7 +198,7 @@ export class CodexRunner implements AgentRunner {
     const done = new Promise<void>((resolve) => {
       proc.onExit((code) => {
         cleanup();
-        if (!terminalSeen) emit({ taskId, kind: "error", sessionId: getSession(), payload: { message: "Codex exited before a terminal turn result." } });
+        if (!terminalSeen) emit({ taskId, kind: "error", sessionId: getSession(), payload: { code: TURN_RESULT_MISSING, message: "Codex exited before a terminal turn result." } });
         emit({ taskId, kind: "status", sessionId: getSession(), payload: { subtype: "process_exit", code } });
         resolve();
       });
