@@ -1,3 +1,4 @@
+import { VoiceWaveform } from "./VoiceWaveform";
 import { useVoiceInput } from "../use-voice-input";
 import { Alert } from "./ui/alert";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -67,14 +68,6 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
     {s.children}
     <p className="text-xs text-muted-foreground">{description}</p>
   </FieldGroup>;
-}
-
-function VoiceWaveform({ levels }: { levels: number[] }) {
-  return <div aria-hidden="true" data-voice-waveform className="flex h-8 min-w-0 flex-1 items-center justify-center gap-[2px] overflow-hidden px-1">
-    {levels.map((level, index) => <span key={index}
-      className="h-full min-w-[2px] max-w-[3px] flex-1 rounded-full bg-muted-foreground/75 transition-[height] duration-75 motion-reduce:transition-none"
-      style={{ height: `${12 + Math.min(0.88, level) * 88}%` }} />)}
-  </div>;
 }
 
 export function Composer({ id, value, onChange, placeholder, label, action, onSend, onStop, stopping, busy, disabled, sendDisabled,
