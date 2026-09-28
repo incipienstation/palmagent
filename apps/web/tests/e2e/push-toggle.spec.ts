@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { assertViewportLocked } from "./_helpers";
+import { captureForReview, assertViewportLocked } from "./_helpers";
 
 // Browser coverage retains permission prompts, feedback, and Settings lifetime.
 // Request ordering and failure combinations live in push-model.spec.ts.
@@ -132,7 +132,7 @@ test("first browser prompt stays off until granted, with no debounced permission
   await settled(page, true);
 });
 
-test("subscribe failure rolls back with a toast and permits retry", async ({ page }, testInfo) => {
+test("subscribe failure rolls back with a toast and permits retry", async ({ page }) => {
   const response = holdRequest();
   await page.route("**/api/push/subscribe", async (route) => {
     await response.pending;
@@ -146,7 +146,7 @@ test("subscribe failure rolls back with a toast and permits retry", async ({ pag
   response.release();
   await settled(page, false);
   await expect(currentToast(page)).toContainText(/notifications.*try again/i);
-  await page.screenshot({ path: testInfo.outputPath("push-failure-toast.png") });
+  await captureForReview(page, "push-failure-toast.png");
   await page.unroute("**/api/push/subscribe");
   await toggle.click();
   await settled(page, true);

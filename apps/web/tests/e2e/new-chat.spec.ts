@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
-import { assertViewportLocked } from "./_helpers";
+import { captureForReview, assertViewportLocked } from "./_helpers";
 import { installScopedStream, send } from "./_session-stream";
 
 test.use({ serviceWorkers: "block" });
@@ -23,7 +23,7 @@ for (const width of [360, 1280]) test(`first send keeps the conversation and com
   await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("First message");
   await page.getByLabel("Attach photos", { exact: true }).setInputFiles({ name: "image.png", mimeType: "image/png", buffer: png });
-  await page.screenshot({ path: `/tmp/palmagent-new-chat-draft-${width}.png` });
+  await captureForReview(page, `palmagent-new-chat-draft-${width}.png`);
   const node = await composer(page).elementHandle();
   const input = await composer(page).getByRole("textbox").elementHandle();
   await page.getByRole("button", { name: "Send now", exact: true }).click();
@@ -35,7 +35,7 @@ for (const width of [360, 1280]) test(`first send keeps the conversation and com
   await expect(composer(page).getByRole("textbox")).toHaveValue("");
   await expect.poll(() => composer(page).evaluate(el => el.getBoundingClientRect().height)).toBe(54);
   const pendingBottom = await composer(page).evaluate(el => el.getBoundingClientRect().bottom);
-  await page.screenshot({ path: `/tmp/palmagent-new-chat-pending-${width}.png` });
+  await captureForReview(page, `palmagent-new-chat-pending-${width}.png`);
   release();
   await expect(page).toHaveURL(/task\/t-run$/);
   await expect.poll(() => node!.evaluate(el => el === document.querySelector('[aria-label="Message composer"]'))).toBe(true);
@@ -49,7 +49,7 @@ for (const width of [360, 1280]) test(`first send keeps the conversation and com
   expect(await composer(page).evaluate(el => el.getBoundingClientRect().bottom)).toBeCloseTo(pendingBottom, 0);
   await expect(page.getByTestId("toast")).toHaveCount(0);
   await assertViewportLocked(page);
-  await page.screenshot({ path: `/tmp/palmagent-new-chat-${width}.png` });
+  await captureForReview(page, `palmagent-new-chat-${width}.png`);
   await page.getByRole("button", { name: "New task", exact: true }).click();
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue("");
   await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(0);

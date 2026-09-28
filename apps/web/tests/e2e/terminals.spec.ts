@@ -1,5 +1,5 @@
 import { test, expect, type Page, type WebSocketRoute } from "@playwright/test";
-import { assertViewportLocked } from "./_helpers";
+import { captureForReview, assertViewportLocked } from "./_helpers";
 
 const id = "80a6a201-c6df-4229-ae7c-7b6b42b72d2f";
 async function terminalFixture(page: Page, options: { legacy?: boolean; occupied?: boolean } = {}) {
@@ -68,7 +68,7 @@ test("global terminals ignore a stale browsing scope; Space terminals use an exp
   await assertViewportLocked(page);
 });
 
-test("mobile task terminal keeps its shell when returning to conversation and requires explicit termination", async ({ page }, testInfo) => {
+test("mobile task terminal keeps its shell when returning to conversation and requires explicit termination", async ({ page }) => {
   const f = await terminalFixture(page);
   await page.goto("/#/task/t-run");
   await page.getByRole("button", { name: "Task actions", exact: true }).click();
@@ -81,7 +81,7 @@ test("mobile task terminal keeps its shell when returning to conversation and re
   await page.getByRole("button", { name: "Ctrl+C", exact: true }).click();
   await expect.poll(() => f.inputs.includes("\x03")).toBe(true);
   await assertViewportLocked(page);
-  await page.screenshot({ path: testInfo.outputPath("terminal-mobile-dark.png") });
+  await captureForReview(page, "terminal-mobile-dark.png");
   await page.getByRole("button", { name: "Back to conversation" }).click();
   expect(f.terminated()).toBe(false);
   await page.getByRole("button", { name: "Task actions", exact: true }).click();
@@ -98,7 +98,7 @@ test("mobile task terminal keeps its shell when returning to conversation and re
   await expect(page.getByText("Shell exited", { exact: true })).toBeVisible();
   expect(f.terminated()).toBe(true);
 });
-test("desktop shows conversation and terminal together; narrow light layout remains reachable", async ({ page }, testInfo) => {
+test("desktop shows conversation and terminal together; narrow light layout remains reachable", async ({ page }) => {
   await terminalFixture(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?__theme=light#/task/t-run");
@@ -108,7 +108,7 @@ test("desktop shows conversation and terminal together; narrow light layout rema
   await expect(page.getByText("Connected · sample-app", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeVisible();
   await assertViewportLocked(page);
-  await page.screenshot({ path: testInfo.outputPath("terminal-desktop-light.png") });
+  await captureForReview(page, "terminal-desktop-light.png");
   await page.setViewportSize({ width: 320, height: 568 });
   // Chromium can acknowledge the viewport before delivering resize to the PWA.
   // Wait for the visible shell to resize before measuring document overflow.
@@ -117,7 +117,7 @@ test("desktop shows conversation and terminal together; narrow light layout rema
   await expect(page.getByRole("button", { name: "Ctrl+C", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Type here" })).toHaveCount(0);
   await assertViewportLocked(page);
-  await page.screenshot({ path: testInfo.outputPath("terminal-mobile-light.png") });
+  await captureForReview(page, "terminal-mobile-light.png");
 });
 
 
