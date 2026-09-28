@@ -18,7 +18,7 @@ import { ListSearch } from "./ListSearch";
 import { Skeleton } from "./ui/skeleton";
 
 export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskState[]; conn: ConnState; loading: boolean; onRefresh: () => Promise<void> }) {
-  const { repos, loading: reposLoading, error, refresh } = useRepos();
+  const { repos, loading: reposLoading, error, refresh, refreshing } = useRepos();
   const [query, setQuery] = useActionState("spaces:query", "");
   const [adding, setAdding] = useUpdateState("spaces:adding", false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -48,7 +48,7 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
           <span className="flex min-w-0 flex-1 flex-col gap-1 text-left"><span>All spaces</span><span className="text-xs font-normal text-muted-foreground">Tasks across all your Spaces</span></span>
           <ChevronRight data-icon="inline-end" />
         </Button>
-        {error && <Alert variant="destructive"><p>{error}</p><Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
+        {error && <Alert variant="destructive"><p>{error}</p><Button variant="outline" disabled={refreshing} onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
         {pending ? <div aria-label="Loading Spaces" aria-busy="true" className="flex flex-col gap-6 py-4">
           {[0, 1, 2].map(i => <div key={i} className="flex min-h-18 flex-col justify-center gap-2 px-2"><Skeleton className="h-5 w-1/2" /><Skeleton className="h-3 w-1/3" /></div>)}
         </div> : <>

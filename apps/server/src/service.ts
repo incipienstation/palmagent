@@ -345,7 +345,7 @@ export class TaskService implements PrStatusSink {
     if (this.terminalLifecycle?.list({ repoId: id }).some(t => ["starting", "running", "closing"].includes(t.state))) throw conflict("Close this Space\'s terminals before removing it");
     if (this.db.hasRunningRoutine(id)) throw conflict("Stop this Space's running scripts before removing it");
     this.db.deleteRepo(id);
-    this.hub.emitReadChange({ type: "read-change", usage: true, routines: true });
+    this.hub.emitReadChange({ type: "read-change", repos: true, usage: true, routines: true });
     this.attachments.prune();
     // deleteRepo cascades to the repo's (archived) tasks in the DB; drop them
     // from the in-memory cache too so listTasks doesn't resurrect dead rows.

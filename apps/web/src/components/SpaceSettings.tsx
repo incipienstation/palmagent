@@ -62,12 +62,12 @@ function BaseBranchForm({ repo }: { repo: Repo }) {
 }
 
 export function SpaceSettings() {
-  const { repos, loading, error, refresh } = useRepos();
+  const { repos, loading, error, refresh, refreshing } = useRepos();
   const gitRepos = [...repos.values()].filter(repo => repo.vcs !== "none");
   return <section className="flex flex-col gap-3 py-4" aria-label="Space base branches">
     <p className="text-sm text-muted-foreground">Choose where new isolated tasks and routine runs start. Existing tasks and your current checkout stay unchanged. Branches are not fetched automatically.</p>
     {loading && <Skeleton className="h-24 w-full" aria-label="Loading spaces" />}
-    {error && <><Alert variant="destructive">{error}</Alert><Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></>}
+    {error && <><Alert variant="destructive">{error}</Alert><Button variant="outline" disabled={refreshing} onClick={() => void refresh().catch(() => {})}>Retry</Button></>}
     {!loading && !error && gitRepos.length === 0 && <p className="text-sm text-muted-foreground">No Git spaces registered. Plain folders do not have a base branch.</p>}
     {gitRepos.map(repo => <BaseBranchForm key={repo.id} repo={repo} />)}
   </section>;

@@ -1,9 +1,57 @@
 import { test, expect } from "@playwright/test";
-import { queryOptions } from "@tanstack/react-query";
+import { QueryObserver, queryOptions } from "@tanstack/react-query";
 import { routines, routineRuns } from "../fixtures.mjs";
 import { clientReadKeys } from "../../src/client-query-keys";
 import { invalidateClientReads } from "../../src/query-lifecycle";
 import { queryClient, taskHistoryKey } from "../../src/task-history-query";
+import { refreshClientReads } from "../../src/query-client";
+
+test("stream refreshes recover failed reads and keep inactive queries stale", async () => {
+  queryClient.clear();
+  let reject!: (cause: Error) => void;
+  let reads = 0;
+  const key = clientReadKeys.routineRuns("routine", "agent");
+  const observer = new QueryObserver(queryClient, {
+    queryKey: key, retry: false, staleTime: Infinity,
+    queryFn: async () => {
+      reads++;
+      if (reads === 1) return new Promise<string>((_, no) => { reject = no; });
+      return "fresh";
+    },
+  });
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    const refreshed = refreshClientReads(clientReadKeys.routineRunsFor("routine"));
+    reject(new Error("Interrupted read"));
+    await refreshed;
+    expect(reads).toBe(2);
+    expect(queryClient.getQueryData(key)).toBe("fresh");
+    unsubscribe();
+    await refreshClientReads(clientReadKeys.routineRunsAll());
+    expect(reads).toBe(2);
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+  } finally { unsubscribe(); queryClient.clear(); }
+});
+
+test("queued stream refreshes cannot recreate a cleared session cache", async () => {
+  queryClient.clear();
+  let release!: (data: string) => void;
+  let reads = 0;
+  const key = clientReadKeys.usage();
+  const observer = new QueryObserver(queryClient, {
+    queryKey: key, retry: false,
+    queryFn: () => { reads++; return new Promise<string>(resolve => { release = resolve; }); },
+  });
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    const refreshed = refreshClientReads(key);
+    await invalidateClientReads(true);
+    release("old session");
+    await refreshed;
+    expect(reads).toBe(1);
+    expect(queryClient.getQueryData(key)).toBeUndefined();
+  } finally { unsubscribe(); queryClient.clear(); }
+});
 
 test("TanStack Query shares reads, scopes invalidation and clears cache on session changes", async () => {
   let reads = 0;

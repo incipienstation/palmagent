@@ -157,14 +157,14 @@ export function useRoutines() {
       ? { ...routine, enabled: preference.value, ...(preference.pending || preference.stale ? { nextRunAt: undefined } : {}) }
       : routine;
   }) ?? null;
-  const queryError = query.data === undefined
-    ? query.error instanceof Error ? query.error.message : query.error ? "Could not load routines." : ""
-    : "";
+  const queryError = query.error instanceof Error ? query.error.message : query.error ? "Could not load routines." : "";
 
   return {
     ...state,
     routines,
-    error: state.error || queryError,
+    readError: queryError && query.data !== undefined ? `Couldn't refresh routines. ${queryError}` : queryError,
+    refreshing: query.isFetching,
+    refresh: query.refetch,
     toggle,
     stop: (id: string) => runAction(id, "stop"),
     run: (id: string) => runAction(id, "run"),

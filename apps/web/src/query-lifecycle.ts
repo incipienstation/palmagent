@@ -54,8 +54,9 @@ export function invalidateClientReads(session = false, scopes?: readonly ClientR
 
 if (typeof window !== "undefined") {
   const refresh = () => {
-    // The inbox stream refreshes these three reads after its new snapshot lands.
-    void notifyReadsInvalidated("foreground", ["repos", "modelCatalog", "skills"]).catch(() => {});
+    // The inbox stream refreshes Spaces, usage, routines and run history after
+    // its new snapshot lands, including native EventSource reconnects.
+    void notifyReadsInvalidated("foreground", ["modelCatalog", "skills"]).catch(() => {});
   };
   window.addEventListener("online", refresh);
   document.addEventListener("visibilitychange", () => {
