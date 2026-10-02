@@ -10,8 +10,8 @@ import { ApplicationError } from "./errors.js";
 import { rasterMediaType } from "./application/output-images.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "./private-files.js";
 import { sanitizeImages } from "./application/image-input.js";
-
 import { videoMediaType } from "./application/video-input.js";
+
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const reference = ({ id, mediaType, size }: AttachmentRecord, image: InputAttachment): Attachment => ({ id, mediaType, size,
   ...(image.width && image.height ? { width: image.width, height: image.height } : {}) });

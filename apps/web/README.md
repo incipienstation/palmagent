@@ -137,8 +137,8 @@ order intact.
 <a id="sent-image-attachments"></a>
 
 New attachments appear in your message and open in the existing enlarged
-viewer. Video attachments open a player with playback controls. They remain available after reload, on other signed-in devices, after a
-server restart, and after archiving the conversation. Older attachments are not
+viewer. Video attachments open a player with playback controls. They remain
+available after reload, on other signed-in devices, after a server restart, and after archiving the conversation. Older attachments are not
 migrated. Each message accepts up to eight attachments. PNG, JPEG, GIF, and WebP
 images are prepared to fit 4.5 MiB each. MP4, WebM, and MOV videos must be playable
 in your browser and no larger than 20 MiB each; all attachments must fit the shared

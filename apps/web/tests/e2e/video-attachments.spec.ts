@@ -88,9 +88,15 @@ for (const width of [360, 1280]) test(`stored videos play after transcript repla
 });
 
 
-for (const extension of ["mp4", "mov"]) test(`${extension.toUpperCase()} videos prepare browser-decodable sampled frames`, async ({ page }) => {
+for (const extension of ["mp4", "mov"]) test(`${extension.toUpperCase()} videos prepare and play when the browser supports H.264`, async ({ page }) => {
   await page.goto("/#/task/t-idle-rich");
+  const supportsH264 = await page.evaluate(() => !!document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E"'));
   await page.getByLabel("Attach videos", { exact: true }).setInputFiles(fileURLToPath(new URL(`../fixtures/blue-video.${extension}`, import.meta.url)));
+  if (!supportsH264) {
+    await expect(page.getByText(/This video cannot be decoded/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Play video/ })).toHaveCount(0);
+    return;
+  }
   const preview = page.getByRole("button", { name: "Play video: attachment 1", exact: true });
   await expect(preview).toBeVisible();
   const pixels = await preview.locator("img").evaluate(async (image: HTMLImageElement) => {
@@ -103,4 +109,6 @@ for (const extension of ["mp4", "mov"]) test(`${extension.toUpperCase()} videos 
   await preview.click();
   const player = page.getByRole("dialog").locator("video");
   await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.duration)).toBe(4);
+  await player.evaluate((video: HTMLVideoElement) => video.play());
+  await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
 });

@@ -9,6 +9,18 @@ export function VideoPreview({ src, poster, label = "Attached video", compact = 
 }) {
   const [failed, setFailed] = useState(false), [expired, setExpired] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [source, setSource] = useState<string>();
+  useEffect(() => {
+    if (!src.startsWith("data:")) { setSource(src); return; }
+    // Blob URLs allow container sniffing, including MOV in browsers whose data
+    // URL media loader rejects the video/quicktime MIME label.
+    const comma = src.indexOf(","), data = atob(src.slice(comma + 1));
+    const bytes = new Uint8Array(data.length);
+    for (let index = 0; index < data.length; index++) bytes[index] = data.charCodeAt(index);
+    const url = URL.createObjectURL(new Blob([bytes]));
+    setSource(url);
+    return () => URL.revokeObjectURL(url);
+  }, [src]);
   useEffect(() => {
     if (!failed || !src.startsWith("/api/tasks/")) return;
     const controller = new AbortController();
@@ -28,7 +40,7 @@ export function VideoPreview({ src, poster, label = "Attached video", compact = 
     </DialogTrigger>
     <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{label}</DialogTitle></DialogHeader>
-      <video key={attempt} src={src} poster={poster} controls playsInline preload="metadata" aria-label={label}
+      <video key={attempt} src={source} poster={poster} controls playsInline preload="metadata" aria-label={label}
         className="max-h-[70dvh] w-full rounded-lg" onLoadedMetadata={onLoad} onError={() => { setFailed(true); onLoad?.(); }} />
       <p className="text-sm text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>
     </DialogContent>
