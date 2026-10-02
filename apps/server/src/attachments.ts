@@ -1,19 +1,19 @@
-import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
+import { INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, isVideoMediaType } from "@palmagent/shared";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, statfsSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { Attachment, ImageAttachment } from "@palmagent/shared";
+import type { Attachment, InputAttachment } from "@palmagent/shared";
 import type { AttachmentRecord } from "./application/models.js";
 import type { AttachmentIndex, AttachmentStorage } from "./application/ports.js";
 import { ATTACHMENT_DEFAULTS, ATTACHMENT_MAINTENANCE_MS, type AttachmentPolicy } from "./attachment-policy.js";
 import { ApplicationError } from "./errors.js";
-import { rasterImage, rasterMediaType } from "./application/output-images.js";
+import { rasterMediaType } from "./application/output-images.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "./private-files.js";
 import { sanitizeImages } from "./application/image-input.js";
 
-const MAX_BYTES = INPUT_IMAGE_POLICY.maxBytes;
+import { videoMediaType } from "./application/video-input.js";
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-const reference = ({ id, mediaType, size }: AttachmentRecord, image: ImageAttachment): Attachment => ({ id, mediaType, size,
+const reference = ({ id, mediaType, size }: AttachmentRecord, image: InputAttachment): Attachment => ({ id, mediaType, size,
   ...(image.width && image.height ? { width: image.width, height: image.height } : {}) });
 
 /** Immutable private files with a task-scoped SQLite index. Only the index grants access. */
@@ -24,10 +24,11 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     private readonly now: () => number = Date.now) {
     this.directory = join(dirname(db.path), "attachments", basename(db.path));
   }
-  save(taskId: string, images?: readonly ImageAttachment[]): Attachment[] | undefined {
+  save(taskId: string, images?: readonly InputAttachment[]): Attachment[] | undefined {
     const normalized = sanitizeImages(images);
     if (!normalized) return undefined;
-    const prepared = normalized.map(image => {
+    const flat = normalized.flatMap(image => [image, ...(image.video?.frames.map(frame => frame.image) ?? [])]);
+    const prepared = flat.map(image => {
       const bytes = Buffer.from(image.data, "base64");
       return { bytes, mediaType: image.mediaType as Attachment["mediaType"], digest: digest(bytes), image };
     });
@@ -37,7 +38,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
       return this.db.transaction(() => {
         // Charge actual directory bytes, including orphan files and failed deletions.
         // A single transaction serializes admission across processes using this DB.
-        return prepared.map(image => {
+        const refs = prepared.map(image => {
           const existing = this.db.attachmentByDigest(taskId, image.digest);
           if (existing && existing.expiredAt === null) {
             try {
@@ -56,6 +57,13 @@ export class LocalAttachmentStorage implements AttachmentStorage {
           else this.db.insertAttachment(record);
           return reference(record, image.image);
         });
+        let offset = 0;
+        return normalized.map(image => {
+          const ref = refs[offset++];
+          if (!image.video) return ref;
+          return { ...ref, video: { duration: image.video.duration,
+            frames: image.video.frames.map(frame => ({ ...refs[offset++], timestamp: frame.timestamp })) } };
+        });
       });
     } catch (error) {
       for (const path of created) this.remove(path);
@@ -73,18 +81,23 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     try {
       fd = openSync(join(this.directory, record.id), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size !== record.size || stat.size > MAX_BYTES) throw new Error("Invalid stored attachment");
+      if (!stat.isFile() || stat.size !== record.size || stat.size > (isVideoMediaType(record.mediaType) ? INPUT_VIDEO_POLICY.maxBytes : INPUT_IMAGE_POLICY.maxBytes)) throw new Error("Invalid stored attachment");
       const bytes = readFileSync(fd);
-      if (digest(bytes) !== record.digest || rasterMediaType(bytes) !== record.mediaType) throw new Error("Invalid stored attachment");
+      if (digest(bytes) !== record.digest || (isVideoMediaType(record.mediaType) ? videoMediaType(bytes) : rasterMediaType(bytes)) !== record.mediaType) throw new Error("Invalid stored attachment");
       return { bytes, mediaType: record.mediaType };
     } catch {
       throw new ApplicationError("not_found", "Attachment unavailable");
     } finally { if (fd !== undefined) closeSync(fd); }
   }
-  load(taskId: string, attachments?: readonly Attachment[]): ImageAttachment[] | undefined {
+  load(taskId: string, attachments?: readonly Attachment[]): InputAttachment[] | undefined {
     return attachments?.map(attachment => {
       const { bytes, mediaType } = this.read(taskId, attachment.id);
-      return { mediaType, data: bytes.toString("base64") };
+      return { mediaType, data: bytes.toString("base64"), ...(attachment.video ? { video: {
+        duration: attachment.video.duration, frames: attachment.video.frames.map(frame => {
+          const stored = this.read(taskId, frame.id);
+          return { timestamp: frame.timestamp, image: { mediaType: stored.mediaType, data: stored.bytes.toString("base64") } };
+        }),
+      } } : {}) };
     });
   }
   start(): void {

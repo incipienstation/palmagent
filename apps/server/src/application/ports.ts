@@ -1,5 +1,5 @@
 import type {
-  AccountLimits, AgentEvent, AgentKind, AgentUsage, ImageAttachment, PermissionRequest, PrRef, PushPayload,
+  AccountLimits, AgentEvent, AgentKind, AgentUsage, InputAttachment, PermissionRequest, PrRef, PushPayload,
   PushSubscriptionJson, QuestionRequest, Repo, Routine, RoutineRun, SkillCatalog, SkillContext, SkillSelection,
   TaskActivityDetailsResponse, TaskHistoryChangesResponse, TaskHistoryResponse, TaskState, TaskStatus,
   VoiceClientTimings, VoiceConnection, SseReadChangeFrame,
@@ -73,9 +73,9 @@ export interface AttachmentStorage {
   start(): void;
   close(): void;
   prune(): void;
-  save(taskId: string, images?: readonly ImageAttachment[]): Attachment[] | undefined;
+  save(taskId: string, images?: readonly InputAttachment[]): Attachment[] | undefined;
   read(taskId: string, id: string): { bytes: Buffer; mediaType: string };
-  load(taskId: string, attachments?: readonly Attachment[]): ImageAttachment[] | undefined;
+  load(taskId: string, attachments?: readonly Attachment[]): InputAttachment[] | undefined;
 }
 
 export interface AuthRepository {
@@ -131,7 +131,7 @@ export interface RoutineScriptRunner {
 
 export interface TaskAttachmentReader {
   read(taskId: string, attachmentId: string): { bytes: Buffer; mediaType: string };
-  load(taskId: string, attachments?: readonly Attachment[]): ImageAttachment[] | undefined;
+  load(taskId: string, attachments?: readonly Attachment[]): InputAttachment[] | undefined;
 }
 
 export interface TaskHistoryReader {

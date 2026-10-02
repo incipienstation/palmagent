@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { LocalAttachmentStorage } from "../src/attachments.js";
+import { INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
+import { sanitizeImages } from "../src/application/image-input.js";
+import { buildClaudeUserMessage } from "../src/claude.js";
+import { codexInput } from "../src/codex-interactive.js";
 import { Db } from "../src/db.js";
 import { MessageController } from "../src/message-controller.js";
 
@@ -277,4 +281,79 @@ test("atomic repairs reserve a temporary copy and release its allocation before 
   const room = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes * 2 + 1 });
   const refs = room.save("one", [image, different])!;
   assert.deepEqual(room.load("one", refs), [image, different]);
+});
+
+
+const video: InputAttachment = { mediaType: "video/webm", data: readFileSync(new URL("../../web/tests/fixtures/blue-video.webm", import.meta.url)).toString("base64"),
+  video: { duration: 4, frames: [{ timestamp: 0, image }, { timestamp: 3, image }] } };
+
+test("video originals and sampled frames survive restart, queue edits, and history retention", t => {
+  const f = fixture(t);
+  const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
+    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage);
+  t.after(() => c.close());
+  const message = c.submit("one", { clientMessageId: randomUUID(), mode: "queue", text: "Review the clip", images: [video, image], expectedRunId: null }).messages[0];
+  const refs = message.attachments!;
+  assert(AttachmentSchema.safeParse(refs[0]).success);
+  assert.equal(f.db.attachmentIds().size, 2); // repeated frames reuse the same private raster
+  assert(!JSON.stringify(f.db.readMessageState("one")).includes(video.data));
+  assert.deepEqual(c.action("one", message.id, { action: "edit", token: randomUUID(), version: 1 }).messages[0].images, [video, image]);
+  assert.throws(() => f.storage.read("two", refs[0].video!.frames[0].id), { code: "not_found" });
+  remember(f.db, "one", refs); f.restart();
+  assert.deepEqual(f.storage.load("one", refs), [video, image]);
+  let now = 10_000;
+  const storage = new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
+  storage.prune(); now += 2000; storage.prune();
+  assert.deepEqual(storage.load("one", refs), [video, image]);
+  f.db.writeMessageState("one", { revision: 1, runId: null, paused: false, messages: [] });
+  f.db.setTaskStatus("one", "archived", false, 1); storage.prune();
+  for (const id of [refs[0].id, refs[0].video!.frames[0].id]) assert.throws(() => storage.read("one", id), { code: "gone" });
+});
+
+test("video validation rejects MIME spoofing, unbounded or unordered frames, and oversized originals atomically", t => {
+  const f = fixture(t), metadata = video.video!;
+  for (const invalid of [
+    { ...video, mediaType: "video/mp4" }, { ...video, data: image.data }, { ...video, video: undefined },
+    { ...video, video: { ...metadata, frames: [] } },
+    { ...video, video: { ...metadata, frames: Array(9).fill(metadata.frames[0]) } },
+    { ...video, video: { ...metadata, frames: [{ timestamp: 5, image }] } },
+    { ...video, video: { ...metadata, frames: [{ timestamp: 2, image }, { timestamp: 1, image }] } },
+    { ...video, video: { ...metadata, frames: [{ timestamp: 0, image: { ...image, data: video.data } }] } },
+    { ...video, data: Buffer.concat([Buffer.from(video.data, "base64"), Buffer.alloc(INPUT_VIDEO_POLICY.maxBytes)]).toString("base64") },
+  ]) assert.throws(() => f.storage.save("one", [image, invalid]), /Invalid video/);
+  assert.equal(f.db.attachmentIds().size, 0);
+  const normalized = sanitizeImages([video, image])!;
+  assert.equal(normalized[0].data, video.data);
+  assert.deepEqual(normalized[0].video!.frames.map(frame => frame.timestamp), [0, 3]);
+  assert.deepEqual(normalized[0].video!.frames[0].image, { ...image, width: 1, height: 1 });
+  const storage = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: Buffer.from(video.data, "base64").length });
+  assert.throws(() => storage.save("one", [video]), { code: "insufficient_storage" });
+  assert.equal(f.db.attachmentIds().size, 0);
+  assert.deepEqual(readdirSync(f.directory), []);
+});
+
+test("both agent protocols receive ordered rasters, timestamps, and the visual-only limitation", () => {
+  const claude = buildClaudeUserMessage("Inspect", [image, video]);
+  const content = claude.message.content;
+  assert.equal(content.filter(block => block.type === "image").length, 3);
+  assert(content.filter(block => block.type === "image").every(block => block.source.media_type === "image/png"));
+  const text = content.find(block => block.type === "text")!.text;
+  assert.match(text, /images 2-3/); assert.match(text, /0.00s, 3.00s/); assert.match(text, /audio and motion between frames are not included/);
+  const codex = codexInput("Inspect", [image, video]);
+  assert.equal(codex.filter(block => block.type === "image").length, 3);
+  assert(!JSON.stringify(codex).includes("data:video/"));
+  assert(!JSON.stringify(claude).includes(video.data));
+  assert.match(JSON.stringify(codex), /0.00s, 3.00s/);
+});
+
+
+test("MP4 and MOV containers retain their original media type and require a matching MIME claim", t => {
+  const f = fixture(t);
+  for (const [extension, mediaType] of [["mp4", "video/mp4"], ["mov", "video/quicktime"]]) {
+    const data = readFileSync(new URL(`../../web/tests/fixtures/blue-video.${extension}`, import.meta.url)).toString("base64");
+    const input = { ...video, mediaType, data };
+    const refs = f.storage.save("one", [input])!;
+    assert.deepEqual(f.storage.load("one", refs), [input]);
+    assert.throws(() => f.storage.save("two", [{ ...input, mediaType: "video/webm" }]), /Invalid video/);
+  }
 });

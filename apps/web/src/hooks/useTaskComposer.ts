@@ -127,7 +127,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
 
   async function send() {
     if (edit) { await endEdit(true); return; }
-    const text = compose.trim() || (skills.length ? "Use the selected skill." : att.images.length ? "See the attached image(s)." : "");
+    const text = compose.trim() || (skills.length ? "Use the selected skill." : att.images.length ? att.images.some(image => image.video) ? "See the attached media." : "See the attached image(s)." : "");
     if (!text || !composeMode) return;
     const images = att.images.length ? att.images : undefined;
     // Send an override only when it differs from the task's current setting.

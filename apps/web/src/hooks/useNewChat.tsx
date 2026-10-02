@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import type { AgentKind, ImageAttachment, PendingMessage, Permission, TaskState } from "@palmagent/shared";
+import type { AgentKind, InputAttachment, PendingMessage, Permission, TaskState } from "@palmagent/shared";
 import { Folder, GitBranch, Plus } from "lucide-react";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { useNewChatSubmission, type NewChatSubmission as Submission } from "../new-chat-state";
@@ -54,7 +54,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
   const [isolate, setIsolate] = usePersistedMapEntry<boolean>("pref:dispatch-isolate", repoId, false);
   const [legacyPrompt, setLegacyPrompt] = useDraft("draft:dispatch-prompt");
-  const [legacyImages, setLegacyImages] = useActionState<ImageAttachment[]>("images:#/new", []);
+  const [legacyImages, setLegacyImages] = useActionState<InputAttachment[]>("images:#/new", []);
   const [prompt, setPrompt] = useDraft(promptKey);
   const [skills, setSkills] = useSkillDraft(`draft:dispatch-skills:${draftRepoId}:${agent}`);
   const [pickerOpen, setPickerOpen] = useUpdateState("dispatch:picker", false);
@@ -63,7 +63,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const [conflictingSpace, setConflictingSpace] = useState<string>();
   const [spaceNotice, setSpaceNotice] = useActionState(`dispatch:space-notice:${draftRepoId}`, "");
   const changingRoute = useRef(false);
-  const transfer = useRef<{ repoId: string; prompt: string; images: ImageAttachment[]; notice: string } | undefined>(undefined);
+  const transfer = useRef<{ repoId: string; prompt: string; images: InputAttachment[]; notice: string } | undefined>(undefined);
   useLayoutEffect(() => {
     const pending = transfer.current;
     if (pending?.repoId === repoId) {
@@ -88,7 +88,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     if (value === repoId) return;
     const hasDraft = !!prompt.trim() || !!att.images.length || !!skills.length;
     const targetPrompt = peekActionState<string>(`draft:dispatch-prompt:${value}`) ?? readDraft(`draft:dispatch-prompt:${value}`);
-    const targetImages = peekActionState<ImageAttachment[]>(`images:#/new:${value}`);
+    const targetImages = peekActionState<InputAttachment[]>(`images:#/new:${value}`);
     const targetSkills = peekActionState<string>(`draft:dispatch-skills:${value}:${agent}`) ?? readDraft(`draft:dispatch-skills:${value}:${agent}`);
     if (hasDraft && !replace && !saved && (targetPrompt || targetImages?.length || targetSkills)) { setConflictingSpace(value); return; }
     if (hasDraft && !saved) {
@@ -126,7 +126,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     if (busy) return;
     setError("");
     if (!saved && !repos.some(repo => repo.id === repoId)) { setError("Choose a Space first."); return; }
-    const text = prompt.trim() || (skills.length ? "Use the selected skill." : att.images.length ? "See the attached image(s)." : "");
+    const text = prompt.trim() || (skills.length ? "Use the selected skill." : att.images.length ? att.images.some(image => image.video) ? "See the attached media." : "See the attached image(s)." : "");
     if (!saved && !text) return;
     const next: Submission = saved ?? { draft: prompt, status: "sending", request: {
       clientRequestId: crypto.randomUUID(), repoId, agent, prompt: text, permission,

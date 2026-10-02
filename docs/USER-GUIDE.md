@@ -61,6 +61,10 @@ beside the message. Retry reconnects to the same creation attempt without starti
 duplicate chat. A rejected message offers **Edit message**, preserving its text and
 attachments. Name the conversation afterward through its **⋮** menu.
 
+Use **+ → Videos** to attach an MP4, WebM, or MOV video up to 20 MiB. The browser
+must be able to decode it. The original stays available for playback, and the agent
+receives up to eight timestamped frames for visual analysis. Audio is not sent.
+
 ## Space base branches
 
 When registering a Git Space, leave **Base branch** blank to detect the remote's

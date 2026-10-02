@@ -152,11 +152,17 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
       .iterate(taskId) as Iterable<{ payload_json: string }>;
     for (const row of rows) {
       const payload = JSON.parse(row.payload_json);
-      for (const ref of payload?.attachments ?? []) history.add(ref.id);
+      for (const ref of payload?.attachments ?? []) {
+        history.add(ref.id);
+        for (const frame of ref.video?.frames ?? []) history.add(frame.id);
+      }
     }
     for (const message of this.readMessageState(taskId)?.messages ?? []) {
       if (!["delivered", "cancelled"].includes(message.status)) {
-        for (const ref of message.attachments ?? []) pending.add(ref.id);
+        for (const ref of message.attachments ?? []) {
+          pending.add(ref.id);
+          for (const frame of ref.video?.frames ?? []) pending.add(frame.id);
+        }
       }
     }
     return { history, pending };

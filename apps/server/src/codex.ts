@@ -1,9 +1,9 @@
-import { TURN_RESULT_MISSING, codexSandbox } from "@palmagent/shared";
+import { TURN_RESULT_MISSING, codexSandbox, sampledAgentInput } from "@palmagent/shared";
 import { startCodexInteractive } from "./codex-interactive.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ImageAttachment } from "@palmagent/shared";
+import type { InputAttachment } from "@palmagent/shared";
 import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
 // Codex's launch and JSONL protocol live here as executable integration code.
@@ -26,7 +26,7 @@ const IMG_EXT: Record<string, string> = {
 };
 
 // Returns repeated ["-i", <path>] pairs plus a cleanup fn for the temp dir.
-function spillImages(images: ImageAttachment[] | undefined): { argv: string[]; cleanup: () => void } {
+function spillImages(images: InputAttachment[] | undefined): { argv: string[]; cleanup: () => void } {
   if (!images?.length) return { argv: [], cleanup: () => {} };
   const dir = mkdtempSync(join(tmpdir(), "palmagent-img-"));
   const argv: string[] = [];
@@ -94,11 +94,12 @@ export class CodexRunner implements AgentRunner {
       return this.wire(taskId, proc, emit, () => {}, () => sessionId, (s) => { sessionId = s; });
     }
 
-    const imgs = spillImages(images);
+    const input = sampledAgentInput(prompt, images);
+    const imgs = spillImages(input.images);
     // Plain-folder tasks require --skip-git-repo-check. Headless execution pins
     // approval_policy=never, while resume expresses sandbox/model settings via
     // -c because it does not accept the dispatch-only flag forms.
-    const skillPrompt = args.skills?.length ? args.skills.map(s => `$${s.name} (${s.path})`).join("\n") + "\n" + prompt : prompt;
+    const skillPrompt = args.skills?.length ? args.skills.map(s => `$${s.name} (${s.path})`).join("\n") + "\n" + input.text : input.text;
     const argv = buildCodexArgv({ prompt: skillPrompt, resumeId, permission, model, effort }, imgs.argv);
 
     const proc = backend.start({ turnId: taskId, command: "codex", argv, cwd, ...(args.providerHome ? { env: { CODEX_HOME: args.providerHome } } : {}) });

@@ -132,24 +132,33 @@ Palmagent and synchronized across connected screens, including for running and
 local sessions. Renaming keeps the original prompt, native CLI session, and activity
 order intact.
 
-## Sent image attachments
+## Sent attachments
 
-New image attachments appear in your message and open in the existing enlarged
-viewer. They remain available after reload, on other signed-in devices, after a
+<a id="sent-image-attachments"></a>
+
+New attachments appear in your message and open in the existing enlarged
+viewer. Video attachments open a player with playback controls. They remain available after reload, on other signed-in devices, after a
 server restart, and after archiving the conversation. Older attachments are not
-migrated. PNG, JPEG, GIF, and WebP are supported, with up to eight images per
-message and 4.5 MiB per image after the composer's image preparation.
+migrated. Each message accepts up to eight attachments. PNG, JPEG, GIF, and WebP
+images are prepared to fit 4.5 MiB each. MP4, WebM, and MOV videos must be playable
+in your browser and no larger than 20 MiB each; all attachments must fit the shared
+request limit. Trim or compress a video if it exceeds these limits.
 
-The server keeps image files under `attachments/<database-filename>/` beside its
+The original video is retained for playback. Claude and Codex receive up to eight
+frames sampled across its duration, with timestamps. Audio and motion between
+frames are not sent. Frame preparation happens in your browser and requires no
+server video tools.
+
+The server keeps attachment files under `attachments/<database-filename>/` beside its
 SQLite database. Back up both the database and that directory while the server is
-stopped. Queue and history records contain attachment references; image bytes are
+stopped. Queue and history records contain attachment references; media bytes are
 loaded for delivery or when editing a queued message. Duplicate content is shared
 within a task. Files are private to the service account and served through
 authenticated task-scoped endpoints with no offline cache. Archiving preserves
 attachments by default; permanently removing the Space removes them with its tasks.
-Unused attachments, including removed or replaced queue images, are collected after
+Unused attachments, including removed or replaced queue attachments, are collected after
 a grace period. History references and queued, editing, rejected, or unconfirmed
-messages protect their images from unused-file cleanup. Cleanup runs at startup,
+messages protect their attachments from unused-file cleanup. Cleanup runs at startup,
 after permanent Space deletion, and hourly while the server is running.
 
 Storage limits are installation settings in the **server service environment**;
@@ -158,7 +167,7 @@ restart the service after changing them:
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `ATTACHMENT_MAX_BYTES` | `1073741824` (1 GiB) | Maximum attachment-directory bytes; includes files awaiting cleanup. |
-| `ATTACHMENT_MIN_FREE_BYTES` | `268435456` (256 MiB) | Free disk space to leave available when accepting an image. |
+| `ATTACHMENT_MIN_FREE_BYTES` | `268435456` (256 MiB) | Free disk space to leave available when accepting an attachment. |
 | `ATTACHMENT_UNUSED_GRACE_HOURS` | `24` | Hours since an attachment was first observed unused before removal; minimum 1. |
 | `ATTACHMENT_RETENTION_DAYS` | `0` (disabled) | Optional expiration for images in archived conversations. |
 

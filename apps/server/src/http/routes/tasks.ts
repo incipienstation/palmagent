@@ -21,8 +21,25 @@ export function taskRoutes({ service }: HttpDependencies) {
       c.header("Cross-Origin-Resource-Policy", "same-origin");
       c.header("Content-Security-Policy", "default-src 'none'; sandbox");
       const { id, attachmentId } = c.req.valid("param");
-      const image = service.readAttachment(id, attachmentId);
-      return c.body(new Uint8Array(image.bytes), 200, { "Content-Type": image.mediaType });
+      const attachment = service.readAttachment(id, attachmentId), size = attachment.bytes.length;
+      c.header("Content-Type", attachment.mediaType);
+      c.header("Accept-Ranges", "bytes");
+      const range = c.req.header("If-Range") ? undefined : c.req.header("Range");
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+        const start = match?.[1] ? Number(match[1]) : Math.max(0, size - Number(match?.[2]));
+        const end = match?.[1] && match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+        if (!match || (!match[1] && !match[2]) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+          || start >= size || start > end || (!match[1] && Number(match[2]) === 0)) {
+          c.header("Content-Range", `bytes */${size}`);
+          return c.body(null, 416);
+        }
+        c.header("Content-Range", `bytes ${start}-${end}/${size}`);
+        c.header("Content-Length", String(end - start + 1));
+        return c.body(new Uint8Array(attachment.bytes.subarray(start, end + 1)), 206);
+      }
+      c.header("Content-Length", String(size));
+      return c.body(new Uint8Array(attachment.bytes), 200);
     })
     .get("/:id/image", params(IdParamsSchema), query(TaskImageQuerySchema), async (c) => {
       c.header("Cache-Control", "no-store");
