@@ -1,5 +1,5 @@
 import { SkillChips } from "./SkillPicker";
-import { AttachmentSchema, attachmentUrl, type Attachment, type PendingMessage, type ImageAttachment, SelectedSkillsSchema } from "@palmagent/shared";
+import { AttachmentSchema, attachmentUrl, type Attachment, type PendingMessage, type ImageAttachment, type InputAttachment, SelectedSkillsSchema } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
 import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type HTMLAttributes, type RefObject, type ReactNode } from "react";
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
@@ -25,6 +25,7 @@ import { describeEvent } from "../format";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
+import { VideoPreview } from "./VideoPreview";
 import { ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
 import { MessageDelivery, type DeliveryControls } from "./MessageDelivery";
@@ -75,7 +76,7 @@ const KIND_ICON: Partial<Record<AgentEventKind, ComponentType<LucideProps>>> = {
 };
 
 export function UserBubble({ text, meta, skills, attachments, images, onImageLoad }: {
-  text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[]; attachments?: Attachment[]; images?: ImageAttachment[]; onImageLoad?: () => void;
+  text: string; meta?: string; skills?: import("@palmagent/shared").SkillSelection[]; attachments?: Attachment[]; images?: InputAttachment[]; onImageLoad?: () => void;
 }) {
   const taskId = useContext(ImageTaskContext);
   // Right-aligned soft chat bubble — the human side of the transcript.
@@ -92,11 +93,13 @@ export function UserBubble({ text, meta, skills, attachments, images, onImageLoa
         <SkillChips skills={skills} />
         {text}
         {!attachments?.length && !!images?.length && <div className="flex flex-wrap gap-2">
-          {images.map((image, index) => <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
+          {images.map((image, index) => image.video ? <VideoPreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
+            poster={`data:${image.video.frames[0].image.mediaType};base64,${image.video.frames[0].image.data}`} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
             alt={`Attached image ${index + 1}`} width={image.width} height={image.height} onLoad={onImageLoad} />)}
         </div>}
         {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
-          {attachments.map((attachment, index) => <ImagePreview key={`${attachment.id}-${index}`}
+          {attachments.map((attachment, index) => attachment.video ? <VideoPreview key={`${attachment.id}-${index}`}
+            src={attachmentUrl(taskId, attachment.id)} poster={attachmentUrl(taskId, attachment.video.frames[0].id)} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={`${attachment.id}-${index}`}
             src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`}
             width={attachment.width} height={attachment.height} onLoad={onImageLoad} />)}
         </div>}

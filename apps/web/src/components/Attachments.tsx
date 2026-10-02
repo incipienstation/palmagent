@@ -2,8 +2,8 @@ import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
 import { useActionState } from "../action-state";
 import { beginBrowserWork } from "../update-state";
 import { useCallback, useRef, type ClipboardEvent } from "react";
-import type { ImageAttachment } from "@palmagent/shared";
-import { Camera, ImagePlus, Loader2, Plus, X } from "lucide-react";
+import type { InputAttachment } from "@palmagent/shared";
+import { Camera, ImagePlus, Loader2, Plus, X, Video } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import {
   imageFilesFromClipboard,
   MAX_ATTACHMENTS,
 } from "../images";
+import { VideoPreview } from "./VideoPreview";
 
 // Leave room for the prompt and JSON envelope before the shared upload cap.
 const WIRE_WARN_BYTES = INPUT_IMAGE_POLICY.maxWireBytes * 0.9;
@@ -22,7 +23,7 @@ const WIRE_WARN_BYTES = INPUT_IMAGE_POLICY.maxWireBytes * 0.9;
 // Shared image-attachment state for a compose box: paste handler (the main
 // path — screenshots land on the clipboard), file picker fallback, previews.
 export function useImageAttachments(onError: (msg: string) => void, key = `images:${location.hash}`) {
-  const [images, setImages] = useActionState<ImageAttachment[]>(key, []);
+  const [images, setImages] = useActionState<InputAttachment[]>(key, []);
   const [preparing, setPreparing] = useActionState(`${key}:preparing`, false);
 
   const addFiles = useCallback(
@@ -30,12 +31,16 @@ export function useImageAttachments(onError: (msg: string) => void, key = `image
       const finish = beginBrowserWork();
       setPreparing(true);
       try {
-        const prepared: ImageAttachment[] = [];
+        const prepared: InputAttachment[] = [];
         for (const f of files) prepared.push(await fileToAttachment(f));
         setImages((cur) => {
           const next = [...cur, ...prepared];
           if (next.length > MAX_ATTACHMENTS) {
-            onError(`Up to ${MAX_ATTACHMENTS} images per message.`);
+            onError(`Up to ${MAX_ATTACHMENTS} attachments per message.`);
+            return cur;
+          }
+          if (attachmentsWireSize(next) > INPUT_IMAGE_POLICY.maxWireBytes - 100_000) {
+            onError("Attachments exceed the upload limit. Remove or trim a video, then retry.");
             return cur;
           }
           return next;
@@ -75,6 +80,7 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd,
 }) {
   const photos = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
+  const videos = useRef<HTMLInputElement>(null);
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
@@ -84,8 +90,8 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd,
     <DropdownMenu open={open && !voiceActive} onOpenChange={next => onOpenChange(voiceActive ? false : next)}>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="ghost" size="icon-lg" className="shrink-0"
-          aria-label={voiceActive ? "Cancel voice input" : preparing ? "Preparing images" : "Add attachments"}
-          title={voiceActive ? "Cancel voice input" : preparing ? "Preparing images" : "Add attachments"}
+          aria-label={voiceActive ? "Cancel voice input" : preparing ? "Preparing attachments" : "Add attachments"}
+          title={voiceActive ? "Cancel voice input" : preparing ? "Preparing attachments" : "Add attachments"}
           aria-haspopup={voiceActive ? undefined : "menu"} aria-expanded={voiceActive ? undefined : open}
           disabled={!voiceActive && disabled}
           onClick={() => { if (voiceActive) onCancelVoice?.(); }}>
@@ -101,24 +107,30 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd,
         <DropdownMenuItem size="lg" onSelect={() => photos.current?.click()}>
           <ImagePlus /> Photos
         </DropdownMenuItem>
+        <DropdownMenuItem size="lg" onSelect={() => videos.current?.click()}>
+          <Video /> Videos
+        </DropdownMenuItem>
       </DropdownMenuGroup></DropdownMenuContent>
     </DropdownMenu>
     <input ref={photos} aria-label="Attach photos" type="file" accept="image/*" multiple hidden disabled={disabled} onChange={pick} />
+    <input ref={videos} aria-label="Attach videos" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple hidden disabled={disabled} onChange={pick} />
     <input ref={camera} aria-label="Take a photo" type="file" accept="image/*" capture="environment" hidden disabled={disabled} onChange={pick} />
   </>;
 }
 
 export function AttachmentTray({ images, disabled, onRemove }: {
-  images: ImageAttachment[]; disabled?: boolean; onRemove: (i: number) => void;
+  images: InputAttachment[]; disabled?: boolean; onRemove: (i: number) => void;
 }) {
   return <div className="min-w-0 w-full">
     <div className="flex gap-2 overflow-x-auto py-1">
       {images.map((img, i) => <span className="relative inline-flex shrink-0 pr-2 pt-2" key={i}>
-        <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />
+        {img.video ? <VideoPreview src={attachmentPreviewUrl(img)} poster={attachmentPreviewUrl(img.video.frames[0].image)} label={`attachment ${i + 1}`} compact />
+          : <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />}
         <Button type="button" variant="secondary" size="icon-sm" className="absolute top-0 right-0"
-          aria-label={`Remove image ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
+          aria-label={`Remove ${img.video ? "video" : "image"} ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
       </span>)}
     </div>
+    {images.some(image => image.video) && <p className="py-1 text-xs text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>}
     {attachmentsWireSize(images) > WIRE_WARN_BYTES && <p className="py-1 text-xs text-amber">Large attachments are close to the upload limit.</p>}
   </div>;
 }

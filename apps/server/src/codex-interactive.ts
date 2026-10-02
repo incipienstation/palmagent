@@ -1,13 +1,16 @@
-import { TURN_RESULT_MISSING, codexSandbox } from "@palmagent/shared";
+import { TURN_RESULT_MISSING, codexSandbox, sampledAgentInput } from "@palmagent/shared";
 import type { AgentEventKind, AgentEventPayloads } from "@palmagent/shared";
-import type { ImageAttachment, QuestionRequest } from "@palmagent/shared";
+import type { InputAttachment, QuestionRequest } from "@palmagent/shared";
 import type { Emit, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
-export const codexInput = (text: string, images?: ImageAttachment[], skills?: StartArgs["skills"]) => [
-  { type: "text", text: [...(skills ?? []).map(s => `$${s.name}`), text].join("\n"), text_elements: [] },
-  ...(skills ?? []).map(s => ({ type: "skill", name: s.name, path: s.path })),
-  ...(images ?? []).map(i => ({ type: "image", url: `data:${i.mediaType};base64,${i.data}` })),
-];
+export const codexInput = (text: string, images?: InputAttachment[], skills?: StartArgs["skills"]) => {
+  const input = sampledAgentInput(text, images);
+  return [
+    { type: "text", text: [...(skills ?? []).map(s => `$${s.name}`), input.text].join("\n"), text_elements: [] },
+    ...(skills ?? []).map(s => ({ type: "skill", name: s.name, path: s.path })),
+    ...input.images.map(i => ({ type: "image", url: `data:${i.mediaType};base64,${i.data}` })),
+  ];
+};
 
 // One app-server process per Palmagent run keeps the existing daemon ownership
 // boundary. Native turn completion closes stdin; a process exit by itself never

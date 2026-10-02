@@ -29,8 +29,8 @@ records. Queue revisions travel in task snapshots; they do not add transcript
 messages on every edit or lease renewal. Full snapshots restore missed updates.
 
 Messages retain their IDs, original request fingerprints, settings and attachment references.
-Image bytes live in private files beside SQLite; see
-[attachment storage and backup](../apps/web/README.md#sent-image-attachments).
+Attachment bytes live in private files beside SQLite; see
+[attachment storage and backup](../apps/web/README.md#sent-attachments).
 An identical client ID returns the accepted state; reuse with a different
 request is rejected. Sending claims a message synchronously before adapter I/O.
 Settings are captured per queued prompt; active Send does not change model or

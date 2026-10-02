@@ -29,3 +29,5 @@ export * from "./product-version.mjs";
 export * from "./distribution.js";
 
 export * from "./event-migrations.js";
+
+export * from "./agent-media.js";

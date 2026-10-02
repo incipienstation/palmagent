@@ -1,5 +1,5 @@
-import type { AnswerRequest, AskQuestion, ImageAttachment, PermissionRequest } from "@palmagent/shared";
-import { normalizePermission } from "@palmagent/shared";
+import type { AnswerRequest, AskQuestion, InputAttachment, PermissionRequest } from "@palmagent/shared";
+import { normalizePermission, sampledAgentInput } from "@palmagent/shared";
 import { config } from "./config.js";
 import type { AgentRunner, Emit, ProcHandle, RawEvent, RunHandle, ProcessBackend, StartArgs } from "./types.js";
 
@@ -26,7 +26,7 @@ type ClaudeUserMessage = {
   message: {
     role: "user";
     content: Array<
-      | { type: "image"; source: { type: "base64"; media_type: ImageAttachment["mediaType"]; data: string } }
+      | { type: "image"; source: { type: "base64"; media_type: InputAttachment["mediaType"]; data: string } }
       | { type: "text"; text: string }
     >;
   };
@@ -50,12 +50,13 @@ export function buildClaudeArgv({ permission, model, effort, resumeId }: ClaudeL
   return argv;
 }
 
-export function buildClaudeUserMessage(text: string, images: readonly ImageAttachment[] = []): ClaudeUserMessage {
-  const content: ClaudeUserMessage["message"]["content"] = images.map((image) => ({
+export function buildClaudeUserMessage(text: string, images: readonly InputAttachment[] = []): ClaudeUserMessage {
+  const input = sampledAgentInput(text, images);
+  const content: ClaudeUserMessage["message"]["content"] = input.images.map((image) => ({
     type: "image",
     source: { type: "base64", media_type: image.mediaType, data: image.data },
   }));
-  content.push({ type: "text", text });
+  content.push({ type: "text", text: input.text });
   return { type: "user", message: { role: "user", content } };
 }
 
@@ -87,7 +88,7 @@ export class ClaudeRunner implements AgentRunner {
       return { steer: () => false, interrupt: () => false, approve: () => false, answer: () => false, cancel: () => {}, done: Promise.resolve() };
     }
 
-    let delivery: { id: string; text: string; images?: ImageAttachment[]; sent: boolean;
+    let delivery: { id: string; text: string; images?: InputAttachment[]; sent: boolean;
       resolve: (s: "delivered" | "rejected" | "unknown") => void; timer: ReturnType<typeof setTimeout> } | undefined;
     const settleDelivery = (status: "delivered" | "rejected" | "unknown") => {
       if (!delivery) return;
@@ -113,7 +114,7 @@ export class ClaudeRunner implements AgentRunner {
     };
     // Images ride the same stream-json channel as Anthropic-API image blocks
     // (verified: the CLI forwards them to the model — works mid-turn too).
-    const sendUser = (text: string, imgs?: ImageAttachment[], id?: string) => {
+    const sendUser = (text: string, imgs?: InputAttachment[], id?: string) => {
       writeLine({ ...buildClaudeUserMessage(text, imgs), ...(id ? { uuid: id } : {}) });
     };
 
@@ -263,7 +264,7 @@ export class ClaudeRunner implements AgentRunner {
         });
       },
       // True mid-turn steer: interrupt the active turn, then send the new instruction.
-      steer: (text: string, imgs?: ImageAttachment[]) => {
+      steer: (text: string, imgs?: InputAttachment[]) => {
         if (!proc.stdinWritable()) return false;
         steerInFlight = true;
         cancelClose();

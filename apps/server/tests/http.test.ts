@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -831,4 +831,35 @@ test("concurrent automatic registrations deduplicate after asynchronous Git disc
   const [first, second] = await Promise.all([f.service.createRepo({ path: f.dir }), f.service.createRepo({ path: f.dir })]);
   assert.equal(first.id, second.id);
   assert.equal(f.db.listRepos().length, 1);
+});
+
+
+test("video playback authenticates ranges, supports seeking, and rejects invalid ranges", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "video", repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  const bytes = readFileSync(new URL("../../web/tests/fixtures/blue-video.webm", import.meta.url));
+  const image = { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
+  const [ref] = f.service.attachments.save("video", [{ mediaType: "video/webm", data: bytes.toString("base64"), video: { duration: 4, frames: [{ timestamp: 0, image }] } }])!;
+  const path = `/api/tasks/video/attachments/${ref.id}`;
+  assert.equal((await f.app.request(path, { headers: { Range: "bytes=0-9" } })).status, 401);
+  f.db.createSession("video-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=video-session` };
+  for (const [range, start, end] of [["bytes=0-9", 0, 9], ["bytes=10-", 10, bytes.length - 1], ["bytes=-10", bytes.length - 10, bytes.length - 1], ["bytes=0-9999", 0, bytes.length - 1]] as const) {
+    const response = await f.app.request(path, { headers: { ...headers, Range: range } });
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("content-range"), `bytes ${start}-${end}/${bytes.length}`);
+    assert.equal(response.headers.get("content-type"), "video/webm");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes.subarray(start, end + 1));
+  }
+  for (const range of ["bytes=9999-", "bytes=9-0", "bytes=-0", "bytes=-", "bytes=0-2,4-6", "garbage"]) {
+    const response = await f.app.request(path, { headers: { ...headers, Range: range } });
+    assert.equal(response.status, 416); assert.equal(response.headers.get("content-range"), `bytes */${bytes.length}`);
+  }
+  const full = await f.app.request(path, { headers });
+  assert.equal(full.status, 200); assert.equal(full.headers.get("accept-ranges"), "bytes");
+  assert.deepEqual(Buffer.from(await full.arrayBuffer()), bytes);
+  assert.equal((await f.app.request(path, { headers: { ...headers, Range: "bytes=0-9", "If-Range": "stale" } })).status, 200);
 });

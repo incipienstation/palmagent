@@ -1,6 +1,6 @@
 import { TASK_STATUSES } from "./task.js";
 import { ROUTINE_POLICY } from "./routine-policy.js";
-import { ImageDimensionSchema } from "./attachments.js";
+import { ImageDimensionSchema, INPUT_VIDEO_POLICY } from "./attachments.js";
 import { SelectedSkillsSchema } from "./skills.js";
 import { z } from "zod";
 export { UpdateSettingsChangeSchema } from "./updates.js";
@@ -16,7 +16,13 @@ const imageDimension = ImageDimensionSchema;
 export const ImageAttachmentSchema = z.object({ mediaType: text, data: text,
   width: imageDimension.optional(), height: imageDimension.optional() })
   .refine(({ width, height }) => (width === undefined) === (height === undefined));
-const images = z.array(ImageAttachmentSchema).optional(); // decoded limits remain in the service
+export const InputAttachmentSchema = z.object({ mediaType: text, data: text,
+  width: imageDimension.optional(), height: imageDimension.optional(),
+  video: z.object({ duration: z.number().finite().positive(),
+    frames: z.array(z.object({ timestamp: z.number().finite().nonnegative(), image: ImageAttachmentSchema })).min(1).max(INPUT_VIDEO_POLICY.maxFrames),
+  }).optional(),
+}).refine(({ width, height }) => (width === undefined) === (height === undefined));
+const images = z.array(InputAttachmentSchema).optional(); // decoded limits remain in the service
 export const CreateRepoSchema = z.object({ path: required, name: text.optional(), defaultBaseRef: text.optional() });
 export const UpdateRepoSchema = z.object({ defaultBaseRef: text.trim().min(1).max(255) });
 export const CreateTaskSchema = z.object({
@@ -109,6 +115,7 @@ export const RegistrationSchema = z.object({ response: z.object({ ...credential,
 
 export type UpdateRepoRequest = z.infer<typeof UpdateRepoSchema>;
 export type CreateRepoRequest = z.infer<typeof CreateRepoSchema>;
+export type InputAttachment = z.infer<typeof InputAttachmentSchema>;
 export type ImageAttachment = z.infer<typeof ImageAttachmentSchema>;
 export type CreateTaskRequest = z.infer<typeof CreateTaskSchema>;
 export type FollowupRequest = z.infer<typeof FollowupSchema>;

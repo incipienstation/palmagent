@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Attach MP4, WebM, and MOV videos up to 20 MiB, replay originals in conversations, and send timestamped sampled frames to Claude and Codex for visual analysis. Audio is not sent to agents.
+
 ## 0.1.0-alpha.128
 
 ### Fixed

@@ -1,9 +1,9 @@
-import { IMAGE_MEDIA_TYPES, INPUT_IMAGE_POLICY } from "@palmagent/shared";
-// Client-side image attachment prep: paste/file → ImageAttachment (base64).
+import { IMAGE_MEDIA_TYPES, INPUT_IMAGE_POLICY, isVideoMediaType } from "@palmagent/shared";
+// Client-side attachment preparation. The images wire field also carries videos.
 // Big images are downscaled to Claude's optimal long edge and re-encoded as
 // JPEG so a screenshot stays well under the proxy/body limits; small ones are
 // passed through untouched.
-import type { ImageAttachment } from "@palmagent/shared";
+import type { ImageAttachment, InputAttachment } from "@palmagent/shared";
 
 const LONG_EDGE = 1568; // Claude's documented optimal max long edge
 const PASSTHROUGH_BYTES = 350_000; // below this (and within LONG_EDGE) keep the original bytes
@@ -16,12 +16,15 @@ const ACCEPTED = new Set<string>(IMAGE_MEDIA_TYPES);
 export function imageFilesFromClipboard(dt: DataTransfer | null): File[] {
   if (!dt) return [];
   return Array.from(dt.items)
-    .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+    .filter((it) => it.kind === "file" && (it.type.startsWith("image/") || isVideoMediaType(it.type)))
     .map((it) => it.getAsFile())
     .filter((f): f is File => !!f);
 }
 
-export async function fileToAttachment(file: File | Blob): Promise<ImageAttachment> {
+export async function fileToAttachment(file: File | Blob): Promise<InputAttachment> {
+  const extension = file instanceof File ? file.name.split(".").pop()?.toLowerCase() : undefined;
+  const inferred = !file.type || file.type === "application/octet-stream" ? ({ mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" } as Record<string, string>)[extension ?? ""] : undefined;
+  if (file.type.startsWith("video/") || inferred) return (await import("./videos")).videoToAttachment(inferred ? file.slice(0, file.size, inferred) : file);
   const type = file.type || "image/png";
   if (!type.startsWith("image/")) throw new Error(`not an image: ${type}`);
 
@@ -53,8 +56,8 @@ export async function fileToAttachment(file: File | Blob): Promise<ImageAttachme
 }
 
 // Rough request-body cost of the attachments (base64 chars ≈ bytes on the wire).
-export function attachmentsWireSize(images: ImageAttachment[]): number {
-  return images.reduce((n, i) => n + i.data.length, 0);
+export function attachmentsWireSize(images: InputAttachment[]): number {
+  return images.reduce((n, i) => n + i.data.length + (i.video?.frames.reduce((sum, frame) => sum + frame.image.data.length, 0) ?? 0), 0);
 }
 
 export function attachmentPreviewUrl(img: ImageAttachment): string {
@@ -86,7 +89,7 @@ async function loadBitmap(file: Blob): Promise<CloseableBitmap & CanvasImageSour
   }
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
+export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onerror = () => reject(r.error ?? new Error("file read failed"));

@@ -1,6 +1,6 @@
 // Backend-only interfaces. The data contracts (AgentEvent, TaskState, Repo, REST
 // DTOs, SSE frames) live in @palmagent/shared so the PWA can reuse them.
-import type { AgentEvent, AgentKind, AnswerRequest, ImageAttachment, Permission, PermissionRequest, QuestionRequest } from "@palmagent/shared";
+import type { AgentEvent, AgentKind, AnswerRequest, InputAttachment, Permission, PermissionRequest, QuestionRequest } from "@palmagent/shared";
 import type { RunHandle } from "./application/models.js";
 export type { RunHandle } from "./application/models.js";
 
@@ -11,7 +11,7 @@ export interface StartArgs {
   cwd: string; // the task's worktree path — stable for the task's whole life
   prompt: string;
   skills?: import("@palmagent/shared").SkillSelection[];
-  images?: ImageAttachment[]; // attached to the opening user message of the turn
+  images?: InputAttachment[]; // attached to the opening user message of the turn
   providerHome?: string; // pinned native transcript/config root for this session
   resumeId?: string; // present => resume an existing session/thread by id
   permission?: Permission; // mapped per adapter; agent-specific safe default
@@ -101,4 +101,4 @@ export interface RunnerBackend {
   release?(turnId: string): void;
 }
 
-export interface ExecutionControlState { stopping: boolean; steerRestart: boolean; pendingSteer: Array<{ text: string; images: ImageAttachment[] }> }
+export interface ExecutionControlState { stopping: boolean; steerRestart: boolean; pendingSteer: Array<{ text: string; images: InputAttachment[] }> }

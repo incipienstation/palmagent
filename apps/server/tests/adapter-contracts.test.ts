@@ -853,3 +853,19 @@ test("explicit skills reach native initial and mid-turn inputs for both adapters
     backend.proc.exit(0); await handle.done;
   }
 });
+
+
+test("headless Codex receives sampled frames as image files and cleans them after the turn", async () => {
+  const backend = new FakeBackend();
+  const images = [{ mediaType: "image/png", data: Buffer.from("first-frame").toString("base64") }, { mediaType: "image/jpeg", data: Buffer.from("last-frame").toString("base64") }];
+  const handle = new CodexRunner().start(startArgs({ images: [{ mediaType: "video/webm", data: "not-forwarded", video: { duration: 4,
+    frames: images.map((image, index) => ({ timestamp: index * 3, image })) } }] }), () => {}, backend);
+  const argv = backend.specs[0].argv, paths = argv.flatMap((value, index) => value === "-i" ? [argv[index + 1]] : []);
+  assert.equal(paths.length, 2);
+  assert.deepEqual(paths.map(path => readFileSync(path).toString()), ["first-frame", "last-frame"]);
+  assert.match(argv[1], /0.00s, 3.00s/);
+  assert.match(argv[1], /audio and motion between frames are not included/);
+  assert(!argv.includes("not-forwarded"));
+  backend.proc.emit({ type: "turn.completed", usage: {} }); backend.proc.exit(0); await handle.done;
+  assert(paths.every(path => !existsSync(path)));
+});

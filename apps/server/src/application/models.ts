@@ -1,4 +1,4 @@
-import type { AgentEvent, AnswerRequest, Attachment, ImageAttachment, MessageQueue, PendingMessage, SkillSelection } from "@palmagent/shared";
+import type { AgentEvent, AnswerRequest, Attachment, InputAttachment, MessageQueue, PendingMessage, SkillSelection } from "@palmagent/shared";
 
 /** Persistence and application records shared across use cases and adapters. */
 export interface EventRow {
@@ -38,8 +38,8 @@ export interface MessageState extends Omit<MessageQueue, "messages"> {
 
 /** A live use-case handle for an executing agent turn. */
 export interface RunHandle {
-  send?: (text: string, images: ImageAttachment[] | undefined, messageId: string, skills?: SkillSelection[]) => Promise<"delivered" | "rejected" | "unknown">;
-  steer: (text: string, images?: ImageAttachment[]) => boolean;
+  send?: (text: string, images: InputAttachment[] | undefined, messageId: string, skills?: SkillSelection[]) => Promise<"delivered" | "rejected" | "unknown">;
+  steer: (text: string, images?: InputAttachment[]) => boolean;
   interrupt: () => boolean;
   approve: (decision: string, scope?: string) => boolean;
   answer: (req: AnswerRequest) => boolean | Promise<boolean>;

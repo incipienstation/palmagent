@@ -5,7 +5,7 @@ import { skillId } from "./application/skill-id.js";
 import { MessageController } from "./message-controller.js";
 import type { SubmitMessage, MessageAction } from "@palmagent/shared";
 import type {
-  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, ImageAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
+  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { extractOutputImages } from "./application/output-images.js";
@@ -87,7 +87,7 @@ export class TaskService implements PrStatusSink {
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
   private sessionMismatch = new Set<string>();
   private turnState = new Map<string, TurnState>(); // per-active-turn error tracking
-  private pendingSteer = new Map<string, { text: string; images: ImageAttachment[] }[]>(); // codex steer → next-turn queue
+  private pendingSteer = new Map<string, { text: string; images: InputAttachment[] }[]>(); // codex steer → next-turn queue
   private stopping = new Set<string>(); // user-requested stop → settle idle(interrupted), not failed
   private steerRestart = new Set<string>(); // steer changed model/effort → interrupt was deliberate, not a failure
   // Per-active-turn reattach baseline: stdout line seqs <= this were already
@@ -775,7 +775,7 @@ export class TaskService implements PrStatusSink {
   }
 
   // ---- turn execution ----
-  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string, skills?: SkillSelection[]): Promise<void> {
+  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string, skills?: SkillSelection[]): Promise<void> {
     const runId = this.messages.beginRun(task.taskId, messageId);
     if (!this.backend.independent && !this.supervisor.tryAcquire()) {
       this.transition(task, "queued"); // over the concurrency cap — wait for a slot
@@ -804,7 +804,7 @@ export class TaskService implements PrStatusSink {
     this.startTurnNow(task, prompt, resumeId, images, messageId, skills);
   }
 
-  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: ImageAttachment[], messageId?: string, skills?: SkillSelection[]): void {
+  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string, skills?: SkillSelection[]): void {
     if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
     const runner = this.backend.agentRunner(task.agent);
     this.sessionMismatch.delete(task.taskId);
