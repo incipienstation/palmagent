@@ -31,7 +31,8 @@ export async function videoToAttachment(file: File | Blob): Promise<InputAttachm
     const frames: NonNullable<InputAttachment["video"]>["frames"] = [];
     for (let index = 0; index < count; index++) {
       const timestamp = count === 1 ? 0 : index * Math.max(0, duration - Math.min(0.1, duration / 2)) / (count - 1);
-      if (timestamp > 0) { const seeked = waitFor(video, "seeked"); video.currentTime = timestamp; await seeked; }
+      // Seek even at zero: loadeddata can precede the first drawable MOV frame.
+      const seeked = waitFor(video, "seeked"); video.currentTime = timestamp; await seeked;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.8));
       if (!blob) throw new Error("Video frame preparation failed.");
