@@ -68,7 +68,8 @@ test("Codex choices survive agent switches and reload, while unsupported effort 
   expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-6-astra", effort: "ultra" });
 });
 
-for (const model of ["gpt-5.4", "gpt-5.4-mini", "gpt-6-astra"]) test(`stale saved Codex selections are normalized before dispatch: ${model}`, async ({ page }) => {
+// One missing-model representative plus a valid model with an unsupported effort.
+for (const model of ["gpt-5.4", "gpt-6-astra"]) test(`stale saved Codex selections are normalized before dispatch: ${model}`, async ({ page }) => {
   await page.addInitScript((model) => {
     localStorage.setItem("pref:dispatch-agent", "codex");
     localStorage.setItem("pref:dispatch-model", JSON.stringify({ codex: model }));
