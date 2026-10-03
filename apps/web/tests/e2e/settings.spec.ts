@@ -11,24 +11,24 @@ async function openSettings(page: Page) {
   return dialog;
 }
 
-for (const [name, width, height] of [
-  ["mobile", 360, 780],
-  ["desktop", 1280, 900],
-] as const) {
-  test(`settings sections fit the ${name} viewport`, async ({ page }) => {
-    await page.setViewportSize({ width, height });
-    await page.goto("/");
-    const settings = await openSettings(page);
-    await expect(settings.getByRole("region", { name: "On this device" })).toBeVisible();
-    await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
-    await assertViewportLocked(page);
-    expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  });
-}
-
-test("preferences persist, cannot be deselected, and sign out remains cancellable", async ({ page }) => {
+test("settings sections fit the desktop viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
-  await openSettings(page);
+  const settings = await openSettings(page);
+  await expect(settings.getByRole("region", { name: "On this device" })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
+  await assertViewportLocked(page);
+  expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+});
+
+test("mobile settings fit, preserve preferences, and keep sign-out cancellable", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.goto("/");
+  const settings = await openSettings(page);
+  await expect(settings.getByRole("region", { name: "On this device" })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
+  await assertViewportLocked(page);
+  expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   const light = page.getByRole("radio", { name: "Light theme" });
   await light.click();
   await light.click();
