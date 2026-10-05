@@ -4,6 +4,7 @@ import { BookOpen, Square, X } from "lucide-react";
 import { SelectedSkillsSchema, type AvailableSkill, type SkillContext, type SkillSelection } from "@palmagent/shared";
 import { skillsQueryOptions } from "../client-queries";
 import { useDraft } from "../hooks/useDraft";
+import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { PopoverContent } from "./ui/popover";
@@ -110,7 +111,7 @@ export function SkillMenu({ picker, textarea }: { picker: ReturnType<typeof useS
     <div className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground"><span>Skills</span><span>Type / to search</span></div>
     {picker.loading ? <p role="status" className="p-2 text-sm">Loading skills…</p>
       : picker.error ? <div className="p-2"><p role="alert" className="text-sm">{picker.error}</p><Button type="button" variant="ghost" onClick={picker.retry}>Try again</Button></div>
-      : <div ref={list} id={picker.id} role="listbox" aria-label="Available skills" className="max-h-[min(16rem,35dvh)] overflow-y-auto overscroll-contain">
+      : <ScrollArea className="max-h-[min(16rem,35dvh)]" viewportProps={{ ref: list, id: picker.id, role: "listbox", "aria-label": "Available skills" }}>
         {picker.matches.length === 0 && <p role="status" className="p-2 text-sm text-muted-foreground">No matching skills in this environment.</p>}
         {picker.matches.map((skill, index) => <Button key={skill.id} type="button" role="option" id={`${picker.id}-${index}`}
           aria-selected={picker.selected === index} tabIndex={-1} variant={picker.selected === index ? "selected" : "ghost"}
@@ -122,7 +123,7 @@ export function SkillMenu({ picker, textarea }: { picker: ReturnType<typeof useS
             <span className="truncate text-xs font-normal text-muted-foreground">{skill.source} · {skill.description}</span>
           </span>
         </Button>)}
-      </div>}
+      </ScrollArea>}
     {picker.warning && <p role="status" className="p-2 text-xs text-muted-foreground">{picker.warning}</p>}
   </PopoverContent>;
 }

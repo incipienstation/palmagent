@@ -71,5 +71,9 @@ test("drawer actions remain reachable in a short landscape viewport", async ({ p
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
     expect(bounds.height).toBeGreaterThanOrEqual(44);
   }
+  const viewport = dialog.locator('[data-radix-scroll-area-viewport]');
+  await viewport.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  expect(await viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await expect(dialog.getByRole("button", { name: "Settings", exact: true })).toBeInViewport({ ratio: 1 });
   await assertViewportLocked(page);
 });

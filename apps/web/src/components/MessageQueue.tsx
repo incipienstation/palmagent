@@ -1,6 +1,7 @@
 import { SkillChips } from "./SkillPicker";
 import { useState } from "react";
 import type { MessageQueue as Queue, PendingMessage } from "@palmagent/shared";
+import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "./ui/popover";
 import { useLongPress } from "../hooks/useLongPress";
@@ -23,13 +24,15 @@ function QueueItem({ message, index, disabled, pending, onEdit, onSend, onDelete
         <span className="ml-auto shrink-0">{pending ?? (editing ? "Editing" : message.status === "queued" ? "" : message.status)}</span>
       </Button>
     </PopoverAnchor>
-    <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} side="top" align="start" className="max-h-80 overflow-y-auto p-2" aria-label="Queued message">
+    <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} side="top" align="start" className="p-0" aria-label="Queued message">
+      <ScrollArea className="max-h-80" contentClassName="p-2">
       {panel === "detail" ? <div className="flex flex-col gap-2 p-2"><SkillChips skills={message.skills} /><p className="whitespace-pre-wrap break-words">{message.text}</p></div> : <div className="flex flex-col gap-1">
         <Button variant="ghost" disabled={message.status !== "queued" || editing} onClick={() => { setPanel(null); onEdit(); }}>Edit prompt</Button>
         <Button variant="ghost" disabled={message.status !== "queued" || editing} onClick={() => { setPanel(null); onSend(); }}>Send now</Button>
         <Button variant="ghost" disabled={message.status === "sending" || editing} onClick={() => { setPanel(null); onDelete(); }}>Remove from queue</Button>
       </div>}
       {message.error && <p role="status" className="p-2 text-sm text-muted-foreground">{message.error}</p>}
+      </ScrollArea>
     </PopoverContent>
   </Popover>;
 }
@@ -46,9 +49,9 @@ export function MessageQueue({ queue, disabled, resumeDisabled, pending, onEdit,
       </Button>
       {queue.paused && <Button variant="ghost" size="sm" disabled={disabled || resumeDisabled} onClick={onResume}>Resume queue</Button>}
     </div>
-    {expanded && <div className="max-h-36 overflow-y-auto">
+    {expanded && <ScrollArea className="max-h-36">
       {queue.messages.map((m, index) => <QueueItem key={m.id} message={m} index={index} disabled={disabled} pending={pending?.id === m.id ? pending.label : undefined}
         onEdit={() => onEdit(m)} onSend={() => onSend(m)} onDelete={() => onDelete(m)} />)}
-    </div>}
+    </ScrollArea>}
   </section>;
 }
