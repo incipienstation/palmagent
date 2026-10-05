@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.132
+
 ### Added
 
 - Manage native Codex and Claude Code updates from Agents, with installed and latest versions, verified update results, and a shared view of account limits and Palmagent activity.
