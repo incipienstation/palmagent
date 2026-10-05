@@ -31,7 +31,7 @@ test("delayed REST history paints at the bottom, then live output preserves foll
     await route.fulfill({ json: { events: savedRows(), before: null, cursor: 5 } });
   });
   await page.goto("/#/task/t-idle-rich");
-  await expect(page.getByText("Loading history…")).toBeVisible();
+  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toBeVisible();
   expect(requested).toBe(true);
 
   // Inspect every painted frame once history becomes visible, rather than
@@ -52,7 +52,7 @@ test("delayed REST history paints at the bottom, then live output preserves foll
   release();
   await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), "t-idle-rich")).toBe(true);
   await send(page, "t-idle-rich", { type: "tasks", tasks: [], historyThrough: 5 });
-  await expect(page.getByText("Loading history…")).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toHaveCount(0);
   await expect(page.getByText(/Middle history/).first()).toBeVisible();
   await expect(page.getByText("Latest history", { exact: true })).toBeVisible();
   await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
@@ -126,7 +126,7 @@ test("REST snapshot gaps are fetched before live output and empty history starts
     await route.fulfill({ json: { events: [row], before: null, cursor: 1 } });
   });
   await page.goto("/#/task/t-idle-rich");
-  await expect(page.getByText("Loading history…")).toBeVisible();
+  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toBeVisible();
   release();
   await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), "t-idle-rich")).toBe(true);
   await page.route("**/api/tasks/t-idle-rich/history/changes?after=1&through=2*", (route) => route.fulfill({ json: {
