@@ -19,6 +19,9 @@ test("long skill lists keep keyboard selection visible without moving the compos
   await input.fill("/");
   const list = page.getByRole("listbox", { name: "Available skills" });
   await expect(list.getByRole("option")).toHaveCount(30);
+  await page.getByRole("group", { name: "Message composer", exact: true }).evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   const top = (await input.boundingBox())!.y;
   expect((await list.boundingBox())!.height).toBeLessThanOrEqual(568 * .35 + 1);
   await input.press("ArrowUp");
