@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Extend the supported Codex CLI range through 0.160.0.
+
 ## 0.1.0-alpha.129
 
 ### Added
