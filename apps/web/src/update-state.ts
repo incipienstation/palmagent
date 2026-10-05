@@ -7,14 +7,20 @@ const marker = "palmagent:screen-checkpoint";
 const storeName = "checkpoints";
 type Screen = { scroll: { top: number; left: number }[]; focus?: { index: number; start: number | null; end: number | null } };
 type Checkpoint = { route: string; created: number; values: Record<string, unknown>; screen: Screen };
-const scrollSelector = '[data-radix-scroll-area-viewport]:not([aria-label="Session transcript"]), [data-slot="settings-scroll"]';
+// Keep the positional checkpoint format compatible as native panes adopt the
+// shared ScrollArea. New wrappers must not shift the existing list/sheet slots.
+const scrollSelector = '[data-radix-scroll-area-viewport]:not([aria-label="Session transcript"]):not([data-slot="scroll-area-viewport"]), [data-slot="settings-scroll"]';
+function screenScrollers() {
+  return [...document.querySelectorAll<HTMLElement>(scrollSelector)].map(el =>
+    el.matches('[data-slot="settings-scroll"]') ? el.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? el : el);
+}
 const editSelector = 'input:not([type="hidden"]):not([type="file"]):not([type="password"]), textarea';
 let restoredScreen: Screen | undefined;
 function captureScreen(): Screen {
   const fields = [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(editSelector)];
   const index = fields.findIndex((field) => field === document.activeElement);
   return {
-    scroll: [...document.querySelectorAll<HTMLElement>(scrollSelector)].map((el) => ({ top: el.scrollTop, left: el.scrollLeft })),
+    scroll: screenScrollers().map((el) => ({ top: el.scrollTop, left: el.scrollLeft })),
     ...(index < 0 ? {} : { focus: { index, start: fields[index].selectionStart, end: fields[index].selectionEnd } }),
   };
 }
@@ -30,7 +36,7 @@ export function restoreScreenPosition() {
   };
   const timeout = setTimeout(stop, 8000);
   function restore() {
-    const scroll = [...document.querySelectorAll<HTMLElement>(scrollSelector)];
+    const scroll = screenScrollers();
     screen!.scroll.forEach((saved, index) => { if (scroll[index]) { scroll[index].scrollTop = saved.top; scroll[index].scrollLeft = saved.left; } });
     if (screen!.focus) {
       const field = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(editSelector)[screen!.focus.index];
