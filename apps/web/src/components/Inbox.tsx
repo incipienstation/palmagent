@@ -292,7 +292,7 @@ export const InboxView = memo(function InboxView({
                 icon={search ? Search : InboxIcon}
                 title={search ? "No matching tasks" : directory !== "all" || statusFilter !== "all" ? "No tasks match these filters" : "No tasks yet"}
                 subtitle={search ? "Try another title or part of a prompt in this scope." : "Start a task and track it here."}
-                action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : { label: "New task", onClick: newTask }}
+                action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : undefined}
               />
             ) : (
               GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
