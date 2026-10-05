@@ -30,6 +30,7 @@ import { ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
 import { MessageDelivery, type DeliveryControls } from "./MessageDelivery";
 import { WorkingLabel } from "./WorkingLabel";
+import { ConversationLoading } from "./ConversationLoading";
 import { ActivitySummary } from "./ActivitySummary";
 import { ApprovalRequest } from "./ApprovalCard";
 import { payload } from "../transcript";
@@ -364,8 +365,8 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
     {historyError ? <>
       <span role="alert" className="text-destructive">{historyError}</span>
       <Button variant="ghost" onClick={loadEarlier}>{hasHistory ? "Retry loading earlier messages" : "Retry loading conversation"}</Button>
-    </> : loadingEarlier ? <div role="status" className="absolute inset-x-0 bottom-0 h-4 text-center text-xs leading-4 text-muted-foreground">
-      {hasHistory ? "Loading earlier messages…" : "Loading conversation…"}
+    </> : hasHistory && loadingEarlier ? <div role="status" className="absolute inset-x-0 bottom-0 h-4 text-center text-xs leading-4 text-muted-foreground">
+      Loading earlier messages…
     </div> : null}
   </div>;
 }
@@ -817,14 +818,18 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
     }
     return rows;
   }, [transcriptRows, activityQueryByRange]);
+  // A running task can already have a synthetic Working row before history
+  // arrives. Show the initial placeholder unless there is real content to keep.
+  const initialLoading = loading && !history.hasHistory && !log.length && !delivery?.messages.length;
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
-    {rows.length > 0 ? <VirtualTranscript rows={rows}
-      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> : empty ?
+    {!initialLoading && rows.length > 0 ? <VirtualTranscript rows={rows}
+      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> : !initialLoading && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
-        <HistoryHeader context={history} /><div className="mb-1.5 text-faint">
-          {loading ? "Loading history…" : log.length ? "No messages in this view." : "waiting for events…"}
-        </div>
+        <HistoryHeader context={history} />
+        {initialLoading ? <ConversationLoading /> : !history.historyError && <div className="mb-1.5 text-faint">
+          {log.length ? "No messages in this view." : "waiting for events…"}
+        </div>}
       </ScrollAreaPrimitive.Viewport>}
     <ScrollBar />
   </ScrollAreaPrimitive.Root></ImageTaskContext.Provider>;

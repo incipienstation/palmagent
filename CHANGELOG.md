@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Conversations show message-shaped skeletons while their history first loads, keeping the composer in place and avoiding duplicate loading messages.
+
 ## 0.1.0-alpha.130
 
 ### Changed

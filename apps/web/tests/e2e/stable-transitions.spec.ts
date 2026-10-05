@@ -35,6 +35,7 @@ for (const mode of ["send", "queue"] as const) test(`a cold conversation keeps i
   await page.addInitScript(({ id, mode }) => { localStorage.setItem(`delivery:${id}`, mode); localStorage.setItem(`draft:compose:${id}`, "Saved draft"); }, { id: task.taskId, mode });
   await page.goto(`/#/task/${task.taskId}`);
   await expect(page.getByRole("heading", { name: "Conversation", exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toBeVisible();
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeVisible();
   await expect(composer).toBeDisabled();
@@ -42,6 +43,7 @@ for (const mode of ["send", "queue"] as const) test(`a cold conversation keeps i
   await expect(page.getByRole("button", { name: mode === "send" ? "Send now" : "Add to queue", exact: true })).toBeDisabled();
   delayed.release();
   await expect(page.getByRole("heading", { name: "Conversation", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toHaveCount(0);
   expect(await node!.evaluate(el => el.isConnected)).toBe(true);
 });
 
