@@ -1,4 +1,5 @@
 import type { AuthService } from "../auth.js";
+import type { AgentInstallationService } from "../agent-installations.js";
 import type { CodexModelCatalogReader } from "../model-catalog.js";
 import type { PushService } from "../push.js";
 import type { RoutineService } from "../routines.js";
@@ -11,7 +12,7 @@ import type { LiveEventStream } from "../application/ports.js";
 
 /** HTTP adapters see only the use cases each route needs, never their implementations or persistence. */
 export type HttpTaskUseCases = Pick<TaskService,
-  | "updating" | "executionProtocol" | "usage" | "availableSkills" | "listTasks" | "getTask" | "accountLimits"
+  | "updating" | "executionProtocol" | "usage" | "availableSkills" | "listTasks" | "getTask" | "accountLimits" | "providerAccountLimits"
   | "createTask" | "resolveSkills" | "readAttachment" | "readTaskImage" | "rename" | "pin" | "taskActivityDetails"
   | "taskHistoryChanges" | "taskHistory" | "archive" | "handoff" | "resolveMessageSkills" | "submitMessage"
   | "messageAction" | "resumeQueue" | "followup" | "steer" | "approve" | "answer" | "stop" | "cancel"
@@ -19,6 +20,7 @@ export type HttpTaskUseCases = Pick<TaskService,
 >;
 
 export type HttpDependencies = {
+  agentInstallations?: Pick<AgentInstallationService, "list" | "update">;
   terminals?: Pick<TerminalService, "list" | "capabilities" | "create" | "getPublic" | "rename" | "terminate">;
   terminalTickets?: Pick<TerminalTickets, "issue">;
   settings: Pick<SettingsStore, "get" | "change">;

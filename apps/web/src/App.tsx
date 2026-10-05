@@ -53,7 +53,7 @@ function AppInner() {
       : route.name === "routines"
         ? "Routines"
         : route.name === "usage"
-          ? "Usage"
+          ? "Agents"
           : route.name === "task"
             ? active ? taskTitle(active) : "Task"
             : route.name === "spaces" ? "Spaces" : route.name === "space" ? repos.get(route.repoId)?.name ?? "Space" : "All spaces";

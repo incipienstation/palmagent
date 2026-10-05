@@ -34,6 +34,11 @@ export class TaskService implements PrStatusSink {
 
   providerHome(agent: AgentKind): string { return this.nativeSession.home(agent); }
 
+  providerAccountLimits(agent: AgentKind) {
+    if (!this.accountLimitReader) throw new ApplicationError("service_unavailable", "Account limits are unavailable");
+    return this.accountLimitReader.get(agent, this.providerHome(agent));
+  }
+
   cleanupTerminalWorktree(id: string) {
     const task = this.getTask(id);
     if (isClosedTaskStatus(task.status)) this.cleanupWorktree(task);

@@ -1,5 +1,5 @@
 export type ClientReadInvalidationSource = "mutation" | "remote" | "foreground";
-export type ClientReadScope = "repos" | "modelCatalog" | "usage" | "routines" | "routineRuns" | "skills";
+export type ClientReadScope = "agents" | "repos" | "modelCatalog" | "usage" | "routines" | "routineRuns" | "skills";
 
 let sessionGeneration = 0;
 const resetListeners = new Set<() => void>();
@@ -30,11 +30,11 @@ const channel = typeof window !== "undefined" && typeof BroadcastChannel !== "un
 channel?.addEventListener("message", ({ data }) => {
   if (data === "session") resetClientSession();
   else if (data === "invalidate") {
-    void notifyReadsInvalidated("remote", ["repos", "modelCatalog", "usage", "routines", "routineRuns", "skills"]).catch(() => {});
+    void notifyReadsInvalidated("remote", ["agents", "repos", "modelCatalog", "usage", "routines", "routineRuns", "skills"]).catch(() => {});
   }
   else if (data && typeof data === "object" && data.type === "invalidate" && Array.isArray(data.scopes)) {
     void notifyReadsInvalidated("remote", data.scopes.filter((scope: unknown): scope is ClientReadScope =>
-      typeof scope === "string" && ["repos", "modelCatalog", "usage", "routines", "routineRuns", "skills"].includes(scope))).catch(() => {});
+      typeof scope === "string" && ["agents", "repos", "modelCatalog", "usage", "routines", "routineRuns", "skills"].includes(scope))).catch(() => {});
   }
 });
 
@@ -44,7 +44,7 @@ export function invalidateClientReads(session = false, scopes?: readonly ClientR
     channel?.postMessage("session");
     return Promise.resolve();
   } else {
-    const affected = scopes ?? ["repos", "modelCatalog", "usage", "routines", "routineRuns", "skills"];
+    const affected = scopes ?? ["agents", "repos", "modelCatalog", "usage", "routines", "routineRuns", "skills"];
     if (affected.length === 0) return Promise.resolve();
     const settled = notifyReadsInvalidated("mutation", affected);
     channel?.postMessage({ type: "invalidate", scopes: affected });
@@ -56,7 +56,7 @@ if (typeof window !== "undefined") {
   const refresh = () => {
     // The inbox stream refreshes Spaces, usage, routines and run history after
     // its new snapshot lands, including native EventSource reconnects.
-    void notifyReadsInvalidated("foreground", ["modelCatalog", "skills"]).catch(() => {});
+    void notifyReadsInvalidated("foreground", ["agents", "modelCatalog", "skills"]).catch(() => {});
   };
   window.addEventListener("online", refresh);
   document.addEventListener("visibilitychange", () => {

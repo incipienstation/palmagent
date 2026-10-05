@@ -14,6 +14,10 @@ import { createRuntime } from "./runtime.js";
 import { startSessionControl } from "./session-control.js";
 import { createUpdateSettingsService } from "./update-settings.js";
 import { SettingsStore } from "./settings.js";
+import { AgentInstallationService } from "./agent-installations.js";
+import { acquireUpdateLock, UpdateBusyError } from "./update-lock.js";
+import { userConfigPath } from "./cli/user-config.js";
+import { ApplicationError } from "./errors.js";
 
 declare const __PALMAGENT_BUILD__: { version: string; sourceCommit: string; dirty: boolean };
 const build = typeof __PALMAGENT_BUILD__ === "undefined" ? undefined : __PALMAGENT_BUILD__;
@@ -44,7 +48,14 @@ try {
   resources.defer(() => updateWatcher?.close());
   updateWatcher?.on("error", () => { updateWatcher.close(); });
   const settings = new SettingsStore(runtime.config.dataDir, runtime.config.repoRoots);
-  const app = createApp({ ...runtime, settings, build, updates, shutdown: shutdown.signal });
+  const agentInstallations = new AgentInstallationService(agent => runtime.service.providerHome(agent), {
+    lock: () => {
+      try { return acquireUpdateLock(dirname(userConfigPath())); }
+      catch (error) { throw new ApplicationError(error instanceof UpdateBusyError ? "conflict" : "service_unavailable", "Another host operation is running, or the update lock is unavailable. Try again after it finishes."); }
+    },
+  }, runtime.config.dataDir);
+  resources.defer(() => agentInstallations.close());
+  const app = createApp({ ...runtime, settings, build, updates, agentInstallations, shutdown: shutdown.signal });
   const server = createServer(getRequestListener(app.fetch));
   resources.defer(() => closeServer(server));
   const closeTerminals = installTerminalGateway(server, { service: runtime.terminals, auth: runtime.auth, tickets: runtime.terminalTickets,

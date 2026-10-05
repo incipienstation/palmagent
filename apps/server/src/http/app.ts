@@ -11,6 +11,7 @@ import { SkillContextSchema } from "@palmagent/shared";
 import { AGENT_CLI_COMPATIBILITY } from "@palmagent/shared";
 import { handleError } from "./errors.js";
 import { authRoutes } from "./routes/auth.js";
+import { agentRoutes } from "./routes/agents.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { repoRoutes } from "./routes/repos.js";
 import { routineRoutes } from "./routes/routines.js";
@@ -40,6 +41,7 @@ export function createApp(deps: HttpDependencies) {
   )(c, next));
   const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol, ...(deps.build ? { build: deps.build } : {}) }, 200))
     .route("/api/auth", authRoutes(deps))
+    .route("/api/agents", agentRoutes(deps))
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))
     .get("/api/model-catalog", async (c) => {
       c.header("Cache-Control", "no-store");

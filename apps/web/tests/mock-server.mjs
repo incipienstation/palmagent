@@ -229,6 +229,16 @@ const server = createServer(async (req, res) => {
         const task = tasks.find((t) => t.taskId === id);
         return task ? json(res, 200, { task }) : json(res, 404, { error: "no such task" });
       }
+      if (pathname === "/api/agents") return json(res, 200, { canUpdate: true, installations: ["claude", "codex"].map(agent => ({
+        agent, version: agent === "claude" ? "2.1.275" : "0.156.1", latestVersion: agent === "claude" ? "2.1.275" : "0.156.1",
+        installation: "native", compatible: true, latestCompatible: true, checkedAt: Date.now(), releaseState: "ready", update: { state: "idle" },
+      })) });
+      if (/^\/api\/agents\/(claude|codex)\/limits$/.test(pathname)) {
+        const agent = pathname.split("/")[3], window = { usedPercent: 28, resetsAt: Date.now() + 100 * 60_000 };
+        return json(res, 200, agent === "claude"
+          ? { agent, state: "ready", checkedAt: Date.now(), fiveHour: window, modelLimits: [] }
+          : { agent, state: "ready", checkedAt: Date.now(), buckets: [{ id: "codex", name: "Codex", primary: { ...window, windowMinutes: 300 } }] });
+      }
       if (pathname === "/api/usage") return json(res, 200, { usage });
       if (pathname === "/api/model-catalog") return json(res, 200, modelCatalog);
       if (pathname === "/api/routines") return json(res, 200, { routines });

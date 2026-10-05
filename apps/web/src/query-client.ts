@@ -39,6 +39,7 @@ export async function refreshClientReads(queryKey: QueryKey): Promise<void> {
 onClientReadInvalidation((source, scopes) => {
   const queryKeys: QueryKey[] = scopes.map((scope): QueryKey => {
     switch (scope) {
+      case "agents": return clientReadKeys.agents();
       case "repos": return clientReadKeys.repos();
       case "modelCatalog": return clientReadKeys.modelCatalog();
       case "usage": return clientReadKeys.usage();

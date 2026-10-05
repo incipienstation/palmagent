@@ -81,7 +81,7 @@ test("Usage and routine history recover from read failures without false empty r
   failUsage = false;
   await page.getByRole("button", { name: "Retry usage" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("claude", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claude Code", exact: true })).toBeVisible();
   let failHistory = true;
   await page.route("**/api/routines/r-standup/runs", route => failHistory
     ? route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } })
@@ -121,12 +121,12 @@ test("usage ignores display snapshots, keeps Retry during automatic refresh, and
   await expect(page.getByRole("status", { name: "" }).filter({ hasText: "Retrying usage" })).toBeVisible();
   release();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("claude", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claude Code", exact: true })).toBeVisible();
 
   await sendInboxFrame(page, { type: "read-change", usage: true });
   await expect.poll(() => requests).toBe(3);
   await expect(page.getByRole("alert")).toContainText("Couldn't load usage");
-  await expect(page.getByText("claude", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claude Code", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Retry usage" }).click();
   await expect.poll(() => requests).toBe(4);
   await expect(page.getByRole("alert")).toHaveCount(0);

@@ -7,6 +7,7 @@ export * from "./branding.js";
 export * from "./compatibility.js";
 export type * from "./updates.js";
 export type * from "./account-limits.js";
+export type * from "./agent-installations.js";
 export type * from "./requests.js";
 export * from "./messages.js";
 export type * from "./settings.js";
