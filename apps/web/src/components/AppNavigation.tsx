@@ -52,7 +52,7 @@ export function AppNavigation({ tasks, conn, children }: {
     { label: "Spaces", icon: Folder, active: route.name === "spaces", onClick: () => go("/spaces") },
     { label: "Routines", icon: Clock3, active: route.name === "routines", onClick: () => go("/routines") },
     { label: "Terminals", icon: Terminal, active: route.name === "terminals", onClick: () => go("/terminals") },
-    { label: "Usage", icon: BarChart3, active: route.name === "usage", onClick: () => go("/usage") },
+    { label: "Agents", icon: BarChart3, active: route.name === "usage", onClick: () => go("/agents") },
   ];
   const navigationLinks = (
         <nav aria-label="Main navigation" className="shrink-0 flex flex-col gap-1 px-3 pb-4">

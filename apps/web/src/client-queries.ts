@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { SkillContext } from "@palmagent/shared";
+import type { AgentKind, SkillContext } from "@palmagent/shared";
 import { api } from "./api";
 import { clientReadKeys } from "./client-query-keys";
 import { taskActivityDetailsKey, TASK_ACTIVITY_DETAILS_GC_TIME } from "./task-history-query";
@@ -69,5 +69,21 @@ export const taskActivityDetailsQueryOptions = (taskId: string, from: number, th
   queryFn: ({ signal }) => api.taskActivityDetails(taskId, from, through, signal),
   staleTime: Infinity,
   gcTime: TASK_ACTIVITY_DETAILS_GC_TIME,
+  retry: false,
+});
+
+export const agentInstallationsQueryOptions = () => queryOptions({
+  queryKey: clientReadKeys.agentInstallations(),
+  queryFn: ({ signal }) => api.agentInstallations(signal),
+  staleTime: 30_000,
+  retry: false,
+  refetchInterval: query => query.state.data?.installations.some(agent => agent.update.state === "running") ? 2_000 : 60_000,
+});
+
+export const agentLimitsQueryOptions = (agent: AgentKind) => queryOptions({
+  queryKey: clientReadKeys.agentLimits(agent),
+  queryFn: ({ signal }) => api.agentLimits(agent, signal),
+  staleTime: FIVE_MINUTES,
+  refetchInterval: FIVE_MINUTES,
   retry: false,
 });

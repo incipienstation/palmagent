@@ -193,6 +193,34 @@ remain a text notice. Arbitrary filesystem paths in tool output are not served.
 Run `palmagent compatibility` to see supported agent CLI ranges. `palmagent doctor`
 reports installed versions outside those ranges.
 
+## Agents and usage
+
+Open **Agents** to see Codex and Claude Code installed on the Palmagent host. Each
+agent has the same sections: installed and latest release versions, account
+limits, and activity recorded by Palmagent. Existing Usage bookmarks still work.
+
+**Update** runs the native CLI updater after confirmation and verifies the
+installed version afterward. It requires Palmagent sign-in and a recognized
+native installation. Package-manager and custom installations are updated on the
+host with their own installer. Refreshing the screen only reads status. Updates
+share the host operation lock with Palmagent updates; the last result survives a
+server restart. An interrupted update is reported as unverified and is never
+replayed automatically.
+
+The latest published release may differ from the version selected by the CLI's
+configured channel. Palmagent flags versions outside its tested adapter range.
+CLI updates do not change Palmagent's own release channel or update preferences.
+
+Account limits show remaining allowance and reset times for the host account,
+shared with its other sessions. Task details show the account used by that task
+using the same presentation. Reports refresh every five minutes; a passed reset
+time or unavailable report does not imply a full allowance.
+
+Palmagent activity covers its recorded tasks, not every native CLI session or an
+account bill. Both agents use the same metric order; a dash means the CLI did not
+report that metric, while an actual reported zero stays zero. Input totals include
+cached input; cached input and reasoning output are subsets, not additional usage.
+
 ## Updates
 
 Ask **“Check for Palmagent updates”** to see the target version and which plugins

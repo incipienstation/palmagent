@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Manage native Codex and Claude Code updates from Agents, with installed and latest versions, verified update results, and a shared view of account limits and Palmagent activity.
+
+### Fixed
+
+- Usage distinguishes unreported metrics from zero and includes Claude cache reads and cache creation in input-token totals.
+
 ## 0.1.0-alpha.131
 
 ### Changed

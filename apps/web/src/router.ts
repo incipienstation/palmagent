@@ -34,7 +34,7 @@ function parse(hash: string): Route {
   if (terminalRepo) return { name: "terminals", repoId: decodeURIComponent(terminalRepo[1]) };
   if (path === "/new") return { name: "new" };
   if (path === "/routines") return { name: "routines" };
-  if (path === "/usage") return { name: "usage" };
+  if (path === "/usage" || path === "/agents") return { name: "usage" };
   const e = /^\/enroll\/(.+)$/.exec(path);
   if (e) return { name: "enroll", token: decodeURIComponent(e[1]) };
   const m = /^\/task\/(.+)$/.exec(path);

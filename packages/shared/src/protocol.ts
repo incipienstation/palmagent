@@ -39,10 +39,9 @@ export interface ErrorResponse {
 }
 
 // ---- Usage stats (per-agent aggregate over the result event log) ----
-// The two CLIs report asymmetric usage and bury it in `result` events: Claude
-// emits a USD cost + duration + turn count; Codex emits token counts (no cost).
-// A consumer renders whichever metrics each agent actually reports — a zero
-// field means "not reported by that CLI", not "no usage".
+// Account quotas are separate from these local result-event totals. The reported
+// fields distinguish a real zero from a metric the CLI never supplied.
+export type AgentUsageMetric = "totalCostUsd" | "durationMs" | "inputTokens" | "cachedInputTokens" | "outputTokens" | "reasoningOutputTokens";
 export interface AgentUsage {
   agent: AgentKind;
   taskCount: number; // tasks ever dispatched to this agent (any final status)
@@ -53,6 +52,7 @@ export interface AgentUsage {
   cachedInputTokens: number; // Σ usage.cached_input_tokens (Codex; subset of input)
   outputTokens: number; // Σ usage.output_tokens (Codex)
   reasoningOutputTokens: number; // Σ usage.reasoning_output_tokens (Codex; subset of output)
+  reported?: AgentUsageMetric[];
 }
 export interface UsageResponse {
   usage: AgentUsage[]; // one row per agent kind that has at least one task

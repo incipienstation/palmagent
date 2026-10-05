@@ -32,7 +32,7 @@ import { startSessionControl, sessionSocket } from "../src/session-control.js";
 import type { HttpDependencies } from "../src/http/types.js";
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog">> = {}) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations">> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
@@ -862,4 +862,41 @@ test("video playback authenticates ranges, supports seeking, and rejects invalid
   assert.equal(full.status, 200); assert.equal(full.headers.get("accept-ranges"), "bytes");
   assert.deepEqual(Buffer.from(await full.arrayBuffer()), bytes);
   assert.equal((await f.app.request(path, { headers: { ...headers, Range: "bytes=0-9", "If-Range": "stale" } })).status, 200);
+});
+
+
+test("agent management reads are inert; updates require sign-in and validated provider/version", async t => {
+  const calls: string[] = [];
+  const status = { agent: "codex" as const, version: "0.156.1", latestVersion: "0.156.2", installation: "native" as const,
+    compatible: true, latestCompatible: true, releaseState: "ready" as const, checkedAt: 1, update: { state: "idle" as const } };
+  const agentInstallations = { list: async () => [status], update: async (agent: string, version: string) => { calls.push(`${agent}:${version}`); return status; } };
+  const f = fixture(t, true, { agentInstallations });
+  const now = Date.now(); f.db.createSession("agent-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=agent-session`, "content-type": "application/json" };
+  const read = await f.app.request("/api/agents", { headers });
+  assert.equal(read.status, 200); assert.equal(read.headers.get("cache-control"), "no-store");
+  assert.equal((await read.json()).canUpdate, true); assert.deepEqual(calls, []);
+  const body = JSON.stringify({ expectedVersion: "0.156.1" });
+  assert.equal((await f.app.request("/api/agents/codex/update", { method: "POST", body })).status, 401);
+  assert.equal((await f.app.request("/api/agents/other/update", { method: "POST", headers, body })).status, 400);
+  assert.equal((await f.app.request("/api/agents/codex/update", { method: "POST", headers, body: JSON.stringify({ expectedVersion: "0.156.1", command: "anything" }) })).status, 400);
+  assert.equal((await f.app.request("/api/agents/codex/update", { method: "POST", headers, body })).status, 202);
+  assert.deepEqual(calls, ["codex:0.156.1"]);
+  const dev = fixture(t, false, { agentInstallations });
+  assert.equal((await dev.app.request("/api/agents/codex/update", { method: "POST", body })).status, 403);
+  assert.deepEqual(calls, ["codex:0.156.1"]);
+});
+
+test("usage distinguishes zero from missing metrics and normalizes Claude cache accounting", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "usage-repo", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const agent of ["claude", "codex"] as const) f.db.insertTask({ taskId: agent, repoId: "usage-repo", agent, prompt: "fixture", permission: agent === "codex" ? "read-only" : "plan", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  f.db.insertEvent("claude", "result", { total_cost_usd: 0, usage: { input_tokens: 10, cache_read_input_tokens: 20, cache_creation_input_tokens: 30, output_tokens: 0 } }, 1);
+  f.db.insertEvent("codex", "result", { usage: { input_tokens: 100, cached_input_tokens: 80, output_tokens: 5 } }, 1);
+  const [claude, codex] = f.service.usage();
+  assert.equal(claude.inputTokens, 60); assert.equal(claude.cachedInputTokens, 20);
+  assert.equal(claude.totalCostUsd, 0); assert.ok(claude.reported?.includes("totalCostUsd"));
+  assert.ok(claude.reported?.includes("outputTokens")); assert.ok(!claude.reported?.includes("durationMs"));
+  assert.equal(codex.inputTokens, 100); assert.equal(codex.cachedInputTokens, 80);
+  assert.ok(!codex.reported?.includes("totalCostUsd"));
 });

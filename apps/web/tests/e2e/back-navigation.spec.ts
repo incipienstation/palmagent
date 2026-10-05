@@ -107,14 +107,14 @@ for (const installed of [false, true]) {
     test("drawer navigation cleans up its cover and preserves page Back/Forward", async ({ page }) => {
       await openTask(page);
       await page.getByRole("button", { name: "Open navigation" }).click();
-      await page.getByRole("button", { name: "Usage", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Agents", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
       await pageEntry(page);
       await back(page);
       await expect(page).toHaveURL(new RegExp(task + "$"));
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await forward(page);
-      await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
     });
   });
 }
@@ -271,7 +271,7 @@ test("native hash navigation dismisses overlays and skips obsolete entries in bo
   await openTask(page);
   await settings(page);
   await page.evaluate(() => { location.hash = "/usage"; });
-  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await back(page);
   await expect(page).toHaveURL(new RegExp(task + "$"));
@@ -280,7 +280,7 @@ test("native hash navigation dismisses overlays and skips obsolete entries in bo
   await page.reload();
   await pageEntry(page);
   await forward(page);
-  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 

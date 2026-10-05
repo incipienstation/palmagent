@@ -629,7 +629,7 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
       if (!u) {
         u = {
           agent, taskCount: 0, turnCount: 0, totalCostUsd: 0, durationMs: 0,
-          inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0,
+          inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0, reported: [],
         };
         acc.set(agent, u);
       }
@@ -648,7 +648,12 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
        FROM events e JOIN tasks t ON t.id = e.task_id
        WHERE e.kind = 'result'`,
     ).all() as { agent: string; payload_json: string }[];
-    const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0);
+    const add = (u: AgentUsage, key: NonNullable<AgentUsage["reported"]>[number], value: unknown) => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return;
+      u[key] += value;
+      if (!u.reported!.includes(key)) u.reported!.push(key);
+    };
     for (const row of rows) {
       const u = bucket(row.agent as AgentKind);
       u.turnCount += 1;
@@ -660,15 +665,18 @@ export class Db implements TaskRepository, AuthRepository, PushRepository, Routi
       }
       if (!parsed || typeof parsed !== "object") continue;
       const p = parsed as Record<string, unknown>;
-      u.totalCostUsd += num(p.total_cost_usd); // Claude
-      u.durationMs += num(p.duration_ms); // Claude
-      const usage = p.usage; // Codex
+      add(u, "totalCostUsd", p.total_cost_usd);
+      add(u, "durationMs", p.duration_ms);
+      const usage = p.usage;
       if (usage && typeof usage === "object") {
         const g = usage as Record<string, unknown>;
-        u.inputTokens += num(g.input_tokens);
-        u.cachedInputTokens += num(g.cached_input_tokens);
-        u.outputTokens += num(g.output_tokens);
-        u.reasoningOutputTokens += num(g.reasoning_output_tokens);
+        // Claude reports cache reads/creation separately from uncached input;
+        // Codex already includes cached tokens in its input total.
+        add(u, "inputTokens", row.agent === "claude" && typeof g.input_tokens === "number" && Number.isFinite(g.input_tokens) && g.input_tokens >= 0
+          ? num(g.input_tokens) + num(g.cache_read_input_tokens) + num(g.cache_creation_input_tokens) : g.input_tokens);
+        add(u, "cachedInputTokens", row.agent === "claude" ? g.cache_read_input_tokens : g.cached_input_tokens);
+        add(u, "outputTokens", g.output_tokens);
+        add(u, "reasoningOutputTokens", g.reasoning_output_tokens);
       }
     }
     return [...acc.values()].sort((a, b) => a.agent.localeCompare(b.agent));

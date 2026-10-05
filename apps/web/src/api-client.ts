@@ -4,7 +4,7 @@ import { hc } from "hono/client";
 import type { AppType } from "@palmagent/server/http-api";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
 import type {
-  AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
+  AgentKind, AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
   CreateTaskRequest, FollowupRequest, MessageAction, PushSubscribeRequest,
   RenameTaskRequest, RepoSettingsChange, SteerRequest, SubmitMessage, TaskStatus,
   UpdateAction, UpdateRepoRequest, UpdateRoutineRequest, UpdateSettingsChange,
@@ -132,6 +132,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     createTask: (json: CreateTaskRequest) => write(() => client.tasks.$post({ json })).then((r) => r.task),
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
+    agentInstallations: (signal?: AbortSignal) => request(() => client.agents.$get({}, requestOptions(signal))),
+    agentLimits: (agent: AgentKind, signal?: AbortSignal) => request(() => client.agents[":agent"].limits.$get({ param: { agent } }, requestOptions(signal))),
+    updateAgent: (agent: AgentKind, expectedVersion: string) => write(() => client.agents[":agent"].update.$post({ param: { agent }, json: { expectedVersion } }), false, false, ["agents", "modelCatalog"]),
     getUsage: (signal?: AbortSignal) => request(() => client.usage.$get({}, requestOptions(signal))).then((r) => r.usage),
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json })).then((r) => r.task),
     steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json })),
