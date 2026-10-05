@@ -1,5 +1,6 @@
 import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
+import { ScrollArea } from "./scroll-area";
 import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "@/lib/utils";
@@ -80,8 +81,9 @@ function DrawerHeaderRow({ className, ...props }: React.ComponentProps<"div">) {
 
 // Only the body scrolls. The content owns the viewport cap and safe-area inset,
 // so short sheets fit their content and long sheets keep their actions reachable.
-function DrawerBody({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="drawer-body" className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-4", className)} {...props} />;
+function DrawerBody({ className, hidden, ...props }: Omit<React.ComponentProps<typeof ScrollArea>, "contentClassName" | "viewportProps">) {
+  return <ScrollArea data-slot="drawer-body" hidden={hidden} className={cn("flex-1", hidden && "hidden")}
+    contentClassName={cn("min-w-0 px-4 pt-3 pb-4", className)} {...props} />;
 }
 
 function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {

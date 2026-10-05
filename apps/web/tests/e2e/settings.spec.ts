@@ -11,6 +11,37 @@ async function openSettings(page: Page) {
   return dialog;
 }
 
+test("an existing update checkpoint restores native settings scroll into the new viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 400 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    const id = "settings-scroll-upgrade";
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("palmagent-screen-state", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("checkpoints");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction("checkpoints", "readwrite");
+        // Previous clients recorded the inbox followed by four native settings panes.
+        transaction.objectStore("checkpoints").put({ route: location.hash, created: Date.now(),
+          values: { "settings:open": true, "settings:section": "general" },
+          screen: { scroll: [0, 120, 0, 0, 0].map(top => ({ top, left: 0 })) } }, id);
+        transaction.oncomplete = () => { db.close(); resolve(); };
+        transaction.onerror = () => { db.close(); reject(transaction.error); };
+      };
+    });
+    sessionStorage.setItem("palmagent:screen-checkpoint", id);
+  });
+  await page.reload();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(settings).toBeVisible();
+  const viewport = settings.locator('[data-slot="settings-scroll"]:visible [data-radix-scroll-area-viewport]');
+  await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBe(120);
+  await assertViewportLocked(page);
+});
+
 test("settings sections fit the desktop viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");

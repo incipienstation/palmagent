@@ -23,7 +23,7 @@ test("short filter sheets align content and actions above the safe area", async 
   expect(action!.width).toBeCloseTo(field!.width, 0);
   expect(action!.height).toBeGreaterThanOrEqual(44);
   expect(action!.y + action!.height).toBeLessThanOrEqual(780 - 34);
-  expect(await sheet.locator('[data-slot="drawer-body"]').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+  expect(await sheet.locator('[data-slot="drawer-body"] [data-radix-scroll-area-viewport]').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
   await captureForReview(page, "bottom-sheet-filters-dark.png");
   await status.click();
   await page.getByRole("option", { name: "Working", exact: true }).click();
@@ -53,9 +53,12 @@ test("long supporting sheets scroll their body while the title stays visible", a
     await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
   });
   const top = (await title.boundingBox())!.y;
+  const viewport = sheet.locator('[data-radix-scroll-area-viewport]');
+  expect(await viewport.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0);
   await sheet.getByRole("heading", { name: "Allowance 20", exact: true }).scrollIntoViewIfNeeded();
   await expect(sheet.getByRole("heading", { name: "Allowance 20", exact: true })).toBeInViewport({ ratio: 1 });
   await expect(title).toBeInViewport({ ratio: 1 });
+  expect(await viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
   expect((await title.boundingBox())!.y).toBeCloseTo(top, 0);
   expect(await sheet.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   await captureForReview(page, "bottom-sheet-long-content.png");
@@ -74,7 +77,7 @@ test("Configure keeps its action reachable while content scrolls in a reduced vi
     await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
   });
   const top = (await done.boundingBox())!.y;
-  await sheet.locator('[data-slot="settings-scroll"]').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await sheet.locator('[data-slot="settings-scroll"] [data-radix-scroll-area-viewport]').evaluate(el => { el.scrollTop = el.scrollHeight; });
   expect((await done.boundingBox())!.y).toBeCloseTo(top, 0);
   await expect(sheet.getByRole("heading", { name: "Configure", exact: true })).toBeInViewport({ ratio: 1 });
   await captureForReview(page, "bottom-sheet-configure-small.png");

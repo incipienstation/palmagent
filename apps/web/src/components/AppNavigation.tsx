@@ -9,6 +9,7 @@ import { compareTasks } from "../lib/task-order";
 import { taskTitle } from "../lib/task-title";
 import { useRepos } from "../hooks/useRepos";
 import { newTaskPath, spaceActivity, spacePath } from "../space-context";
+import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
@@ -82,13 +83,13 @@ export function AppNavigation({ tasks, conn, children }: {
       {desktopSidebar && <aside aria-label="Space navigation" className="hidden h-app w-60 shrink-0 flex-col border-r md:flex">
         <p className="px-6 pb-5 pt-[calc(24px+var(--safe-top))] text-lg font-semibold">Palmagent</p>
         {navigationLinks}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <ScrollArea className="flex-1">
           {pinnedNavigation}
           <div className="px-3">
           <h2 className="px-3 py-3 text-xs text-muted-foreground">Recent Spaces</h2>
           {recentSpaces.map(repo => <Button key={repo.id} variant={route.name === "space" && route.repoId === repo.id ? "selected" : "ghost"} className="w-full justify-start px-3" aria-current={route.name === "space" && route.repoId === repo.id ? "page" : undefined} onClick={() => go(spacePath(repo.id))}><span className="truncate">{repo.name}</span></Button>)}
           </div>
-        </div>
+        </ScrollArea>
         <div className="flex items-center gap-2 p-4 pb-[calc(16px+var(--safe-bottom))]"><Button onClick={newTask}><SquarePen data-icon="inline-start" />New task</Button><Button variant="ghost" size="icon-lg" aria-label="Settings" onClick={event => { trigger.current = event.currentTarget; setSettingsOpen(true); }}><Settings /></Button></div>
       </aside>}
       <div className="min-w-0 flex-1">{children}</div>
@@ -106,7 +107,7 @@ export function AppNavigation({ tasks, conn, children }: {
           <Button variant="ghost" size="icon-lg" aria-label="Close navigation" onClick={() => setOpen(false)}><PanelLeftClose /></Button>
         </div>
         <DrawerDescription className="sr-only">Navigate your tasks, spaces, and settings.</DrawerDescription>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <ScrollArea className="flex-1">
         {navigationLinks}
 
         <div className="mx-5 border-t border-border" />
@@ -121,7 +122,7 @@ export function AppNavigation({ tasks, conn, children }: {
             <span className="truncate">{taskTitle(task)}</span>
           </Button>)}
         </div>
-        </div>
+        </ScrollArea>
         <div className="flex shrink-0 items-center gap-3 px-5 pt-3 pb-[calc(16px+var(--safe-bottom))]">
           <Button className="rounded-full px-5" onClick={newTask}><SquarePen />New task</Button>
           <Button variant="ghost" size="icon-lg" className="ml-auto rounded-full" aria-label="Settings" onClick={() => showAfterClose(() => setSettingsOpen(true))}><Settings /></Button>

@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Sheets, navigation, Agents, Routines, and skill and message lists use consistent scrollbars while keeping headings and actions visible.
+
 ## 0.1.0-alpha.133
 
 ### Changed

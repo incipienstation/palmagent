@@ -1,12 +1,43 @@
 import { test, expect, type Page } from "@playwright/test";
 import { tasks, repos } from "../fixtures.mjs";
 import { installScopedStream, open, send } from "./_scoped-stream";
+import { assertViewportLocked } from "./_helpers";
 
 const palm = { id: "palm-doctor", name: "palmagent:doctor", source: "palmagent", pluginId: "palmagent@palmagent", description: "Check the dispatcher and explain connection problems." };
 const project = { id: "project-check", name: "check", source: "repo", description: "Check this project's changes." };
 async function catalogue(page: Page) {
   await page.route("**/api/skills?**", route => route.fulfill({ json: { skills: [palm, project] } }));
 }
+
+test("long skill lists keep keyboard selection visible without moving the composer", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.route("**/api/skills?**", route => route.fulfill({ json: {
+    skills: Array.from({ length: 30 }, (_, i) => ({ ...project, id: `skill-${i}`, name: `check-${i}` })),
+  } }));
+  await page.goto("/#/new/space/repo-app");
+  const input = page.getByRole("textbox", { name: "Prompt", exact: true });
+  await input.fill("/");
+  const list = page.getByRole("listbox", { name: "Available skills" });
+  await expect(list.getByRole("option")).toHaveCount(30);
+  await page.getByRole("group", { name: "Message composer", exact: true }).evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
+  const top = (await input.boundingBox())!.y;
+  expect((await list.boundingBox())!.height).toBeLessThanOrEqual(568 * .35 + 1);
+  await input.press("ArrowUp");
+  const last = list.getByRole("option").last();
+  await expect(last).toHaveAttribute("aria-selected", "true");
+  // The 35dvh cap can leave a fractional pixel at the scroll boundary.
+  await expect(last).toBeInViewport({ ratio: .99 });
+  expect(await list.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await expect(input).toBeFocused();
+  expect((await input.boundingBox())!.y).toBeCloseTo(top, 0);
+  await input.press("ArrowDown");
+  await expect(list.getByRole("option").first()).toBeInViewport({ ratio: .99 });
+  await input.press("Enter");
+  await expect(page.getByRole("button", { name: "Remove check-0 skill" })).toBeVisible();
+  await assertViewportLocked(page);
+});
 
 for (const route of ["new", "task/t-idle-rich"]) test(`slash selection is explicit, persisted and restored after failed send (${route})`, async ({ page }) => {
   await catalogue(page);

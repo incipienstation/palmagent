@@ -87,7 +87,7 @@ test("Spaces refresh failures retain rows and allow another pull without reloadi
   let calls = 0, loads = 0;
   page.on("load", () => loads++);
   await page.route("**/api/tasks", route => { calls++; return route.fulfill({ status: 503, json: { error: "Try again" } }); });
-  const pull = () => page.locator(".overscroll-contain").evaluate(el => {
+  const pull = () => page.locator("[data-radix-scroll-area-viewport]").filter({ has: row }).evaluate(el => {
     el.scrollTop = 0;
     for (const [type, y] of [["touchstart", 20], ["touchmove", 180], ["touchend", 180]] as const) {
       el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: [new Touch({ identifier: 1, target: el, clientX: 100, clientY: y })] }));

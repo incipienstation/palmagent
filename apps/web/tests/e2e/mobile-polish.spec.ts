@@ -177,7 +177,7 @@ test("Settings controls remain reachable while scrolling on a narrow phone", asy
     await expectTouchTarget(back);
     const headerTop = (await header.boundingBox())!.y;
     await expect(page.locator('[data-slot="settings-scroll"]:visible')).toHaveCount(1);
-    await page.locator('[data-slot="settings-scroll"]:visible').evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await page.locator('[data-slot="settings-scroll"]:visible [data-radix-scroll-area-viewport]').evaluate(el => { el.scrollTop = el.scrollHeight; });
     expect((await header.boundingBox())!.y).toBeCloseTo(headerTop, 0);
     await assertViewportLocked(page);
     await back.click();

@@ -2,6 +2,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
 import type { MessageQueue } from "@palmagent/shared";
 import { installScopedStream, open, send } from "./_scoped-stream";
+import { assertViewportLocked } from "./_helpers";
 
 async function hold(page: Page, button: Locator) {
   // Filling the draft can still be moving the queue row during expansion.
@@ -32,6 +33,36 @@ async function setup(page: Page, idle = false) {
   await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, ...(idle ? { status: "idle" as const } : {}), messageQueue: state }], historyThrough: 0 });
   return { calls, state };
 }
+
+test("queue lists fit short content and scroll long lists and message details", async ({ page }) => {
+  const { state } = await setup(page);
+  state.messages = Array.from({ length: 10 }, (_, i) => ({
+    id: `scroll-${i}`, version: 1, status: "queued", mode: "queue", text: `Prompt ${i + 1}\n${"Long message detail\n".repeat(40)}`,
+  }));
+  const publish = () => send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, messageQueue: state }], historyThrough: 0 });
+  await publish();
+  const queue = page.getByRole("region", { name: "Message queue" });
+  const viewport = queue.locator('[data-radix-scroll-area-viewport]');
+  await expect(queue.getByRole("button", { name: /Queued message/ })).toHaveCount(10);
+  expect((await viewport.boundingBox())!.height).toBeLessThanOrEqual(144);
+  const last = queue.getByRole("button", { name: /Queued message 10:/ });
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport({ ratio: 1 });
+  expect(await viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await last.click();
+  const detail = page.getByRole("dialog", { name: "Queued message", exact: true }).locator('[data-radix-scroll-area-viewport]');
+  await expect(detail).toBeVisible();
+  expect((await detail.boundingBox())!.height).toBeLessThanOrEqual(320);
+  await detail.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  expect(await detail.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press("Escape");
+  state.messages = state.messages.slice(0, 1);
+  state.revision++;
+  await publish();
+  await expect(queue.getByRole("button", { name: /Queued message/ })).toHaveCount(1);
+  expect((await viewport.boundingBox())!.height).toBeLessThan(100);
+  await assertViewportLocked(page);
+});
 
 test("running and queued-edit summaries show the applicable settings without changing them", async ({ page }) => {
   const { calls, state } = await setup(page);
