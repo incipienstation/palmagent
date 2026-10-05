@@ -1,7 +1,7 @@
 # Codex compatibility verification
 
-The declared Codex range is `>=0.154.0 <0.157.2`. It retains the previous
-0.154/0.155 lane and includes 0.156.0 through 0.157.1.
+The declared Codex range is `>=0.154.0 <0.160.1`. It retains the previous
+0.154.0 through 0.157.1 range and extends support through 0.160.0.
 The shared metadata is copied to both operator plugins by `node scripts/sync-skills.mjs`.
 
 On 2026-09-27, authenticated tests against Codex CLI 0.154.0, 0.155.0,
@@ -16,6 +16,12 @@ execution paths on Linux ARM64 with Node 24.21.0. Every listed version passed:
 | Nonexistent model produces an error, never a successful result | Passed | Passed |
 | Stop during a sleeping shell command | SIGINT fallback | `turn/interrupt` |
 | Resume the stopped session and complete another turn | Passed | Passed |
+
+On 2026-10-05, Codex CLI 0.160.0 passed the same authenticated matrix on
+Linux ARM64 with Node 24.21.0 for both execution paths. The first run stopped
+when the provider reported that the selected model was at capacity; a complete
+retry passed every scenario. Versions between 0.157.1 and 0.160.0 are included
+in the declared range but were not individually rerun for this extension.
 
 Codex 0.157.1 also emitted configuration warnings as completed `error`
 items before successful turns. These items now remain as status diagnostics
