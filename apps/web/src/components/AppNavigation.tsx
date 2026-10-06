@@ -1,7 +1,7 @@
 import { needsTaskAttention } from "@palmagent/shared";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { BarChart3, Check, Clock3, Folder, Layers, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
+import { BarChart3, Check, Clock3, Folder, Gamepad2, Layers, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
@@ -13,9 +13,12 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
+import { useAdhdMode } from "../AdhdModeProvider";
+import { EchoGardenSheet } from "../games/echo-garden/EchoGardenSheet";
 
 const NavigationContext = createContext<{
   openNavigation: (trigger: HTMLButtonElement) => void;
+  openGarden?: (trigger: HTMLButtonElement) => void;
   desktopSidebar: boolean;
 } | null>(null);
 
@@ -27,6 +30,8 @@ export function AppNavigation({ tasks, conn, children }: {
   tasks: TaskState[]; conn: ConnState; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const { enabled: adhdMode } = useAdhdMode();
+  const [gardenOpen, setGardenOpen] = useState(false);
   const { repos } = useRepos();
   const [settingsOpen, setSettingsOpen] = useUpdateState("settings:open", false);
   const trigger = useRef<HTMLButtonElement | null>(null);
@@ -40,8 +45,12 @@ export function AppNavigation({ tasks, conn, children }: {
     trigger.current = element;
     setOpen(true);
   }, []);
+  const openGarden = useCallback((element: HTMLButtonElement) => {
+    trigger.current = element;
+    setGardenOpen(true);
+  }, []);
   const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
-  const context = useMemo(() => ({ openNavigation, desktopSidebar }), [openNavigation, desktopSidebar]);
+  const context = useMemo(() => ({ openNavigation, desktopSidebar, openGarden: adhdMode ? openGarden : undefined }), [openNavigation, desktopSidebar, adhdMode, openGarden]);
   const restoreFocus = () => {
     const target = trigger.current?.isConnected ? trigger.current : document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
     target?.focus();
@@ -64,6 +73,10 @@ export function AppNavigation({ tasks, conn, children }: {
             {needsAttention && <span className="size-2 rounded-full bg-amber" aria-label="Tasks need attention" />}
             {active && <Check className="size-4" />}
           </Button>)}
+          {adhdMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
+            if (open) showAfterClose(() => setGardenOpen(true));
+            else openGarden(event.currentTarget);
+          }}><Gamepad2 data-icon="inline-start" />Echo Garden</Button>}
         </nav>
   );
   const pinnedNavigation = (pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
@@ -131,5 +144,9 @@ export function AppNavigation({ tasks, conn, children }: {
     </Drawer>
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
+    {adhdMode && <EchoGardenSheet open={gardenOpen} onOpenChange={setGardenOpen}
+      tasks={tasks} taskId={route.name === "task" ? route.id : undefined} conn={conn}
+      onReturn={taskId => { setGardenOpen(false); if (route.name !== "task" || route.id !== taskId) navigate(`/task/${encodeURIComponent(taskId)}`); }}
+      onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }} />}
   </NavigationContext.Provider>;
 }

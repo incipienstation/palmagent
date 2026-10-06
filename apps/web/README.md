@@ -132,6 +132,28 @@ Palmagent and synchronized across connected screens, including for running and
 local sessions. Renaming keeps the original prompt, native CLI session, and activity
 order intact.
 
+## Experimental ADHD mode: Echo Garden
+
+Enable **Settings → Experimental → ADHD mode** to reveal **Echo Garden** in
+navigation and the game button in conversation headers. It is off by default and
+saved on this device. The game opens above the current view, keeping the conversation,
+draft, and scroll in place. Close it or use **Task** to return. The shared inbox stream
+continues to show task status and surfaces questions and approval requests while playing;
+a disconnected stream is explicitly marked as potentially out of date.
+
+Echo Garden is an authored, turn-based puzzle prototype with 12 progressively more
+complex levels. Tap a plant through **Seed → Bud → Bloom → Seed**. Tapping into
+bloom sends echoes along its arrows; the path's number is the delay in turns.
+The chosen plant grows first, then existing echoes advance. Each arriving echo grows
+its target once without sending another echo. **Let echoes arrive** advances a turn
+without tapping a plant. Win with every plant in bloom and no echoes pending.
+
+Nothing advances with time or agent activity. Undo restores the entire previous turn,
+including pending echoes. Restart, revisiting unlocked levels, and saved progress
+are available without a timer or penalty. Game progress is stored locally per browser,
+survives disabling the experiment, and is not synchronized between devices. The final
+level ends the prototype; there is no endless generation or scoring service.
+
 ## Sent attachments
 
 <a id="sent-image-attachments"></a>
