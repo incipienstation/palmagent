@@ -1,3 +1,4 @@
+import { ScrollArea } from "./ui/scroll-area";
 import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
 import { useActionState } from "../action-state";
 import { beginBrowserWork } from "../update-state";
@@ -122,14 +123,14 @@ export function AttachmentTray({ images, disabled, onRemove }: {
   images: InputAttachment[]; disabled?: boolean; onRemove: (i: number) => void;
 }) {
   return <div className="min-w-0 w-full">
-    <div className="flex gap-2 overflow-x-auto py-1">
+    <ScrollArea orientation="horizontal" contentClassName="flex w-max min-w-full gap-2 py-1" viewportProps={{ "aria-label": "Attachments" }}>
       {images.map((img, i) => <span className="relative inline-flex shrink-0 pr-2 pt-2" key={i}>
         {img.video ? <VideoPreview src={attachmentPreviewUrl(img)} poster={attachmentPreviewUrl(img.video.frames[0].image)} label={`attachment ${i + 1}`} compact />
           : <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />}
         <Button type="button" variant="secondary" size="icon-sm" className="absolute top-0 right-0"
           aria-label={`Remove ${img.video ? "video" : "image"} ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
       </span>)}
-    </div>
+    </ScrollArea>
     {images.some(image => image.video) && <p className="py-1 text-xs text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>}
     {attachmentsWireSize(images) > WIRE_WARN_BYTES && <p className="py-1 text-xs text-amber">Large attachments are close to the upload limit.</p>}
   </div>;

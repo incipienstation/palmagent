@@ -104,12 +104,17 @@ for (const width of [360, 1280]) {
   test(`script history displays failure details and escaped output at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
     await page.route("**/api/routines", route => route.fulfill({ json: { routines: [{ ...routines[0], kind: "script", script: { command: "node scripts/report.mjs", timeoutSeconds: 60 } }] } }));
-    await page.route("**/api/routines/*/runs", route => route.fulfill({ json: { runs: [{ id: 1, routineId: routines[0].id, firedAt: Date.now(), status: "failed", exitCode: 7, note: "script timed out", output: "<script>doNotExecute()</script>\nFailure details" }] } }));
+    await page.route("**/api/routines/*/runs", route => route.fulfill({ json: { runs: [{ id: 1, routineId: routines[0].id, firedAt: Date.now(), status: "failed", exitCode: 7, note: "script timed out", output: "<script>doNotExecute()</script>\n" + "Failure details\n".repeat(60) + "Last output line" }] } }));
     await page.goto("/#/routines");
     await page.getByRole("button", { name: "History", exact: true }).click();
     await expect(page.getByText("Exit code: 7", { exact: true })).toBeVisible();
     await expect(page.getByText("script timed out", { exact: true })).toBeVisible();
     await expect(page.locator("pre")).toContainText("<script>doNotExecute()</script>");
+    const output = page.locator('[data-slot="scroll-area-viewport"][aria-label="Run output"]');
+    await expect.poll(() => output.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(256);
+    expect((await output.boundingBox())!.height).toBeLessThanOrEqual(256);
+    await output.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect.poll(() => output.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(1);
     await assertViewportLocked(page);
   });
 }

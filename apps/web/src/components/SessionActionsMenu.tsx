@@ -5,7 +5,7 @@ import { MoreVertical, Pencil, Pin, PinOff } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -117,7 +117,7 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
       <DialogContent
         showClose={false}
         aria-describedby={undefined}
-        className="overflow-y-auto"
+        className="flex flex-col overflow-hidden"
         style={viewport}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -127,30 +127,32 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
         }}
         onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}
       >
-        <DialogHeader><DialogTitle>Rename session</DialogTitle></DialogHeader>
-        <form ref={form} className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          <FieldGroup>
-            <Field data-invalid={!!fieldError || undefined}>
-              <FieldLabel htmlFor={id}>Session name</FieldLabel>
-              <Input
-                id={id}
-                name="title"
-                value={title}
-                aria-invalid={!!fieldError || undefined}
-                aria-describedby={fieldError ? `${id}-error` : undefined}
-                onChange={(event) => setTitle(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();
-                }}
-              />
-              {fieldError && <FieldError id={`${id}-error`}>{fieldError}</FieldError>}
-            </Field>
-          </FieldGroup>
-          <DialogFooter className="flex-row justify-end">
-            <Button type="button" variant="outline" onClick={cancel}>Cancel</Button>
-            <Button type="submit" disabled={!valid}>Save</Button>
-          </DialogFooter>
-        </form>
+        <DialogBody contentClassName="flex flex-col gap-3">
+          <DialogHeader><DialogTitle>Rename session</DialogTitle></DialogHeader>
+          <form ref={form} className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+            <FieldGroup>
+              <Field data-invalid={!!fieldError || undefined}>
+                <FieldLabel htmlFor={id}>Session name</FieldLabel>
+                <Input
+                  id={id}
+                  name="title"
+                  value={title}
+                  aria-invalid={!!fieldError || undefined}
+                  aria-describedby={fieldError ? `${id}-error` : undefined}
+                  onChange={(event) => setTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();
+                  }}
+                />
+                {fieldError && <FieldError id={`${id}-error`}>{fieldError}</FieldError>}
+              </Field>
+            </FieldGroup>
+            <DialogFooter className="flex-row justify-end">
+              <Button type="button" variant="outline" onClick={cancel}>Cancel</Button>
+              <Button type="submit" disabled={!valid}>Save</Button>
+            </DialogFooter>
+          </form>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

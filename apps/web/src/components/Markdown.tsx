@@ -1,3 +1,4 @@
+import { ScrollArea } from "./ui/scroll-area";
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -66,17 +67,17 @@ const COMPONENTS = {
       const filename = /(?:^|\s)(?:title|filename)="([^"]+)"/.exec(meta)?.[1];
       return <CodeBlock source={source} language={language} filename={filename} />;
     }
-    return <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 font-mono text-[12.5px] leading-[18px] text-strong [&>code]:bg-transparent [&>code]:p-0">
+    return <ScrollArea orientation="horizontal" className="my-2 rounded-md bg-muted" contentClassName="w-max min-w-full" viewportProps={{ tabIndex: 0, "aria-label": "Code" }}><pre className="rounded-md bg-muted p-3 font-mono text-[12.5px] leading-[18px] text-strong [&>code]:bg-transparent [&>code]:p-0">
       {children}
-    </pre>;
+    </pre></ScrollArea>;
   },
-  // GFM table: wrap in an overflow-x-auto rail so a wide table scrolls *inside*
+  // GFM table: use the shared horizontal scroll area so a wide table scrolls *inside*
   // the pane on a phone, never widening the document (the mobile overflow
   // contract the e2e harness asserts).
   table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
+    <ScrollArea orientation="horizontal" className="my-2" viewportProps={{ tabIndex: 0, "aria-label": "Table" }}>
       <table className="w-full border-collapse text-[13px]">{children}</table>
-    </div>
+    </ScrollArea>
   ),
   th: ({ children }) => (
     <th className="border border-border bg-muted/50 px-2 py-1 text-left font-semibold text-strong">{children}</th>

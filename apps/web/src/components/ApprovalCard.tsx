@@ -1,3 +1,4 @@
+import { ScrollArea } from "./ui/scroll-area";
 import { Check, LoaderCircle, ShieldCheck, X } from "lucide-react";
 import type { PermissionRequest } from "@palmagent/shared";
 import { Button } from "./ui/button";
@@ -15,9 +16,9 @@ export function ApprovalRequest({ payload, full, expanded, onToggle }: {
       <CardDescription className="break-words [overflow-wrap:anywhere]">{reason}</CardDescription>
     </CardHeader>
     <CardContent className="p-3 pt-0">
-      {command && <pre className="overflow-x-auto rounded-lg bg-background p-2 font-mono text-xs">{command}</pre>}
+      {command && <ScrollArea orientation="horizontal" className="rounded-lg bg-background" contentClassName="w-max min-w-full" viewportProps={{ tabIndex: 0, "aria-label": "Requested command" }}><pre className="p-2 font-mono text-xs">{command}</pre></ScrollArea>}
       <Button variant="ghost" className="w-full justify-start px-0" aria-expanded={expanded} onClick={onToggle}>Request details</Button>
-      {expanded && <pre className="max-h-48 overflow-auto text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{full}</pre>}
+      {expanded && <ScrollArea className="max-h-48" viewportProps={{ tabIndex: 0, "aria-label": "Request details" }}><pre className="text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{full}</pre></ScrollArea>}
     </CardContent>
   </Card>;
 }
@@ -38,7 +39,7 @@ export function ApprovalCard({ busy, request, onDecision }: {
       <CardDescription>{request?.reason ?? "Review the requested action before allowing it."}</CardDescription>
     </CardHeader>
     <CardContent className="px-3 pb-3">
-      {detail && <pre className="mb-3 max-h-32 overflow-auto rounded-lg bg-background p-2 font-mono text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{detail}</pre>}
+      {detail && <ScrollArea className="mb-3 max-h-32 rounded-lg bg-background" viewportProps={{ tabIndex: 0, "aria-label": "Permission details" }}><pre className="p-2 font-mono text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{detail}</pre></ScrollArea>}
       <p role="status" className="text-xs text-muted-foreground">{busy ? "Sending your decision…" : "The agent is waiting for your decision."}</p>
     </CardContent>
     <CardFooter className="p-3 pt-0">

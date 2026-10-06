@@ -206,7 +206,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
                   {run.note && <p className="break-words text-xs text-muted-foreground">{run.note}</p>}
                   {run.exitCode !== undefined && <p className="text-xs text-muted-foreground">Exit code: {run.exitCode}</p>}
                   {run.worktreePath && <p className="break-all text-xs text-muted-foreground">Files: {run.worktreePath}</p>}
-                  {run.output && <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs">{run.output}</pre>}
+                  {run.output && <ScrollArea className="max-h-64 rounded-md bg-muted" viewportProps={{ tabIndex: 0, "aria-label": "Run output" }}><pre className="whitespace-pre-wrap break-words p-2 text-xs">{run.output}</pre></ScrollArea>}
                 </div>
               ))
             ))}

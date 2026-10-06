@@ -3,6 +3,7 @@ import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 
+import { ScrollArea } from "./scroll-area";
 import { cn } from "@/lib/utils";
 
 function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -66,6 +67,10 @@ function DialogContent({
   );
 }
 
+function DialogBody(props: React.ComponentProps<typeof ScrollArea>) {
+  return <ScrollArea data-slot="dialog-body" {...props} />;
+}
+
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="dialog-header" className={cn("flex flex-col gap-1.5", className)} {...props} />;
 }
@@ -110,6 +115,7 @@ export {
   DialogClose,
   DialogOverlay,
   DialogContent,
+  DialogBody,
   DialogHeader,
   DialogFooter,
   DialogTitle,

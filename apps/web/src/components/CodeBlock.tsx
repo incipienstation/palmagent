@@ -1,3 +1,4 @@
+import { ScrollArea } from "./ui/scroll-area";
 import { memo, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "./ui/button";
@@ -46,9 +47,11 @@ export const CodeBlock = memo(function CodeBlock({ source, language, filename }:
       </Button>
       <span role="status" className="sr-only">{copied ? "Copied to clipboard" : ""}</span>
     </figcaption>
-    <pre className="m-0 overflow-x-auto p-3 font-mono text-[12.5px] leading-[20px] text-strong [overflow-wrap:normal]">
-      <code>{highlight && Renderer ? <Renderer source={source} language={language!} /> : source}</code>
-    </pre>
+    <ScrollArea orientation="horizontal" contentClassName="w-max min-w-full" viewportProps={{ tabIndex: 0, "aria-label": "Code" }}>
+      <pre className="m-0 p-3 font-mono text-[12.5px] leading-[20px] text-strong [overflow-wrap:normal]">
+        <code>{highlight && Renderer ? <Renderer source={source} language={language!} /> : source}</code>
+      </pre>
+    </ScrollArea>
     {copyError && <p role="status" className="px-3 pb-3 font-sans text-xs text-muted-foreground">Couldn’t copy. Select the code to copy it manually.</p>}
   </figure>;
 });

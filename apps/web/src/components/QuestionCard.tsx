@@ -6,7 +6,7 @@ import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
-import { ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
@@ -202,13 +202,13 @@ export function QuestionCard({
         <div className="flex items-center justify-between gap-1">
           <Button variant="ghost" size="icon-lg" aria-label="Previous question" disabled={page === 0 || busy} onClick={() => goTo(page - 1)}><ChevronLeft /></Button>
           {progress}
-          <div className="flex min-w-0 gap-1 overflow-x-auto">
+          <ScrollArea orientation="horizontal" contentClassName="flex w-max min-w-full gap-1" viewportProps={{ "aria-label": "Question navigation" }}>
           {questions.map((_q, qi) => <Button key={qi} type="button" variant={qi === page ? "selected" : "ghost"} size="icon-lg"
             aria-label={`Go to question ${qi + 1}${answeredAt(qi) ? ", answered" : ""}`} aria-current={qi === page ? "step" : undefined}
             disabled={busy} onClick={() => goTo(qi)}>
             {answeredAt(qi) ? <Check /> : qi + 1}
           </Button>)}
-          </div>
+          </ScrollArea>
           <Button variant="ghost" size="icon-lg" aria-label="Next question" disabled={page === questions.length - 1 || busy} onClick={() => goTo(page + 1)}><ChevronRight /></Button>
         </div>
       )}

@@ -3,6 +3,7 @@ import * as React from "react";
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import { Check } from "lucide-react";
 
+import { ScrollArea } from "./scroll-area";
 import { cn } from "@/lib/utils";
 
 // Default to NON-modal. Radix's modal default (`modal={true}`) locks the page by
@@ -32,6 +33,7 @@ function DropdownMenuGroup(props: React.ComponentProps<typeof DropdownMenuPrimit
 function DropdownMenuContent({
   className,
   sideOffset = 6,
+  children,
   align = "end",
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
@@ -42,11 +44,13 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         align={align}
         className={cn(
-          "z-50 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "z-50 flex max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[10rem] flex-col overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
-      />
+      >
+        <ScrollArea>{children}</ScrollArea>
+      </DropdownMenuPrimitive.Content>
     </DropdownMenuPrimitive.Portal>
   );
 }
