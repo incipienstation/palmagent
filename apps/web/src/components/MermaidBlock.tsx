@@ -1,3 +1,4 @@
+import { ScrollArea } from "./ui/scroll-area";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useTheme } from "../ThemeProvider";
 import { mermaidCache } from "../mermaid-cache";
@@ -33,7 +34,7 @@ export function MermaidBlock({ source }: { source: string }) {
     return () => { controller.abort(); clearTimeout(timer); };
   }, [source, resolved]);
 
-  const code = <pre className="overflow-x-auto p-3 font-mono text-[12.5px] leading-[18px] text-strong"><code>{source}</code></pre>;
+  const code = <pre className="p-3 font-mono text-[12.5px] leading-[18px] text-strong"><code>{source}</code></pre>;
   // Keep the Markdown row at its final viewer height while Mermaid loads or
   // falls back to source. Otherwise replacing a long fence changes the virtual
   // row size during reverse scrolling.
@@ -46,15 +47,15 @@ export function MermaidBlock({ source }: { source: string }) {
           <MermaidViewport key={current.url} url={current.url} />
         </Suspense>
       </div>
-      <details className="max-h-40 shrink-0 overflow-y-auto border-t border-border">
+      <details className="shrink-0 border-t border-border">
         <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">Diagram source</summary>
-        {code}
+        <ScrollArea orientation="both" className="max-h-32" contentClassName="w-max min-w-full" viewportProps={{ tabIndex: 0, "aria-label": "Diagram source" }}>{code}</ScrollArea>
       </details>
     </> : <>
       <p className="shrink-0 px-3 pt-2 text-xs text-muted-foreground" role="status">
         {current ? "Diagram unavailable — showing source." : "Rendering diagram…"}
       </p>
-      <div className="min-h-0 flex-1 overflow-auto">{code}</div>
+      <ScrollArea orientation="both" className="flex-1" contentClassName="w-max min-w-full" viewportProps={{ tabIndex: 0, "aria-label": "Diagram source" }}>{code}</ScrollArea>
     </>}
   </div>;
 }

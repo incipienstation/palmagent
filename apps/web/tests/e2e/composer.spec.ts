@@ -67,27 +67,35 @@ for (const width of [320, 360, 1280]) test(`empty composers animate between one 
     const boxes = await Promise.all([add, action].map(el => el.boundingBox()));
     expect(boxes[0]!.y).toBe(boxes[1]!.y);
     expect(boxes[1]!.height).toBe(44);
-    // Sample actual rendered heights, including a reversal before completion.
+    // Seek actual CSS transitions so a busy renderer cannot skip the short
+    // reverse animation between sampled frames. Keep the continuity assertion.
     const frames = await input.evaluate(async el => {
       const group = el.closest('[aria-label="Message composer"]')!;
-      const sample = async (duration: number) => {
-        const heights: number[] = [], start = performance.now();
-        while (performance.now() - start < duration) {
-          await new Promise(requestAnimationFrame);
-          heights.push(group.getBoundingClientRect().height);
-        }
-        return heights;
+      const freeze = () => {
+        const animations = group.getAnimations({ subtree: true });
+        for (const animation of animations) animation.pause();
+        return animations;
       };
-      el.focus(); const opening = await sample(100);
+      const sample = (animations: Animation[]) => [0.2, 0.4].map(fraction => {
+        for (const animation of animations) {
+          animation.currentTime = Number(animation.effect!.getComputedTiming().duration) * fraction;
+        }
+        return group.getBoundingClientRect().height;
+      });
+      el.focus(); await Promise.resolve();
+      const opening = sample(freeze());
       const before = group.getBoundingClientRect().height;
-      el.blur();
-      await Promise.resolve();
+      el.blur(); await Promise.resolve();
       const after = group.getBoundingClientRect().height;
-      const closing = await sample(260);
+      const closingAnimations = freeze();
+      const closing = sample(closingAnimations);
+      for (const animation of closingAnimations) animation.finish();
       return { opening, closing, reversal: Math.abs(after - before) };
     });
     expect(frames.opening.some(h => h > 55 && h < 109)).toBe(true);
     expect(frames.closing.some(h => h > 55 && h < 109)).toBe(true);
+    expect(frames.opening[1]).toBeGreaterThan(frames.opening[0]);
+    expect(frames.closing[1]).toBeLessThan(frames.closing[0]);
     expect(frames.reversal).toBeLessThan(1);
     await expect.poll(height).toBe(54);
     await input.focus();

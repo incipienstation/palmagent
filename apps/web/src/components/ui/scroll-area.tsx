@@ -5,13 +5,16 @@ import { cn } from "@/lib/utils"
 
 // A shrinking flex viewport supports both capped, content-sized panels and
 // full-height panes. Keep padding and child layouts inside the scroll viewport.
+// Horizontal-only content must let vertical gestures reach the surrounding pane.
 function ScrollArea({
   className,
   children,
   contentClassName,
   viewportProps,
+  orientation = "vertical",
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  orientation?: "vertical" | "horizontal" | "both"
   contentClassName?: string
   viewportProps?: React.ComponentProps<typeof ScrollAreaPrimitive.Viewport>
 }) {
@@ -24,11 +27,12 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         {...viewportProps}
         data-slot="scroll-area-viewport"
-        className={cn("min-h-0 w-full flex-auto overscroll-contain rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1", viewportProps?.className)}
+        className={cn("min-h-0 w-full flex-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1", orientation === "horizontal" ? "overscroll-x-contain" : "overscroll-contain", viewportProps?.className)}
       >
         <div className={contentClassName}>{children}</div>
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      {orientation !== "horizontal" && <ScrollBar />}
+      {orientation !== "vertical" && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

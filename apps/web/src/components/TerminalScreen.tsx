@@ -1,3 +1,4 @@
+import { ScrollArea } from "./ui/scroll-area";
 import { TERMINAL_POLICY, terminalSize } from "@palmagent/shared/terminals";
 import { type TouchEvent as ReactTouchEvent, useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
@@ -217,9 +218,9 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
       onTouchEndCapture={handleTouchEnd}
       onTouchCancelCapture={handleTouchCancel}
     />
-    <div className="flex shrink-0 gap-1 overflow-x-auto px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" aria-label="Terminal keys">
+    <ScrollArea orientation="horizontal" className="shrink-0" contentClassName="flex w-max min-w-full gap-1 px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" viewportProps={{ "aria-label": "Terminal keys" }}>
       {[["Ctrl+C", "\x03"], ["Tab", "\t"], ["Esc", "\x1b"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"]].map(([label, data]) =>
         <Button key={label} variant="secondary" className="shrink-0" disabled={!writable} onPointerDown={e => e.preventDefault()} onClick={() => { input.current(data); termRef.current?.focus(); }}>{label}</Button>)}
-    </div>
+    </ScrollArea>
   </div>;
 }

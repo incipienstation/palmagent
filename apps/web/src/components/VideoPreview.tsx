@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Play } from "lucide-react";
 import { attachmentExpired } from "../image-source";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 
 export function VideoPreview({ src, poster, label = "Attached video", compact = false, onLoad }: {
   src: string; poster?: string; label?: string; compact?: boolean; onLoad?: () => void;
@@ -38,11 +38,13 @@ export function VideoPreview({ src, poster, label = "Attached video", compact = 
         <span className="absolute inset-0 flex items-center justify-center"><span className="rounded-full bg-background/80 p-2"><Play /></span></span>
       </Button>
     </DialogTrigger>
-    <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto" aria-describedby={undefined}>
-      <DialogHeader><DialogTitle>{label}</DialogTitle></DialogHeader>
-      <video key={attempt} src={source} poster={poster} controls playsInline preload="metadata" aria-label={label}
-        className="max-h-[70dvh] w-full rounded-lg" onLoadedMetadata={onLoad} onError={() => { setFailed(true); onLoad?.(); }} />
-      <p className="text-sm text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>
+    <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden" aria-describedby={undefined}>
+      <DialogBody contentClassName="flex flex-col gap-3" viewportProps={{ tabIndex: 0, "aria-label": "Video preview" }}>
+        <DialogHeader className="pr-8"><DialogTitle className="break-words [overflow-wrap:anywhere]">{label}</DialogTitle></DialogHeader>
+        <video key={attempt} src={source} poster={poster} controls playsInline preload="metadata" aria-label={label}
+          className="max-h-[70dvh] w-full rounded-lg" onLoadedMetadata={onLoad} onError={() => { setFailed(true); onLoad?.(); }} />
+        <p className="text-sm text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>
+      </DialogBody>
     </DialogContent>
   </Dialog>;
 }

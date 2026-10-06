@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { previewSource, attachmentExpired } from "../image-source";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 
 export const ImageTaskContext = createContext<string | undefined>(undefined);
 export const ImageLinkContext = createContext(false);
@@ -63,13 +63,15 @@ function Preview({ src, alt, title, dimensions, onLoad, linked }: {
         {image}
       </Button>
     </DialogTrigger>
-    <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto" aria-describedby={undefined}>
-      <DialogHeader className="min-w-0 pr-8"><DialogTitle className="break-words [overflow-wrap:anywhere]">{label}</DialogTitle></DialogHeader>
-      <div className="max-h-[70dvh] min-w-0 overflow-auto">
-        <img src={src} alt={label} referrerPolicy="no-referrer" onError={() => setFailed(true)}
-          className={cn("mx-auto", actualSize ? "max-w-none" : "max-h-[70dvh] max-w-full object-contain")} />
-      </div>
-      <Button type="button" variant="outline" aria-pressed={actualSize} onClick={() => setActualSize(!actualSize)}>
+    <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden" aria-describedby={undefined}>
+      <DialogBody orientation="both" contentClassName="flex flex-col gap-3" viewportProps={{ tabIndex: 0, "aria-label": "Image preview" }}>
+        <DialogHeader className="min-w-0 pr-8"><DialogTitle className="break-words [overflow-wrap:anywhere]">{label}</DialogTitle></DialogHeader>
+        <div className="min-w-0">
+          <img src={src} alt={label} referrerPolicy="no-referrer" onError={() => setFailed(true)}
+            className={cn("mx-auto", actualSize ? "max-w-none" : "max-h-[70dvh] max-w-full object-contain")} />
+        </div>
+      </DialogBody>
+      <Button className="shrink-0" type="button" variant="outline" aria-pressed={actualSize} onClick={() => setActualSize(!actualSize)}>
         {actualSize ? "Fit image" : "Actual size"}
       </Button>
     </DialogContent>

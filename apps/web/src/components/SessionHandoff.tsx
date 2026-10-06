@@ -39,7 +39,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
           <p className="text-sm text-muted-foreground">Release this session before opening it locally. Palmagent follow-up stays paused until you use the dispatch skill in that CLI and close it. Open only one local writer.</p>
           <Button disabled={busy || !["idle", "failed"].includes(task.status)} onClick={prepare}>{busy ? "Preparing resume command…" : local ? "Show resume command" : "Release to shell"}</Button>
           {!["idle", "failed"].includes(task.status) && <p className="text-sm">Stop the active turn and wait for it to finish first.</p>}
-          {command && <div ref={commandRef} className="flex flex-col gap-3"><pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-all"><code>{command}</code></pre><Button variant="outline" onClick={copy}><Copy data-icon="inline-start" />Copy resume command</Button></div>}
+          {command && <div ref={commandRef} className="flex flex-col gap-3"><pre className="rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-all"><code>{command}</code></pre><Button variant="outline" onClick={copy}><Copy data-icon="inline-start" />Copy resume command</Button></div>}
         </>}
       </div>
   </section>;
