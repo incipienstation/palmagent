@@ -272,13 +272,15 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
 });
 
 test("fast upward scrolling formats long Markdown before it reaches the viewport", async ({ page }) => {
+  // Keep the first answer beyond the premeasured row buffer so this exercises
+  // a genuinely unmounted message approaching the visible viewport.
   await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), route => route.fulfill({
-    json: { events: longMarkdownRows(1801, 1808), before: null, cursor: 1808 },
+    json: { events: longMarkdownRows(1801, 1816), before: null, cursor: 1816 },
   }));
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1808 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1816 });
   await expectBottom(page);
-  await expect(page.getByText("tool_result: Tool 1808", { exact: true })).toBeVisible();
+  await expect(page.getByText("tool_result: Tool 1816", { exact: true })).toBeVisible();
   const target = page.locator('[data-message-key="1801"]');
   await expect(target).toHaveCount(0);
   const samples = await page.evaluate(() => new Promise<Array<{ formatted: boolean; height: number }>>((resolve) => {
@@ -744,7 +746,9 @@ test("early loading adapts to a resized viewport without another scroll gesture"
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });
   await recent(page);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 1700; });
+  // Stay outside the short viewport's runway after row measurements settle,
+  // but inside the enlarged viewport's runway without another reading gesture.
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 2200; });
   await page.waitForTimeout(150);
   expect(requested).toBe(0);
   await page.setViewportSize({ width: 360, height: 1000 });
