@@ -126,6 +126,66 @@ test("prepending an older page preserves the visible message through simultaneou
   expect(requested).toBe(1);
 });
 
+for (const phase of ["touch", "momentum"] as const) test(`an older page arriving during upward ${phase} preserves the ongoing movement`, async ({ page }, testInfo) => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let requested = 0;
+  await page.route("**/history?before=1801*", async route => {
+    requested++;
+    await pending;
+    await route.fulfill({ json: { events: rows(1601, 1800), before: null, cursor: 2000 } });
+  });
+  await recent(page);
+  await viewport(page).evaluate(el => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+    el.scrollTop = el.clientHeight * 2;
+  });
+  await expect.poll(() => requested).toBe(1);
+  // Settle the initial jump before measuring real touch/momentum input.
+  await page.waitForTimeout(250);
+  const capture = await viewport(page).evaluateHandle(pane => {
+    const state = { active: true, samples: [] as Array<{ backward: number; blank: boolean; at: number; top: number; height: number; rows: Array<{ key: string; top: number }> }> };
+    let previous = new Map<string, number>();
+    const frame = () => {
+      const bounds = pane.getBoundingClientRect();
+      const visible = Array.from(pane.querySelectorAll<HTMLElement>("[data-row-key]")).map(row => ({
+        key: row.dataset.rowKey!, rect: row.getBoundingClientRect(),
+      })).filter(({ rect }) => rect.bottom > bounds.top && rect.top < bounds.bottom);
+      state.samples.push({
+        backward: Math.min(0, ...visible.flatMap(({ key, rect }) => previous.has(key) ? [rect.top - previous.get(key)!] : [])),
+        blank: !visible.length, at: performance.now(), top: pane.scrollTop, height: pane.scrollHeight,
+        rows: visible.map(({ key, rect }) => ({ key, top: rect.top })),
+      });
+      previous = new Map(visible.map(({ key, rect }) => [key, rect.top]));
+      // Sample after this frame's ResizeObserver corrections, as the browser
+      // presents it. A pre-layout rAF sample can mistake a pending measurement
+      // for a visible backward jump.
+      if (state.active) requestAnimationFrame(() => setTimeout(frame, 0));
+    };
+    requestAnimationFrame(() => setTimeout(frame, 0));
+    return state;
+  });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 180, y: 130 }] });
+  for (let step = 1; step <= 8; step++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 180, y: 130 + 45 * step }] });
+    if (phase === "touch" && step === 3) release();
+    await page.waitForTimeout(30);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  if (phase === "momentum") { await page.waitForTimeout(50); release(); }
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+  await page.waitForTimeout(700);
+  const samples = await capture.evaluate(state => { state.active = false; return state.samples; });
+  await capture.dispose();
+  await cdp.detach();
+  await testInfo.attach("touch-pagination-frames", { body: JSON.stringify(samples), contentType: "application/json" });
+  console.log(JSON.stringify({ phase, samples: samples.length, worstBackward: Math.min(...samples.map(sample => sample.backward)), anomalies: samples.filter(sample => sample.backward < -2) }));
+  expect(samples.length).toBeGreaterThan(5);
+  expect(samples.filter(sample => sample.blank)).toEqual([]);
+  expect(Math.min(...samples.map(sample => sample.backward)), "Pagination must not reverse an upward gesture or its momentum").toBeGreaterThanOrEqual(-2);
+});
+
 for (const first of ["catch-up", "older page"] as const) {
   test(`reconnect catch-up survives pagination when ${first} completes first`, async ({ page }) => {
     let releaseOlder!: () => void, releaseCatchup!: () => void;
@@ -212,13 +272,15 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
 });
 
 test("fast upward scrolling formats long Markdown before it reaches the viewport", async ({ page }) => {
+  // Keep the first answer beyond the premeasured row buffer so this exercises
+  // a genuinely unmounted message approaching the visible viewport.
   await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), route => route.fulfill({
-    json: { events: longMarkdownRows(1801, 1808), before: null, cursor: 1808 },
+    json: { events: longMarkdownRows(1801, 1816), before: null, cursor: 1816 },
   }));
   await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1808 });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1816 });
   await expectBottom(page);
-  await expect(page.getByText("tool_result: Tool 1808", { exact: true })).toBeVisible();
+  await expect(page.getByText("tool_result: Tool 1816", { exact: true })).toBeVisible();
   const target = page.locator('[data-message-key="1801"]');
   await expect(target).toHaveCount(0);
   const samples = await page.evaluate(() => new Promise<Array<{ formatted: boolean; height: number }>>((resolve) => {
@@ -647,6 +709,35 @@ for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) 
   });
 }
 
+test("fast upward reading starts history loading while several screens remain", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let requested = 0;
+  await page.route("**/history?before=1801*", async route => {
+    requested++;
+    await pending;
+    await route.fulfill({ json: { events: rows(1601, 1800), before: null, cursor: 2000 } });
+  });
+  await recent(page);
+  await viewport(page).evaluate(el => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+    el.scrollTop = el.clientHeight * 9;
+  });
+  await page.waitForTimeout(250);
+  try {
+    await viewport(page).evaluate(async el => {
+      for (let step = 0; step < 8; step++) {
+        el.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+        el.scrollTop -= 100;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    });
+    await expect.poll(() => requested).toBe(1);
+    expect(await viewport(page).evaluate(el => el.scrollTop / el.clientHeight)).toBeGreaterThan(3);
+  } finally { release(); }
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+});
+
 test("early loading adapts to a resized viewport without another scroll gesture", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 520 });
   let requested = 0;
@@ -655,7 +746,9 @@ test("early loading adapts to a resized viewport without another scroll gesture"
     await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
   });
   await recent(page);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 1700; });
+  // Stay outside the short viewport's runway after row measurements settle,
+  // but inside the enlarged viewport's runway without another reading gesture.
+  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 2200; });
   await page.waitForTimeout(150);
   expect(requested).toBe(0);
   await page.setViewportSize({ width: 360, height: 1000 });

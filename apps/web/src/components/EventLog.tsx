@@ -40,6 +40,7 @@ import { taskActivityDetailsQueryOptions } from "../client-queries";
 import { historyLogItems } from "../hooks/useTaskStream";
 import type { TaskHistoryControls } from "../task-history-state";
 import { prewarmMarkdown } from "../markdown-worker";
+import { useHistoryPrefetch } from "../hooks/useHistoryPrefetch";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
 // strong text; machinery (tool_call/result/status/error/etc.) reads as a quieter,
@@ -313,47 +314,11 @@ function RunFailureSummary({ failure, open, toggle }: { failure: RunFailure; ope
 }
 
 function HistoryHeader({ context }: { context?: HistoryControls }) {
-  const sentinel = useRef<HTMLDivElement>(null);
   const { initial, earlier, retryInitial, loadEarlier } = context?.history ?? {};
   const error = initial?.status === "error" ? { message: initial.message, retry: retryInitial, label: "Retry loading conversation" }
     : earlier?.status === "error" ? { message: earlier.message, retry: loadEarlier, label: "Retry loading earlier messages" } : undefined;
   const paused = initial?.status === "paused" || earlier?.status === "paused";
-  useEffect(() => {
-    const target = sentinel.current;
-    const root = target?.closest("[data-radix-scroll-area-viewport]");
-    if (!target || !root || earlier?.status !== "idle") return;
-    let observer: IntersectionObserver | undefined;
-    let margin = 0;
-    const observe = () => {
-      // Keep several screens of runway for the request and row measurement.
-      // The floor also gives short keyboard/landscape viewports time to load.
-      const nextMargin = Math.max(1200, root.clientHeight * 3);
-      if (nextMargin === margin) return;
-      margin = nextMargin;
-      observer?.disconnect();
-      observer = new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) loadEarlier?.();
-      }, { root, rootMargin: `${margin}px 0px 0px` });
-      observer.observe(target);
-    };
-    const resize = new ResizeObserver(observe);
-    // Virtuoso hides its list until the initial scroll target is reached. That
-    // can take several measurement frames; don't mistake it for a short page.
-    // Recheck after each page even without a scroll event, since compact mode
-    // can hide all of a page's events.
-    const observeWhenReady = () => {
-      const list = root.querySelector<HTMLElement>("[data-transcript-items]");
-      if (list && getComputedStyle(list).visibility === "hidden") {
-        frame = requestAnimationFrame(observeWhenReady);
-      } else {
-        observe();
-        resize.observe(root);
-      }
-    };
-    // Give a prepended page's anchor adjustment time to run before observing.
-    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(observeWhenReady); });
-    return () => { cancelAnimationFrame(frame); resize.disconnect(); observer?.disconnect(); };
-  }, [earlier?.status, loadEarlier]);
+  const sentinel = useHistoryPrefetch({ earlier, loadEarlier });
   // Keep the first message below the floating toolbar even when no older page
   // remains. The fixed height also avoids anchor shifts as history exhausts.
   return <div data-transcript-top-inset className={cn(
@@ -410,6 +375,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const virtuoso = useRef<VirtuosoHandle>(null);
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
   const initialized = useRef(!!saved.current);
+  const [positioned, setPositioned] = useState(false);
   useUpdateSnapshot(`scroll:${location.hash}`, () => {
     let state: StateSnapshot | undefined;
     virtuoso.current?.getState((value) => { state = value; });
@@ -419,6 +385,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
 
   const anchor = useRef<{ key: string; offset: number }>(undefined);
   const restoring = useRef(false);
+  const inputRevision = useRef(0);
+  const touching = useRef(false);
+  const waitingAtStart = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
   const captureFrame = useRef(0);
@@ -444,6 +413,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const onScrollPosition = useCallback((el: HTMLElement) => {
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
+    waitingAtStart.current = el.scrollTop <= 1;
     if (restoring.current) return;
     if (!initialized.current) return;
     const list = el.querySelector<HTMLElement>("[data-transcript-items]");
@@ -485,14 +455,16 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   // Let Virtuoso finish its initial positioning before our bottom follower can
   // write. Its early atBottom notification includes the empty, hidden list.
   useLayoutEffect(() => {
-    if (initialized.current) return;
     let frame = 0, stable = 0;
     let previous: string | undefined;
     const initialize = () => {
-      if (initialized.current) return;
       const el = viewport.current;
       const list = el?.querySelector<HTMLElement>("[data-transcript-items]");
       if (el && list && getComputedStyle(list).visibility !== "hidden") {
+        // Visible rows are ready to replace the placeholder even if a live
+        // answer keeps changing height. Bottom-follow settling is independent.
+        setPositioned(true);
+        if (initialized.current) return;
         const position = `${el.scrollTop}:${el.scrollHeight}:${el.clientHeight}`;
         stable = previous === position ? stable + 1 : 0;
         previous = position;
@@ -515,21 +487,36 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
+    const cancelRestore = () => {
+      inputRevision.current++;
+      restoring.current = false;
+    };
     const pause = () => {
+      cancelRestore();
       initialized.current = true;
       following.current = false;
-      restoring.current = false;
       cancelAnimationFrame(scrollFrame.current);
     };
-    const wheel = (event: WheelEvent) => { if (event.deltaY < 0) pause(); };
+    const wheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) pause();
+      else if (event.deltaY > 0) cancelRestore();
+    };
     let touchY: number | undefined;
-    const touchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY; };
+    const touchStart = (event: TouchEvent) => {
+      cancelRestore();
+      touching.current = true;
+      touchY = event.touches[0]?.clientY;
+    };
+    const touchEnd = () => { touching.current = false; };
     const touchMove = (event: TouchEvent) => {
       const next = event.touches[0]?.clientY;
       if (next !== undefined && touchY !== undefined && next > touchY) pause();
       touchY = next;
     };
-    const key = (event: KeyboardEvent) => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause(); };
+    const key = (event: KeyboardEvent) => {
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause();
+      else if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) cancelRestore();
+    };
     const root = el.closest("[data-transcript-root]");
     const scrollbar = (event: Event) => {
       if (event.target instanceof Element && event.target.closest('[data-slot="scroll-area-scrollbar"]')) pause();
@@ -538,11 +525,15 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     el.addEventListener("wheel", wheel, { passive: true });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: true });
+    el.addEventListener("touchend", touchEnd, { passive: true });
+    el.addEventListener("touchcancel", touchEnd, { passive: true });
     el.addEventListener("keydown", key);
     return () => {
       el.removeEventListener("wheel", wheel);
       el.removeEventListener("touchstart", touchStart);
       el.removeEventListener("touchmove", touchMove);
+      el.removeEventListener("touchend", touchEnd);
+      el.removeEventListener("touchcancel", touchEnd);
       el.removeEventListener("keydown", key);
       root?.removeEventListener("pointerdown", scrollbar, true);
     };
@@ -567,49 +558,42 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     previous.rows = rows;
   }
   const firstItemIndex = previous.first;
-  // Resolve the old visible row through Virtuoso, then correct the final pixel
-  // offset against the DOM once its estimated prepend sizes have settled.
+  // Virtuoso owns prepend compensation during reading. At the unloaded top
+  // boundary it cannot compensate from a nonzero scroll position; reconcile
+  // only that stationary anchor after measurement, never replay a scroll target.
   const firstKey = rows[0].seq;
   const previousStart = useRef(firstKey);
   useLayoutEffect(() => {
     const prepended = firstKey < previousStart.current;
     previousStart.current = firstKey;
-    if (!prepended || !anchor.current || following.current) return;
+    if (!prepended || !waitingAtStart.current || !anchor.current || following.current || touching.current) return;
     const saved = anchor.current;
-    const index = rows.findIndex((row) => row.key === saved.key);
-    if (index < 0) return;
+    const revision = inputRevision.current;
+    let frame = 0, attempts = 0, stable = 0;
+    let previousOffset: number | undefined;
     restoring.current = true;
-    let active = true;
-    let frame = requestAnimationFrame(() => {
-      virtuoso.current?.scrollIntoView({ index, align: "start",
-        calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: -saved.offset }),
-        done: () => {
-          if (!active) return;
-          let lastOffset: number | undefined;
-          let stable = 0, attempts = 0;
-          const settle = () => {
-            if (!active || !restoring.current) return;
-            const el = viewport.current;
-            const row = el?.querySelector<HTMLElement>(`[data-row-key="${saved.key}"]`);
-            if (el && row) {
-              const offset = row.getBoundingClientRect().top - el.getBoundingClientRect().top;
-              stable = lastOffset !== undefined && Math.abs(offset - lastOffset) < 1 ? stable + 1 : 0;
-              lastOffset = offset;
-              // Virtuoso can issue one last measured scroll after its done
-              // callback. Wait for stable row coordinates before correcting.
-              if (++attempts < 20 && stable < 2) { frame = requestAnimationFrame(settle); return; }
-              el.scrollTop += offset - saved.offset;
-              lastScrollTop.current = el.scrollTop;
-            }
-            restoring.current = false;
-            captureAnchor();
-          };
-          frame = requestAnimationFrame(settle);
-        },
-      });
-    });
-    return () => { active = false; cancelAnimationFrame(frame); restoring.current = false; };
-  }, [firstKey]);
+    const settle = () => {
+      if (inputRevision.current !== revision || !restoring.current) return;
+      const el = viewport.current;
+      const row = el?.querySelector<HTMLElement>(`[data-row-key="${saved.key}"]`);
+      if (el && row) {
+        const offset = row.getBoundingClientRect().top - el.getBoundingClientRect().top;
+        stable = previousOffset !== undefined && Math.abs(offset - previousOffset) < 1 ? stable + 1 : 0;
+        previousOffset = offset;
+        if (stable >= 2) {
+          el.scrollTop += offset - saved.offset;
+          lastScrollTop.current = el.scrollTop;
+          restoring.current = false;
+          captureAnchor();
+          return;
+        }
+      }
+      if (++attempts < 20) frame = requestAnimationFrame(settle);
+      else restoring.current = false;
+    };
+    frame = requestAnimationFrame(settle);
+    return () => { cancelAnimationFrame(frame); restoring.current = false; };
+  }, [firstKey, captureAnchor]);
   // A disclosure changes measured height without prepending data. Keep the
   // interacted row in view while Virtuoso refines its estimates, including when
   // the expanded row was taller than the entire viewport.
@@ -645,12 +629,14 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     return () => cancelAnimationFrame(frame);
   }, [rows, toggled]);
   useLayoutEffect(followBottom, [rows, followBottom]);
-  return <Virtuoso<TranscriptRow, HistoryControls>
+  return <><Virtuoso<TranscriptRow, HistoryControls>
     ref={virtuoso}
     scrollerRef={(element) => { viewport.current = element instanceof HTMLElement ? element : null; }}
     style={{ height: "100%" }}
+    aria-busy={!positioned}
     data={rows}
     firstItemIndex={firstItemIndex}
+    skipAnimationFrameInResizeObserver
     {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}
     totalListHeightChanged={followBottom}
@@ -658,7 +644,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     atBottomThreshold={80}
     // A short tool row can precede a very tall answer. Reserve rows as well as
     // pixels so that answer is measured before the reader crosses into it.
-    minOverscanItemCount={{ top: 3, bottom: 1 }}
+    minOverscanItemCount={{ top: 6, bottom: 1 }}
     increaseViewportBy={{ top: 300, bottom: 200 }}
     computeItemKey={rowKey}
     components={VIRTUAL_COMPONENTS}
@@ -680,7 +666,11 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
           {row.delivery && delivery && <MessageDelivery {...delivery} message={row.delivery} />}
         </div>}
     </div>}
-  />;
+  />
+    {!positioned && <div className="pointer-events-none absolute inset-0 bg-background px-4 pt-[calc(80px+var(--safe-top))]" data-transcript-loading>
+      <ConversationLoading />
+    </div>}
+  </>;
 }
 
 export function EventLog({ log, live, blocked = false, prompt, taskId, delivery, empty, history }: {

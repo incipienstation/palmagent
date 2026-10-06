@@ -39,6 +39,22 @@ for (const theme of ["dark", "light"] as const) test(`initial history uses one s
   await assertViewportLocked(page);
   await captureForReview(page, `conversation-loading-${theme}.png`);
 
+  const frames = await page.evaluateHandle(() => {
+    const capture = { active: true, blank: [] as number[], frames: 0 };
+    const sample = () => {
+      const root = document.querySelector<HTMLElement>("[data-transcript-root]");
+      if (root) {
+        capture.frames++;
+        const loading = root.querySelector<HTMLElement>('[aria-label="Loading conversation"]');
+        const list = root.querySelector<HTMLElement>("[data-transcript-items]");
+        const painted = (element: HTMLElement | null) => !!element?.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
+        if (!painted(loading) && !painted(list)) capture.blank.push(performance.now());
+      }
+      if (capture.active) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+    return capture;
+  });
   pending.release();
   await expect(page.getByText("Loaded conversation", { exact: true })).toBeVisible();
   await expect(loading).toHaveCount(0);
@@ -51,6 +67,10 @@ for (const theme of ["dark", "light"] as const) test(`initial history uses one s
   await expect(loading).toHaveCount(0);
   await expect(page.getByText("Waiting for connection…", { exact: true })).toHaveCount(0);
   expect(reads).toBe(1);
+  const captured = await frames.evaluate(capture => { capture.active = false; return capture; });
+  expect(captured.frames).toBeGreaterThan(0);
+  expect(captured.blank, "Loading and cached reentry must never uncover a hidden transcript").toEqual([]);
+  await frames.dispose();
 });
 
 test("an uncached conversation waits offline and starts history once on reconnect", async ({ page, context }) => {
