@@ -11,7 +11,8 @@ import { MessageQueue as QueuePanel } from "./MessageQueue";
 import { useUpdateState } from "../update-state";
 import { useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { Archive, Check, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
+import { Archive, Check, Gamepad2, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
+import { useAppNavigation } from "./AppNavigation";
 
 import {
   AlertDialog,
@@ -46,6 +47,7 @@ import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetDescripti
 
 export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated, initialRepoId }: { initialRepoId?: string; taskId?: string; task?: TaskState; onCreated?: (task: TaskState) => void }) {
   const taskId = existingId ?? "new";
+  const navigation = useAppNavigation();
   const creating = !existingId;
   const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
@@ -77,6 +79,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <AppBar title={heading} conn={creating ? undefined : conn} conversation>
+          {navigation?.openGarden && <Button variant="ghost" size="icon-lg" aria-label="Open Echo Garden" title="Echo Garden" onClick={event => navigation.openGarden?.(event.currentTarget)}><Gamepad2 /></Button>}
           <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
             <SquarePen />
           </Button>

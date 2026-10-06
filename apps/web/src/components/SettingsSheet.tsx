@@ -9,11 +9,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetClose, SheetBody, SheetContent, SheetHeaderRow, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
 import { useOutputMode, type OutputMode } from "../OutputModeProvider";
+import { useAdhdMode } from "../AdhdModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
 import { useSendShortcut } from "../SendShortcutProvider";
 import { useUpdateState } from "../update-state";
@@ -39,6 +41,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const { signingOut, signOut } = useSignOut();
   const { theme, setTheme } = useTheme();
   const { mode, setMode } = useOutputMode();
+  const { enabled: adhdMode, setEnabled: setAdhdMode } = useAdhdMode();
   const { shortcut, setShortcut } = useSendShortcut();
   const [section, setSection] = useUpdateState("settings:section", "general");
   const title = useRef<HTMLHeadingElement>(null);
@@ -49,6 +52,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const appearanceId = useId();
   const detailId = useId();
   const shortcutId = useId();
+  const adhdId = useId();
   const home = section === "general";
   useBackLayer(open && !home, () => setSection("general"), 150);
 
@@ -123,6 +127,20 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   </FieldDescription>
                 </Field>
                 <PushToggle className="border-t border-border py-3.5" />
+              </FieldGroup>
+            </SettingsGroup>
+
+            <SettingsGroup label="Experimental">
+              <FieldGroup className="rounded-xl border border-border bg-background/50 px-3.5">
+                <Field className="gap-2.5 py-3.5">
+                  <div className="flex min-h-11 items-center justify-between gap-3">
+                    <FieldLabel htmlFor={adhdId}>ADHD mode</FieldLabel>
+                    <Switch id={adhdId} checked={adhdMode} onCheckedChange={setAdhdMode} aria-describedby={`${adhdId}-description`} />
+                  </div>
+                  <FieldDescription id={`${adhdId}-description`}>
+                    Play Echo Garden, a turn-based puzzle, while your agent works. Adds a game button to conversations and navigation. Saved on this device.
+                  </FieldDescription>
+                </Field>
               </FieldGroup>
             </SettingsGroup>
 
