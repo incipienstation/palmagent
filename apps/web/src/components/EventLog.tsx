@@ -487,18 +487,23 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
-    const pause = () => {
+    const cancelRestore = () => {
       inputRevision.current++;
+      restoring.current = false;
+    };
+    const pause = () => {
+      cancelRestore();
       initialized.current = true;
       following.current = false;
-      restoring.current = false;
       cancelAnimationFrame(scrollFrame.current);
     };
-    const wheel = (event: WheelEvent) => { if (event.deltaY < 0) pause(); };
+    const wheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) pause();
+      else if (event.deltaY > 0) cancelRestore();
+    };
     let touchY: number | undefined;
     const touchStart = (event: TouchEvent) => {
-      inputRevision.current++;
-      restoring.current = false;
+      cancelRestore();
       touching.current = true;
       touchY = event.touches[0]?.clientY;
     };
@@ -508,7 +513,10 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       if (next !== undefined && touchY !== undefined && next > touchY) pause();
       touchY = next;
     };
-    const key = (event: KeyboardEvent) => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause(); };
+    const key = (event: KeyboardEvent) => {
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause();
+      else if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) cancelRestore();
+    };
     const root = el.closest("[data-transcript-root]");
     const scrollbar = (event: Event) => {
       if (event.target instanceof Element && event.target.closest('[data-slot="scroll-area-scrollbar"]')) pause();
