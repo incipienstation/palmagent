@@ -113,7 +113,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
       <div className="flex min-h-0 flex-1 flex-col">
         {localOwner && <Alert className="mx-3 my-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
 
-        <EventLog taskId={existingId} log={log} live={running} history={history}
+        <EventLog taskId={existingId} log={log} live={running} blocked={status === "awaiting_input" || status === "awaiting_approval"} history={history}
           empty={creating ? <p className="text-center font-sans text-lg text-muted-foreground">What should we work on?</p> : undefined}
           prompt={showingFirstMessage ? undefined : task?.prompt}
           delivery={creating ? newChat.delivery : { messages: [...(showingFirstMessage ? newChat.delivery.messages : []), ...pendingDeliveries], paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,

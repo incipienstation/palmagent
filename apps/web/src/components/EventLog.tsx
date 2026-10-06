@@ -30,6 +30,7 @@ import { ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
 import { MessageDelivery, type DeliveryControls } from "./MessageDelivery";
 import { WorkingLabel } from "./WorkingLabel";
+import { transcriptActivity } from "../transcript-activity";
 import { ConversationLoading } from "./ConversationLoading";
 import { ActivitySummary } from "./ActivitySummary";
 import { ApprovalRequest } from "./ApprovalCard";
@@ -682,8 +683,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   />;
 }
 
-export function EventLog({ log, live, prompt, taskId, delivery, empty, history }: {
-  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; delivery?: DeliveryControls; empty?: ReactNode;
+export function EventLog({ log, live, blocked = false, prompt, taskId, delivery, empty, history }: {
+  log: LogItem[]; live: boolean; blocked?: boolean; prompt?: string; taskId?: string; delivery?: DeliveryControls; empty?: ReactNode;
 } & HistoryControls) {
   const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
@@ -728,9 +729,10 @@ export function EventLog({ log, live, prompt, taskId, delivery, empty, history }
     }
     const messages = new Map(delivery?.messages.map(message => [message.id, message]));
     const seen = new Set<string>();
-    const last = log.at(-1);
-    const ended = last && (last.kind === "result" || last.kind === "error" || payload(last).subtype === "process_exit");
-    for (const row of presentTranscript(log, mode, live && !ended)) {
+    const activity = transcriptActivity(log, { running: live, blocked, messages: delivery?.messages,
+      loading: history.initial.status !== "ready" && history.initial.status !== "disabled",
+    });
+    for (const row of presentTranscript(log, mode, live && (activity === "working" || activity === "output"))) {
       if (row.type === "message") {
         const p = payload(row.item);
         const messageId = row.item.kind === "status" && ["followup", "steer", "dispatch"].includes(String(p.subtype)) && typeof p.messageId === "string" ? p.messageId : undefined;
@@ -750,20 +752,17 @@ export function EventLog({ log, live, prompt, taskId, delivery, empty, history }
       }
     }
     const pending = [...messages.values()].filter(message => !seen.has(message.id));
-    const sending = [...messages.values()].some(message => message.status === "sending");
     const seq = log.at(-1)?.key ?? 0;
     if (pending.length) {
-      // A new optimistic message starts after the current activity; don't leave
-      // the active indicator above the message the user just sent.
+      // A new optimistic message starts after the current activity.
       for (const row of rows) if (row.type === "activity" && row.activity.live) row.activity = { ...row.activity, live: false };
       for (const message of pending) rows.push({ key: `delivery-${message.id}`, seq: seq + 1, type: "delivery", message });
     }
-    if ((sending || (live && !ended)) && !rows.some(row => row.type === "activity" && row.activity.live)
-      && (pending.length || !last || last.kind !== "assistant_text")) {
+    if (activity === "working") {
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;
-  }, [log, mode, live, prompt, openActivity, toggled, delivery?.messages, historyFloor, history.initial.status, history.earlier.hasMore]);
+  }, [log, mode, live, blocked, prompt, openActivity, toggled, delivery?.messages, historyFloor, history.initial.status, history.earlier.hasMore]);
   const deferredActivities = useMemo(() => transcriptRows.flatMap((row) => {
     if (row.type !== "activity" || !row.open || !row.activity.items.some((item) => item.kind !== "assistant_text" && item.detailsDeferred) || !taskId) return [];
     const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);

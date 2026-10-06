@@ -93,13 +93,11 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
     const work = groups.filter((group) => group.items.some((item) =>
       item.kind === "tool_call" || item.kind === "tool_result" || phaseOf(item) === "progress"));
     const keep = new Set(work);
-    if (!work.length && active && groups.length) keep.add(groups.at(-1)!);
     for (const group of groups) {
       if (keep.has(group)) continue;
       const target = work.find((candidate) => candidate.key > group.key) ?? work.at(-1);
       if (target) target.items = [...target.items, ...group.items].sort((a, b) => a.key - b.key);
     }
-    // A lifecycle-only active row can later merge into its first tool row.
     // Keep the earliest member sequence as the React/Virtuoso key so streaming
     // classification never remounts the disclosure and flashes its content.
     for (const group of groups) {
@@ -151,6 +149,5 @@ export function activityLabel(group: Activity, mode: OutputMode): string {
     : "Activity";
   const label = mode === "compact" ? "Activity" : category;
   const count = tools.size ? `${tools.size} ${tools.size === 1 ? "tool" : "tools"}` : `${group.items.length} ${group.items.length === 1 ? "event" : "events"}`;
-  const state = group.live ? mode === "compact" ? "Working…" : category === "Commands" ? "Running commands…" : "Working…" : label;
-  return `${state} · ${count}${failures.size ? ` · ${failures.size} failed` : ""}`;
+  return `${label} · ${count}${failures.size ? ` · ${failures.size} failed` : ""}`;
 }
