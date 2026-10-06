@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.138
+
 ### Fixed
 
 - Conversations hide Working while replies are being output and show it once at the end when the agent resumes work, without stale indicators above answers.
