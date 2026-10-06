@@ -1,7 +1,6 @@
 # Codex compatibility verification
 
-The declared Codex range is `>=0.154.0 <0.160.1`. It retains the previous
-0.154.0 through 0.157.1 range and extends support through 0.160.0.
+The declared Codex range is `>=0.154.0 <0.160.2`.
 The shared metadata is copied to both operator plugins by `node scripts/sync-skills.mjs`.
 
 On 2026-09-27, authenticated tests against Codex CLI 0.154.0, 0.155.0,
