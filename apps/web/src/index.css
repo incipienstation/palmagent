@@ -289,6 +289,13 @@
   height: 44px;
   transition: height 200ms ease-out, padding 200ms ease-out;
 }
+.composer-input::placeholder {
+  opacity: 1;
+  transition: opacity 75ms ease-in-out;
+}
+.composer-input[data-placeholder-fading="true"]::placeholder {
+  opacity: 0;
+}
 .composer-toolbar {
   position: relative;
   margin-top: 0;
@@ -335,6 +342,10 @@
   transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
+  .composer-input[data-placeholder-fading]::placeholder {
+    opacity: 1;
+    transition: none;
+  }
   .composer-input, .composer-toolbar, .composer-skill, .composer-settings {
     transition: none;
   }

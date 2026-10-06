@@ -22,7 +22,7 @@ test.describe("task detail", () => {
     await expect(page.getByRole("group", { name: "Your message", exact: true })).toBeVisible();
     await expect(page.getByText("You", { exact: true })).toHaveCount(0);
     // idle task → follow-up composer is enabled.
-    await expect(page.getByPlaceholder(/Send a follow-up turn/)).toBeVisible();
+    await expect(page.getByPlaceholder(/Message Palmagent/)).toBeVisible();
   });
 
   test("session details lists PRs and restores focus after scrim dismissal", async ({ page }) => {

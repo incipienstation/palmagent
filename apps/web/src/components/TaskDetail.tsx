@@ -65,7 +65,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills,
     edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue,
     queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status,
-    running, awaiting, answering, composeMode, settingsReadOnly, displayedModel,
+    running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel,
     displayedEffort, setModel, setEffort, permission, setPermission, primaryAction,
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
@@ -153,7 +153,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             skillContext={{ taskId }} skills={edit ? editSkills : skills} onSkillsChange={edit ? setEditSkills : setSkills}
             voiceScope={`${taskId}:${edit?.id ?? "draft"}`} id={`task-compose-${taskId}`} label="Message" value={edit ? editText : compose}
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit} attachments={att}
-            placeholder={edit ? "Edit queued message…" : running ? "Message the agent…" : "Send a follow-up turn…"}
+            placeholder={placeholder}
             onStop={primaryAction === "stop" ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={() => void send()} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}

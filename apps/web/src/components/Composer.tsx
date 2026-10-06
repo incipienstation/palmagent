@@ -20,6 +20,7 @@ import { Sheet, SheetBody, SheetContent, SheetFooter, SheetDescription, SheetHea
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { PermissionPicker, permissionLabel } from "./PermissionPicker";
 import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
+import { useFadingPlaceholder } from "../hooks/useFadingPlaceholder";
 import { cn } from "../lib/utils";
 
 export interface ComposerSettings {
@@ -117,6 +118,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   }, () => !composing.current);
   const hasDraft = !!value.trim() || attachments.images.length > 0 || !!skills?.length;
   const compactVoice = voice.active && !hasDraft;
+  const hint = useFadingPlaceholder(placeholder, value.length === 0 && !compactVoice);
   const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || !hasDraft;
   const expanded = hasDraft || focused || voice.active || !!voice.error || picker.open || !!header || configure || menuOpen || attachments.preparing;
   useLayoutEffect(() => {
@@ -186,7 +188,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         if (onSend) onSend();
         else if (!controls) event.currentTarget.form?.requestSubmit();
       }}
-      hidden={compactVoice} placeholder={placeholder} disabled={disabled || busy}
+      hidden={compactVoice} placeholder={hint.text} data-placeholder-fading={hint.fading} disabled={disabled || busy}
       className="composer-input order-1 max-h-36 basis-full px-3 py-2.5"
     />
     {voice.active && <span role="status" className="sr-only">{voice.state === "stopping" ? "Finishing transcription…" : "Recording…"}</span>}
