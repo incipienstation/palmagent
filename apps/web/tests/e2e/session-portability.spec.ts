@@ -115,7 +115,7 @@ test("live preview is readable before handoff and enables input only when owners
   owner = "palmagent";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText("Live preview", { exact: true })).toBeHidden();
-  await expect(page.getByPlaceholder("Send a follow-up turn…")).toBeEnabled();
+  await expect(page.getByPlaceholder("Message Palmagent…")).toBeEnabled();
   await expect(page.getByText("Saved locally and visible before closing the CLI.", { exact: true })).toHaveCount(1);
 });
 

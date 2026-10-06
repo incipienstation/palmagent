@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Composer hints distinguish messages for the current task from queued messages, with a subtle fade that respects reduced motion. New tasks keep “Work with Palmagent”.
+
 ## 0.1.0-alpha.136
 
 ### Fixed

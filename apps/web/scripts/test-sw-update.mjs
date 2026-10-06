@@ -219,7 +219,7 @@ async function run() {
     assert.equal(await page.getByText("Beginning of conversation", { exact: true }).count(), 0);
     const position = await transcript.evaluate((el) => el.scrollTop);
     assert(position > 100);
-    const draft = page.getByPlaceholder("Message the agent…");
+    const draft = page.getByRole("textbox", { name: "Message", exact: true });
     await draft.fill("Do not submit this conversation draft");
     const reconnects = [];
     page.on("request", (request) => { if (request.url().includes("/api/stream?task=t-run")) reconnects.push(request.url()); });

@@ -92,6 +92,7 @@ test("running and queued-edit summaries show the applicable settings without cha
   await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
   await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
   await expect(summary).toContainText("opus · high");
+  await expect(input).toHaveAttribute("placeholder", "Edit queued message…");
   await expect(summary).toBeDisabled();
   await page.getByRole("button", { name: "Cancel editing" }).click();
   await expect(input).toHaveValue("Ordinary draft");

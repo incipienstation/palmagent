@@ -108,6 +108,12 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
   const status = task?.status;
   const running = status === "running";
+  const queueWaits = (status !== "idle" && status !== "failed") || queue?.paused || !!queue?.runId
+    || queue?.messages.some(message => message.status !== "delivered" && message.status !== "cancelled");
+  const placeholder = edit ? "Edit queued message…"
+    : deliveryMode === "queue" && queueWaits ? "Queue a message for later…"
+    : running ? "Guide the current task…"
+    : "Message Palmagent…";
   const editedSettings = edit ? queue?.messages.find(message => message.id === edit.id)?.settings : undefined;
   const settingsReadOnly = edit
     ? "Settings are retained from the queued message."
@@ -212,5 +218,5 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     ...request, answers: skip ? request.answers.map(a => ({ ...a, selected: [], notes: undefined })) : request.answers,
   }), () => toast({ title: "Answer sent", variant: "success" }));
   const approve = (decision: "approve" | "deny") => act(decision === "approve" ? "approve" : "deny", () => taskOperations.approve({ decision }));
-  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
+  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
 }
