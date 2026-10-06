@@ -55,7 +55,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
-  const { log, conn, loadingHistory, hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier, task: streamTask } = useTaskStream(taskId, !creating);
+  const { log, conn, history, task: streamTask } = useTaskStream(taskId, !creating);
   // Trust the scoped stream's snapshot (it's the connection that's actually live
   // while you're on this page) over the inbox-provided task, which can go stale
   // when the long-lived inbox stream freezes in the background. Fall back to the
@@ -70,8 +70,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
   const heading = creating ? "New task" : task ? taskTitle(task) : "Conversation";
-  const showingFirstMessage = !!newChat.preview && !(hasHistory && hasEarlier) && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
-  const firstDelivery = creating || showingFirstMessage;
+  const showingFirstMessage = !!newChat.preview && !history.earlier.hasMore && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
 
   return (
     <div className={terminalOpen ? "mx-auto flex max-w-[1600px]" : undefined}>
@@ -114,10 +113,9 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
       <div className="flex min-h-0 flex-1 flex-col">
         {localOwner && <Alert className="mx-3 my-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
 
-        <EventLog taskId={existingId} log={log} live={running} loading={loadingHistory && !firstDelivery}
+        <EventLog taskId={existingId} log={log} live={running} history={history}
           empty={creating ? <p className="text-center font-sans text-lg text-muted-foreground">What should we work on?</p> : undefined}
-          prompt={firstDelivery || loadingHistory || hasEarlier ? undefined : task?.prompt}
-          hasHistory={hasHistory} hasEarlier={hasEarlier} loadingEarlier={loadingEarlier} historyError={historyError} loadEarlier={loadEarlier}
+          prompt={showingFirstMessage ? undefined : task?.prompt}
           delivery={creating ? newChat.delivery : { messages: [...(showingFirstMessage ? newChat.delivery.messages : []), ...pendingDeliveries], paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,
             resumeDisabled, onDelete: m => void queueAction(m, "delete"),
             onResume: () => void resume(true) }} />

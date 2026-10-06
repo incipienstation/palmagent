@@ -9,6 +9,7 @@ import { api } from "../api";
 import { queryClient, taskHistoryChangesKey, taskHistoryKey, TASK_HISTORY_GC_TIME } from "../task-history-query";
 import { useOutputMode } from "../OutputModeProvider";
 import { connectSse, type ConnState } from "./sse";
+import { taskHistoryState, type TaskHistoryControls } from "../task-history-state";
 
 // The first event's durable sequence is the row key. Replacing a growing text
 // item preserves every other row's identity for memoized transcript rendering.
@@ -28,12 +29,7 @@ export type TaskHistoryData = InfiniteData<TaskHistoryPage, number | null>;
 export interface TaskStream {
   log: LogItem[];
   conn: ConnState;
-  loadingHistory: boolean;
-  hasHistory: boolean;
-  hasEarlier: boolean;
-  loadingEarlier: boolean;
-  historyError?: string;
-  loadEarlier: () => void;
+  history: TaskHistoryControls;
   // The scoped snapshot remains authoritative even if the inbox was suspended.
   task?: TaskState;
 }
@@ -112,13 +108,14 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
   const [streamTask, setStreamTask] = useState<{ taskId: string; task: TaskState }>();
   const loadingOlderRef = useRef<{ taskId: string; settled: Promise<unknown> } | undefined>(undefined);
   const resumeLiveRef = useRef<() => void>(() => {});
+  const historyState = taskHistoryState(history, enabled);
+  const retryInitial = useCallback(() => {
+    if (historyState.initial.status === "error") void history.refetch({ cancelRefetch: false });
+  }, [historyState.initial.status, history.refetch]);
+  // A new page must re-arm viewport prefetch even if loading and completion
+  // notifications were batched and the rendered status stayed idle.
   const loadEarlier = useCallback(() => {
-    if (history.isPlaceholderData) return;
-    if (!history.data) {
-      void history.refetch();
-      return;
-    }
-    if (!history.hasPreviousPage || loadingOlderRef.current?.taskId === taskId) return;
+    if (!history.data || !["idle", "error"].includes(historyState.earlier.status) || loadingOlderRef.current?.taskId === taskId) return;
     const loading = { taskId, settled: history.fetchPreviousPage({ cancelRefetch: false }).catch(() => {}) };
     loadingOlderRef.current = loading;
     void loading.settled.finally(() => {
@@ -127,7 +124,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
         resumeLiveRef.current();
       }
     });
-  }, [history.data, history.fetchPreviousPage, history.hasPreviousPage, history.isPlaceholderData, history.refetch, taskId]);
+  }, [history.data, historyState.earlier.status, history.fetchPreviousPage, taskId]);
 
   const historyReady = !!history.data && !history.isPlaceholderData;
   useEffect(() => {
@@ -328,19 +325,10 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
   const log = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data]);
   const cachedTask = history.data?.pages.at(-1)?.task;
   const mutations = useTaskMutations();
-  const historyError = (history.isFetchPreviousPageError && !history.isFetchingPreviousPage) ||
-      (history.isError && !history.data && !history.isFetching)
-    ? history.error instanceof Error ? history.error.message : "Could not load conversation history."
-    : undefined;
   return {
     log,
     conn,
     task: projectTask(streamTask?.taskId === taskId ? streamTask.task : cachedTask, mutations),
-    loadingHistory: history.isFetching && !history.data,
-    hasHistory: !!history.data,
-    hasEarlier: history.data ? history.hasPreviousPage : history.isError,
-    loadingEarlier: history.isFetchingPreviousPage || (history.isFetching && !history.data),
-    historyError,
-    loadEarlier,
+    history: { ...historyState, retryInitial, loadEarlier },
   };
 }

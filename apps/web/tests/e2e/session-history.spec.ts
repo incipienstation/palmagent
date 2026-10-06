@@ -376,6 +376,35 @@ test("a failed older page is retryable without replacing current history", async
   await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
 });
 
+test("earlier history pauses offline while keeping current messages and resumes once", async ({ page, context }) => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let requests = 0;
+  await page.route("**/history?before=1801*", async route => {
+    requests++;
+    await pending;
+    await route.fulfill({ json: { events: rows(1601, 1800), before: null, cursor: 2000 } });
+  });
+  const latestRequests = await recent(page);
+  await context.setOffline(true);
+  await viewport(page).evaluate(el => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
+  const waiting = page.getByRole("status").filter({ hasText: "Waiting for connection…" });
+  await expect(waiting).toBeVisible();
+  await expect(page.getByText("History message 1801", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry loading conversation", exact: true })).toHaveCount(0);
+  expect(requests).toBe(0);
+  await context.setOffline(false);
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toBeVisible();
+  await expect(waiting).toHaveCount(0);
+  release();
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+  await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBeGreaterThan(1000);
+  await expect(page.getByText("History message 1801", { exact: true })).toBeVisible();
+  expect(requests).toBe(1);
+  expect(latestRequests()).toBe(1);
+});
+
 test("scrolling away and back preserves a tool row's collapsed override", async ({ page }) => {
   await recent(page);
   const full = "Expanded tool output\n".repeat(80) + "Expansion survived remount";

@@ -37,6 +37,7 @@ import { payload } from "../transcript";
 import { queryClient, taskActivityDetailsKey } from "../task-history-query";
 import { taskActivityDetailsQueryOptions } from "../client-queries";
 import { historyLogItems } from "../hooks/useTaskStream";
+import type { TaskHistoryControls } from "../task-history-state";
 import { prewarmMarkdown } from "../markdown-worker";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
@@ -196,11 +197,7 @@ type TranscriptRow = { key: string; seq: number } & (
   | { type: "failure"; failure: RunFailure; open: boolean }
 );
 type HistoryControls = {
-  hasHistory?: boolean;
-  hasEarlier?: boolean;
-  loadingEarlier?: boolean;
-  historyError?: string;
-  loadEarlier?: () => void;
+  history: TaskHistoryControls;
   onScrollPosition?: (element: HTMLElement) => void;
 };
 
@@ -316,11 +313,14 @@ function RunFailureSummary({ failure, open, toggle }: { failure: RunFailure; ope
 
 function HistoryHeader({ context }: { context?: HistoryControls }) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const { hasHistory, hasEarlier, loadingEarlier, historyError, loadEarlier } = context ?? {};
+  const { initial, earlier, retryInitial, loadEarlier } = context?.history ?? {};
+  const error = initial?.status === "error" ? { message: initial.message, retry: retryInitial, label: "Retry loading conversation" }
+    : earlier?.status === "error" ? { message: earlier.message, retry: loadEarlier, label: "Retry loading earlier messages" } : undefined;
+  const paused = initial?.status === "paused" || earlier?.status === "paused";
   useEffect(() => {
     const target = sentinel.current;
     const root = target?.closest("[data-radix-scroll-area-viewport]");
-    if (!target || !root || !hasEarlier || loadingEarlier || historyError) return;
+    if (!target || !root || earlier?.status !== "idle") return;
     let observer: IntersectionObserver | undefined;
     let margin = 0;
     const observe = () => {
@@ -352,21 +352,21 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
     // Give a prepended page's anchor adjustment time to run before observing.
     let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(observeWhenReady); });
     return () => { cancelAnimationFrame(frame); resize.disconnect(); observer?.disconnect(); };
-  }, [hasEarlier, loadingEarlier, historyError, loadEarlier]);
+  }, [earlier?.status, loadEarlier]);
   // Keep the first message below the floating toolbar even when no older page
   // remains. The fixed height also avoids anchor shifts as history exhausts.
   return <div data-transcript-top-inset className={cn(
     "relative font-sans",
-    historyError
+    error
       ? "flex flex-col items-center gap-1 px-4 pt-[calc(80px+var(--safe-top))] pb-3"
       : "h-[calc(80px+var(--safe-top))]",
   )}>
     <div ref={sentinel} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
-    {historyError ? <>
-      <span role="alert" className="text-destructive">{historyError}</span>
-      <Button variant="ghost" onClick={loadEarlier}>{hasHistory ? "Retry loading earlier messages" : "Retry loading conversation"}</Button>
-    </> : hasHistory && loadingEarlier ? <div role="status" className="absolute inset-x-0 bottom-0 h-4 text-center text-xs leading-4 text-muted-foreground">
-      Loading earlier messages…
+    {error ? <>
+      <span role="alert" className="text-destructive">{error.message}</span>
+      <Button variant="ghost" onClick={error.retry}>{error.label}</Button>
+    </> : paused || earlier?.status === "loading" ? <div role="status" className="absolute inset-x-0 bottom-0 h-4 text-center text-xs leading-4 text-muted-foreground">
+      {paused ? "Waiting for connection…" : "Loading earlier messages…"}
     </div> : null}
   </div>;
 }
@@ -401,7 +401,7 @@ function activityRowKey(activity: Activity, historyFloor?: number): string {
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
-function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivity, following, delivery, ...history }: {
+function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivity, following, delivery, ...context }: {
   rows: TranscriptRow[]; liveKey?: number; mode: OutputMode; delivery?: DeliveryControls;
   toggled: Set<number>; toggle: (key: number) => void;
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
@@ -661,7 +661,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     increaseViewportBy={{ top: 300, bottom: 200 }}
     computeItemKey={rowKey}
     components={VIRTUAL_COMPONENTS}
-    context={{ ...history, onScrollPosition }}
+    context={{ ...context, onScrollPosition }}
     itemContent={(_index, row) => <div className="flow-root px-4" data-row-key={row.key}
       data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
       {row.type === "working" ? <div className="mb-3 py-2"><WorkingLabel /></div> : row.type === "delivery" ?
@@ -682,8 +682,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   />;
 }
 
-export function EventLog({ log, live, prompt, taskId, loading = false, delivery, empty, ...history }: {
-  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; loading?: boolean; delivery?: DeliveryControls; empty?: ReactNode;
+export function EventLog({ log, live, prompt, taskId, delivery, empty, history }: {
+  log: LogItem[]; live: boolean; prompt?: string; taskId?: string; delivery?: DeliveryControls; empty?: ReactNode;
 } & HistoryControls) {
   const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
@@ -723,7 +723,9 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
     const rows: TranscriptRow[] = [];
     const hasDispatch = log.some((item) => item.kind === "status" &&
       (item.event.payload as { subtype?: string } | null)?.subtype === "dispatch");
-    if (!hasDispatch && prompt?.trim()) rows.push({ key: "prompt", seq: 0, type: "prompt", text: prompt.trim() });
+    if (history.initial.status === "ready" && !history.earlier.hasMore && !hasDispatch && prompt?.trim()) {
+      rows.push({ key: "prompt", seq: 0, type: "prompt", text: prompt.trim() });
+    }
     const messages = new Map(delivery?.messages.map(message => [message.id, message]));
     const seen = new Set<string>();
     const last = log.at(-1);
@@ -761,7 +763,7 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;
-  }, [log, mode, live, prompt, openActivity, toggled, delivery?.messages, historyFloor]);
+  }, [log, mode, live, prompt, openActivity, toggled, delivery?.messages, historyFloor, history.initial.status, history.earlier.hasMore]);
   const deferredActivities = useMemo(() => transcriptRows.flatMap((row) => {
     if (row.type !== "activity" || !row.open || !row.activity.items.some((item) => item.kind !== "assistant_text" && item.detailsDeferred) || !taskId) return [];
     const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);
@@ -818,16 +820,17 @@ export function EventLog({ log, live, prompt, taskId, loading = false, delivery,
     }
     return rows;
   }, [transcriptRows, activityQueryByRange]);
-  // A running task can already have a synthetic Working row before history
-  // arrives. Show the initial placeholder unless there is real content to keep.
-  const initialLoading = loading && !history.hasHistory && !log.length && !delivery?.messages.length;
+  // Initial loading, connection waits, and errors replace only an empty
+  // transcript. Keep optimistic messages; a synthetic Working row is not data.
+  const initialPending = history.initial.status !== "ready" && history.initial.status !== "disabled";
+  const showInitialState = initialPending && !rows.some(row => row.type !== "working");
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
-    {!initialLoading && rows.length > 0 ? <VirtualTranscript rows={rows}
-      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} {...history} /> : !initialLoading && empty ?
+    {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows}
+      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} history={history} /> : !showInitialState && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
-        <HistoryHeader context={history} />
-        {initialLoading ? <ConversationLoading /> : !history.historyError && <div className="mb-1.5 text-faint">
+        <HistoryHeader context={{ history }} />
+        {history.initial.status === "loading" ? <ConversationLoading /> : !initialPending && <div className="mb-1.5 text-faint">
           {log.length ? "No messages in this view." : "waiting for events…"}
         </div>}
       </ScrollAreaPrimitive.Viewport>}
