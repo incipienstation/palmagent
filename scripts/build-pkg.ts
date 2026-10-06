@@ -82,24 +82,24 @@ async function main(): Promise<void> {
   console.log("[build-pkg] bundling server / runner-daemon / cli …");
   await build({
     ...common,
-    entryPoints: [join(SERVER, "src/server.ts")],
+    entryPoints: [join(SERVER, "src/bootstrap/server.ts")],
     define: { __PALMAGENT_BUILD__: JSON.stringify(buildInfo) },
     outfile: join(OUT, "server.js"),
   });
   await build({
     ...common,
-    entryPoints: [join(SERVER, "src/runner-daemon.ts")],
+    entryPoints: [join(SERVER, "src/bootstrap/runner-daemon.ts")],
     outfile: join(OUT, "runner-daemon.js"),
   });
   await build({
     ...common,
-    entryPoints: [join(SERVER, "src/cli/index.ts")],
+    entryPoints: [join(SERVER, "src/bootstrap/cli.ts")],
     outfile: join(OUT, "cli.js"),
     banner: { js: "#!/usr/bin/env node" },
   });
 
   for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher"]) {
-    await build({ ...common, entryPoints: [join(SERVER, `src/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
+    await build({ ...common, entryPoints: [join(SERVER, `src/bootstrap/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
   writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, ingressOwner: "plugin" }) + "\n");
 

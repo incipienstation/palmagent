@@ -336,7 +336,7 @@ async function main() {
         'A new stable Codex CLI ' + version + ' failed Palmagent compatibility checks against ' + baseline + '.',
         'The user authorizes use of this machine ChatGPT Codex login ONLY for this failure.',
         'You are already in the isolated task worktree. Diagnose and fix the Codex adapter and its regression tests here.',
-        'Allowed files: apps/server/src/codex.ts, apps/server/src/codex-interactive.ts, apps/server/tests/adapter-contracts.test.ts, scripts/lib/codex-protocol-contract.mjs.',
+        'Allowed files: apps/server/src/modules/agents/adapters/outbound/codex.ts, apps/server/src/modules/agents/adapters/outbound/codex-interactive.ts, apps/server/tests/contracts/adapter-contracts.test.ts, scripts/lib/codex-protocol-contract.mjs.',
         'Keep the declarative consumed-protocol specification in sync with adapter changes; do not remove still-consumed fields or methods to bypass a failure.',
         'Do not commit, push, create PRs, merge, change support metadata, weaken tests, run live model tests, spawn other agents, or change host state.',
         'The parent script owns verification, one authenticated matrix, and delivery. Stop with an explanation if the fix needs other files.',

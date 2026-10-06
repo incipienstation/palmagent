@@ -66,8 +66,8 @@ export const metadataFiles = [
 ];
 export function allowedChanges(paths, repaired = false) {
   return paths.length > 0 && paths.every(path => metadataFiles.includes(path)
-    || repaired && ['apps/server/src/codex.ts', 'apps/server/src/codex-interactive.ts',
-      'apps/server/tests/adapter-contracts.test.ts', 'scripts/lib/codex-protocol-contract.mjs'].includes(path));
+    || repaired && ['apps/server/src/modules/agents/adapters/outbound/codex.ts', 'apps/server/src/modules/agents/adapters/outbound/codex-interactive.ts',
+      'apps/server/tests/contracts/adapter-contracts.test.ts', 'scripts/lib/codex-protocol-contract.mjs'].includes(path));
 }
 export function updateCompatibility(cwd, version, receipt) {
   const path = join(cwd, metadataFiles[0]);

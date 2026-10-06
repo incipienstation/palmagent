@@ -5,7 +5,7 @@
 //
 //   node tests/mock-server.mjs            # serve on $PORT (default 4317)
 //
-// SSE frame format is copied verbatim from apps/server/src/server.ts:
+// SSE frame format is copied verbatim from apps/server/src/modules/tasks/adapters/inbound/stream.ts:
 //   ": connected\n\n"                                  on connect
 //   "data: {"type":"tasks",...}\n\n"                   inbox snapshot (no id)
 //   "id: <seq>\ndata: {"type":"event",...}\n\n"        scoped per-task event

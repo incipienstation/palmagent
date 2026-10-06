@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildClaudeArgv, buildClaudeUserMessage } from "../src/claude.js";
-import { buildCodexArgv } from "../src/codex.js";
+import { buildClaudeArgv, buildClaudeUserMessage } from "../src/modules/agents/adapters/outbound/claude.js";
+import { buildCodexArgv } from "../src/modules/agents/adapters/outbound/codex.js";
 
 const marker = "PALMAGENT_ADAPTER_CONTRACT_OK";
 const prompt = `Reply with exactly ${marker}. Do not use tools.`;

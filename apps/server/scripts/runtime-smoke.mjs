@@ -37,7 +37,7 @@ try {
   await assertConfigContract();
 
   const port = await getFreePort();
-  const runner = startTypeScript("src/runner-daemon.ts", {
+  const runner = startTypeScript("src/bootstrap/runner-daemon.ts", {
     ...sanitizedEnv,
     RUNNER_SOCKET: socketPath,
   });
@@ -49,7 +49,7 @@ try {
     "runner socket is not owner-only",
   );
 
-  const web = startTypeScript("src/server.ts", {
+  const web = startTypeScript("src/bootstrap/server.ts", {
     ...sanitizedEnv,
     AUTH_DISABLED: "1",
     DISPATCHER_DATA_DIR: tempDir,
@@ -97,7 +97,7 @@ try {
 
 async function assertConfigContract() {
   const probe = await runNode(
-    'import("./src/config.ts").then(({ config }) => console.log(JSON.stringify({' +
+    'import("./src/composition/config.ts").then(({ config }) => console.log(JSON.stringify({' +
       'host: config.host, authOrigin: config.authOrigin, cookieName: config.cookieName, dbPath: config.dbPath' +
       "})))",
     {
@@ -116,14 +116,14 @@ async function assertConfigContract() {
     dbPath,
   });
 
-  const invalidPort = await runNode('import("./src/config.ts")', {
+  const invalidPort = await runNode('import("./src/composition/config.ts")', {
     ...sanitizedEnv, AUTH_DISABLED: "1", DISPATCHER_DATA_DIR: tempDir, PORT: "70000",
   });
   assert.notEqual(invalidPort.code, 0, "an out-of-range runtime port was accepted");
   assert.match(invalidPort.stderr, /PORT/);
 
   const xdg = await runNode(
-    'Promise.all([import("./src/config.ts"), import("./src/cli/config.ts")]).then(([{ config }, { resolveDataDir }]) =>' +
+    'Promise.all([import("./src/composition/config.ts"), import("./src/modules/installation/adapters/outbound/config.ts")]).then(([{ config }, { resolveDataDir }]) =>' +
       'console.log(JSON.stringify({ runtime: config.dbPath, cli: resolveDataDir() })))',
     { ...sanitizedEnv, AUTH_DISABLED: "1", XDG_STATE_HOME: tempDir },
   );
@@ -132,7 +132,7 @@ async function assertConfigContract() {
     runtime: join(tempDir, "palmagent", "palmagent.db"), cli: join(tempDir, "palmagent"),
   });
 
-  const rejected = await runNode('import("./src/config.ts")', {
+  const rejected = await runNode('import("./src/composition/config.ts")', {
     ...sanitizedEnv,
     AUTH_DISABLED: "1",
     AUTH_ORIGIN: "http://localhost",
@@ -141,7 +141,7 @@ async function assertConfigContract() {
   assert.notEqual(rejected.code, 0, "plaintext AUTH_ORIGIN was accepted");
   assert.match(rejected.stderr, /AUTH_ORIGIN must use https:\/\//);
 
-  const publicBind = await runNode('import("./src/config.ts")', {
+  const publicBind = await runNode('import("./src/composition/config.ts")', {
     ...sanitizedEnv,
     AUTH_DISABLED: "1",
     DISPATCHER_DATA_DIR: tempDir,
@@ -150,7 +150,7 @@ async function assertConfigContract() {
   assert.notEqual(publicBind.code, 0, "a public plaintext listener was accepted");
   assert.match(publicBind.stderr, /HOST must be loopback/);
 
-  const plaintextPushSubject = await runNode('import("./src/config.ts")', {
+  const plaintextPushSubject = await runNode('import("./src/composition/config.ts")', {
     ...sanitizedEnv,
     AUTH_DISABLED: "1",
     DISPATCHER_DATA_DIR: tempDir,

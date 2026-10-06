@@ -63,7 +63,7 @@ else if (args.includes('generate-json-schema')) {
     ['-e', 'setTimeout(() => require("node:fs").writeFileSync(process.env.TEST_BACKGROUND, "orphan"), 1000)'], {stdio:'inherit'});
   process.stdin.resume(); process.stdin.on('end', () => {
     if (process.env.TEST_REPAIR_OK) {
-      fs.appendFileSync('apps/server/src/codex.ts','// Repaired fixture adapter.\\n');
+      fs.appendFileSync('apps/server/src/modules/agents/adapters/outbound/codex.ts','// Repaired fixture adapter.\\n');
       const file='scripts/lib/codex-protocol-contract.mjs';
       fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('const thread = { id: true };','const thread = { key: true };'));
       process.exit(0);
@@ -122,7 +122,7 @@ function fixture(t) {
   const git = (...args) => execFileSync('git', args, {cwd: repo, encoding:'utf8', stdio:['ignore','pipe','pipe']}).trim();
   git('init','--bare',remote); git('init','-b','develop');
   git('config','user.name','Fixture'); git('config','user.email','fixture@example.com');
-  for (const directory of ['packages/shared/src','docs','scripts/lib','apps/server/src']) mkdirSync(join(repo,directory),{recursive:true});
+  for (const directory of ['packages/shared/src','docs','scripts/lib','apps/server/src/modules/agents/adapters/outbound']) mkdirSync(join(repo,directory),{recursive:true});
   writeFileSync(join(repo,'.gitignore'),'node_modules/\n');
   writeFileSync(join(repo,'.nvmrc'),process.version.slice(1));
   writeFileSync(join(repo,'packages/shared/src/agent-compatibility.json'), JSON.stringify({codex:{minimum:'0.154.0',exclusiveMaximum:'0.160.1',range:'>=0.154.0 <0.160.1'}}));
@@ -131,7 +131,7 @@ function fixture(t) {
   for (const name of ['codex-schema-contract.mjs','codex-protocol-contract.mjs']) {
     writeFileSync(join(repo,'scripts/lib',name),readFileSync(new URL('../lib/'+name,import.meta.url)));
   }
-  writeFileSync(join(repo,'apps/server/src/codex.ts'),'// Fixture adapter\n');
+  writeFileSync(join(repo,'apps/server/src/modules/agents/adapters/outbound/codex.ts'),'// Fixture adapter\n');
   git('add','.'); git('commit','-m','fixture'); git('remote','add','origin',remote); git('push','-u','origin','develop');
   writeFileSync(join(root,'cli.cjs'),cliStub);
   writeFileSync(join(root,'schemas.json'),JSON.stringify(schemas()));

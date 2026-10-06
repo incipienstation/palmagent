@@ -18,8 +18,8 @@ test('documentation and repository/operator skills need no dependency or runtime
 });
 
 test('package READMEs do not hide code or make arbitrary Markdown static', () => {
-  assert.deepEqual(classifyChanges(['apps/web/README.md', 'apps/server/src/server.ts']),
-    { ...none, types: true, tooling: true, server: true });
+  assert.deepEqual(classifyChanges(['apps/web/README.md', 'apps/server/src/bootstrap/server.ts']),
+    { ...none, types: true, tooling: true, server: true, package: true });
   assert.deepEqual(classifyChanges(['apps/web/src/prompt.md']), { ...none, types: true, tooling: true, web: true });
   assert.deepEqual(classifyChanges(['packages/new/README.md']), all);
 });
@@ -38,7 +38,7 @@ test('PR template changes are static without hiding code or executable GitHub co
 });
 
 test('server, web, and shared changes select their runtime surfaces', () => {
-  assert.deepEqual(classifyChanges(['apps/server/src/server.ts']), { ...none, types: true, tooling: true, server: true });
+  assert.deepEqual(classifyChanges(['apps/server/src/bootstrap/server.ts']), { ...none, types: true, tooling: true, server: true, package: true });
   assert.deepEqual(classifyChanges(['apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
   assert.deepEqual(classifyChanges(['packages/shared/src/types.ts']), { ...all, package: false });
   assert.deepEqual(classifyChanges(['README.md', 'apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
@@ -48,7 +48,7 @@ test('reviewed tooling tests select tooling without hiding other changed consume
   for (const path of ['scripts/tests/release-finalize.test.mjs', 'scripts/tests/package-fixture.mjs']) {
     assert.deepEqual(classifyChanges([path]), { ...none, tooling: true });
     assert.deepEqual(classifyChanges([path, 'apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
-    assert.deepEqual(classifyChanges(['apps/server/src/server.ts', path]), { ...none, types: true, tooling: true, server: true });
+    assert.deepEqual(classifyChanges(['apps/server/src/bootstrap/server.ts', path]), { ...none, types: true, tooling: true, server: true, package: true });
     assert.deepEqual(classifyChanges([path, 'scripts/release-finalize.mjs']), all);
   }
   for (const path of ['scripts/tests/new.test.mjs', 'scripts/tests/new-fixture.mjs', '.nvmrc']) {
@@ -71,8 +71,13 @@ test('packaging, dependency, workflow, and unknown changes cannot take the stati
     'LICENSE', '.claude/hooks/check.sh', '.harness/skills/ship/scripts/cleanup.sh', 'new-package/file.ts']) {
     assert.deepEqual(classifyChanges([path]), all, path);
   }
-  assert.equal(classifyChanges(['apps/server/src/cli/index.ts']).package, true);
+  assert.equal(classifyChanges(['apps/server/src/bootstrap/cli.ts']).package, true);
   assert.equal(classifyChanges(['packages/shared/src/branding.ts']).package, true);
+  for (const module of ['tasks', 'spaces', 'routines', 'terminals']) {
+    assert.equal(classifyChanges([`apps/server/src/modules/${module}/adapters/inbound/cli.ts`]).package, true);
+  }
+  assert.equal(classifyChanges(['apps/server/src/modules/spaces/composition.ts']).package, true);
+  assert.equal(classifyChanges(['apps/server/src/modules/tasks/application/use-cases/task-service.ts']).package, false);
 });
 
 test('missing scope or an unexpected event cannot select the static shortcut', () => {

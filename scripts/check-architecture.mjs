@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { serverLocation, serverDependency, dependencyCycles, moduleReferences } from "./lib/architecture.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const failures = [];
@@ -14,16 +15,8 @@ async function files(directory) {
   }
   return found;
 }
-const core = new Set(["service.ts", "routines.ts", "message-controller.ts", "cron.ts", "errors.ts", "types.ts"]);
-const isCore = name => name.startsWith("apps/server/src/application/") ||
-  (name.startsWith("apps/server/src/") && core.has(name.slice("apps/server/src/".length)));
 const isShared = name => name?.startsWith("packages/shared/src/");
-// These coordinators intentionally own platform integrations; keep their exceptions explicit.
-const coordinators = {
-  "apps/server/src/auth.ts": new Set(["node:crypto", "@simplewebauthn/server", "apps/server/src/config.ts"]),
-  "apps/server/src/terminal/service.ts": new Set(["node:fs", "node:path", "apps/server/src/terminal/store.ts", "apps/server/src/terminal/platform.ts", "apps/server/src/private-files.ts"]),
-};
-const persistence = /(?:^|\/)(?:db|attachments|native-session|paths|worktree|runtime|terminal\/store)(?:\.ts)?$/;
+const edges = [], featureEdges = [];
 let inspected = 0;
 for (const packageDir of ["apps/server", "apps/web", "packages/shared"]) {
   const configPath = join(root, packageDir, "tsconfig.json");
@@ -37,20 +30,19 @@ for (const packageDir of ["apps/server", "apps/web", "packages/shared"]) {
     const source = ts.createSourceFile(path, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true);
     const report = (node, message) => failures.push(`${name}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}: ${message}`);
     const view = /^apps\/web\/src\/(components|auth)\//.test(name) && !name.endsWith("/useSignOut.ts");
-    const route = name.startsWith("apps/server/src/http/") || name === "apps/server/src/local/app.ts" || name === "apps/server/src/terminal/gateway.ts";
-    function inspectImport(node, specifier) {
+    if (serverLocation(name)?.area === "unknown") report(source, "unclassified server source");
+    function inspectImport(node, specifier, typeOnly) {
       const module = specifier.text;
       const resolved = ts.resolveModuleName(module, path, parsed.options, ts.sys).resolvedModule?.resolvedFileName;
       const target = resolved ? relative(root, resolved) : undefined;
       const shared = isShared(target);
-      if (isCore(name)) {
-        const crypto = module === "node:crypto" && ["apps/server/src/application/skill-id.ts", "apps/server/src/message-controller.ts"].includes(name);
-        if (!shared && !crypto && !(target && isCore(target))) report(node, `application code imports outer dependency ${module}`);
+      const violation = serverDependency(name, target, module, typeOnly);
+      if (violation) report(node, violation + `: ${module}`);
+      if (serverLocation(name) && serverLocation(target)) {
+        edges.push([name, target]);
+        const from = serverLocation(name)?.feature, to = serverLocation(target)?.feature;
+        if (from && to && from !== to) featureEdges.push([from, to]);
       }
-      if (coordinators[name] && !shared && !(target && isCore(target)) && !coordinators[name].has(target) && !coordinators[name].has(module)) {
-        report(node, `coordinator imports undeclared dependency ${module}`);
-      }
-      if (route && target && persistence.test(target)) report(node, `transport adapter imports persistence or host implementation ${module}`);
       if (isShared(name) && !shared && module !== "zod" && !module.startsWith("zod/") && !target?.endsWith(".json")) {
         report(node, `shared contracts import nonportable dependency ${module}`);
       }
@@ -63,12 +55,13 @@ for (const packageDir of ["apps/server", "apps/web", "packages/shared"]) {
         }
       }
     }
+    for (const reference of moduleReferences(ts, source)) inspectImport(reference.node, reference.specifier, reference.typeOnly);
+    const location = serverLocation(name);
+    const core = location && (location.area === "kernel" || location.area === "domain" || location.area.startsWith("application/"));
     function visit(node) {
-      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) inspectImport(node, node.moduleSpecifier);
-      if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) inspectImport(node, node.argument.literal);
+      if (core && ts.isIdentifier(node) && ["process", "Buffer", "fetch", "XMLHttpRequest", "WebSocket"].includes(node.text)) report(node, `core uses host global ${node.text}; inject a port`);
       if (ts.isCallExpression(node)) {
-        const first = node.arguments[0];
-        if ((node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require")) && first && ts.isStringLiteral(first)) inspectImport(node, first);
+        if (core && node.expression.kind === ts.SyntaxKind.ImportKeyword && !ts.isStringLiteralLike(node.arguments[0])) report(node, "core has a dynamic dependency that cannot be checked");
         if (view && ts.isIdentifier(node.expression) && node.expression.text === "fetch") report(node, "view calls fetch directly; use a feature operation hook");
       }
       ts.forEachChild(node, visit);
@@ -76,6 +69,8 @@ for (const packageDir of ["apps/server", "apps/web", "packages/shared"]) {
     visit(source);
   }
 }
+for (const cycle of dependencyCycles(edges)) failures.push(`source cycle: ${cycle.join(" -> ")}`);
+for (const cycle of dependencyCycles(featureEdges)) failures.push(`feature cycle: ${cycle.join(" -> ")}`);
 if (failures.length) {
   console.error(`Architecture boundary check failed (${failures.length}):\n${failures.map(f => `- ${f}`).join("\n")}`);
   process.exitCode = 1;

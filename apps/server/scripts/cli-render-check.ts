@@ -22,23 +22,23 @@ import {
   saveConfig,
   validateInstallInput,
   type InstallConfig,
-} from "../src/cli/config.js";
+} from "../src/modules/installation/adapters/outbound/config.js";
 import {
   type Flags,
   gatherConfig,
   loadInstalledConfig,
   postUpgradeArgs,
   update,
-} from "../src/cli/install.js";
-import { renderTerminalUnits } from "../src/cli/terminal-units.js";
+} from "../src/composition/installation.js";
+import { renderTerminalUnits } from "../src/modules/installation/adapters/outbound/terminal-units.js";
 import {
   recordRunnerArtifact,
   runnerArtifactChanged,
-} from "../src/cli/runner-state.js";
-import { renderUnits, runnerUnitName, webUnitName } from "../src/cli/units.js";
+} from "../src/modules/installation/adapters/outbound/runner-state.js";
+import { renderUnits, runnerUnitName, webUnitName } from "../src/modules/installation/adapters/outbound/units.js";
 
-import { setUserChannel, userConfigPath } from "../src/cli/user-config.js";
-import { compatiblePlugin, releaseChannel, validateUpdateTarget } from "../src/cli/release-policy.js";
+import { setUserChannel, userConfigPath } from "../src/modules/installation/adapters/outbound/user-config.js";
+import { compatiblePlugin, releaseChannel, validateUpdateTarget } from "../src/modules/installation/domain/release-policy.js";
 
 let failures = 0;
 function check(condition: boolean, message: string): void {
@@ -118,7 +118,7 @@ check(
   "web service binds to loopback",
 );
 check(
-  sourceUnits.runner.text.includes("src/runner-daemon.ts"),
+  sourceUnits.runner.text.includes("src/bootstrap/runner-daemon.ts"),
   "source mode launches the TypeScript runner",
 );
 
@@ -177,7 +177,7 @@ const subcommandHelp = spawnSync(
   [
     "--import",
     "tsx",
-    "apps/server/src/cli/index.ts",
+    "apps/server/src/bootstrap/cli.ts",
     "setup",
     "--help",
   ],

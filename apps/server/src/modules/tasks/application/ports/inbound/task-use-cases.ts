@@ -1,0 +1,55 @@
+import type { AccountLimits, TaskHistoryResponse, TaskHistoryChangesResponse, TaskActivityDetailsResponse, VoiceConnection, MessageQueue, SkillCatalog } from "@palmagent/shared";
+import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagent/shared";
+import type { SubmitMessage, MessageAction } from "@palmagent/shared";
+import type { DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, PrRef, Repo, SteerResponse, TaskState, TaskStatus } from "@palmagent/shared";
+
+/** Operations accepted by the tasks module. */
+export interface TaskUseCases {
+  providerHome(agent: AgentKind): string;
+  providerAccountLimits(agent: AgentKind): Promise<AccountLimits>;
+  cleanupTerminalWorktree(id: string): void;
+  accountLimits(taskId: string): Promise<AccountLimits>;
+  readAttachment(taskId: string, attachmentId: string): { bytes: Uint8Array; mediaType: string; };
+  readTaskImage(taskId: string, requestedPath: string | string[]): Promise<{ bytes: Uint8Array; mediaType: string; }>;
+  eventCursor(taskId?: string): number;
+  taskHistory(taskId: string, before?: number, includeActivityDetails?: boolean): TaskHistoryResponse;
+  taskHistoryChanges(taskId: string, after: number, through?: number, includeActivityDetails?: boolean): TaskHistoryChangesResponse;
+  taskActivityDetails(taskId: string, from: number, through: number): TaskActivityDetailsResponse;
+  beginShutdown(): void;
+  startVoice(context: SkillContext, sdp: string, signal?: AbortSignal): Promise<VoiceConnection>;
+  touchVoice(id: string): void;
+  stopVoice(id: string, timings?: VoiceClientTimings): void;
+  resumeQueue(id: string): MessageQueue;
+  availableSkills(context: SkillContext): Promise<SkillCatalog>;
+  resolveSkills(context: SkillContext, skills?: SkillSelection[]): Promise<SkillSelection[] | undefined>;
+  resolveMessageSkills(id: string, req: SubmitMessage): Promise<SkillSelection[] | undefined>;
+  submitMessage(id: string, req: SubmitMessage): MessageQueue;
+  messageAction(id: string, messageId: string, req: MessageAction): MessageQueue;
+  readonly executionProtocol: number | undefined;
+  readonly updating: boolean;
+  init(): Promise<void>;
+  createRepo(req: CreateRepoRequest): Promise<Repo>;
+  updateRepo(id: string, req: UpdateRepoRequest): Repo;
+  deleteRepo(id: string): Repo;
+  listRepos(): Repo[];
+  getRepo(id: string): Repo;
+  spaceRemoved(id: string): void;
+  listTasks(status?: TaskStatus): TaskState[];
+  getTask(id: string): TaskState;
+  pin(id: string, pinned: boolean): TaskState;
+  rename(id: string, title: string): TaskState;
+  handoff(id: string): SessionHandoffResponse;
+  dispatchSession(req: DispatchSessionRequest): Promise<TaskState>;
+  reconcileLocalSessions(): void;
+  tasksWithPrs(): { taskId: string; prs: PrRef[]; }[];
+  applyPrStatuses(taskId: string, patches: Map<string, Partial<PrRef>>): void;
+  usage(): AgentUsage[];
+  createTask(req: CreateTaskRequest): TaskState;
+  followup(id: string, prompt: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): TaskState;
+  steer(id: string, text: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): SteerResponse;
+  approve(id: string, decision: string, scope?: string): TaskState;
+  answer(id: string, req: AnswerRequest): Promise<TaskState>;
+  stop(id: string): TaskState;
+  cancel(id: string): TaskState;
+  archive(id: string): TaskState;
+}

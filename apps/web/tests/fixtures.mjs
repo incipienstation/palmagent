@@ -403,7 +403,7 @@ export const events = {
     { kind: "status", payload: { subtype: "dispatch", text: "Refactor hub.ts so a misbehaving subscriber can never break fan-out to the others." } },
     { kind: "status", payload: { subtype: "init", model: "claude-sonnet", text: "session started" } },
     { kind: "assistant_text", payload: { text: "Reading hub.ts and wrapping each subscriber call in try/catch so one dead socket can't break fan-out…" } },
-    { kind: "tool_call", payload: { name: "read", command: "apps/server/src/hub.ts" } },
+    { kind: "tool_call", payload: { name: "read", command: "apps/server/src/platform/events/hub.ts" } },
   ],
   "t-await": [
     { kind: "status", payload: { subtype: "init", model: "claude-opus", text: "session started" } },

@@ -8,10 +8,10 @@ import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
-import { loadConfig } from "../src/cli/config.js";
-import { pinNode } from "../src/cli/execution-release.js";
-import { renderExecutionUnits } from "../src/cli/execution-units.js";
-import { ExecutionStore } from "../src/execution/store.js";
+import { loadConfig } from "../src/modules/installation/adapters/outbound/config.js";
+import { pinNode } from "../src/modules/installation/adapters/outbound/execution-release.js";
+import { renderExecutionUnits } from "../src/modules/installation/adapters/outbound/execution-units.js";
+import { ExecutionStore } from "../src/modules/agents/adapters/outbound/execution-store.js";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const artifact = resolve(process.argv[2] ?? join(repository, "build/pkg"));
@@ -39,7 +39,7 @@ try {
   Object.assign(cfg, { mode: "package", pkgDir: pkg, workingDir: pkg, concurrency: 2, user: userInfo().username, group: userInfo().username });
   cfg.executionNode = pinNode(cfg.dataDir);
   cfg.execPath = `${join(root, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin`;
-  const fixture = join(repository, "apps/server/tests/fixtures/lifecycle-cli.cjs");
+  const fixture = join(repository, "apps/server/tests/support/lifecycle-cli.cjs");
   for (const agent of ["claude", "codex"]) writeFileSync(join(root, "bin", agent), `#!${process.execPath}\nprocess.argv.splice(2,0,${JSON.stringify(agent)}); require(${JSON.stringify(fixture)});\n`, { mode: 0o700 });
   writeFileSync(join(root, "bin/sudo"), `#!${process.execPath}
 const { execFileSync } = require("node:child_process");

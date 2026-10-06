@@ -12,7 +12,7 @@ const number = { type: 'integer' };
 const clone = value => structuredClone(value);
 
 test('every App Server method referenced by the adapter has a schema contract', () => {
-  const source = readFileSync(new URL('../../apps/server/src/codex-interactive.ts', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../apps/server/src/modules/agents/adapters/outbound/codex-interactive.ts', import.meta.url), 'utf8');
   const declared = new Set(protocolContracts.flatMap(([, , methods]) => Object.keys(methods)));
   const referenced = [...source.matchAll(/"([a-zA-Z]+(?:\/[a-zA-Z]+)+|initialize|initialized)"/g)].map(match => match[1]);
   assert.ok(referenced.length > 10, 'Adapter method discovery must not become an empty check');
@@ -139,8 +139,8 @@ test('disabled paid repair records the failure but cannot invoke Codex', async (
 });
 test('metadata-only promotion and repair file allowlists reject workflow and gate changes', () => {
   assert.equal(allowedChanges(['packages/shared/src/agent-compatibility.json']), true);
-  assert.equal(allowedChanges(['apps/server/src/codex.ts']), false);
-  assert.equal(allowedChanges(['apps/server/src/codex.ts'], true), true);
+  assert.equal(allowedChanges(['apps/server/src/modules/agents/adapters/outbound/codex.ts']), false);
+  assert.equal(allowedChanges(['apps/server/src/modules/agents/adapters/outbound/codex.ts'], true), true);
   for (const path of ['.github/workflows/ci.yml', 'scripts/codex-compat-routine.mjs', 'AGENTS.md', 'private.log']) {
     assert.equal(allowedChanges([path], true), false);
   }
