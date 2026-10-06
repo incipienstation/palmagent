@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Experimental ADHD mode now opens Scrap Scout, a Phaser ricochet adventure with illustrated robot sprites, explosive chain reactions, upgrade choices, four rooms, and a boss encounter. Progress saves locally while task alerts remain available.
+
 ## 0.1.0-alpha.139
 
 ### Changed

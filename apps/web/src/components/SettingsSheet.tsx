@@ -138,7 +138,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                     <Switch id={adhdId} checked={adhdMode} onCheckedChange={setAdhdMode} aria-describedby={`${adhdId}-description`} />
                   </div>
                   <FieldDescription id={`${adhdId}-description`}>
-                    Play Echo Garden, a turn-based puzzle, while your agent works. Adds a game button to conversations and navigation. Saved on this device.
+                    Play Scrap Scout, a ricochet adventure, while your agent works. Adds a game button to conversations and navigation. Saved on this device.
                   </FieldDescription>
                 </Field>
               </FieldGroup>

@@ -14,11 +14,11 @@ import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
 import { useAdhdMode } from "../AdhdModeProvider";
-import { EchoGardenSheet } from "../games/echo-garden/EchoGardenSheet";
+import { ScrapScoutSheet } from "../games/scrap-scout/ScrapScoutSheet";
 
 const NavigationContext = createContext<{
   openNavigation: (trigger: HTMLButtonElement) => void;
-  openGarden?: (trigger: HTMLButtonElement) => void;
+  openGame?: (trigger: HTMLButtonElement) => void;
   desktopSidebar: boolean;
 } | null>(null);
 
@@ -31,7 +31,7 @@ export function AppNavigation({ tasks, conn, children }: {
 }) {
   const [open, setOpen] = useState(false);
   const { enabled: adhdMode } = useAdhdMode();
-  const [gardenOpen, setGardenOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
   const { repos } = useRepos();
   const [settingsOpen, setSettingsOpen] = useUpdateState("settings:open", false);
   const trigger = useRef<HTMLButtonElement | null>(null);
@@ -45,12 +45,12 @@ export function AppNavigation({ tasks, conn, children }: {
     trigger.current = element;
     setOpen(true);
   }, []);
-  const openGarden = useCallback((element: HTMLButtonElement) => {
+  const openGame = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
-    setGardenOpen(true);
+    setGameOpen(true);
   }, []);
   const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
-  const context = useMemo(() => ({ openNavigation, desktopSidebar, openGarden: adhdMode ? openGarden : undefined }), [openNavigation, desktopSidebar, adhdMode, openGarden]);
+  const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: adhdMode ? openGame : undefined }), [openNavigation, desktopSidebar, adhdMode, openGame]);
   const restoreFocus = () => {
     const target = trigger.current?.isConnected ? trigger.current : document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
     target?.focus();
@@ -74,9 +74,9 @@ export function AppNavigation({ tasks, conn, children }: {
             {active && <Check className="size-4" />}
           </Button>)}
           {adhdMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
-            if (open) showAfterClose(() => setGardenOpen(true));
-            else openGarden(event.currentTarget);
-          }}><Gamepad2 data-icon="inline-start" />Echo Garden</Button>}
+            if (open) showAfterClose(() => setGameOpen(true));
+            else openGame(event.currentTarget);
+          }}><Gamepad2 data-icon="inline-start" />Scrap Scout</Button>}
         </nav>
   );
   const pinnedNavigation = (pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
@@ -144,9 +144,9 @@ export function AppNavigation({ tasks, conn, children }: {
     </Drawer>
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
-    {adhdMode && <EchoGardenSheet open={gardenOpen} onOpenChange={setGardenOpen}
+    {adhdMode && <ScrapScoutSheet open={gameOpen} onOpenChange={setGameOpen}
       tasks={tasks} taskId={route.name === "task" ? route.id : undefined} conn={conn}
-      onReturn={taskId => { setGardenOpen(false); if (route.name !== "task" || route.id !== taskId) navigate(`/task/${encodeURIComponent(taskId)}`); }}
+      onReturn={taskId => { setGameOpen(false); if (route.name !== "task" || route.id !== taskId) navigate(`/task/${encodeURIComponent(taskId)}`); }}
       onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }} />}
   </NavigationContext.Provider>;
 }
