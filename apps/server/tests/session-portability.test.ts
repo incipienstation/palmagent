@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { AgentKind, TaskState } from "@palmagent/shared";
-import { compatibleAgentCli } from "@palmagent/shared";
+import { AGENT_CLI_COMPATIBILITY, compatibleAgentCli } from "@palmagent/shared";
 import { Db } from "../src/db.js";
 import { LocalAttachmentStorage } from "../src/attachments.js";
 import { Hub } from "../src/hub.js";
@@ -62,7 +62,11 @@ function message(agent: AgentKind, role: string, text: string) {
 
 test("CLI compatibility ranges reject unknown, prerelease and out-of-lane versions", () => {
   for (const version of ["0.154.0", "0.154.99", "0.155.0", "0.155.1", "0.156.0", "0.156.1", "0.157.0", "0.157.1", "0.157.2", "0.158.0", "0.159.0", "0.160.0"]) assert.equal(compatibleAgentCli("codex", version), true);
-  for (const version of ["0.153.0", "0.160.1", "0.161.0", "0.154.0-beta.1", "0.160.0-beta.1", "unknown", "1.0"]) assert.equal(compatibleAgentCli("codex", version), false);
+  const lane = AGENT_CLI_COMPATIBILITY.codex;
+  const [major, minor, patch] = lane.exclusiveMaximum.split(".").map(Number);
+  assert.equal(compatibleAgentCli("codex", lane.minimum), true);
+  assert.equal(compatibleAgentCli("codex", [major, minor, patch - 1].join(".")), true);
+  for (const version of ["0.153.0", lane.exclusiveMaximum, [major + 1, 0, 0].join("."), "0.154.0-beta.1", "0.160.0-beta.1", "unknown", "1.0"]) assert.equal(compatibleAgentCli("codex", version), false);
   assert.equal(compatibleAgentCli("claude", "2.1.268"), true);
   assert.equal(compatibleAgentCli("claude", "2.1.267"), false);
   assert.equal(compatibleAgentCli("claude", "2.2.0"), false);
