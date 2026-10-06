@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Long Composer drafts use scrollbar styling consistent with the rest of the app, while retaining native text editing and scrolling.
+
 ## 0.1.0-alpha.138
 
 ### Fixed
