@@ -39,7 +39,7 @@ test("call lifecycle updates count as one failed tool inside activity", () => {
   const rows = presentTranscript(log, "compact", true);
   const group = rows[0] as Activity;
   expect(activityLabel(group, "compact")).toContain("1 tool");
-  expect(activityLabel(group, "compact")).toBe("Working… · 1 tool · 1 failed");
+  expect(activityLabel(group, "compact")).toBe("Activity · 1 tool · 1 failed");
   expect(group.items).toEqual(log);
   expect(rows).toHaveLength(1);
 });

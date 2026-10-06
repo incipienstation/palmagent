@@ -363,7 +363,11 @@ Tap Send to deliver the draft to the current run, or start a run when idle.
 Hold Send to open the Send/Queue toggle. Selecting a mode does not submit; tap
 again to send. Queue applies to the current draft and resets after submission.
 Send shows the message immediately in the conversation. An inline Working label
-indicates pending delivery or an active turn. Queue lists only waiting turns;
+appears once at the conversation end while sending or waiting for the agent to
+produce output. It hides during reply output and while waiting for your answer
+or approval. New tool or reasoning activity can show it again; usage updates,
+late message metadata, and pauses between text chunks cannot. Activity summaries
+remain available separately from this waiting state. Queue lists only waiting turns;
 Send now moves a queued message into the conversation immediately and restores
 its queue position if the action fails. Unconfirmed or rejected delivery keeps
 recovery controls beside the affected message.
