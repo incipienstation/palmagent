@@ -492,7 +492,10 @@ test("scrolling away and back preserves a tool row's collapsed override", async 
     }
     return true;
   })).toBe(true);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = el.scrollHeight / 2; });
+  // Use browser input so wheel handling and the resulting scroll run in their
+  // normal order, rather than racing pending virtualizer layout in one script.
+  await viewport(page).hover();
+  await page.mouse.wheel(0, -3000);
   await expect(row).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");

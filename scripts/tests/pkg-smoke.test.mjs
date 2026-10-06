@@ -25,7 +25,7 @@ test("package smoke boots with scratch paths despite hostile inherited runtime s
       FUTURE_RUNTIME_OPTION: "must-not-inherit",
     }, scratch, 12345);
     const probe = execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-      import { config, validateConfig } from "./apps/server/src/config.ts";
+      import { config, validateConfig } from "./apps/server/src/composition/config.ts";
       validateConfig();
       console.log(JSON.stringify({
         socket: config.runnerSocket, db: config.dbPath,

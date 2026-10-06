@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodexRunner } from "../src/codex.js";
-import { InProcessBackend } from "../src/inproc-backend.js";
+import { CodexRunner } from "../src/modules/agents/adapters/outbound/codex.js";
+import { InProcessBackend } from "../src/modules/agents/adapters/outbound/inproc-backend.js";
 
 // Explicit, authenticated integration coverage; never runs in hermetic CI.
 export async function codexLiveMatrix() {

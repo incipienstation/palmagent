@@ -12,6 +12,8 @@ Guidance for coding agents maintaining the Palmagent repository.
 - Read linked references when they affect a decision. Keep searches and output focused; store full
   test logs outside the repository and inspect relevant excerpts.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
+- For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) and verify
+  module and layer boundaries with `pnpm architecture:check`.
 
 ## Product UI
 

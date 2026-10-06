@@ -16,8 +16,8 @@ await new Promise((resolve) => server.listen(0, "localhost", resolve));
 const origin = `https://localhost:${server.address().port}`;
 Object.assign(process.env, { AUTH_ENABLED: "1", AUTH_RP_ID: "localhost", AUTH_ORIGIN: origin,
   DISPATCHER_DATA_DIR: join(dir, "state"), REPO_ROOTS: dir, STATIC_DIR: resolve("../web/dist") });
-const { createRuntime } = await import("../../server/src/runtime.ts");
-const { createApp } = await import("../../server/src/http/app.ts");
+const { createRuntime } = await import("../../server/src/composition/server-runtime.ts");
+const { createApp } = await import("../../server/src/composition/http-app.ts");
 const { getRequestListener } = await import("../../server/node_modules/@hono/node-server/dist/index.mjs");
 const runtime = await createRuntime();
 const shutdown = new AbortController();

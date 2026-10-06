@@ -39,7 +39,8 @@ export function classifyChanges(paths, eventName = 'pull_request') {
     if (!path.startsWith('apps/web/tests/e2e/')) scope.types = scope.tooling = true;
     if (path.startsWith('apps/server/')) {
       scope.server = true;
-      if (path.startsWith('apps/server/src/cli/')) scope.package = true;
+      if (/^apps\/server\/src\/(bootstrap|composition|platform|modules\/installation)\//.test(path) ||
+          /^apps\/server\/src\/modules\/[^/]+\/(?:composition\.ts|adapters\/inbound\/cli\.ts)$/.test(path)) scope.package = true;
     } else if (path.startsWith('apps/web/')) {
       scope.web = true;
     } else if (path.startsWith('packages/shared/')) {

@@ -89,6 +89,9 @@ channel for a new installation. To opt into Preview, ask the plugin: **“Use Pr
 
 ## Development
 
+The [backend architecture policy](docs/ARCHITECTURE.md) defines feature ownership,
+ports, adapters, composition and dependency checks.
+
 Use the Node.js version in [`.nvmrc`](.nvmrc) and the pnpm version pinned in
 [`package.json`](package.json):
 

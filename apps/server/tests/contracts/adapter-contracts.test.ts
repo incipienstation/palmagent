@@ -1,0 +1,865 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { PERMISSIONS, type AnswerRequest, type QuestionRequest } from "@palmagent/shared";
+import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../../src/modules/agents/adapters/outbound/claude.js";
+import { buildCodexArgv, CodexRunner } from "../../src/modules/agents/adapters/outbound/codex.js";
+import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
+import { getRunner } from "../../src/modules/agents/adapters/outbound/runner.js";
+import type { Emit, RawEvent, StartArgs } from "../../src/modules/agents/domain/execution.js";
+import type { ProcHandle, ProcessBackend, SpawnSpec } from "../../src/modules/agents/application/ports/outbound/provider-process.js";
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class FakeProc implements ProcHandle {
+  readonly turnId: string;
+  readonly writes: string[] = [];
+  readonly kills: NodeJS.Signals[] = [];
+  closeCount = 0;
+  private writable = true;
+  private lineHandler: (seq: number, line: string) => void = () => {};
+  private stderrHandler: (text: string) => void = () => {};
+  private exitHandler: (code: number | null) => void = () => {};
+  private seq = 0;
+
+  constructor(turnId = "task-1") {
+    this.turnId = turnId;
+  }
+
+  onLine(cb: (seq: number, line: string) => void): void {
+    this.lineHandler = cb;
+  }
+
+  onStderr(cb: (text: string) => void): void {
+    this.stderrHandler = cb;
+  }
+
+  onExit(cb: (code: number | null) => void): void {
+    this.exitHandler = cb;
+  }
+
+  stdinWritable(): boolean {
+    return this.writable;
+  }
+
+  writeStdin(data: string): boolean {
+    if (!this.writable) return false;
+    this.writes.push(data);
+    return true;
+  }
+
+  closeStdin(): void {
+    this.closeCount++;
+    this.writable = false;
+  }
+
+  kill(signal: NodeJS.Signals): void {
+    this.kills.push(signal);
+  }
+
+  emit(value: unknown): void {
+    this.lineHandler(++this.seq, JSON.stringify(value));
+  }
+
+  stderr(text: string): void {
+    this.stderrHandler(text);
+  }
+
+  exit(code: number | null = 0): void {
+    this.writable = false;
+    this.exitHandler(code);
+  }
+}
+
+class FakeBackend implements ProcessBackend {
+  readonly proc: FakeProc;
+  readonly specs: SpawnSpec[] = [];
+  attachCalls: Array<{ turnId: string; fromSeq?: number }> = [];
+
+  constructor(proc = new FakeProc()) {
+    this.proc = proc;
+  }
+
+  agentRunner(agent: import("@palmagent/shared").AgentKind) { return getRunner(agent); }
+
+  start(spec: SpawnSpec): ProcHandle {
+    this.specs.push(spec);
+    return this.proc;
+  }
+
+  attach(turnId: string, fromSeq?: number): ProcHandle | undefined {
+    this.attachCalls.push({ turnId, fromSeq });
+    return this.proc;
+  }
+
+  async listLive(): Promise<string[]> {
+    return [this.proc.turnId];
+  }
+}
+
+function startArgs(overrides: Partial<StartArgs> = {}): StartArgs {
+  return {
+    taskId: "task-1",
+    cwd: "/workspace/repository",
+    prompt: "contract prompt",
+    ...overrides,
+  };
+}
+
+function captureEvents(): {
+  events: Array<{ event: RawEvent; seq?: number }>;
+  emit: Emit;
+} {
+  const events: Array<{ event: RawEvent; seq?: number }> = [];
+  return {
+    events,
+    emit: (event, seq) => events.push({ event, seq }),
+  };
+}
+
+function writtenJson(proc: FakeProc): any[] {
+  return proc.writes.map((line) => JSON.parse(line));
+}
+
+function eventSubtype(event: RawEvent | undefined): string | undefined {
+  if (!event?.payload || typeof event.payload !== "object") return undefined;
+  return "subtype" in event.payload && typeof event.payload.subtype === "string"
+    ? event.payload.subtype
+    : undefined;
+}
+
+test("Claude launch contract covers resume settings and safe permission fallback", () => {
+  assert.deepEqual(
+    buildClaudeArgv({
+      permission: "bypassPermissions",
+      model: "claude-contract-model",
+      effort: "high",
+      resumeId: "session-1",
+    }),
+    [
+      "-p",
+      "--input-format", "stream-json",
+      "--output-format", "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+      "--allow-dangerously-skip-permissions",
+      "--permission-mode", "bypassPermissions",
+      "--permission-prompt-tool", "stdio",
+      "--model", "claude-contract-model",
+      "--effort", "high",
+      "--resume", "session-1",
+    ],
+  );
+  const safeArgs = buildClaudeArgv({ permission: "unknown" });
+  assert.equal(safeArgs[safeArgs.indexOf("--permission-mode") + 1], "acceptEdits");
+});
+
+test("permission catalog values reach each adapter's native launch flag", () => {
+  const claudeValues = PERMISSIONS.claude.map(({ value }) => value);
+  assert.deepEqual(
+    claudeValues.map((permission) => buildClaudeArgv({ permission })[buildClaudeArgv({ permission }).indexOf("--permission-mode") + 1]),
+    claudeValues,
+  );
+  const codexValues = PERMISSIONS.codex.map(({ value }) => value);
+  assert.deepEqual(
+    codexValues.map((permission) => {
+      const argv = buildCodexArgv({ prompt: "catalog", permission });
+      return argv[argv.indexOf("--sandbox") + 1];
+    }),
+    codexValues,
+  );
+});
+
+test("Claude user-message contract keeps image blocks before the text block", () => {
+  assert.deepEqual(
+    buildClaudeUserMessage("contract prompt", [{ mediaType: "image/png", data: "cG5n" }]),
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "cG5n" },
+          },
+          { type: "text", text: "contract prompt" },
+        ],
+      },
+    },
+  );
+});
+
+test("Codex launch contract keeps dispatch and resume flag forms distinct", () => {
+  assert.deepEqual(
+    buildCodexArgv(
+      {
+        prompt: "dispatch prompt",
+        permission: "workspace-write",
+        model: "codex-contract-model",
+        effort: "high",
+      },
+      ["-i", "/tmp/contract-image.png"],
+    ),
+    [
+      "exec", "dispatch prompt",
+      "--json",
+      "--skip-git-repo-check",
+      "-c", "approval_policy=never",
+      "--sandbox", "workspace-write",
+      "-c", "model=codex-contract-model",
+      "-c", "model_reasoning_effort=high",
+      "-i", "/tmp/contract-image.png",
+    ],
+  );
+  assert.deepEqual(
+    buildCodexArgv({
+      prompt: "resume prompt",
+      resumeId: "thread-1",
+      permission: "read-only",
+    }),
+    [
+      "exec", "resume", "thread-1", "resume prompt",
+      "--json",
+      "--skip-git-repo-check",
+      "-c", "approval_policy=never",
+      "-c", "sandbox_mode=read-only",
+    ],
+  );
+  assert.deepEqual(
+    buildCodexArgv({ prompt: "safe default", permission: "unknown" }).slice(-2),
+    ["--sandbox", "workspace-write"],
+  );
+  const legacyNetwork = buildCodexArgv({ prompt: "legacy network", permission: "workspace-write-net" });
+  assert.deepEqual(legacyNetwork.slice(legacyNetwork.indexOf("--sandbox")), [
+    "--sandbox", "workspace-write",
+    "-c", "sandbox_workspace_write.network_access=true",
+  ]);
+});
+
+test("Claude runner owns prompt, event normalization, questions, steer, and stop", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new ClaudeRunner().start(
+    startArgs({ permission: "plan" }),
+    capture.emit,
+    backend,
+  );
+
+  assert.equal(backend.specs.length, 1);
+  assert.equal(backend.specs[0].command, "claude");
+  assert.equal(backend.specs[0].cwd, "/workspace/repository");
+  assert.deepEqual(writtenJson(backend.proc)[0], {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "contract prompt" }],
+    },
+  });
+
+  backend.proc.emit({
+    type: "system",
+    subtype: "init",
+    session_id: "claude-session",
+    model: "claude-contract-model",
+    cwd: "/workspace/repository",
+    tools: ["Read"],
+  });
+  backend.proc.emit({
+    type: "stream_event",
+    event: {
+      type: "content_block_delta",
+      delta: { type: "text_delta", text: "hello" },
+    },
+  });
+  backend.proc.emit({
+    type: "assistant",
+    message: {
+      content: [{ type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "README.md" } }],
+    },
+  });
+  backend.proc.emit({
+    type: "control_request",
+    request_id: "approval-1",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "Bash",
+      input: { command: "pnpm test" },
+      reason: "Run the requested verification",
+    },
+  });
+  backend.proc.emit({
+    type: "control_request",
+    request_id: "question-1",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      input: {
+        questions: [{ question: "Continue?", header: "Confirm", options: [{ label: "Yes", description: "Continue" }], multiSelect: false }],
+      },
+    },
+  });
+
+  assert.deepEqual(capture.events.map(({ event, seq }) => [event.kind, seq]), [
+    ["status", 1],
+    ["assistant_text", 2],
+    ["tool_call", 3],
+    ["approval_request", 4],
+    ["question", 5],
+  ]);
+
+  assert.equal(handle.approve("approve"), true);
+  assert.deepEqual(writtenJson(backend.proc).at(-1), {
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "approval-1",
+      response: { behavior: "allow", updatedInput: { command: "pnpm test" } },
+    },
+  });
+
+  const answer: AnswerRequest = {
+    requestId: "question-1",
+    answers: [{ question: "Continue?", selected: ["Yes"] }],
+  };
+  assert.equal(handle.answer(answer), true);
+  assert.deepEqual(writtenJson(backend.proc).at(-1), {
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "question-1",
+      response: {
+        behavior: "allow",
+        updatedInput: {
+          questions: [{ question: "Continue?", header: "Confirm", options: [{ label: "Yes", description: "Continue" }], multiSelect: false }],
+          answers: { "Continue?": "Yes" },
+        },
+      },
+    },
+  });
+
+  assert.equal(handle.steer("steered prompt"), true);
+  assert.equal(writtenJson(backend.proc).at(-1).request.subtype, "interrupt");
+  await delay(300);
+  assert.equal(writtenJson(backend.proc).at(-1).message.content[0].text, "steered prompt");
+  assert.equal(handle.interrupt(), true);
+  handle.cancel();
+  assert.deepEqual(backend.proc.kills, ["SIGINT"]);
+
+  backend.proc.stderr("provider warning");
+  backend.proc.exit(0);
+  await handle.done;
+  assert.equal(eventSubtype(capture.events.at(-2)?.event), "stderr");
+  assert.equal(eventSubtype(capture.events.at(-1)?.event), "process_exit");
+});
+
+test("Claude reattach restores a pending question without replaying the prompt", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const pendingInput = {
+    requestId: "question-reattach",
+    questions: [{
+      question: "Resume?",
+      header: "Resume",
+      options: [{ label: "Resume", description: "Continue the turn" }],
+      multiSelect: false,
+    }],
+  };
+  const handle = new ClaudeRunner().start(
+    startArgs({ reattach: true, resumeFromSeq: 12, pendingInput }),
+    capture.emit,
+    backend,
+  );
+
+  assert.deepEqual(backend.attachCalls, [{ turnId: "task-1", fromSeq: 0 }]);
+  assert.equal(backend.specs.length, 0);
+  backend.proc.emit({
+    type: "control_request", request_id: "already-answered",
+    request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", input: pendingInput },
+  });
+  backend.proc.emit({
+    type: "control_request", request_id: "already-denied",
+    request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "true" } },
+  });
+  assert.equal(backend.proc.writes.length, 0);
+  assert.equal(capture.events.some(({ event }) => event.kind === "question"), false);
+  assert.equal(handle.answer({
+    requestId: "question-reattach",
+    answers: [{ question: "Resume?", selected: ["Resume"] }],
+  }), true);
+  assert.equal(writtenJson(backend.proc)[0].response.request_id, "question-reattach");
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Claude replayed activity supersedes an earlier result's idle-close timer", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new ClaudeRunner().start(
+    startArgs({ reattach: true, resumeFromSeq: 2 }),
+    capture.emit,
+    backend,
+  );
+  backend.proc.emit({ type: "result", is_error: false });
+  backend.proc.emit({
+    type: "stream_event",
+    event: { type: "content_block_delta", delta: { type: "text_delta", text: "continuing" } },
+  });
+  await delay(1600);
+  assert.equal(backend.proc.closeCount, 0);
+  backend.proc.emit({ type: "result", is_error: false });
+  await delay(1600);
+  assert.equal(backend.proc.closeCount, 1);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("In-process missing executable reports a failed exit", async () => {
+  const dir = mkdtempSync(join(process.env.TMPDIR || "/tmp", "palmagent-missing-cli-"));
+  try {
+    const proc = new InProcessBackend().start({
+      turnId: "missing-command", command: join(dir, "absent"), argv: [], cwd: dir,
+    });
+    const code = await new Promise<number | null>((resolve) => proc.onExit(resolve));
+    assert.equal(code, -1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Claude stop still closes stdin when output drains without a result", async () => {
+  const backend = new FakeBackend();
+  const handle = new ClaudeRunner().start(
+    startArgs({ reattach: true, resumeFromSeq: 0 }), () => {}, backend,
+  );
+  assert.equal(handle.interrupt(), true);
+  backend.proc.emit({
+    type: "stream_event",
+    event: { type: "content_block_delta", delta: { type: "text_delta", text: "draining" } },
+  });
+  await delay(1600);
+  assert.equal(backend.proc.closeCount, 1);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Claude result closes idle stdin so one process remains one turn", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new ClaudeRunner().start(startArgs(), capture.emit, backend);
+  backend.proc.emit({ type: "result", subtype: "success", result: "done" });
+  await delay(1_600);
+  assert.equal(backend.proc.closeCount, 1);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Codex runner normalizes JSONL, has no interactive channel, and cleans images", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new CodexRunner().start(
+    startArgs({
+      images: [{ mediaType: "image/png", data: Buffer.from("contract-image").toString("base64") }],
+      permission: "danger-full-access",
+    }),
+    capture.emit,
+    backend,
+  );
+
+  assert.equal(backend.specs[0].command, "codex");
+  assert.equal(backend.proc.closeCount, 1);
+  const imageIndex = backend.specs[0].argv.indexOf("-i");
+  assert.notEqual(imageIndex, -1);
+  const imagePath = backend.specs[0].argv[imageIndex + 1];
+  assert.equal(existsSync(imagePath), true);
+
+  backend.proc.emit({ type: "thread.started", thread_id: "codex-thread" });
+  backend.proc.emit({
+    type: "item.completed",
+    item: { type: "command_execution", command: "pwd", status: "completed", aggregated_output: "/workspace/repository", exit_code: 0 },
+  });
+  backend.proc.emit({ type: "item.completed", item: { type: "agent_message", text: "complete" } });
+  backend.proc.emit({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } });
+
+  assert.deepEqual(capture.events.map(({ event, seq }) => [event.kind, seq]), [
+    ["status", 1],
+    ["tool_call", 2],
+    ["tool_result", 2],
+    ["assistant_text", 3],
+    ["result", 4],
+  ]);
+  assert.equal(handle.steer("later"), false);
+  assert.equal(handle.interrupt(), false);
+  assert.equal(handle.answer({ requestId: "none", answers: [] }), false);
+  handle.cancel();
+  assert.deepEqual(backend.proc.kills, ["SIGINT"]);
+
+  backend.proc.exit(0);
+  await handle.done;
+  assert.equal(existsSync(imagePath), false);
+  assert.equal(eventSubtype(capture.events.at(-1)?.event), "process_exit");
+});
+
+test("Codex diagnostic items do not fail successful turns, while terminal errors remain errors", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new CodexRunner().start(startArgs(), e => events.push(e), backend);
+  backend.proc.emit({ type: "thread.started", thread_id: "thread-1" });
+  backend.proc.emit({ type: "item.completed", item: { id: "warning", type: "error", message: "Unrecognized configuration setting." } });
+  backend.proc.emit({ type: "turn.started" });
+  backend.proc.emit({ type: "turn.completed", usage: {} });
+  assert.equal(events.some(e => e.kind === "error"), false);
+  assert.deepEqual(events[1].payload, { subtype: "diagnostic", message: "Unrecognized configuration setting." });
+  assert.equal(events.at(-1)?.kind, "result");
+  backend.proc.emit({ type: "error", message: "Provider connection failed" });
+  backend.proc.emit({ type: "turn.failed", error: { message: "Invalid model" } });
+  assert.deepEqual(events.slice(-2).map(e => e.kind), ["error", "error"]);
+  backend.proc.exit(1); await handle.done;
+});
+
+test("Codex exit without a terminal event is an error even after diagnostics and exit zero", async () => {
+  for (const interactive of [false, true]) for (const reattach of [false, true]) {
+    const backend = new FakeBackend(), events: RawEvent[] = [];
+    const handle = new CodexRunner().start(startArgs({ reattach, interactive }), e => events.push(e), backend);
+    backend.proc.emit({ type: "item.completed", item: { type: "error", message: "Diagnostic" } });
+    backend.proc.exit(0); await handle.done;
+    assert.equal(events.at(-2)?.kind, "error");
+    assert.match((events.at(-2)?.payload as { message: string }).message, /before a terminal turn result/);
+    assert.equal((events.at(-2)?.payload as { code: string }).code, "turn_result_missing");
+    assert.equal(eventSubtype(events.at(-1)), "process_exit");
+  }
+});
+
+test("live smoke escalates to SIGKILL when a CLI ignores its timeout interrupt", async () => {
+  const binDir = mkdtempSync(join(tmpdir(), "palmagent-smoke-bin-"));
+  const fakeCodex = join(binDir, "codex");
+  const interruptSeen = join(binDir, "interrupt-seen");
+  writeFileSync(fakeCodex, [
+    "#!/usr/bin/env node",
+    "process.on('SIGINT', () => require('node:fs').writeFileSync(process.env.PALMAGENT_FAKE_SIGNAL_FILE, 'seen'));",
+    "setInterval(() => {}, 1_000);",
+    "",
+  ].join("\n"));
+  chmodSync(fakeCodex, 0o755);
+
+  try {
+    const startedAt = Date.now();
+    const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        ["--import", "tsx", "scripts/adapter-live-smoke.mjs", "--", "--agent", "codex"],
+        {
+          cwd: new URL("../..", import.meta.url),
+          env: {
+            ...process.env,
+            PATH: `${binDir}:${process.env.PATH ?? ""}`,
+            PALMAGENT_ADAPTER_SMOKE_TIMEOUT_MS: "500",
+            PALMAGENT_ADAPTER_SMOKE_FORCE_KILL_MS: "50",
+            PALMAGENT_FAKE_SIGNAL_FILE: interruptSeen,
+          },
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      );
+      let stderr = "";
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.once("error", reject);
+      child.once("close", (code) => resolve({ code, stderr }));
+    });
+
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /codex adapter live smoke timed out/);
+    assert.equal(existsSync(interruptSeen), true, "fake CLI did not receive and ignore SIGINT");
+    assert(Date.now() - startedAt < 5_000, "timeout escalation did not terminate promptly");
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("live smoke kills descendants holding pipes after their wrapper exits", {
+  skip: process.platform === "win32",
+}, async () => {
+  const binDir = mkdtempSync(join(tmpdir(), "palmagent-smoke-tree-"));
+  const fakeCodex = join(binDir, "codex");
+  const leaderFile = join(binDir, "leader");
+  const interruptFile = join(binDir, "interrupt");
+  const cwdFile = join(binDir, "cwd");
+  const descendant = [
+    "process.on('SIGINT', () => require('node:fs').writeFileSync(process.env.PALMAGENT_FAKE_SIGNAL_FILE, 'seen'));",
+    "setInterval(() => {}, 1000);",
+  ].join("\n");
+  writeFileSync(fakeCodex, [
+    "#!/usr/bin/env node",
+    "const fs = require('node:fs');",
+    "fs.writeFileSync(process.env.PALMAGENT_FAKE_LEADER_FILE, String(process.pid));",
+    "fs.writeFileSync(process.env.PALMAGENT_FAKE_CWD_FILE, process.cwd());",
+    `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'inherit' });`,
+    "setInterval(() => {}, 1000);",
+  ].join("\n"));
+  chmodSync(fakeCodex, 0o755);
+
+  const child = spawn(process.execPath,
+    ["--import", "tsx", "scripts/adapter-live-smoke.mjs", "--agent", "codex"], {
+      cwd: new URL("../..", import.meta.url),
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+        PALMAGENT_ADAPTER_SMOKE_TIMEOUT_MS: "1000",
+        PALMAGENT_ADAPTER_SMOKE_FORCE_KILL_MS: "100",
+        PALMAGENT_FAKE_LEADER_FILE: leaderFile,
+        PALMAGENT_FAKE_SIGNAL_FILE: interruptFile,
+        PALMAGENT_FAKE_CWD_FILE: cwdFile,
+      },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  let watchdog: NodeJS.Timeout | undefined;
+  try {
+    const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      watchdog = setTimeout(() => reject(new Error("live smoke hung on descendant pipes")), 5000);
+      let stderr = "";
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.once("error", reject);
+      child.once("close", (code) => resolve({ code, stderr }));
+    });
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /codex adapter live smoke timed out/);
+    assert.equal(existsSync(interruptFile), true, "descendant must receive and ignore SIGINT");
+    assert.equal(existsSync(readFileSync(cwdFile, "utf8")), false, "smoke must remove its working directory");
+  } finally {
+    clearTimeout(watchdog);
+    if (existsSync(leaderFile)) {
+      try {
+        process.kill(-Number(readFileSync(leaderFile, "utf8")), "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+    child.kill("SIGKILL");
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude preserves message identity and explicit progress/final boundaries", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new ClaudeRunner().start(startArgs(), capture.emit, backend);
+  for (const [id, reason, text] of [["m1", "tool_use", "Checking files"], ["m2", "end_turn", "Finished"]]) {
+    backend.proc.emit({ type: "stream_event", event: { type: "message_start", message: { id } } });
+    backend.proc.emit({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
+    backend.proc.emit({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: reason } } });
+    backend.proc.emit({ type: "stream_event", event: { type: "message_stop" } });
+  }
+  assert.deepEqual(capture.events.map(({ event }) => event.payload), [
+    { text: "Checking files", messageId: "m1" },
+    { subtype: "assistant_message", messageId: "m1", phase: "progress" },
+    { text: "Finished", messageId: "m2" },
+    { subtype: "assistant_message", messageId: "m2", phase: "final" },
+  ]);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Codex preserves supplied message phases and stable tool identities without guessing legacy phases", async () => {
+  const backend = new FakeBackend();
+  const capture = captureEvents();
+  const handle = new CodexRunner().start(startArgs(), capture.emit, backend);
+  for (const [id, phase] of [["m1", "commentary"], ["m2", "final_answer"], ["m3", undefined]]) {
+    backend.proc.emit({ type: "item.completed", item: { type: "agent_message", id, phase, text: id } });
+  }
+  backend.proc.emit({ type: "item.started", item: { type: "command_execution", id: "t1", command: "false", status: "in_progress" } });
+  backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "t1", command: "false", status: "failed", exit_code: 1 } });
+  const data = capture.events.map(({ event }) => event.payload as Record<string, unknown>);
+  assert.deepEqual(data.slice(0, 3), [
+    { text: "m1", messageId: "m1", phase: "progress" },
+    { text: "m2", messageId: "m2", phase: "final" },
+    { text: "m3", messageId: "m3" },
+  ]);
+  assert.equal(data[3].id, "t1");
+  assert.equal(data[4].id, "t1");
+  assert.equal(data[5].tool_use_id, "t1");
+  assert.equal(data[5].exit_code, 1);
+  backend.proc.exit(0);
+  await handle.done;
+});
+
+test("Codex and Claude PR creation evidence follows their normalized call/result contracts", async () => {
+  const { PrEvidence } = await import("../../src/modules/tasks/adapters/outbound/pr-evidence.js");
+  const url = "https://github.com/acme/sample-app/pull/42";
+  for (const agent of ["codex", "claude"] as const) {
+    const backend = new FakeBackend();
+    const tracker = new PrEvidence();
+    const found: string[] = [];
+    const runner = agent === "codex" ? new CodexRunner() : new ClaudeRunner();
+    const handle = runner.start(startArgs(), (raw) => found.push(...tracker.accept({ ...raw, agent })), backend);
+    if (agent === "codex") {
+      backend.proc.emit({ type: "item.started", item: { type: "command_execution", id: "create", command: "gh pr create", status: "in_progress", aggregated_output: "", exit_code: null } });
+      backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "read", command: "cat fixture.ts", status: "completed", aggregated_output: url, exit_code: 0 } });
+      assert.deepEqual(found, []);
+      backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "create", command: "gh pr create", status: "completed", aggregated_output: url, exit_code: 0 } });
+    } else {
+      backend.proc.emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "create", name: "Bash", input: { command: "gh pr create" } }, { type: "tool_use", id: "read", name: "Read", input: { file_path: "fixture.ts" } }] } });
+      backend.proc.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read", content: url }] } });
+      assert.deepEqual(found, []);
+      backend.proc.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "create", content: url }] } });
+    }
+    assert.deepEqual(found, [url]);
+    backend.proc.exit(0);
+    await handle.done;
+  }
+});
+
+test("Codex interactive adapter acknowledges Send, uses the active turn, and reconstructs replay without resending", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const runner = new CodexRunner();
+  const args = startArgs({ interactive: true, messageId: "initial" });
+  const handle = runner.start(args, e => events.push(e), backend);
+  assert.equal(backend.specs[0].argv[0], "app-server");
+  backend.proc.emit({ id: "initialize", result: {} });
+  backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  const sent = handle.send!("change direction", undefined, "message-1");
+  const request = writtenJson(backend.proc).at(-1);
+  assert.equal(request.method, "turn/steer");
+  assert.equal(request.params.expectedTurnId, "turn-1");
+  let resolved = false; void sent.then(() => { resolved = true; });
+  await Promise.resolve(); assert.equal(resolved, false, "stdin writes are not delivery acknowledgements");
+  backend.proc.emit({ id: "message:message-1", result: { turnId: "turn-1" } });
+  assert.equal(await sent, "delivered");
+  backend.proc.emit({ method: "item/agentMessage/delta", params: { threadId: "thread-1", itemId: "answer", delta: "Public answer" } });
+  backend.proc.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } } });
+  assert.equal(await handle.send!("too late", undefined, "late"), "rejected");
+  backend.proc.exit(0); await handle.done;
+  assert.equal(events.filter(e => e.kind === "assistant_text").length, 1);
+
+  const replay = new FakeBackend();
+  const recovered = runner.start({ ...args, reattach: true }, () => {}, replay);
+  replay.proc.emit({ id: "initialize", result: {} });
+  replay.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  replay.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  assert.equal(replay.proc.writes.length, 0);
+  assert.equal(recovered.interrupt(), true);
+  assert.equal(writtenJson(replay.proc).at(-1).method, "turn/interrupt");
+  replay.proc.exit(0); await recovered.done;
+});
+
+test("Claude interactive Send waits for interruption and echoed input; Stop wins before delivery", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new ClaudeRunner().start(startArgs({ interactive: true }), e => events.push(e), backend);
+  const sent = handle.send!("new instruction", undefined, "message-1");
+  assert.equal(writtenJson(backend.proc).at(-1).request.subtype, "interrupt");
+  await delay(280);
+  assert.equal(writtenJson(backend.proc).at(-1).type, "control_request", "a fixed timer must not deliver the prompt");
+  backend.proc.emit({ type: "result", is_error: true });
+  assert.equal(writtenJson(backend.proc).at(-1).uuid, "message-1");
+  backend.proc.emit({ type: "user", uuid: "message-1", message: { role: "user", content: [{ type: "text", text: "new instruction" }] } });
+  assert.equal(await sent, "delivered");
+  const cancelled = handle.send!("must not arrive", undefined, "message-2");
+  handle.interrupt(); assert.equal(await cancelled, "rejected");
+  backend.proc.emit({ type: "result", is_error: true });
+  assert.equal(writtenJson(backend.proc).some(m => m.uuid === "message-2"), false);
+  backend.proc.exit(0); await handle.done;
+});
+
+for (const rpcId of [17, "17"]) test(`Codex questions retain ${typeof rpcId} RPC ids and distinct question ids`, async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new CodexRunner().start(startArgs({ interactive: true }), e => events.push(e), backend);
+  backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  const before = backend.proc.writes.length;
+  backend.proc.emit({ id: rpcId, method: "item/tool/requestUserInput", params: { questions: [
+    { id: "first", header: "First", question: "Choose", options: [{ label: "Yes", description: "Proceed" }] },
+    { id: "second", header: "Second", question: "Choose", options: null },
+  ] } });
+  assert.equal(backend.proc.writes.length, before, "questions must not be auto-answered");
+  const pending = events.find(e => e.kind === "question")!.payload as QuestionRequest;
+  assert.equal(pending.requestId, JSON.stringify(rpcId));
+  assert.deepEqual(pending.questions[1].options, []);
+  assert.equal(await handle.answer({ requestId: pending.requestId, answers: [{ question: "Choose", selected: ["Yes"] }] }), false);
+  const request = { requestId: pending.requestId, answers: [
+    { questionId: "first", question: "Choose", selected: ["Yes"] },
+    { questionId: "second", question: "Choose", selected: [], notes: "Custom answer" },
+  ] };
+  const write = backend.proc.writeStdin.bind(backend.proc);
+  backend.proc.writeStdin = () => false;
+  assert.equal(await handle.answer(request), false);
+  backend.proc.writeStdin = write;
+  assert.equal(await handle.answer(request), true, "a failed write keeps the pending request");
+  assert.deepEqual(writtenJson(backend.proc).at(-1), { jsonrpc: "2.0", id: rpcId,
+    result: { answers: { first: { answers: ["Yes"] }, second: { answers: ["Custom answer"] } } } });
+  assert.equal(await handle.answer(request), false, "answers cannot be sent twice");
+  backend.proc.exit(0); await handle.done;
+});
+
+test("Codex restores only the pending question, supports Skip, and clears resolved requests", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const pendingInput: QuestionRequest = { requestId: '"current"', questions: [{ id: "choice", question: "Continue?", options: [] }] };
+  const handle = new CodexRunner().start(startArgs({ interactive: true, reattach: true, resumeFromSeq: 2, pendingInput }), e => events.push(e), backend);
+  for (const id of ["old", "current"]) backend.proc.emit({ id, method: "item/tool/requestUserInput", params: { questions: pendingInput.questions } });
+  assert.equal(backend.proc.writes.length, 0);
+  assert.equal(events.length, 0);
+  assert.equal(await handle.answer({ requestId: '"old"', answers: [] }), false);
+  assert.equal(await handle.answer({ requestId: pendingInput.requestId, answers: [] }), true);
+  assert.deepEqual(writtenJson(backend.proc).at(-1), { jsonrpc: "2.0", id: "current", result: { answers: {} } });
+  backend.proc.emit({ id: "next", method: "item/tool/requestUserInput", params: { questions: pendingInput.questions } });
+  backend.proc.emit({ method: "serverRequest/resolved", params: { requestId: "next" } });
+  assert.equal(await handle.answer({ requestId: '"next"', answers: [] }), false);
+  assert.equal((events.at(-1)?.payload as { subtype: string }).subtype, "input_resolved");
+  backend.proc.exit(0); await handle.done;
+});
+
+test("Codex App Server retains successful PR creation evidence", async () => {
+  const { PrEvidence } = await import("../../src/modules/tasks/adapters/outbound/pr-evidence.js");
+  const tracker = new PrEvidence(), found: string[] = [], backend = new FakeBackend();
+  const handle = new CodexRunner().start(startArgs({ interactive: true }), e => found.push(...tracker.accept({ ...e, agent: "codex" })), backend);
+  backend.proc.emit({ id: "initialize", result: {} });
+  backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  backend.proc.emit({ method: "item/started", params: { threadId: "thread-1", item: { id: "create", type: "commandExecution", command: "gh pr create --title Example --body Example" } } });
+  backend.proc.emit({ method: "item/completed", params: { threadId: "thread-1", item: { id: "create", type: "commandExecution", exitCode: 0, aggregatedOutput: "https://github.com/acme/sample-app/pull/42" } } });
+  assert.deepEqual(found, ["https://github.com/acme/sample-app/pull/42"]);
+  backend.proc.exit(0); await handle.done;
+});
+
+test("explicit skills reach native initial and mid-turn inputs for both adapters", async () => {
+  const skills = [{ id: "fixture-skill", name: "palmagent:doctor", source: "palmagent", pluginId: "palmagent@palmagent", path: "/plugins/palmagent/skills/doctor/SKILL.md" }];
+  for (const agent of ["codex", "claude"] as const) {
+    const backend = new FakeBackend();
+    const runner = agent === "codex" ? new CodexRunner() : new ClaudeRunner();
+    const handle = runner.start(startArgs({ interactive: true, skills }), () => {}, backend);
+    if (agent === "codex") {
+      backend.proc.emit({ id: "initialize", result: {} });
+      backend.proc.emit({ id: "session", result: { thread: { id: "thread" } } });
+      assert.equal(writtenJson(backend.proc).at(-1).params.input[1].type, "skill");
+      backend.proc.emit({ id: "start", result: { turn: { id: "turn" } } });
+      const sent = handle.send!("Check again", undefined, "skill-message", skills);
+      assert.deepEqual(writtenJson(backend.proc).at(-1).params.input[1], { type: "skill", name: skills[0].name, path: skills[0].path });
+      backend.proc.emit({ id: "message:skill-message", result: { turnId: "turn" } });
+      assert.equal(await sent, "delivered");
+    } else {
+      assert.ok(JSON.stringify(writtenJson(backend.proc).at(-1)).includes("/palmagent:doctor"));
+      const sent = handle.send!("Check again", undefined, "skill-message", skills);
+      backend.proc.emit({ type: "result", is_error: true });
+      assert.ok(JSON.stringify(writtenJson(backend.proc).at(-1)).includes("/palmagent:doctor Check again"));
+      backend.proc.emit({ type: "user", uuid: "skill-message", message: { role: "user", content: [{ type: "text", text: "/palmagent:doctor Check again" }] } });
+      assert.equal(await sent, "delivered");
+    }
+    backend.proc.exit(0); await handle.done;
+  }
+});
+
+
+test("headless Codex receives sampled frames as image files and cleans them after the turn", async () => {
+  const backend = new FakeBackend();
+  const images = [{ mediaType: "image/png", data: Buffer.from("first-frame").toString("base64") }, { mediaType: "image/jpeg", data: Buffer.from("last-frame").toString("base64") }];
+  const handle = new CodexRunner().start(startArgs({ images: [{ mediaType: "video/webm", data: "not-forwarded", video: { duration: 4,
+    frames: images.map((image, index) => ({ timestamp: index * 3, image })) } }] }), () => {}, backend);
+  const argv = backend.specs[0].argv, paths = argv.flatMap((value, index) => value === "-i" ? [argv[index + 1]] : []);
+  assert.equal(paths.length, 2);
+  assert.deepEqual(paths.map(path => readFileSync(path).toString()), ["first-frame", "last-frame"]);
+  assert.match(argv[1], /0.00s, 3.00s/);
+  assert.match(argv[1], /audio and motion between frames are not included/);
+  assert(!argv.includes("not-forwarded"));
+  backend.proc.emit({ type: "turn.completed", usage: {} }); backend.proc.exit(0); await handle.done;
+  assert(paths.every(path => !existsSync(path)));
+});
