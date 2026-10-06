@@ -232,10 +232,12 @@ async function shipJob(repository, state, save) {
   }
   state.pr = pr.html_url; state.stage = 'pr'; await save();
   console.log('Compatibility PR: ' + state.pr);
-  // Checks can take a few seconds to appear after PR creation. Never treat an
-  // empty required-check list as success.
+  // The required aggregate job may not exist until all its dependencies finish.
+  // Wait for its registration, not just the first few seconds after PR creation.
+  // Never treat an empty required-check list as success.
   let checks;
-  for (let attempt = 0; attempt < 10; attempt++) {
+  const checkDeadline = Date.now() + 20 * 60_000;
+  while (Date.now() < checkDeadline) {
     try {
       checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket'],
         { timeout: 60_000, label: 'Read required checks' }));
@@ -243,8 +245,9 @@ async function shipJob(repository, state, save) {
       try { checks = JSON.parse(error.output); } catch { checks = null; }
     }
     if (checks?.some(check => check.name === 'validate')) break;
-    await new Promise(ok => setTimeout(ok, 3000));
+    await new Promise(ok => setTimeout(ok, 30_000));
   }
+  assert(checks?.some(check => check.name === 'validate'), 'Required CI is not registered yet; resume this PR on the next run');
   // gh returns a nonzero exit for pending checks, so wait via its standard
   // watch command and verify the resulting list separately.
   await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--watch', '--fail-fast', '--interval', '30'],
