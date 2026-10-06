@@ -117,7 +117,9 @@ export function createArena(parent: HTMLElement, initial: Run, onAim: (angle: nu
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, audio: { noAudio: true },
     input: { keyboard: false, mouse: { preventDefaultWheel: false }, touch: { capture: true } }, banner: false,
     fps: { target: 60, forceSetTimeOut: false } });
-  const resize = new ResizeObserver(() => { if (game.isBooted) game.scale.refresh(); });
+  const resize = new ResizeObserver(() => {
+    if (game.isBooted) { game.scale.getParentBounds(); game.scale.refresh(); }
+  });
   resize.observe(parent);
   return () => { cancelled = true; resize.disconnect(); game.destroy(true); };
 }
