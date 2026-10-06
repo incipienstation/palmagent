@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.134
+
 ### Added
 
 - Experimental ADHD mode adds Echo Garden, a turn-based puzzle with 12 levels, undo, and saved progress, alongside live task status while agents work. Enable it in Settings to reveal the game.
