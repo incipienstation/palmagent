@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.136
+
 ### Fixed
 
 - Conversations show a connection-waiting state when history loading is paused offline and resume on reconnect, while keeping cached messages and the composer visible.
