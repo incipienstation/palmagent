@@ -30,7 +30,10 @@ A missing Stable release never falls back to Preview.
 
 ## Spaces
 
-**All spaces** shows tasks across every connected Space. Open **Spaces** to search
+**Tasks** is the home screen, with tasks grouped by Space. Use **Answer** or
+**Approval** to find tasks waiting for you, or **Filters** for another status.
+Each group can be collapsed and has controls to open its Space or start a task
+there. Search and filters reveal matching tasks even in collapsed groups. Open **Spaces** to search
 by name or folder, enter a Space, or connect another folder with **Add Space**.
 Spaces with the same name show a short folder qualifier. Full folder paths and
 **Terminals** are available in each Space's details.
@@ -38,7 +41,7 @@ Spaces with the same name show a short folder qualifier. Full folder paths and
 A Space includes all of its Worktree tasks. Use **Filters** inside the Space to
 narrow the list to a Worktree or status. Filtering changes the list, not the
 execution folder for a new task. Back restores the previous list's search and
-reading position. All spaces always remains the complete view.
+reading position. Tasks also remembers which Space groups you collapsed.
 
 Pull down on Tasks or Spaces to refresh their data in place. Search, filters, and
 the current screen stay available; a failed refresh keeps the existing list.
@@ -46,7 +49,7 @@ the current screen stay available; a failed refresh keeps the existing list.
 ## Start a chat
 
 Open **New task**, check the **Space** above the composer, and send your first
-message. Starting inside a Space selects it. From All spaces, the last-used Space
+message. Starting inside a Space selects it. From the global New task button, the last-used Space
 is shown; without one, choose a Space explicitly. Use the same picker to add a
 Space. Model, effort, permission, and optional Git worktree isolation are in the
 composer settings.
@@ -159,9 +162,8 @@ configured roots.
 
 ## Sessions and working directories
 
-The Tasks screen has a working-directory sidebar on desktop and a directory picker
-on mobile. Isolated task worktrees appear as separate directories; selecting a
-folder filters every status group and is remembered on that browser.
+The Tasks screen groups sessions by Space. Open a Space and use **Filters → Worktree**
+to narrow its tasks to a working directory. Each Space remembers its own filters.
 
 Open a task's **Resume in shell** panel after its turn finishes. **Release to shell**
 pauses Palmagent control and provides a quoted native `codex resume` or `claude --resume`

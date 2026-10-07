@@ -1,21 +1,57 @@
 import { test, expect } from "@playwright/test";
+import { tasks, repos } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
 
 test.describe("inbox", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "All spaces" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
     // Wait for the task snapshot to arrive over SSE (an idle task's title).
     await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   });
 
-  test("sets the inbox title and renders every status group within the viewport", async ({ page }) => {
-    await expect(page).toHaveTitle("All spaces · PalmAgent");
+  test("groups every task once by Space and retains explicit row status", async ({ page }) => {
+    await expect(page).toHaveTitle("Tasks · PalmAgent");
     await assertViewportLocked(page);
-    // Nothing the backend can emit may silently vanish from the inbox.
-    for (const label of ["Needs your answer", "Needs your approval", "Working now", "Up next", "Done", "Failed", "Cancelled", "Archived"]) {
-      await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+    const content = page.getByTestId("inbox-content");
+    await expect(content.getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.length);
+    for (const repo of repos) {
+      const groupTasks = tasks.filter(task => task.repoId === repo.id);
+      if (!groupTasks.length) continue;
+      const group = content.getByRole("region", { name: `${repo.name} tasks`, exact: true });
+      await expect(group.getByRole("button", { name: /^Actions for / })).toHaveCount(groupTasks.length);
+      for (const task of groupTasks) await expect(group.getByRole("button", { name: `Actions for ${task.title || task.prompt.split("\n")[0]}`, exact: true })).toHaveCount(1);
     }
+    for (const label of ["Needs answer", "Needs approval", "Working", "Queued", "Done", "Failed", "Cancelled", "Archived"]) {
+      await expect(content.getByText(label, { exact: true }).first()).toBeVisible();
+    }
+  });
+
+  test("attention shortcuts filter across Spaces, reveal folded matches, and restore on Back", async ({ page }) => {
+    const group = page.getByRole("region", { name: "sample-app tasks", exact: true });
+    const fold = group.getByRole("button", { name: "sample-app tasks", exact: true });
+    await fold.click();
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("radio", { name: "Needs answer", exact: true }).click();
+    await expect(group.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_input").length);
+    await group.getByRole("button", { name: /Scaffold a new settings screen/ }).first().click();
+    await page.goBack();
+    await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveAttribute("aria-checked", "true");
+    await page.getByRole("radio", { name: "Needs approval", exact: true }).click();
+    await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_approval").length);
+    await page.getByRole("radio", { name: "All tasks", exact: true }).click();
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("Space group actions open that Space or start a task in it", async ({ page }) => {
+    await page.getByRole("button", { name: "New task in notes", exact: true }).click();
+    await expect(page).toHaveURL(/#\/new\/space\/repo-notes$/);
+    await expect(page.getByRole("combobox", { name: "Space", exact: true })).toContainText("notes");
+    await page.goBack();
+    await page.getByRole("button", { name: "Open Space sample-app", exact: true }).click();
+    await expect(page).toHaveURL(/#\/spaces\/repo-app$/);
+    await expect(page.getByRole("heading", { name: "Working now", exact: true })).toBeVisible();
   });
 
   test("pull-to-refresh updates data while retaining the list and search", async ({ page }) => {

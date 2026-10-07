@@ -100,7 +100,7 @@ test("live preview is readable before handoff and enables input only when owners
     `data: ${JSON.stringify({ type: "tasks", tasks: [current()] })}\n\n`,
   }));
   await page.goto("/");
-  const local = page.locator("section").filter({ has: page.getByRole("heading", { name: "Local sessions", exact: true }) });
+  const local = page.getByRole("region", { name: "sample-app tasks", exact: true });
   await expect(local.getByText("Wire the web QA harness")).toBeVisible();
   await expect(local.getByText("Live preview", { exact: true })).toBeVisible();
   await page.goto("/#/task/t-idle-rich");

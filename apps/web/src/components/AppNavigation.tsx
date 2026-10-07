@@ -1,7 +1,7 @@
 import { needsTaskAttention } from "@palmagent/shared";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { BarChart3, Check, Clock3, Folder, Gamepad2, Layers, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
+import { BarChart3, Check, Clock3, Folder, Gamepad2, ListTodo, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
@@ -58,7 +58,7 @@ export function AppNavigation({ tasks, conn, children }: {
   const go = (path: string) => { setOpen(false); navigate(path); };
   const showAfterClose = (action: () => void) => { afterClose.current = action; setOpen(false); };
   const destinations = [
-    { label: "All spaces", icon: Layers, active: route.name === "inbox", onClick: () => go("/"), attention },
+    { label: "Tasks", icon: ListTodo, active: route.name === "inbox", onClick: () => go("/"), attention },
     { label: "Spaces", icon: Folder, active: route.name === "spaces", onClick: () => go("/spaces") },
     { label: "Routines", icon: Clock3, active: route.name === "routines", onClick: () => go("/routines") },
     { label: "Terminals", icon: Terminal, active: route.name === "terminals", onClick: () => go("/terminals") },

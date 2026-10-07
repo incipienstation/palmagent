@@ -648,7 +648,7 @@ test("short history prefetch keeps its first message clear of the floating toolb
 test("returning to a conversation keeps messages and resumes only missed events", async ({ page }) => {
   const latestRequests = await recent(page);
   await page.evaluate(() => { location.hash = "/"; });
-  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
   await expect(page.getByText("tool_result: Tool 2000", { exact: true })).toBeVisible();
   const urls = await page.evaluate(() => (window as unknown as Harness).scopedUrls);
