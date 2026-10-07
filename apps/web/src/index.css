@@ -310,6 +310,10 @@
     .composer-input::-webkit-scrollbar-corner {
       background: transparent;
     }
+    .composer-input::-webkit-scrollbar-track {
+      /* Keep the thumb below the Composer's rounded top corners. */
+      margin-block: 0.5rem;
+    }
     .composer-input::-webkit-scrollbar-thumb {
       border: 1px solid transparent;
       border-radius: 999px;

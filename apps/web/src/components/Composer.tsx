@@ -165,7 +165,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     onBlurCapture={event => {
       if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
     }}
-    className={cn("composer rounded-3xl p-1", (busy || stopping) && "composer-pending")}>
+    className={cn("composer overflow-clip rounded-3xl p-1", (busy || stopping) && "composer-pending")}>
     <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
       onChange={(e) => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
       onSelect={e => picker.cursor(e.currentTarget)}

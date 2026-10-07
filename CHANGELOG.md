@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Long-draft scrollbars stay inside the Composer's rounded outline.
+
 ## 0.1.0-alpha.141
 
 ### Changed
