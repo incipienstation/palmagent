@@ -56,7 +56,7 @@ function AppInner() {
           ? "Agents"
           : route.name === "task"
             ? active ? taskTitle(active) : "Task"
-            : route.name === "spaces" ? "Spaces" : route.name === "space" ? repos.get(route.repoId)?.name ?? "Space" : "All spaces";
+            : route.name === "spaces" ? "Spaces" : route.name === "space" ? repos.get(route.repoId)?.name ?? "Space" : "Tasks";
   useDocumentTitle(pageTitle);
 
   const view = route.name === "terminals" ? <TerminalsView key={route.taskId ?? route.repoId ?? "all"} repoId={route.repoId} taskId={route.taskId} />

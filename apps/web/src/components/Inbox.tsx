@@ -1,10 +1,11 @@
 import { useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, Folder, Pin } from "lucide-react";
+import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, Folder, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
@@ -16,7 +17,7 @@ import { useRepos } from "../hooks/useRepos";
 
 import { goBackTo, navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
-import { AgentTag, RepoChip, StatusBadge } from "./chips";
+import { AgentTag, StatusBadge } from "./chips";
 import { SpaceDetails, TaskFilters, type TaskFilter } from "./SpaceTools";
 import { useActionState } from "../action-state";
 import { Alert } from "./ui/alert";
@@ -25,12 +26,10 @@ import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
 import { SessionActionsMenu } from "./SessionActionsMenu";
-import { newTaskPath, taskDirectoryFor } from "../space-context";
+import { newTaskPath, spacePath, spaceQualifier, taskDirectoryFor } from "../space-context";
 
-// repoId → Repo map for the rows, provided once by InboxView so each card can
-// resolve its project name without prop-drilling through StatusGroup.
+// Resolve Space group headings from the shared repository snapshot.
 const ReposContext = createContext<Map<string, Repo>>(new Map());
-const ShowSpaceContext = createContext(true);
 
 // Attention-ordered grouping. Every status the backend can emit is represented
 // Empty groups stay out of the way; every non-empty state remains reachable.
@@ -47,6 +46,9 @@ const GROUP_ORDER: InboxStatus[] = [
   "cancelled",
   "archived",
 ];
+function taskPriority(task: TaskState): number {
+  return GROUP_ORDER.indexOf(task.sessionControl && task.sessionControl.owner !== "palmagent" ? "local" : task.status);
+}
 // Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
 // a short date past a week so the dense list stays scannable.
 function relTime(ms: number): string {
@@ -88,13 +90,10 @@ function previewOf(t: TaskState): string | null {
   return rest || null;
 }
 
-// Secondary context stays below the title: project, state, and agent.
+// State and agent stay below the title; the group heading supplies the Space.
 function CardContextLine({ task }: { task: TaskState }) {
-  const repos = useContext(ReposContext);
-  const showSpace = useContext(ShowSpaceContext);
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 pr-8">
-      {showSpace && <RepoChip repo={repos.get(task.repoId)} isolated={!!task.branch} />}
       <span className="flex shrink-0 items-center gap-2">
         <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
         <AgentTag agent={task.agent} />
@@ -182,6 +181,43 @@ function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks:
   );
 }
 
+// Global task groups retain their folded state when visiting a session. A search
+// or status filter temporarily reveals every match without changing that state.
+function SpaceTaskGroup({ repoId, tasks, reveal }: { repoId: string; tasks: TaskState[]; reveal: boolean }) {
+  const repos = useContext(ReposContext);
+  const repo = repos.get(repoId);
+  const name = repo?.name ?? "Unavailable Space";
+  const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
+  const label = qualifier ? `${name} · ${qualifier}` : name;
+  const [collapsed, setCollapsed] = useActionState(`inbox:space-group:${repoId}:collapsed`, false);
+  const expanded = reveal || !collapsed;
+  const rowsId = useId();
+  const heading = <>
+    <span className="min-w-0 text-left"><span className="block break-words whitespace-normal">{name}</span>
+      {qualifier && <span className="block truncate text-xs text-muted-foreground">{qualifier}</span>}</span>
+    <Badge variant="secondary" className="ml-1 shrink-0">{tasks.length}</Badge>
+  </>;
+  return <section aria-label={`${label} tasks`} className="pt-4">
+    <div className="flex min-w-0 items-center gap-1 px-4">
+      <h2 className="min-w-0 flex-1">
+        {reveal ? <div className="flex min-h-11 items-center gap-2">{heading}</div> :
+          <Button variant="ghost" className="h-auto min-h-11 w-full justify-start px-0" aria-label={`${label} tasks`}
+            aria-expanded={expanded} aria-controls={rowsId} onClick={() => setCollapsed(!collapsed)}>
+            <ChevronDown data-icon="inline-start" className={cn("shrink-0", !expanded && "-rotate-90")} />
+            {heading}
+          </Button>}
+      </h2>
+      {repo && <>
+        <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} onClick={() => navigate(spacePath(repoId))}><Folder /></Button>
+        <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} onClick={() => navigate(newTaskPath(repoId))}><Plus /></Button>
+      </>}
+    </div>
+    <div id={rowsId} hidden={!expanded}>
+      {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
+    </div>
+  </section>;
+}
+
 // Skeleton rows shown while the first SSE snapshot is in flight (the mock
 // harness renders loaded state, so these never appear in visual snapshots).
 function LoadingRows() {
@@ -259,15 +295,34 @@ export const InboxView = memo(function InboxView({
   // Preserve status groups and filters, with stable pins first in each group.
   for (const arr of byStatus.values()) arr.sort(compareTasks);
 
+  const bySpace = new Map<string, TaskState[]>();
+  for (const task of filtered) {
+    const group = bySpace.get(task.repoId) ?? [];
+    group.push(task);
+    bySpace.set(task.repoId, group);
+  }
+  for (const group of bySpace.values()) group.sort((a, b) =>
+    a.pinnedAt !== undefined || b.pinnedAt !== undefined ? compareTasks(a, b) : taskPriority(a) - taskPriority(b) || compareTasks(a, b));
+  // Establish the order from the full snapshot, not search/filter results. Keep
+  // live updates from moving a Space under a pointer; new Spaces append.
+  const [spaceOrder, setSpaceOrder] = useActionState<string[]>("inbox:space-order", []);
+  useEffect(() => {
+    if (repoId || loading) return;
+    const ids = [...new Set(tasks.slice().sort((a, b) => taskPriority(a) - taskPriority(b) || compareTasks(a, b)).map(task => task.repoId))];
+    const added = ids.filter(id => !spaceOrder.includes(id));
+    if (added.length) setSpaceOrder([...spaceOrder, ...added]);
+  }, [tasks, repoId, loading, spaceOrder, setSpaceOrder]);
+  const spaceGroups = [...bySpace].sort(([a], [b]) => spaceOrder.indexOf(a) - spaceOrder.indexOf(b));
+
   const isEmpty = !loading && filtered.length === 0;
   const selectedName = space?.name ?? "Space";
   const missingSpace = !!repoId && reposLoaded && !space;
   const newTask = () => navigate(newTaskPath(repoId));
 
   return (
-    <ReposContext.Provider value={repos}><ShowSpaceContext.Provider value={!repoId}>
+    <ReposContext.Provider value={repos}>
       <AppShell wide>
-        <AppBar title={repoId ? selectedName : "All spaces"} back={!!repoId} onBack={() => goBackTo("/spaces")} conn={conn}>
+        <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")} conn={conn}>
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
@@ -278,10 +333,15 @@ export const InboxView = memo(function InboxView({
         <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
           {/* Let the final row scroll fully above the floating action. */}
           <div data-testid="inbox-content" className="pb-22">
-            {!repoId && <p className="px-4 pt-1 text-sm text-muted-foreground">Tasks across all your Spaces</p>}
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
+              {!repoId && <ToggleGroup type="single" aria-label="Quick task filters" value={statusFilter}
+                onValueChange={value => setStatusFilter((value || "all") as TaskFilter)}>
+                <ToggleGroupItem value="all">All tasks</ToggleGroupItem>
+                <ToggleGroupItem value="awaiting_input" aria-label="Needs answer">Answer · {scoped.filter(task => task.status === "awaiting_input").length}</ToggleGroupItem>
+                <ToggleGroupItem value="awaiting_approval" aria-label="Needs approval">Approval · {scoped.filter(task => task.status === "awaiting_approval").length}</ToggleGroupItem>
+              </ToggleGroup>}
               <TaskFilters repo={space} repos={repos} tasks={scoped} directory={directory} onDirectoryChange={setDirectory} status={statusFilter} onStatusChange={setStatusFilter} />
               {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
             </div>}
@@ -294,6 +354,8 @@ export const InboxView = memo(function InboxView({
                 subtitle={search ? "Try another title or part of a prompt in this scope." : "Start a task and track it here."}
                 action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : undefined}
               />
+            ) : !repoId ? (
+              spaceGroups.map(([id, group]) => <SpaceTaskGroup key={id} repoId={id} tasks={group} reveal={!!search || statusFilter !== "all"} />)
             ) : (
               GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
                 <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} searching={!!search} />
@@ -314,6 +376,6 @@ export const InboxView = memo(function InboxView({
         </div>
         </div>
       </AppShell>
-    </ShowSpaceContext.Provider></ReposContext.Provider>
+    </ReposContext.Provider>
   );
 });

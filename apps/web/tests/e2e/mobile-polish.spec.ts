@@ -58,7 +58,7 @@ test("the inbox distinguishes a pending snapshot, an empty list, and populated s
   await expect(page.getByTestId("inbox-content").getByRole("status")).toHaveText("1 task found");
   await expect(page.getByRole("heading", { name: "Working now", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Clear task search" }).click();
-  const done = page.getByRole("button", { name: "Done", exact: true });
+  const done = page.getByRole("button", { name: "sample-app tasks", exact: true });
   await done.click();
   await expect(page.getByText("Wire the web QA harness", { exact: true })).toBeHidden();
   await input.fill("Wire the web QA harness");

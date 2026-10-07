@@ -9,7 +9,7 @@ test("drawer routes share the inbox stream and retain the new-task draft", async
   const menu = page.getByRole("button", { name: "Open navigation" });
   await menu.click();
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
-  await expect(navigation.getByRole("button", { name: "All spaces", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByRole("button", { name: "Tasks", exact: true })).toHaveAttribute("aria-current", "page");
   await navigation.getByRole("button", { name: "Agents", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);

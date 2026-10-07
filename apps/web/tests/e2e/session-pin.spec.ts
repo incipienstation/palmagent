@@ -64,11 +64,11 @@ test("failed pin rolls back and blocks duplicate requests while pending", async 
 });
 
 
-test("pins keep creation order within their status group and respect search and Space filters", async ({ page, request }) => {
+test("pins keep creation order within their Space group and respect search and Space filters", async ({ page, request }) => {
   await page.goto("/");
   await request.patch("/api/tasks/t-idle-interrupted/pin", { data: { pinned: true } });
   await request.patch(path, { data: { pinned: true } });
-  const done = page.locator("section").filter({ has: page.getByRole("heading", { name: "Done", exact: true }) });
+  const done = page.getByRole("region", { name: "sample-app tasks", exact: true });
   await expect(done.getByRole("button", { name: /^Actions for / }).nth(0)).toHaveAccessibleName("Actions for Interrupted across a deploy");
   await expect(done.getByRole("button", { name: /^Actions for / }).nth(1)).toHaveAccessibleName(`Actions for ${title}`);
   await page.getByRole("button", { name: "Open navigation" }).click();

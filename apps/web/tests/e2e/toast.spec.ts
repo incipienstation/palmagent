@@ -107,7 +107,7 @@ test("reduced motion keeps the toast readable and allows keyboard dismissal", as
 test("root exit hint stays above the new-task button and respects safe areas", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true }));
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await page.evaluate(() => {
     document.documentElement.style.setProperty("--safe-bottom", "34px");
     window.dispatchEvent(new Event("resize"));

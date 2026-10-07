@@ -14,7 +14,7 @@ async function openSettings(page: Page) {
 test("an existing update checkpoint restores native settings scroll into the new viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 400 });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await page.evaluate(async () => {
     const id = "settings-scroll-upgrade";
     await new Promise<void>((resolve, reject) => {

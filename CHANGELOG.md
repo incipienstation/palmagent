@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The Tasks home screen groups work by Space, with answer and approval shortcuts and a New task action for each Space. Spaces focuses on finding and connecting folders, without the duplicate All spaces card.
+
 ## 0.1.0-alpha.142
 
 ### Fixed

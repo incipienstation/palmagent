@@ -20,14 +20,15 @@ async function setup(page: Page, path = "/") {
 }
 const mainSpace = (page: Page) => page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /customer-experience/ });
 
-test("All spaces ignores legacy filters and Spaces has searchable, distinct rows", async ({ page }) => {
+test("Tasks ignores legacy filters and Spaces has searchable, distinct rows", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await page.addInitScript(() => localStorage.setItem("working-directory", "/missing/old-worktree"));
   await setup(page);
-  await expect(page.getByRole("heading", { name: /^All spaces(?: Reconnecting…)?$/, level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Tasks(?: Reconnecting…)?$/, level: 1 })).toBeVisible();
   await expect(page.getByText("Separate Space task", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Open Spaces" }).click();
   await expect(page).toHaveURL(/#\/spaces$/);
+  await expect(page.getByRole("button", { name: /All spaces/ })).toHaveCount(0);
   const search = page.getByRole("searchbox", { name: "Search Spaces" });
   await expect(search).not.toBeFocused();
   await expect(page.getByRole("region", { name: "Spaces list" }).getByRole("button")).toHaveCount(3);
@@ -36,8 +37,10 @@ test("All spaces ignores legacy filters and Spaces has searchable, distinct rows
   await expect(page.getByRole("region", { name: "Spaces list" }).getByRole("button")).toHaveCount(1);
   await search.fill("not-found");
   await expect(page.getByText("No Spaces found", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /All spaces.*Tasks across/ }).click();
-  await expect(page.getByText("Separate Space task", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("inbox-content").getByText("Separate Space task", { exact: true })).toBeVisible();
   await assertViewportLocked(page);
 });
 
@@ -235,7 +238,7 @@ test("desktop search stays above the list and resizing preserves the same query 
   await page.setViewportSize({ width: 1280, height: 900 });
   await setup(page, "/#/spaces");
   const search = page.getByRole("searchbox", { name: "Search Spaces" });
-  const all = page.getByRole("button", { name: /All spaces.*Tasks across/ });
+  const all = page.getByRole("region", { name: "Spaces list" });
   const box = (await search.boundingBox())!;
   expect(box.y + box.height).toBeLessThanOrEqual((await all.boundingBox())!.y);
   await search.fill("experiments");
@@ -295,4 +298,22 @@ test("Space search clearing keeps editing active and closing preserves filters",
   await search.press("Escape");
   await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
   await expect(search).not.toBeFocused();
+});
+
+
+test("home separates same-name Spaces and retains tasks from disconnected Spaces", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await setup(page);
+  for (const qualifier of ["customer-experience", "experiments"]) {
+    const group = page.getByRole("region", { name: new RegExp(`Palmagent.*${qualifier}.*tasks`) });
+    await expect(group).toBeVisible();
+    await expect(group.getByRole("button", { name: /New task in/ })).toBeEnabled();
+  }
+  await assertViewportLocked(page);
+  await page.route("**/api/repos", route => route.fulfill({ json: { repos: [] } }));
+  await page.reload();
+  const content = page.getByTestId("inbox-content");
+  await expect(content.getByRole("button", { name: /^Actions for / })).toHaveCount(fixtureTasks.length);
+  await expect(content.getByRole("button", { name: /New task in/ })).toHaveCount(0);
+  await expect(content.getByRole("region", { name: /Unavailable Space/ })).toHaveCount(2);
 });

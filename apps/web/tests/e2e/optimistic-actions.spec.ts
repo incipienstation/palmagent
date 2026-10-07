@@ -442,7 +442,7 @@ test("archive leaves the inbox immediately and restores the task with a toast if
   await page.goto("/#/task/t-idle-rich"); await page.getByRole("button", { name: "Task actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await page.getByRole("button", { name: "Archive task", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Actions for Wire the web QA harness", exact: true })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: "Archiving task…" })).toBeVisible();
   expect(calls).toBe(1); delayed.release();

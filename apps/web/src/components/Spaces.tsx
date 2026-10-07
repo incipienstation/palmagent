@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import type { Repo, TaskState } from "@palmagent/shared";
-import { ChevronRight, Folder, Layers, Plus, Search } from "lucide-react";
+import { Folder, Plus, Search } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
 import { useActionState } from "../action-state";
@@ -43,11 +43,6 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
       <ListSearch inputRef={searchRef} label="Search Spaces" clearLabel="Clear Space search" placeholder="Search Spaces…" value={query} onChange={setQuery} />
       <PullToRefresh className="min-h-0 flex-1" scrollKey={!pending ? `spaces:${query}` : undefined} onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
       <div className="flex flex-col gap-4 px-4 pt-2 pb-4 md:px-6">
-        <Button variant="secondary" className="h-auto min-h-20 w-full justify-start gap-3 rounded-2xl px-4 py-3" onClick={() => navigate("/")}>
-          <Layers data-icon="inline-start" />
-          <span className="flex min-w-0 flex-1 flex-col gap-1 text-left"><span>All spaces</span><span className="text-xs font-normal text-muted-foreground">Tasks across all your Spaces</span></span>
-          <ChevronRight data-icon="inline-end" />
-        </Button>
         {error && <Alert variant="destructive"><p>{error}</p><Button variant="outline" disabled={refreshing} onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
         {pending ? <div aria-label="Loading Spaces" aria-busy="true" className="flex flex-col gap-6 py-4">
           {[0, 1, 2].map(i => <div key={i} className="flex min-h-18 flex-col justify-center gap-2 px-2"><Skeleton className="h-5 w-1/2" /><Skeleton className="h-3 w-1/3" /></div>)}

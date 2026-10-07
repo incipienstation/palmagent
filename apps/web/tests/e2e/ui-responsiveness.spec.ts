@@ -6,7 +6,7 @@ test.use({ serviceWorkers: "block" });
 
 const inboxViewport = (page: Page) => page.locator('[data-radix-scroll-area-viewport]:has([data-testid="inbox-content"])');
 
-test("Back restores the inbox search, completed-group state, and scroll position", async ({ page }) => {
+test("Back restores the inbox search, Space-group state, and scroll position", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("the");
   await expect(page.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
@@ -18,14 +18,14 @@ test("Back restores the inbox search, completed-group state, and scroll position
   await target.click();
   await expect(page).toHaveURL(/task\/t-idle-rich/);
   await page.evaluate(() => history.back());
-  await expect(page.getByRole("heading", { name: "All spaces", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("the");
   await expect.poll(() => inboxViewport(page).evaluate(el => el.scrollTop)).toBeCloseTo(top, 0);
   await page.getByRole("button", { name: "Clear task search" }).click();
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: "sample-app tasks", exact: true }).click();
   await page.getByRole("button", { name: "Dispatch new task" }).click();
   await page.goBack();
-  await expect(page.getByRole("button", { name: "Done", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "sample-app tasks", exact: true })).toHaveAttribute("aria-expanded", "false");
 });
 
 test("large Markdown preserves cross-block references, tables, literal HTML and streamed final text", async ({ page }) => {
@@ -78,7 +78,8 @@ test("each Space retains its own inbox reading position", async ({ page }) => {
   await expect.poll(() => inboxViewport(page).evaluate(el => el.scrollTop)).toBe(0);
   await inboxViewport(page).evaluate(el => { el.scrollTop = 300; });
   await page.getByRole("button", { name: "Back", exact: true }).click();
-  await page.getByRole("button", { name: /All spaces.*Tasks across/ }).click();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect.poll(() => inboxViewport(page).evaluate(el => el.scrollTop)).toBe(600);
   await page.getByRole("button", { name: "Open Spaces" }).click();
   await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /sample-app/ }).click();
