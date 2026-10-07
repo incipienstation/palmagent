@@ -154,6 +154,35 @@ test("reduced motion changes composer height without animation", async ({ page }
   await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveCSS("height", "54px");
 });
 
+for (const width of [320, 1280]) test(`long draft scrolling stays inside the rounded Composer at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await page.goto("/#/new/space/repo-app");
+  const composer = page.getByRole("group", { name: "Message composer", exact: true });
+  const input = composer.getByRole("textbox");
+  const draft = "Keep this long draft editable\n".repeat(40);
+  await input.fill(draft);
+  await expect(input).toHaveCSS("height", "144px");
+  // These points are inside the textarea's rectangle but outside the rounded
+  // surface. A rectangular hit target here also lets its scrollbar paint out.
+  const corners = () => composer.evaluate(el => {
+    const r = el.getBoundingClientRect();
+    return [r.left + 6, r.right - 6].map(x => el.contains(document.elementFromPoint(x, r.top + 6)));
+  });
+  await expect.poll(corners).toEqual([false, false]);
+  await input.evaluate(el => { el.scrollTop = 0; });
+  await input.hover();
+  await page.mouse.wheel(0, 240);
+  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await input.press("Control+End");
+  await expect.poll(() => input.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(24);
+  await expect(input).toHaveValue(draft);
+  await onScreen(composer.getByRole("button", { name: "Send now", exact: true }));
+  await composer.getByRole("button", { name: "Add attachments" }).click();
+  await onScreen(page.getByRole("menuitem", { name: "Photos" }));
+  await page.keyboard.press("Escape");
+  await assertViewportLocked(page);
+});
+
 test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
   const width = 360;
   await page.setViewportSize({ width, height: 780 });
