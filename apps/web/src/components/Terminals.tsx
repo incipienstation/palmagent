@@ -157,7 +157,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         <AlertDialogDescription>This ends the shell and its child processes. To leave them running, return to the conversation instead.</AlertDialogDescription>
       </AlertDialogHeader><AlertDialogFooter>
         <AlertDialogCancel>Keep running</AlertDialogCancel>
-        <AlertDialogAction onClick={() => { setConfirm(false); if (active) void act(() => terminalOperations.terminate(active.id)); }}>Terminate</AlertDialogAction>
+        <AlertDialogAction variant="destructive" onClick={() => { setConfirm(false); if (active) void act(() => terminalOperations.terminate(active.id)); }}>Terminate</AlertDialogAction>
       </AlertDialogFooter></AlertDialogContent>
     </AlertDialog>
   </section>;

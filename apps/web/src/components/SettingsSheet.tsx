@@ -186,7 +186,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   <AlertDialogDescription>You'll need your passkey to sign back in on this device.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogAction disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
+                  <AlertDialogAction variant="destructive" disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
                   <AlertDialogCancel>Stay</AlertDialogCancel>
                 </AlertDialogFooter>
               </AlertDialogContent>
