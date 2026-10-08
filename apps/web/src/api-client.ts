@@ -104,6 +104,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     submitMessage: (id: string, json: SubmitMessage) => write(() => tasks.messages.$post({ param: idParam(id), json })),
     messageAction: (id: string, messageId: string, json: MessageAction) => write(() => tasks.messages[":messageId"].$post({ param: { ...idParam(id), messageId: encodeURIComponent(messageId) }, json })),
     resumeQueue: (id: string) => write(() => tasks.queue.resume.$post({ param: idParam(id), json: {} })),
+    compact: (id: string, json: import("@palmagent/shared").CompactTaskRequest) => write(() => tasks.compact.$post({ param: idParam(id), json })).then(r => r.task),
     updateSettings: {
       action: (json: UpdateAction) => write(() => client.settings.updates.$post({ json })),
       get: () => request(() => client.settings.updates.$get()),

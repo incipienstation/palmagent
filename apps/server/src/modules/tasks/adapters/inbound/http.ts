@@ -1,4 +1,4 @@
-import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema } from "@palmagent/shared";
+import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
 import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../../../../platform/http/input.js";
@@ -94,6 +94,8 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       return c.json(service.messageAction(id, messageId, action), 200);
     })
     .post("/:id/queue/resume", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json(service.resumeQueue(c.req.valid("param").id), 200))
+    .post("/:id/compact", params(IdParamsSchema), jsonBody(CompactTaskSchema), (c) =>
+      c.json({ task: service.compact(c.req.valid("param").id, c.req.valid("json")) }, 202))
     .post("/:id/followup", params(IdParamsSchema), jsonBody(FollowupSchema), (c) => {
       const input = c.req.valid("json");
       return c.json({ task: service.followup(c.req.valid("param").id, input.prompt, input.images, input.model, input.effort, input.permission) }, 202);

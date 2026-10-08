@@ -863,3 +863,39 @@ test("headless Codex receives sampled frames as image files and cleans them afte
   backend.proc.emit({ type: "turn.completed", usage: {} }); backend.proc.exit(0); await handle.done;
   assert(paths.every(path => !existsSync(path)));
 });
+
+for (const outcome of ["completed", "missing-item", "rejected", "interrupted"] as const) {
+  test(`Codex context compaction: ${outcome}, acknowledgement is not completion`, async () => {
+    const backend = new FakeBackend(), events: RawEvent[] = [];
+    const args = startArgs({ operation: "compact", interactive: true, resumeId: "thread-1" });
+    const runner = new CodexRunner();
+    const handle = runner.start(args, e => events.push(e), backend);
+    backend.proc.emit({ id: "initialize", result: {} });
+    backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+    const requests = writtenJson(backend.proc);
+    assert.equal(requests.some(r => r.method === "turn/start"), false);
+    assert.deepEqual(requests.at(-1).params, { threadId: "thread-1" });
+    assert.equal(requests.at(-1).method, "thread/compact/start");
+    if (outcome === "rejected") backend.proc.emit({ id: "compact", error: { message: "Compaction is unavailable" } });
+    else {
+      backend.proc.emit({ id: "compact", result: {} });
+      assert.equal(events.some(e => e.kind === "result"), false);
+      assert.equal(backend.proc.closeCount, 0);
+      backend.proc.emit({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "compact-turn" } } });
+      assert.equal(await handle.send!("No steer during compaction", undefined, "m"), "rejected");
+      if (outcome === "completed") backend.proc.emit({ method: "item/completed", params: { threadId: "thread-1", item: { id: "c", type: "contextCompaction" } } });
+      backend.proc.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "compact-turn", status: outcome === "interrupted" ? "interrupted" : "completed" } } });
+    }
+    backend.proc.exit(0); await handle.done;
+    const results = events.filter(e => e.kind === "result");
+    if (outcome === "rejected") assert(events.some(e => e.kind === "error"));
+    else assert.equal((results[0].payload as { is_error: boolean }).is_error, outcome !== "completed");
+    const replay = new FakeBackend();
+    const recovered = runner.start({ ...args, reattach: true }, () => {}, replay);
+    replay.proc.emit({ id: "initialize", result: {} });
+    replay.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+    replay.proc.emit({ id: "compact", result: {} });
+    assert.equal(replay.proc.writes.length, 0, "restart must not issue another compaction");
+    replay.proc.exit(0); await recovered.done;
+  });
+}

@@ -1,6 +1,6 @@
 import { recoverTasks } from "./recover-tasks.js";
 import type { TaskUseCases } from "../ports/inbound/task-use-cases.js";
-import { isClosedTaskStatus } from "@palmagent/shared";
+import { isClosedTaskStatus, compactUnavailableReason, type CompactTaskRequest } from "@palmagent/shared";
 import { sanitizeImages } from "../attachments/image-input.js";
 import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagent/shared";
 import { MessageController } from "./message-controller.js";
@@ -27,6 +27,7 @@ const notFound = (m: string) => new ApplicationError("not_found", m);
 const conflict = (m: string) => new ApplicationError("conflict", m);
 
 interface TurnState {
+  failureMessage?: string;
   sawResult: boolean; // a terminal result event arrived (claude result / codex turn.completed)
   lastResultError: boolean; // is_error of the LAST result (so an interrupt's aborted result is superseded)
   errored: boolean; // a non-result error event arrived (used only when no result ever did)
@@ -180,6 +181,7 @@ export class TaskService implements PrStatusSink {
         this.assertTaskAdmission();
         const task = this.getTask(id);
         this.assertSessionOwnership(task);
+        if (this.messages.state(id).compaction?.status === "running") throw conflict("Wait for context compaction to finish.");
         if (isClosedTaskStatus(task.status)) throw conflict("This task is closed.");
       },
       canStart: (id) => {
@@ -233,6 +235,22 @@ export class TaskService implements PrStatusSink {
   }
 
   get executionProtocol(): number | undefined { return this.backend.independent ? 1 : undefined; }
+
+  compact(id: string, request: CompactTaskRequest): TaskState {
+    this.assertTaskAdmission();
+    const task = this.getTask(id);
+    this.assertSessionOwnership(task);
+    const state = this.messages.state(id);
+    // Lost acknowledgements can be retried without compacting a second time.
+    if (state.compaction?.requestId === request.requestId) return task;
+    if (state.revision !== request.expectedRevision) throw conflict("The session changed. Try context compaction again.");
+    const reason = compactUnavailableReason(task);
+    if (reason) throw conflict(reason);
+    if (this.supervisor.has(id)) throw conflict("Available after the response finishes.");
+    this.emitSynthetic(task, { subtype: "compaction_requested" });
+    void this.runTurn(task, "", task.sessionId, undefined, undefined, undefined, request.requestId);
+    return this.getTask(id);
+  }
 
   get updating(): boolean { return this.maintenance(); }
 
@@ -568,6 +586,7 @@ export class TaskService implements PrStatusSink {
     if (!this.supervisor.has(id)) this.assertTaskAdmission();
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (this.messages.state(id).compaction?.status === "running") throw conflict("Wait for context compaction to finish.");
     if (!text) throw badRequest("text is required");
     const images = sanitizeImages(rawImages);
     const nImages = images?.length ?? 0;
@@ -710,6 +729,7 @@ export class TaskService implements PrStatusSink {
     if (handle) {
       handle.cancel(); // SIGINT; finishTurn() removes the worktree once it exits
     } else {
+      if (this.messages.state(id).compaction?.status === "running") this.messages.stopWaiting(id);
       this.cleanupWorktree(task); // no process held — clean up now
     }
     return task;
@@ -719,6 +739,7 @@ export class TaskService implements PrStatusSink {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
     if (task.status === "archived") return task; // idempotent
+    if (this.messages.state(id).compaction?.status === "running") throw conflict("Stop context compaction before archiving.");
     if (this.supervisor.has(id)) throw conflict("cancel the active turn before archiving");
     this.messages.pause(id);
     this.transition(task, "archived");
@@ -727,8 +748,8 @@ export class TaskService implements PrStatusSink {
   }
 
   // ---- turn execution ----
-  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string, skills?: SkillSelection[]): Promise<void> {
-    const runId = this.messages.beginRun(task.taskId, messageId);
+  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string, skills?: SkillSelection[], compactionRequestId?: string): Promise<void> {
+    const runId = this.messages.beginRun(task.taskId, messageId, compactionRequestId);
     if (!this.backend.independent && !this.supervisor.tryAcquire()) {
       this.transition(task, "queued"); // over the concurrency cap — wait for a slot
       await this.supervisor.acquire();
@@ -772,6 +793,7 @@ export class TaskService implements PrStatusSink {
         {
           taskId: task.taskId,
           messageId, interactive: true,
+          operation: this.messages.state(task.taskId).compaction?.status === "running" ? "compact" : undefined,
           cwd: task.worktreePath!, // stable for the task's whole life
           prompt,
           skills,
@@ -790,7 +812,7 @@ export class TaskService implements PrStatusSink {
       this.supervisor.release(task.taskId);
       this.emitSynthetic(task, { subtype: "error", message: `failed to start turn: ${String(e)}` });
       this.transition(task, "failed");
-      this.messages.finish(task.taskId, true);
+      this.messages.finish(task.taskId, true, false, "Context compaction could not start. Try again.");
       return;
     }
     this.supervisor.register(task.taskId, handle);
@@ -812,6 +834,7 @@ export class TaskService implements PrStatusSink {
         cwd: task.worktreePath!,
         messageId: this.messages.state(task.taskId).initialMessageId,
         interactive: this.messages.state(task.taskId).protocol === "interactive",
+        operation: this.messages.state(task.taskId).compaction?.status === "running" ? "compact" : undefined,
         prompt: "", // unused on reattach — the live turn already got its prompt
         resumeId: task.sessionId,
         permission: task.permission,
@@ -859,7 +882,11 @@ export class TaskService implements PrStatusSink {
 
     const ts = this.turnState.get(task.taskId);
     if (ts) {
-      if (event.kind === "error") ts.errored = true;
+      if (event.kind === "error") {
+        ts.errored = true;
+        const message = (event.payload as { message?: unknown } | null)?.message;
+        if (typeof message === "string") ts.failureMessage = message;
+      }
       if (event.kind === "result") {
         ts.sawResult = true;
         ts.lastResultError = !!(event.payload as { is_error?: boolean })?.is_error;
@@ -955,6 +982,7 @@ export class TaskService implements PrStatusSink {
     this.persistControl(task.taskId);
 
     if (task.status === "cancelled") {
+      if (this.messages.state(task.taskId).compaction?.status === "running") this.messages.finish(task.taskId, true, false, "Context compaction was cancelled.");
       this.cleanupWorktree(task);
       this.broadcastTasks();
       return;
@@ -964,7 +992,7 @@ export class TaskService implements PrStatusSink {
       // aborted result / SIGINT exit must not count as an error). No steer
       // chaining, no push — the user did this themselves.
       this.transition(task, "idle", { interrupted: true });
-      this.messages.finish(task.taskId, true);
+      this.messages.finish(task.taskId, true, false, "Context compaction was stopped.");
       return;
     }
     // Decide off the TERMINAL signal: if a result arrived, trust its is_error
@@ -972,11 +1000,14 @@ export class TaskService implements PrStatusSink {
     // error item does NOT fail the turn). Only fall back to `errored` (e.g.
     // codex turn.failed, which has no result) when no result ever arrived.
     // A signal, lost backend, or failed spawn is never a normal completion.
-    const failed = !steerRestart && !!ts &&
+    const compacting = this.messages.state(task.taskId).compaction?.status === "running";
+    const failed = compacting && !ts?.sawResult || !steerRestart && !!ts &&
       (ts.abnormalExit || (ts.sawResult ? ts.lastResultError : ts.errored));
-    this.transition(task, failed ? "failed" : "idle");
-
-    this.messages.finish(task.taskId, failed, false);
+    this.db.transaction(() => {
+      this.transition(task, failed ? "failed" : "idle");
+      if (compacting && !failed) this.emitSynthetic(task, { subtype: "context_compacted" });
+      this.messages.finish(task.taskId, failed, false, ts?.failureMessage);
+    });
 
     // Legacy-client compatibility: old steers drain separately from the explicit queue.
     const pending = this.pendingSteer.get(task.taskId);

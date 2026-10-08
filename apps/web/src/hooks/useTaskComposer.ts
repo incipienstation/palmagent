@@ -67,6 +67,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const remoteQueue = task?.messageQueue;
   const confirmedQueue = queueOverride && queueOverride.revision > (remoteQueue?.revision ?? -1) ? queueOverride : remoteQueue;
   const queue = activity.preview?.apply(confirmedQueue ?? { revision: 0, paused: false, runId: null, messages: [] }) ?? confirmedQueue;
+  const compacting = queue?.compaction?.status === "running";
   const pendingDeliveries = queue?.messages.filter(m => !isWaitingMessage(m)) ?? [];
   const displayedQueue = queue && { ...queue, messages: queue.messages.filter(isWaitingMessage) };
   const resumeDisabled = !!queue?.messages.some(m => m.status === "unknown" || m.status === "sending");
@@ -113,7 +114,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     || queue?.messages.some(message => message.status !== "delivered" && message.status !== "cancelled");
   const placeholder = edit ? "Edit queued message…"
     : deliveryMode === "queue" && queueWaits ? "Queue a message for later…"
-    : running ? "Guide the current task…"
+    : running && !compacting ? "Guide the current task…"
     : "Message Palmagent…";
   const editedSettings = edit ? queue?.messages.find(message => message.id === edit.id)?.settings : undefined;
   const settingsReadOnly = edit
@@ -126,7 +127,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const active = status !== undefined && isActiveTaskStatus(status);
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
-  const composeMode: "steer" | "followup" | null = !task || localOwner || status === "archived" || status === "cancelled" ? null : running
+  const composeMode: "steer" | "followup" | null = compacting || !task || localOwner || status === "archived" || status === "cancelled" ? null : running
     ? "steer"
     : status === "idle" || status === "failed" || deliveryMode === "queue"
       ? "followup"
@@ -216,7 +217,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     ? !!editText.trim() || editAtt.images.length > 0 || editSkills.length > 0
     : hasDraft;
   // Preserve one primary action through submission and delayed Stop snapshots.
-  const primaryAction = edit ? "save" : activity.stopping || sending || canStop && !composerHasDraft ? "stop" : "send";
+  const primaryAction = edit ? "save" : compacting || activity.stopping || sending || canStop && !composerHasDraft ? "stop" : "send";
   const canCancel = running || status === "queued";
   const canArchive = !localOwner && !active && status !== "archived";
 

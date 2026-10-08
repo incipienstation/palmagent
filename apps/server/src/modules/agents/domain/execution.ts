@@ -4,6 +4,7 @@ export interface StartArgs {
   taskId: string;
   messageId?: string;
   interactive?: boolean;
+  operation?: "compact";
   cwd: string; // the task's worktree path — stable for the task's whole life
   prompt: string;
   skills?: import("@palmagent/shared").SkillSelection[];

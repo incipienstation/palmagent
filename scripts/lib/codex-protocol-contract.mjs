@@ -13,6 +13,7 @@ const item = { $variants: {
   fileChange: fields('id', 'type', 'changes'),
   mcpToolCall: fields('id', 'type', 'result', 'tool'),
   webSearch: fields('id', 'type', 'action'),
+  contextCompaction: fields('type'),
 } };
 const session = fields('cwd', 'approvalPolicy', 'sandbox', 'model', 'config');
 
@@ -21,6 +22,7 @@ export const protocolContracts = [
     initialize: { clientInfo: fields('name', 'version'), capabilities: {} },
     'thread/start': session,
     'thread/resume': { ...session, threadId: true },
+    'thread/compact/start': fields('threadId'),
     'turn/start': { ...fields('threadId', 'clientUserMessageId', 'effort'), input },
     'turn/steer': { ...fields('threadId', 'clientUserMessageId', 'expectedTurnId'), input },
     'turn/interrupt': fields('threadId', 'turnId'),
@@ -48,6 +50,7 @@ export const protocolContracts = [
   }],
 ];
 export const responseContracts = {
+  'v2/ThreadCompactStartResponse': {},
   'v2/ThreadStartResponse': { thread }, 'v2/ThreadResumeResponse': { thread },
   'v2/TurnStartResponse': { turn: { id: true } },
 };

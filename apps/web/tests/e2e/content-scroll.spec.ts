@@ -67,7 +67,7 @@ test("actual-size image scrolls on both axes while Fit stays reachable on a shor
   await assertViewportLocked(page);
 });
 
-test("short-screen action menu scrolls to its last item with the keyboard", async ({ page }) => {
+test("short-screen action menu scrolls to its last available item with the keyboard", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 280 });
   await page.goto("/#/task/t-idle-rich");
   const trigger = page.getByRole("button", { name: "Task actions" });
@@ -78,7 +78,7 @@ test("short-screen action menu scrolls to its last item with the keyboard", asyn
   const area = menu.locator('[data-slot="scroll-area-viewport"]');
   await expect.poll(() => area.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0);
   await page.keyboard.press("End");
-  const last = menu.getByRole("menuitem").last();
+  const last = menu.locator('[role="menuitem"]:not([aria-disabled="true"])').last();
   await expect(last).toBeFocused();
   await expect(last).toBeInViewport({ ratio: 1 });
   await expect.poll(() => area.evaluate(el => el.scrollTop)).toBeGreaterThan(0);

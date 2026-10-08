@@ -72,7 +72,7 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
 }
 
 export function Composer({ id, value, onChange, placeholder, label, action, onSend, onStop, stopping, busy, disabled, sendDisabled,
-  attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange, voiceScope = id }: {
+  attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange, commandActive, voiceScope = id }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
@@ -95,6 +95,8 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   skillContext?: SkillContext;
   skills?: SkillSelection[];
   onSkillsChange?: (skills: SkillSelection[]) => void;
+  /** A built-in command owns the slash token and submission. */
+  commandActive?: boolean;
 }) {
   const [configure, setConfigure] = useUpdateState(`composer:${id}:configure`, false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -109,7 +111,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
   const catalog = useAgentCatalog(settings.agent);
-  const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy });
+  const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy || commandActive });
   const latest = useRef({ value, onChange }); latest.current = { value, onChange };
   const voice = useVoiceInput(settings.agent === "codex" ? skillContext : undefined, voiceScope, !!(disabled || busy), text => {
     const draft = latest.current.value;

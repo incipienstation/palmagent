@@ -10,6 +10,7 @@ export type * from "./account-limits.js";
 export type * from "./agent-installations.js";
 export type * from "./requests.js";
 export * from "./messages.js";
+export * from "./compaction.js";
 export type * from "./settings.js";
 export * from "./ingress.js";
 

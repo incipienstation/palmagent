@@ -360,6 +360,16 @@ needs a device check with a new notification after the updated worker activates.
 
 ## Message controls
 
+The conversation's task menu groups Pin and Rename, session tools, and lifecycle
+actions separately. **Compact context** is available for an idle Codex session,
+or through an exact `/compact` message. It summarizes the model's earlier context;
+it is separate from the Compact output display setting. A first-use explanation
+appears before starting. The input area shows progress and offers Retry on failure;
+successful compaction leaves a small record in the conversation. Drafts, attachments,
+and the reader's scroll position remain in place, and drafts stay editable while
+compaction runs. Stop retains the session. Local-shell sessions, active responses,
+and unresolved queued messages show an unavailable reason in the menu.
+
 The composer switches immediately to Stop after submitting a prompt, including
 new tasks. A Stop click during submission waits for that request to settle before
 interrupting the turn and leaving the task resumable. Stop is available only in

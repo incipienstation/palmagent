@@ -11,6 +11,7 @@ const actionLabels = {
   cancel: "Cancelling task…", answer: "Sending answer…", skipQuestion: "Skipping question…",
   approve: "Approving…", deny: "Denying…", handoff: "Preparing shell handoff…", dispatch: "Creating task…",
   stop: "Stopping turn…",
+  compact: "Starting context compaction…",
 } as const;
 export type TaskActionKind = keyof typeof actionLabels;
 export const isSendingAction = (kind?: TaskActionKind) => kind === "send" || kind === "sendQueued";

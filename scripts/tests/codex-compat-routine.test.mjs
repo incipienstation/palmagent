@@ -28,6 +28,7 @@ function schemas() {
   }
   for (const file of ['v2/ThreadStartResponse', 'v2/ThreadResumeResponse']) result[file] = schemaFor({ thread: { id: true } });
   result['v2/TurnStartResponse'] = schemaFor({ turn: { id: true } });
+  result['v2/ThreadCompactStartResponse'] = schemaFor({});
   for (const file of ['CommandExecutionRequestApprovalResponse', 'FileChangeRequestApprovalResponse', 'ToolRequestUserInputResponse']) result[file] = schemaFor({ answers: true });
   return result;
 }

@@ -65,6 +65,23 @@ A local CLI's ownership remains read-only. Queue dispatch checks ownership and
 maintenance state again before starting. Ordinary chat input does not answer a
 pending question or approval; those retain their separate controls.
 
+## Context compaction
+
+Context compaction is a dedicated Codex execution, not a user prompt. The task menu
+and `/compact` shortcut call `POST /api/tasks/:id/compact` with a UUID `requestId`
+and the latest message-control `expectedRevision`. Admission requires an existing,
+idle or failed Codex session owned by Palmagent with no unresolved messages.
+An accepted request occupies the ordinary execution slot and resumes the same
+native thread before calling `thread/compact/start`.
+
+The latest compaction receipt and state are persisted in the message-control
+aggregate. Matching retries return that receipt; stale revisions cannot start a
+second operation. New messages and legacy steers are rejected during compaction.
+Restart reattaches the existing execution without issuing another compaction.
+The API acknowledgement is not completion: success requires the native
+`contextCompaction` item and terminal turn result. Stop, missing completion, and
+provider failure remain visible and resumable. Visible transcript events are retained.
+
 ## Verification
 
 The controller tests cover FIFO, edits, version conflicts, pause/resume,

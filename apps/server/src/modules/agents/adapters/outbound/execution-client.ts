@@ -32,6 +32,7 @@ export class ExecutionBackend implements RunnerBackend {
       taskId: args.taskId, agent, cwd: args.cwd, prompt: args.prompt, images: args.images,
       resumeId: args.resumeId, providerHome: args.providerHome, permission: args.permission,
       model: args.model, effort: args.effort, messageId: args.messageId, interactive: args.interactive,
+      operation: args.operation,
     }), this.releaseDirectory, this.node, args.skills ?? []);
     if (!record) throw new Error("Execution identity is unavailable; it will not be resumed automatically");
     const handle = new ExecutionHandle(this.store, record, emit);
