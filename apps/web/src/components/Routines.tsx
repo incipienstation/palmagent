@@ -253,7 +253,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogAction disabled={busy || saving} onClick={onDelete}>
+                  <AlertDialogAction variant="destructive" disabled={busy || saving} onClick={onDelete}>
                     Delete routine
                   </AlertDialogAction>
                   <AlertDialogCancel>Keep</AlertDialogCancel>

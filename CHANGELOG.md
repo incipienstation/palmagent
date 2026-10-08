@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Destructive actions use filled red buttons with white labels, while agent updates use the normal confirmation style. Confirmation cancel buttons use an outline style.
+
 ## 0.1.0-alpha.147
 
 ### Changed
