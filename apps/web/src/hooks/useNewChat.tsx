@@ -1,3 +1,4 @@
+import { gameDelivery } from "../games/play-events";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import type { AgentKind, InputAttachment, PendingMessage, Permission, TaskState } from "@palmagent/shared";
 import { Folder, GitBranch, Plus } from "lucide-react";
@@ -142,6 +143,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     }, "");
     if (!finish) return;
     setSubmission({ ...next, status: "sending", error: undefined });
+    if (!checkOnly) gameDelivery({ id: next.request.clientRequestId, state: "sending" });
     try {
       // Always check the durable ID before retrying an uncertain request. A 404
       // can race the original POST; replaying the same ID remains idempotent.
@@ -150,12 +152,14 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
         catch (cause) { if (!(cause instanceof ApiError && cause.status === 404)) throw cause; }
       }
       if (!created && checkOnly) {
+        gameDelivery({ id: next.request.clientRequestId, state: "failed" });
         setSubmission(current => ({ ...next, stop: current?.stop ?? next.stop, status: "unknown", error: "Creation is not confirmed yet. Retry safely to reconnect or finish creating this conversation." }));
         return;
       }
       created ??= await operations.createTask(next.request);
       if (generation !== cacheSession()) return;
       if (next.stop) await stopTaskTurn(created.taskId);
+      gameDelivery({ id: next.request.clientRequestId, taskId: created.taskId, state: "sent" });
       setPrompt(current => current === next.draft ? "" : current);
       att.setImages(current => JSON.stringify(current) === JSON.stringify(next.request.images ?? []) ? [] : current);
       setSkills(current => JSON.stringify(current) === JSON.stringify(next.request.skills ?? []) ? [] : current);
@@ -163,6 +167,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
       if (mounted.current) { setAccepted({ ...next, status: "sending", error: undefined }); onCreated?.(created); }
     } catch (cause) {
       if (generation !== cacheSession()) return;
+      gameDelivery({ id: next.request.clientRequestId, state: "failed" });
       const rejected = (!saved || saved.status === "rejected") && cause instanceof ApiError && cause.status >= 400 && cause.status < 500;
       setSubmission(current => ({ ...next, stop: current?.stop ?? next.stop, status: rejected ? "rejected" : "unknown",
         error: cause instanceof Error ? cause.message : String(cause) }));

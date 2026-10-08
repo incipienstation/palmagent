@@ -78,7 +78,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <AppBar title={heading} conn={creating ? undefined : conn} conversation>
-          {navigation?.openGame && <Button variant="ghost" size="icon-lg" aria-label="Open Scrap Scout" title="Scrap Scout" onClick={event => navigation.openGame?.(event.currentTarget)}><Gamepad2 /></Button>}
+          {navigation?.openGame && <Button variant="ghost" size="icon-lg" aria-label="Open Scrap Survivor" title="Scrap Survivor" onClick={event => navigation.openGame?.(event.currentTarget)}><Gamepad2 /></Button>}
           <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
             <SquarePen />
           </Button>

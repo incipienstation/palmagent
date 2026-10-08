@@ -6,7 +6,7 @@ import { disarmExit, hasExitHint, isStandalone, showExitHint, watchNativeBack } 
 // Only page entries survive navigation. Forward never replays a dismissed action.
 type Entry = { version: 1; session: string; index: number; depth: number; hash: string; kind: "page" | "layer" | "floor" };
 type Layer = { dismiss: () => void; priority: number; order: number };
-type Destination = { hash: string; replace?: boolean };
+type Destination = { hash: string; replace?: boolean; preserveLayers?: boolean };
 const key = "__palmagentNavigation";
 const layers = new Set<Layer>();
 const listeners = new Set<() => void>();
@@ -135,9 +135,9 @@ function reconcile() {
     return;
   }
   if (destination) {
-    if (layers.size) dismissAll();
+    if (layers.size && !destination.preserveLayers) dismissAll();
     // A saving dialog may refuse dismissal. Keep the user's work on screen.
-    if (layers.size) { destination = undefined; return; }
+    if (layers.size && !destination.preserveLayers) { destination = undefined; return; }
     if (current.kind === "layer") { removeCover(); return; }
     const next = destination;
     destination = undefined;
@@ -147,6 +147,7 @@ function reconcile() {
         index: current.index + (next.replace ? 0 : 1), depth: current.depth + (next.replace ? 0 : 1) }, next.replace);
       publish();
     }
+    if (next.preserveLayers) schedule();
     return;
   }
   if (layers.size && current.kind === "page") {
@@ -266,8 +267,8 @@ export const subscribeNavigation = (listener: () => void) => {
   return () => { listeners.delete(listener); };
 };
 export const navigationHash = () => visibleHash;
-export function navigate(path: string, opts?: { replace?: boolean }) {
-  destination = { hash: path.startsWith("#") ? path : `#${path}`, replace: opts?.replace };
+export function navigate(path: string, opts?: { replace?: boolean; preserveLayers?: boolean }) {
+  destination = { hash: path.startsWith("#") ? path : `#${path}`, replace: opts?.replace, preserveLayers: opts?.replace && opts.preserveLayers };
   schedule();
 }
 export function goBack() { goBackTo("/"); }

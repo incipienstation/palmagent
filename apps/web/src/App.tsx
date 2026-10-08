@@ -31,7 +31,8 @@ function AppInner() {
   const onCreated = (task: TaskState) => {
     setCreated(task);
     setConversation(current => ({ ...current, taskId: task.taskId }));
-    navigate(`/task/${encodeURIComponent(task.taskId)}`, { replace: true });
+    // Resolving a conversation identity must not close its active game or controls.
+    navigate(`/task/${encodeURIComponent(task.taskId)}`, { replace: true, preserveLayers: true });
   };
   // The single inbox stream lives for the whole app session, independent of the
   // current view, so the task list stays live everywhere (and we never open more

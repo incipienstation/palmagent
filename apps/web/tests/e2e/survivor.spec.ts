@@ -1,0 +1,106 @@
+import { expect, test, type Page } from "@playwright/test";
+import { tasks } from "../fixtures.mjs";
+import { freshRun, SAVE_KEY, serialize } from "../../src/games/scrap-survivor/engine";
+import { installScopedStream } from "./_session-stream";
+import { assertViewportLocked } from "./_helpers";
+test.use({ serviceWorkers: "block" });
+const game = (page: Page) => page.getByRole("dialog", { name: "Scrap Survivor", exact: true });
+const saved = (page: Page) => page.evaluate(key => JSON.parse(localStorage.getItem(key)!), SAVE_KEY);
+const enable = (page: Page) => page.addInitScript(() => localStorage.setItem("pref:adhd-mode", "on"));
+const open = (page: Page) => page.getByRole("button", { name: "Open Scrap Survivor", exact: true }).click();
+
+test("a first send opens before the response and preserves the canvas through task identity replacement and Back", async ({ page }) => {
+  await enable(page); await installScopedStream(page); await page.setViewportSize({ width: 390, height: 844 });
+  let release!: () => void; const gate = new Promise<void>(r => release = r);
+  const task = { ...tasks.find(t => t.taskId === "t-run")!, prompt: "Explore while sending" };
+  await page.route("**/api/tasks", async route => { if (route.request().method() !== "POST") return route.continue(); await gate; await route.fulfill({ status: 201, json: { task } }); });
+  await page.goto("/#/new/space/repo-app");
+  const prompt = page.getByRole("textbox", { name: "Prompt", exact: true }); await prompt.fill("Explore while sending");
+  const input = await prompt.elementHandle();
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  try {
+    await expect(game(page)).toBeVisible(); await expect(game(page).getByText("Sending your message…")).toBeVisible();
+    await expect(game(page).getByRole("button", { name: "Move right", exact: true })).toBeEnabled();
+    const canvas = await game(page).locator("canvas").elementHandle();
+    release(); await expect(page).toHaveURL(/task\/t-run$/);
+    await expect(game(page)).toBeVisible();
+    expect(await canvas!.evaluate(el => el.isConnected && el === document.querySelector('canvas'))).toBe(true);
+    expect(await input!.evaluate(el => el === document.querySelector('textarea'))).toBe(true);
+    await assertViewportLocked(page);
+    await page.goBack(); await expect(game(page)).toHaveCount(0); await expect(page).toHaveURL(/task\/t-run$/);
+    await expect(page.locator("canvas")).toHaveCount(0);
+    await open(page); await expect(game(page)).toBeVisible(); await page.keyboard.press("Escape"); await expect(game(page)).toHaveCount(0);
+  } finally { release(); }
+});
+
+test("follow-up send opens immediately; failure pauses play and retains the draft", async ({ page }) => {
+  await enable(page);
+  let release!: () => void; const gate = new Promise<void>(r => release = r);
+  await page.route("**/api/tasks/t-idle-rich/messages", async route => { await gate; await route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } }); });
+  await page.goto("/#/task/t-idle-rich");
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Preserve this follow-up");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  try { await expect(game(page)).toBeVisible(); release(); await expect(game(page).getByText("Message delivery needs attention")).toBeVisible();
+    await expect(game(page).getByRole("button", { name: "Move right" })).toBeDisabled();
+    await game(page).getByRole("button", { name: "Back to chat" }).click();
+    await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Preserve this follow-up");
+  } finally { release(); }
+});
+
+test("opt-in controls, movement, pause, persistence, upgrades and short-screen controls", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 }); await page.goto("/#/new/space/repo-app");
+  await expect(page.getByRole("button", { name: "Open Scrap Survivor" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click(); await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true }); await settings.getByRole("switch", { name: "ADHD mode" }).check(); await settings.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft"); await open(page);
+  await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  await page.keyboard.down("ArrowRight"); await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(300); await page.keyboard.up("ArrowRight");
+  await game(page).getByRole("button", { name: "Pause game" }).click();
+  await expect(game(page).getByText("Paused", { exact: true })).toBeVisible();
+  await game(page).getByRole("button", { name: "Close game" }).click();
+  const checkpoint = await saved(page); await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep my draft");
+  await expect(page.getByRole("button", { name: "Open Scrap Survivor" })).toBeFocused();
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await page.reload(); await open(page); await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  expect((await saved(page)).time).toBeGreaterThanOrEqual(checkpoint.time);
+  await page.evaluate(() => window.dispatchEvent(new Event("blur"))); await expect(game(page).getByText("Paused while away", { exact: true })).toBeVisible();
+  await game(page).getByRole("button", { name: "Continue playing" }).click();
+  await page.setViewportSize({ width: 320, height: 480 });
+  await expect(game(page).getByRole("button", { name: "Close game" })).toBeInViewport(); await expect(game(page).getByRole("button", { name: "Move down" })).toBeInViewport();
+  await game(page).getByRole("button", { name: "Restart expedition" }).click(); await game(page).getByRole("button", { name: "Restart", exact: true }).click();
+  await game(page).getByRole("button", { name: "Close game" }).click();
+  const run = freshRun(1); run.level = 2; run.choices = ["blade", "arc", "bolt"];
+  await page.evaluate(({key,value}) => localStorage.setItem(key,value), {key:SAVE_KEY,value:serialize(run)});
+  await page.reload(); await open(page); await expect(game(page).getByRole("region", { name: "Choose an upgrade" })).toBeVisible();
+  await game(page).getByRole("button", { name: /Orbiting blades/ }).click(); await expect.poll(async () => (await saved(page)).upgrades.blade).toBe(1);
+});
+
+test("sprite loading can retry and live attention pauses without resetting the run", async ({ page }) => {
+  await enable(page);
+  await page.addInitScript(() => {
+    const Native = window.EventSource;
+    class Inbox extends EventTarget {
+      onopen: ((e: Event) => void) | null = null; onmessage: ((e: MessageEvent) => void) | null = null; onerror: ((e: Event) => void) | null = null;
+      constructor(url: string | URL) { super(); if (new URL(url, location.href).searchParams.get("snapshots") !== "1") return new Native(url) as unknown as Inbox;
+        Object.assign(window, { survivorInbox: this }); queueMicrotask(() => this.onopen?.(new Event("open"))); }
+      close() {}
+    }
+    window.EventSource = Inbox as unknown as typeof EventSource;
+  });
+  await page.route("**/scouts-*.png", route => route.abort());
+  await page.goto("/#/task/t-run"); await open(page);
+  await expect(game(page).getByText("The game could not load.")).toBeVisible();
+  await page.unroute("**/scouts-*.png"); await game(page).getByRole("button", { name: "Retry game" }).click();
+  await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  const task = tasks.find(t => t.taskId === "t-run")!;
+  for (const status of ["awaiting_input", "awaiting_approval"] as const) {
+    await page.evaluate(t => (window as unknown as { survivorInbox: EventSource }).survivorInbox.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "tasks", tasks: [t] }) })), { ...task, status });
+    await expect(game(page).getByText("Your agent needs attention")).toBeVisible();
+    await expect(game(page).getByRole("button", { name: "Move right" })).toBeDisabled();
+    await game(page).getByRole("button", { name: "Continue playing" }).click();
+    await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  }
+  await page.evaluate(() => (window as unknown as { survivorInbox: EventSource }).survivorInbox.onerror?.(new Event("error")));
+  await expect(game(page).getByText("Reconnecting — task status may be out of date")).toBeVisible();
+  await expect(game(page).locator("canvas")).toHaveCount(1);
+});
