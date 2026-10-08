@@ -435,3 +435,63 @@
 [data-sonner-toaster] .compact-toast[data-removed="true"][data-swipe-out="false"] {
   --y: translateY(8px);
 }
+
+/* Scrap Survivor owns a fixed game palette in both app themes. */
+.survivor-game {
+  --background: #101d25;
+  --foreground: #edf7ee;
+  --primary: #79e4c4;
+  --primary-foreground: #082b24;
+  --primary-active: #56bda0;
+  --input: #416069;
+  --accent: #233e47;
+  --accent-foreground: #edf7ee;
+  --muted: #23323b;
+  --muted-foreground: #aec5c7;
+  --ring: #f7c36e;
+  --game-gold: #f7c36e;
+  --game-danger: #ff8e7f;
+  --game-panel: #182b34;
+  background: linear-gradient(145deg, var(--game-panel), var(--background) 65%);
+  color: var(--foreground);
+}
+.survivor-eyebrow { color: var(--game-gold); font-size: 9px; font-weight: 800; letter-spacing: .14em; }
+.survivor-art { display: block; width: 100%; height: 100%; }
+.survivor-title-art { width: 44px; height: 44px; flex: none; }
+.survivor-hud { display: grid; grid-template-columns: 1.5fr .75fr 1fr; gap: 12px; margin: 10px 16px 4px; font-variant-numeric: tabular-nums; }
+.survivor-health { font-size: 11px; color: var(--primary); }
+.survivor-health[data-critical="true"] { color: var(--game-danger); }
+.survivor-health-cells { display: flex; gap: 3px; margin-top: 5px; }
+.survivor-health-cells span { flex: 1; height: 9px; border: 1px solid var(--input); border-radius: 2px; background: var(--muted); }
+.survivor-health-cells [data-filled="true"] { background: currentColor; border-color: currentColor; box-shadow: 0 0 5px color-mix(in srgb, currentColor 25%, transparent); }
+.survivor-stat { text-align: right; }
+.survivor-stat > span { display: flex; justify-content: end; align-items: center; gap: 4px; color: var(--muted-foreground); font-size: 9px; letter-spacing: .04em; }
+.survivor-stat strong { font-size: 17px; line-height: 1.3; }
+.survivor-xp-row { display: flex; align-items: center; gap: 8px; padding: 3px 16px; font-size: 10px; color: var(--game-gold); }
+.survivor-xp { flex: 1; height: 5px; border-radius: 3px; background: var(--muted); overflow: hidden; }
+.survivor-xp > div { height: 100%; background: var(--game-gold); }
+.survivor-board { background: #0c151b; border: 1px solid var(--input); box-shadow: inset 0 0 0 3px #101d25, 0 6px 20px #0004; }
+.survivor-overlay { background: linear-gradient(#0d1b25e8, #102832f5); }
+.survivor-panel-art { width: 128px; height: 112px; margin: 0 auto; background: radial-gradient(ellipse, #79e4c423, transparent 70%); }
+.survivor-result-title { font-size: 24px; }
+.survivor-caption { color: var(--muted-foreground); font-size: 11px; font-weight: 400; line-height: 1.45; }
+.survivor-upgrade-heading { padding: 2px 0 8px; }
+.survivor-upgrade-heading h2 { font-size: 23px; font-weight: 850; letter-spacing: -.04em; }
+.survivor-upgrade { background: linear-gradient(120deg, var(--game-panel), var(--background)); box-shadow: inset 0 1px #ffffff10, 0 3px 0 #070e14; }
+.survivor-item-frame { flex: none; width: 74px; height: 80px; border-radius: 8px; background: radial-gradient(ellipse, #79e4c423, #79e4c405 70%); }
+.survivor-item-meta { color: var(--game-gold); font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.survivor-level-pips { display: flex; gap: 3px; padding-top: 3px; }
+.survivor-level-pips i { width: 15px; height: 3px; border-radius: 1px; background: var(--input); }
+.survivor-level-pips [data-filled="true"] { background: var(--primary); }
+.survivor-level-pips [data-next="true"] { background: var(--game-gold); box-shadow: 0 0 5px #f7c36e66; }
+.survivor-loadout, .survivor-result-loadout { display: flex; min-width: 0; gap: 4px; }
+.survivor-result-loadout { justify-content: center; margin: 4px 0; }
+.survivor-loadout > span, .survivor-result-loadout > span { position: relative; width: 34px; height: 36px; min-width: 0; border: 1px solid var(--input); border-radius: 6px; background: var(--game-panel); }
+.survivor-loadout small, .survivor-result-loadout small { position: absolute; bottom: -3px; right: -2px; padding: 0 3px; color: var(--game-gold); background: var(--background); font-size: 9px; font-weight: 800; border-radius: 3px; }
+@media (max-height: 600px) {
+  .survivor-hud { margin-top: 4px; }
+  .survivor-title-art { width: 30px; height: 30px; }
+  .survivor-panel-art { width: 80px; height: 70px; }
+  .survivor-item-frame { width: 58px; height: 66px; }
+  .survivor-upgrade-heading h2 { font-size: 19px; }
+}

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
-import { freshRun, SAVE_KEY, serialize } from "../../src/games/scrap-survivor/engine";
+import { freshRun, SAVE_KEY, serialize, WORLD_W } from "../../src/games/scrap-survivor/engine";
 import { installScopedStream } from "./_session-stream";
 import { assertViewportLocked } from "./_helpers";
 test.use({ serviceWorkers: "block" });
@@ -54,7 +54,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   const settings = page.getByRole("dialog", { name: "Settings", exact: true }); await settings.getByRole("switch", { name: "ADHD mode" }).check(); await settings.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft"); await open(page);
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
-  await page.keyboard.down("ArrowRight"); await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(300); await page.keyboard.up("ArrowRight");
+  await page.keyboard.down("ArrowRight"); await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(WORLD_W / 2 + 60); await page.keyboard.up("ArrowRight");
   await game(page).getByRole("button", { name: "Pause game" }).click();
   await expect(game(page).getByText("Paused", { exact: true })).toBeVisible();
   await game(page).getByRole("button", { name: "Close game" }).click();
@@ -87,10 +87,10 @@ test("sprite loading can retry and live attention pauses without resetting the r
     }
     window.EventSource = Inbox as unknown as typeof EventSource;
   });
-  await page.route("**/scouts-*.png", route => route.abort());
+  await page.route("**/units-*.webp", route => route.abort());
   await page.goto("/#/task/t-run"); await open(page);
   await expect(game(page).getByText("The game could not load.")).toBeVisible();
-  await page.unroute("**/scouts-*.png"); await game(page).getByRole("button", { name: "Retry game" }).click();
+  await page.unroute("**/units-*.webp"); await game(page).getByRole("button", { name: "Retry game" }).click();
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   const task = tasks.find(t => t.taskId === "t-run")!;
   for (const status of ["awaiting_input", "awaiting_approval"] as const) {
@@ -121,9 +121,15 @@ test.describe("touch joystick", () => {
     });
     const resting = await joystick.boundingBox();
     const arena = await game(page).getByTestId("survivor-arena").boundingBox();
-    const start = { x: arena!.x + arena!.width / 2, y: arena!.y + arena!.height / 2 };
+    const start = { x: arena!.x + arena!.width / 2, y: arena!.y + arena!.height * 0.8 };
     const touch = await context.newCDPSession(page);
     const point = (id: number, x: number, y: number) => ({ id, x, y });
+    const upper = { x: start.x, y: arena!.y + arena!.height * 0.4 };
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(7, upper.x, upper.y)] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(7, upper.x + 65, upper.y)] });
+    await page.waitForTimeout(1100);
+    expect((await saved(page)).player).toEqual(run.player);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(1, start.x, start.y)] });
     await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(1, start.x + 65, start.y - 65)] });
     await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(run.player.x + 20);
@@ -151,4 +157,24 @@ test.describe("touch joystick", () => {
     await page.waitForTimeout(1100); expect((await saved(page)).player).toEqual(resumed);
     await assertViewportLocked(page);
   });
+});
+
+test("illustrated upgrades stay reachable on short screens and repair the visible HP meter", async ({ page }) => {
+  await enable(page); await page.setViewportSize({ width: 320, height: 480 });
+  const run = freshRun(4); run.hull = 2; run.level = 6; run.enemies = []; run.spawn = 10;
+  run.upgrades = { bolt: 1, blade: 1, arc: 1, reactor: 1, magnet: 1, boots: 1 };
+  run.choices = ["reactor", "magnet", "boots"];
+  await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: SAVE_KEY, value: serialize(run) });
+  await page.goto("/#/task/t-run"); await open(page);
+  const panel = game(page), choices = panel.getByRole("region", { name: "Choose an upgrade" });
+  await expect(choices).toBeVisible();
+  await expect(panel.getByRole("meter", { name: "Player HP" })).toHaveAttribute("aria-valuenow", "2");
+  await expect(choices.locator("button svg image")).toHaveCount(3);
+  await expect(panel.getByLabel("Equipped upgrades").getByRole("img")).toHaveCount(6);
+  await choices.getByRole("button", { name: /Turbo treads/ }).click();
+  await expect(choices).toHaveCount(0);
+  await expect(panel.getByRole("meter", { name: "Player HP" })).toHaveAttribute("aria-valuenow", "4");
+  await expect(panel.getByRole("img", { name: "Turbo treads level 2", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Movement joystick" })).toBeInViewport();
+  await assertViewportLocked(page);
 });
