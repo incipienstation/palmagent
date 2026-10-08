@@ -20,7 +20,7 @@ test("a first send opens before the response and preserves the canvas through ta
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   try {
     await expect(game(page)).toBeVisible(); await expect(game(page).getByText("Sending your message…")).toBeVisible();
-    await expect(game(page).getByRole("button", { name: "Move right", exact: true })).toBeEnabled();
+    await expect(game(page).getByRole("button", { name: "Movement joystick", exact: true })).toBeEnabled();
     const canvas = await game(page).locator("canvas").elementHandle();
     release(); await expect(page).toHaveURL(/task\/t-run$/);
     await expect(game(page)).toBeVisible();
@@ -41,7 +41,7 @@ test("follow-up send opens immediately; failure pauses play and retains the draf
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Preserve this follow-up");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   try { await expect(game(page)).toBeVisible(); release(); await expect(game(page).getByText("Message delivery needs attention")).toBeVisible();
-    await expect(game(page).getByRole("button", { name: "Move right" })).toBeDisabled();
+    await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeDisabled();
     await game(page).getByRole("button", { name: "Back to chat" }).click();
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Preserve this follow-up");
   } finally { release(); }
@@ -53,7 +53,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await page.getByRole("button", { name: "Open navigation", exact: true }).click(); await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true }); await settings.getByRole("switch", { name: "ADHD mode" }).check(); await settings.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft"); await open(page);
-  await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   await page.keyboard.down("ArrowRight"); await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(300); await page.keyboard.up("ArrowRight");
   await game(page).getByRole("button", { name: "Pause game" }).click();
   await expect(game(page).getByText("Paused", { exact: true })).toBeVisible();
@@ -61,12 +61,12 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   const checkpoint = await saved(page); await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep my draft");
   await expect(page.getByRole("button", { name: "Open Scrap Survivor" })).toBeFocused();
   await expect(page.locator("canvas")).toHaveCount(0);
-  await page.reload(); await open(page); await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  await page.reload(); await open(page); await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   expect((await saved(page)).time).toBeGreaterThanOrEqual(checkpoint.time);
   await page.evaluate(() => window.dispatchEvent(new Event("blur"))); await expect(game(page).getByText("Paused while away", { exact: true })).toBeVisible();
   await game(page).getByRole("button", { name: "Continue playing" }).click();
   await page.setViewportSize({ width: 320, height: 480 });
-  await expect(game(page).getByRole("button", { name: "Close game" })).toBeInViewport(); await expect(game(page).getByRole("button", { name: "Move down" })).toBeInViewport();
+  await expect(game(page).getByRole("button", { name: "Close game" })).toBeInViewport(); await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeInViewport();
   await game(page).getByRole("button", { name: "Restart expedition" }).click(); await game(page).getByRole("button", { name: "Restart", exact: true }).click();
   await game(page).getByRole("button", { name: "Close game" }).click();
   const run = freshRun(1); run.level = 2; run.choices = ["blade", "arc", "bolt"];
@@ -91,16 +91,64 @@ test("sprite loading can retry and live attention pauses without resetting the r
   await page.goto("/#/task/t-run"); await open(page);
   await expect(game(page).getByText("The game could not load.")).toBeVisible();
   await page.unroute("**/scouts-*.png"); await game(page).getByRole("button", { name: "Retry game" }).click();
-  await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   const task = tasks.find(t => t.taskId === "t-run")!;
   for (const status of ["awaiting_input", "awaiting_approval"] as const) {
     await page.evaluate(t => (window as unknown as { survivorInbox: EventSource }).survivorInbox.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "tasks", tasks: [t] }) })), { ...task, status });
     await expect(game(page).getByText("Your agent needs attention")).toBeVisible();
-    await expect(game(page).getByRole("button", { name: "Move right" })).toBeDisabled();
+    await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeDisabled();
     await game(page).getByRole("button", { name: "Continue playing" }).click();
-    await expect(game(page).getByRole("button", { name: "Move right" })).toBeEnabled();
+    await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   }
   await page.evaluate(() => (window as unknown as { survivorInbox: EventSource }).survivorInbox.onerror?.(new Event("error")));
   await expect(game(page).getByText("Reconnecting — task status may be out of date")).toBeVisible();
   await expect(game(page).locator("canvas")).toHaveCount(1);
+});
+
+test.describe("touch joystick", () => {
+  test.use({ hasTouch: true });
+  test("arena dragging moves diagonally, ignores extra fingers, and releases on cancel or pause", async ({ page, context }) => {
+    await enable(page); await page.setViewportSize({ width: 390, height: 844 });
+    const run = freshRun(9); run.enemies = []; run.spawn = 10;
+    await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: SAVE_KEY, value: serialize(run) });
+    await page.goto("/#/task/t-run"); await open(page);
+    const joystick = game(page).getByRole("button", { name: "Movement joystick" });
+    await expect(joystick).toBeEnabled(); await expect(joystick).toBeInViewport();
+    await expect(game(page).getByRole("button", { name: /^Move (up|down|left|right)$/ })).toHaveCount(0);
+    // Capture the resting position after the sheet finishes entering the viewport.
+    await game(page).evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    });
+    const resting = await joystick.boundingBox();
+    const arena = await game(page).getByTestId("survivor-arena").boundingBox();
+    const start = { x: arena!.x + arena!.width / 2, y: arena!.y + arena!.height / 2 };
+    const touch = await context.newCDPSession(page);
+    const point = (id: number, x: number, y: number) => ({ id, x, y });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(1, start.x, start.y)] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(1, start.x + 65, start.y - 65)] });
+    await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(run.player.x + 20);
+    expect((await saved(page)).player.y).toBeLessThan(run.player.y - 20);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(1, start.x + 65, start.y - 65), point(2, start.x - 70, start.y + 70)] });
+    const active = await joystick.boundingBox();
+    expect(active!.x + active!.width / 2).toBeCloseTo(start.x, 0);
+    expect(active!.y + active!.height / 2).toBeCloseTo(start.y, 0);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
+    await expect.poll(async () => (await joystick.boundingBox())!.y).toBeCloseTo(resting!.y, 0);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(4, start.x, start.y)] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(4, start.x - 45, start.y)] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(async () => (await joystick.boundingBox())!.y).toBeCloseTo(resting!.y, 0);
+    await page.waitForTimeout(1100); const released = (await saved(page)).player;
+    await page.waitForTimeout(1100); expect((await saved(page)).player).toEqual(released);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(3, start.x, start.y)] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(3, start.x - 50, start.y)] });
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect(joystick).toBeDisabled();
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await game(page).getByRole("button", { name: "Continue playing" }).click();
+    await expect(joystick).toBeEnabled();
+    await page.waitForTimeout(1100); const resumed = (await saved(page)).player;
+    await page.waitForTimeout(1100); expect((await saved(page)).player).toEqual(resumed);
+    await assertViewportLocked(page);
+  });
 });
