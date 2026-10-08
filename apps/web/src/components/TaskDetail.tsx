@@ -267,7 +267,7 @@ function TaskActionsMenu({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={onCancel}>Cancel task</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={onCancel}>Cancel task</AlertDialogAction>
             <AlertDialogCancel>Keep</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -283,7 +283,7 @@ function TaskActionsMenu({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={onArchive}>Archive task</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={onArchive}>Archive task</AlertDialogAction>
             <AlertDialogCancel>Keep</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,10 +1,9 @@
 import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui";
-import type { VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 
 function AlertDialog(props: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
   const { depth, ...back } = useBackDismiss(props);
@@ -98,33 +97,38 @@ function AlertDialogDescription({
   );
 }
 
-// Confirm (destructive by default — these wrap Cancel/Archive/Delete/Sign out).
+// Callers opt into destructive styling for actions with destructive consequences.
 function AlertDialogAction({
   className,
-  variant = "destructive",
+  variant = "default",
+  size = "default",
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & Pick<VariantProps<typeof buttonVariants>, "variant">) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <AlertDialogPrimitive.Action
-      data-slot="alert-dialog-action"
-      className={cn(buttonVariants({ variant }), "w-full", className)}
-      {...props}
-    />
+    <Button variant={variant} size={size} asChild>
+      <AlertDialogPrimitive.Action
+        data-slot="alert-dialog-action"
+        className={cn("w-full", className)}
+        {...props}
+      />
+    </Button>
   );
 }
 
-// Dismiss. MUST NOT be labeled "Cancel" (collides with the task "Cancel"
-// selector) — consumers label it "Keep" / "Stay".
 function AlertDialogCancel({
   className,
+  variant = "outline",
+  size = "default",
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Cancel> & Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <AlertDialogPrimitive.Cancel
-      data-slot="alert-dialog-cancel"
-      className={cn(buttonVariants({ variant: "secondary" }), "w-full", className)}
-      {...props}
-    />
+    <Button variant={variant} size={size} asChild>
+      <AlertDialogPrimitive.Cancel
+        data-slot="alert-dialog-cancel"
+        className={cn("w-full", className)}
+        {...props}
+      />
+    </Button>
   );
 }
 
