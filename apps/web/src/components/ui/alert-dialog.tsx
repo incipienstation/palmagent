@@ -1,6 +1,7 @@
 import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui";
+import type { VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -100,12 +101,13 @@ function AlertDialogDescription({
 // Confirm (destructive by default — these wrap Cancel/Archive/Delete/Sign out).
 function AlertDialogAction({
   className,
+  variant = "destructive",
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & Pick<VariantProps<typeof buttonVariants>, "variant">) {
   return (
     <AlertDialogPrimitive.Action
       data-slot="alert-dialog-action"
-      className={cn(buttonVariants({ variant: "destructive" }), "w-full", className)}
+      className={cn(buttonVariants({ variant }), "w-full", className)}
       {...props}
     />
   );

@@ -218,6 +218,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
   if (item.kind === "status") {
     const p = (item.event.payload ?? {}) as Record<string, unknown>;
     const sub = typeof p.subtype === "string" ? p.subtype : "";
+    if (sub === "context_compacted") return <p className="my-3 text-center text-xs text-muted-foreground">Context compacted</p>;
     const text = typeof p.text === "string" ? p.text.trim() : "";
     if ((sub === "steer" || sub === "followup" || sub === "dispatch") && text) {
       const meta = p.queued === true ? "queued" : p.injected === true ? "injected" : undefined;

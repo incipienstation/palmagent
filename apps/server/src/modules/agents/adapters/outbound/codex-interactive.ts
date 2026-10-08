@@ -18,6 +18,9 @@ export const codexInput = (text: string, images?: InputAttachment[], skills?: St
 // boundary. Native turn completion closes stdin; a process exit by itself never
 // establishes success. The daemon's stdout replay reconstructs RPC/turn IDs.
 export function startCodexInteractive(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
+  const compacting = args.operation === "compact";
+  if (compacting && !args.resumeId) throw new Error("Context compaction requires an existing session.");
+  let compactionCompleted = false;
   const { taskId, reattach } = args;
   let sessionId = args.resumeId;
   let turnId: string | undefined;
@@ -74,7 +77,8 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
       } else if (ev.id === "session") {
         sessionId = ev.result.thread.id;
         event("status", { subtype: "thread_started" }, seq);
-        if (!reattach) rpc("start", "turn/start", { threadId: sessionId, input: codexInput(args.prompt, args.images, args.skills),
+        if (!reattach && compacting) rpc("compact", "thread/compact/start", { threadId: sessionId });
+        else if (!reattach) rpc("start", "turn/start", { threadId: sessionId, input: codexInput(args.prompt, args.images, args.skills),
           ...(args.messageId ? { clientUserMessageId: args.messageId } : {}),
           ...(args.effort ? { effort: args.effort } : {}) });
       } else if (ev.id === "start") {
@@ -96,6 +100,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
         break;
       case "item/completed": {
         const item = p.item;
+        if (item?.type === "contextCompaction") compactionCompleted = true;
         if (item?.type === "userMessage" && item.clientId) delivery(item.clientId, seq);
         else if (item?.type === "agentMessage") event("status", { subtype: "assistant_message", messageId: item.id,
           phase: item.phase === "commentary" ? "progress" : item.phase === "final_answer" ? "final" : undefined }, seq);
@@ -105,11 +110,13 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
         // Reasoning payloads are never converted into assistant text.
         break;
       }
-      case "turn/completed":
+      case "turn/completed": {
         completed = true; turnId = undefined; questions.clear(); clearTimeout(startup);
-        if (p.turn.status === "failed") event("error", { message: p.turn.error?.message ?? "Codex turn failed." }, seq);
-        event("result", { is_error: p.turn.status !== "completed", subtype: p.turn.status, error: p.turn.error, usage }, seq);
+        const missingCompaction = compacting && p.turn.status === "completed" && !compactionCompleted;
+        if (p.turn.status === "failed" || missingCompaction) event("error", { message: p.turn.error?.message ?? (missingCompaction ? "Codex did not confirm context compaction." : "Codex turn failed.") }, seq);
+        event("result", { is_error: p.turn.status !== "completed" || missingCompaction, subtype: p.turn.status, error: p.turn.error, usage }, seq);
         proc.closeStdin(); break;
+      }
       case "thread/tokenUsage/updated":
         if (p.tokenUsage?.last) usage = { input_tokens: p.tokenUsage.last.inputTokens, cached_input_tokens: p.tokenUsage.last.cachedInputTokens, output_tokens: p.tokenUsage.last.outputTokens };
         event("status", { subtype: "usage", usage: p.tokenUsage }, seq); break;
@@ -149,6 +156,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
   if (!reattach) rpc("initialize", "initialize", { clientInfo: { name: "palmagent", version: "1.0.0" }, capabilities: {} });
   return {
     send: (text, images, messageId, skills) => {
+      if (compacting) return Promise.resolve("rejected");
       if (!turnId || completed || !proc.stdinWritable()) return Promise.resolve("rejected");
       return new Promise(resolve => {
         const timer = setTimeout(() => { pending.delete(messageId); resolve("unknown"); }, 15_000); timer.unref();

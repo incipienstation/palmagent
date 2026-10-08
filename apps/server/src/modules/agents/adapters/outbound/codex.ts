@@ -80,7 +80,7 @@ export class CodexRunner implements AgentRunner {
   readonly agent = "codex" as const;
 
   start(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
-    if (args.interactive) return startCodexInteractive(args, emit, backend);
+    if (args.interactive || args.operation === "compact") return startCodexInteractive(args, emit, backend);
     const { taskId, cwd, prompt, images, resumeId, permission, model, effort, reattach } = args;
     let sessionId: string | undefined = resumeId;
 

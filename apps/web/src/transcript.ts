@@ -121,7 +121,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
       if (failure) failure.previous = true;
       failure = undefined;
     }
-    if (userMessage(item) || item.kind === "question" || item.kind === "approval_request") {
+    if (item.kind === "status" && p.subtype === "context_compacted" || userMessage(item) || item.kind === "question" || item.kind === "approval_request") {
       flush(false);
       rows.push({ type: "message", key: item.key, item });
     } else {

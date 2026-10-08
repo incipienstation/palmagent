@@ -12,6 +12,7 @@ export function useTaskOperations(taskId: string) {
     getTask: () => api.getTask(taskId),
     cancel: () => api.cancel(taskId),
     resumeQueue: () => api.resumeQueue(taskId),
+    compact: (input: import("@palmagent/shared").CompactTaskRequest) => api.compact(taskId, input),
     answer: (input: Parameters<typeof api.answer>[1]) => api.answer(taskId, input),
     approve: (input: Parameters<typeof api.approve>[1]) => api.approve(taskId, input),
     accountLimits: () => api.getAccountLimits(taskId),

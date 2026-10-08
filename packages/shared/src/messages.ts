@@ -34,6 +34,7 @@ export interface PendingMessage {
   editingUntil?: number;
 }
 export interface MessageQueue {
+  compaction?: import("./compaction.js").ContextCompaction;
   revision: number;
   paused: boolean;
   runId: string | null;

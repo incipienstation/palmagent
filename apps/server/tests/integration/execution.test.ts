@@ -173,3 +173,14 @@ test("skill inputs persist beside v1 args without breaking older execution reade
   assert.equal(store.reserve(args, record.release, process.execPath, skills).id, record.id);
   assert.throws(() => store.reserve(args, record.release, process.execPath, []), /already owns/);
 });
+
+test("context compaction operation is preserved across the execution process boundary", async t => {
+  const { store } = fixture(t);
+  const client = new ExecutionBackend(store.directory, "/opt/releases/current", process.execPath, 1, () => {});
+  t.after(() => client.close());
+  client.agentRunner("codex").start({ taskId: "compact", cwd: "/tmp/workspace", prompt: "", resumeId: "existing-thread", interactive: true, operation: "compact" }, () => {});
+  const record = store.latest("compact")!;
+  assert.equal(record.args.operation, "compact");
+  assert.equal(record.args.resumeId, "existing-thread");
+  assert.equal(record.args.prompt, "");
+});

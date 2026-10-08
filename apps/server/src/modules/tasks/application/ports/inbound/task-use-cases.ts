@@ -20,6 +20,7 @@ export interface TaskUseCases {
   touchVoice(id: string): void;
   stopVoice(id: string, timings?: VoiceClientTimings): void;
   resumeQueue(id: string): MessageQueue;
+  compact(id: string, request: import("@palmagent/shared").CompactTaskRequest): TaskState;
   availableSkills(context: SkillContext): Promise<SkillCatalog>;
   resolveSkills(context: SkillContext, skills?: SkillSelection[]): Promise<SkillSelection[] | undefined>;
   resolveMessageSkills(id: string, req: SubmitMessage): Promise<SkillSelection[] | undefined>;

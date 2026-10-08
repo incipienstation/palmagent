@@ -14,9 +14,10 @@ import { mutateTask, useTaskMutations, getRenameDraft, clearRenameDraft } from "
 
 // Both list and detail use the same editor; optional children are the detail's
 // existing lifecycle actions. Keep the menu and dialog as sibling overlays.
-export function SessionActionsMenu({ task, children, label = "Task actions", renameDisabled = false, triggerRef }: {
+export function SessionActionsMenu({ task, children, lifecycle, label = "Task actions", renameDisabled = false, triggerRef }: {
   task: TaskState;
   children?: ReactNode;
+  lifecycle?: ReactNode;
   label?: string;
   /** Keep read-only menu items available while a task action is pending. */
   renameDisabled?: boolean;
@@ -61,6 +62,10 @@ export function SessionActionsMenu({ task, children, label = "Task actions", ren
           {children && <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>{children}</DropdownMenuGroup>
+          </>}
+          {lifecycle && <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>{lifecycle}</DropdownMenuGroup>
           </>}
         </DropdownMenuContent>}
       </DropdownMenu>

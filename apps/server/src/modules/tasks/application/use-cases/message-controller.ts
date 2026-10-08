@@ -34,7 +34,7 @@ export class MessageController {
   }
   snapshot(id: string): MessageQueue {
     const s = this.state(id);
-    return { revision: s.revision, paused: s.paused, runId: s.runId,
+    return { revision: s.revision, paused: s.paused, runId: s.runId, ...(s.compaction ? { compaction: s.compaction } : {}),
       messages: s.messages.filter(m => !["delivered", "cancelled"].includes(m.status)).map(({ fingerprint: _, editToken: __, ...m }) => m) };
   }
   private save(id: string, s: MessageState) {
@@ -42,9 +42,10 @@ export class MessageController {
     this.db.writeMessageState(id, s);
     this.host.changed(id);
   }
-  beginRun(id: string, initialMessageId?: string) {
+  beginRun(id: string, initialMessageId?: string, compactionRequestId?: string) {
     const s = this.state(id);
     s.runId = this.ids.uuid(); s.initialMessageId = initialMessageId; s.runtimeStarted = false;
+    s.compaction = compactionRequestId ? { requestId: compactionRequestId, status: "running" } : undefined;
     for (const m of s.messages) if (m.status === "sending" && !m.runId) m.runId = s.runId;
     s.protocol = "interactive";
     this.save(id, s);
@@ -61,7 +62,9 @@ export class MessageController {
     const s = this.state(id);
     const m = s.messages.find(m => m.id === s.initialMessageId);
     if (!s.runtimeStarted && m?.status === "sending") { m.status = "queued"; m.runId = undefined; }
-    s.runId = null; s.paused = true; this.save(id, s);
+    s.runId = null; s.paused = true;
+    if (s.compaction?.status === "running") s.compaction = { ...s.compaction, status: "failed", error: "Context compaction was stopped." };
+    this.save(id, s);
   }
   recover(id: string, live: boolean) {
     const s = this.state(id);
@@ -69,6 +72,7 @@ export class MessageController {
     // Never replay it merely because its acknowledgement was lost.
     for (const m of s.messages) if (m.status === "sending") { if (!live && !s.runtimeStarted && m.id === s.initialMessageId) { m.status = "queued"; m.runId = undefined; continue; } m.status = "unknown"; m.error = "Delivery could not be confirmed after reconnecting."; s.paused = true; }
     if (!live && s.runId) { s.runId = null; s.paused = true; }
+    if (!live && s.compaction?.status === "running") s.compaction = { ...s.compaction, status: "failed", error: "Context compaction could not be confirmed after restarting. You can try again." };
     this.save(id, s);
   }
   pause(id: string) { const s = this.state(id); s.paused = true; this.save(id, s); }
@@ -79,8 +83,9 @@ export class MessageController {
     s.paused = false; this.save(id, s); this.pump(id);
     return this.snapshot(id);
   }
-  finish(id: string, failed: boolean, drain = true) {
+  finish(id: string, failed: boolean, drain = true, error?: string) {
     const s = this.state(id); s.runId = null;
+    if (s.compaction?.status === "running") s.compaction = { ...s.compaction, status: failed ? "failed" : "completed", ...(failed ? { error: error ?? "Context compaction did not finish. Try again." } : {}) };
     if (failed) s.paused = true;
     for (const m of s.messages) if (m.status === "sending") { m.status = "unknown"; m.error = "The run ended before delivery was confirmed."; s.paused = true; }
     this.save(id, s);

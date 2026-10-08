@@ -903,3 +903,22 @@ test("usage distinguishes zero from missing metrics and normalizes Claude cache 
   assert.equal(codex.inputTokens, 100); assert.equal(codex.cachedInputTokens, 80);
   assert.ok(!codex.reported?.includes("totalCostUsd"));
 });
+
+test("context compaction requires authentication and a bounded request without provider arguments", async t => {
+  const f = fixture(t);
+  const request = { requestId: "11111111-1111-4111-8111-111111111111", expectedRevision: 0 };
+  const now = Date.now(); f.db.createSession("compact-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=compact-session`, "content-type": "application/json" };
+  let calls = 0;
+  f.service.compact = (id, input) => {
+    calls++; assert.equal(id, "task"); assert.deepEqual(input, request);
+    return { taskId: "task" } as ReturnType<typeof f.service.getTask>;
+  };
+  assert.equal((await f.app.request("/api/tasks/task/compact", { method: "POST", body: JSON.stringify(request) })).status, 401);
+  for (const input of [{}, { ...request, requestId: "invalid" }, { ...request, expectedRevision: -1 }, { ...request, providerHome: "/tmp/other" }]) {
+    assert.equal((await f.app.request("/api/tasks/task/compact", { method: "POST", headers, body: JSON.stringify(input) })).status, 400);
+  }
+  assert.equal(calls, 0);
+  assert.equal((await f.app.request("/api/tasks/task/compact", { method: "POST", headers, body: JSON.stringify(request) })).status, 202);
+  assert.equal(calls, 1);
+});

@@ -11,6 +11,7 @@ export const ExecutionStartSchema = z.object({
   model: z.string().optional(), effort: z.string().optional(),
   images: z.array(InputAttachmentSchema).optional(), messageId: z.string().optional(),
   interactive: z.boolean().optional(),
+  operation: z.literal("compact").optional(),
 }).strict();
 export type ExecutionStart = z.infer<typeof ExecutionStartSchema>;
 export const ExecutionCommandSchema = z.discriminatedUnion("kind", [
