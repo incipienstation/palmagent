@@ -115,6 +115,10 @@ test.describe("touch joystick", () => {
     const joystick = game(page).getByRole("button", { name: "Movement joystick" });
     await expect(joystick).toBeEnabled(); await expect(joystick).toBeInViewport();
     await expect(game(page).getByRole("button", { name: /^Move (up|down|left|right)$/ })).toHaveCount(0);
+    // Capture the resting position after the sheet finishes entering the viewport.
+    await game(page).evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    });
     const resting = await joystick.boundingBox();
     const arena = await game(page).getByTestId("survivor-arena").boundingBox();
     const start = { x: arena!.x + arena!.width / 2, y: arena!.y + arena!.height / 2 };
