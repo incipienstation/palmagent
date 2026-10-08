@@ -4,6 +4,9 @@ import { defaultUrlTransform } from "react-markdown";
 // default protocol restrictions, and raw HTML stays escaped.
 export function imageSource(value: string): string {
   if (!value || /[\u0000-\u001f\u007f]/.test(value)) return "";
+  // Sandbox links may name local artifacts. Keep absolute paths only; the task
+  // image endpoint still checks existence and containment in the working directory.
+  if (/^sandbox:/i.test(value)) return /^sandbox:\/(?!\/)/i.test(value) ? value.slice(8) : "";
   if (/^data:/i.test(value)) {
     return value.length <= 7_000_000 && /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value) ? value : "";
   }

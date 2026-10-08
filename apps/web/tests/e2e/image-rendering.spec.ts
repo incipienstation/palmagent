@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, captureForReview } from "./_helpers";
 import { installScopedStream, open, send } from "./_scoped-stream";
 
 test.use({ serviceWorkers: "block" });
@@ -18,6 +18,42 @@ async function reply(page: Page, text: string, running = false) {
 }
 
 for (const parser of ["static", "streaming", "long"] as const) {
+  test(`${parser} Markdown resolves sandbox images through the task image endpoint`, async ({ page }) => {
+    const paths: string[] = [];
+    await page.route("**/api/tasks/*/image?*", route => {
+      const path = new URL(route.request().url()).searchParams.get("path")!;
+      paths.push(path);
+      return path === "/workspace/preview #1.png"
+        ? route.fulfill({ contentType: "image/png", body: png })
+        : route.fulfill({ status: 404, body: "unavailable" });
+    });
+    const prefix = parser === "long" ? "<!--" + "x".repeat(4100) + "-->\n\n" : "";
+    const taskId = await reply(page, prefix + [
+      "![Sandbox preview](<sandbox:/workspace/preview%20%231.png>)",
+      "![Missing sandbox file](sandbox:/mnt/data/missing.png)",
+      "![Sandbox host](sandbox://example.invalid/preview.png)",
+      "![Nested scheme](sandbox:https://example.invalid/preview.png)",
+      "![Relative sandbox](sandbox:preview.png)",
+    ].join("\n\n"), parser === "streaming");
+    const preview = page.getByRole("button", { name: "Enlarge image: Sandbox preview" });
+    await expect(preview).toBeVisible();
+    await expect(preview.locator("img")).toHaveAttribute("src",
+      `/api/tasks/${taskId}/image?${new URLSearchParams({ path: "/workspace/preview #1.png" })}`);
+    await expect.poll(() => preview.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
+    for (const label of ["Missing sandbox file", "Sandbox host", "Nested scheme", "Relative sandbox"]) {
+      await expect(page.getByText(`Image unavailable: ${label}`, { exact: true })).toBeVisible();
+    }
+    expect(paths).toContain("/workspace/preview #1.png");
+    expect(paths).toContain("/mnt/data/missing.png");
+    expect(paths.every(path => ["/workspace/preview #1.png", "/mnt/data/missing.png"].includes(path))).toBe(true);
+    await assertViewportLocked(page);
+    await captureForReview(page, `sandbox-image-${parser}.png`);
+    await preview.click();
+    const dialog = page.getByRole("dialog", { name: "Sandbox preview", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect.poll(() => dialog.getByRole("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
+  });
+
   test(`${parser} Markdown renders local images and opens an accessible preview`, async ({ page }) => {
     const requests: string[] = [];
     await page.route("**/api/tasks/*/image?*", route => {
