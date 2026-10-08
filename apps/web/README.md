@@ -132,26 +132,38 @@ Palmagent and synchronized across connected screens, including for running and
 local sessions. Renaming keeps the original prompt, native CLI session, and activity
 order intact.
 
-## Experimental ADHD mode: Scrap Scout
+## Experimental ADHD mode: Scrap Survivor
 
-Enable **Settings → Experimental → ADHD mode** to reveal **Scrap Scout** in
-navigation and conversation headers. This Phaser 3 prototype replaces Echo Garden.
-The experiment is off by default. Opening the game keeps the conversation and draft
-mounted; live task attention and a **Task** return action remain available.
+Enable **Settings → Experimental → ADHD mode** to play Scrap Survivor, a Phaser
+survival prototype. It is off by default and remembered on this device. A valid
+new message, follow-up, steer, or explicit queued-message Send opens the game as
+soon as submission starts, without waiting for the server. Editing or adding a
+queued message does not open it. The navigation and conversation game buttons
+also open it manually. Assets warm up while the experiment is enabled; first-time
+network loading can still delay the arena. The conversation, draft, and game stay
+mounted when a new conversation receives its server ID.
 
-Aim on the board or use the keyboard-accessible angle slider, then **Fire**.
-Orbs ricochet off walls and surviving armor; energy barrels explode into nearby targets.
-Clear each room to choose Heavy core, Split shot, Chain lightning, or Field repair.
-Normal upgrades also restore one hull. Four rooms end with the Warden boss.
-Surviving enemies retaliate every second shot, dealing one hull (two in the boss room).
-Aiming has no timer. Depleted hull ends the expedition; New expedition starts again.
+Move with WASD, arrow keys, the directional pad, or a drag on the arena. Weapons
+fire automatically. Collect green scrap to level up and choose one of three
+upgrades while combat pauses. Bolts gain triple fire and then piercing fans;
+orbiting blades and chain lightning add different attacks. Reactor, magnet, and
+movement upgrades also restore hull. Three enemy behaviors escalate until the
+Warden arrives at 2:30. Defeat it to finish the expedition, or try again if hull
+runs out. A new send starts a fresh expedition if the previous one ended.
 
-Shots are deterministic and their results save atomically when fired. Closing the
-panel or reloading during a shot skips its remaining animation and retains its result.
-The engine is destroyed when the game closes. Game progress is browser-local, survives
-disabling the experiment, and does not synchronize between devices. The old Echo Garden
-save is left untouched. Restart requires confirmation during an active expedition.
-The game engine is imported on opening; the PWA may precache its assets for offline use.
+**Back to chat**, Close, Escape, or Back preserves progress. Closing the game or
+putting the app in the background pauses combat; background returns require
+**Continue playing**. A new message resumes the saved expedition. The associated
+task's questions and approvals pause play with a choice to return or continue;
+completion and reconnect status stay visible. Failed or unconfirmed sends pause
+play and offer a return to the existing delivery/retry controls without resending.
+
+Runs save locally every second and on closing/backgrounding. An abrupt browser
+termination can lose the last second. Progress is not synchronized across devices.
+The previous Scrap Scout and Echo Garden saves remain untouched. Restart requires
+confirmation; closing destroys the engine. Keyboard and directional buttons remain
+available alongside touch dragging. The prototype has no sound or permanent
+progression system.
 
 ## Sent attachments
 

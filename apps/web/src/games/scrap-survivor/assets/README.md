@@ -1,4 +1,6 @@
-# Scrap Scout sprite atlas
+# Scrap Survivor sprite atlas
+
+Reused from the earlier Scrap Scout prototype.
 
 `scouts.png` is original artwork generated with the built-in image generation tool.
 The PNG retains transparent alpha; the renderer divides its actual dimensions into

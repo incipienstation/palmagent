@@ -1,3 +1,4 @@
+import { gameDelivery } from "../games/play-events";
 import { isActiveTaskStatus } from "@palmagent/shared";
 import { useEffect, useRef } from "react";
 import type { MessageQueue, PendingMessage, SubmitMessage, TaskState, AnswerRequest } from "@palmagent/shared";
@@ -158,12 +159,15 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, images, skills, status: deliveryMode === "queue" ? "queued" : "sending" };
     const originalDraft = compose;
     await act(deliveryMode === "queue" ? "enqueue" : "send", async () => {
+      if (deliveryMode === "send") gameDelivery({ id, taskId, state: "sending" });
       setSubmitted({ fingerprint, id, request: submission });
       setCompose(""); setSkills([]); att.clear();
       try {
         setQueueOverride(await taskOperations.submitMessage({ ...submission, clientMessageId: id }));
+        if (deliveryMode === "send") gameDelivery({ id, taskId, state: "sent" });
         setSubmitted(null); setDeliveryMode("send");
       } catch (error) {
+        if (deliveryMode === "send") gameDelivery({ id, taskId, state: "failed" });
         if (error instanceof ApiError && error.status >= 400 && error.status < 500) setSubmitted(null);
         setCompose(originalDraft); setSkills(skills); att.setImages(images ?? []);
         throw error;
@@ -193,9 +197,13 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
 
   async function queueAction(message: PendingMessage, action: "send" | "delete") {
     await act(action === "send" ? "sendQueued" : "deleteQueued", async () => {
-      setQueueOverride(await taskOperations.messageAction(message.id, action === "send"
-        ? { action, version: message.version, expectedRunId: confirmedQueue?.runId ?? null }
-        : { action, version: message.version }));
+      if (action === "send") gameDelivery({ id: message.id, taskId, state: "sending" });
+      try {
+        setQueueOverride(await taskOperations.messageAction(message.id, action === "send"
+          ? { action, version: message.version, expectedRunId: confirmedQueue?.runId ?? null }
+          : { action, version: message.version }));
+        if (action === "send") gameDelivery({ id: message.id, taskId, state: "sent" });
+      } catch (error) { if (action === "send") gameDelivery({ id: message.id, taskId, state: "failed" }); throw error; }
     }, undefined, { id: message.id, label: "Sending…", apply: q => ({ ...q, messages: action === "delete"
       ? q.messages.filter(m => m.id !== message.id)
       : q.messages.map(m => m.id === message.id && m.status === "queued" ? { ...m, mode: "send", status: "sending" } : m) }) });

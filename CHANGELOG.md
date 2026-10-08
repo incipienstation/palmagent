@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Experimental ADHD mode now opens Scrap Survivor immediately when sending a message. The Phaser survival prototype adds movement, automatic weapons, scrap collection, upgrade choices, escalating enemies, a boss, and saved pause/resume while preserving chat delivery and task attention.
+
+
 ## 0.1.0-alpha.143
 
 ### Changed

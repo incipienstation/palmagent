@@ -1,5 +1,5 @@
 import { needsTaskAttention } from "@palmagent/shared";
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { BarChart3, Check, Clock3, Folder, Gamepad2, ListTodo, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
@@ -14,7 +14,8 @@ import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
 import { useAdhdMode } from "../AdhdModeProvider";
-import { ScrapScoutSheet } from "../games/scrap-scout/ScrapScoutSheet";
+import { SurvivorSheet } from "../games/scrap-survivor/SurvivorSheet";
+import { onGameDelivery, warmSurvivor, type GameDelivery } from "../games/play-events";
 
 const NavigationContext = createContext<{
   openNavigation: (trigger: HTMLButtonElement) => void;
@@ -32,9 +33,21 @@ export function AppNavigation({ tasks, conn, children }: {
   const [open, setOpen] = useState(false);
   const { enabled: adhdMode } = useAdhdMode();
   const [gameOpen, setGameOpen] = useState(false);
+  const [delivery, setDelivery] = useState<GameDelivery>();
+  useEffect(() => {
+    if (!adhdMode) { setGameOpen(false); setDelivery(undefined); return; }
+    void warmSurvivor();
+    return onGameDelivery(event => {
+      if (event.state === "sending") {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) { trigger.current = active; active.blur(); }
+        setDelivery(event); setGameOpen(true);
+      } else setDelivery(current => current?.id === event.id ? event : current);
+    });
+  }, [adhdMode]);
   const { repos } = useRepos();
   const [settingsOpen, setSettingsOpen] = useUpdateState("settings:open", false);
-  const trigger = useRef<HTMLButtonElement | null>(null);
+  const trigger = useRef<HTMLElement | null>(null);
   const afterClose = useRef<(() => void) | null>(null);
   const route = useRoute();
   const pinned = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt !== undefined).sort(compareTasks), [tasks]);
@@ -47,7 +60,7 @@ export function AppNavigation({ tasks, conn, children }: {
   }, []);
   const openGame = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
-    setGameOpen(true);
+    setDelivery(undefined); setGameOpen(true);
   }, []);
   const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
   const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: adhdMode ? openGame : undefined }), [openNavigation, desktopSidebar, adhdMode, openGame]);
@@ -74,9 +87,9 @@ export function AppNavigation({ tasks, conn, children }: {
             {active && <Check className="size-4" />}
           </Button>)}
           {adhdMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
-            if (open) showAfterClose(() => setGameOpen(true));
+            if (open) showAfterClose(() => { setDelivery(undefined); setGameOpen(true); });
             else openGame(event.currentTarget);
-          }}><Gamepad2 data-icon="inline-start" />Scrap Scout</Button>}
+          }}><Gamepad2 data-icon="inline-start" />Scrap Survivor</Button>}
         </nav>
   );
   const pinnedNavigation = (pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
@@ -144,9 +157,9 @@ export function AppNavigation({ tasks, conn, children }: {
     </Drawer>
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
-    {adhdMode && <ScrapScoutSheet open={gameOpen} onOpenChange={setGameOpen}
-      tasks={tasks} taskId={route.name === "task" ? route.id : undefined} conn={conn}
-      onReturn={taskId => { setGameOpen(false); if (route.name !== "task" || route.id !== taskId) navigate(`/task/${encodeURIComponent(taskId)}`); }}
+    {adhdMode && <SurvivorSheet open={gameOpen} onOpenChange={setGameOpen}
+      tasks={tasks} delivery={delivery} taskId={delivery?.taskId ?? (route.name === "task" ? route.id : undefined)} conn={conn}
+      onReturn={taskId => { setGameOpen(false); if (taskId && (route.name !== "task" || route.id !== taskId)) navigate(`/task/${encodeURIComponent(taskId)}`); }}
       onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }} />}
   </NavigationContext.Provider>;
 }
