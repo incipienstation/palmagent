@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Pause, Play, RotateCcw, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, Pause, Play, RotateCcw, X } from "lucide-react";
 import { needsTaskAttention, type TaskState } from "@palmagent/shared";
 import type { ConnState } from "../../hooks/useInbox";
 import type { GameDelivery } from "../play-events";
@@ -7,6 +7,8 @@ import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
 import { Sheet, SheetContent, SheetHeader, SheetHeaderRow, SheetTitle, SheetDescription } from "../../components/ui/sheet";
 import { chooseUpgrade, freshRun, restore, serialize, SAVE_KEY, UPGRADES, type Point, type Run, type Upgrade } from "./engine";
+
+import { MovementJoystick } from "./MovementJoystick";
 
 const read = () => { try { return restore(localStorage.getItem(SAVE_KEY)); } catch { return freshRun(); } };
 const snapshot = (r: Run) => ({ time: r.time, hull: r.hull, level: r.level, xp: r.xp, nextXp: r.nextXp, kills: r.kills, won: r.won, boss: r.boss, choices: [...r.choices], upgrades: { ...r.upgrades } });
@@ -22,6 +24,7 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
   const [saveFailed, setSaveFailed] = useState(false), [restart, setRestart] = useState(false);
   const [ack, setAck] = useState("");
   const host = useRef<HTMLDivElement>(null), keys = useRef(new Set<string>()), pointer = useRef<Point>({ x: 0, y: 0 });
+  const movePointer = useCallback((point: Point) => { pointer.current = point; }, []);
   const task = tasks.find(t => t.taskId === taskId);
   const attention = task && needsTaskAttention(task.status) ? `${task.taskId}:${task.status}:${JSON.stringify(task.pendingInput ?? task.pendingApproval)}` : "";
   const failed = delivery?.state === "failed";
@@ -47,7 +50,7 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
         let { x, y } = pointer.current;
         for (const key of keys.current) { const vector = directions[key as keyof typeof directions]; if (vector) { x += vector[0]; y += vector[1]; } }
         return { x, y };
-      }, () => stoppedRef.current, point => { pointer.current = point; }, refresh, value => { if (!cancelled) { setReady(value); setError(!value); } });
+      }, () => stoppedRef.current, refresh, value => { if (!cancelled) { setReady(value); setError(!value); } });
     }).catch(() => { if (!cancelled) setError(true); });
     const checkpoint = setInterval(save, 1000);
     const blur = () => { clearInput(); setPause("Paused while away"); save(); };
@@ -68,19 +71,11 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
   const choose = (key: Upgrade) => { chooseUpgrade(run.current!, key); refresh(); save(); };
   const reset = () => { run.current = freshRun(); setRestart(false); setPause(""); refresh(); save(); };
   const resume = () => { setAck(attention); setPause(""); };
-  const press = (event: PointerEvent<HTMLButtonElement>, x: number, y: number) => {
-    if (stoppedRef.current) return;
-    event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); pointer.current = { x, y };
-  };
   const status = failed ? "Send failed or unconfirmed" : delivery?.state === "sending" ? "Sending your message…"
     : conn !== "open" ? "Reconnecting — task status may be out of date"
     : task?.status === "awaiting_input" ? "Agent needs your answer" : task?.status === "awaiting_approval" ? "Agent needs approval"
     : task?.status === "running" || task?.status === "queued" ? "Agent working" : task?.status === "idle" ? "Agent is idle"
     : task?.status === "failed" ? "Task failed" : delivery?.state === "sent" ? "Message delivered" : "Ready when you are";
-  const pad = (label: string, x: number, y: number, icon: React.ReactNode, className: string) => <Button variant="outline" size="icon-lg" aria-label={label} className={className} disabled={stopped}
-    onPointerDown={e => press(e, x, y)} onPointerUp={clearInput} onPointerCancel={clearInput} onLostPointerCapture={clearInput}
-    onKeyDown={e => { if ((e.key === " " || e.key === "Enter") && !stoppedRef.current) { e.preventDefault(); pointer.current = { x, y }; } }}
-    onKeyUp={clearInput} onBlur={clearInput}>{icon}</Button>;
   return <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
     <SheetContent size="panel" className="h-[900px] max-h-[calc(var(--app-height,100dvh)-8px)]" onCloseAutoFocus={onCloseAutoFocus}>
       <SheetHeader className="pb-1">
@@ -93,7 +88,8 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
       </div>
       <div role="progressbar" aria-label="Scrap to next level" aria-valuenow={hud.xp} aria-valuemin={0} aria-valuemax={Math.max(hud.nextXp, hud.xp)} className="mx-4 h-1 shrink-0 overflow-hidden rounded bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.min(100, hud.xp / hud.nextXp * 100)}%` }} /></div>
       <div className="relative mx-3 my-2 min-h-0 flex-1 overflow-hidden rounded-xl bg-muted">
-        <div ref={host} data-testid="survivor-arena" data-vaul-no-drag role="img" aria-label="Survival arena. Use the movement controls or arrow keys. Weapons fire automatically." className="absolute inset-0 touch-none" />
+        <div ref={host} data-testid="survivor-arena" data-vaul-no-drag role="img" aria-label="Survival arena. Drag to move or use arrow keys. Weapons fire automatically." className="absolute inset-0 touch-none" />
+        <MovementJoystick disabled={stopped} onMove={movePointer} />
         {(!ready || reason || restart || hud.choices.length > 0 || hud.hull <= 0 || hud.won) && <div className="absolute inset-0 flex items-center justify-center overflow-y-auto bg-background/85 p-3" data-vaul-no-drag>
           <div className="my-auto flex w-full max-w-sm flex-col gap-2 text-center">
             {error ? <><p>The game could not load.</p><Button onClick={() => setAttempt(a => a + 1)}>Retry game</Button></> : !ready ? <p role="status">Loading the scrapyard…</p>
@@ -105,11 +101,8 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
         </div>}
       </div>
       {saveFailed && <Alert variant="warning" className="mx-3 w-auto shrink-0">Progress could not be saved. Keep this tab open.</Alert>}
-      <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2" data-vaul-no-drag>
-        <div role="group" aria-label="Movement controls" className="grid grid-cols-3 grid-rows-2 gap-1 touch-none">
-          {pad("Move up", 0, -1, <ArrowUp />, "col-start-2")}{pad("Move left", -1, 0, <ArrowLeft />, "col-start-1 row-start-2")}{pad("Move down", 0, 1, <ArrowDown />, "col-start-2 row-start-2")}{pad("Move right", 1, 0, <ArrowRight />, "col-start-3 row-start-2")}
-        </div>
-        <div className="flex min-w-0 flex-col gap-2"><div className="flex justify-end gap-2"><Button variant="outline" size="icon-lg" aria-label={reason ? "Resume game" : "Pause game"} disabled={!ready || failed} onClick={() => reason ? resume() : setPause("Paused")} >{reason ? <Play /> : <Pause />}</Button><Button variant="ghost" size="icon-lg" aria-label="Restart expedition" onClick={() => setRestart(true)}><RotateCcw /></Button></div><p className="text-right text-xs text-muted-foreground">{(Object.keys(UPGRADES) as Upgrade[]).filter(k => hud.upgrades[k] > 0 && UPGRADES[k].max === 5).map(k => `${k} ${hud.upgrades[k]}`).join(" · ")}</p></div>
+      <div className="flex shrink-0 justify-end px-4 pb-2" data-vaul-no-drag>
+        <div className="flex min-w-0 flex-row-reverse items-center gap-3"><div className="flex gap-2"><Button variant="outline" size="icon-lg" aria-label={reason ? "Resume game" : "Pause game"} disabled={!ready || failed} onClick={() => reason ? resume() : setPause("Paused")} >{reason ? <Play /> : <Pause />}</Button><Button variant="ghost" size="icon-lg" aria-label="Restart expedition" onClick={() => setRestart(true)}><RotateCcw /></Button></div><p className="text-right text-xs text-muted-foreground">{(Object.keys(UPGRADES) as Upgrade[]).filter(k => hud.upgrades[k] > 0 && UPGRADES[k].max === 5).map(k => `${k} ${hud.upgrades[k]}`).join(" · ")}</p></div>
       </div>
     </SheetContent>
   </Sheet>;

@@ -143,8 +143,9 @@ also open it manually. Assets warm up while the experiment is enabled; first-tim
 network loading can still delay the arena. The conversation, draft, and game stay
 mounted when a new conversation receives its server ID.
 
-Move with WASD, arrow keys, the directional pad, or a drag on the arena. Weapons
-fire automatically. Collect green scrap to level up and choose one of three
+Move with WASD, arrow keys, or a drag anywhere on the arena. A translucent joystick
+rests near the bottom as a visible control, follows the drag, and centers on release.
+Weapons fire automatically. Collect green scrap to level up and choose one of three
 upgrades while combat pauses. Bolts gain triple fire and then piercing fans;
 orbiting blades and chain lightning add different attacks. Reactor, magnet, and
 movement upgrades also restore hull. Three enemy behaviors escalate until the
@@ -161,9 +162,9 @@ play and offer a return to the existing delivery/retry controls without resendin
 Runs save locally every second and on closing/backgrounding. An abrupt browser
 termination can lose the last second. Progress is not synchronized across devices.
 The previous Scrap Scout and Echo Garden saves remain untouched. Restart requires
-confirmation; closing destroys the engine. Keyboard and directional buttons remain
-available alongside touch dragging. The prototype has no sound or permanent
-progression system.
+confirmation; closing destroys the engine. The joystick is keyboard-focusable;
+arrow keys and WASD remain available alongside touch dragging. The prototype has
+no sound or permanent progression system.
 
 ## Sent attachments
 

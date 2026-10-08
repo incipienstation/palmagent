@@ -6,7 +6,7 @@ export function preloadSprites(): Promise<void> {
   return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(); img.onerror = reject; img.src = sprites; });
 }
 export function createArena(parent: HTMLElement, getRun: () => Run, movement: () => Point, paused: () => boolean,
-  onMove: (point: Point) => void, onUpdate: () => void, onReady: (ready: boolean) => void): () => void {
+  onUpdate: () => void, onReady: (ready: boolean) => void): () => void {
   let cancelled = false;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   class Survival extends Phaser.Scene {
@@ -16,7 +16,6 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
     private elapsed = 0;
     private report = 0;
     private hull = 8;
-    private anchor?: Point;
     private seen = new WeakSet<object>();
     preload() { this.load.image("survivor", sprites); }
     create() {
@@ -32,12 +31,6 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
       for (let y = 36; y < H - 20; y += 70) floor.fillStyle(0xf7b953, 0.8).fillRect(6, y, 6, 22).fillRect(W - 12, y, 6, 22);
       this.paint = this.add.graphics().setDepth(3);
       this.robot = this.add.image(W / 2, H / 2, "survivor", "0").setDisplaySize(46, 46).setDepth(5);
-      this.input.on("pointerdown", (p: Phaser.Input.Pointer) => { this.anchor = { x: p.x, y: p.y }; });
-      this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
-        if (p.isDown && this.anchor) { const x = p.x - this.anchor.x, y = p.y - this.anchor.y, n = Math.max(32, Math.hypot(x, y)); onMove({ x: x / n, y: y / n }); }
-      });
-      const release = () => { this.anchor = undefined; onMove({ x: 0, y: 0 }); };
-      this.input.on("pointerup", release); this.input.on("pointerupoutside", release); this.input.on("gameout", release);
       onReady(true); this.draw();
     }
     private draw() {
@@ -82,11 +75,10 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
       this.robot.setPosition(r.player.x, r.player.y).setAlpha(r.invulnerable > 0 && Math.floor(r.time * 12) % 2 ? 0.5 : 1);
       if (r.hull < this.hull && !reduced) this.cameras.main.shake(100, 0.004);
       this.hull = r.hull;
-      if (this.anchor && !paused()) { g.lineStyle(2, 0xffffff, 0.35).strokeCircle(this.anchor.x, this.anchor.y, 32); }
     }
     update(_time: number, delta: number) {
       if (!this.paint) return;
-      if (paused()) { this.elapsed = 0; this.anchor = undefined; this.draw(); return; }
+      if (paused()) { this.elapsed = 0; this.draw(); return; }
       this.elapsed += Math.min(delta, 100) / 1000;
       while (this.elapsed >= STEP) { step(getRun(), movement()); this.elapsed -= STEP; }
       this.draw(); this.report += delta;
@@ -95,7 +87,7 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
   }
   const game = new Phaser.Game({ type: Phaser.AUTO, parent, width: W, height: H, transparent: true, scene: Survival,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, audio: { noAudio: true }, banner: false,
-    input: { keyboard: false, mouse: { preventDefaultWheel: false }, touch: { capture: true } }, fps: { target: 60 } });
+    input: { keyboard: false, mouse: false, touch: false }, fps: { target: 60 } });
   const resize = new ResizeObserver(() => { if (game.isBooted) { game.scale.getParentBounds(); game.scale.refresh(); } });
   resize.observe(parent);
   return () => { cancelled = true; resize.disconnect(); game.destroy(true); };

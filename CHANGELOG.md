@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Scrap Survivor replaces the directional buttons with a visible, translucent joystick that follows arena dragging and returns to its resting position on release.
+
 ## 0.1.0-alpha.144
 
 ### Changed
