@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Pause, Play, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, Pause, Play, RotateCcw, X, Shield, Crosshair, Clock3 } from "lucide-react";
 import { needsTaskAttention, type TaskState } from "@palmagent/shared";
 import type { ConnState } from "../../hooks/useInbox";
 import type { GameDelivery } from "../play-events";
@@ -8,8 +8,19 @@ import { Alert } from "../../components/ui/alert";
 import { Sheet, SheetContent, SheetHeader, SheetHeaderRow, SheetTitle, SheetDescription } from "../../components/ui/sheet";
 import { chooseUpgrade, freshRun, restore, serialize, SAVE_KEY, UPGRADES, type Point, type Run, type Upgrade } from "./engine";
 
+import { EquipmentArt, RobotArt } from "./art";
 import { MovementJoystick } from "./MovementJoystick";
 
+function upgradeGain(key: Upgrade, level: number) {
+  switch (key) {
+    case "bolt": return level === 2 ? "Triple shot unlocked" : level === 4 ? "5-shot piercing fan" : `Base damage ${level + 1} → ${level + 2}`;
+    case "blade": return level ? `${level + 1} → ${level + 2} blades · wider orbit` : "2 blades orbit your robot";
+    case "arc": return level ? `${level + 1} → ${level + 2} lightning targets` : "Lightning chains to 2 targets";
+    case "reactor": return "+35% base weapon damage · repair 2 HP";
+    case "magnet": return "+35 pickup range · repair 2 HP";
+    case "boots": return "+22 movement speed · repair 2 HP";
+  }
+}
 const read = () => { try { return restore(localStorage.getItem(SAVE_KEY)); } catch { return freshRun(); } };
 const snapshot = (r: Run) => ({ time: r.time, hull: r.hull, level: r.level, xp: r.xp, nextXp: r.nextXp, kills: r.kills, won: r.won, boss: r.boss, choices: [...r.choices], upgrades: { ...r.upgrades } });
 const directions = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] } as const;
@@ -77,32 +88,46 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
     : task?.status === "running" || task?.status === "queued" ? "Agent working" : task?.status === "idle" ? "Agent is idle"
     : task?.status === "failed" ? "Task failed" : delivery?.state === "sent" ? "Message delivered" : "Ready when you are";
   return <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
-    <SheetContent size="panel" className="h-[900px] max-h-[calc(var(--app-height,100dvh)-8px)]" onCloseAutoFocus={onCloseAutoFocus}>
+    <SheetContent size="panel" className="survivor-game h-[900px] max-h-[calc(var(--app-height,100dvh)-8px)]" onCloseAutoFocus={onCloseAutoFocus}>
       <SheetHeader className="pb-1">
-        <SheetHeaderRow><SheetTitle>Scrap Survivor</SheetTitle><Button variant="ghost" size="icon-lg" aria-label="Close game" onClick={() => onOpenChange(false)}><X /></Button></SheetHeaderRow>
+        <SheetHeaderRow><div className="flex min-w-0 flex-1 items-center gap-2"><div className="survivor-title-art"><RobotArt /></div><div><p className="survivor-eyebrow">SCRAPYARD / SURVIVAL</p><SheetTitle>Scrap Survivor</SheetTitle></div></div><Button variant="ghost" size="icon-lg" aria-label="Close game" onClick={() => onOpenChange(false)}><X /></Button></SheetHeaderRow>
         <SheetDescription className="sr-only">Move to survive. Weapons fire automatically. Collect scrap and choose upgrades.</SheetDescription>
       </SheetHeader>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 text-sm"><p role="status" className="min-w-0 truncate">{status}</p><Button variant="outline" size="sm" onClick={() => onReturn(taskId)}><ArrowLeft data-icon="inline-start" />Back to chat</Button></div>
-      <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2 text-xs tabular-nums" aria-label="Expedition status">
-        <span>Hull {hud.hull}/8</span><span>Lv {hud.level} · {hud.kills} cleared</span><span aria-label="Elapsed time">{Math.floor(hud.time / 60)}:{String(Math.floor(hud.time % 60)).padStart(2, "0")}{hud.boss ? " · Warden" : " / 2:30 boss"}</span>
+      <div className="survivor-hud" aria-label="Expedition status">
+        <div className="survivor-health" data-critical={hud.hull <= 2}>
+          <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1"><Shield size={13} aria-hidden="true" />HP</span><strong>{hud.hull}/8</strong></div>
+          <div className="survivor-health-cells" role="meter" aria-label="Player HP" aria-valuenow={hud.hull} aria-valuemin={0} aria-valuemax={8}>
+            {Array.from({ length: 8 }, (_, i) => <span key={i} data-filled={i < hud.hull} />)}
+          </div>
+        </div>
+        <div className="survivor-stat"><span><Crosshair size={13} aria-hidden="true" />CLEARED</span><strong>{hud.kills}</strong></div>
+        <div className="survivor-stat"><span><Clock3 size={13} aria-hidden="true" />{hud.boss ? "WARDEN" : "BOSS IN"}</span><strong aria-label={hud.boss ? "Elapsed time" : "Time until Warden"}>{hud.boss ? `${Math.floor(hud.time / 60)}:${String(Math.floor(hud.time % 60)).padStart(2, "0")}` : `${Math.floor(Math.ceil(Math.max(0, 150 - hud.time)) / 60)}:${String(Math.ceil(Math.max(0, 150 - hud.time)) % 60).padStart(2, "0")}`}</strong></div>
       </div>
-      <div role="progressbar" aria-label="Scrap to next level" aria-valuenow={hud.xp} aria-valuemin={0} aria-valuemax={Math.max(hud.nextXp, hud.xp)} className="mx-4 h-1 shrink-0 overflow-hidden rounded bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.min(100, hud.xp / hud.nextXp * 100)}%` }} /></div>
-      <div className="relative mx-3 my-2 min-h-0 flex-1 overflow-hidden rounded-xl bg-muted">
-        <div ref={host} data-testid="survivor-arena" data-vaul-no-drag role="img" aria-label="Survival arena. Drag to move or use arrow keys. Weapons fire automatically." className="absolute inset-0 touch-none" />
+      <div className="survivor-xp-row"><strong>LV {hud.level}</strong><div role="progressbar" aria-label="Scrap to next level" aria-valuenow={hud.xp} aria-valuemin={0} aria-valuemax={Math.max(hud.nextXp, hud.xp)} className="survivor-xp"><div style={{ width: `${Math.min(100, hud.xp / hud.nextXp * 100)}%` }} /></div><span>{hud.xp}/{hud.nextXp}</span></div>
+      <div className="survivor-board relative mx-3 my-2 min-h-0 flex-1 overflow-hidden rounded-xl">
+        <div ref={host} data-testid="survivor-arena" data-vaul-no-drag role="img" aria-label="Survival arena. Drag in the lower control area or use arrow keys. Weapons fire automatically." className="absolute inset-0 touch-none" />
         <MovementJoystick disabled={stopped} onMove={movePointer} />
-        {(!ready || reason || restart || hud.choices.length > 0 || hud.hull <= 0 || hud.won) && <div className="absolute inset-0 flex items-center justify-center overflow-y-auto bg-background/85 p-3" data-vaul-no-drag>
-          <div className="my-auto flex w-full max-w-sm flex-col gap-2 text-center">
-            {error ? <><p>The game could not load.</p><Button onClick={() => setAttempt(a => a + 1)}>Retry game</Button></> : !ready ? <p role="status">Loading the scrapyard…</p>
-              : restart ? <><p>Start a new expedition?</p><Button onClick={reset}>Restart</Button><Button variant="outline" onClick={() => setRestart(false)}>Keep this run</Button></>
-              : reason ? <><strong>{reason}</strong>{!failed && <Button onClick={resume}>Continue playing</Button>}<Button variant="outline" onClick={() => onReturn(taskId)}>Return to conversation</Button></>
-              : hud.won || hud.hull <= 0 ? <><strong>{hud.won ? "Warden defeated!" : "Hull depleted"}</strong><p>{hud.kills} enemies cleared · Level {hud.level}</p><Button onClick={reset}>New expedition</Button></>
-              : <section aria-label="Choose an upgrade" className="flex flex-col gap-2"><strong>Level {hud.level} · Choose an upgrade</strong>{hud.choices.map(key => <Button variant="outline" key={key} className="h-auto min-h-16 flex-col items-start whitespace-normal p-3 text-left" onClick={() => choose(key)}><span>{UPGRADES[key].name} · Lv {hud.upgrades[key] + 1}</span><span className="text-xs text-muted-foreground">{UPGRADES[key].detail}</span></Button>)}</section>}
+        {(!ready || reason || restart || hud.choices.length > 0 || hud.hull <= 0 || hud.won) && <div className="survivor-overlay absolute inset-0 flex overflow-y-auto p-3" data-vaul-no-drag>
+          <div className="my-auto flex w-full flex-col gap-3 text-center">
+            {error ? <><div className="survivor-panel-art"><RobotArt /></div><strong>The game could not load.</strong><Button onClick={() => setAttempt(a => a + 1)}>Retry game</Button></> : !ready ? <><div className="survivor-panel-art"><RobotArt /></div><p role="status">Loading the scrapyard…</p></>
+              : restart ? <><div className="survivor-panel-art"><RobotArt /></div><p className="survivor-eyebrow">NEW RUN</p><strong>Start a new expedition?</strong><p className="survivor-caption">Your current loadout and progress will be replaced.</p><Button onClick={reset}>Restart</Button><Button variant="outline" onClick={() => setRestart(false)}>Keep this run</Button></>
+              : reason ? <><div className="survivor-panel-art"><RobotArt /></div><p className="survivor-eyebrow">EXPEDITION ON HOLD</p><strong>{reason}</strong>{!failed && <Button onClick={resume}><Play data-icon="inline-start" />Continue playing</Button>}<Button variant="outline" onClick={() => onReturn(taskId)}>Return to conversation</Button></>
+              : hud.won || hud.hull <= 0 ? <><div className="survivor-panel-art"><RobotArt boss={!hud.won} /></div><p className="survivor-eyebrow">{hud.won ? "MISSION COMPLETE" : "SIGNAL LOST"}</p><strong className="survivor-result-title">{hud.won ? "Warden defeated!" : "Hull depleted"}</strong><p>{hud.kills} enemies cleared · Level {hud.level}</p><div className="survivor-result-loadout">{(Object.keys(UPGRADES) as Upgrade[]).filter(k => hud.upgrades[k] > 0).map(k => <span key={k} title={`${UPGRADES[k].name} level ${hud.upgrades[k]}`}><EquipmentArt kind={k} /><small>{hud.upgrades[k]}</small></span>)}</div><Button onClick={reset}>New expedition</Button></>
+              : <section aria-label="Choose an upgrade" className="flex flex-col gap-2">
+                <div className="survivor-upgrade-heading"><p className="survivor-eyebrow">LEVEL {hud.level} / UPGRADE READY</p><h2>Build your loadout</h2><p className="survivor-caption">Choose one. Make it count.</p></div>
+                {hud.choices.map(key => <Button variant="outline" key={key} className="survivor-upgrade h-auto min-h-24 justify-start gap-2 whitespace-normal p-2 text-left" onClick={() => choose(key)}>
+                  <span className="survivor-item-frame"><EquipmentArt kind={key} /></span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-1"><span className="survivor-item-meta">{hud.upgrades[key] === 0 ? "NEW EQUIPMENT" : `LV ${hud.upgrades[key]} → ${hud.upgrades[key] + 1}`}</span><span>{UPGRADES[key].name}</span><span className="survivor-caption">{upgradeGain(key, hud.upgrades[key])}</span><span className="survivor-level-pips" aria-hidden="true">{Array.from({ length: UPGRADES[key].max }, (_, i) => <i key={i} data-filled={i < hud.upgrades[key]} data-next={i === hud.upgrades[key]} />)}</span></span>
+                </Button>)}
+              </section>}
           </div>
         </div>}
       </div>
       {saveFailed && <Alert variant="warning" className="mx-3 w-auto shrink-0">Progress could not be saved. Keep this tab open.</Alert>}
-      <div className="flex shrink-0 justify-end px-4 pb-2" data-vaul-no-drag>
-        <div className="flex min-w-0 flex-row-reverse items-center gap-3"><div className="flex gap-2"><Button variant="outline" size="icon-lg" aria-label={reason ? "Resume game" : "Pause game"} disabled={!ready || failed} onClick={() => reason ? resume() : setPause("Paused")} >{reason ? <Play /> : <Pause />}</Button><Button variant="ghost" size="icon-lg" aria-label="Restart expedition" onClick={() => setRestart(true)}><RotateCcw /></Button></div><p className="text-right text-xs text-muted-foreground">{(Object.keys(UPGRADES) as Upgrade[]).filter(k => hud.upgrades[k] > 0 && UPGRADES[k].max === 5).map(k => `${k} ${hud.upgrades[k]}`).join(" · ")}</p></div>
+      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2" data-vaul-no-drag>
+        <div className="survivor-loadout" aria-label="Equipped upgrades">{(Object.keys(UPGRADES) as Upgrade[]).filter(k => hud.upgrades[k] > 0).map(k => <span key={k} role="img" aria-label={`${UPGRADES[k].name} level ${hud.upgrades[k]}`} title={`${UPGRADES[k].name} level ${hud.upgrades[k]}`}><EquipmentArt kind={k} /><small>{hud.upgrades[k]}</small></span>)}</div>
+        <div className="flex shrink-0 gap-1"><Button variant="outline" size="icon-lg" aria-label={reason ? "Resume game" : "Pause game"} disabled={!ready || failed} onClick={() => reason ? resume() : setPause("Paused")} >{reason ? <Play /> : <Pause />}</Button><Button variant="ghost" size="icon-lg" aria-label="Restart expedition" onClick={() => setRestart(true)}><RotateCcw /></Button></div>
       </div>
     </SheetContent>
   </Sheet>;

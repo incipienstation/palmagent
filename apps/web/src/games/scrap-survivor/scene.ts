@@ -1,6 +1,8 @@
 import Phaser from "phaser";
-import sprites from "./assets/scouts.png?url";
-import { H, W, STEP, step, type Point, type Run } from "./engine";
+import sprites from "./assets/units.webp?url";
+import floorTiles from "./assets/floor.webp?url";
+import { unitFrames } from "./art";
+import { H, W, WORLD_W, WORLD_H, PLAYER_SCREEN_Y, STEP, step, type Point, type Run } from "./engine";
 
 export function preloadSprites(): Promise<void> {
   return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(); img.onerror = reject; img.src = sprites; });
@@ -11,26 +13,46 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   class Survival extends Phaser.Scene {
     private robot!: Phaser.GameObjects.Image;
+    private health!: Phaser.GameObjects.Graphics;
+    private shadow!: Phaser.GameObjects.Ellipse;
     private paint!: Phaser.GameObjects.Graphics;
     private art = new Map<number, Phaser.GameObjects.Image>();
     private elapsed = 0;
     private report = 0;
     private hull = 8;
     private seen = new WeakSet<object>();
-    preload() { this.load.image("survivor", sprites); }
+    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); }
     create() {
       if (cancelled) return;
-      if (!this.textures.exists("survivor")) { onReady(false); return; }
-      const texture = this.textures.get("survivor"), source = texture.getSourceImage() as HTMLImageElement, cell = source.width / 2;
-      for (let i = 0; i < 4; i++) texture.add(String(i), 0, i % 2 * cell, Math.floor(i / 2) * cell, cell, cell);
-      const floor = this.add.graphics().fillStyle(0x101f2a).fillRoundedRect(0, 0, W, H, 18);
-      floor.lineStyle(1, 0x243c47, 0.7);
-      for (let x = 0; x < W; x += 40) floor.lineBetween(x, 0, x, H);
-      for (let y = 0; y < H; y += 40) floor.lineBetween(0, y, W, y);
-      floor.lineStyle(6, 0x48616b).strokeRoundedRect(9, 9, W - 18, H - 18, 14);
-      for (let y = 36; y < H - 20; y += 70) floor.fillStyle(0xf7b953, 0.8).fillRect(6, y, 6, 22).fillRect(W - 12, y, 6, 22);
+      if (!["survivor", "floor"].every(key => this.textures.exists(key))) { onReady(false); return; }
+      const texture = this.textures.get("survivor"), source = texture.getSourceImage() as HTMLImageElement;
+      unitFrames.forEach(([x, y, w, h], i) => texture.add(String(i), 0, Math.round(x * source.width), Math.round(y * source.height), Math.round(w * source.width), Math.round(h * source.height)));
+      // Overscan outside the walking boundary keeps the robot clear of controls at every edge.
+      const floor = this.add.tileSprite(WORLD_W / 2, WORLD_H / 2, WORLD_W + W * 2, WORLD_H + H * 2, "floor");
+      const tileSource = this.textures.get("floor").getSourceImage() as HTMLImageElement;
+      floor.setTileScale(256 / tileSource.width, 256 / tileSource.height).setTint(0x8da5ab);
+      const markings = this.add.graphics();
+      markings.fillStyle(0x06131a, 0.65)
+        .fillRect(-W, -H, W, WORLD_H + H * 2).fillRect(WORLD_W, -H, W, WORLD_H + H * 2)
+        .fillRect(0, -H, WORLD_W, H).fillRect(0, WORLD_H, WORLD_W, H);
+      markings.lineStyle(12, 0x0c1820).strokeRect(8, 8, WORLD_W - 16, WORLD_H - 16);
+      markings.lineStyle(3, 0xc4a164, 0.65).strokeRect(16, 16, WORLD_W - 32, WORLD_H - 32);
+      for (let x = 32; x < WORLD_W; x += 64) {
+        markings.fillStyle(0xc4a164, 0.5).fillRect(x, 4, 22, 8).fillRect(x, WORLD_H - 12, 22, 8);
+      }
+      for (let y = 32; y < WORLD_H; y += 64) markings.fillStyle(0xc4a164, 0.5).fillRect(4, y, 8, 22).fillRect(WORLD_W - 12, y, 8, 22);
+      // Low-contrast floor bays and grates are landmarks, never hidden collision obstacles.
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+        const x = col * W + 75, y = row * H + 100;
+        markings.lineStyle(2, 0x799b9c, 0.25).strokeRoundedRect(x, y, 330, 380, 8);
+        markings.fillStyle(0x12222b, 0.4).fillRect(x + 110, y + 155, 110, 70);
+        for (let n = 0; n < 7; n++) markings.lineStyle(3, 0x6f8587, 0.18).lineBetween(x + 120, y + 163 + n * 8, x + 210, y + 163 + n * 8);
+        this.add.text(x + 12, y + 12, `BAY 0${row * 3 + col + 1}`, { fontSize: "18px", fontFamily: "monospace", color: "#738d91" }).setAlpha(0.35);
+      }
       this.paint = this.add.graphics().setDepth(3);
-      this.robot = this.add.image(W / 2, H / 2, "survivor", "0").setDisplaySize(46, 46).setDepth(5);
+      this.shadow = this.add.ellipse(0, 0, 34, 14, 0x031019, 0.45).setDepth(1);
+      this.robot = this.add.image(0, 0, "survivor", "0").setDisplaySize(38, 46).setDepth(5);
+      this.health = this.add.graphics().setDepth(7);
       onReady(true); this.draw();
     }
     private draw() {
@@ -40,9 +62,12 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
       for (const e of r.enemies) {
         let sprite = this.art.get(e.id);
         if (!sprite) { sprite = this.add.image(e.x, e.y, "survivor", "1").setDepth(2); this.art.set(e.id, sprite); }
-        const boss = e.kind === "boss", frame = e.kind === "sentry" || boss ? "2" : "1";
-        sprite.setTexture("survivor", frame).setPosition(e.x, e.y).setDisplaySize(boss ? 86 : 40, boss ? 86 : 40);
-        if (e.kind === "charger") sprite.setTint(0xffb56c); else sprite.clearTint();
+        const boss = e.kind === "boss", frame = boss ? "5" : e.kind === "sentry" ? "4" : "3";
+        const bob = reduced ? 0 : Math.sin(r.time * (e.kind === "charger" ? 16 : 8) + e.id) * 1.3;
+        sprite.setTexture("survivor", frame).setPosition(e.x, e.y + bob).setDisplaySize(boss ? 82 : 40, boss ? 78 : e.kind === "sentry" ? 48 : 33);
+        sprite.setRotation(reduced ? 0 : e.kind === "charger" && e.dash > 0 ? Math.sin(r.time * 30) * 0.12 : Math.sin(r.time * 5 + e.id) * 0.035);
+        if (r.effects.some(fx => fx.kind === "hit" && fx.ttl > 0.3 && Math.hypot(fx.x - e.x, fx.y - e.y) < 25)) sprite.setTintFill(0xffffff);
+        else if (e.kind === "charger") sprite.setTint(0xffb56c); else sprite.clearTint();
         if (e.hp < e.max || boss) { g.fillStyle(0x29313d).fillRect(e.x - 18, e.y - (boss ? 42 : 24), 36, 4); g.fillStyle(0xff836f).fillRect(e.x - 18, e.y - (boss ? 42 : 24), 36 * e.hp / e.max, 4); }
         if ((e.kind === "charger" && e.clock < 0.65 && e.dash <= 0) || (boss && e.clock < 0.5)) {
           g.lineStyle(2, 0xff7866, 0.7).strokeCircle(e.x, e.y, boss ? 44 : 25);
@@ -72,7 +97,14 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
           }
         }
       }
+      const moving = !paused() && Math.hypot(movement().x, movement().y) > 0.05;
+      this.robot.setFrame(!reduced && moving ? String(1 + Math.floor(r.time * 9) % 2) : "0");
+      this.shadow.setPosition(r.player.x, r.player.y + 20);
       this.robot.setPosition(r.player.x, r.player.y).setAlpha(r.invulnerable > 0 && Math.floor(r.time * 12) % 2 ? 0.5 : 1);
+      const hp = this.health.clear(), hx = r.player.x - 22, hy = r.player.y - 34;
+      hp.fillStyle(0x07151f, 0.95).fillRoundedRect(hx - 3, hy - 3, 50, 11, 3);
+      for (let i = 0; i < 8; i++) hp.fillStyle(i < r.hull ? r.hull <= 2 ? 0xff8e7f : 0x79e4c4 : 0x354550).fillRect(hx + i * 5.5, hy, 4, 5);
+      this.cameras.main.setScroll(r.player.x - W / 2, r.player.y - PLAYER_SCREEN_Y);
       if (r.hull < this.hull && !reduced) this.cameras.main.shake(100, 0.004);
       this.hull = r.hull;
     }

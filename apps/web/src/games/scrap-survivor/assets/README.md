@@ -1,15 +1,32 @@
-# Scrap Survivor sprite atlas
+# Scrap Survivor artwork
 
-Reused from the earlier Scrap Scout prototype.
+Original artwork generated with the built-in image generation tool; no third-party game assets.
+Selected PNG outputs were encoded as WebP for delivery (quality 88 for atlases, 85 for the floor,
+full-quality alpha). The three delivered files total about 516 KiB. Generated source canvases are
+1254 × 1254; normalized source rectangles in `../art.tsx` preserve silhouettes and aspect ratios.
 
-`scouts.png` is original artwork generated with the built-in image generation tool.
-The PNG retains transparent alpha; the renderer divides its actual dimensions into
-four equal cells (scout, drone, sentry, barrel). No third-party game assets were used.
-Animation, impact flashes, trails, and explosion effects are implemented in Phaser.
+- `equipment-v2.webp`: six equipment illustrations for upgrade cards and equipped-item slots.
+- `units.webp`: idle and two walking robot poses, crab drone, sentry, and Warden.
+- `floor.webp`: repeating steel floor plates. Phaser adds bay markings, grates, boundary stripes,
+  and darker non-walkable surroundings. The arena is 1440 × 1920 world units with a 480 × 640 view.
 
-Generation prompt:
+Movement frames, enemy motion, hit flashes, weapon trails, and HP bars are rendered in Phaser.
+Reduced motion disables walking-frame animation, enemy bobbing, and camera shake.
 
-> Use case: stylized-concept. Asset type: one production sprite atlas for an original mobile 2D ricochet game called Scrap Scout. Create a square transparent PNG sprite sheet with EXACTLY four equally sized cells in a precise 2 by 2 grid, no visible grid lines. Each sprite centered at the exact center of its quadrant, generous transparent padding, entirely inside its own cell. Top left: charming little teal salvage robot with ivory metal body, orange visor, stubby legs, small backpack; top right: hostile rust-red crab drone with four mechanical legs and glowing orange eye; bottom left: chunky purple armored sentry turret with cyan core and short cannon; bottom right: orange cylindrical explosive energy barrel with glowing yellow seams. All viewed from a consistent high three-quarter top-down angle facing down toward camera, crafted hand-painted 2D game art with crisp dark contours, chunky readable silhouettes, polished materials and restrained highlights, playful industrial sci-fi. Exactly one complete object per cell, no scenery, no floor, no ground shadow extending outside sprite, no letters, no numbers, no labels, no border, no watermark. Actual transparent alpha background. Composition must work as four 512 by 512 frames in a 1024 by 1024 atlas.
+## Generation prompts
 
-The generated dimensions are 1254 by 1254, so the game reads frame dimensions from
-the decoded image rather than assuming the requested export size.
+### Equipment
+
+Use case: stylized-concept. Asset type: production equipment icon atlas for Scrap Survivor, an original mobile robot survival game. Create ONE square atlas with exactly SIX icons in a precise 3-column by 2-row equal grid. Each icon centered in its cell with 15 percent transparent padding, all objects contained inside their own cell. Row 1 left to right: chunky teal and ivory bolt cannon with orange muzzle; three silver circular saw blades orbiting a teal hub; purple electrical coil with bright cyan lightning. Row 2 left to right: amber glowing reactor core inside a heavy steel cage; red horseshoe scrap magnet holding small metal bolts; pair of teal tracked robot boots with orange exhaust. Cohesive polished hand-painted 2D game inventory art, strong dark outlines, simple bold color blocks, crisp silhouette, chunky bevels, restrained highlights, readable at 64 pixels. High three-quarter view. No floor, no scenic background, no text, no lettering, no frame, no watermark, no cell borders. Actual transparent alpha background. 1536 by 1536 canvas if possible.
+
+### Equipment spacing revision
+
+Edit this equipment atlas for production use. Preserve the exact six illustrated equipment designs and their colors. SHRINK every icon substantially and separate them with LARGE transparent gutters. Canvas square, exactly 3 columns and 2 rows. Icon centers at x=16.67%,50%,83.33% and y=25%,75%. Every complete icon including glow must fit inside a bounding box that is at most 22% of the full canvas width and 28% of the full canvas height. This is mandatory: no silhouette or glow may reach neighboring cells. Add generous empty transparent space all around each icon; use smaller icons rather than filling cells. Order remains cannon, saw blades, lightning coil / reactor, magnet, tread boots. No text, no cell lines, no frames. Actual transparent alpha background.
+
+### Units
+
+Use case: stylized-concept. Asset type: ONE original game character sprite atlas for Scrap Survivor. Square canvas, EXACTLY 3 columns and 2 rows of equal rectangular cells. Every character must occupy AT MOST 65 percent of its cell width and height, centered in its cell, generous transparent gutters separating all six sprites. Row 1 left to right: friendly small teal and ivory salvage robot, bright orange horizontal visor, two stubby tracked feet, front idle pose; same exact robot walking with left foot forward and right foot back; same exact robot walking with right foot forward and left foot back. Row 2 left to right: rust red hostile four-legged crab drone with orange eye; chunky purple sentry turret with short cannon and cyan core; large yellow-orange industrial boss mech with twin heavy arms, black visor, broad shoulders. Consistent high three-quarter top-down perspective for a 2D overhead action game, facing down toward viewer. Polished cartoon game sprites, bold very dark outlines, broad simple color blocks, little surface detail, strong readable silhouettes and clean soft highlights. Transparent alpha, no ground, no shadows outside silhouette, no text, no grid lines, no watermark. Each entire silhouette strictly within its cell with generous empty margin.
+
+### Floor
+
+Use case: stylized-concept. Asset type: seamless square repeating floor texture for an original top-down mobile scrapyard robot game. Orthographic straight-down view, no perspective. A 4 by 4 arrangement of large dark desaturated blue-gray steel floor plates. Fine understated seams join plates, occasional small corner bolts, subtle scratches and restrained patches of oxidized brown metal. Broad quiet color areas and very low contrast so bright teal robots and orange enemies are clearly visible. Hand painted clean cartoon industrial sci-fi game texture matching chunky outlined robots. The texture must seamlessly tile horizontally and vertically, all outer edges share the same quiet steel material. No objects, no robots, no text, no symbols, no thick outlines, no bright highlights, no black void, no vignette, no lighting gradient across the whole image, no borders. Entire canvas opaque floor material.
