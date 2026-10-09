@@ -11,24 +11,27 @@ let interrupted;
 const interrupt = signal => { interrupted = signal; child?.kill(signal); };
 process.on('SIGINT', interrupt);
 process.on('SIGTERM', interrupt);
-const harness = await createWebHarness();
 const webDir = fileURLToPath(new URL('..', import.meta.url));
-const outputDir = join(webDir, 'test-results', harness.runId);
+let harness, outputDir;
+const run = (args, env = process.env) => {
+  child = spawn(process.execPath, args, { cwd: webDir, env, stdio: 'inherit' });
+  return new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code, signal) => resolve(code ?? (signal === 'SIGINT' ? 130 : 143)));
+  });
+};
 try {
-  if (!interrupted) {
-    child = spawn(process.execPath, [require.resolve('@playwright/test/cli'), 'test', ...process.argv.slice(2)], {
-      cwd: webDir,
-      env: { ...process.env, E2E_BASE_URL: harness.urls[0], E2E_STATEFUL_URL: harness.urls[1], E2E_OUTPUT_DIR: outputDir },
-      stdio: 'inherit',
-    });
-    process.exitCode = await new Promise((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code, signal) => resolve(code ?? (signal === 'SIGINT' ? 130 : 143)));
+  process.exitCode = await run(['--import', require.resolve('tsx'), '--test', 'tests/game/*.test.ts']);
+  if (!interrupted && process.exitCode === 0) {
+    harness = await createWebHarness();
+    outputDir = join(webDir, 'test-results', harness.runId);
+    if (!interrupted) process.exitCode = await run([require.resolve('@playwright/test/cli'), 'test', ...process.argv.slice(2)], {
+      ...process.env, E2E_BASE_URL: harness.urls[0], E2E_STATEFUL_URL: harness.urls[1], E2E_OUTPUT_DIR: outputDir,
     });
   }
 } finally {
-  await harness.close();
+  await harness?.close();
   process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt);
   if (interrupted) process.exitCode = interrupted === 'SIGINT' ? 130 : 143;
-  if (process.exitCode === 0) await rm(outputDir, { recursive: true, force: true });
+  if (process.exitCode === 0 && outputDir) await rm(outputDir, { recursive: true, force: true });
 }

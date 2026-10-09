@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import combat from "./assets/combat.webp?url";
-import type { Point, Run } from "./engine";
+import { bladeRadius, dronePositions, type Point, type Run } from "./engine";
+import { expansionFrames, expansionTexture } from "./atlas";
 
 export const combatTexture = { key: "combat", url: combat };
 const frames = {
@@ -14,6 +15,7 @@ export class CombatArt {
   private sprites: Phaser.GameObjects.Image[] = [];
   private used = 0;
   private field: Phaser.GameObjects.Graphics;
+  private bursts: Phaser.GameObjects.Graphics;
 
   constructor(private scene: Phaser.Scene, private reduced: boolean) {
     const texture = scene.textures.get(combatTexture.key), source = texture.getSourceImage() as HTMLImageElement;
@@ -21,17 +23,31 @@ export class CombatArt {
       texture.add(name, 0, Math.round(x * source.width), Math.round(y * source.height), Math.round(w * source.width), Math.round(h * source.height));
     }
     this.field = scene.add.graphics().setDepth(1);
+    this.bursts = scene.add.graphics().setDepth(6);
+    const extra = scene.textures.get(expansionTexture.key), extraSource = extra.getSourceImage() as HTMLImageElement;
+    for (const [name, [x, y, w, h]] of Object.entries(expansionFrames)) {
+      extra.add(name, 0, Math.round(x * extraSource.width), Math.round(y * extraSource.height), Math.round(w * extraSource.width), Math.round(h * extraSource.height));
+    }
   }
 
-  private sprite(frame: keyof typeof frames, x: number, y: number, w: number, h: number, angle = 0, alpha = 1, depth = 4) {
+  private sprite(frame: keyof typeof frames | keyof typeof expansionFrames, x: number, y: number, w: number, h: number, angle = 0, alpha = 1, depth = 4, texture = combatTexture.key) {
     const image = this.sprites[this.used] ?? (this.sprites[this.used] = this.scene.add.image(0, 0, combatTexture.key));
     this.used++;
-    return image.setFrame(frame).setPosition(x, y).setDisplaySize(w, h).setRotation(angle).setAlpha(alpha).setDepth(depth).setVisible(true).clearTint();
+    return image.setTexture(texture, frame).setPosition(x, y).setDisplaySize(w, h).setRotation(angle).setAlpha(alpha).setDepth(depth).setVisible(true).clearTint();
   }
 
   draw(r: Run, movement: Point, moving: boolean) {
     this.used = 0;
-    const g = this.field.clear(), p = r.player;
+    const g = this.field.clear(), bursts = this.bursts.clear(), p = r.player;
+    for (const chest of r.chests) {
+      g.lineStyle(2, 0xffce74, 0.6).strokeCircle(chest.x, chest.y, 23);
+      this.sprite("chest", chest.x, chest.y, 34, 30, 0, 1, 3, expansionTexture.key);
+    }
+    for (const mine of r.mines) {
+      this.sprite("mine", mine.x, mine.y, 22, 22, 0, mine.arm > 0 ? 0.5 : 1, 1, expansionTexture.key);
+      if (mine.arm <= 0) g.lineStyle(1, 0xffc36c, 0.25).strokeCircle(mine.x, mine.y, 32);
+    }
+    for (const drone of dronePositions(r)) this.sprite("drone", drone.x, drone.y, 31, 25, 0, 1, 5, expansionTexture.key);
     if (r.upgrades.reactor) {
       const radius = 24 + r.upgrades.reactor * 2;
       g.lineStyle(4, 0xffbf61, 0.12).strokeCircle(p.x, p.y, radius);
@@ -62,21 +78,30 @@ export class CombatArt {
         const length = b.pierce > 0 ? 30 : 23;
         // The solid nose sits on the simulated projectile; its trail extends behind it.
         this.sprite("bolt", b.x - Math.cos(angle) * length * 0.3, b.y - Math.sin(angle) * length * 0.3,
-          length, b.pierce > 0 ? 12 : 10, angle);
+          length, b.pierce > 0 ? 12 : 10, angle).setTint(b.kind === "drone" ? 0xffd68b : 0xffffff);
       }
     }
     const lv = r.upgrades.blade;
     if (lv) {
-      const radius = 42 + lv * 9;
+      const radius = bladeRadius(r);
       g.lineStyle(1, 0x82d4ff, 0.18).strokeCircle(p.x, p.y, radius);
       for (let i = 0; i <= lv; i++) {
         const angle = r.time * 4 + i * Math.PI * 2 / (lv + 1);
         this.sprite("blade", p.x + Math.cos(angle) * radius, p.y + Math.sin(angle) * radius,
-          24, 24, this.reduced ? 0 : -r.time * 12 + i);
+          r.evolutions.blade ? 30 : 24, r.evolutions.blade ? 30 : 24, this.reduced ? 0 : -r.time * 12 + i,
+          1, 4, r.evolutions.blade ? expansionTexture.key : combatTexture.key);
       }
     }
     for (const fx of r.effects) {
-      if (fx.kind === "arc" && fx.from) {
+      if (fx.kind === "rail" && fx.from) {
+        bursts.lineStyle(12, 0x5de6ff, fx.ttl * 1.5).lineBetween(fx.from.x, fx.from.y, fx.x, fx.y);
+        bursts.lineStyle(3, 0xe9fcff, Math.min(1, fx.ttl * 5)).lineBetween(fx.from.x, fx.from.y, fx.x, fx.y);
+      } else if (fx.kind === "blast" || fx.kind === "storm") {
+        const radius = (fx.radius ?? 60) * (1 - fx.ttl / 0.5), color = fx.kind === "blast" ? 0xffb85c : 0x84caff;
+        bursts.lineStyle(3, color, fx.ttl * 1.8).strokeCircle(fx.x, fx.y, radius);
+        bursts.fillStyle(color, fx.ttl * 0.16).fillCircle(fx.x, fx.y, radius);
+        this.sprite("hit", fx.x, fx.y, 30, 30, 0, Math.min(1, fx.ttl * 3), 6).setTint(color);
+      } else if (fx.kind === "arc" && fx.from) {
         const dx = fx.x - fx.from.x, dy = fx.y - fx.from.y, distance = Math.hypot(dx, dy);
         const angle = Math.atan2(dy, dx), count = Math.max(1, Math.ceil(distance / 64));
         for (let i = 0; i < count; i++) {
@@ -84,7 +109,7 @@ export class CombatArt {
           this.sprite("arc", fx.from.x + dx * t, fx.from.y + dy * t, distance / count + 3,
             16, angle, Math.min(1, fx.ttl / 0.12), 6);
         }
-      } else if (fx.kind !== "arc") {
+      } else if (fx.kind === "hit" || fx.kind === "kill") {
         const progress = 1 - fx.ttl / 0.4, size = fx.kind === "kill" ? 27 : 16;
         this.sprite("hit", fx.x, fx.y, size * (1 + progress * 0.5), size * (1 + progress * 0.5),
           (fx.x + fx.y) % (Math.PI * 2), Math.min(1, fx.ttl / 0.22), 6);
