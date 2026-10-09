@@ -77,8 +77,8 @@ for (const parser of ["static", "streaming", "long"] as const) {
     await expect(dialog.getByRole("img")).toBeVisible();
     await assertViewportLocked(page);
     if (parser === "static") await expect(page).toHaveScreenshot("image-enlarged-mobile.png");
-    await dialog.getByRole("button", { name: "Actual size" }).click();
-    await expect.poll(() => dialog.getByRole("img").evaluate(img => img.getBoundingClientRect().width)).toBe(512);
+    await dialog.getByRole("button", { name: "Zoom in image" }).click();
+    await expect.poll(() => imageTransform(page).then(value => value.scale)).toBeGreaterThan(1);
     await assertViewportLocked(page);
     await dialog.getByRole("button", { name: "Fit image" }).click();
     if (parser === "static") await page.evaluate(() => history.back());
@@ -191,3 +191,112 @@ for (const width of [360, 1280]) {
     await assertViewportLocked(page);
   });
 }
+
+async function imageTransform(page: Page) {
+  return page.getByRole("dialog").getByRole("img").evaluate(img => {
+    const matrix = new DOMMatrix(getComputedStyle(img.parentElement!).transform);
+    return { scale: matrix.a, x: matrix.e, y: matrix.f };
+  });
+}
+
+for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+  test(`image fullscreen fits, zooms, pans, and restores focus at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.route("**/api/tasks/*/image?*", route => route.fulfill({ contentType: "image/png", body: png }));
+    await reply(page, "![Preview](preview.png)");
+    const trigger = page.getByRole("button", { name: "Enlarge image: Preview" });
+    for (const theme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog", { name: "Preview", exact: true });
+      await expect.poll(async () => {
+        const box = (await dialog.boundingBox())!;
+        return Object.fromEntries(Object.entries(box).map(([key, value]) => [key, Math.round(value)]));
+      }).toEqual({ x: 0, y: 0, ...viewport });
+      const canvas = dialog.getByRole("region", { name: "Preview", exact: true });
+      await expect(canvas).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Zoom out image" })).toBeDisabled();
+      await expect.poll(() => imageTransform(page)).toEqual({ scale: 1, x: 0, y: 0 });
+      await canvas.focus();
+      await page.keyboard.press("+");
+      await expect.poll(async () => (await imageTransform(page)).scale).toBeGreaterThan(1);
+      const zoomed = await imageTransform(page);
+      const box = (await canvas.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 - 60, box.y + box.height / 2 - 40, { steps: 8 });
+      await page.mouse.up();
+      await expect.poll(async () => (await imageTransform(page)).x).toBeLessThan(zoomed.x - 20);
+      await expect.poll(async () => (await imageTransform(page)).y).toBeLessThan(zoomed.y - 20);
+      await dialog.getByRole("button", { name: "Fit image" }).click();
+      await expect.poll(() => imageTransform(page)).toEqual({ scale: 1, x: 0, y: 0 });
+      await captureForReview(page, `image-fullscreen-${viewport.width}-${theme}.png`);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      await trigger.click();
+      await expect.poll(() => imageTransform(page)).toEqual({ scale: 1, x: 0, y: 0 });
+      await dialog.getByRole("button", { name: "Exit image fullscreen" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      await assertViewportLocked(page);
+    }
+  });
+}
+
+test("native pinch and pan zoom only the fullscreen image", async ({ page, context }) => {
+  await page.route("**/api/tasks/*/image?*", route => route.fulfill({ contentType: "image/png", body: png }));
+  await reply(page, "![Preview](preview.png)");
+  await page.getByRole("button", { name: "Enlarge image: Preview" }).click();
+  const canvas = page.getByRole("region", { name: "Preview", exact: true });
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  const cdp = await context.newCDPSession(page);
+  const points = (radius: number) => [{ x: x - radius, y, id: 0 }, { x: x + radius, y, id: 1 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(35) });
+  for (let radius = 40; radius <= 90; radius += 10) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(radius) });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(async () => (await imageTransform(page)).scale).toBeGreaterThan(1.5);
+  const pinched = await imageTransform(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 0 }] });
+  for (let delta = 10; delta <= 50; delta += 10) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x - delta, y: y - delta, id: 0 }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(async () => (await imageTransform(page)).x).toBeLessThan(pinched.x - 20);
+  await expect.poll(async () => (await imageTransform(page)).y).toBeLessThan(pinched.y - 20);
+  expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+  await page.getByRole("button", { name: "Fit image" }).click();
+  await expect.poll(() => imageTransform(page)).toEqual({ scale: 1, x: 0, y: 0 });
+  await cdp.detach();
+});
+
+test("inline images preserve transcript wheel and touch scrolling", async ({ page, context }) => {
+  await page.route("**/api/tasks/*/image?*", route => route.fulfill({ contentType: "image/png", body: png }));
+  await reply(page, Array.from({ length: 20 }, (_, i) => `Paragraph ${i}`).join("\n\n") + "\n\n![Preview](preview.png)");
+  const trigger = page.getByRole("button", { name: "Enlarge image: Preview" });
+  await trigger.scrollIntoViewIfNeeded();
+  const transcript = page.locator('[data-radix-scroll-area-viewport][aria-label="Session transcript"]');
+  const before = await transcript.evaluate(el => el.scrollTop);
+  await trigger.hover();
+  await page.mouse.wheel(0, -120);
+  await expect.poll(() => transcript.evaluate(el => el.scrollTop)).toBeLessThan(before - 20);
+  await trigger.scrollIntoViewIfNeeded();
+  const beforeTouch = await transcript.evaluate(el => el.scrollTop);
+  const box = (await trigger.boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + 30;
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 0 }] });
+  for (let delta = 20; delta <= 100; delta += 20) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + delta, id: 0 }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(() => transcript.evaluate(el => el.scrollTop)).toBeLessThan(beforeTouch - 20);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await cdp.detach();
+  await assertViewportLocked(page);
+});
