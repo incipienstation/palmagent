@@ -134,10 +134,10 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               <FieldGroup className="rounded-xl border border-border bg-background/50 px-3.5">
                 <Field className="gap-2.5 py-3.5">
                   <div className="flex min-h-11 items-center justify-between gap-3">
-                    <FieldLabel htmlFor={arcadeId}>Arcade mode</FieldLabel>
+                    <FieldLabel htmlFor={arcadeId} className="text-sm">Arcade mode</FieldLabel>
                     <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
                   </div>
-                  <FieldDescription id={`${arcadeId}-description`}>
+                  <FieldDescription id={`${arcadeId}-description`} className="text-xs">
                     Play games while your agent works. Opens automatically when you send a message.
                   </FieldDescription>
                 </Field>
