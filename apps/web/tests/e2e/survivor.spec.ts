@@ -76,7 +76,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await game(page).getByRole("button", { name: /Orbiting blades/ }).click(); await expect.poll(async () => (await saved(page)).upgrades.blade).toBe(1);
 });
 
-test("sprite loading can retry and new attention returns to chat without resetting the run", async ({ page }) => {
+for (const atlas of ["units", "combat"]) test(`${atlas} sprite loading can retry and new attention returns to chat without resetting the run`, async ({ page }) => {
   await enable(page);
   await page.addInitScript(() => {
     const Native = window.EventSource;
@@ -89,10 +89,10 @@ test("sprite loading can retry and new attention returns to chat without resetti
     window.EventSource = Inbox as unknown as typeof EventSource;
   });
   await installScopedStream(page);
-  await page.route("**/units-*.webp", route => route.abort());
+  await page.route(`**/${atlas}-*.webp`, route => route.abort());
   await page.goto("/#/task/t-run"); await open(page);
   await expect(game(page).getByText("The game could not load.")).toBeVisible();
-  await page.unroute("**/units-*.webp"); await game(page).getByRole("button", { name: "Retry game" }).click();
+  await page.unroute(`**/${atlas}-*.webp`); await game(page).getByRole("button", { name: "Retry game" }).click();
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   const task = tasks.find(t => t.taskId === "t-run")!;
   for (const status of ["awaiting_input", "awaiting_approval"] as const) {
