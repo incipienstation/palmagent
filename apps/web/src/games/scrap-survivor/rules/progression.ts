@@ -1,9 +1,10 @@
 import { canEvolve, canUpgrade, EVOLUTION_KEYS, UPGRADE_KEYS, UPGRADES } from "./catalog";
 import type { Reward, Run, Upgrade } from "./model";
+import { maxHull, repairBonus } from "./campaign-catalog";
 
 function improve(r: Run, key: Upgrade) {
   r.upgrades[key]++;
-  r.hull = Math.min(8, r.hull + (UPGRADES[key].max === 3 ? 2 : 1));
+  r.hull = Math.min(maxHull(r), r.hull + (UPGRADES[key].max === 3 ? 2 : 1) + repairBonus(r));
   r.invulnerable = 1;
 }
 export function chooseUpgrade(r: Run, choice: Upgrade): boolean {
@@ -16,7 +17,7 @@ export function offerUpgrades(r: Run, random: () => number) {
     const j = Math.floor(random() * (i + 1)); [available[i], available[j]] = [available[j], available[i]];
   }
   r.choices = available.slice(0, 3);
-  if (!r.choices.length) r.hull = Math.min(8, r.hull + 2);
+  if (!r.choices.length) r.hull = Math.min(maxHull(r), r.hull + 2);
 }
 export function openChest(r: Run, id: number): boolean {
   const chest = r.chests.find(c => c.id === id);
@@ -35,10 +36,10 @@ export function chooseReward(r: Run, index: number): boolean {
   if (!reward) return false;
   if (reward.kind === "evolve") {
     if (!canEvolve(r, reward.weapon)) return false;
-    r.evolutions[reward.weapon] = true; r.hull = Math.min(8, r.hull + 2);
+    r.evolutions[reward.weapon] = true; r.hull = Math.min(maxHull(r), r.hull + 2);
   } else if (reward.kind === "upgrade") {
     if (!canUpgrade(r, reward.upgrade)) return false;
     improve(r, reward.upgrade);
-  } else r.hull = 8;
+  } else r.hull = maxHull(r);
   r.invulnerable = 1.5; r.rewards = []; return true;
 }

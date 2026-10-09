@@ -1,7 +1,7 @@
 import equipment from "./assets/equipment-v2.webp?url";
 import units from "./assets/units.webp?url";
-import { EVOLUTION_KEYS, type Upgrade, type EvolvingWeapon } from "./engine";
-import { unitFrames, expansionFrames, expansionTexture } from "./atlas";
+import { EVOLUTION_KEYS, type Upgrade, type EvolvingWeapon, type Robot } from "./engine";
+import { unitFrames, expansionFrames, expansionTexture, robotFrames, robotTexture } from "./atlas";
 
 const equipmentFrames: Record<Exclude<Upgrade, "mine" | "drone">, readonly number[]> = {
   bolt: [0.09, 0.31, 0.20, 0.19], blade: [0.405, 0.295, 0.195, 0.195], arc: [0.73, 0.27, 0.185, 0.225],
@@ -19,4 +19,6 @@ export function EquipmentArt({ kind, evolved = false }: { kind: Upgrade; evolved
   return <AtlasArt src={equipment} frame={equipmentFrames[kind as keyof typeof equipmentFrames]} />;
 }
 export function ChestArt() { return <AtlasArt src={expansionTexture.url} frame={expansionFrames.chest} />; }
-export function RobotArt({ boss = false }: { boss?: boolean }) { return <AtlasArt src={units} frame={unitFrames[boss ? 5 : 0]} />; }
+export function RobotArt({ boss = false, robot = "scout" }: { boss?: boolean; robot?: Robot }) {
+  return !boss && robot !== "scout" ? <AtlasArt src={robotTexture.url} frame={robotFrames[robot === "bulwark" ? 0 : 3]} /> : <AtlasArt src={units} frame={unitFrames[boss ? 5 : 0]} />;
+}

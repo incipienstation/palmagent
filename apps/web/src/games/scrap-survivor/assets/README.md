@@ -2,7 +2,7 @@
 
 Original artwork generated with the built-in image generation tool; no third-party game assets.
 Selected PNG outputs were encoded as WebP for delivery (quality 88 for atlases, 85 for the floor,
-full-quality alpha). Original canvases are 1254 × 1254; the expansion atlas is 1536 × 1024.
+full-quality alpha). Original canvases are 1254 × 1254; the expansion atlas is 1536 × 1024 and the campaign robots atlas is 1254 × 1254.
 Normalized source rectangles in `../art.tsx`, `../atlas.ts`, and `../combat-art.ts` isolate the sprites.
 
 - `equipment-v2.webp`: six equipment illustrations for upgrade cards and equipped-item slots.
@@ -50,3 +50,14 @@ Use case: stylized-concept. Asset type: ONE original game character sprite atlas
 ### Floor
 
 Use case: stylized-concept. Asset type: seamless square repeating floor texture for an original top-down mobile scrapyard robot game. Orthographic straight-down view, no perspective. A 4 by 4 arrangement of large dark desaturated blue-gray steel floor plates. Fine understated seams join plates, occasional small corner bolts, subtle scratches and restrained patches of oxidized brown metal. Broad quiet color areas and very low contrast so bright teal robots and orange enemies are clearly visible. Hand painted clean cartoon industrial sci-fi game texture matching chunky outlined robots. The texture must seamlessly tile horizontally and vertically, all outer edges share the same quiet steel material. No objects, no robots, no text, no symbols, no thick outlines, no bright highlights, no black void, no vignette, no lighting gradient across the whole image, no borders. Entire canvas opaque floor material.
+## Campaign robots
+
+`robots.webp` adds Bulwark and Engineer player classes, each with idle and two walking frames.
+Generated with the built-in imagegen tool, then encoded as WebP while retaining transparent alpha.
+The existing Scout remains in `units.webp`. Source rectangles are defined in `atlas.ts`.
+
+Final generation prompt:
+
+```text
+Use case: stylized-concept. Asset type: one production transparent robot sprite atlas for the Scrap Survivor game. Create EXACTLY 6 separate sprites in a square canvas in a regular 3-column 2-row grid. Each sprite centered within its cell and fully contained within 65 percent of cell width and 65 percent of cell height, with broad entirely transparent gutters. Polished hand-painted cartoon industrial robots, bold black outlines, ivory metal panels, strong readable silhouettes, high three-quarter top-down perspective facing down toward viewer, readable at 40 pixels. TOP ROW is the SAME friendly heavy Bulwark robot in 3 animation frames: idle; left tracked foot forward; right tracked foot forward. Bulwark has a wide squat ivory and muted amber armored body, broad shoulder plates, two chunky black tracked feet, and a horizontal cyan friendly visor, no weapon in hands. BOTTOM ROW is the SAME friendly Engineer robot in 3 animation frames: idle; left foot forward; right foot forward. Engineer has a slim ivory and muted violet body, a square cyan visor, a tall twin antenna backpack with compact folded drone rotor pods, two narrow robotic feet, no separate companion. Consistent size and identity across each row, consistent perspective throughout. Transparent alpha background. No ground, no shadows outside the silhouette, no scene, no text or grid lines, no watermark. These are two new friendly player classes; neither resembles a hostile boss.
+```

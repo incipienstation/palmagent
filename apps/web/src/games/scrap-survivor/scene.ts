@@ -1,9 +1,9 @@
 import Phaser from "phaser";
 import sprites from "./assets/units.webp?url";
 import floorTiles from "./assets/floor.webp?url";
-import { unitFrames, expansionTexture } from "./atlas";
+import { unitFrames, expansionTexture, robotFrames, robotTexture } from "./atlas";
 import { CombatArt, combatTexture } from "./combat-art";
-import { H, W, WORLD_W, WORLD_H, PLAYER_SCREEN_Y, STEP, step, type Point, type Run } from "./engine";
+import { H, W, WORLD_W, WORLD_H, PLAYER_SCREEN_Y, STEP, RELAY_SECONDS, maxHull, step, type Point, type Run } from "./engine";
 
 export function preloadSprites(): Promise<void> {
   return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(); img.onerror = reject; img.src = sprites; });
@@ -17,20 +17,25 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
     private health!: Phaser.GameObjects.Graphics;
     private shadow!: Phaser.GameObjects.Ellipse;
     private paint!: Phaser.GameObjects.Graphics;
+    private floor!: Phaser.GameObjects.TileSprite;
+    private relayLabels: Phaser.GameObjects.Text[] = [];
     private art = new Map<number, Phaser.GameObjects.Image>();
     private combat!: CombatArt;
     private elapsed = 0;
     private report = 0;
     private hull = 8;
     private seen = new WeakSet<object>();
-    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); this.load.image(expansionTexture.key, expansionTexture.url); }
+    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); this.load.image(expansionTexture.key, expansionTexture.url); this.load.image(robotTexture.key, robotTexture.url); }
     create() {
       if (cancelled) return;
-      if (!["survivor", "floor", combatTexture.key, expansionTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
+      if (!["survivor", "floor", combatTexture.key, expansionTexture.key, robotTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
       const texture = this.textures.get("survivor"), source = texture.getSourceImage() as HTMLImageElement;
       unitFrames.forEach(([x, y, w, h], i) => texture.add(String(i), 0, Math.round(x * source.width), Math.round(y * source.height), Math.round(w * source.width), Math.round(h * source.height)));
+      const robotAtlas = this.textures.get(robotTexture.key), robotSource = robotAtlas.getSourceImage() as HTMLImageElement;
+      robotFrames.forEach(([x, y, w, h], i) => robotAtlas.add(String(i), 0, Math.round(x * robotSource.width), Math.round(y * robotSource.height), Math.round(w * robotSource.width), Math.round(h * robotSource.height)));
       // Overscan outside the walking boundary keeps the robot clear of controls at every edge.
       const floor = this.add.tileSprite(WORLD_W / 2, WORLD_H / 2, WORLD_W + W * 2, WORLD_H + H * 2, "floor");
+      this.floor = floor;
       const tileSource = this.textures.get("floor").getSourceImage() as HTMLImageElement;
       floor.setTileScale(256 / tileSource.width, 256 / tileSource.height).setTint(0x8da5ab);
       const markings = this.add.graphics();
@@ -52,6 +57,7 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
         this.add.text(x + 12, y + 12, `BAY 0${row * 3 + col + 1}`, { fontSize: "18px", fontFamily: "monospace", color: "#738d91" }).setAlpha(0.35);
       }
       this.paint = this.add.graphics().setDepth(3);
+      this.relayLabels = Array.from({ length: 3 }, () => this.add.text(0, 0, "", { fontSize: "12px", fontFamily: "system-ui", color: "#d0fff0", stroke: "#10232c", strokeThickness: 4 }).setOrigin(0.5).setDepth(4));
       this.shadow = this.add.ellipse(0, 0, 34, 14, 0x031019, 0.45).setDepth(1);
       this.robot = this.add.image(0, 0, "survivor", "0").setDisplaySize(38, 46).setDepth(5);
       this.health = this.add.graphics().setDepth(7);
@@ -61,6 +67,27 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
     private draw() {
       if (!this.paint) return;
       const r = getRun(), g = this.paint.clear(), ids = new Set(r.enemies.map(e => e.id));
+      this.floor.setTint(r.rig.sector === 1 ? 0x8da5ab : r.rig.sector === 2 ? 0xba977a : 0x9386bc);
+      this.relayLabels.forEach((label, i) => {
+        const relay = r.relays[i]; label.setVisible(Boolean(relay));
+        if (!relay) return;
+        const restored = relay.charge >= RELAY_SECONDS, color = restored ? 0x78e4b7 : 0x74d9ff;
+        g.fillStyle(0x102b35, 0.65).fillCircle(relay.x, relay.y, 58);
+        g.lineStyle(2, color, 0.65).strokeCircle(relay.x, relay.y, 58);
+        g.lineStyle(5, color).beginPath().arc(relay.x, relay.y, 58, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * relay.charge / RELAY_SECONDS).strokePath();
+        g.fillStyle(0x253946).fillRoundedRect(relay.x - 13, relay.y - 20, 26, 36, 5);
+        g.lineStyle(2, color).strokeRoundedRect(relay.x - 13, relay.y - 20, 26, 36, 5);
+        g.fillStyle(color).fillRect(relay.x - 7, relay.y - 13, 14, restored ? 22 : 7);
+        label.setPosition(relay.x, relay.y + 77).setText(restored ? `RELAY ${i + 1} RESTORED` : `RELAY ${i + 1} · STAY NEAR TO RESTORE`);
+      });
+      for (const hazard of r.hazards) {
+        const active = hazard.ttl <= 0.9, color = r.rig.sector === 3 ? 0xc6a5ff : 0xff9b59;
+        g.fillStyle(color, active ? 0.45 : 0.1).fillCircle(hazard.x, hazard.y, 55);
+        g.lineStyle(active ? 4 : 2, color).strokeCircle(hazard.x, hazard.y, 55);
+        g.lineBetween(hazard.x - 10, hazard.y - 10, hazard.x + 10, hazard.y + 10);
+        g.lineBetween(hazard.x + 10, hazard.y - 10, hazard.x - 10, hazard.y + 10);
+        if (!active) g.lineStyle(2, color, 0.7).strokeCircle(hazard.x, hazard.y, 55 * (2.4 - hazard.ttl) / 1.5);
+      }
       for (const [id, sprite] of this.art) if (!ids.has(id)) { sprite.destroy(); this.art.delete(id); }
       for (const e of r.enemies) {
         let sprite = this.art.get(e.id);
@@ -90,12 +117,15 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
           }
         }
       }
-      this.robot.setFrame(!reduced && moving ? String(1 + Math.floor(r.time * 9) % 2) : "0");
+      const frame = !reduced && moving ? 1 + Math.floor(r.time * 9) % 2 : 0;
+      this.robot.setTexture(r.rig.robot === "scout" ? "survivor" : robotTexture.key, String(frame + (r.rig.robot === "engineer" ? 3 : 0)))
+        .setDisplaySize(r.rig.robot === "bulwark" ? 49 : r.rig.robot === "engineer" ? 31 : 38, 46);
       this.shadow.setPosition(r.player.x, r.player.y + 20);
       this.robot.setPosition(r.player.x, r.player.y).setAlpha(r.invulnerable > 0 && Math.floor(r.time * 12) % 2 ? 0.5 : 1);
       const hp = this.health.clear(), hx = r.player.x - 22, hy = r.player.y - 34;
       hp.fillStyle(0x07151f, 0.95).fillRoundedRect(hx - 3, hy - 3, 50, 11, 3);
-      for (let i = 0; i < 8; i++) hp.fillStyle(i < r.hull ? r.hull <= 2 ? 0xff8e7f : 0x79e4c4 : 0x354550).fillRect(hx + i * 5.5, hy, 4, 5);
+      const cells = maxHull(r), cellWidth = 44 / cells;
+      for (let i = 0; i < cells; i++) hp.fillStyle(i < r.hull ? r.hull <= 2 ? 0xff8e7f : 0x79e4c4 : 0x354550).fillRect(hx + i * cellWidth, hy, Math.max(1, cellWidth - 1.5), 5);
       this.cameras.main.setScroll(r.player.x - W / 2, r.player.y - PLAYER_SCREEN_Y);
       if (r.hull < this.hull && !reduced) this.cameras.main.shake(100, 0.004);
       this.hull = r.hull;

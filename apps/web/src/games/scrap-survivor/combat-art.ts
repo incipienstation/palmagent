@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import combat from "./assets/combat.webp?url";
-import { bladeRadius, dronePositions, type Point, type Run } from "./engine";
+import { bladeRadius, dronePositions, pickupRadius, type Point, type Run } from "./engine";
 import { expansionFrames, expansionTexture } from "./atlas";
 
 export const combatTexture = { key: "combat", url: combat };
@@ -54,7 +54,7 @@ export class CombatArt {
       g.lineStyle(1.5, 0xffd581, 0.4).strokeCircle(p.x, p.y, radius - 3);
     }
     if (r.upgrades.magnet) {
-      const radius = 55 + r.upgrades.magnet * 35;
+      const radius = pickupRadius(r);
       // The field follows the actual pickup radius; quiet dashes keep enemy telegraphs readable.
       for (let i = 0; i < 12; i++) {
         const angle = i * Math.PI / 6;
