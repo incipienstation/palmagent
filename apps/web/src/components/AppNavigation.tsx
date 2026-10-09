@@ -15,7 +15,7 @@ import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
 import { useAdhdMode } from "../AdhdModeProvider";
-import { SurvivorSheet } from "../games/scrap-survivor/SurvivorSheet";
+import { SurvivorSheet } from "../games/SurvivorSheet";
 import { onGameDelivery, warmSurvivor, type GameDelivery } from "../games/play-events";
 
 const NavigationContext = createContext<{

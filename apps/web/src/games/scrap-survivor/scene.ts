@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import sprites from "./assets/units.webp?url";
 import floorTiles from "./assets/floor.webp?url";
-import { unitFrames } from "./art";
+import { unitFrames, expansionTexture } from "./atlas";
 import { CombatArt, combatTexture } from "./combat-art";
 import { H, W, WORLD_W, WORLD_H, PLAYER_SCREEN_Y, STEP, step, type Point, type Run } from "./engine";
 
@@ -23,10 +23,10 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
     private report = 0;
     private hull = 8;
     private seen = new WeakSet<object>();
-    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); }
+    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); this.load.image(expansionTexture.key, expansionTexture.url); }
     create() {
       if (cancelled) return;
-      if (!["survivor", "floor", combatTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
+      if (!["survivor", "floor", combatTexture.key, expansionTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
       const texture = this.textures.get("survivor"), source = texture.getSourceImage() as HTMLImageElement;
       unitFrames.forEach(([x, y, w, h], i) => texture.add(String(i), 0, Math.round(x * source.width), Math.round(y * source.height), Math.round(w * source.width), Math.round(h * source.height)));
       // Overscan outside the walking boundary keeps the robot clear of controls at every edge.
@@ -65,15 +65,16 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
       for (const e of r.enemies) {
         let sprite = this.art.get(e.id);
         if (!sprite) { sprite = this.add.image(e.x, e.y, "survivor", "1").setDepth(2); this.art.set(e.id, sprite); }
-        const boss = e.kind === "boss", frame = boss ? "5" : e.kind === "sentry" ? "4" : "3";
+        const boss = e.kind === "boss", elite = e.kind === "elite", frame = boss ? "5" : e.kind === "sentry" || elite ? "4" : "3";
         const bob = reduced ? 0 : Math.sin(r.time * (e.kind === "charger" ? 16 : 8) + e.id) * 1.3;
-        sprite.setTexture("survivor", frame).setPosition(e.x, e.y + bob).setDisplaySize(boss ? 82 : 40, boss ? 78 : e.kind === "sentry" ? 48 : 33);
+        sprite.setTexture("survivor", frame).setPosition(e.x, e.y + bob).setDisplaySize(boss ? 82 : elite ? 60 : 40, boss ? 78 : elite ? 66 : e.kind === "sentry" ? 48 : 33);
         sprite.setRotation(reduced ? 0 : e.kind === "charger" && e.dash > 0 ? Math.sin(r.time * 30) * 0.12 : Math.sin(r.time * 5 + e.id) * 0.035);
         if (r.effects.some(fx => fx.kind === "hit" && fx.ttl > 0.3 && Math.hypot(fx.x - e.x, fx.y - e.y) < 25)) sprite.setTintFill(0xffffff);
-        else if (e.kind === "charger") sprite.setTint(0xffb56c); else sprite.clearTint();
-        if (e.hp < e.max || boss) { g.fillStyle(0x29313d).fillRect(e.x - 18, e.y - (boss ? 42 : 24), 36, 4); g.fillStyle(0xff836f).fillRect(e.x - 18, e.y - (boss ? 42 : 24), 36 * e.hp / e.max, 4); }
-        if ((e.kind === "charger" && e.clock < 0.65 && e.dash <= 0) || (boss && e.clock < 0.5)) {
-          g.lineStyle(2, 0xff7866, 0.7).strokeCircle(e.x, e.y, boss ? 44 : 25);
+        else if (elite) sprite.setTint(0xffcf6a); else if (e.kind === "charger") sprite.setTint(0xffb56c); else sprite.clearTint();
+        if (elite) g.lineStyle(2, 0xffcf6a, 0.7).strokeCircle(e.x, e.y, 34);
+        if (e.hp < e.max || boss || elite) { g.fillStyle(0x29313d).fillRect(e.x - 18, e.y - (boss ? 42 : elite ? 37 : 24), 36, 4); g.fillStyle(0xff836f).fillRect(e.x - 18, e.y - (boss ? 42 : elite ? 37 : 24), 36 * e.hp / e.max, 4); }
+        if ((e.kind === "charger" && e.clock < 0.65 && e.dash <= 0) || ((boss || elite) && e.clock < 0.5)) {
+          g.lineStyle(2, 0xff7866, 0.7).strokeCircle(e.x, e.y, boss ? 44 : elite ? 38 : 25);
           g.lineBetween(e.x, e.y, r.player.x, r.player.y);
         }
       }
@@ -81,7 +82,7 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
       const direction = movement(), moving = !paused() && Math.hypot(direction.x, direction.y) > 0.05;
       this.combat.draw(r, direction, moving);
       for (const fx of r.effects) {
-        if (fx.kind !== "arc") {
+        if (fx.kind === "hit" || fx.kind === "kill") {
           if (!this.seen.has(fx)) {
             this.seen.add(fx);
             const text = this.add.text(fx.x, fx.y - 15, String(fx.value), { fontSize: "13px", fontFamily: "system-ui", color: "#fff0c8", stroke: "#18232d", strokeThickness: 3 }).setOrigin(0.5).setDepth(6);

@@ -2,10 +2,13 @@
 
 Original artwork generated with the built-in image generation tool; no third-party game assets.
 Selected PNG outputs were encoded as WebP for delivery (quality 88 for atlases, 85 for the floor,
-full-quality alpha). The four delivered files total about 792 KiB. Generated source canvases are
-1254 × 1254; normalized source rectangles in `../art.tsx` and `../combat-art.ts` isolate the sprites.
+full-quality alpha). Original canvases are 1254 × 1254; the expansion atlas is 1536 × 1024.
+Normalized source rectangles in `../art.tsx`, `../atlas.ts`, and `../combat-art.ts` isolate the sprites.
 
 - `equipment-v2.webp`: six equipment illustrations for upgrade cards and equipped-item slots.
+- `expansion.webp`: proximity mine, support drone, elite chest, reactor railgun, magnetic grinder,
+  and storm relay. The mine, drone, and chest also appear in the arena; evolutions use beam,
+  magnetic ring, and shockwave effects.
 - `units.webp`: idle and two walking robot poses, crab drone, sentry, and Warden.
 - `combat.webp`: player bolt, circular saw, chain lightning, impact sparks, hostile plasma, and
   tread exhaust. Phaser rotates and pools the sprites, stretches lightning between actual targets,
@@ -19,6 +22,14 @@ Reduced motion disables walking-frame animation, enemy bobbing, camera shake, sa
 exhaust flicker. Attack travel and blade orbits remain visible; pausing freezes combat effects.
 
 ## Generation prompts
+
+### Expansion equipment
+
+Use case: stylized-concept. Asset type: one transparent production sprite atlas for Scrap Survivor, a polished hand-painted top-down teal salvage robot game. EXACTLY six separate objects in a square 3-column by 2-row grid. Strong dark outlines, chunky ivory and teal metal, restrained amber/cyan glow, readable silhouettes at 24-64 pixels. Centers x16.67%,50%,83.33% and y25%,75%. Every object contained within its cell with generous transparent gutters, no overlap. Row 1 left: circular teal proximity mine seen straight down, orange armed light and three short silver feet; middle: small friendly teal and ivory flying support drone seen from overhead, two side rotors, orange visor, forward cannon, symmetrical compact silhouette; right: closed chunky industrial salvage chest in high three-quarter perspective, teal metal, broad brass latch and glowing amber seams. Row 2 left: powerful ivory and teal railgun with twin long cyan rails and chunky amber reactor, pointing diagonally upper right; middle: circular magnetic grinder seen straight down, a dark teal hub and four interlocking silver saw cutters with faint cyan magnetic arcs; right: compact violet and teal storm relay coil, bright branching blue-white electric discharge wrapping around the coil. No text, labels, borders, cell lines, background, characters, scenery or watermark. Actual transparent alpha. Consistent visual language and equal visual weight for all six complete silhouettes.
+
+### Expansion transparency and spacing revision
+
+Edit this sprite atlas for production use. Preserve the six object designs and order exactly (mine, drone, chest / railgun, grinder, lightning coil). Remove ALL background haze, broad colored lighting and diffuse glow. Keep opaque mechanical silhouettes and only tiny tight electric sparks attached to the coil. Everything outside the individual object silhouettes MUST have alpha zero, not dark or translucent backdrop. Shrink all six objects to add generous fully transparent gutters. Each complete object must be within its own equal 3-column 2-row cell, with at least 15 percent of cell width and height empty on each side. No ground, no cast shadow, no lettering, no grid lines. Actual transparent alpha background, production sprite sheet.
 
 ### Combat effects
 
