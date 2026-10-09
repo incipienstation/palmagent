@@ -21,6 +21,8 @@ for (const name of [
   "AUTH_RP_ID",
   "DISPATCHER_DB",
   "DISPATCHER_DATA_DIR",
+  "EXECUTION_RELEASE",
+  "EXECUTION_NODE",
   "XDG_STATE_HOME",
   "HOST",
   "NODE_ENV",

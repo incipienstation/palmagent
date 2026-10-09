@@ -218,8 +218,12 @@ async function shipJob(repository, state, save) {
     await run(process.execPath, ['scripts/verify-local.mjs', '--base', state.base], { directory: work, timeout: 1_500_000, label: 'Scoped source verification' });
     state.validated = true; await save();
   }
-  const push = ['push', 'origin', 'HEAD:refs/heads/' + state.branch];
-  if (state.previousHead) push.push('--force-with-lease=refs/heads/' + state.branch + ':' + state.previousHead);
+  const remoteRef = 'refs/heads/' + state.branch;
+  const remoteHead = (await run('git', ['ls-remote', '--refs', 'origin', remoteRef], { directory: work })).split(/\s+/)[0];
+  assert(!remoteHead || [state.head, state.previousHead].includes(remoteHead), 'Compatibility remote branch changed; holding');
+  // A local rebase may precede the first push. Lease the observed remote (or
+  // its absence), never an unpublished local commit; still reject concurrent changes.
+  const push = ['push', 'origin', 'HEAD:' + remoteRef, '--force-with-lease=' + remoteRef + ':' + remoteHead];
   await run('git', push, { directory: work });
   delete state.previousHead; await save();
   if (!pr) {

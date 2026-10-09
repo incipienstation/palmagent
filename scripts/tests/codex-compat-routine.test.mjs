@@ -128,7 +128,8 @@ function fixture(t) {
   writeFileSync(join(repo,'.nvmrc'),process.version.slice(1));
   writeFileSync(join(repo,'packages/shared/src/agent-compatibility.json'), JSON.stringify({codex:{minimum:'0.154.0',exclusiveMaximum:'0.160.1',range:'>=0.154.0 <0.160.1'}}));
   writeFileSync(join(repo,'docs/CODEX-COMPATIBILITY.md'),'The declared Codex range is old.\nThe shared metadata is copied.\n');
-  writeFileSync(join(repo,'scripts/sync-skills.mjs'),''); writeFileSync(join(repo,'scripts/verify-local.mjs'),'');
+  writeFileSync(join(repo,'scripts/sync-skills.mjs'),'');
+  writeFileSync(join(repo,'scripts/verify-local.mjs'),'if (process.env.TEST_VERIFY_FAIL) process.exit(1);\n');
   for (const name of ['codex-schema-contract.mjs','codex-protocol-contract.mjs']) {
     writeFileSync(join(repo,'scripts/lib',name),readFileSync(new URL('../lib/'+name,import.meta.url)));
   }
@@ -210,6 +211,30 @@ test('a failed schema recheck after rebase cannot be skipped by the next schedul
   assert.equal(recovered.code,0,recovered.output);
   assert.equal(f.states()[0].stage,'merged');
   assert.equal(f.states()[0].needsCompatibilityCheck,false);
+});
+test('a failed local verification can rebase and create its first remote branch on retry', async t=>{
+  const f=fixture(t), first=await f.run(['--apply','--allow-codex-repair'],{TEST_VERIFY_FAIL:'1'});
+  assert.equal(first.code,1,first.output); assert.equal(f.states()[0].stage,'committed');
+  const ref='refs/heads/'+f.states()[0].branch;
+  assert.equal(f.git('ls-remote','origin',ref),'');
+  writeFileSync(join(f.repo,'docs/unrelated.md'),'A concurrent source change.\n');
+  f.git('add','docs/unrelated.md'); f.git('commit','-m','concurrent change'); f.git('push','origin','develop');
+  const recovered=await f.run(['--apply','--allow-codex-repair']);
+  assert.equal(recovered.code,0,recovered.output); assert.equal(f.states()[0].stage,'merged');
+  assert.equal(f.git('ls-remote','origin',ref).split(/\s+/)[0],f.states()[0].head);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,1);
+  assert.equal(paid(f.calls()).length,0);
+});
+test('retry preserves an unexpected remote branch and does not create a PR', async t=>{
+  const f=fixture(t), first=await f.run(['--apply','--allow-codex-repair'],{TEST_VERIFY_FAIL:'1'});
+  assert.equal(first.code,1,first.output);
+  const ref='refs/heads/'+f.states()[0].branch, unrelated=f.git('rev-parse','HEAD');
+  f.git('push','origin','HEAD:'+ref);
+  const retry=await f.run(['--apply','--allow-codex-repair']);
+  assert.equal(retry.code,1,retry.output); assert.match(retry.output,/remote branch changed/);
+  assert.equal(f.git('ls-remote','origin',ref).split(/\s+/)[0],unrelated);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,0);
+  assert.equal(paid(f.calls()).length,0);
 });
 test('a successful repair rereads the updated consumed schema and runs exactly one live matrix', async t=>{
   const f=fixture(t), result=await f.run(['--apply','--allow-codex-repair'],{TEST_RENAME:'1',TEST_REPAIR_OK:'1'});
