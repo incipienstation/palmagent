@@ -132,7 +132,13 @@ export function synchronizeSession(task: TaskState, { preview = false } = {}): {
     if (!message || !["user", "assistant"].includes(message.role)) continue;
     const content = Array.isArray(message.content) ? message.content : [{ type: "text", text: message.content }];
     const text = content.filter((b: RecordValue) => ["text", "input_text", "output_text"].includes(b.type) && typeof b.text === "string").map((b: RecordValue) => b.text).join("\n");
-    if (text) emit(message.role === "user" ? "status" : "assistant_text", message.role === "user" ? { subtype: "followup", text, source: "local" } : { text });
+    if (text && message.role === "user") emit("status", { subtype: "followup", text, source: "local" });
+    if (text && message.role === "assistant") {
+      const phase = task.agent === "codex"
+        ? message.phase === "commentary" ? "progress" : message.phase === "final_answer" ? "final" : undefined
+        : message.stop_reason === "tool_use" ? "progress" : message.stop_reason === "end_turn" ? "final" : undefined;
+      emit("assistant_text", { text, ...(typeof message.id === "string" ? { messageId: message.id } : {}), ...(phase ? { phase } : {}) });
+    }
     const output = extractOutputImages(content);
     for (const img of output.images) emit("output_image", img);
     for (const block of output.payload as RecordValue[]) {

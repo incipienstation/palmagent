@@ -183,7 +183,7 @@ test("illustrated upgrades stay reachable on short screens and repair the visibl
 });
 
 
-test("new reply returns once per message, preserving the draft and run without focusing the keyboard", async ({ page }) => {
+test("progress leaves the game open; final reply returns once while preserving draft and run", async ({ page }) => {
   await enable(page); await installScopedStream(page); await openSession(page, "t-run");
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   await draft.fill("Keep this draft while I play");
@@ -194,11 +194,16 @@ test("new reply returns once per message, preserving the draft and run without f
   const emit = (seq: number, kind: string, payload: unknown, taskId = "t-run") => send(page, "t-run", {
     type: "event", event: { taskId, agent: "codex", ts: seq, kind, payload },
   }, seq);
-  await emit(1, "tool_use", { name: "exec", input: {} });
+  await emit(1, "tool_call", { name: "exec", input: {} });
   await emit(2, "assistant_text", { text: "Other conversation", messageId: "other" }, "t-idle-rich");
   await emit(3, "assistant_text", { text: "  ", messageId: "reply", phase: "progress" });
   await expect(game(page)).toBeVisible();
+  const moving = (await saved(page)).player.x;
   await emit(4, "assistant_text", { text: "I found the cause", messageId: "reply", phase: "progress" });
+  await emit(5, "assistant_text", { text: ", and am fixing it.", messageId: "reply", phase: "progress" });
+  await expect.poll(async () => (await saved(page)).player.x).toBeGreaterThan(moving + 20);
+  await expect(game(page)).toBeVisible();
+  await emit(6, "assistant_text", { text: "The fix is ready.", messageId: "final", phase: "final" });
   await expect(game(page)).toHaveCount(0);
   await page.keyboard.up("ArrowRight");
   await expect(page.locator("canvas")).toHaveCount(0);
@@ -210,11 +215,10 @@ test("new reply returns once per message, preserving the draft and run without f
   expect(await saved(page)).toEqual(checkpoint);
   await open(page);
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
-  await emit(4, "assistant_text", { text: "I found the cause", messageId: "reply", phase: "progress" });
-  await emit(5, "assistant_text", { text: ", and am fixing it.", messageId: "reply", phase: "progress" });
-  await expect(game(page)).toBeVisible();
   await emit(6, "assistant_text", { text: "The fix is ready.", messageId: "final", phase: "final" });
-  await expect(game(page)).toHaveCount(0);
+  await emit(7, "assistant_text", { text: " All done.", messageId: "final", phase: "final" });
+  await emit(8, "result", { result: "The fix is ready. All done." });
+  await expect(game(page)).toBeVisible();
   expect((await saved(page)).time).toBeGreaterThanOrEqual(checkpoint.time);
 });
 
@@ -236,18 +240,25 @@ test("scoped attention closes only for a new request, even when the inbox is unc
 });
 
 
-test("a fast first reply already in new-task history returns to chat, while reopening ignores old history", async ({ page }) => {
+for (const phase of ["progress", "final"] as const) test(`new-task history with ${phase} prose only returns for a final reply`, async ({ page }) => {
   await enable(page); await installScopedStream(page);
   const task = tasks.find(t => t.taskId === "t-run")!;
   await page.route("**/api/tasks", async route => {
     if (route.request().method() !== "POST") return route.continue();
     await route.fulfill({ status: 201, json: { task } });
   });
+  await page.route("**/api/tasks/t-run/history?**", route => route.fulfill({ json: {
+    events: [{ seq: 1, event: { taskId: "t-run", agent: "codex", ts: 1, kind: "assistant_text",
+      payload: { text: "A quick reply", messageId: "first", phase } } }], before: null, cursor: 1,
+  } }));
   await page.goto("/#/new/space/repo-app");
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("A quick reply");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page).toHaveURL(/task\/t-run$/);
-  await expect(game(page)).toHaveCount(0);
+  if (phase === "progress") {
+    await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+    await game(page).getByRole("button", { name: "Close game" }).click();
+  } else await expect(game(page)).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toBeFocused();
   await open(page);
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
@@ -260,7 +271,7 @@ test("a reply recovered after reconnect returns once and does not replay on reop
   await page.route("**/api/tasks/t-run/history/changes?**", route => route.fulfill({ json: {
     after: 0, through: 10, nextAfter: null,
     events: [{ seq: 10, event: { taskId: "t-run", agent: "codex", ts: 10, kind: "assistant_text",
-      payload: { text: "Reply received during reconnect", messageId: "recovered" } } }],
+      payload: { text: "Reply received during reconnect", messageId: "recovered", phase: "final" } } }],
   } }));
   await open(page);
   await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 10 });
@@ -268,6 +279,24 @@ test("a reply recovered after reconnect returns once and does not replay on reop
   await open(page);
   await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 10 });
   await send(page, "t-run", { type: "event", event: { taskId: "t-run", agent: "codex", ts: 11,
-    kind: "assistant_text", payload: { text: " continued", messageId: "recovered" } } }, 11);
+    kind: "assistant_text", payload: { text: " continued", messageId: "recovered", phase: "final" } } }, 11);
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+});
+
+
+test("late final classification returns to chat; unclassified text and progress markers keep playing", async ({ page }) => {
+  await enable(page); await installScopedStream(page); await openSession(page, "t-run");
+  await open(page);
+  const emit = (seq: number, kind: string, payload: unknown) => send(page, "t-run", {
+    type: "event", event: { taskId: "t-run", agent: "claude", ts: seq, kind, payload },
+  }, seq);
+  await emit(1, "assistant_text", { text: "Checking the files", messageId: "work" });
+  await emit(2, "status", { subtype: "assistant_message", messageId: "work", phase: "progress" });
+  await emit(3, "assistant_text", { text: "Finished the fix", messageId: "answer" });
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+  await emit(4, "status", { subtype: "assistant_message", messageId: "answer", phase: "final" });
+  await expect(game(page)).toHaveCount(0);
+  await open(page);
+  await emit(5, "result", { result: "Finished the fix" });
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
 });

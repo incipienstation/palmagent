@@ -98,6 +98,26 @@ for (const agent of ["claude", "codex"] as const) test(`${agent} transcript sync
   assert.throws(() => synchronizeSession(f.task));
 });
 
+for (const agent of ["claude", "codex"] as const) test(`${agent} native import preserves progress and final reply classification`, (t) => {
+  const f = setup(t, agent);
+  for (const [id, text, phase] of [["work", "Checking files", "progress"], ["answer", "Finished", "final"], ["legacy", "Unclassified", undefined]] as const) {
+    const content = [{ type: agent === "codex" ? "output_text" : "text", text }];
+    appendFileSync(f.transcript, line(agent === "codex"
+      ? { type: "response_item", payload: { type: "message", role: "assistant", id, content,
+        phase: phase === "progress" ? "commentary" : phase === "final" ? "final_answer" : undefined } }
+      : { type: "assistant", message: { role: "assistant", id, content,
+        stop_reason: phase === "progress" ? "tool_use" : phase === "final" ? "end_turn" : undefined } }));
+  }
+  const synced = synchronizeSession(f.task);
+  assert.deepEqual(synced.events.map(event => event.payload), [
+    { text: "Checking files", messageId: "work", phase: "progress" },
+    { text: "Finished", messageId: "answer", phase: "final" },
+    { text: "Unclassified", messageId: "legacy" },
+  ]);
+  f.task.sessionControl = synced.control;
+  assert.equal(synchronizeSession(f.task).events.length, 0);
+});
+
 test("structured image extraction bounds raster payloads and strips unsupported image bodies", () => {
   const out = extractOutputImages({ content: [{ type: "image", mimeType: "image/png", data: png }, { type: "tool_result", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }] }] });
   assert.equal(out.images.length, 2);
