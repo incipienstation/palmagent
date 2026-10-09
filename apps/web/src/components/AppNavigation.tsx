@@ -1,3 +1,4 @@
+import { onConversationNotification } from "../conversation-notifications";
 import { needsTaskAttention } from "@palmagent/shared";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
@@ -34,11 +35,13 @@ export function AppNavigation({ tasks, conn, children }: {
   const { enabled: adhdMode } = useAdhdMode();
   const [gameOpen, setGameOpen] = useState(false);
   const [delivery, setDelivery] = useState<GameDelivery>();
+  const newGameConversation = useRef(false);
   useEffect(() => {
     if (!adhdMode) { setGameOpen(false); setDelivery(undefined); return; }
     void warmSurvivor();
     return onGameDelivery(event => {
       if (event.state === "sending") {
+        newGameConversation.current = !event.taskId;
         const active = document.activeElement;
         if (active instanceof HTMLElement) { trigger.current = active; active.blur(); }
         setDelivery(event); setGameOpen(true);
@@ -50,6 +53,13 @@ export function AppNavigation({ tasks, conn, children }: {
   const trigger = useRef<HTMLElement | null>(null);
   const afterClose = useRef<(() => void) | null>(null);
   const route = useRoute();
+  const gameTaskId = route.name === "task" ? route.id : delivery?.taskId;
+  const automaticGameClose = useRef(false);
+  useEffect(() => onConversationNotification(({ taskId, initial }) => {
+    if (!gameOpen || taskId !== gameTaskId || (initial && !newGameConversation.current)) return;
+    automaticGameClose.current = true;
+    setGameOpen(false);
+  }), [gameOpen, gameTaskId]);
   const pinned = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt !== undefined).sort(compareTasks), [tasks]);
   const recent = useMemo(() => tasks.filter(task => task.status !== "archived" && task.pinnedAt === undefined)
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20), [tasks]);
@@ -60,6 +70,7 @@ export function AppNavigation({ tasks, conn, children }: {
   }, []);
   const openGame = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
+    newGameConversation.current = false;
     setDelivery(undefined); setGameOpen(true);
   }, []);
   const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
@@ -87,7 +98,7 @@ export function AppNavigation({ tasks, conn, children }: {
             {active && <Check className="size-4" />}
           </Button>)}
           {adhdMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
-            if (open) showAfterClose(() => { setDelivery(undefined); setGameOpen(true); });
+            if (open) showAfterClose(() => { newGameConversation.current = false; setDelivery(undefined); setGameOpen(true); });
             else openGame(event.currentTarget);
           }}><Gamepad2 data-icon="inline-start" />Scrap Survivor</Button>}
         </nav>
@@ -158,8 +169,16 @@ export function AppNavigation({ tasks, conn, children }: {
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
     {adhdMode && <SurvivorSheet open={gameOpen} onOpenChange={setGameOpen}
-      tasks={tasks} delivery={delivery} taskId={delivery?.taskId ?? (route.name === "task" ? route.id : undefined)} conn={conn}
+      tasks={tasks} delivery={delivery} taskId={gameTaskId} conn={conn}
       onReturn={taskId => { setGameOpen(false); if (taskId && (route.name !== "task" || route.id !== taskId)) navigate(`/task/${encodeURIComponent(taskId)}`); }}
-      onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }} />}
+      onCloseAutoFocus={event => {
+        event.preventDefault();
+        if (automaticGameClose.current) {
+          automaticGameClose.current = false;
+          // A send may have opened the game from the composer. Return focus to
+          // a visible control without reopening the mobile keyboard.
+          document.querySelector<HTMLButtonElement>('button[aria-label="Open Scrap Survivor"]')?.focus({ preventScroll: true });
+        } else restoreFocus();
+      }} />}
   </NavigationContext.Provider>;
 }

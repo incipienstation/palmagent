@@ -1,3 +1,4 @@
+import { notifyConversation } from "../conversation-notifications";
 import { restoredHistory } from "../history-checkpoint";
 import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,7 +35,7 @@ export interface TaskStream {
   task?: TaskState;
 }
 
-function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferred = false): void {
+function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferred = false): boolean {
   if (event.kind === "assistant_text") {
     const payload = event.payload ?? { text: "" }; // Historical records can predate typed payloads.
     const text = typeof payload.text === "string" ? payload.text : "";
@@ -43,8 +44,11 @@ function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferre
     const last = items.at(-1);
     if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && last.phase === phase) {
       items[items.length - 1] = { ...last, endSeq: seq, text: last.text + text };
+      return !last.text.trim() && Boolean(text.trim());
     } else items.push({ key: seq, endSeq: seq, kind: "assistant_text", agent: event.agent, text, messageId, phase });
+    return Boolean(text.trim());
   } else items.push({ key: seq, endSeq: seq, kind: event.kind, event, ...(detailsDeferred ? { detailsDeferred: true } : {}) });
+  return false;
 }
 
 export function historyLogItems(events: TaskHistoryResponse["events"]): LogItem[] {
@@ -131,6 +135,11 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     if (!enabled || !historyReady) return;
     const currentData = () => queryClient.getQueryData<TaskHistoryData>(queryKey);
     const initial = currentData();
+    // A just-created task can already contain its first reply when REST wins
+    // the race with the scoped stream. Consumers distinguish this from live text.
+    if (initial?.pages.some(page => page.items.some(item => item.kind === "assistant_text" && item.text.trim()))) {
+      notifyConversation(taskId, true);
+    }
     let appliedSeq = initial?.pages.at(-1)?.cursor ?? 0;
     let receivedSeq = appliedSeq;
     let catchupTarget = appliedSeq;
@@ -175,12 +184,16 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       pendingTask = undefined;
       const fresh = events.filter((entry) => entry.seq > appliedSeq);
       if (fresh.length || task) {
+        let newReply = false;
         const nextSeq = fresh.reduce((value, entry) => Math.max(value, entry.seq), appliedSeq);
         if (updateLatestPage((page) => {
           const items = fresh.length ? [...page.items] : page.items;
-          for (const entry of fresh) append(items, entry.event, entry.seq, entry.detailsDeferred);
+          for (const entry of fresh) newReply = append(items, entry.event, entry.seq, entry.detailsDeferred) || newReply;
           return { ...page, items, cursor: Math.max(page.cursor, nextSeq), ...(task ? { task } : {}) };
-        })) appliedSeq = nextSeq;
+        })) {
+          appliedSeq = nextSeq;
+          if (newReply) notifyConversation(taskId);
+        }
       }
       receivedSeq = Math.max(receivedSeq, appliedSeq);
     };
@@ -230,11 +243,13 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
               if (nextAfter < after || nextAfter > through || (page.nextAfter !== null && nextAfter === after)) {
                 throw new Error("Invalid history catch-up cursor");
               }
+              let newReply = false;
               if (!updateLatestPage((historyPage) => {
                 const items = page.events.length ? [...historyPage.items] : historyPage.items;
-                for (const entry of page.events) append(items, entry.event, entry.seq, entry.detailsDeferred);
+                for (const entry of page.events) newReply = append(items, entry.event, entry.seq, entry.detailsDeferred) || newReply;
                 return { ...historyPage, items, cursor: Math.max(historyPage.cursor, nextAfter) };
               })) throw new Error("History query disappeared during catch-up");
+              if (newReply) notifyConversation(taskId);
               appliedSeq = nextAfter;
               receivedSeq = Math.max(receivedSeq, appliedSeq);
               after = nextAfter;
@@ -289,7 +304,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
           }
           return;
         }
-        if (frame.type !== "event") return;
+        if (frame.type !== "event" || frame.event.taskId !== taskId) return;
         const seq = Number(message.lastEventId);
         if (!Number.isSafeInteger(seq) || seq <= Math.max(appliedSeq, receivedSeq)) return;
         receivedSeq = seq;

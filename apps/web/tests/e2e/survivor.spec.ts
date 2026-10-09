@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
 import { freshRun, SAVE_KEY, serialize, WORLD_W } from "../../src/games/scrap-survivor/engine";
-import { installScopedStream } from "./_session-stream";
+import { installScopedStream, open as openSession, send } from "./_session-stream";
 import { assertViewportLocked } from "./_helpers";
 test.use({ serviceWorkers: "block" });
 const game = (page: Page) => page.getByRole("dialog", { name: "Scrap Survivor", exact: true });
@@ -11,6 +11,7 @@ const open = (page: Page) => page.getByRole("button", { name: "Open Scrap Surviv
 
 test("a first send opens before the response and preserves the canvas through task identity replacement and Back", async ({ page }) => {
   await enable(page); await installScopedStream(page); await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/tasks/t-run/history?**", route => route.fulfill({ json: { events: [], before: null, cursor: 0 } }));
   let release!: () => void; const gate = new Promise<void>(r => release = r);
   const task = { ...tasks.find(t => t.taskId === "t-run")!, prompt: "Explore while sending" };
   await page.route("**/api/tasks", async route => { if (route.request().method() !== "POST") return route.continue(); await gate; await route.fulfill({ status: 201, json: { task } }); });
@@ -75,7 +76,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await game(page).getByRole("button", { name: /Orbiting blades/ }).click(); await expect.poll(async () => (await saved(page)).upgrades.blade).toBe(1);
 });
 
-test("sprite loading can retry and live attention pauses without resetting the run", async ({ page }) => {
+test("sprite loading can retry and new attention returns to chat without resetting the run", async ({ page }) => {
   await enable(page);
   await page.addInitScript(() => {
     const Native = window.EventSource;
@@ -87,6 +88,7 @@ test("sprite loading can retry and live attention pauses without resetting the r
     }
     window.EventSource = Inbox as unknown as typeof EventSource;
   });
+  await installScopedStream(page);
   await page.route("**/units-*.webp", route => route.abort());
   await page.goto("/#/task/t-run"); await open(page);
   await expect(game(page).getByText("The game could not load.")).toBeVisible();
@@ -95,10 +97,11 @@ test("sprite loading can retry and live attention pauses without resetting the r
   const task = tasks.find(t => t.taskId === "t-run")!;
   for (const status of ["awaiting_input", "awaiting_approval"] as const) {
     await page.evaluate(t => (window as unknown as { survivorInbox: EventSource }).survivorInbox.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "tasks", tasks: [t] }) })), { ...task, status });
-    await expect(game(page).getByText("Your agent needs attention")).toBeVisible();
-    await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeDisabled();
-    await game(page).getByRole("button", { name: "Continue playing" }).click();
+    await expect(game(page)).toHaveCount(0);
+    const checkpoint = await saved(page);
+    await open(page);
     await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+    expect((await saved(page)).time).toBeGreaterThanOrEqual(checkpoint.time);
   }
   await page.evaluate(() => (window as unknown as { survivorInbox: EventSource }).survivorInbox.onerror?.(new Event("error")));
   await expect(game(page).getByText("Reconnecting — task status may be out of date")).toBeVisible();
@@ -177,4 +180,94 @@ test("illustrated upgrades stay reachable on short screens and repair the visibl
   await expect(panel.getByRole("img", { name: "Turbo treads level 2", exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Movement joystick" })).toBeInViewport();
   await assertViewportLocked(page);
+});
+
+
+test("new reply returns once per message, preserving the draft and run without focusing the keyboard", async ({ page }) => {
+  await enable(page); await installScopedStream(page); await openSession(page, "t-run");
+  const draft = page.getByRole("textbox", { name: "Message", exact: true });
+  await draft.fill("Keep this draft while I play");
+  await open(page);
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+  await page.keyboard.down("ArrowRight");
+  await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(WORLD_W / 2 + 30);
+  const emit = (seq: number, kind: string, payload: unknown, taskId = "t-run") => send(page, "t-run", {
+    type: "event", event: { taskId, agent: "codex", ts: seq, kind, payload },
+  }, seq);
+  await emit(1, "tool_use", { name: "exec", input: {} });
+  await emit(2, "assistant_text", { text: "Other conversation", messageId: "other" }, "t-idle-rich");
+  await emit(3, "assistant_text", { text: "  ", messageId: "reply", phase: "progress" });
+  await expect(game(page)).toBeVisible();
+  await emit(4, "assistant_text", { text: "I found the cause", messageId: "reply", phase: "progress" });
+  await expect(game(page)).toHaveCount(0);
+  await page.keyboard.up("ArrowRight");
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await expect(draft).toHaveValue("Keep this draft while I play");
+  await expect(draft).not.toBeFocused();
+  await expect(page.getByRole("button", { name: "Open Scrap Survivor", exact: true })).toBeFocused();
+  const checkpoint = await saved(page);
+  await page.waitForTimeout(1100);
+  expect(await saved(page)).toEqual(checkpoint);
+  await open(page);
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+  await emit(4, "assistant_text", { text: "I found the cause", messageId: "reply", phase: "progress" });
+  await emit(5, "assistant_text", { text: ", and am fixing it.", messageId: "reply", phase: "progress" });
+  await expect(game(page)).toBeVisible();
+  await emit(6, "assistant_text", { text: "The fix is ready.", messageId: "final", phase: "final" });
+  await expect(game(page)).toHaveCount(0);
+  expect((await saved(page)).time).toBeGreaterThanOrEqual(checkpoint.time);
+});
+
+test("scoped attention closes only for a new request, even when the inbox is unchanged", async ({ page }) => {
+  await enable(page); await installScopedStream(page); await openSession(page, "t-run");
+  const task = tasks.find(t => t.taskId === "t-run")!;
+  await open(page);
+  const snapshot = (status: string, taskId = "t-run") => send(page, "t-run", { type: "tasks", tasks: [{ ...task, taskId, status }] });
+  await snapshot("awaiting_input", "t-idle-rich");
+  await expect(game(page)).toBeVisible();
+  await snapshot("awaiting_input");
+  await expect(game(page)).toHaveCount(0);
+  await open(page); await snapshot("awaiting_input");
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+  await snapshot("awaiting_approval");
+  await expect(game(page)).toHaveCount(0);
+  await open(page); await snapshot("awaiting_approval");
+  await expect(game(page)).toBeVisible();
+});
+
+
+test("a fast first reply already in new-task history returns to chat, while reopening ignores old history", async ({ page }) => {
+  await enable(page); await installScopedStream(page);
+  const task = tasks.find(t => t.taskId === "t-run")!;
+  await page.route("**/api/tasks", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fulfill({ status: 201, json: { task } });
+  });
+  await page.goto("/#/new/space/repo-app");
+  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("A quick reply");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect(page).toHaveURL(/task\/t-run$/);
+  await expect(game(page)).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toBeFocused();
+  await open(page);
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+});
+
+
+test("a reply recovered after reconnect returns once and does not replay on reopening", async ({ page }) => {
+  await enable(page); await installScopedStream(page); await openSession(page, "t-run");
+  const task = tasks.find(t => t.taskId === "t-run")!;
+  await page.route("**/api/tasks/t-run/history/changes?**", route => route.fulfill({ json: {
+    after: 0, through: 10, nextAfter: null,
+    events: [{ seq: 10, event: { taskId: "t-run", agent: "codex", ts: 10, kind: "assistant_text",
+      payload: { text: "Reply received during reconnect", messageId: "recovered" } } }],
+  } }));
+  await open(page);
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 10 });
+  await expect(game(page)).toHaveCount(0);
+  await open(page);
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 10 });
+  await send(page, "t-run", { type: "event", event: { taskId: "t-run", agent: "codex", ts: 11,
+    kind: "assistant_text", payload: { text: " continued", messageId: "recovered" } } }, 11);
+  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
 });
