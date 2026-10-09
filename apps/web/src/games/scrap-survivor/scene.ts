@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import sprites from "./assets/units.webp?url";
 import floorTiles from "./assets/floor.webp?url";
 import { unitFrames } from "./art";
+import { CombatArt, combatTexture } from "./combat-art";
 import { H, W, WORLD_W, WORLD_H, PLAYER_SCREEN_Y, STEP, step, type Point, type Run } from "./engine";
 
 export function preloadSprites(): Promise<void> {
@@ -17,14 +18,15 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
     private shadow!: Phaser.GameObjects.Ellipse;
     private paint!: Phaser.GameObjects.Graphics;
     private art = new Map<number, Phaser.GameObjects.Image>();
+    private combat!: CombatArt;
     private elapsed = 0;
     private report = 0;
     private hull = 8;
     private seen = new WeakSet<object>();
-    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); }
+    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); }
     create() {
       if (cancelled) return;
-      if (!["survivor", "floor"].every(key => this.textures.exists(key))) { onReady(false); return; }
+      if (!["survivor", "floor", combatTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
       const texture = this.textures.get("survivor"), source = texture.getSourceImage() as HTMLImageElement;
       unitFrames.forEach(([x, y, w, h], i) => texture.add(String(i), 0, Math.round(x * source.width), Math.round(y * source.height), Math.round(w * source.width), Math.round(h * source.height)));
       // Overscan outside the walking boundary keeps the robot clear of controls at every edge.
@@ -53,6 +55,7 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
       this.shadow = this.add.ellipse(0, 0, 34, 14, 0x031019, 0.45).setDepth(1);
       this.robot = this.add.image(0, 0, "survivor", "0").setDisplaySize(38, 46).setDepth(5);
       this.health = this.add.graphics().setDepth(7);
+      this.combat = new CombatArt(this, reduced);
       onReady(true); this.draw();
     }
     private draw() {
@@ -75,21 +78,10 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
         }
       }
       for (const gem of r.gems) { g.fillStyle(0x61f2b8).fillTriangle(gem.x, gem.y - 5, gem.x - 4, gem.y, gem.x, gem.y + 5); g.fillTriangle(gem.x, gem.y - 5, gem.x + 4, gem.y, gem.x, gem.y + 5); }
-      for (const b of r.bullets) {
-        g.fillStyle(b.hostile ? 0xff755f : 0xc4fff0).fillCircle(b.x, b.y, b.hostile ? 5 : 3);
-        if (!b.hostile) g.lineStyle(2, 0x68e6e7, 0.6).lineBetween(b.x, b.y, b.x - b.vx * 0.025, b.y - b.vy * 0.025);
-      }
-      const lv = r.upgrades.blade;
-      if (lv) {
-        const radius = 42 + lv * 9;
-        g.lineStyle(1, 0x82d4ff, 0.18).strokeCircle(r.player.x, r.player.y, radius);
-        for (let i = 0; i <= lv; i++) { const a = r.time * 4 + i * Math.PI * 2 / (lv + 1), x = r.player.x + Math.cos(a) * radius, y = r.player.y + Math.sin(a) * radius;
-          g.lineStyle(5, 0xaedbff).lineBetween(x - Math.cos(a + 1) * 10, y - Math.sin(a + 1) * 10, x + Math.cos(a + 1) * 10, y + Math.sin(a + 1) * 10); }
-      }
+      const direction = movement(), moving = !paused() && Math.hypot(direction.x, direction.y) > 0.05;
+      this.combat.draw(r, direction, moving);
       for (const fx of r.effects) {
-        if (fx.kind === "arc" && fx.from) g.lineStyle(3, 0xace6ff, fx.ttl / 0.2).lineBetween(fx.from.x, fx.from.y, fx.x, fx.y);
-        else {
-          g.lineStyle(2, fx.kind === "kill" ? 0xffc664 : 0xffffff, fx.ttl / 0.4).strokeCircle(fx.x, fx.y, (0.4 - fx.ttl) * (fx.kind === "kill" ? 75 : 30) + 4);
+        if (fx.kind !== "arc") {
           if (!this.seen.has(fx)) {
             this.seen.add(fx);
             const text = this.add.text(fx.x, fx.y - 15, String(fx.value), { fontSize: "13px", fontFamily: "system-ui", color: "#fff0c8", stroke: "#18232d", strokeThickness: 3 }).setOrigin(0.5).setDepth(6);
@@ -97,7 +89,6 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
           }
         }
       }
-      const moving = !paused() && Math.hypot(movement().x, movement().y) > 0.05;
       this.robot.setFrame(!reduced && moving ? String(1 + Math.floor(r.time * 9) % 2) : "0");
       this.shadow.setPosition(r.player.x, r.player.y + 20);
       this.robot.setPosition(r.player.x, r.player.y).setAlpha(r.invulnerable > 0 && Math.floor(r.time * 12) % 2 ? 0.5 : 1);
