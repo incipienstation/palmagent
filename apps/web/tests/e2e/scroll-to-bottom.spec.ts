@@ -90,15 +90,17 @@ test("upward input interrupts the short return animation", async ({ page }) => {
   await longConversation(page);
   await readAbove(page, 220);
   // Trigger input in the next animation frame, before the 180ms return finishes.
-  await button(page).evaluate(el => {
+  const top = await button(page).evaluate(el => new Promise<number>(resolve => {
     (el as HTMLButtonElement).click();
     requestAnimationFrame(() => {
-      document.querySelector('[aria-label="Session transcript"]')!
-        .dispatchEvent(new WheelEvent("wheel", { deltaY: -200 }));
+      const transcript = document.querySelector<HTMLElement>('[aria-label="Session transcript"]')!;
+      transcript.dispatchEvent(new WheelEvent("wheel", { deltaY: -200 }));
+      // Capture after cancellation, not while the first animation frame is
+      // still queued: that frame is allowed to advance before the input.
+      resolve(transcript.scrollTop);
     });
-  });
+  }));
   await expect(button(page)).toBeVisible();
-  const top = await viewport(page).evaluate(el => el.scrollTop);
   await event(page, "t-idle-rich", 2, "Output after interruption\n\n".repeat(8));
   await expect(page.getByText("Output after interruption", { exact: true })).toHaveCount(8);
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(top);
