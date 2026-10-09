@@ -36,7 +36,8 @@ export const protocolContracts = [
     'item/started': { threadId: true, item },
     'item/completed': { threadId: true, item },
     'thread/tokenUsage/updated': { threadId: true, tokenUsage: {
-      last: fields('inputTokens', 'cachedInputTokens', 'outputTokens'),
+      last: fields('inputTokens', 'cachedInputTokens', 'outputTokens', 'totalTokens'),
+      modelContextWindow: true,
     } },
     error: { threadId: true, error: { message: true } },
     'serverRequest/resolved': fields('threadId', 'requestId'),

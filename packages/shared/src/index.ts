@@ -33,3 +33,5 @@ export * from "./distribution.js";
 export * from "./event-migrations.js";
 
 export * from "./agent-media.js";
+
+export * from "./context-usage.js";

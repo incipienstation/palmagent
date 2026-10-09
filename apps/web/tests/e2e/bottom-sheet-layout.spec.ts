@@ -44,9 +44,9 @@ test("long supporting sheets scroll their body while the title stays visible", a
     })),
   } }));
   await page.goto("/#/task/t-run-charts");
-  await page.getByRole("button", { name: "Account limit details" }).click();
-  const sheet = page.getByRole("dialog", { name: "Codex account limits" });
-  const title = sheet.getByRole("heading", { name: "Codex account limits" });
+  await page.getByRole("button", { name: "Usage details" }).click();
+  const sheet = page.getByRole("dialog", { name: "Session usage" });
+  const title = sheet.getByRole("heading", { name: "Session usage" });
   await expect(title).toBeInViewport({ ratio: 1 });
   // Wait for the drawer's opening transition before comparing positions.
   await sheet.evaluate(async el => {

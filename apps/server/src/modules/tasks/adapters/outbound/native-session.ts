@@ -108,6 +108,11 @@ export function synchronizeSession(task: TaskState, { preview = false } = {}): {
   for (const row of rows) {
     const ts = Number.isFinite(Date.parse(row.timestamp)) ? Date.parse(row.timestamp) : Date.now();
     const emit = <K extends AgentEventKind>(kind: K, payload: AgentEventPayloads[K]) => events.push({ taskId: task.taskId, agent: task.agent, sessionId: task.sessionId, kind, payload, ts } as AgentEvent);
+    if (task.agent === "codex" && row.type === "event_msg" && row.payload?.type === "token_count" && row.payload.info) {
+      const info = row.payload.info;
+      emit("status", { subtype: "usage", usage: { last: { totalTokens: info.last_token_usage?.total_tokens }, modelContextWindow: info.model_context_window } });
+    }
+    if (task.agent === "codex" && row.type === "compacted") emit("status", { subtype: "context_compaction_started" });
     // Codex response_item is canonical; event_msg repeats the same prose.
     if (task.agent === "codex" && row.type === "response_item") {
       const item = row.payload;

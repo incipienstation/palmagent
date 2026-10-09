@@ -96,6 +96,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
       case "item/agentMessage/delta":
         event("assistant_text", { text: p.delta, messageId: p.itemId }, seq); break;
       case "item/started":
+        if (p.item?.type === "contextCompaction") event("status", { subtype: "context_compaction_started" }, seq);
         if (p.item?.type === "commandExecution") event("tool_call", { id: p.item.id, name: "bash", command: p.item.command }, seq);
         break;
       case "item/completed": {

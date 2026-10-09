@@ -307,3 +307,18 @@ test("Claude transcript import retains PR creation failures as well as successfu
   assert.deepEqual(events.slice(0, 2).flatMap((e) => tracker.accept(e)), []);
   assert.deepEqual(events.slice(2).flatMap((e) => tracker.accept(e)), [url]);
 });
+
+
+test("native Codex preview imports context usage and compaction boundaries without duplicating them", t => {
+  const f = setup(t);
+  appendFileSync(f.transcript, line({ type: "event_msg", payload: { type: "token_count", info: {
+    last_token_usage: { total_tokens: 84000 }, total_token_usage: { total_tokens: 900000 }, model_context_window: 200000,
+  } } }) + line({ type: "compacted", replacement_history: [] }));
+  const synced = synchronizeSession(f.task, { preview: true });
+  assert.deepEqual(synced.events.map(e => e.payload), [
+    { subtype: "usage", usage: { last: { totalTokens: 84000 }, modelContextWindow: 200000 } },
+    { subtype: "context_compaction_started" },
+  ]);
+  f.task.sessionControl = synced.control;
+  assert.equal(synchronizeSession(f.task, { preview: true }).events.length, 0);
+});
