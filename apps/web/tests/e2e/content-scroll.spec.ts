@@ -49,21 +49,30 @@ for (const kind of ["Code", "Table"] as const) {
   });
 }
 
-test("actual-size image scrolls on both axes while Fit stays reachable on a short screen", async ({ page }) => {
+test("zoomed image pans on both axes while Fit stays reachable on a short screen", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 360 });
   const png = readFileSync(new URL("../../public/icon-512.png", import.meta.url));
   await page.route("**/api/tasks/*/image?*", route => route.fulfill({ contentType: "image/png", body: png }));
   await reply(page, "![Preview](preview.png)");
   await page.getByRole("button", { name: "Enlarge image: Preview" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Actual size" }).click();
-  const area = dialog.locator('[data-slot="scroll-area-viewport"]');
-  await expect.poll(() => area.evaluate(el => Math.min(el.scrollWidth - el.clientWidth, el.scrollHeight - el.clientHeight))).toBeGreaterThan(100);
-  await area.evaluate(el => el.scrollTo({ left: el.scrollWidth, top: el.scrollHeight }));
-  await expect.poll(() => area.evaluate(el => Math.min(el.scrollLeft, el.scrollTop))).toBeGreaterThan(100);
+  await dialog.getByRole("button", { name: "Zoom in image" }).click();
+  const area = dialog.getByRole("region", { name: "Preview", exact: true });
+  const transform = () => dialog.getByRole("img").evaluate(img => {
+    const matrix = new DOMMatrix(getComputedStyle(img.parentElement!).transform);
+    return { scale: matrix.a, x: matrix.e, y: matrix.f };
+  });
+  await expect.poll(async () => (await transform()).scale).toBeGreaterThan(1);
+  const before = await transform();
+  await area.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(async () => (await transform()).x).toBeLessThan(before.x);
+  await expect.poll(async () => (await transform()).y).toBeLessThan(before.y);
   await expect(dialog.getByRole("button", { name: "Fit image" })).toBeInViewport({ ratio: 1 });
   await dialog.getByRole("button", { name: "Fit image" }).click();
-  await expect.poll(() => area.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  await expect.poll(transform).toEqual({ scale: 1, x: 0, y: 0 });
+  await expect(dialog.getByRole("button", { name: "Exit image fullscreen" })).toBeInViewport({ ratio: 1 });
   await assertViewportLocked(page);
 });
 
