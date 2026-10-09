@@ -12,13 +12,30 @@ Mines reward leading enemies across your trail; drones add mobile ranged fire.
 
 Elite sentinels arrive at 55 and 105 seconds. Each drops a chest when defeated. Approach the
 chest to pause and choose one reward. A weapon at level 5 plus its matching support at level 1
-or higher unlocks an evolution in that chest:
+or higher makes its final evolution eligible in that chest:
 
 | Weapon | Support | Evolution |
 | --- | --- | --- |
 | Bolt launcher | Overcharged core | Reactor railgun: a long piercing beam |
 | Orbiting blades | Scrap magnet | Magnetic grinder: a wider cutter ring that pulls enemies in |
 | Chain lightning | Turbo treads | Storm relay: lightning impacts release nearby shockwaves |
+| Scrap mines | Scrap magnet | Singularity mine: pulls nearby enemies together before a wide implosion |
+| Support drones | Overcharged core | Siege drones: armored companions fire explosive missiles |
+
+Final evolutions are obtained **only by choosing their reward in an elite chest**. Reaching Lv 5,
+equipping the support, gaining mastery, or buying workshop upgrades never grants one automatically.
+A chest prioritizes every eligible equipped weapon; choosing one reward consumes the chest. The
+chosen final form replaces its weapon in the same slot and displays **FINAL** instead of a level.
+Two elite chests per expedition allow at most two final evolutions. Previously claimed final forms
+and pending chest choices survive save migration.
+
+Each final form has a distinct weapon sprite in reward cards, the loadout, and the arena. Railguns
+have visible twin rails and a dedicated beam; grinders use interlocking cutters; storm relays add
+a coil device, forked lightning, and electrical bursts. Singularity mines open a gravity core,
+pull non-boss enemies for 0.65 seconds after triggering, then implode. Bosses take the blast damage
+without being pulled. Siege drones replace their bullets with missiles that explode on the first
+hit, damaging enemies within 65 world units once per missile. Their slower volleys trade single-target
+fire rate for area damage. Reduced motion disables decorative spinning but retains attack timing.
 
 Chests also offer owned equipment upgrades or hull repair when space permits. You can leave a
 chest on the ground until your components are ready. Progress, equipment, mines, and unclaimed

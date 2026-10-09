@@ -1,0 +1,40 @@
+import { expect, test } from "@playwright/test";
+import { freshRun, EVOLUTIONS, SAVE_KEY, serialize, type Weapon } from "../../src/games/scrap-survivor/engine";
+import { assertViewportLocked } from "./_helpers";
+
+test.use({ serviceWorkers: "block" });
+for (const weapon of ["mine", "drone"] as Weapon[]) test(`${weapon} stays basic when eligible and becomes a persistent final form only after claiming a chest`, async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.addInitScript(() => localStorage.setItem("pref:adhd-mode", "on"));
+  const r = freshRun(21), evo = EVOLUTIONS[weapon];
+  r.upgrades.bolt = 0; r.upgrades[weapon] = 5; r.upgrades[evo.passive] = 1;
+  r.enemies = []; r.spawn = 10; r.chests = [{ x: r.player.x + 75, y: r.player.y, id: ++r.id }];
+  await page.goto("/#/new/space/repo-app");
+  await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: SAVE_KEY, value: serialize(r) });
+  await page.getByRole("button", { name: "Open arcade", exact: true }).click();
+  const game = page.getByRole("dialog", { name: "Scrap Survivor", exact: true });
+  await expect(game.getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+  await game.getByRole("button", { name: "Inspect loadout" }).click();
+  const details = game.getByRole("region", { name: "Loadout details" });
+  await expect(details.getByText(`${evo.name} ready in an elite chest`)).toBeVisible();
+  await expect(details.locator('image[href*="final-weapons"]')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(({ key, weapon }) => JSON.parse(localStorage.getItem(key)!).evolutions[weapon], { key: SAVE_KEY, weapon })).toBe(false);
+  await details.getByRole("button", { name: "Close loadout" }).click();
+  const choices = game.getByRole("region", { name: "Choose an elite reward" });
+  await page.keyboard.down("ArrowRight");
+  try { await expect(choices).toBeVisible(); } finally { await page.keyboard.up("ArrowRight"); }
+  const reward = choices.getByRole("button", { name: new RegExp(evo.name) });
+  await expect(reward.getByText("FINAL EVOLUTION", { exact: true })).toBeVisible();
+  await expect(reward.locator('image[href*="final-weapons"]')).toHaveCount(1);
+  await reward.click();
+  await expect(game.getByRole("img", { name: `${evo.name} final evolution`, exact: true })).toBeVisible();
+  await game.getByRole("button", { name: "Inspect loadout" }).click();
+  await expect(details.getByText(`${evo.name} · FINAL`, { exact: true })).toBeVisible();
+  await expect(details.locator('image[href*="final-weapons"]')).toHaveCount(1);
+  await game.getByRole("button", { name: "Back to chat" }).click();
+  await page.reload(); await page.getByRole("button", { name: "Open arcade", exact: true }).click();
+  await expect(game.getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+  await expect(game.getByRole("img", { name: `${evo.name} final evolution`, exact: true })).toBeVisible();
+  await expect(choices).toHaveCount(0);
+  await assertViewportLocked(page);
+});

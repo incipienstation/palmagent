@@ -17,6 +17,8 @@ export const EVOLUTIONS: Record<EvolvingWeapon, { name: string; passive: Passive
   bolt: { name: "Reactor railgun", passive: "reactor", detail: "Fire a heavy beam through every enemy in a long line." },
   blade: { name: "Magnetic grinder", passive: "magnet", detail: "Pull nearby enemies into a wider, stronger ring of cutters." },
   arc: { name: "Storm relay", passive: "boots", detail: "Every lightning impact releases a shockwave into nearby enemies." },
+  mine: { name: "Singularity mine", passive: "magnet", detail: "Triggered gravity cores pull enemies together, then collapse in a wide blast." },
+  drone: { name: "Siege drones", passive: "reactor", detail: "Armored drones launch explosive missiles that damage tightly packed enemies." },
 };
 export const EVOLUTION_KEYS = Object.keys(EVOLUTIONS) as EvolvingWeapon[];
 export const isWeapon = (key: Upgrade): key is Weapon => WEAPONS.includes(key as Weapon);
@@ -34,7 +36,7 @@ export const dronePositions = (r: Pick<Run, "player" | "time" | "upgrades" | "ri
 export function evolutionHint(key: Upgrade, r: Pick<Run, "upgrades" | "evolutions">): string | undefined {
   if (!EVOLUTION_KEYS.includes(key as EvolvingWeapon)) return;
   const weapon = key as EvolvingWeapon, evo = EVOLUTIONS[weapon];
-  if (r.evolutions[weapon]) return `${evo.name} evolved`;
+  if (r.evolutions[weapon]) return `${evo.name} · final evolution`;
   return canEvolve(r, weapon) ? `${evo.name} ready in an elite chest`
     : `${evo.name}: weapon Lv 5 + ${UPGRADES[evo.passive].name} Lv 1 + elite chest`;
 }

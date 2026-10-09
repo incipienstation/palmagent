@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import combat from "./assets/combat.webp?url";
 import { bladeRadius, dronePositions, pickupRadius, type Point, type Run } from "./engine";
-import { expansionFrames, expansionTexture } from "./atlas";
+import { expansionFrames, expansionTexture, finalWeaponFrames, finalWeaponTexture, finalEffectFrames, finalEffectTexture } from "./atlas";
 
 export const combatTexture = { key: "combat", url: combat };
 const frames = {
@@ -24,13 +24,15 @@ export class CombatArt {
     }
     this.field = scene.add.graphics().setDepth(1);
     this.bursts = scene.add.graphics().setDepth(6);
-    const extra = scene.textures.get(expansionTexture.key), extraSource = extra.getSourceImage() as HTMLImageElement;
-    for (const [name, [x, y, w, h]] of Object.entries(expansionFrames)) {
-      extra.add(name, 0, Math.round(x * extraSource.width), Math.round(y * extraSource.height), Math.round(w * extraSource.width), Math.round(h * extraSource.height));
+    for (const [atlas, entries] of [[expansionTexture, expansionFrames], [finalWeaponTexture, finalWeaponFrames], [finalEffectTexture, finalEffectFrames]] as const) {
+      const extra = scene.textures.get(atlas.key), extraSource = extra.getSourceImage() as HTMLImageElement;
+      for (const [name, [x, y, w, h]] of Object.entries(entries)) {
+        extra.add(name, 0, Math.round(x * extraSource.width), Math.round(y * extraSource.height), Math.round(w * extraSource.width), Math.round(h * extraSource.height));
+      }
     }
   }
 
-  private sprite(frame: keyof typeof frames | keyof typeof expansionFrames, x: number, y: number, w: number, h: number, angle = 0, alpha = 1, depth = 4, texture = combatTexture.key) {
+  private sprite(frame: keyof typeof frames | keyof typeof expansionFrames | keyof typeof finalWeaponFrames | keyof typeof finalEffectFrames, x: number, y: number, w: number, h: number, angle = 0, alpha = 1, depth = 4, texture = combatTexture.key) {
     const image = this.sprites[this.used] ?? (this.sprites[this.used] = this.scene.add.image(0, 0, combatTexture.key));
     this.used++;
     return image.setTexture(texture, frame).setPosition(x, y).setDisplaySize(w, h).setRotation(angle).setAlpha(alpha).setDepth(depth).setVisible(true).clearTint();
@@ -44,10 +46,24 @@ export class CombatArt {
       this.sprite("chest", chest.x, chest.y, 34, 30, 0, 1, 3, expansionTexture.key);
     }
     for (const mine of r.mines) {
-      this.sprite("mine", mine.x, mine.y, 22, 22, 0, mine.arm > 0 ? 0.5 : 1, 1, expansionTexture.key);
-      if (mine.arm <= 0) g.lineStyle(1, 0xffc36c, 0.25).strokeCircle(mine.x, mine.y, 32);
+      const evolved = r.evolutions.mine, size = evolved ? 31 : 22;
+      this.sprite("mine", mine.x, mine.y, size, size, 0, mine.arm > 0 ? 0.5 : 1, 2, evolved ? finalWeaponTexture.key : expansionTexture.key);
+      if (mine.fuse !== undefined) {
+        const size = 120 + (1 - mine.fuse / 0.65) * 80;
+        this.sprite("gravity", mine.x, mine.y, size, size, this.reduced ? 0 : r.time * 3, 0.6, 1, finalEffectTexture.key);
+      } else if (mine.arm <= 0) g.lineStyle(1, evolved ? 0xbd8cff : 0xffc36c, 0.25).strokeCircle(mine.x, mine.y, evolved ? 45 : 32);
     }
-    for (const drone of dronePositions(r)) this.sprite("drone", drone.x, drone.y, 31, 25, 0, 1, 5, expansionTexture.key);
+    const aim = (from: Point) => {
+      const target = r.enemies.reduce<Run["enemies"][number] | undefined>((best, e) => !best || Math.hypot(e.x - from.x, e.y - from.y) < Math.hypot(best.x - from.x, best.y - from.y) ? e : best, undefined);
+      return target ? Math.atan2(target.y - from.y, target.x - from.x) : 0;
+    };
+    for (const drone of dronePositions(r)) this.sprite("drone", drone.x, drone.y, r.evolutions.drone ? 39 : 31, r.evolutions.drone ? 39 : 25,
+      r.evolutions.drone ? aim(drone) : 0, 1, 5, r.evolutions.drone ? finalWeaponTexture.key : expansionTexture.key);
+    if (r.evolutions.bolt) {
+      const angle = aim(p);
+      this.sprite("bolt", p.x + Math.cos(angle) * 18, p.y + Math.sin(angle) * 18, 38, 29, angle, 1, 5, finalWeaponTexture.key);
+    }
+    if (r.evolutions.arc) this.sprite("arc", p.x - 21, p.y - 17, 28, 37, 0, 1, 5, finalWeaponTexture.key);
     if (r.upgrades.reactor) {
       const radius = 24 + r.upgrades.reactor * 2;
       g.lineStyle(4, 0xffbf61, 0.12).strokeCircle(p.x, p.y, radius);
@@ -74,6 +90,7 @@ export class CombatArt {
     for (const b of r.bullets) {
       const angle = Math.atan2(b.vy, b.vx);
       if (b.hostile) this.sprite("hostile", b.x, b.y, 14, 14, 0, 1);
+      else if (b.kind === "missile") this.sprite("missile", b.x, b.y, 31, 13, angle, 1, 4, finalWeaponTexture.key);
       else {
         const length = b.pierce > 0 ? 30 : 23;
         // The solid nose sits on the simulated projectile; its trail extends behind it.
@@ -89,15 +106,20 @@ export class CombatArt {
         const angle = r.time * 4 + i * Math.PI * 2 / (lv + 1);
         this.sprite("blade", p.x + Math.cos(angle) * radius, p.y + Math.sin(angle) * radius,
           r.evolutions.blade ? 30 : 24, r.evolutions.blade ? 30 : 24, this.reduced ? 0 : -r.time * 12 + i,
-          1, 4, r.evolutions.blade ? expansionTexture.key : combatTexture.key);
+          1, 4, r.evolutions.blade ? finalWeaponTexture.key : combatTexture.key);
       }
     }
     for (const fx of r.effects) {
       if (fx.kind === "rail" && fx.from) {
-        bursts.lineStyle(12, 0x5de6ff, fx.ttl * 1.5).lineBetween(fx.from.x, fx.from.y, fx.x, fx.y);
-        bursts.lineStyle(3, 0xe9fcff, Math.min(1, fx.ttl * 5)).lineBetween(fx.from.x, fx.from.y, fx.x, fx.y);
-      } else if (fx.kind === "blast" || fx.kind === "storm") {
-        const radius = (fx.radius ?? 60) * (1 - fx.ttl / 0.5), color = fx.kind === "blast" ? 0xffb85c : 0x84caff;
+        const dx = fx.x - fx.from.x, dy = fx.y - fx.from.y;
+        this.sprite("rail", (fx.x + fx.from.x) / 2, (fx.y + fx.from.y) / 2, Math.hypot(dx, dy), 24,
+          Math.atan2(dy, dx), Math.min(1, fx.ttl * 6), 6, finalEffectTexture.key);
+      } else if (fx.kind === "storm" || fx.kind === "implosion" || fx.kind === "missile") {
+        const progress = 1 - fx.ttl / 0.4, radius = fx.radius ?? 60;
+        const size = radius * 2 * (fx.kind === "implosion" ? 1 - progress * 0.5 : 0.5 + progress * 0.5);
+        this.sprite(fx.kind, fx.x, fx.y, size, size, 0, Math.min(1, fx.ttl * 4), 6, finalEffectTexture.key);
+      } else if (fx.kind === "blast") {
+        const radius = (fx.radius ?? 60) * (1 - fx.ttl / 0.5), color = 0xffb85c;
         bursts.lineStyle(3, color, fx.ttl * 1.8).strokeCircle(fx.x, fx.y, radius);
         bursts.fillStyle(color, fx.ttl * 0.16).fillCircle(fx.x, fx.y, radius);
         this.sprite("hit", fx.x, fx.y, 30, 30, 0, Math.min(1, fx.ttl * 3), 6).setTint(color);
@@ -107,7 +129,7 @@ export class CombatArt {
         for (let i = 0; i < count; i++) {
           const t = (i + 0.5) / count;
           this.sprite("arc", fx.from.x + dx * t, fx.from.y + dy * t, distance / count + 3,
-            16, angle, Math.min(1, fx.ttl / 0.12), 6);
+            r.evolutions.arc ? 24 : 16, angle, Math.min(1, fx.ttl / 0.12), 6, r.evolutions.arc ? finalEffectTexture.key : combatTexture.key);
         }
       } else if (fx.kind === "hit" || fx.kind === "kill") {
         const progress = 1 - fx.ttl / 0.4, size = fx.kind === "kill" ? 27 : 16;

@@ -42,7 +42,7 @@ test("elite choices persist through chat and reload; evolution appears in the in
   await game(page).getByRole("button", { name: "Inspect loadout" }).click();
   const details = game(page).getByRole("region", { name: "Loadout details" });
   await expect(details.getByText("Your loadout · 3/3 weapons")).toBeVisible();
-  await expect(details.getByText("Reactor railgun · Lv 5")).toBeVisible();
+  await expect(details.getByText("Reactor railgun · FINAL", { exact: true })).toBeVisible();
   await details.getByRole("button", { name: "Close loadout" }).click();
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   await assertViewportLocked(page);
@@ -130,7 +130,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await expect(page.getByRole("button", { name: "Arcade", exact: true })).toHaveCount(0);
 });
 
-for (const atlas of ["units", "combat", "expansion", "robots"]) test(`${atlas} sprite loading can retry and new attention returns to chat without resetting the run`, async ({ page }) => {
+for (const atlas of ["units", "combat", "expansion", "robots", "final-weapons", "final-effects"]) test(`${atlas} sprite loading can retry and new attention returns to chat without resetting the run`, async ({ page }) => {
   await enable(page);
   await page.addInitScript(() => {
     const Native = window.EventSource;

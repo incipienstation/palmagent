@@ -11,7 +11,7 @@ export function restore(raw: string | null): Run {
   try {
     if (!raw || raw.length > 180_000) return freshRun();
     const parsed = JSON.parse(raw);
-    if (!parsed || ![1, 2, 3, 4].includes(parsed.version)) return freshRun();
+    if (!parsed || ![1, 2, 3, 4, 5].includes(parsed.version)) return freshRun();
     const legacyWorld = parsed.version === 1;
     if (parsed.version < 3) {
       parsed.upgrades = { ...parsed.upgrades, mine: 0, drone: 0 };
@@ -20,6 +20,10 @@ export function restore(raw: string | null): Run {
         eliteWave: ELITE_TIMES.filter(time => time <= parsed.time).length });
     }
     if (parsed.version === 3) Object.assign(parsed, { version: 4, rig: baseRig(), relays: [], hazards: [], hazardClock: 0, wardenDefeated: parsed.won });
+    if (parsed.version === 4) {
+      parsed.version = 5;
+      parsed.evolutions = { ...parsed.evolutions, mine: false, drone: false };
+    }
     delete parsed.campaign;
     const r = parsed as Run;
     const finite = (v: unknown, min: number, max: number): v is number => typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
@@ -47,10 +51,12 @@ export function restore(raw: string | null): Run {
     if (r.enemies.some(e => !point(e) || !integer(e.id, 1, r.id) || !["drone", "charger", "sentry", "elite", "boss"].includes(e.kind)
         || !finite(e.hp, 0, 2000) || !finite(e.max, 1, 2000) || e.hp > e.max || !finite(e.clock, -10, 5) || !finite(e.dash, -1, 1) || !finite(e.dx, -1, 1) || !finite(e.dy, -1, 1))
       || r.bullets.some(b => !point(b) || !integer(b.id, 1, r.id) || !finite(b.vx, -400, 400) || !finite(b.vy, -400, 400) || !finite(b.ttl, 0, 5)
-        || !finite(b.damage, 0, 30) || typeof b.hostile !== "boolean" || !integer(b.pierce, -1, 3) || !list(b.hit, 5)
-        || b.hit.some(id => !integer(id, 1, r.id)) || (b.kind !== undefined && b.kind !== "bolt" && b.kind !== "drone"))
+        || !finite(b.damage, 0, 40) || typeof b.hostile !== "boolean" || !integer(b.pierce, -1, 3) || !list(b.hit, 5)
+        || b.hit.some(id => !integer(id, 1, r.id)) || (b.kind !== undefined && b.kind !== "bolt" && b.kind !== "drone" && b.kind !== "missile")
+        || (b.kind === "missile" && (b.hostile || !r.evolutions.drone || b.pierce !== 0)))
       || r.gems.some(g => !point(g) || !integer(g.id, 1, r.id) || !finite(g.value, 1, 1e6))
-      || r.mines.some(m => !point(m) || !integer(m.id, 1, r.id) || !finite(m.ttl, 0, 9) || !finite(m.arm, -10, 0.3))
+      || r.mines.some(m => !point(m) || !integer(m.id, 1, r.id) || !finite(m.ttl, 0, 9) || !finite(m.arm, -10, 0.3)
+        || (m.fuse !== undefined && (!r.evolutions.mine || !finite(m.fuse, 0, 0.65))))
       || r.chests.some(c => !point(c) || !integer(c.id, 1, r.id))) return freshRun();
     if (r.rewards.some(reward => !reward || (reward.kind === "evolve" ? !EVOLUTION_KEYS.includes(reward.weapon) || !canEvolve(r, reward.weapon)
       : reward.kind === "upgrade" ? !upgrade(reward.upgrade) || !r.upgrades[reward.upgrade] || !canUpgrade(r, reward.upgrade)

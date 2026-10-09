@@ -13,7 +13,7 @@ export function RewardChoices({ rewards, onChoose }: { rewards: Reward[]; onChoo
       const detail = reward.kind === "evolve" ? EVOLUTIONS[reward.weapon].detail : reward.kind === "upgrade" ? "Gain one level and repair hull." : "Restore your robot to full HP.";
       return <Button key={index} variant="outline" className="survivor-upgrade h-auto min-h-24 justify-start gap-2 whitespace-normal p-2 text-left" onClick={() => onChoose(index)}>
         <span className="survivor-item-frame">{key ? <EquipmentArt kind={key} evolved={reward.kind === "evolve"} /> : <ChestArt />}</span>
-        <span className="flex min-w-0 flex-1 flex-col gap-1"><Badge variant={reward.kind === "evolve" ? "default" : "secondary"}>{reward.kind === "evolve" ? "EVOLUTION" : "SUPPLY"}</Badge><span>{name}</span><span className="survivor-caption">{detail}</span></span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1"><Badge variant={reward.kind === "evolve" ? "default" : "secondary"}>{reward.kind === "evolve" ? "FINAL EVOLUTION" : "SUPPLY"}</Badge><span>{name}</span><span className="survivor-caption">{detail}</span></span>
       </Button>;
     })}
     {!rewards.some(r => r.kind === "evolve") && <p className="survivor-caption">For an evolution, reach weapon Lv 5 and equip its matching support before opening a chest.</p>}
