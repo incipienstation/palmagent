@@ -899,3 +899,19 @@ for (const outcome of ["completed", "missing-item", "rejected", "interrupted"] a
     replay.proc.exit(0); await recovered.done;
   });
 }
+
+
+test("Codex forwards context capacity and invalidates the last reading when compaction starts", async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new CodexRunner().start(startArgs({ interactive: true, resumeId: "thread-1" }), e => events.push(e), backend);
+  backend.proc.emit({ id: "initialize", result: {} });
+  backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  const usage = { last: { totalTokens: 84000, inputTokens: 83000, cachedInputTokens: 80000, outputTokens: 1000 }, modelContextWindow: 200000 };
+  backend.proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: "other-thread", tokenUsage: usage } });
+  assert.equal(events.some(e => eventSubtype(e) === "usage"), false);
+  backend.proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: "thread-1", tokenUsage: usage } });
+  assert.deepEqual(events.find(e => eventSubtype(e) === "usage")?.payload, { subtype: "usage", usage });
+  backend.proc.emit({ method: "item/started", params: { threadId: "thread-1", item: { type: "contextCompaction" } } });
+  assert.equal(events.filter(e => eventSubtype(e) === "context_compaction_started").length, 1);
+  backend.proc.exit(0); await handle.done;
+});

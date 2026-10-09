@@ -40,6 +40,7 @@ async function fixture(t: test.TestContext, patch: Partial<TaskState> = {}) {
   let service = makeService(); await service.init();
   t.after(() => { service.beginShutdown(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   return {
+    status: (payload: unknown) => emit({ taskId: "t", sessionId: "session", kind: "status", payload }),
     db, starts, get service() { return service; },
     request: () => ({ requestId: randomUUID(), expectedRevision: service.getTask("t").messageQueue?.revision ?? 0 }),
     restart: async () => { service.beginShutdown(); service = makeService(); await service.init(); },
@@ -110,3 +111,23 @@ for (const patch of [{ agent: "claude" }, { sessionId: undefined }, { status: "r
     assert.equal(f.starts.length, 0);
   });
 }
+
+
+test("live context snapshots follow compaction usage and survive service restart", async t => {
+  const f = await fixture(t);
+  f.service.compact("t", f.request());
+  f.status({ subtype: "usage", usage: { last: { totalTokens: 84000 }, modelContextWindow: 200000 } });
+  assert.equal(f.service.getTask("t").contextUsage?.usedTokens, 84000);
+  f.status({ subtype: "context_compaction_started" });
+  assert.equal(f.service.getTask("t").contextUsage?.stale, true);
+  f.status({ subtype: "usage", usage: { last: { totalTokens: 20000 }, modelContextWindow: 200000 } });
+  await f.complete();
+  assert.equal(f.service.getTask("t").contextUsage?.usedTokens, 20000);
+  assert.equal(f.service.getTask("t").contextUsage?.stale, undefined);
+  await f.restart();
+  assert.equal(f.service.getTask("t").contextUsage?.usedTokens, 20000);
+  f.service.compact("t", f.request());
+  assert.equal(f.service.getTask("t").contextUsage?.stale, true);
+  await f.complete(true);
+  assert.equal(f.service.getTask("t").contextUsage?.usedTokens, 20000);
+});

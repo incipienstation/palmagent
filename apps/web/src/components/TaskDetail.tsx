@@ -53,6 +53,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const statuslineTrigger = useRef<HTMLButtonElement>(null);
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
@@ -119,7 +120,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
       <AlertDialog open={compaction.intro !== null} onOpenChange={open => { if (!open) compaction.closeIntro(); }}>
         <AlertDialogContent onCloseAutoFocus={event => {
           event.preventDefault();
-          const target = compaction.source.current === "command" ? document.getElementById(`task-compose-${taskId}`) : taskActionsTrigger.current;
+          const target = compaction.source.current === "command" ? document.getElementById(`task-compose-${taskId}`) : compaction.source.current === "statusline" ? statuslineTrigger.current : taskActionsTrigger.current;
           target?.focus({ preventScroll: true });
         }}>
           <AlertDialogHeader>
@@ -156,7 +157,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             <Button variant="ghost" size="sm" disabled={!!compaction.unavailable} onClick={compaction.retry}>Retry</Button>
           </Alert>}
           {creating && newChat.notices}
-          {creating ? newChat.workspace : task && <TaskStatusline key={taskId} taskId={taskId} agent={task.agent} />}
+          {creating ? newChat.workspace : task && <TaskStatusline key={taskId} task={task} triggerRef={statuslineTrigger} compacting={compaction.running} compactReason={compaction.unavailable} onCompact={() => compaction.request("statusline")} />}
           {answering && task?.pendingInput && (
             <QuestionCard
               key={`${taskId}:${task.pendingInput.requestId}`}

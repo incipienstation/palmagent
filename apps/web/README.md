@@ -115,7 +115,13 @@ Focused screens retain Back; the task title opens session details.
    remain in the task menu. Tap the header title for session configuration, pull requests,
    and shell handoff;
    the task status and local-control notices remain visible in the conversation.
-4. **Account limits** — session footers show remaining account allowance and reset
+4. **Session usage** — Codex session footers show remaining context as a circular
+   gauge and percentage beside account allowances. **Usage details** shows the
+   latest reported used/total tokens, its timestamp, and **Compact context**.
+   Context readings survive reloads and local-session previews independently of
+   loaded conversation history. Missing capacity stays unknown; compaction and
+   model changes wait for a new provider reading instead of assuming zero usage.
+   Account limits show remaining account allowance and reset
    countdowns in aligned columns, including while idle or previewing a local session. When available,
    Claude shows 5-hour, weekly, and model-specific windows; Codex keeps its named quota buckets
    and reported window lengths. Details show additional windows and available
@@ -247,7 +253,7 @@ Settings → Output detail controls the session transcript:
   progress while running.
 - **Verbose** shows all recorded events.
 
-Account allowance and reset countdowns stay visible in every mode. Account Details shows
+Account allowance and reset countdowns stay visible in every mode. Usage details shows
 the additional provider-specific quota windows.
 
 Compact Activity summaries load tool inputs and outputs from REST only when expanded. Live

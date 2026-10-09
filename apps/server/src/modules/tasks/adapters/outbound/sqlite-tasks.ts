@@ -1,3 +1,4 @@
+import { projectContextUsage } from "./context-usage.js";
 import { projectConfirmedPrs } from "../../domain/pr-projection.js";
 import Database from "better-sqlite3";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
@@ -11,6 +12,7 @@ type TaskRow = {
   worktree_path: string | null; permission: string; model: string | null; effort: string | null;
   session_control: string | null;
   skills_json: string | null;
+  context_usage_json?: string | null;
   pr_url: string | null; pr_urls: string | null; pending_input: string | null; pending_approval: string | null;
   created_at: number; updated_at: number; last_activity_at: number;
 };
@@ -39,6 +41,7 @@ function parsePrs(r: TaskRow): PrRef[] | undefined {
 function rowToTask(r: TaskRow): TaskState {
   return {
     taskId: r.id,
+    contextUsage: r.context_usage_json ? JSON.parse(r.context_usage_json) : undefined,
     pinnedAt: r.pinned_at ?? undefined,
     repoId: r.repo_id,
     agent: r.agent as AgentKind,
@@ -111,10 +114,41 @@ export class SqliteTasks {
 private insertEventStmt: Database.Statement;
 private getSeqStmt: Database.Statement;
 constructor(private readonly db: Database.Database) {
+ this.initializeContextUsage();
  this.initializePrEvidence();
  this.insertEventStmt = db.prepare(`INSERT INTO events (task_id, seq, kind, payload_json, ts) VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE task_id = ?), ?, ?, ?)`);
  this.getSeqStmt = db.prepare("SELECT seq FROM events WHERE id = ?");
 }
+private initializeContextUsage(): void {
+    this.db.exec(`CREATE TABLE IF NOT EXISTS task_context_usage (
+      task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+      context_usage_json TEXT
+    )`);
+    const tasks = this.db.prepare(`SELECT t.id, t.agent FROM tasks t LEFT JOIN task_context_usage c ON c.task_id = t.id
+      WHERE c.task_id IS NULL`).all() as { id: string; agent: AgentKind }[];
+    for (const task of tasks) this.db.transaction(() => {
+      let usage: TaskState["contextUsage"];
+      const rows = this.db.prepare(`SELECT payload_json, ts FROM events WHERE task_id = ? AND kind = 'status' ORDER BY seq`).iterate(task.id);
+      for (const row of rows as Iterable<{ payload_json: string; ts: number }>) {
+        usage = projectContextUsage(usage, { taskId: task.id, agent: task.agent, kind: "status", payload: JSON.parse(row.payload_json), ts: row.ts });
+      }
+      this.writeContextUsage(task.id, usage);
+    })();
+  }
+
+private writeContextUsage(taskId: string, usage: TaskState["contextUsage"]): void {
+    this.db.prepare(`INSERT INTO task_context_usage (task_id, context_usage_json) VALUES (?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET context_usage_json = excluded.context_usage_json`)
+      .run(taskId, usage ? JSON.stringify(usage) : null);
+  }
+
+private projectContextEvents(taskId: string, events: AgentEvent[]): void {
+    if (!events.some(event => event.kind === "status")) return;
+    const previous = this.getTask(taskId)?.contextUsage;
+    const next = events.reduce(projectContextUsage, previous);
+    if (next !== previous) this.writeContextUsage(taskId, next);
+  }
+
 private initializePrEvidence(): void {
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_pr_evidence (
       task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
@@ -238,14 +272,14 @@ insertTask(t: TaskState) {
   }
 
 getTask(id: string): TaskState | undefined {
-    const row = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as TaskRow | undefined;
+    const row = this.db.prepare(`SELECT t.*, c.context_usage_json FROM tasks t LEFT JOIN task_context_usage c ON c.task_id = t.id WHERE t.id = ?`).get(id) as TaskRow | undefined;
     return row && rowToTask(row);
   }
 
 listTasks(status?: TaskStatus): TaskState[] {
     const rows = status
-      ? this.db.prepare(`SELECT * FROM tasks WHERE status = ? ORDER BY created_at`).all(status)
-      : this.db.prepare(`SELECT * FROM tasks ORDER BY created_at`).all();
+      ? this.db.prepare(`SELECT t.*, c.context_usage_json FROM tasks t LEFT JOIN task_context_usage c ON c.task_id = t.id WHERE status = ? ORDER BY created_at`).all(status)
+      : this.db.prepare(`SELECT t.*, c.context_usage_json FROM tasks t LEFT JOIN task_context_usage c ON c.task_id = t.id ORDER BY created_at`).all();
     return (rows as TaskRow[]).map(rowToTask);
   }
 
@@ -270,6 +304,7 @@ appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventR
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));
       this.projectPrEvents(taskId, events);
+      this.projectContextEvents(taskId, events);
       if (rawSeq !== undefined) this.setTaskRawSeq(taskId, rawSeq);
       this.touchTask(taskId, Date.now());
       return rows;
@@ -280,6 +315,7 @@ importSessionEvents(task: TaskState, events: AgentEvent[]): EventRow[] {
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
       this.projectPrEvents(task.taskId, events);
+      this.projectContextEvents(task.taskId, events);
       this.setSessionControl(task.taskId, task.sessionControl);
       if (events.length) this.touchTask(task.taskId, Date.now());
       return rows;
@@ -293,13 +329,20 @@ setTaskStatus(id: string, status: TaskStatus, interrupted: boolean, now: number)
   }
 
 setTaskSession(id: string, sessionId: string, now: number) {
-    this.db.prepare(`UPDATE tasks SET session_id = ?, updated_at = ? WHERE id = ?`).run(sessionId, now, id);
+    this.db.transaction(() => {
+      if (this.getTask(id)?.sessionId !== sessionId) this.writeContextUsage(id, undefined);
+      this.db.prepare(`UPDATE tasks SET session_id = ?, updated_at = ? WHERE id = ?`).run(sessionId, now, id);
+    })();
   }
 
 setTaskSettings(id: string, model: string | undefined, effort: string | undefined, permission: string, now: number) {
-    this.db.prepare(
-      `UPDATE tasks SET model = ?, effort = ?, permission = ?, updated_at = ? WHERE id = ?`,
-    ).run(model ?? null, effort ?? null, permission, now, id);
+    this.db.transaction(() => {
+      const task = this.getTask(id);
+      if (task?.model !== model && task?.contextUsage) this.writeContextUsage(id, { ...task.contextUsage, stale: true });
+      this.db.prepare(
+        `UPDATE tasks SET model = ?, effort = ?, permission = ?, updated_at = ? WHERE id = ?`,
+      ).run(model ?? null, effort ?? null, permission, now, id);
+    })();
   }
 
 setTaskWorktree(id: string, branch: string, worktreePath: string, now: number) {

@@ -23,7 +23,7 @@ async function show(page: Page, report: AccountLimits, id = report.agent === "cl
   await page.clock.install({ time: now });
   await page.route(`**/api/tasks/${id}/account-limits`, route => route.fulfill({ json: report }));
   await page.goto(`/#/task/${id}`);
-  return page.getByRole("region", { name: "Account limits" });
+  return page.getByRole("region", { name: "Session usage" });
 }
 
 test("Claude allowances share one summary with reset times and model windows in Details", async ({ page }) => {
@@ -33,9 +33,9 @@ test("Claude allowances share one summary with reset times and model windows in 
   await expect(line.getByText(/Resets in/)).toHaveCount(0);
   await expect(line.getByText(/Input|Output|Cache|Reasoning/)).toHaveCount(0);
   await assertViewportLocked(page);
-  await line.getByRole("button", { name: "Account limit details" }).focus();
+  await line.getByRole("button", { name: "Usage details" }).focus();
   await page.keyboard.press("Enter");
-  const sheet = page.getByRole("dialog", { name: "Claude account limits" });
+  const sheet = page.getByRole("dialog", { name: "Session usage" });
   await expect(sheet.getByText("Resets in 1h 40m", { exact: true })).toBeVisible();
   await expect(sheet.getByText("Fable · Weekly")).toBeVisible();
   await expect(sheet.getByText("5% left", { exact: true })).toBeVisible();
@@ -49,9 +49,9 @@ test("Codex uses the reported weekly primary window and keeps model buckets dist
   await expect(line.getByText("Weekly", { exact: true })).toBeVisible();
   await expect(line.getByText("79%", { exact: true })).toBeVisible();
   await expect(line.getByText("5h", { exact: true })).toHaveCount(0);
-  await line.getByRole("button", { name: "Account limit details" }).focus();
+  await line.getByRole("button", { name: "Usage details" }).focus();
   await page.keyboard.press("Enter");
-  const sheet = page.getByRole("dialog", { name: "Codex account limits" });
+  const sheet = page.getByRole("dialog", { name: "Session usage" });
   await expect(sheet.getByRole("heading", { name: "Spark" })).toBeVisible();
   await expect(sheet.getByText("5h", { exact: true })).toBeVisible();
   await expect(sheet.getByText("100% left", { exact: true })).toBeVisible();
@@ -64,7 +64,7 @@ test("missing percentages stay unknown and expired windows await a fresh report"
   const line = await show(page, { ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 90, resetsAt: now - 1000 } });
   await expect(line.getByText("Unknown")).toBeVisible();
   await expect(line.getByText("Refreshing")).toBeVisible();
-  await line.getByRole("button", { name: "Account limit details" }).click();
+  await line.getByRole("button", { name: "Usage details" }).click();
   await expect(page.getByRole("dialog").getByText("Reset time passed")).toBeVisible();
   await expect(line.getByText(/%/)).toHaveCount(0);
 });
@@ -75,7 +75,7 @@ test("the reset countdown advances and an idle refresh replaces old quota number
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: { ...claude, checkedAt: now + 60000, fiveHour: { usedPercent: 40, resetsAt: reset } } }));
   await page.clock.fastForward(60000);
   await expect(line.getByText("60%")).toBeVisible();
-  await line.getByRole("button", { name: "Account limit details" }).click();
+  await line.getByRole("button", { name: "Usage details" }).click();
   await expect(page.getByRole("dialog").getByText("Resets in 1h 39m")).toBeVisible();
   await expect(line.getByText("72%")).toHaveCount(0);
 });
@@ -128,14 +128,14 @@ test("allowance details remain reachable on a narrow phone, including unknown or
   await page.setViewportSize({ width: 320, height: 780 });
   const line = await show(page, claude);
   await expect(line.getByText("72%", { exact: true })).toBeVisible();
-  const action = await line.getByRole("button", { name: "Account limit details" }).boundingBox();
+  const action = await line.getByRole("button", { name: "Usage details" }).boundingBox();
   expect(action!.width).toBeGreaterThanOrEqual(44);
   expect(action!.height).toBe(40);
   await line.getByText("72%", { exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Claude account limits" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Session usage" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(line.getByRole("button", { name: "Account limit details" })).toBeFocused();
+  await expect(line.getByRole("button", { name: "Usage details" })).toBeFocused();
   await assertViewportLocked(page);
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: {
     ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 95, resetsAt: now - 1000 },
@@ -152,7 +152,7 @@ test("low allowance shows its reset, but expired or stale readings never show a 
   const report = { ...claude, fiveHour: { usedPercent: 95, resetsAt: reset } };
   const line = await show(page, report);
   await expect(line.getByText("5h low · Resets in 1h 40m")).toBeVisible();
-  const action = await line.getByRole("button", { name: "Account limit details" }).boundingBox();
+  const action = await line.getByRole("button", { name: "Usage details" }).boundingBox();
   expect(action!.height).toBe(40);
   await assertViewportLocked(page);
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: report }));

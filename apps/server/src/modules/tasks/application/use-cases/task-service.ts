@@ -437,6 +437,7 @@ export class TaskService implements PrStatusSink {
         const rows = this.db.importSessionEvents(updated, synced.events);
         if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
         this.refreshPrs(task);
+        this.refreshContextUsage(task);
         task.sessionControl = synced.control;
         if (rows.length) task.lastActivityAt = Date.now();
         for (const row of rows) this.hub.emitEvent(row);
@@ -876,6 +877,7 @@ export class TaskService implements PrStatusSink {
 
     if (event.sessionId && task.sessionId !== event.sessionId) {
       this.db.setTaskSession(task.taskId, event.sessionId, now);
+      task.contextUsage = undefined;
       task.sessionId = event.sessionId; // capture claude session_id / codex thread_id
       this.broadcastTasks();
     }
@@ -940,8 +942,16 @@ export class TaskService implements PrStatusSink {
     const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq);
     if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
     if (event.kind === "tool_result") this.refreshPrs(task);
+    if (event.kind === "status") this.refreshContextUsage(task);
     task.lastActivityAt = now;
     for (const row of rows) this.hub.emitEvent(row);
+  }
+
+  private refreshContextUsage(task: TaskState): void {
+    const usage = this.db.getTask(task.taskId)?.contextUsage;
+    if (JSON.stringify(usage) === JSON.stringify(task.contextUsage)) return;
+    task.contextUsage = usage;
+    this.broadcastTasks();
   }
 
   private refreshPrs(task: TaskState): void {
@@ -1057,6 +1067,7 @@ export class TaskService implements PrStatusSink {
     const now = Date.now();
     this.db.setTaskSettings(task.taskId, nextModel, nextEffort, nextPermission, now);
     Object.assign(task, { model: nextModel, effort: nextEffort, permission: nextPermission, updatedAt: now });
+    this.refreshContextUsage(task);
     this.broadcastTasks();
     return true;
   }
@@ -1075,6 +1086,7 @@ export class TaskService implements PrStatusSink {
     const rows = this.db.appendAgentEvents(task.taskId, [
       { taskId: task.taskId, agent: task.agent, kind: "status", sessionId: task.sessionId, payload, ts: now },
     ]);
+    this.refreshContextUsage(task);
     for (const row of rows) this.hub.emitEvent(row);
   }
 

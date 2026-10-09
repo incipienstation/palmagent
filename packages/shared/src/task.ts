@@ -126,6 +126,7 @@ export function makePrRef(url: string): PrRef | null {
 export interface TaskState {
   taskId: string;
   pinnedAt?: number; // stable pin order; absent when unpinned
+  contextUsage?: import("./context-usage.js").ContextUsage;
   messageQueue?: import("./messages.js").MessageQueue;
   repoId: string;
   agent: AgentKind;

@@ -9,10 +9,10 @@ import { usePersistedFlag } from "./useDraft";
 export function useContextCompaction(task: TaskState | undefined, queue: MessageQueue | undefined, busy: boolean, onCommandAccepted: () => void) {
   const operations = useTaskOperations(task?.taskId ?? "new");
   const [explained, setExplained] = usePersistedFlag("pref:context-compaction-explained");
-  const [intro, setIntro] = useState<"menu" | "command" | null>(null);
+  const [intro, setIntro] = useState<"menu" | "command" | "statusline" | null>(null);
   const [error, setError] = useState<string>();
   const pending = useRef<CompactTaskRequest | undefined>(undefined);
-  const source = useRef<"menu" | "command">("menu");
+  const source = useRef<"menu" | "command" | "statusline">("menu");
   const currentTask = useRef(task?.taskId);
   currentTask.current = task?.taskId;
   useEffect(() => { setIntro(null); setError(undefined); pending.current = undefined; }, [task?.taskId]);
@@ -53,7 +53,7 @@ export function useContextCompaction(task: TaskState | undefined, queue: Message
     } finally { finish(); }
   }
 
-  function request(from: "menu" | "command" = "menu") {
+  function request(from: "menu" | "command" | "statusline" = "menu") {
     source.current = from;
     if (unavailable) { setError(unavailable); return; }
     if (!explained) setIntro(from);

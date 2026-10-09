@@ -14,7 +14,7 @@ for (const width of [360, 1280]) {
       if (scenario === "questions" || scenario === "approval") {
         await page.goto(`/#/task/${scenario === "questions" ? "t-input" : "t-await"}`);
         await expect(page.getByRole("button", { name: scenario === "questions" ? "Send answer" : "Approve", exact: true })).toBeVisible();
-        await expect(page.getByRole("region", { name: "Account limits" }).getByText("72%", { exact: true })).toBeVisible();
+        await expect(page.getByRole("region", { name: "Session usage" }).getByText("72%", { exact: true })).toBeVisible();
       } else {
         await installScopedStream(page);
         const id = "t-idle-rich";
