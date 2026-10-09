@@ -10,8 +10,9 @@ import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
 import { MessageQueue as QueuePanel } from "./MessageQueue";
 import { useUpdateState } from "../update-state";
-import { useRef, useState } from "react";
-import type { TaskState } from "@palmagent/shared";
+import { useEffect, useRef, useState } from "react";
+import { needsTaskAttention, type TaskState } from "@palmagent/shared";
+import { notifyConversation } from "../conversation-notifications";
 import { Archive, Check, Minimize2, Gamepad2, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
 import { useAppNavigation } from "./AppNavigation";
 
@@ -63,6 +64,13 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   // when the long-lived inbox stream freezes in the background. Fall back to the
   // inbox task for the first paint before the scoped snapshot arrives.
   const task = streamTask ?? inboxTask;
+  const attention = task && needsTaskAttention(task.status)
+    ? `${taskId}:${task.status}:${JSON.stringify(task.pendingInput ?? task.pendingApproval)}` : "";
+  const lastAttention = useRef("");
+  useEffect(() => {
+    if (attention && attention !== lastAttention.current) notifyConversation(taskId);
+    lastAttention.current = attention;
+  }, [attention, taskId]);
   const {
     activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills,
     edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue,

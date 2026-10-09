@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Pause, Play, RotateCcw, X, Shield, Crosshair, Clock3 } from "lucide-react";
-import { needsTaskAttention, type TaskState } from "@palmagent/shared";
+import type { TaskState } from "@palmagent/shared";
 import type { ConnState } from "../../hooks/useInbox";
 import type { GameDelivery } from "../play-events";
 import { Button } from "../../components/ui/button";
@@ -33,13 +33,11 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
   const [pause, setPause] = useState("");
   const [ready, setReady] = useState(false), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   const [saveFailed, setSaveFailed] = useState(false), [restart, setRestart] = useState(false);
-  const [ack, setAck] = useState("");
   const host = useRef<HTMLDivElement>(null), keys = useRef(new Set<string>()), pointer = useRef<Point>({ x: 0, y: 0 });
   const movePointer = useCallback((point: Point) => { pointer.current = point; }, []);
   const task = tasks.find(t => t.taskId === taskId);
-  const attention = task && needsTaskAttention(task.status) ? `${task.taskId}:${task.status}:${JSON.stringify(task.pendingInput ?? task.pendingApproval)}` : "";
   const failed = delivery?.state === "failed";
-  const reason = failed ? "Message delivery needs attention" : attention && attention !== ack ? "Your agent needs attention" : pause;
+  const reason = failed ? "Message delivery needs attention" : pause;
   const stopped = !open || !ready || Boolean(reason) || restart || hud.choices.length > 0 || hud.hull <= 0 || hud.won;
   const stoppedRef = useRef(stopped); stoppedRef.current = stopped;
   const refresh = () => setHud(snapshot(run.current!));
@@ -49,7 +47,7 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
   useEffect(() => {
     if (!open) return;
     if (delivery?.state === "sending" && (run.current!.won || run.current!.hull <= 0)) { run.current = freshRun(); refresh(); }
-    setPause(document.hidden ? "Paused while away" : ""); setAck(""); setRestart(false);
+    setPause(document.hidden ? "Paused while away" : ""); setRestart(false);
   }, [open, delivery?.id]);
   useEffect(() => {
     if (!open) return;
@@ -81,7 +79,7 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
   }, [open, attempt]);
   const choose = (key: Upgrade) => { chooseUpgrade(run.current!, key); refresh(); save(); };
   const reset = () => { run.current = freshRun(); setRestart(false); setPause(""); refresh(); save(); };
-  const resume = () => { setAck(attention); setPause(""); };
+  const resume = () => setPause("");
   const status = failed ? "Send failed or unconfirmed" : delivery?.state === "sending" ? "Sending your message…"
     : conn !== "open" ? "Reconnecting — task status may be out of date"
     : task?.status === "awaiting_input" ? "Agent needs your answer" : task?.status === "awaiting_approval" ? "Agent needs approval"
