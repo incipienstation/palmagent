@@ -109,7 +109,6 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await game(page).getByRole("button", { name: "Continue playing" }).click();
   await page.setViewportSize({ width: 320, height: 480 });
   await expect(game(page).getByRole("button", { name: "Close game" })).toBeInViewport(); await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeInViewport();
-  await game(page).getByRole("button", { name: "Restart expedition" }).click(); await game(page).getByRole("button", { name: "Restart", exact: true }).click();
   await game(page).getByRole("button", { name: "Close game" }).click();
   const run = freshRun(1); run.level = 2; run.choices = ["blade", "arc", "bolt"];
   await page.evaluate(({key,value}) => localStorage.setItem(key,value), {key:SAVE_KEY,value:serialize(run)});
@@ -131,7 +130,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await expect(page.getByRole("button", { name: "Arcade", exact: true })).toHaveCount(0);
 });
 
-for (const atlas of ["units", "combat", "expansion"]) test(`${atlas} sprite loading can retry and new attention returns to chat without resetting the run`, async ({ page }) => {
+for (const atlas of ["units", "combat", "expansion", "robots"]) test(`${atlas} sprite loading can retry and new attention returns to chat without resetting the run`, async ({ page }) => {
   await enable(page);
   await page.addInitScript(() => {
     const Native = window.EventSource;

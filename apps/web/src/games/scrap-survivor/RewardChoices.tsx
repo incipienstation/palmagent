@@ -10,7 +10,7 @@ export function RewardChoices({ rewards, onChoose }: { rewards: Reward[]; onChoo
     {rewards.map((reward, index) => {
       const key = reward.kind === "evolve" ? reward.weapon : reward.kind === "upgrade" ? reward.upgrade : null;
       const name = reward.kind === "evolve" ? EVOLUTIONS[reward.weapon].name : reward.kind === "upgrade" ? UPGRADES[reward.upgrade].name : "Full hull repair";
-      const detail = reward.kind === "evolve" ? EVOLUTIONS[reward.weapon].detail : reward.kind === "upgrade" ? "Gain one level and repair hull." : "Restore all 8 hull points.";
+      const detail = reward.kind === "evolve" ? EVOLUTIONS[reward.weapon].detail : reward.kind === "upgrade" ? "Gain one level and repair hull." : "Restore your robot to full HP.";
       return <Button key={index} variant="outline" className="survivor-upgrade h-auto min-h-24 justify-start gap-2 whitespace-normal p-2 text-left" onClick={() => onChoose(index)}>
         <span className="survivor-item-frame">{key ? <EquipmentArt kind={key} evolved={reward.kind === "evolve"} /> : <ChestArt />}</span>
         <span className="flex min-w-0 flex-1 flex-col gap-1"><Badge variant={reward.kind === "evolve" ? "default" : "secondary"}>{reward.kind === "evolve" ? "EVOLUTION" : "SUPPLY"}</Badge><span>{name}</span><span className="survivor-caption">{detail}</span></span>

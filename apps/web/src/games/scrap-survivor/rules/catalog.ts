@@ -26,8 +26,9 @@ export const canUpgrade = (r: Pick<Run, "upgrades">, key: Upgrade) => r.upgrades
 export const canEvolve = (r: Pick<Run, "upgrades" | "evolutions">, key: EvolvingWeapon) => !r.evolutions[key]
   && r.upgrades[key] === UPGRADES[key].max && r.upgrades[EVOLUTIONS[key].passive] > 0;
 export const bladeRadius = (r: Pick<Run, "upgrades" | "evolutions">) => 42 + r.upgrades.blade * 9 + (r.evolutions.blade ? 28 : 0);
-export const dronePositions = (r: Pick<Run, "player" | "time" | "upgrades">) => Array.from({ length: r.upgrades.drone ? 1 + Math.floor((r.upgrades.drone - 1) / 2) : 0 }, (_, i) => {
-  const angle = r.time * 0.9 + i * Math.PI * 2 / (1 + Math.floor((r.upgrades.drone - 1) / 2));
+const droneCount = (r: Pick<Run, "upgrades" | "rig">) => r.upgrades.drone ? 1 + Math.floor((r.upgrades.drone - 1) / 2) + (r.rig.robot === "engineer" && r.rig.mastery >= 2 ? 1 : 0) : 0;
+export const dronePositions = (r: Pick<Run, "player" | "time" | "upgrades" | "rig">) => Array.from({ length: droneCount(r) }, (_, i) => {
+  const angle = r.time * 0.9 + i * Math.PI * 2 / droneCount(r);
   return { x: r.player.x + Math.cos(angle) * 54, y: r.player.y + Math.sin(angle) * 54 };
 });
 export function evolutionHint(key: Upgrade, r: Pick<Run, "upgrades" | "evolutions">): string | undefined {
