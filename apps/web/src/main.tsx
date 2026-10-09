@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { AdhdModeProvider } from "./AdhdModeProvider";
+import { ArcadeModeProvider } from "./ArcadeModeProvider";
 import { OutputModeProvider } from "./OutputModeProvider";
 import { SendShortcutProvider } from "./SendShortcutProvider";
 import { ThemeProvider } from "./ThemeProvider";
@@ -31,7 +31,7 @@ async function boot() {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <AdhdModeProvider>
+          <ArcadeModeProvider>
             <OutputModeProvider>
               <SendShortcutProvider>
                 <TooltipProvider>
@@ -40,7 +40,7 @@ async function boot() {
                 </TooltipProvider>
               </SendShortcutProvider>
             </OutputModeProvider>
-          </AdhdModeProvider>
+          </ArcadeModeProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </StrictMode>,

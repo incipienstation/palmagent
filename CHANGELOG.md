@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Renamed the experimental game feature to Arcade mode, with Arcade entry points that appear only when enabled. Existing device preferences are preserved.
+
 ## 0.1.0-alpha.157
 
 ### Changed
