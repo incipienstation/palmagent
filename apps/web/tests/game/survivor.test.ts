@@ -69,7 +69,7 @@ test("legacy saves move into the expanded map without losing relative positions 
   r.bullets = [{ id: 2, x: 220, y: 310, vx: 10, vy: 0, ttl: 1, damage: 2, hostile: false, pierce: 0, hit: [] }];
   r.time = 71; r.hull = 5;
   const restored = restore(serialize(r));
-  assert.equal(restored.version, 4); assert.equal(restored.time, 71); assert.equal(restored.hull, 5);
+  assert.equal(restored.version, 5); assert.equal(restored.time, 71); assert.equal(restored.hull, 5);
   assert.deepEqual(restored.player, { x: WORLD_W / 2, y: WORLD_H / 2 });
   assert.equal(restored.gems[0].x - restored.player.x, -40);
   assert.equal(restored.bullets[0].y - restored.player.y, -10);

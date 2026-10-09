@@ -1,7 +1,7 @@
 import equipment from "./assets/equipment-v2.webp?url";
 import units from "./assets/units.webp?url";
 import { EVOLUTION_KEYS, type Upgrade, type EvolvingWeapon, type Robot } from "./engine";
-import { unitFrames, expansionFrames, expansionTexture, robotFrames, robotTexture } from "./atlas";
+import { unitFrames, expansionFrames, expansionTexture, robotFrames, robotTexture, finalWeaponFrames, finalWeaponTexture } from "./atlas";
 
 const equipmentFrames: Record<Exclude<Upgrade, "mine" | "drone">, readonly number[]> = {
   bolt: [0.09, 0.31, 0.20, 0.19], blade: [0.405, 0.295, 0.195, 0.195], arc: [0.73, 0.27, 0.185, 0.225],
@@ -13,7 +13,10 @@ function AtlasArt({ src, frame }: { src: string; frame: readonly number[] }) {
   return <svg aria-hidden="true" className="survivor-art" viewBox={[x * width, y * height, w * width, h * height].join(" ")}><image href={src} width={width} height={height} /></svg>;
 }
 export function EquipmentArt({ kind, evolved = false }: { kind: Upgrade; evolved?: boolean }) {
-  if (kind === "mine" || kind === "drone" || (evolved && EVOLUTION_KEYS.includes(kind as EvolvingWeapon))) {
+  if (evolved && EVOLUTION_KEYS.includes(kind as EvolvingWeapon)) {
+    return <AtlasArt src={finalWeaponTexture.url} frame={finalWeaponFrames[kind as EvolvingWeapon]} />;
+  }
+  if (kind === "mine" || kind === "drone") {
     return <AtlasArt src={expansionTexture.url} frame={expansionFrames[kind as keyof typeof expansionFrames]} />;
   }
   return <AtlasArt src={equipment} frame={equipmentFrames[kind as keyof typeof equipmentFrames]} />;

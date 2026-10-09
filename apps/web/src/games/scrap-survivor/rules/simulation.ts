@@ -7,11 +7,11 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 function random(r: Run) { r.rng = (Math.imul(r.rng, 1664525) + 1013904223) >>> 0; return r.rng / 4294967296; }
 export function freshRun(seed = Math.floor(Math.random() * 4294967295), rig: Rig = baseRig(), weapon: Weapon = ROBOTS[rig.robot].weapon): Run {
-  const r: Run = { version: 4, rng: seed >>> 0, id: 0, time: 0, hull: maxHull({ rig }), player: { x: WORLD_W / 2, y: WORLD_H / 2 }, invulnerable: 1.5,
+  const r: Run = { version: 5, rng: seed >>> 0, id: 0, time: 0, hull: maxHull({ rig }), player: { x: WORLD_W / 2, y: WORLD_H / 2 }, invulnerable: 1.5,
     rig: { ...rig, workshop: { ...rig.workshop } }, relays: [], hazards: [], hazardClock: SECTORS[rig.sector].hazardEvery, wardenDefeated: false,
     level: 1, xp: 0, nextXp: 24, kills: 0, upgrades: { bolt: 0, blade: 0, arc: 0, mine: 0, drone: 0, reactor: 0, magnet: 0, boots: 0, [weapon]: 1 },
     spawn: 1, spawned: 0, bolt: 0, blade: 0, arc: 0, mine: 0, drone: 0,
-    eliteWave: 0, elitesCleared: 0, evolutions: { bolt: false, blade: false, arc: false }, rewards: [], chests: [], mines: [], boss: false, won: false, enemies: [], bullets: [], gems: [], choices: [], effects: [] };
+    eliteWave: 0, elitesCleared: 0, evolutions: { bolt: false, blade: false, arc: false, mine: false, drone: false }, rewards: [], chests: [], mines: [], boss: false, won: false, enemies: [], bullets: [], gems: [], choices: [], effects: [] };
   const angle = (seed % 4) * Math.PI / 2;
   r.relays = Array.from({ length: SECTORS[rig.sector].relays }, (_, i) => ({
     x: WORLD_W / 2 + Math.cos(angle + i * Math.PI * 2 / 3) * (260 + i * 80),
@@ -43,8 +43,8 @@ function damage(r: Run, enemy: Enemy, amount: number) {
   }
 }
 function hitPlayer(r: Run) { if (r.invulnerable <= 0) { r.hull = Math.max(0, r.hull - 1); r.invulnerable = 0.85; } }
-function projectile(r: Run, from: Point, angle: number, hostile = false, damage = 1, pierce = 0, kind: "bolt" | "drone" = "bolt") {
-  const speed = hostile ? 125 : 390;
+function projectile(r: Run, from: Point, angle: number, hostile = false, damage = 1, pierce = 0, kind: "bolt" | "drone" | "missile" = "bolt") {
+  const speed = hostile ? 125 : kind === "missile" ? 240 : 390;
   r.bullets.push({ ...from, id: ++r.id, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, ttl: hostile ? 5 : 2, damage, hostile, pierce, hit: [], kind });
 }
 /** Mutates only this run; callers keep UI snapshots separate from its 30 Hz simulation. */
@@ -126,25 +126,40 @@ export function step(r: Run, movement: Point) {
   }
   r.mine -= STEP; r.drone -= STEP;
   if (r.upgrades.mine && r.mine <= 0) {
-    r.mine = 2.2 - r.upgrades.mine * 0.2;
+    r.mine = r.evolutions.mine ? 1.8 : 2.2 - r.upgrades.mine * 0.2;
     r.mines.push({ ...r.player, id: ++r.id, ttl: 9, arm: 0.3 });
   }
   for (const mine of r.mines) {
     mine.ttl -= STEP; mine.arm -= STEP;
-    if (mine.arm > 0 || mine.ttl <= 0 || !r.enemies.some(e => e.hp > 0 && distance(e, mine) < 32)) continue;
-    const radius = 60 + r.upgrades.mine * 5;
-    r.effects.push({ kind: "blast", x: mine.x, y: mine.y, ttl: 0.4, value: 0, radius });
+    if (mine.arm > 0 || mine.ttl <= 0) continue;
+    const evolved = r.evolutions.mine;
+    if (mine.fuse === undefined) {
+      if (!r.enemies.some(e => e.hp > 0 && distance(e, mine) < (evolved ? 45 : 32))) continue;
+      if (evolved) mine.fuse = 0.65;
+    }
+    if (mine.fuse !== undefined) {
+      mine.fuse = Math.max(0, mine.fuse - STEP);
+      for (const e of r.enemies) {
+        const d = distance(e, mine);
+        if (e.hp <= 0 || e.kind === "boss" || d <= 12 || d >= 120) continue;
+        const fraction = Math.min((d - 12) / d, 110 * STEP / d);
+        e.x += (mine.x - e.x) * fraction; e.y += (mine.y - e.y) * fraction;
+      }
+      if (mine.fuse > 0) continue;
+    }
+    const radius = evolved ? 115 : 60 + r.upgrades.mine * 5;
+    r.effects.push({ kind: evolved ? "implosion" : "blast", x: mine.x, y: mine.y, ttl: 0.4, value: 0, radius });
     const mastery = r.rig.robot === "engineer" && r.rig.mastery >= 2 ? 1.25 : 1;
-    for (const e of r.enemies) if (e.hp > 0 && distance(e, mine) < radius) damage(r, e, (7 + r.upgrades.mine * 3) * power * engineering * mastery);
+    for (const e of r.enemies) if (e.hp > 0 && distance(e, mine) < radius) damage(r, e, (evolved ? 32 : 7 + r.upgrades.mine * 3) * power * engineering * mastery);
     mine.ttl = 0;
   }
   r.mines = r.mines.filter(m => m.ttl > 0).slice(-18);
   if (r.upgrades.drone && r.drone <= 0) {
-    r.drone = 0.9 - r.upgrades.drone * 0.08;
+    r.drone = r.evolutions.drone ? 0.85 : 0.9 - r.upgrades.drone * 0.08;
     dronePositions(r).forEach((position, i) => {
       const targets = r.enemies.filter(e => e.hp > 0).sort((a, b) => distance(a, position) - distance(b, position));
       const target = targets[i % Math.max(1, targets.length)];
-      if (target) projectile(r, position, Math.atan2(target.y - position.y, target.x - position.x), false, (1.5 + r.upgrades.drone) * power * engineering, 0, "drone");
+      if (target) projectile(r, position, Math.atan2(target.y - position.y, target.x - position.x), false, (r.evolutions.drone ? 12 : 1.5 + r.upgrades.drone) * power * engineering, 0, r.evolutions.drone ? "missile" : "drone");
     });
   }
   for (const e of r.enemies) {
@@ -173,6 +188,11 @@ export function step(r: Run, movement: Point) {
     b.x += b.vx * STEP; b.y += b.vy * STEP; b.ttl -= STEP;
     if (b.hostile) { if (distance(b, r.player) < 16) { hitPlayer(r); b.ttl = 0; } }
     else for (const e of r.enemies) if (e.hp > 0 && !b.hit.includes(e.id) && distance(b, e) < (e.kind === "boss" ? 34 : 19)) {
+      if (b.kind === "missile") {
+        r.effects.push({ kind: "missile", x: b.x, y: b.y, ttl: 0.4, value: 0, radius: 65 });
+        for (const target of r.enemies) if (target.hp > 0 && distance(target, b) < 65) damage(r, target, b.damage);
+        b.ttl = 0; break;
+      }
       damage(r, e, b.damage); b.hit.push(e.id); if (b.pierce-- <= 0) { b.ttl = 0; break; }
     }
   }

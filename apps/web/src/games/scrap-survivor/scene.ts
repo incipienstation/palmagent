@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import sprites from "./assets/units.webp?url";
 import floorTiles from "./assets/floor.webp?url";
-import { unitFrames, expansionTexture, robotFrames, robotTexture } from "./atlas";
+import { unitFrames, expansionTexture, robotFrames, robotTexture, finalWeaponTexture, finalEffectTexture } from "./atlas";
 import { CombatArt, combatTexture } from "./combat-art";
 import { H, W, WORLD_W, WORLD_H, PLAYER_SCREEN_Y, STEP, RELAY_SECONDS, maxHull, step, type Point, type Run } from "./engine";
 
@@ -25,10 +25,10 @@ export function createArena(parent: HTMLElement, getRun: () => Run, movement: ()
     private report = 0;
     private hull = 8;
     private seen = new WeakSet<object>();
-    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); this.load.image(expansionTexture.key, expansionTexture.url); this.load.image(robotTexture.key, robotTexture.url); }
+    preload() { this.load.image("survivor", sprites); this.load.image("floor", floorTiles); this.load.image(combatTexture.key, combatTexture.url); this.load.image(expansionTexture.key, expansionTexture.url); this.load.image(robotTexture.key, robotTexture.url); this.load.image(finalWeaponTexture.key, finalWeaponTexture.url); this.load.image(finalEffectTexture.key, finalEffectTexture.url); }
     create() {
       if (cancelled) return;
-      if (!["survivor", "floor", combatTexture.key, expansionTexture.key, robotTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
+      if (!["survivor", "floor", combatTexture.key, expansionTexture.key, robotTexture.key, finalWeaponTexture.key, finalEffectTexture.key].every(key => this.textures.exists(key))) { onReady(false); return; }
       const texture = this.textures.get("survivor"), source = texture.getSourceImage() as HTMLImageElement;
       unitFrames.forEach(([x, y, w, h], i) => texture.add(String(i), 0, Math.round(x * source.width), Math.round(y * source.height), Math.round(w * source.width), Math.round(h * source.height)));
       const robotAtlas = this.textures.get(robotTexture.key), robotSource = robotAtlas.getSourceImage() as HTMLImageElement;
