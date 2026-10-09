@@ -129,7 +129,8 @@ function fixture(t) {
   writeFileSync(join(repo,'packages/shared/src/agent-compatibility.json'), JSON.stringify({codex:{minimum:'0.154.0',exclusiveMaximum:'0.160.1',range:'>=0.154.0 <0.160.1'}}));
   writeFileSync(join(repo,'docs/CODEX-COMPATIBILITY.md'),'The declared Codex range is old.\nThe shared metadata is copied.\n');
   writeFileSync(join(repo,'scripts/sync-skills.mjs'),'');
-  writeFileSync(join(repo,'scripts/verify-local.mjs'),'if (process.env.TEST_VERIFY_FAIL) process.exit(1);\n');
+  writeFileSync(join(repo,'scripts/validate.mjs'),'if (process.env.TEST_VERIFY_FAIL) process.exit(1);\n');
+  writeFileSync(join(repo,'scripts/check-release.mjs'),'');
   for (const name of ['codex-schema-contract.mjs','codex-protocol-contract.mjs']) {
     writeFileSync(join(repo,'scripts/lib',name),readFileSync(new URL('../lib/'+name,import.meta.url)));
   }

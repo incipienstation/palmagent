@@ -3,13 +3,18 @@ import test from 'node:test';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowedChanges, gateVersion, lastSupported, nextCandidate, nextPatch, saveState, updateCompatibility } from '../lib/codex-compatibility.mjs';
+import { allowedChanges, gateVersion, lastSupported, metadataFiles, nextCandidate, nextPatch, saveState, updateCompatibility } from '../lib/codex-compatibility.mjs';
 import { compareProtocolContracts, projectSchema, protocolContracts, schemaDifferences } from '../lib/codex-schema-contract.mjs';
+import { classifyChanges } from '../lib/ci-scope.mjs';
 
 const object = (properties, required = []) => ({ type: 'object', properties, required });
 const text = { type: 'string' };
 const number = { type: 'integer' };
 const clone = value => structuredClone(value);
+
+test('compatibility promotion selects every required CI lane including browser and package checks', () => {
+  assert.deepEqual(classifyChanges(metadataFiles), { types:true, tooling:true, server:true, web:true, package:true });
+});
 
 test('every App Server method referenced by the adapter has a schema contract', () => {
   const source = readFileSync(new URL('../../apps/server/src/modules/agents/adapters/outbound/codex-interactive.ts', import.meta.url), 'utf8');
