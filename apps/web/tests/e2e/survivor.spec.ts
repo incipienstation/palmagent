@@ -7,7 +7,7 @@ test.use({ serviceWorkers: "block" });
 const game = (page: Page) => page.getByRole("dialog", { name: "Scrap Survivor", exact: true });
 const saved = (page: Page) => page.evaluate(key => JSON.parse(localStorage.getItem(key)!), SAVE_KEY);
 const enable = (page: Page) => page.addInitScript(() => localStorage.setItem("pref:adhd-mode", "on"));
-const open = (page: Page) => page.getByRole("button", { name: "Open Scrap Survivor", exact: true }).click();
+const open = (page: Page) => page.getByRole("button", { name: "Open arcade", exact: true }).click();
 
 test("storage failure keeps the in-tab run when returning to chat and reopening", async ({ page }) => {
   await enable(page);
@@ -89,9 +89,11 @@ test("follow-up send opens immediately; failure pauses play and retains the draf
 
 test("opt-in controls, movement, pause, persistence, upgrades and short-screen controls", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 }); await page.goto("/#/new/space/repo-app");
-  await expect(page.getByRole("button", { name: "Open Scrap Survivor" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click(); await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings", exact: true }); await settings.getByRole("switch", { name: "ADHD mode" }).check(); await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(page.getByRole("button", { name: "Open arcade" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Arcade", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true }); await settings.getByRole("switch", { name: "Arcade mode" }).check(); await settings.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep my draft"); await open(page);
   await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   await page.keyboard.down("ArrowRight"); await expect.poll(async () => (await saved(page))?.player.x).toBeGreaterThan(WORLD_W / 2 + 60); await page.keyboard.up("ArrowRight");
@@ -99,7 +101,7 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await expect(game(page).getByText("Paused", { exact: true })).toBeVisible();
   await game(page).getByRole("button", { name: "Close game" }).click();
   const checkpoint = await saved(page); await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep my draft");
-  await expect(page.getByRole("button", { name: "Open Scrap Survivor" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Open arcade" })).toBeFocused();
   await expect(page.locator("canvas")).toHaveCount(0);
   await page.reload(); await open(page); await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
   expect((await saved(page)).time).toBeGreaterThanOrEqual(checkpoint.time);
@@ -113,6 +115,20 @@ test("opt-in controls, movement, pause, persistence, upgrades and short-screen c
   await page.evaluate(({key,value}) => localStorage.setItem(key,value), {key:SAVE_KEY,value:serialize(run)});
   await page.reload(); await open(page); await expect(game(page).getByRole("region", { name: "Choose an upgrade" })).toBeVisible();
   await game(page).getByRole("button", { name: /Orbiting blades/ }).click(); await expect.poll(async () => (await saved(page)).upgrades.blade).toBe(1);
+  await game(page).getByRole("button", { name: "Close game" }).click();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Arcade", exact: true }).click();
+  await expect(game(page)).toBeVisible();
+  await game(page).getByRole("button", { name: "Close game" }).click();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await settings.getByRole("switch", { name: "Arcade mode", exact: true }).uncheck();
+  await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(page.getByRole("button", { name: "Open arcade" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Open arcade" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Arcade", exact: true })).toHaveCount(0);
 });
 
 for (const atlas of ["units", "combat", "expansion"]) test(`${atlas} sprite loading can retry and new attention returns to chat without resetting the run`, async ({ page }) => {
@@ -248,7 +264,7 @@ test("progress leaves the game open; final reply returns once while preserving d
   await expect(page.locator("canvas")).toHaveCount(0);
   await expect(draft).toHaveValue("Keep this draft while I play");
   await expect(draft).not.toBeFocused();
-  await expect(page.getByRole("button", { name: "Open Scrap Survivor", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Open arcade", exact: true })).toBeFocused();
   const checkpoint = await saved(page);
   await page.waitForTimeout(1100);
   expect(await saved(page)).toEqual(checkpoint);

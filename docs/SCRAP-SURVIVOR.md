@@ -1,6 +1,6 @@
 # Scrap Survivor
 
-Enable **ADHD mode** in Settings to play while an agent works. Move with the on-screen joystick,
+Enable **Arcade mode** in Settings → Experimental to play while an agent works. Move with the on-screen joystick,
 arrow keys, or WASD. Weapons fire automatically. Collect scrap to level up, choose equipment,
 and defeat the Warden, which arrives after 150 seconds. Opening the loadout pauses play and
 shows equipment levels and evolution requirements.

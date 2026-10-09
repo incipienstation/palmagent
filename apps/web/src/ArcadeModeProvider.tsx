@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { useStoredPreference } from "./hooks/useStoredPreference";
 
+// Keep the original key so existing device preferences survive the rename.
 const STORAGE_KEY = "pref:adhd-mode";
 
 function readInitial(): "on" | "off" {
@@ -11,22 +12,22 @@ function readInitial(): "on" | "off" {
   }
 }
 
-const AdhdModeContext = createContext<{
+const ArcadeModeContext = createContext<{
   enabled: boolean;
   setEnabled: (enabled: boolean) => void;
 } | null>(null);
 
-export function AdhdModeProvider({ children }: { children: ReactNode }) {
+export function ArcadeModeProvider({ children }: { children: ReactNode }) {
   const [value, setValue] = useStoredPreference(STORAGE_KEY, readInitial);
   const enabled = value === "on";
 
-  return <AdhdModeContext.Provider value={{ enabled, setEnabled: next => setValue(next ? "on" : "off") }}>
+  return <ArcadeModeContext.Provider value={{ enabled, setEnabled: next => setValue(next ? "on" : "off") }}>
     {children}
-  </AdhdModeContext.Provider>;
+  </ArcadeModeContext.Provider>;
 }
 
-export function useAdhdMode() {
-  const context = useContext(AdhdModeContext);
-  if (!context) throw new Error("useAdhdMode must be used within an AdhdModeProvider");
+export function useArcadeMode() {
+  const context = useContext(ArcadeModeContext);
+  if (!context) throw new Error("useArcadeMode must be used within an ArcadeModeProvider");
   return context;
 }
