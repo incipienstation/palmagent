@@ -215,11 +215,27 @@ async function shipJob(repository, state, save) {
   }
   assert(allowedChanges(changedPaths(work, state.base), state.mode === 'repaired-live'), 'Compatibility PR contains unexpected files');
   if (!state.validated) {
-    await run(process.execPath, ['scripts/verify-local.mjs', '--base', state.base], { directory: work, timeout: 1_500_000, label: 'Scoped source verification' });
+    // Compatibility changes select the full CI gate. Keep local source/backend
+    // checks, but let that required gate own browser and packed-install checks
+    // instead of duplicating them inside the live installation's scheduled job.
+    for (const [command, argv] of [
+      [process.execPath, ['scripts/sync-skills.mjs', '--check']],
+      [process.execPath, ['scripts/validate.mjs']],
+      [process.execPath, ['scripts/check-release.mjs']],
+      ['git', ['diff', '--check', state.base + '...' + state.head]],
+      ['pnpm', ['typecheck']],
+      ['pnpm', ['pkg:check']],
+      ['pnpm', ['server:contracts']],
+      ['pnpm', ['server:smoke']],
+    ]) await run(command, argv, { directory: work, label: 'Promotion check: ' + argv.join(' ') });
     state.validated = true; await save();
   }
-  const push = ['push', 'origin', 'HEAD:refs/heads/' + state.branch];
-  if (state.previousHead) push.push('--force-with-lease=refs/heads/' + state.branch + ':' + state.previousHead);
+  const remoteRef = 'refs/heads/' + state.branch;
+  const remoteHead = (await run('git', ['ls-remote', '--refs', 'origin', remoteRef], { directory: work })).split(/\s+/)[0];
+  assert(!remoteHead || [state.head, state.previousHead].includes(remoteHead), 'Compatibility remote branch changed; holding');
+  // A local rebase may precede the first push. Lease the observed remote (or
+  // its absence), never an unpublished local commit; still reject concurrent changes.
+  const push = ['push', 'origin', 'HEAD:' + remoteRef, '--force-with-lease=' + remoteRef + ':' + remoteHead];
   await run('git', push, { directory: work });
   delete state.previousHead; await save();
   if (!pr) {
