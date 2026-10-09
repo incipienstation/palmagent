@@ -287,40 +287,15 @@
    Keep the textarea mounted and animate padding rather than reordering it. */
 .composer-input {
   height: 44px;
+  scrollbar-width: none;
   transition: height 200ms ease-out, padding 200ms ease-out;
 }
-/* Match ScrollArea's border-colored rounded thumb while the textarea keeps
-   native editing and scrolling. Let forced-colors use the system scrollbar. */
-@media (forced-colors: none) {
-  .composer-input {
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-  @supports selector(::-webkit-scrollbar) {
-    .composer-input {
-      /* Non-auto standard values override the detailed pseudo-element styles. */
-      scrollbar-width: auto;
-      scrollbar-color: auto;
-    }
-    .composer-input::-webkit-scrollbar {
-      width: 0.625rem;
-      height: 0.625rem;
-    }
-    .composer-input::-webkit-scrollbar-track,
-    .composer-input::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-    .composer-input::-webkit-scrollbar-track {
-      /* Keep the thumb below the Composer's rounded top corners. */
-      margin-block: 0.5rem;
-    }
-    .composer-input::-webkit-scrollbar-thumb {
-      border: 1px solid transparent;
-      border-radius: 999px;
-      background-color: var(--border);
-      background-clip: padding-box;
-    }
-  }
+.composer-input::-webkit-scrollbar {
+  display: none;
+}
+@media (forced-colors: active) {
+  .composer-scrollbar-thumb { background: CanvasText; forced-color-adjust: none; }
+  .composer-scrollbar:focus-visible { outline: 1px solid Highlight; }
 }
 
 .composer-input::placeholder {

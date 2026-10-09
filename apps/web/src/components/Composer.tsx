@@ -1,4 +1,5 @@
 import { VoiceWaveform } from "./VoiceWaveform";
+import { ComposerScrollbar } from "./ComposerScrollbar";
 import { useVoiceInput } from "../use-voice-input";
 import { Alert } from "./ui/alert";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -106,7 +107,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   useLayoutEffect(() => {
     // Removing a focused action (Send becoming Stop, for example) does not
     // dispatch blur in every browser. Reconcile after DOM updates as well.
-    if (focused && !textarea.current?.parentElement?.contains(document.activeElement)) setFocused(false);
+    if (focused && !textarea.current?.closest(".composer")?.contains(document.activeElement)) setFocused(false);
   });
   const composing = useRef(false);
   const { shortcut } = useSendShortcut();
@@ -168,6 +169,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
     }}
     className={cn("composer overflow-clip rounded-3xl p-1", (busy || stopping) && "composer-pending")}>
+    <div className="relative order-1 basis-full" hidden={compactVoice}>
     <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
       onChange={(e) => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
       onSelect={e => picker.cursor(e.currentTarget)}
@@ -191,8 +193,10 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         else if (!controls) event.currentTarget.form?.requestSubmit();
       }}
       hidden={compactVoice} placeholder={hint.text} data-placeholder-fading={hint.fading} disabled={disabled || busy}
-      className="composer-input order-1 max-h-36 basis-full px-3 py-2.5"
+      className="composer-input block w-full max-h-36 px-3 py-2.5"
     />
+    <ComposerScrollbar textarea={textarea} value={value} />
+    </div>
     {voice.active && <span role="status" className="sr-only">{voice.state === "stopping" ? "Finishing transcription…" : "Recording…"}</span>}
     {voice.error && <InputGroupAddon align="block-start" className="px-3">
       <Alert variant="destructive">{voice.error}</Alert>

@@ -183,6 +183,77 @@ for (const width of [320, 1280]) test(`long draft scrolling stays inside the rou
   await assertViewportLocked(page);
 });
 
+for (const width of [320, 1280]) for (const theme of ["light", "dark"]) test(`Composer scrollbar preserves text width through overflow transitions (${width}px, ${theme})`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await page.goto(`/?__theme=${theme}#/new/space/repo-app`);
+  const input = page.getByLabel("Prompt", { exact: true });
+  const bar = page.getByRole("scrollbar", { name: "Scroll message" });
+  await input.focus();
+  await expect(input).toHaveCSS("height", "56px");
+  const initialWidth = await input.evaluate(el => el.clientWidth);
+  for (const lines of [5, 6, 5, 20, 2]) {
+    await input.fill(Array(lines).fill("Editable text").join("\n"));
+    const samples = await input.evaluate(el => {
+      const animations = el.getAnimations();
+      for (const animation of animations) animation.pause();
+      const samples = [0, 0.25, 0.5, 0.75, 1].map(fraction => {
+        for (const animation of animations) animation.currentTime = Number(animation.effect!.getComputedTiming().duration) * fraction;
+        return { width: el.clientWidth, gutter: el.offsetWidth - el.clientWidth };
+      });
+      for (const animation of animations) animation.finish();
+      return samples;
+    });
+    expect(samples.every(sample => sample.width === initialWidth && sample.gutter === 0)).toBe(true);
+    if (lines >= 6) await expect(bar).toBeVisible();
+    else await expect(bar).toBeHidden();
+  }
+  await assertViewportLocked(page);
+});
+
+for (const forcedColors of ["none", "active"] as const) test(`Composer overlay scrollbar supports drag, wheel, keyboard, and editing (${forcedColors})`, async ({ page }) => {
+  await page.emulateMedia({ forcedColors });
+  await page.goto("/#/new/space/repo-app");
+  const input = page.getByLabel("Prompt", { exact: true });
+  const draft = "Keep this draft editable\n".repeat(40);
+  await input.fill(draft);
+  await expect(input).toHaveCSS("height", "144px");
+  const bar = page.getByRole("scrollbar", { name: "Scroll message" });
+  await expect(bar).toBeVisible();
+  await input.press("Control+Home");
+  await input.evaluate(el => { el.scrollTop = 0; });
+  await expect(bar).toHaveAttribute("aria-valuenow", "0");
+  const box = (await bar.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBeGreaterThan(500);
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue(draft);
+  await bar.focus();
+  await bar.press("Home");
+  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBe(0);
+  await bar.press("PageDown");
+  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBeGreaterThan(100);
+  await bar.press("End");
+  await expect.poll(() => input.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(1);
+  await bar.press("Home");
+  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBe(0);
+  await bar.hover();
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await input.focus();
+  await input.press("Control+End");
+  await input.press("x");
+  await input.press("Shift+Home");
+  await input.press("y");
+  await expect(input).toHaveValue(`${draft}y`);
+  await expect.poll(() => input.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(24);
+  await input.fill("Short draft");
+  await expect(bar).toBeHidden();
+  await assertViewportLocked(page);
+});
+
 test("composer controls stay reachable with a keyboard and long drafts", async ({ page }) => {
   const width = 360;
   await page.setViewportSize({ width, height: 780 });
