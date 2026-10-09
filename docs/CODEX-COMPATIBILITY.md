@@ -102,8 +102,11 @@ image handling, MCP integration, or end-to-end session behavior.
 A repair may change only the Codex adapters, their contract tests, and the
 declarative consumed-protocol specification. It cannot change the comparison
 engine, maintenance gate, or workflows. The controller rereads the repaired
-specification and verifies the candidate before running the authenticated matrix
-and normal source checks. Automatic delivery
+specification and verifies the candidate before running the authenticated matrix.
+Local promotion checks cover metadata, source safety, types, tooling, server
+contracts, and runtime smoke. Browser and packed-install checks run in the full
+required CI gate; the scheduled job does not duplicate them on the installation
+host. Automatic delivery
 uses a version-specific feature PR into `develop`, requires successful exact-head
 CI, and respects review requirements and branch protection. Closed/draft PRs,
 unexpected file changes, changed PR identity, and unresolved failures remain
