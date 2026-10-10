@@ -1,0 +1,161 @@
+name: PWA cache experiment
+
+on:
+  pull_request:
+    branches: [develop]
+    paths: [.github/workflows/web-cache-experiment.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-cache-experiment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Preserve the exact source used in the first shared-build experiment.
+  EXPERIMENT_SOURCE: 34d9f6f57a5ae0c0a3dcd28a2c6b71118a3dc533
+
+jobs:
+  baseline:
+    if: github.head_ref == 'feature/ci-web-cache'
+    name: trial ${{ matrix.trial }} / baseline / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [1, 2]
+        shard: [1, 2, 3, sw]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPERIMENT_SOURCE }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build PWA per runner
+        run: pnpm web:build
+      - name: Hash complete output tree
+        id: digest
+        run: echo "value=$(find apps/web/dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      - name: Verify browser shard
+        if: matrix.shard != 'sw'
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/3
+      - name: Verify service worker
+        if: matrix.shard == 'sw'
+        run: node apps/web/scripts/test-sw-update.mjs
+
+  cold:
+    needs: baseline
+    outputs:
+      digest: ${{ steps.digest.outputs.value }}
+    name: trial ${{ matrix.trial }} / cold / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [1, 2]
+        shard: [1, 2, 3, sw]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPERIMENT_SOURCE }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Restore exact PWA cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/web/dist
+          # Separate trial/shard namespaces force every cold runner to miss.
+          key: pwa-direct-experiment-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ env.EXPERIMENT_SOURCE }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.trial }}-${{ matrix.shard }}
+      - name: Require cold cache outcome
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: test "$CACHE_HIT" != true
+      - name: Build PWA per runner
+        run: pnpm web:build
+      - name: Hash complete output tree
+        id: digest
+        run: echo "value=$(find apps/web/dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      - name: Verify browser shard
+        if: matrix.shard != 'sw'
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/3
+      - name: Verify service worker
+        if: matrix.shard == 'sw'
+        run: node apps/web/scripts/test-sw-update.mjs
+      - uses: actions/cache/save@v4
+        with:
+          path: apps/web/dist
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+  warm:
+    needs: cold
+    name: trial ${{ matrix.trial }} / warm / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [1, 2]
+        shard: [1, 2, 3, sw]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPERIMENT_SOURCE }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Restore exact PWA cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/web/dist
+          # Separate trial/shard namespaces force every cold runner to miss.
+          key: pwa-direct-experiment-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc') }}-${{ env.EXPERIMENT_SOURCE }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.trial }}-${{ matrix.shard }}
+          fail-on-cache-miss: true
+      - name: Require warm cache outcome
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+      - name: Hash complete output tree
+        id: digest
+        run: echo "value=$(find apps/web/dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Require byte-identical cached output
+        env:
+          ACTUAL_DIGEST: ${{ steps.digest.outputs.value }}
+          EXPECTED_DIGEST: ${{ needs.cold.outputs.digest }}
+        run: |
+          test -f apps/web/dist/index.html
+          test -f apps/web/dist/sw.js
+          test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
+      - name: Install Chromium
+        run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      - name: Verify browser shard
+        if: matrix.shard != 'sw'
+        run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/3
+      - name: Verify service worker
+        if: matrix.shard == 'sw'
+        run: node apps/web/scripts/test-sw-update.mjs
