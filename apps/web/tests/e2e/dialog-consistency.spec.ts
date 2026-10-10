@@ -85,7 +85,7 @@ test("Settings stays centered, preserves scroll across resizing, and restores ne
   const signOut = dialog.getByRole("button", { name: "Sign out", exact: true });
   await signOut.click();
   const alert = page.getByRole("alertdialog");
-  await expect(alert).toBeVisible();
+  await settled(alert);
   await expect(alert.getByRole("button", { name: "Stay", exact: true })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(alert).toHaveCount(0);
