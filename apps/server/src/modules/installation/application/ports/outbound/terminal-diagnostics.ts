@@ -8,6 +8,6 @@ export interface DiagnosticRegistry {
   close(): void;
 }
 export interface TerminalDiagnosticsHost {
-  platform(): TerminalPlatform;
+  platform(daemonData?: string): TerminalPlatform;
   registry(directory: string): DiagnosticRegistry;
 }

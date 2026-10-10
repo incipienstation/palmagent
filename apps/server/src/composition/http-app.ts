@@ -41,7 +41,8 @@ export function createApp(deps: HttpDependencies) {
   app.use("/api/*", (c, next) => (
     c.req.method === "POST" && IMAGE_BODY_PATH.test(c.req.path) ? imageBody : standardBody
   )(c, next));
-  const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol, ...(deps.build ? { build: deps.build } : {}) }, 200))
+  const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol,
+    activeRoutineScripts: deps.routines.activeScriptCount ?? 0, ...(deps.build ? { build: deps.build } : {}) }, 200))
     .route("/api/auth", authRoutes(deps))
     .route("/api/agents", agentRoutes(deps))
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))

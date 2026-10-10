@@ -68,7 +68,7 @@ async function diagnoseTerminal(cfg: InstallConfig, options: {
   if (cfg.mode !== "package" || !cfg.executionNode || !cfg.pkgDir) throw new Error("Terminal diagnostics require a package installation with retained runtimes");
   if (userInfo().username !== cfg.user || statSync(cfg.dbPath).uid !== process.getuid?.()) throw new Error("Run terminal diagnostics as the installation owner");
   if (cfg.authOrigin !== `https://${cfg.domain}`) throw new Error("Terminal diagnostics require the installation's exact HTTPS origin");
-  const platform = options.platform ?? host.platform();
+  const platform = options.platform ?? host.platform(cfg.supervisor === "palmagentd" ? cfg.dataDir : undefined);
   if (!platform.supervisor.capabilities.available) throw new Error(platform.supervisor.capabilities.reason ?? "Terminal services unavailable");
   if (!platform.shell.diagnosticCommand) throw new Error("Terminal diagnostics are not supported by this shell adapter");
   const unlock = acquireUpdateLock(dirname(userConfigPath()));

@@ -1,5 +1,6 @@
 // Install and boot exactly the tarball packed by this run, with isolated state.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
@@ -45,6 +46,17 @@ try {
   assert(!has("public") && !has("docs/archive"), "unexpected fallback or archive");
   execFileSync("npm", ["init", "-y"], { ...options, stdio: "ignore" });
   execFileSync("npm", ["install", tarball], options);
+  const installed = join(scratch, "node_modules", pkg.name);
+  const daemonManifest = JSON.parse(readFileSync(join(installed, "daemon/manifest.json"), "utf8"));
+  assert.equal(daemonManifest.protocol, 1);
+  assert.equal(daemonManifest.sourceCommit, buildInfo.sourceCommit);
+  for (const platform of ["linux-x64", "linux-arm64"]) {
+    const bytes = readFileSync(join(installed, "daemon", platform, "palmagentd"));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), daemonManifest.artifacts[platform]);
+  }
+  const daemon = join(installed, "daemon", `${process.platform}-${process.arch}`, "palmagentd");
+  assert.deepEqual(JSON.parse(execFileSync(daemon, ["version"], { env, encoding: "utf8" })),
+    { version: pkg.version, sourceCommit: buildInfo.sourceCommit, protocol: 1 });
   const bin = join(scratch, "node_modules/.bin", binName);
   assert.equal(execFileSync(bin, ["--version"], { env, encoding: "utf8" }).trim(), pkg.version);
   assert.match(execFileSync(bin, ["terminal", "--help"], { env, encoding: "utf8" }), /Ctrl\+\]/);

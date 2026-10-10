@@ -3,6 +3,7 @@ import type { CreateRoutineRequest, Routine, RoutineRun, UpdateRoutineRequest } 
 
 /** Operations accepted by the routines module. */
 export interface RoutineUseCases {
+  readonly activeScriptCount?: number;
   start(): void;
   stop(): Promise<void>;
   create(req: CreateRoutineRequest): Routine;

@@ -29,14 +29,17 @@ flowchart LR
   Updater[Update executor] --> Web
 ```
 
-The execution control boundary uses a shared SQLite registry instead of a separate
-long-lived control daemon. Web clients and finishing hosts reconcile admission
+Execution admission and durable control use a shared SQLite registry. The
+[native supervisor](DAEMON.md) controls process lifetimes separately. Web clients and finishing hosts reconcile admission
 through transactions. Journals are logically separated by execution in that
 registry, rather than stored in one database file per invocation. This keeps the
-execution database separate from product migrations without another service that
-could become a shared restart dependency.
+execution database separate from product migrations without coupling existing hosts to a supervisor restart.
 
 ## Process and artifact boundaries
+
+New packages use the [Rust daemon](DAEMON.md) and its delegated host groups.
+The following service layout remains supported for existing installations until
+an idle `setup` migration.
 
 `palmagent.service` serves HTTP and the PWA. Each invocation runs under its own
 `palmagent-execution@<uuid>.service`, with no `PartOf`, `BindsTo`, or restart
@@ -137,8 +140,9 @@ retain their original release and gain these changes only in a new invocation.
 3. Enter the existing short admission barrier and require the live web server to
    acknowledge both maintenance and independent execution support. Existing runs
    and provider input channels remain active.
-4. Record previous and target configuration atomically. Install the application
-   units, save the selected release atomically, and restart only the web service.
+4. Record previous and target configuration atomically. For daemon installations,
+   replace the control daemon and web process through private IPC; legacy installs
+   update application units. Routine scripts finish before web activation.
 5. Verify the exact running version and health. Update the one-shot executor's
    release reference and record success. The PWA prepares its service worker,
    checkpoints per-tab state, and switches at a quiet moment automatically.

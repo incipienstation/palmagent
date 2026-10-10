@@ -51,7 +51,7 @@ function installation(dataDir: string, expectedDb: string): { cfg?: InstallConfi
     return { availability: "installation-mismatch" };
   }
   const owner = cfg.user !== "root" && cfg.user === userInfo().username;
-  return { cfg, availability: owner && process.platform === "linux" && canSudoNonInteractive() ? "available" : "permission-required" };
+  return { cfg, availability: owner && process.platform === "linux" && (cfg.supervisor === "palmagentd" || canSudoNonInteractive()) ? "available" : "permission-required" };
 }
 
 export function runUpdateSettingsCommand(args: string[], checkAvailability = checkUpdateAccess): UpdateSettingsCommandResult {
@@ -81,7 +81,7 @@ export function runUpdateSettingsCommand(args: string[], checkAvailability = che
     if (changing && (availability !== "available" || !cfg)) return { ok: false, error: "unavailable" };
     if (cfg && changing) {
       if (change) applyUpdateSettings(cfg, change);
-      retireAutoUpdateTimer();
+      if (!cfg.supervisor) retireAutoUpdateTimer();
       const check = action === "visit" || action === "check" || (change && ("channel" in change || change.autoUpdate));
       if (check) {
         const state = checkAvailability(cfg, action !== "visit");
@@ -110,7 +110,7 @@ export function runUpdateSettingsCommand(args: string[], checkAvailability = che
           prepareUpdateService(cfg);
           // The executor also takes this lock; release before asking systemd to start it.
           unlock?.(); unlock = undefined;
-          startRequestedUpdate();
+          startRequestedUpdate(cfg);
         }
       }
     }

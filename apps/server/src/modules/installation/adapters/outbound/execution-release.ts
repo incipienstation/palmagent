@@ -7,13 +7,19 @@ import type { InstallConfig } from "./config.js";
 import { ensurePrivateDirectory } from "../../../../platform/filesystem/private-files.js";
 import { run } from "./sh.js";
 import { EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
+import { DAEMON_PROTOCOL } from "@palmagent/shared/daemon";
+import { daemonBinary } from "./daemon-runtime.js";
 
-export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin" }
+export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number }
 export function releaseContract(directory: string): ReleaseContract {
   const contract = JSON.parse(readFileSync(join(directory, "runtime-contract.json"), "utf8"));
   if (contract.executionProtocol !== EXECUTION_PROTOCOL || contract.productStorage !== 1 || contract.applicationApi !== 1) throw new Error("Candidate runtime or storage contract is incompatible");
   if (contract.terminalProtocol !== undefined && contract.terminalProtocol !== TERMINAL_PROTOCOL) throw new Error("Candidate terminal protocol is incompatible");
   if (contract.hostSetup !== undefined && contract.hostSetup !== 1) throw new Error("Candidate host setup protocol is incompatible");
+  if (contract.daemonProtocol !== undefined) {
+    if (contract.daemonProtocol !== DAEMON_PROTOCOL) throw new Error("Candidate daemon protocol is incompatible");
+    daemonBinary(directory);
+  }
   for (const file of ["cli.js", "server.js", "execution-host.js", "execution-launcher.js"]) {
     if (!existsSync(join(directory, file))) throw new Error("Candidate release is incomplete");
   }
@@ -70,6 +76,7 @@ function stageRelease(cfg: InstallConfig, version: string): InstallConfig {
 function verifyActiveExecutionCompatibility(cfg: InstallConfig): void {
   if (!cfg.executionNode || !cfg.pkgDir) throw new Error("Independent execution is not enabled");
   const contract = releaseContract(cfg.pkgDir);
+  if (cfg.supervisor === "palmagentd" && contract.daemonProtocol !== DAEMON_PROTOCOL) throw new Error("Candidate cannot control this daemon installation");
   const terminalDirectory = join(cfg.dataDir, "terminals");
   if (existsSync(terminalDirectory)) {
     const terminals = inventory.terminals(terminalDirectory);

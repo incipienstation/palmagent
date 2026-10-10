@@ -150,6 +150,7 @@ jobs:
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/candidate
+          pnpm exec tsx apps/server/scripts/daemon-systemd-smoke.ts
       - name: Save the tested PWA build
         if: steps.pwa-build.outcome == 'success'
         uses: actions/cache/save@v4

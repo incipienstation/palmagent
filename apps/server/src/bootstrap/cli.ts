@@ -20,6 +20,7 @@ import { ensurePrivateDirectory } from "../platform/filesystem/private-files.js"
 import { getUserConfig, initUserConfig, setUserChannel } from "../modules/installation/adapters/outbound/user-config.js";
 import { compatiblePlugin } from "../modules/installation/domain/release-policy.js";
 import { loadConfig, resolveDataDir } from "../modules/installation/adapters/outbound/config.js";
+import { daemonRequest } from "../platform/process/daemon-client.js";
 import { userConfigPath } from "../modules/installation/adapters/outbound/user-config.js";
 import { readUpdateAccess } from "../modules/installation/adapters/outbound/update-access.js";
 import { acquireUpdateLock } from "../modules/installation/adapters/outbound/update-state.js";
@@ -131,6 +132,7 @@ Commands:
   routine      Manage scheduled agent tasks and scripts (run routine --help)
   settings     Manage Space search paths (run settings --help)
   terminal     Manage persistent shells (run terminal --help)
+  daemon       Inspect or replace the native supervisor (status|restart)
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove application units (proxy/TLS preserved; --purge removes data)
@@ -179,6 +181,14 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "terminal") return terminalCommand(rest);
+  if (cmd === "daemon") {
+    const [action, ...options] = rest;
+    if (!["status", "restart"].includes(action)) throw new Error("usage: daemon status|restart [--data-dir <path>]");
+    const cfg = loadConfig({ dataDir: parseFlags(options).get("data-dir"), requireInstalled: true });
+    if (cfg.supervisor !== "palmagentd") throw new Error("This installation uses the legacy supervisor; run setup during an idle window to migrate");
+    console.log(JSON.stringify(daemonRequest(cfg.dataDir, { action: action === "restart" ? "replace" : "status" })));
+    return;
+  }
   if (cmd === "routine") return routineCommand(rest);
   if (cmd === "settings") return settingsCommand(rest);
   if (rest.includes("--help") || rest.includes("-h")) {

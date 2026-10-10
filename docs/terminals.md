@@ -49,8 +49,9 @@ or extra user-managed process is required. The Linux package installer provision
 the host services and private IPC. Normal Node/npm and host setup prerequisites
 still apply, including native-module build tools on targets without prebuilt binaries.
 
-The first supported platform is Linux with systemd and an unprivileged installation
-owner. Run the normal Palmagent setup/update flow to install its terminal services.
+The first supported platform is Linux with an unprivileged installation owner.
+New installations use the [native supervisor and Linux bootstrap](DAEMON.md);
+existing installations retain their systemd host services until idle setup migration. Run the normal Palmagent setup/update flow to install its terminal services.
 Source-mode installations and other OSes report the feature as unavailable.
 Browser shell access requires enabled sign-in. Commands run with the installation
 owner's host permissions in the owner's login shell.
@@ -83,9 +84,9 @@ flowchart LR
   macOS or Windows support supplies its own supervision, IPC, shell discovery, and
   installation integration while reusing the registry, host protocol, service, and UI.
   They are extension points, not claims of current support.
-- Linux uses node-pty, systemd template services, and owner-only Unix sockets.
-  Terminals belong to their own resource-limited slice and use full control-group
-  termination. They have no restart or dependency coupling to the web service.
+- Linux uses node-pty and owner-only Unix sockets. The native daemon owns
+  delegated terminal cgroups; older installations use systemd template services.
+  Both apply aggregate resource limits and full control-group termination. They have no restart or dependency coupling to the web service.
 - Each terminal reserves an idempotent registry entry before launch, pins its
   immutable package and Node runtime, and claims a single host process. An uncertain
   launch retains its reservation; reconciliation never silently creates a new shell.

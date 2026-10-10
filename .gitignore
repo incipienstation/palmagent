@@ -8,6 +8,7 @@ node_modules/
 # Build output.
 dist/
 build/
+target/
 
 # Session-local git worktrees. Editing here is worktree-only (see AGENTS.md).
 .claude/worktrees/

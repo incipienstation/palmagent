@@ -52,7 +52,11 @@ are authorized by diagnosis alone. Investigate any remaining user symptom.
 
 For each failing area, gather the live evidence the CLI does not print. Inspect
 the saved installation configuration and doctor report to identify its execution
-mode. All installations use **`palmagent.service`** for the web/SSE server:
+mode. For `SUPERVISOR=palmagentd`, inspect `palmagentd.service` and
+`<data-dir>/daemon/logs/` as described in the shared bootstrap guidance. The daemon
+owns web recovery; individual provider hosts must not be restarted.
+
+Legacy installations use **`palmagent.service`** for the web/SSE server:
 
 ```bash
 systemctl status palmagent.service --no-pager
