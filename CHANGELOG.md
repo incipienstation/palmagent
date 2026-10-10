@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.167
+
 ### Added
 
 - A translucent scroll-to-bottom button returns to the latest conversation content and resumes following live output without disturbing your draft.
