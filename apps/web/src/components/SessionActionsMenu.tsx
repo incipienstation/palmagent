@@ -132,32 +132,30 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
         }}
         onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}
       >
-        <DialogBody contentClassName="flex flex-col gap-3">
-          <DialogHeader><DialogTitle>Rename session</DialogTitle></DialogHeader>
-          <form ref={form} className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-            <FieldGroup>
-              <Field data-invalid={!!fieldError || undefined}>
-                <FieldLabel htmlFor={id}>Session name</FieldLabel>
-                <Input
-                  id={id}
-                  name="title"
-                  value={title}
-                  aria-invalid={!!fieldError || undefined}
-                  aria-describedby={fieldError ? `${id}-error` : undefined}
-                  onChange={(event) => setTitle(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();
-                  }}
-                />
-                {fieldError && <FieldError id={`${id}-error`}>{fieldError}</FieldError>}
-              </Field>
-            </FieldGroup>
-            <DialogFooter className="flex-row justify-end">
-              <Button type="button" variant="outline" onClick={cancel}>Cancel</Button>
-              <Button type="submit" disabled={!valid}>Save</Button>
-            </DialogFooter>
-          </form>
-        </DialogBody>
+        <DialogHeader><DialogTitle>Rename session</DialogTitle></DialogHeader>
+        <form ref={form} className="flex min-h-0 flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+          <DialogBody><FieldGroup>
+            <Field data-invalid={!!fieldError || undefined}>
+              <FieldLabel htmlFor={id}>Session name</FieldLabel>
+              <Input
+                id={id}
+                name="title"
+                value={title}
+                aria-invalid={!!fieldError || undefined}
+                aria-describedby={fieldError ? `${id}-error` : undefined}
+                onChange={(event) => setTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();
+                }}
+              />
+              {fieldError && <FieldError id={`${id}-error`}>{fieldError}</FieldError>}
+            </Field>
+          </FieldGroup></DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={cancel}>Cancel</Button>
+            <Button type="submit" disabled={!valid}>Save</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

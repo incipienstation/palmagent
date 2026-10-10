@@ -3,13 +3,24 @@ import * as React from "react";
 import { ScrollArea } from "./scroll-area";
 import { Drawer as DrawerPrimitive } from "vaul";
 
+import { X } from "lucide-react";
+import { Button } from "./button";
 import { cn } from "@/lib/utils";
 
-// vaul bottom drawer — replaces the hand-rolled .sheet/.sheet-scrim bottom
-// sheet (drag-to-dismiss, scrim and body scroll lock come from the library).
+// Keep one primitive tree through viewport changes so drafts, focus and scroll survive.
+const desktopQuery = "(min-width: 640px)";
+const subscribeDesktop = (notify: () => void) => {
+  const query = window.matchMedia(desktopQuery);
+  query.addEventListener("change", notify);
+  return () => query.removeEventListener("change", notify);
+};
+const isDesktop = () => window.matchMedia(desktopQuery).matches;
 function Drawer(props: React.ComponentProps<typeof DrawerPrimitive.Root>) {
   const { depth, ...back } = useBackDismiss(props);
-  return <BackLayerScope depth={depth}><DrawerPrimitive.Root data-slot="drawer" {...props} {...back} /></BackLayerScope>;
+  const desktop = React.useSyncExternalStore(subscribeDesktop, isDesktop, () => false);
+  const centered = desktop && (!props.direction || props.direction === "bottom");
+  return <BackLayerScope depth={depth}><DrawerPrimitive.Root data-slot="drawer" {...props} {...back}
+    handleOnly={centered || props.handleOnly} repositionInputs={centered ? false : props.repositionInputs} /></BackLayerScope>;
 }
 
 function DrawerTrigger(props: React.ComponentProps<typeof DrawerPrimitive.Trigger>) {
@@ -42,23 +53,29 @@ function DrawerContent({
   children,
   side = "bottom",
   size = "content",
+  showClose = true,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left"; size?: "content" | "panel" }) {
+}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left"; size?: "content" | "panel"; showClose?: boolean }) {
   return (
     <DrawerPortal>
       <DrawerOverlay />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
+        data-side={side}
+        data-close={showClose || undefined}
         className={cn(
-          "fixed z-50 flex min-h-0 flex-col bg-card",
+          "responsive-drawer fixed z-50 flex min-h-0 flex-col bg-card [&[data-close]_[data-slot=drawer-header]]:pr-14",
           side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : "inset-x-0 bottom-0 mx-auto h-auto max-h-[min(90dvh,calc(var(--app-height,100dvh)-16px))] w-full max-w-[720px] rounded-t-3xl border border-b-0 border-border pb-[var(--safe-bottom,0px)]",
           side === "bottom" && size === "panel" && "h-[680px]",
           className,
         )}
         {...props}
       >
-        {side === "bottom" && <div aria-hidden="true" className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />}
+        {side === "bottom" && <div aria-hidden="true" data-slot="drawer-handle" className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input sm:hidden" />}
         {children}
+        {showClose && <DrawerClose asChild>
+          <Button variant="ghost" size="icon" className="absolute top-2 right-2 size-11" aria-label="Close"><X /></Button>
+        </DrawerClose>}
       </DrawerPrimitive.Content>
     </DrawerPortal>
   );
@@ -91,7 +108,7 @@ function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="drawer-footer"
       className={cn(
-        "flex shrink-0 flex-col gap-2 px-4 pt-1 pb-4",
+        "flex shrink-0 flex-col-reverse gap-2 px-4 pt-1 pb-4 sm:flex-row sm:flex-wrap sm:justify-end",
         className,
       )}
       {...props}

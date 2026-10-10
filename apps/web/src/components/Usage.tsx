@@ -75,8 +75,8 @@ function Installation({ status, canUpdate, stale }: { status?: AgentInstallation
             {status.latestCompatible === false && <Alert variant="warning">The latest release is outside Palmagent’s tested CLI range. Some agent features may not work.</Alert>}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction disabled={running || stale} onClick={() => mutation.mutate()}>Update {agentName(status.agent)}</AlertDialogAction>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={running || stale} onClick={() => mutation.mutate()}>Update {agentName(status.agent)}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>}

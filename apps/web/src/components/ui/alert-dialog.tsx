@@ -44,7 +44,7 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(var(--app-height,100dvh)-2rem)] flex-col overflow-y-auto w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
@@ -54,18 +54,15 @@ function AlertDialogContent({
 }
 
 function AlertDialogHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="alert-dialog-header" className={cn("flex flex-col gap-1.5", className)} {...props} />;
+  return <div data-slot="alert-dialog-header" className={cn("flex min-h-0 flex-col gap-1.5 overflow-y-auto", className)} {...props} />;
 }
 
-// Mobile-first: stacked action pair — destructive confirm ON TOP (thumb-reachable),
-// dismiss below. Plain `flex-col` relies on DECLARATION ORDER: consumers write
-// <AlertDialogAction> first (renders on top), <AlertDialogCancel> second (below).
-// Do NOT switch to column-reverse — that would invert this intended order.
+// Declare cancel before action: desktop follows DOM order, mobile shows action first.
 function AlertDialogFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-dialog-footer"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
       {...props}
     />
   );
@@ -108,7 +105,7 @@ function AlertDialogAction({
     <Button variant={variant} size={size} asChild>
       <AlertDialogPrimitive.Action
         data-slot="alert-dialog-action"
-        className={cn("w-full", className)}
+        className={cn("w-full sm:w-auto", className)}
         {...props}
       />
     </Button>
@@ -125,7 +122,7 @@ function AlertDialogCancel({
     <Button variant={variant} size={size} asChild>
       <AlertDialogPrimitive.Cancel
         data-slot="alert-dialog-cancel"
-        className={cn("w-full", className)}
+        className={cn("w-full sm:w-auto", className)}
         {...props}
       />
     </Button>

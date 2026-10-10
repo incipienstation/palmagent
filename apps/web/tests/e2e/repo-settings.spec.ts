@@ -43,7 +43,8 @@ test("search settings add and remove paths, disable discovery, and restore insta
   await section.getByRole("button", { name: "Use installation defaults" }).click();
   await expect(section.getByText("Using installation defaults.", { exact: true })).toBeVisible();
   await expect(section.getByText("/projects", { exact: true })).toBeVisible();
-  expect(changes).toEqual([{ action: "add", paths: [longPath] }, { action: "remove", paths: ["/projects"] },
+  // The optimistic UI can settle before the request reaches the route handler.
+  await expect.poll(() => changes).toEqual([{ action: "add", paths: [longPath] }, { action: "remove", paths: ["/projects"] },
     { action: "remove", paths: [longPath] }, { action: "reset" }]);
   await page.reload();
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();

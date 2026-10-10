@@ -470,3 +470,21 @@
   .survivor-item-frame { width: 58px; height: 66px; }
   .survivor-upgrade-heading h2 { font-size: 19px; }
 }
+
+/* A bottom drawer becomes a centered dialog without remounting its contents.
+   Vaul's translate animation and overscroll filler belong only to mobile sheets. */
+@media (min-width: 640px) {
+  .responsive-drawer[data-side="bottom"] {
+    inset: 50% auto auto 50%;
+    width: calc(100% - 2rem);
+    max-height: calc(var(--app-height, 100dvh) - 2rem);
+    margin: 0;
+    padding-bottom: 0;
+    border-bottom-width: 1px;
+    border-radius: var(--radius);
+    translate: -50% -50%;
+    transform: none !important;
+    animation: none !important;
+  }
+  .responsive-drawer[data-side="bottom"]::after { display: none; }
+}

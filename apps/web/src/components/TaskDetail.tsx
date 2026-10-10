@@ -136,8 +136,8 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             <AlertDialogDescription>Summarize earlier messages to free context space. Some details may be omitted from the model’s context. Your visible conversation and draft stay in place.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction variant="default" disabled={!!compaction.unavailable} onClick={compaction.confirm}>Compact context</AlertDialogAction>
             <AlertDialogCancel>Not now</AlertDialogCancel>
+            <AlertDialogAction variant="default" disabled={!!compaction.unavailable} onClick={compaction.confirm}>Compact context</AlertDialogAction>
           </AlertDialogFooter>
           {compaction.unavailable && <p role="status" className="text-sm text-muted-foreground">{compaction.unavailable}</p>}
         </AlertDialogContent>
@@ -267,7 +267,10 @@ function TaskActionsMenu({
       </SessionActionsMenu>
 
       <AlertDialog open={confirm === "cancel"} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={event => {
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+        }}>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel this task?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -276,14 +279,17 @@ function TaskActionsMenu({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction variant="destructive" onClick={onCancel}>Cancel task</AlertDialogAction>
             <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onCancel}>Cancel task</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       <AlertDialog open={confirm === "archive"} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={event => {
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+        }}>
           <AlertDialogHeader>
             <AlertDialogTitle>Archive this task?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -292,8 +298,8 @@ function TaskActionsMenu({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction variant="destructive" onClick={onArchive}>Archive task</AlertDialogAction>
             <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onArchive}>Archive task</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
