@@ -6,6 +6,7 @@ import { ensurePrivateDirectory, ensurePrivateFile } from "../../../../platform/
 import { processIdentity } from "../../../../platform/process/identity.js";
 import { ExecutionStartSchema, ExecutionCommandSchema, EXECUTION_PROTOCOL, type ExecutionStart, type ExecutionCommand, type ExecutionCommandResult } from "@palmagent/shared/executions";
 import type { RawEvent } from "../../domain/execution.js";
+import { notifyExecutionCommands } from "./execution-wake.js";
 
 export interface ExecutionRecord {
   id: string; taskId: string; protocol: number; release: string; node: string;
@@ -90,6 +91,8 @@ export class ExecutionStore {
     this.db.prepare("INSERT INTO admission_settings VALUES (1,?) ON CONFLICT(id) DO UPDATE SET capacity=excluded.capacity").run(capacity);
   }
   admit(limit: number): ExecutionRecord[] {
+    // Reconciliation is frequent; an empty queue must not contend with output writes.
+    if (!this.db.prepare("SELECT 1 FROM executions WHERE state='queued' LIMIT 1").get()) return [];
     return this.db.transaction(() => {
       const settings = this.db.prepare("SELECT capacity FROM admission_settings WHERE id=1").get() as { capacity: number } | undefined;
       limit = settings?.capacity ?? limit;
@@ -143,7 +146,7 @@ export class ExecutionStore {
   }
   enqueue(execution: string, id: string, input: ExecutionCommand): ExecutionCommandResult {
     const body = JSON.stringify(ExecutionCommandSchema.parse(input));
-    return this.db.transaction(() => {
+    const result = this.db.transaction(() => {
       const prior = this.command(execution, id);
       if (prior) {
         if (JSON.stringify(prior.body) !== body) throw new Error("Command identity was reused with different content");
@@ -164,12 +167,17 @@ export class ExecutionStore {
       this.db.prepare("INSERT INTO commands(execution,id,body,result) VALUES (?,?,?,'accepted')").run(execution, id, body);
       return "accepted";
     }).immediate();
+    if (result === "accepted") notifyExecutionCommands(this.directory, execution);
+    return result;
   }
   command(execution: string, id: string): CommandRecord | undefined {
     const row = this.db.prepare("SELECT * FROM commands WHERE execution=? AND id=?").get(execution, id) as (Omit<CommandRecord, "body"> & { body: string }) | undefined;
     return row && { ...row, body: ExecutionCommandSchema.parse(JSON.parse(row.body)) };
   }
   pending(id: string): CommandRecord[] {
+    // Read first, then recheck under the write lock before claiming. The first
+    // read is only a hint and must never authorize delivery on its own.
+    if (!this.db.prepare("SELECT 1 FROM commands WHERE execution=? AND result='accepted' AND claimed=0 LIMIT 1").get(id)) return [];
     return this.db.transaction(() => {
       const rows = this.db.prepare("SELECT id FROM commands WHERE execution=? AND result='accepted' AND claimed=0 ORDER BY rowid").all(id) as { id: string }[];
       for (const row of rows) this.db.prepare("UPDATE commands SET claimed=1 WHERE execution=? AND id=?").run(id, row.id);
