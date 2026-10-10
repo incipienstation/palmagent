@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { previewSource, attachmentExpired } from "../image-source";
-import { cn } from "../lib/utils";
+import { Maximize } from "lucide-react";
+import { ImageViewerContent } from "./ImageViewerContent";
 import { Button } from "./ui/button";
-import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Dialog, DialogTrigger } from "./ui/dialog";
 
 export const ImageTaskContext = createContext<string | undefined>(undefined);
 export const ImageLinkContext = createContext(false);
@@ -41,7 +42,6 @@ function Preview({ src, alt, title, dimensions, onLoad, linked }: {
     return () => controller.abort();
   }, [failed, src]);
   const [attempt, setAttempt] = useState(0);
-  const [actualSize, setActualSize] = useState(false);
   const label = alt || "Image";
   if (!src || failed) return <span className="my-2 inline-flex max-w-full flex-wrap items-center gap-2 text-sm text-muted-foreground">
     <span>{expired ? "Image expired" : "Image unavailable"}: {label}</span>
@@ -59,21 +59,11 @@ function Preview({ src, alt, title, dimensions, onLoad, linked }: {
   if (linked) return image;
   return <Dialog>
     <DialogTrigger asChild>
-      <Button type="button" variant="ghost" className="my-2 h-auto max-w-full p-0" aria-label={`Enlarge image: ${label}`}>
+      <Button type="button" variant="ghost" className="relative my-2 h-auto max-w-full cursor-zoom-in p-0" aria-label={`Enlarge image: ${label}`}>
         {image}
+        <span aria-hidden="true" className="pointer-events-none absolute top-1 right-1 rounded-md bg-muted p-1.5"><Maximize /></span>
       </Button>
     </DialogTrigger>
-    <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden" aria-describedby={undefined}>
-      <DialogBody orientation="both" contentClassName="flex flex-col gap-3" viewportProps={{ tabIndex: 0, "aria-label": "Image preview" }}>
-        <DialogHeader className="min-w-0 pr-8"><DialogTitle className="break-words [overflow-wrap:anywhere]">{label}</DialogTitle></DialogHeader>
-        <div className="min-w-0">
-          <img src={src} alt={label} referrerPolicy="no-referrer" onError={() => setFailed(true)}
-            className={cn("mx-auto", actualSize ? "max-w-none" : "max-h-[70dvh] max-w-full object-contain")} />
-        </div>
-      </DialogBody>
-      <Button className="shrink-0" type="button" variant="outline" aria-pressed={actualSize} onClick={() => setActualSize(!actualSize)}>
-        {actualSize ? "Fit image" : "Actual size"}
-      </Button>
-    </DialogContent>
+    <ImageViewerContent src={src} label={label} kind="image" onError={() => setFailed(true)} />
   </Dialog>;
 }

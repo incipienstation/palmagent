@@ -138,13 +138,15 @@ Palmagent and synchronized across connected screens, including for running and
 local sessions. Renaming keeps the original prompt, native CLI session, and activity
 order intact.
 
-## Experimental ADHD mode: Scrap Survivor
+## Experimental Arcade mode
 
-Enable **Settings → Experimental → ADHD mode** to play Scrap Survivor, a Phaser
-survival prototype. It is off by default and remembered on this device. A valid
+Enable **Settings → Experimental → Arcade mode** to play games while your agent
+works. Arcade currently includes Scrap Survivor, a Phaser survival prototype.
+The mode is off by default and remembered on this device; game entry points appear
+only while it is enabled. A valid
 new message, follow-up, steer, or explicit queued-message Send opens the game as
 soon as submission starts, without waiting for the server. Editing or adding a
-queued message does not open it. The navigation and conversation game buttons
+queued message does not open it. The **Arcade** navigation button and **Open arcade** conversation button
 also open it manually. Assets warm up while the experiment is enabled; first-time
 network loading can still delay the arena. The conversation, draft, and game stay
 mounted when a new conversation receives its server ID.

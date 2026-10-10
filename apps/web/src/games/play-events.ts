@@ -5,5 +5,5 @@ export function gameDelivery(event: GameDelivery) { listeners.forEach(listener =
 export function onGameDelivery(listener: (event: GameDelivery) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 let warming: Promise<unknown> | undefined;
 export function warmSurvivor() {
-  return warming ??= import("./scrap-survivor/scene").then(m => m.preloadSprites()).catch(() => { warming = undefined; });
+  return warming ??= import("./scrap-survivor/api").then(m => m.preloadGame()).catch(() => { warming = undefined; });
 }

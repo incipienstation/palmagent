@@ -14,8 +14,8 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
 import { SettingsSheet } from "./SettingsSheet";
-import { useAdhdMode } from "../AdhdModeProvider";
-import { SurvivorSheet } from "../games/scrap-survivor/SurvivorSheet";
+import { useArcadeMode } from "../ArcadeModeProvider";
+import { SurvivorSheet } from "../games/SurvivorSheet";
 import { onGameDelivery, warmSurvivor, type GameDelivery } from "../games/play-events";
 
 const NavigationContext = createContext<{
@@ -32,12 +32,12 @@ export function AppNavigation({ tasks, conn, children }: {
   tasks: TaskState[]; conn: ConnState; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const { enabled: adhdMode } = useAdhdMode();
+  const { enabled: arcadeMode } = useArcadeMode();
   const [gameOpen, setGameOpen] = useState(false);
   const [delivery, setDelivery] = useState<GameDelivery>();
   const newGameConversation = useRef(false);
   useEffect(() => {
-    if (!adhdMode) { setGameOpen(false); setDelivery(undefined); return; }
+    if (!arcadeMode) { setGameOpen(false); setDelivery(undefined); return; }
     void warmSurvivor();
     return onGameDelivery(event => {
       if (event.state === "sending") {
@@ -47,7 +47,7 @@ export function AppNavigation({ tasks, conn, children }: {
         setDelivery(event); setGameOpen(true);
       } else setDelivery(current => current?.id === event.id ? event : current);
     });
-  }, [adhdMode]);
+  }, [arcadeMode]);
   const { repos } = useRepos();
   const [settingsOpen, setSettingsOpen] = useUpdateState("settings:open", false);
   const trigger = useRef<HTMLElement | null>(null);
@@ -74,7 +74,7 @@ export function AppNavigation({ tasks, conn, children }: {
     setDelivery(undefined); setGameOpen(true);
   }, []);
   const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
-  const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: adhdMode ? openGame : undefined }), [openNavigation, desktopSidebar, adhdMode, openGame]);
+  const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: arcadeMode ? openGame : undefined }), [openNavigation, desktopSidebar, arcadeMode, openGame]);
   const restoreFocus = () => {
     const target = trigger.current?.isConnected ? trigger.current : document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
     target?.focus();
@@ -97,10 +97,10 @@ export function AppNavigation({ tasks, conn, children }: {
             {needsAttention && <span className="size-2 rounded-full bg-amber" aria-label="Tasks need attention" />}
             {active && <Check className="size-4" />}
           </Button>)}
-          {adhdMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
+          {arcadeMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
             if (open) showAfterClose(() => { newGameConversation.current = false; setDelivery(undefined); setGameOpen(true); });
             else openGame(event.currentTarget);
-          }}><Gamepad2 data-icon="inline-start" />Scrap Survivor</Button>}
+          }}><Gamepad2 data-icon="inline-start" />Arcade</Button>}
         </nav>
   );
   const pinnedNavigation = (pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
@@ -168,7 +168,7 @@ export function AppNavigation({ tasks, conn, children }: {
     </Drawer>
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
-    {adhdMode && <SurvivorSheet open={gameOpen} onOpenChange={setGameOpen}
+    {arcadeMode && <SurvivorSheet open={gameOpen} onOpenChange={setGameOpen}
       tasks={tasks} delivery={delivery} taskId={gameTaskId} conn={conn}
       onReturn={taskId => { setGameOpen(false); if (taskId && (route.name !== "task" || route.id !== taskId)) navigate(`/task/${encodeURIComponent(taskId)}`); }}
       onCloseAutoFocus={event => {
@@ -177,7 +177,7 @@ export function AppNavigation({ tasks, conn, children }: {
           automaticGameClose.current = false;
           // A send may have opened the game from the composer. Return focus to
           // a visible control without reopening the mobile keyboard.
-          document.querySelector<HTMLButtonElement>('button[aria-label="Open Scrap Survivor"]')?.focus({ preventScroll: true });
+          document.querySelector<HTMLButtonElement>('button[aria-label="Open arcade"]')?.focus({ preventScroll: true });
         } else restoreFocus();
       }} />}
   </NavigationContext.Provider>;

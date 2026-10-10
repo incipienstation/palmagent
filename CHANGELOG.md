@@ -10,6 +10,60 @@ An entry does not mean a version has been published.
 
 - Reading older messages keeps its position when conversation history contains answers with very different heights.
 
+## 0.1.0-alpha.162
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/97f985b4f71f96509779c9a0c9d1eb1c65472d09...08e687eaede210f852c34497bb89fc7fb3527e18) for details.
+
+## 0.1.0-alpha.161
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/bf20cbdeb9f74c67dcd1789b1520818bbb35bac0...dd83b8ea107515ab78c78a4313821de10ba2d377) for details.
+
+## 0.1.0-alpha.160
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/d4ea7d5a9f9ca91b55ab26c83e3d49b48b85dd23...975b5f278a8e05906638bf19c50e6876b7159fee) for details.
+
+## 0.1.0-alpha.159
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/a62f7636a811b9d12f4ac0e4805e91a76b150c6b...47065e645c86b676375312b331e26726f381311a) for details.
+
+## 0.1.0-alpha.158
+
+### Changed
+
+- Renamed the experimental game feature to Arcade mode, with Arcade entry points that appear only when enabled. Existing device preferences are preserved.
+
+## 0.1.0-alpha.157
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/3bb8583959088e79abf64e93b9380ef2497982ef...53d641ee41535330d3ef0a29b129502c53ca103c) for details.
+
+## 0.1.0-alpha.156
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/5de58601d6d51ebdd60eddf109727d97fd2e40ce...42bafeaa3cb75456b05ab69e6d542ce256125b4e) for details.
+
+## 0.1.0-alpha.155
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/977158db2c39a99bc30f8c4b805df951ceda9343...c69a39ca29bb089a7dc3f4820982526c6026a770) for details.
+
+## 0.1.0-alpha.154
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/7b7600a6103855c8a032b34dea49e8a4abb42740...e1b9c2a541b7eb3a554677773a0b9bbe0bedf36d) for details.
+
 ## 0.1.0-alpha.153
 
 ### Changed

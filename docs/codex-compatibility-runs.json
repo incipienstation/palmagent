@@ -1,0 +1,26 @@
+[
+  {
+    "version": "0.160.1",
+    "baseline": "0.160.0",
+    "source": "5de58601d6d51ebdd60eddf109727d97fd2e40ce",
+    "checkedAt": "2026-10-09T11:52:02.642Z",
+    "mode": "schema-contract",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "ff62e95e1f2b73ef421ee7ed29366223002b070b12e738b226305e4758c5c96e",
+    "candidateSchemaSha256": "ff62e95e1f2b73ef421ee7ed29366223002b070b12e738b226305e4758c5c96e"
+  },
+  {
+    "version": "0.161.0",
+    "baseline": "0.160.1",
+    "source": "97f985b4f71f96509779c9a0c9d1eb1c65472d09",
+    "checkedAt": "2026-10-09T18:04:12.555Z",
+    "mode": "schema-contract",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "ff62e95e1f2b73ef421ee7ed29366223002b070b12e738b226305e4758c5c96e",
+    "candidateSchemaSha256": "ff62e95e1f2b73ef421ee7ed29366223002b070b12e738b226305e4758c5c96e"
+  }
+]
