@@ -41,6 +41,14 @@ for (const width of [360, 1280]) {
       await expect(dialog).toHaveCount(0);
       await expect(trigger).toBeFocused();
     }
+    await page.goto("/#/task/t-run-charts");
+    await trigger.click();
+    await page.getByRole("menuitem", { name: "Cancel…", exact: true }).click();
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm.getByRole("button", { name: "Keep", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(trigger).toBeFocused();
     await assertViewportLocked(page);
   });
 }

@@ -267,7 +267,10 @@ function TaskActionsMenu({
       </SessionActionsMenu>
 
       <AlertDialog open={confirm === "cancel"} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={event => {
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+        }}>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel this task?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -283,7 +286,10 @@ function TaskActionsMenu({
       </AlertDialog>
 
       <AlertDialog open={confirm === "archive"} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={event => {
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+        }}>
           <AlertDialogHeader>
             <AlertDialogTitle>Archive this task?</AlertDialogTitle>
             <AlertDialogDescription>

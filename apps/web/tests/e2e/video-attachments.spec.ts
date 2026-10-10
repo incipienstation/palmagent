@@ -24,6 +24,9 @@ for (const route of ["new", "task/t-idle-rich"]) test(`video-only preparation, p
   expect(await player.evaluate((video: HTMLVideoElement) => [video.duration, video.videoWidth, video.videoHeight])).toEqual([4, 32, 24]);
   await player.evaluate((video: HTMLVideoElement) => { video.currentTime = 2; });
   await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBe(2);
+  await page.getByRole("dialog").evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   const close = page.getByRole("dialog").getByRole("button", { name: "Close", exact: true });
   const closeBox = (await close.boundingBox())!;
   expect(closeBox.width).toBeGreaterThanOrEqual(44);
