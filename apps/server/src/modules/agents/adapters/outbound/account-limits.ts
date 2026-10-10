@@ -1,3 +1,4 @@
+import { ReadObserver } from "../../../../kernel/read-observer.js";
 import { readNdjsonQuery } from "../../../../platform/process/ndjson-query.js";
 import type { AccountLimits, AgentKind, ClaudeAccountLimits, CodexAccountLimits, CodexLimitBucket, LimitWindow } from "@palmagent/shared";
 
@@ -105,6 +106,19 @@ export async function readCliAccountLimits(agent: AgentKind, home: string, timeo
 // All sessions using the same provider home share one read, including failures.
 // A five-minute cache avoids hammering account endpoints from multiple tabs.
 export class AccountLimitReader {
+  private observers = new Map<string, ReadObserver<AccountLimits>>();
+  observe(agent: AgentKind, home: string, listener: () => void): () => void {
+    const key = JSON.stringify([agent, home]);
+    let observer = this.observers.get(key);
+    if (!observer) {
+      observer = new ReadObserver(() => this.get(agent, home), () => (this.cache.get(key)?.expiresAt ?? this.now() + 300_000) - this.now());
+      this.observers.set(key, observer);
+    }
+    const off = observer.subscribe(listener);
+    return () => { off(); if (!observer.observed && this.observers.get(key) === observer) this.observers.delete(key); };
+  }
+  close(): void { for (const observer of this.observers.values()) observer.close(); this.observers.clear(); }
+
   private cache = new Map<string, { expiresAt: number; value: Promise<AccountLimits> }>();
   constructor(private read = readCliAccountLimits, private now = Date.now) {}
 

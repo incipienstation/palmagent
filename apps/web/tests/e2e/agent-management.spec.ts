@@ -1,3 +1,4 @@
+import { installReadStreams, changeRead } from "./_read-streams";
 import { expect, test } from "@playwright/test";
 import { usage } from "../fixtures.mjs";
 
@@ -27,6 +28,7 @@ test("Agents uses consistent metrics, preserves zero versus missing, and keeps a
 });
 
 test("refresh and navigation never update; an explicit update remains visible after reload and verifies its result", async ({ page }) => {
+  await installReadStreams(page);
   let posts = 0, state = "idle", version = "0.156.1";
   await page.route("**/api/agents", route => route.fulfill({ json: { canUpdate: true, installations: [installation("claude"), {
     ...installation("codex"), version, update: { state, ...(state === "succeeded" ? { message: "Updated from 0.156.1 to 0.156.2." } : {}) },
@@ -50,7 +52,7 @@ test("refresh and navigation never update; an explicit update remains visible af
   await expect(update).toBeDisabled();
   await expect(page.getByRole("region", { name: "Codex", exact: true }).getByRole("status")).toHaveText("Updating…");
   state = "succeeded"; version = "0.156.2";
-  await page.getByRole("button", { name: "Refresh agents" }).click();
+  await changeRead(page, "/api/agents/stream");
   await expect(page.getByText("Updated from 0.156.1 to 0.156.2.")).toBeVisible();
   expect(posts).toBe(1);
 });
@@ -68,4 +70,35 @@ test("failed installation reads preserve displayed versions and disable stale up
   await expect(page.getByRole("alert")).toContainText("Couldn’t load agent installations");
   await expect(update).toBeDisabled();
   await expect(page.getByText("0.156.1", { exact: true })).toBeVisible();
+});
+
+test("installation and allowance reads remain idle until SSE changes or reconnects", async ({ page }) => {
+  await installReadStreams(page);
+  await page.clock.install();
+  let installations = 0, limits = 0, used = 28;
+  await page.route("**/api/agents", route => {
+    installations++;
+    return route.fulfill({ json: { canUpdate: true, installations: [installation("codex")] } });
+  });
+  await page.route("**/api/agents/codex/limits", route => {
+    limits++;
+    return route.fulfill({ json: { agent: "codex", state: "ready", checkedAt: Date.now(), buckets: [
+      { id: "codex", primary: { usedPercent: used, windowMinutes: 300, resetsAt: null } },
+    ] } });
+  });
+  await page.goto("/#/agents");
+  const card = page.getByRole("region", { name: "Codex", exact: true });
+  await expect(card.getByText("72% left")).toBeVisible();
+  // Finish any initial subscription revalidation before measuring idle traffic.
+  await changeRead(page, "/api/agents/stream");
+  await expect(page.getByRole("button", { name: "Refresh agents" })).toBeEnabled();
+  const before = { installations, limits };
+  await page.clock.fastForward(600_000);
+  expect({ installations, limits }).toEqual(before);
+  used = 40;
+  await changeRead(page, "/api/agents/stream", true);
+  await expect(card.getByText("60% left")).toBeVisible();
+  expect(installations).toBe(before.installations + 1);
+  await page.evaluate(() => { location.hash = "#/spaces"; });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { readStreams: Map<string, unknown> }).readStreams.size)).toBe(0);
 });

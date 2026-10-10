@@ -74,6 +74,8 @@ export async function createRuntime() {
     resources.defer(() => attachments.close());
     const voice = new VoiceSessions();
     resources.defer(() => voice.close());
+    const accountLimits = new AccountLimitReader();
+    resources.defer(() => accountLimits.close());
     const service = createTaskService(db, hub, supervisor, backend, worktrees, attachments,
       new LocalRepositoryPaths(), new LocalNativeSessionAdapter(config.dbPath), new NodeIdentifierGenerator(),
       push, () => isUpdateMaintenance(config.dbPath), {
@@ -84,7 +86,7 @@ export async function createRuntime() {
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
         : removeWorktree(),
-    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), new AccountLimitReader());
+    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits);
     resources.onStop(() => service.beginShutdown());
     const terminalStore = new TerminalStore(join(config.dataDir, "terminals"));
     let terminalsOwnStore = false;
@@ -92,7 +94,7 @@ export async function createRuntime() {
     const terminals = terminalService = new TerminalService(terminalStore,
       terminalPlatform(Boolean(config.executionRelease && config.executionNode)).supervisor,
       { task: id => service.getTask(id), repo: id => db.getRepo(id), cleanup: id => service.cleanupTerminalWorktree(id), updating: () => service.updating },
-      config.executionRelease ?? "", config.executionNode ?? "", terminalFiles);
+      config.executionRelease ?? "", config.executionNode ?? "", terminalFiles, () => hub.emitReadChange({ type: "read-change", terminals: true }));
     terminalsOwnStore = true;
     resources.defer(() => terminals.close());
     await service.init();

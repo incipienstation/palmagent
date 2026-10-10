@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync, watch } from "node:fs";
 import { join } from "node:path";
 import { TERMINAL_PROTOCOL, TERMINAL_STARTUP_TIMEOUT_MS, type TerminalStartError } from "@palmagent/shared/terminals";
 import { ensurePrivateDirectory, ensurePrivateFile } from "../../../../platform/filesystem/private-files.js";
@@ -19,6 +19,16 @@ export class TerminalStore {
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("journal_mode = WAL");
     this.db.exec("CREATE TABLE IF NOT EXISTS terminals (id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL); CREATE TABLE IF NOT EXISTS cleanup (cwd TEXT PRIMARY KEY, task_id TEXT NOT NULL);");
+  }
+  watch(changed: () => void): () => void {
+    let scheduled: NodeJS.Immediate | undefined;
+    const notify = () => { scheduled ??= setImmediate(() => { scheduled = undefined; changed(); }); };
+    // Watch the directory: WAL files can be replaced by another host process.
+    const watcher = watch(this.directory, (_event, name) => {
+      if (name === null || name.startsWith("registry.sqlite")) notify();
+    });
+    watcher.on("error", notify);
+    return () => { watcher.close(); if (scheduled) clearImmediate(scheduled); };
   }
   list(): TerminalRecord[] {
     return (this.db.prepare("SELECT record FROM terminals ORDER BY rowid DESC").all() as { record: string }[]).map(row => JSON.parse(row.record));

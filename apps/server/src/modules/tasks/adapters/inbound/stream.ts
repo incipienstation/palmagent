@@ -43,7 +43,29 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
       if ((!taskId || row.event.taskId === taskId) && idOf(row) > boundary) enqueue(frame(row));
     });
     const offUpdates = taskId ? () => {} : hub.onUpdates(() => enqueue('data: {"type":"updates"}\n\n'));
-    const offTasks = hub.onTasks(() => enqueue(snapshot()));
+    const limitsFrame = `data: ${JSON.stringify({ type: "read-change", taskLimits: taskId })}\n\n`;
+    let limitsPending = false;
+    const limitsChanged = () => {
+      if (limitsPending) return;
+      limitsPending = true;
+      enqueue(limitsFrame);
+    };
+    let account = taskId ? JSON.stringify([service.getTask(taskId).agent, service.getTask(taskId).sessionControl?.home]) : undefined;
+    let offLimits = taskId ? service.observeAccountLimits(taskId, limitsChanged) : () => {};
+    const offTasks = hub.onTasks(tasks => {
+      if (taskId) {
+        const task = tasks.find(task => task.taskId === taskId);
+        const next = task ? JSON.stringify([task.agent, task.sessionControl?.home]) : "removed";
+        if (next !== account) {
+          account = next; offLimits();
+          offLimits = task ? service.observeAccountLimits(taskId, limitsChanged) : () => {};
+          limitsChanged();
+        }
+      }
+      enqueue(snapshot());
+    });
+    // Share the task connection and revalidate changes missed before subscription.
+    if (taskId) limitsChanged();
     const offRead = taskId ? () => {} : hub.onReadChange(change => enqueue(`data: ${JSON.stringify(change)}\n\n`));
     const keepAlive = setInterval(() => enqueue(":keep-alive\n\n"), config.keepAliveMs);
     const abort = () => stream.abort();
@@ -51,7 +73,7 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
       if (closed) return;
       closed = true;
       clearInterval(keepAlive);
-      offEvent(); offTasks(); offUpdates(); offRead();
+      offEvent(); offTasks(); offUpdates(); offRead(); offLimits();
       shutdown?.removeEventListener("abort", abort);
       c.req.raw.signal.removeEventListener("abort", abort);
       queue.length = 0;
@@ -68,6 +90,7 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
         if (!queue.length) { await new Promise<void>((resolve) => { wake = resolve; }); wake = undefined; }
         while (!closed && queue.length) {
           const value = queue.shift()!;
+          if (value === limitsFrame) limitsPending = false;
           await stream.write(value);
           pendingBytes -= Buffer.byteLength(value);
         }

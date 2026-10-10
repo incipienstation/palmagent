@@ -124,6 +124,7 @@ function handleStream(req, res, url) {
   // Persisted rows are served by REST. This boundary marks the point after
   // which newly produced events belong on the live stream.
   tasksFrame(res, taskId ? stream.length : undefined);
+  if (taskId) res.write(`data: ${JSON.stringify({ type: "read-change", taskLimits: taskId })}\n\n`);
 
   const keepAlive = setInterval(() => {
     try {
@@ -167,6 +168,13 @@ const server = createServer(async (req, res) => {
   const m = req.method ?? "GET";
 
   if (pathname === "/api/stream") return handleStream(req, res, url);
+  if (pathname === "/api/agents/stream") {
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+    res.write('data: {"type":"read-change"}\n\n');
+    const timer = setInterval(() => res.write(":keep-alive\n\n"), 15000);
+    res.on("close", () => clearInterval(timer));
+    return;
+  }
 
   if (pathname.startsWith("/api/")) {
     // ---- GET reads ----
