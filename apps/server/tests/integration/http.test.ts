@@ -41,7 +41,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), new LocalAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader());
+    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }));
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: "https://localhost", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
@@ -109,7 +109,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/unknown"]) {
     const denied = await fetch(base + path);
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get("cache-control"), "no-store");
@@ -555,6 +555,8 @@ test("snapshot-only inbox streams omit historical and live event bodies", async 
   f.hub.emitReadChange({ type: "read-change", usage: true });
   const readChange = new TextDecoder().decode((await reader.read()).value);
   assert.match(readChange, /"type":"read-change","usage":true/);
+  f.hub.emitReadChange({ type: "read-change", terminals: true });
+  assert.match(new TextDecoder().decode((await reader.read()).value), /"terminals":true/);
   await reader.cancel();
 });
 
@@ -872,7 +874,7 @@ test("agent management reads are inert; updates require sign-in and validated pr
   const calls: string[] = [];
   const status = { agent: "codex" as const, version: "0.156.1", latestVersion: "0.156.2", installation: "native" as const,
     compatible: true, latestCompatible: true, releaseState: "ready" as const, checkedAt: 1, update: { state: "idle" as const } };
-  const agentInstallations = { list: async () => [status], update: async (agent: string, version: string) => { calls.push(`${agent}:${version}`); return status; } };
+  const agentInstallations = { observe: () => () => {}, list: async () => [status], update: async (agent: string, version: string) => { calls.push(`${agent}:${version}`); return status; } };
   const f = fixture(t, true, { agentInstallations });
   const now = Date.now(); f.db.createSession("agent-session", now, now + 60_000);
   const headers = { cookie: `${f.settings.cookieName}=agent-session`, "content-type": "application/json" };
@@ -921,4 +923,61 @@ test("context compaction requires authentication and a bounded request without p
   assert.equal(calls, 0);
   assert.equal((await f.app.request("/api/tasks/task/compact", { method: "POST", headers, body: JSON.stringify(request) })).status, 202);
   assert.equal(calls, 1);
+});
+
+test("resource streams use authenticated scopes and unsubscribe when clients disconnect", async t => {
+  const scopes: string[] = [];
+  let active = 0;
+  const subscribe = (scope: string) => {
+    scopes.push(scope); active++;
+    return () => { active--; };
+  };
+  const f = fixture(t, true, { agentInstallations: {
+    list: async () => [], update: async () => { throw new Error("unused"); }, observe: () => subscribe("installations"),
+  } });
+  f.service.observeProviderAccountLimits = agent => subscribe(agent);
+  const now = Date.now(); f.db.createSession("stream-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=stream-session` };
+  for (const path of ["/api/agents/stream"]) {
+    assert.equal((await f.app.request(path)).status, 401);
+    const controller = new AbortController();
+    const response = await f.app.request(path, { headers, signal: controller.signal });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("cache-control")!, /no-store/);
+    const reader = response.body!.getReader();
+    assert.match(new TextDecoder().decode((await reader.read()).value), /read-change/);
+    assert.equal(active, 3);
+    controller.abort(); await reader.cancel();
+    assert.equal(active, 0);
+  }
+  assert.deepEqual(scopes, ["installations", "claude", "codex"]);
+  assert.equal((await f.app.request("/api/stream?task=missing", { headers })).status, 404);
+});
+
+test("task streams carry account changes and release the provider subscription when the task disappears", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "limits-repo", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "limits-task", repoId: "limits-repo", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  let active = 0;
+  let changed = () => {};
+  f.service.observeAccountLimits = (id, listener) => {
+    changed = listener;
+    assert.equal(id, "limits-task"); active++;
+    return () => { active--; };
+  };
+  const abort = new AbortController();
+  const response = await f.app.request("/api/stream?task=limits-task", { signal: abort.signal });
+  const reader = response.body!.getReader();
+  await reader.read();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /"taskLimits":"limits-task"/);
+  assert.equal(active, 1);
+  changed();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /"taskLimits":"limits-task"/);
+  f.hub.emitTasks([]);
+  assert.match(new TextDecoder().decode((await reader.read()).value), /read-change/);
+  assert.equal(active, 0);
+  abort.abort(); await reader.cancel();
+  f.hub.emitTasks(f.service.listTasks());
+  assert.equal(active, 0, "the task listener is also removed on disconnect");
 });

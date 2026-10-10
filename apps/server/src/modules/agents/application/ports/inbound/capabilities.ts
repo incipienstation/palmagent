@@ -16,4 +16,5 @@ export interface TaskSkillEnvironment { agent: AgentKind; cwd: string; home: str
 
 export interface TaskAccountLimitReader {
   get(agent: AgentKind, home: string): Promise<AccountLimits>;
+  observe(agent: AgentKind, home: string, listener: () => void): () => void;
 }

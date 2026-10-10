@@ -9,6 +9,8 @@ export interface TaskUseCases {
   providerAccountLimits(agent: AgentKind): Promise<AccountLimits>;
   cleanupTerminalWorktree(id: string): void;
   accountLimits(taskId: string): Promise<AccountLimits>;
+  observeAccountLimits(taskId: string, listener: () => void): () => void;
+  observeProviderAccountLimits(agent: AgentKind, listener: () => void): () => void;
   readAttachment(taskId: string, attachmentId: string): { bytes: Uint8Array; mediaType: string; };
   readTaskImage(taskId: string, requestedPath: string | string[]): Promise<{ bytes: Uint8Array; mediaType: string; }>;
   eventCursor(taskId?: string): number;

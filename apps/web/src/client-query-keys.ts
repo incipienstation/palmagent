@@ -6,6 +6,7 @@ export const clientReadKeys = {
   modelCatalog: () => [...clientReadKeys.all, "model-catalog"] as const,
   agents: () => [...clientReadKeys.all, "agents"] as const,
   agentInstallations: () => [...clientReadKeys.agents(), "installations"] as const,
+  taskLimits: (taskId: string) => [...clientReadKeys.all, "task-limits", taskId] as const,
   agentLimits: (agent: AgentKind) => [...clientReadKeys.agents(), "limits", agent] as const,
   usage: () => [...clientReadKeys.all, "usage"] as const,
   routines: () => [...clientReadKeys.all, "routines"] as const,

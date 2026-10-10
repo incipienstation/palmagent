@@ -1,3 +1,5 @@
+import { clientReadKeys } from "../client-query-keys";
+import { refreshClientReads } from "../query-client";
 import { createFinalReplyObserver, notifyConversation } from "../conversation-notifications";
 import { restoredHistory } from "../history-checkpoint";
 import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
@@ -293,6 +295,10 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       (message) => {
         let frame: SseFrame;
         try { frame = JSON.parse(message.data) as SseFrame; } catch { return; }
+        if (frame.type === "read-change" && frame.taskLimits === taskId) {
+          if (document.visibilityState !== "hidden") void refreshClientReads(clientReadKeys.taskLimits(taskId));
+          return;
+        }
         if (frame.type === "tasks") {
           const mine = frame.tasks.find((entry) => entry.taskId === taskId);
           if (mine) {

@@ -1,3 +1,4 @@
+import { onTerminalsChanged } from "../terminal-events";
 import { TERMINAL_POLICY } from "@palmagent/shared/terminals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
@@ -53,15 +54,20 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   }, [taskId, space]);
   useEffect(() => {
     let live = true;
-    let pending = false;
+    let pending = false, dirty = false;
     setLoaded(false);
     const load = () => {
-      if (pending || document.visibilityState === "hidden") return;
+      if (!live) return;
+      if (pending || document.visibilityState === "hidden") { dirty = true; return; }
+      dirty = false;
       pending = true;
-      void refresh().catch(e => { if (live) setError(e.message); }).finally(() => { pending = false; });
+      void refresh().catch(e => { if (live) setError(e.message); }).finally(() => { pending = false; if (dirty) load(); });
     };
-    load(); const timer = setInterval(load, 5000);
-    return () => { live = false; generation.current++; clearInterval(timer); };
+    const off = onTerminalsChanged(load);
+    const foreground = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", foreground);
+    load();
+    return () => { live = false; generation.current++; off(); document.removeEventListener("visibilitychange", foreground); };
   }, [refresh]);
   const active = terminals.find(t => t.id === selected);
   async function act(operation: () => Promise<unknown>) {
@@ -81,7 +87,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         const result = await terminalOperations.create({ target: taskId ? { taskId } : { repoId: space }, requestId: requestId.current, cols: 80, rows: 24 });
         if (generation.current !== currentGeneration) return;
         // Publish the returned session and its selection together. An older
-        // poll must not remove it while the post-create refresh is in flight.
+        // read must not remove it while the post-create refresh is in flight.
         revision.current++;
         setTerminals(current => [...current.filter(t => t.id !== result.terminal.id), result.terminal]);
         setSelected(result.terminal.id); requestId.current = undefined;

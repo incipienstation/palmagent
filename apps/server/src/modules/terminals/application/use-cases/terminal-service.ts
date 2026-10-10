@@ -10,11 +10,26 @@ import { ApplicationError } from "../../../../kernel/errors.js";
 export class TerminalService implements TerminalUseCases {
   private timer?: ReturnType<typeof setInterval>;
   private reconciliation?: Promise<void>;
+  private unwatch?: () => void;
+  private launches = new Map<string, Promise<void>>();
+  private snapshot = "";
+  private publishChanges() {
+    const next = JSON.stringify({ terminals: this.list(), capabilities: this.capabilities() });
+    if (next === this.snapshot) return false;
+    this.snapshot = next; this.changed();
+    return true;
+  }
   constructor(readonly store: TerminalRegistry, readonly supervisor: TerminalSupervisor,
     private targets: { task(id: string): TaskState; repo(id: string): Repo | undefined; cleanup(taskId: string): void; updating(): boolean },
-    private release: string, private node: string, private files: TerminalFiles) {}
+    private release: string, private node: string, private files: TerminalFiles, private changed: () => void = () => {}) {}
   capabilities() { return this.supervisor.capabilities; }
-  start() { void this.reconcile(); this.timer = setInterval(() => void this.reconcile(), 5000); this.timer.unref(); }
+  start() {
+    this.snapshot = JSON.stringify({ terminals: this.list(), capabilities: this.capabilities() });
+    this.unwatch = this.store.watch(() => { if (this.publishChanges()) void this.reconcile(); });
+    void this.reconcile();
+    // Recovery for ungraceful process deaths or missed filesystem notifications.
+    this.timer = setInterval(() => void this.reconcile(), 5000); this.timer.unref();
+  }
   list(query: { taskId?: string; repoId?: string } = {}) {
     return this.store.list().filter(r => (!r.diagnostic || r.diagnosticCleanupFailed) && (!query.taskId || r.taskId === query.taskId) && (!query.repoId || r.repoId === query.repoId)).map(publicTerminal);
   }
@@ -43,10 +58,18 @@ export class TerminalService implements TerminalUseCases {
     try { reserved = this.store.reserve({ requestId: input.requestId, taskId: task?.taskId, repoId, title: input.title ?? "Shell",
       initialCwd: cwd, cols: input.cols, rows: input.rows, release: this.release, node: this.node, directory: this.store.directory }); }
     catch (error) { throw new ApplicationError("conflict", error instanceof Error ? error.message : "Terminal could not be reserved"); }
+    this.publishChanges();
     if (reserved.created) await this.launch(reserved.record.id);
     return publicTerminal(this.get(reserved.record.id));
   }
-  private async launch(id: string) {
+  private launch(id: string): Promise<void> {
+    const active = this.launches.get(id);
+    if (active) return active;
+    const pending = this.launchOnce(id).finally(() => { this.launches.delete(id); });
+    this.launches.set(id, pending);
+    return pending;
+  }
+  private async launchOnce(id: string) {
     const record = this.get(id);
     this.files.writeLaunchDescriptor(this.store.directory, record);
     try {
@@ -56,11 +79,12 @@ export class TerminalService implements TerminalUseCases {
       throw new ApplicationError("service_unavailable", "Shell launch could not be confirmed. Check this terminal's status before opening another.");
     }
   }
-  rename(id: string, title: string) { this.get(id); return publicTerminal(this.store.update(id, { title })); }
+  rename(id: string, title: string) { this.get(id); const next = publicTerminal(this.store.update(id, { title })); this.publishChanges(); return next; }
   async terminate(id: string) {
     const record = this.get(id);
     if (["exited", "lost"].includes(record.state)) return publicTerminal(record);
     this.store.update(id, { state: "closing" });
+    this.publishChanges();
     await this.supervisor.terminate(record);
     // A successful supervisor stop confirms the complete process group has exited.
     const next = this.store.update(id, { state: "exited" });
@@ -68,7 +92,7 @@ export class TerminalService implements TerminalUseCases {
     return publicTerminal(next);
   }
   reconcile(): Promise<void> {
-    return this.reconciliation ??= this.reconcileOnce().finally(() => { this.reconciliation = undefined; });
+    return this.reconciliation ??= this.reconcileOnce().finally(() => { this.reconciliation = undefined; this.publishChanges(); });
   }
   private async reconcileOnce() {
     for (const record of this.store.list()) {
@@ -93,5 +117,5 @@ export class TerminalService implements TerminalUseCases {
       try { this.targets.cleanup(entry.taskId); } catch { /* Retry after the next reconciliation. */ }
     }
   }
-  async close() { clearInterval(this.timer); try { await this.reconciliation; } finally { this.store.close(); } }
+  async close() { this.unwatch?.(); clearInterval(this.timer); try { await this.reconciliation; } finally { this.store.close(); } }
 }
