@@ -621,11 +621,13 @@ test("expanded activity virtualizes its individual tool records and retains disc
   await disclosure.click();
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("tool_result: Activity record 2", { exact: true })).toBeVisible();
-  expect(await page.locator("[data-row-key]").count()).toBeLessThan(40);
+  // Short raw rows need more viewport/overscan nodes than regular messages.
+  // Keep the 1,000-record group bounded to a few dozen mounted rows.
+  expect(await page.locator("[data-row-key]").count()).toBeLessThan(60);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(page.getByText("tool_result: Activity record 1000", { exact: true })).toBeVisible();
-  // The final record can paint before measured heights narrow the rendered range.
-  await expect.poll(() => page.locator("[data-row-key]").count()).toBeLessThan(40);
+  await expectBottom(page);
+  expect(await page.locator("[data-row-key]").count()).toBeLessThan(60);
   await expect(disclosure).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
