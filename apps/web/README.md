@@ -273,7 +273,7 @@ guess which text is safe to fold.
   `Permission`, `Repo`, REST DTOs, `SseFrame`, and shared branding). Nothing is
   redefined. Type-only imports are erased by esbuild; shared intentionally uses
   source exports, so it needs no separate build step here.
-- **`EventSource`, not fetch streaming.** Each connection sends a task snapshot
+- **`EventSource`, not fetch streaming.** Each task-stream connection sends a task snapshot
   with a durable event boundary. Task detail loads any gap through that boundary
   from bounded REST history pages, then applies only events produced after the
   stream subscribed. The per-task `seq` in each SSE `id:` orders live deltas;
@@ -294,9 +294,20 @@ guess which text is safe to fold.
   30 seconds; usage and routine runs for 10 seconds. Concurrent reads share a
   request. Mutations invalidate before and after the request, including failed
   requests with uncertain outcomes; other tabs receive invalidation signals.
-  Foreground and online transitions expire REST reads and refresh mounted views. Task snapshots invalidate
+  Foreground and online transitions expire REST reads and refresh mounted views. Reconnect snapshots revalidate
   usage and run history. Authentication, settings, discovery, filesystem checks,
-  live task state, and account limits always reach the network.
+  and live task state always reach the network. Routine run history and terminal
+  lists refresh from inbox `read-change` events, including initial connection and
+  reconnect recovery. Terminal output continues to use WebSocket.
+- **Resource subscriptions:** agent installations and provider account limits share
+  `/api/agents/stream` for authenticated SSE invalidations and REST snapshots. Task account limits share the scoped conversation stream. Mounted
+  views subscribe; navigation and session reset close the streams. Invalidations during an active read coalesce into a trailing read.
+  Browsers do not poll these resources. The server shares external CLI reads across
+  subscribers: installation discovery refreshes every minute, account limits at
+  their five-minute cache expiry, and both stop refreshing when unobserved.
+  CLI update completion notifies immediately. Terminal registry file events carry
+  changes from independent hosts; periodic server reconciliation remains a repair
+  mechanism for lost notifications and unexpected process death.
 - **Conversation history:** REST returns the latest whole-message page and older
   pages on demand. Compact and full history variants share a per-task TanStack
   Query infinite cache retained for up to five minutes, within a five-conversation /
@@ -323,9 +334,9 @@ guess which text is safe to fold.
 | Live transcript deltas | Scoped SSE sends only post-subscription events; REST fills reconnect gaps; Compact receives summary payloads |
 | Repositories (30s), routines (30s), usage (10s), model catalog (5m) | TanStack Query v5 in-memory cache with shared request deduplication and scoped invalidation |
 | Skills by task/repository context (10s) | Context-keyed TanStack Query cache; only fetched while the picker is open |
-| Routine run history | TanStack Query cache; agent history is fresh for 10s, script history is revalidated on open, and active runs poll every 3s |
+| Routine run history | TanStack Query cache; revalidated on open, routine events, and inbox reconnect |
 | Discovery, path validation, filesystem browse | Network so external settings and filesystem changes remain authoritative |
-| Account limits | Network in the client; provider-scoped server cache owns freshness |
+| Account limits | In-memory snapshots invalidated by SSE; provider-scoped server cache owns freshness |
 | Markdown rendering | Existing bounded content-keyed worker cache |
 | Theme, output mode, form drafts, selected space | Local preferences, not server response caches |
 | Update checkpoints | Existing per-tab IndexedDB handoff, consumed after reload |

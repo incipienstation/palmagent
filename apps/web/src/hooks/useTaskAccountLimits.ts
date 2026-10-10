@@ -1,29 +1,19 @@
 import { useEffect, useState } from "react";
-import type { AccountLimits } from "@palmagent/shared";
-import { useTaskOperations } from "./remote-operations";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api";
+import { clientReadKeys } from "../client-query-keys";
 
 export function useTaskAccountLimits(taskId: string) {
-  const [report, setReport] = useState<AccountLimits | null>(null);
-  const [failed, setFailed] = useState(false);
+  const queryKey = clientReadKeys.taskLimits(taskId);
+  const query = useQuery({ queryKey, queryFn: () => api.getAccountLimits(taskId),
+    staleTime: 300_000, retry: false });
   const [now, setNow] = useState(Date.now);
-  const operations = useTaskOperations(taskId);
   useEffect(() => {
-    let stopped = false, pending = false;
-    const refresh = async () => {
-      if (document.visibilityState === "hidden" || pending) return;
-      pending = true;
-      try {
-        const next = await operations.accountLimits();
-        if (!stopped) { setReport(next); setFailed(false); setNow(Date.now()); }
-      } catch {
-        if (!stopped) { setReport(null); setFailed(true); }
-      } finally { pending = false; }
-    };
-    void refresh();
-    const timer = window.setInterval(() => { setNow(Date.now()); void refresh(); }, 30_000);
-    const visible = () => { setNow(Date.now()); void refresh(); };
-    document.addEventListener("visibilitychange", visible);
-    return () => { stopped = true; window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
-  }, [operations]);
-  return { report, failed, now };
+    // Local countdown only. Account reads are driven by the stream.
+    const tick = () => setNow(Date.now());
+    const timer = window.setInterval(tick, 30_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
+  }, []);
+  return { report: query.isError ? null : query.data ?? null, failed: query.isError, now };
 }
