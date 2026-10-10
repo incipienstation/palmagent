@@ -35,7 +35,8 @@ export function runInterrupted(failure: RunFailure): boolean {
 // provider phase markers can arrive after text deltas. Unknown/legacy prose is
 // always signal; a later tool call alone is not proof that text was progress.
 export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolean): TranscriptRow[] {
-  if (mode === "verbose") return log.map((item) => ({ type: "message", key: item.key, item }));
+  if (mode === "verbose") return log.filter((item) => item.kind !== "status" || payload(item).subtype !== "context_compacted")
+    .map((item) => ({ type: "message", key: item.key, item }));
   const rows: TranscriptRow[] = [];
   let turn: LogItem[] = [];
   let failure: RunFailure | undefined;
@@ -114,6 +115,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
   };
   for (const item of log) {
     const p = payload(item);
+    if (item.kind === "status" && p.subtype === "context_compacted") { flush(false); continue; }
     // Answers and steering continue the same run; only a new request or a
     // provider turn start makes the previous run's error historical.
     if (item.kind === "status" && ["dispatch", "followup", "turn_started"].includes(String(p.subtype))) {
@@ -121,7 +123,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
       if (failure) failure.previous = true;
       failure = undefined;
     }
-    if (item.kind === "status" && p.subtype === "context_compacted" || userMessage(item) || item.kind === "question" || item.kind === "approval_request") {
+    if (userMessage(item) || item.kind === "question" || item.kind === "approval_request") {
       flush(false);
       rows.push({ type: "message", key: item.key, item });
     } else {

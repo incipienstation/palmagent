@@ -84,8 +84,12 @@ for (const width of [360, 1280]) test(`compaction menu and lifecycle preserve dr
   await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toHaveCount(0);
   await expect(draft).toHaveValue("Keep my next question, edited during compaction");
   expect(Math.abs(await viewport.evaluate(el => el.scrollTop) - before)).toBeLessThan(8);
+  await expect(page.getByTestId("toast")).toHaveText("Context compacted");
   await viewport.hover(); await page.mouse.wheel(0, 100000);
-  await expect(page.getByText("Context compacted", { exact: true })).toBeVisible();
+  await expect(viewport.getByText("Context compacted", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("toast")).toHaveCount(0);
+  await f.snapshot();
+  await expect(page.getByTestId("toast")).toHaveCount(0);
   await assertViewportLocked(page);
   await menu(page); await page.getByRole("menuitem", { name: "Compact context", exact: true }).click();
   await expect.poll(() => f.requests.length).toBe(2);
@@ -107,11 +111,16 @@ test("slash command uses compaction and restores running state after reload", as
   await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toBeVisible();
   await expect(draft).toHaveValue("Draft during compaction");
   await f.complete("Provider unavailable");
+  await expect(page.getByTestId("toast")).toHaveCount(0);
   await expect(page.getByRole("alert").filter({ hasText: "Provider unavailable" })).toBeVisible();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect.poll(() => f.requests.length).toBe(2);
   await expect(draft).toHaveValue("Draft during compaction");
   await f.complete();
+  await expect(page.getByTestId("toast")).toHaveText("Context compacted");
+  await page.reload(); await f.snapshot();
+  await expect(draft).toHaveValue("Draft during compaction");
+  await expect(page.getByText("Context compacted", { exact: true })).toHaveCount(0);
 });
 
 test("failed admission retains slash command and retry identity", async ({ page }) => {
