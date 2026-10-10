@@ -1,5 +1,7 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { installScopedStream, open, send, viewport, expectBottom } from "./_session-stream";
+
+test.use({ serviceWorkers: "block" });
 
 const taskId = "t-idle-rich";
 function message(seq: number, paragraphs: number) {
@@ -9,30 +11,35 @@ function message(seq: number, paragraphs: number) {
   } } };
 }
 
+async function unevenHistory(page: Page) {
+  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "verbose"));
+  await installScopedStream(page);
+  let requested = 0;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let releaseTail!: () => void;
+  const tail = new Promise<void>(resolve => { releaseTail = resolve; });
+  await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), async route => {
+    const before = new URL(route.request().url()).searchParams.get("before");
+    if (before === "901") { await tail; return route.fulfill({ json: { events: [], before: null, cursor: 1004 } }); }
+    const earlier = before === "1001";
+    if (earlier) { requested++; await pending; }
+    return route.fulfill({ json: { events: earlier
+      ? [message(901, 12), message(902, 1), message(903, 12)]
+      : before ? [message(1001, 80), message(1002, 1), message(1003, 1)] : [message(1004, 24)],
+    before: earlier ? 901 : before ? 1001 : 1004, cursor: 1004 } });
+  });
+  await open(page, taskId, { serverHistory: true });
+  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1004 });
+  await expect(page.locator('[data-message-key="1001"]')).toHaveCount(1);
+  await expectBottom(page);
+  return { release, releaseTail, requests: () => requested };
+}
+
 for (const width of [360, 1280]) test.describe(`${width}px history`, () => {
   test.use({ viewport: { width, height: width === 360 ? 780 : 900 } });
   test("wheel reading survives a prepend estimated from a much taller message", async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("pref:output-mode", "verbose"));
-    await installScopedStream(page);
-    let requested = 0;
-    let release!: () => void;
-    const pending = new Promise<void>(resolve => { release = resolve; });
-    let releaseTail!: () => void;
-    const tail = new Promise<void>(resolve => { releaseTail = resolve; });
-    await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), async route => {
-      const before = new URL(route.request().url()).searchParams.get("before");
-      if (before === "901") { await tail; return route.fulfill({ json: { events: [], before: null, cursor: 1004 } }); }
-      const earlier = before === "1001";
-      if (earlier) { requested++; await pending; }
-      return route.fulfill({ json: { events: earlier
-        ? [message(901, 12), message(902, 1), message(903, 12)]
-        : before ? [message(1001, 80), message(1002, 1), message(1003, 1)] : [message(1004, 24)],
-      before: earlier ? 901 : before ? 1001 : 1004, cursor: 1004 } });
-    });
-    await open(page, taskId, { serverHistory: true });
-    await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1004 });
-    await expect(page.locator('[data-message-key="1001"]')).toHaveCount(1);
-    await expectBottom(page);
+    const history = await unevenHistory(page);
     await viewport(page).hover();
     const capture = await viewport(page).evaluateHandle(pane => {
       const state = { active: true, frames: 0, blank: 0, backward: 0 };
@@ -58,7 +65,7 @@ for (const width of [360, 1280]) test.describe(`${width}px history`, () => {
     const wheelDistance = width === 360 ? 240 : 120;
     for (let step = 0; step < 18; step++) {
       await page.mouse.wheel(0, -wheelDistance);
-      if (step === 2) release();
+      if (step === 2) history.release();
       await page.waitForTimeout(40);
     }
     await expect(page.locator('[data-message-key="901"]')).toHaveCount(1);
@@ -66,12 +73,54 @@ for (const width of [360, 1280]) test.describe(`${width}px history`, () => {
     const result = await capture.evaluate(state => { state.active = false; return state; });
     await capture.dispose();
     const distance = await viewport(page).evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop);
-    releaseTail();
-    console.log(JSON.stringify({ requested, distance, ...result }));
+    history.releaseTail();
+    console.log(JSON.stringify({ requested: history.requests(), distance, ...result }));
     expect(Math.abs(distance - 18 * wheelDistance), "Prepending must not skip content or cancel wheel movement").toBeLessThanOrEqual(2);
-    expect(requested).toBe(1);
+    expect(history.requests()).toBe(1);
     expect(result.frames).toBeGreaterThan(5);
     expect(result.blank).toBe(0);
     expect(result.backward).toBeGreaterThanOrEqual(-2);
+  });
+
+  test("a prepend at the unloaded top preserves the original reading row", async ({ page }) => {
+    const history = await unevenHistory(page);
+    await viewport(page).hover();
+    await viewport(page).evaluate(pane => {
+      pane.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+      pane.scrollTop = 0;
+    });
+    await page.waitForTimeout(100);
+    const capture = await viewport(page).evaluateHandle(pane => {
+      const row = () => pane.querySelector<HTMLElement>('[data-message-key="1001"]');
+      const offset = () => row()!.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+      const before = offset();
+      const state = { active: true, before, min: before, max: before, frames: 0, missing: 0 };
+      const frame = () => {
+        if (!state.active) return;
+        state.frames++;
+        if (!row()) state.missing++;
+        else { const top = offset(); state.min = Math.min(state.min, top); state.max = Math.max(state.max, top); }
+        requestAnimationFrame(() => setTimeout(frame, 0));
+      };
+      requestAnimationFrame(() => setTimeout(frame, 0));
+      return state;
+    });
+    history.release();
+    // Keep upward input active across page arrival so a later stationary restore
+    // cannot hide a frame that jumped while the reader was moving.
+    for (let step = 0; step < 12; step++) {
+      await page.mouse.wheel(0, -1);
+      await page.waitForTimeout(40);
+    }
+    await expect(page.locator('[data-message-key="901"]')).toHaveCount(1);
+    await page.waitForTimeout(500);
+    const result = await capture.evaluate(state => { state.active = false; return state; });
+    await capture.dispose();
+    history.releaseTail();
+    console.log(JSON.stringify(result));
+    expect(result.frames).toBeGreaterThan(5);
+    expect(result.missing).toBe(0);
+    expect(result.min).toBeGreaterThanOrEqual(result.before - 2);
+    expect(result.max).toBeLessThanOrEqual(result.before + 12 + 2);
   });
 });

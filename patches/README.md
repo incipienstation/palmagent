@@ -10,11 +10,15 @@ loses the reader's movement.
 
 The patch computes compensation from the offset of the row at the reading position, using
 Virtuoso's measured layout. Total-height changes below that row no longer move the viewport.
+It retains that row's stable index through the first measurement after a prepend, including
+at the unloaded top where the header would otherwise select a newly inserted row. The size
+observer releases the retained index after publishing its measurement, even if sizes match.
 It retains native-clamp compensation and uses the upstream total-height fallback when the
 rendered ranges do not share that row. Measurements still correct the position after the
 reader pauses or changes direction; they no longer depend on the transient direction flag.
 The existing guards for count changes, recalculation, and programmatic scrolling remain.
-The application does not gain a second scroll-position owner or a timed correction window.
+The application no longer restores a separate top-edge scroll target. Virtuoso owns the
+prepend correction without a timed correction window.
 Only the ESM entry used by the web build is patched; the CommonJS entry is unused by Palmagent.
 
 When upgrading Virtuoso, review `upwardScrollFixSystem` and remove or rebase the patch. Run

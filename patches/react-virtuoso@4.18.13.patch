@@ -1,8 +1,37 @@
 diff --git a/dist/index.mjs b/dist/index.mjs
-index faf06c75ffb1135b62e15b50a9874f00145d390e..5e488ca2eda7e893a3f79ec4bd858c79c8204584 100644
+index faf06c75ffb1135b62e15b50a9874f00145d390e..b02365660a5b5838f0edddf124567b9e2ea9a30d 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -2065,7 +2065,7 @@ function oo(t) {
+@@ -312,7 +312,7 @@ function $e(t, e, n) {
+     i && e ? (s?.observe(i), o.current = i) : (o.current && s?.unobserve(o.current), o.current = null);
+   }, { callbackRef: r, ref: o };
+ }
+-function An(t, e, n, o, r, s, i, l, c) {
++function An(t, e, n, o, r, s, i, l, c, measurementComplete) {
+   const d = E.useCallback(
+     (f) => {
+       const v = Bo(f.children, e, l ? "offsetWidth" : "offsetHeight", r);
+@@ -329,9 +329,9 @@ function An(t, e, n, o, r, s, i, l, c) {
+         viewportHeight: I
+       }), s?.(
+         l ? In("column-gap", getComputedStyle(f).columnGap, r) : In("row-gap", getComputedStyle(f).rowGap, r)
+-      ), v !== null && t(v);
++      ), v !== null && t(v), measurementComplete?.();
+     },
+-    [t, e, r, s, i, o, l]
++    [t, e, r, s, i, o, l, measurementComplete]
+   );
+   return $e(d, n, c);
+ }
+@@ -1023,6 +1023,7 @@ const _o = {
+       shiftWith: i,
+       shiftWithOffset: k,
+       sizeRanges: n,
++      sizeMeasurementComplete: K(),
+       // output
+       sizes: h,
+       statefulTotalCount: r,
+@@ -2065,28 +2066,43 @@ function oo(t) {
  }
  const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.test(navigator.userAgent)), sr = Z(
    ([
@@ -10,8 +39,15 @@ index faf06c75ffb1135b62e15b50a9874f00145d390e..5e488ca2eda7e893a3f79ec4bd858c79
 +    { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r, headerHeight: readingHeaderHeight },
      { isAtBottom: s, isScrolling: i, lastJumpDueToItemResize: l, scrollDirection: c },
      { listState: d },
-     { beforeUnshiftWith: f, gap: v, shiftWithOffset: m, sizes: g },
-@@ -2075,18 +2075,29 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+-    { beforeUnshiftWith: f, gap: v, shiftWithOffset: m, sizes: g },
++    { beforeUnshiftWith: f, gap: v, shiftWithOffset: m, sizes: g, sizeMeasurementComplete },
+     { log: y },
+     { recalcInProgress: R }
+   ]) => {
++    let prependAnchorIndex;
++    // Keep the pre-prepend row through the first size measurement. At the
++    // unloaded top, the header otherwise points into a newly inserted row.
++    J(sizeMeasurementComplete, () => { if (!ot(R)) prependAnchorIndex = void 0; });
      const I = Ct(
        S(
          d,
@@ -28,7 +64,7 @@ index faf06c75ffb1135b62e15b50a9874f00145d390e..5e488ca2eda7e893a3f79ec4bd858c79
 +            // the reader, which must not move their viewport.
 +            if (C === z && x.length > 0 && p.length > 0) {
 +              const readingTop = readingScrollTop + F - readingHeader;
-+              const previous = x.find((item) => item.offset + item.size > readingTop) ?? x[x.length - 1];
++              const previous = x.find((item) => item.index === prependAnchorIndex) ?? x.find((item) => item.offset + item.size > readingTop) ?? x[x.length - 1];
 +              const current = p.find((item) => item.originalIndex === previous.originalIndex);
 +              V = current ? current.offset - previous.offset : O - k;
 +              if (V !== 0) V += F;
@@ -45,3 +81,57 @@ index faf06c75ffb1135b62e15b50a9874f00145d390e..5e488ca2eda7e893a3f79ec4bd858c79
          B(([[x], , , , , C]) => (C("Upward scrolling compensation", { amount: x }, mt.DEBUG), x))
        )
      );
+@@ -2143,6 +2159,8 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+         })
+       ),
+       (x) => {
++        const items = ot(d).items, readingTop = Math.max(0, ot(r) - ot(readingHeaderHeight));
++        prependAnchorIndex = (items.find((item) => item.offset + item.size > readingTop) ?? items[items.length - 1])?.index;
+         a = { acknowledgeable: ot(t) !== x, offset: x }, M(t, x), requestAnimationFrame(T);
+       }
+     ), { deviation: t };
+@@ -2200,6 +2218,7 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+       heightEstimates: l,
+       itemSize: c,
+       sizeRanges: d,
++      sizeMeasurementComplete,
+       sizes: f,
+       statefulTotalCount: v,
+       totalCount: m,
+@@ -2238,6 +2257,7 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+       initialTopMostItemIndex: R,
+       scrolledToInitialItem: I,
+       sizeRanges: d,
++      sizeMeasurementComplete,
+       topItemCount: u,
+       topItemsIndexes: O,
+       // input
+@@ -2471,7 +2491,7 @@ const ur = /* @__PURE__ */ Z(() => {
+   ([t, e]) => ({ ...t, ...e }),
+   it(ro, ur)
+ ), dr = ({ height: t }) => /* @__PURE__ */ G("div", { style: { height: t } }), fr = { overflowAnchor: "none", position: Qe(), zIndex: 1 }, lo = { overflowAnchor: "none" }, mr = { ...lo, display: "inline-block", height: "100%" }, Hn = /* @__PURE__ */ E.memo(function({ showTopList: e = !1 }) {
+-  const n = A("listState"), o = Tt("sizeRanges"), r = A("useWindowScroll"), s = A("customScrollParent"), i = Tt("windowScrollContainerState"), l = Tt("scrollContainerState"), c = s || r ? i : l, d = A("itemContent"), f = A("context"), v = A("groupContent"), m = A("trackItemSizes"), g = A("itemSize"), y = A("log"), R = Tt("gap"), I = A("horizontalDirection"), { callbackRef: h } = An(
++  const n = A("listState"), o = Tt("sizeRanges"), r = A("useWindowScroll"), s = A("customScrollParent"), i = Tt("windowScrollContainerState"), l = Tt("scrollContainerState"), c = s || r ? i : l, d = A("itemContent"), f = A("context"), v = A("groupContent"), m = A("trackItemSizes"), g = A("itemSize"), y = A("log"), R = Tt("gap"), I = A("horizontalDirection"), measurementComplete = Tt("sizeMeasurementComplete"), { callbackRef: h } = An(
+     o,
+     g,
+     m,
+@@ -2480,7 +2500,8 @@ const ur = /* @__PURE__ */ Z(() => {
+     R,
+     s,
+     I,
+-    A("skipAnimationFrameInResizeObserver")
++    A("skipAnimationFrameInResizeObserver"),
++    e ? void 0 : measurementComplete
+   ), [a, T] = E.useState(0);
+   rn("deviation", ($) => {
+     a !== $ && T($);
+@@ -2846,7 +2867,8 @@ const xr = ({ children: t }) => {
+     void 0,
+     s,
+     !1,
+-    _("skipAnimationFrameInResizeObserver")
++    _("skipAnimationFrameInResizeObserver"),
++    wt("sizeMeasurementComplete")
+   ), [y, R] = E.useState(0);
+   sn("deviation", (O) => {
+     y !== O && (g.current.style.marginTop = `${O}px`, R(O));
