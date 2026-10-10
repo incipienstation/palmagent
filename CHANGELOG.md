@@ -10,6 +10,12 @@ An entry does not mean a version has been published.
 
 - Reading older messages keeps its position when conversation history contains answers with very different heights.
 
+## 0.1.0-alpha.167
+
+### Added
+
+- A translucent scroll-to-bottom button returns to the latest conversation content and resumes following live output without disturbing your draft.
+
 ## 0.1.0-alpha.166
 
 ### Changed

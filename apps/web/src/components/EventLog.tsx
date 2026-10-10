@@ -5,6 +5,7 @@ import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, 
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import {
   AlertTriangle,
+  ArrowDown,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -18,6 +19,7 @@ import { Virtuoso, type SizeFunction, type StateSnapshot, type VirtuosoHandle } 
 import { useQueries } from "@tanstack/react-query";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -380,6 +382,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
   const initialized = useRef(!!saved.current);
   const [positioned, setPositioned] = useState(false);
+  const [showJump, setShowJump] = useState(false);
+  const jumpButton = useRef<HTMLButtonElement>(null);
   useUpdateSnapshot(`scroll:${location.hash}`, () => {
     let state: StateSnapshot | undefined;
     virtuoso.current?.getState((value) => { state = value; });
@@ -392,6 +396,16 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const viewport = useRef<HTMLElement | null>(null);
   const scrollFrame = useRef(0);
   const captureFrame = useRef(0);
+  const jumpFrame = useRef(0);
+  const jumping = useRef(false);
+  const updateJump = useCallback(() => {
+    const el = viewport.current;
+    if (!el || !initialized.current) return;
+    const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
+    // Keep the control through an explicit jump; separate show/hide thresholds
+    // avoid flicker from small height corrections near the bottom.
+    setShowJump(shown => jumping.current || (!following.current && gap > (shown ? 80 : 120)));
+  }, []);
   const lastScrollTop = useRef<number | undefined>(undefined);
   const captureAnchor = useCallback(() => {
     const el = viewport.current;
@@ -414,11 +428,12 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const onScrollPosition = useCallback((el: HTMLElement) => {
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
+    updateJump();
     if (restoring.current) return;
     if (!initialized.current) return;
     const list = el.querySelector<HTMLElement>("[data-transcript-items]");
     if (list && getComputedStyle(list).visibility === "hidden") return;
-    if (el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
+    if (!jumping.current && el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
     // A scroll event can come from Virtuoso's measurement correction. Only
     // explicit upward input or scrollbar interaction detaches bottom following.
     captureAnchor();
@@ -433,14 +448,16 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       return typeof text === "string" && text.length > 4000 ? [text] : [];
     }).slice(0, 16);
     prewarmMarkdown(texts);
-  }, [captureAnchor, rows]);
+  }, [captureAnchor, rows, updateJump]);
   // Check the reading position when the frame runs, not when a resize was
   // scheduled: a delayed size update must not pull a reader back to the bottom.
   const followBottom = useCallback(() => {
+    if (jumping.current) return;
     cancelAnimationFrame(scrollFrame.current);
     let previousHeight = -1, stable = 0, attempts = 0;
     const follow = () => {
       const el = viewport.current;
+      updateJump();
       if (!el || !initialized.current || !following.current) return;
       const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
       stable = previousHeight === el.scrollHeight && gap <= 1 ? stable + 1 : 0;
@@ -451,7 +468,34 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       if (++attempts < 8 && stable < 2) scrollFrame.current = requestAnimationFrame(follow);
     };
     scrollFrame.current = requestAnimationFrame(follow);
-  }, []);
+  }, [updateJump]);
+  const jumpToBottom = useCallback(() => {
+    const el = viewport.current;
+    if (!el) return;
+    if (document.activeElement === jumpButton.current) el.focus({ preventScroll: true });
+    restoring.current = false;
+    initialized.current = true;
+    following.current = false;
+    jumping.current = true;
+    cancelAnimationFrame(scrollFrame.current);
+    cancelAnimationFrame(jumpFrame.current);
+    const start = el.scrollTop;
+    const gap = el.scrollHeight - el.clientHeight - start;
+    const duration = matchMedia("(prefers-reduced-motion: reduce)").matches || gap > el.clientHeight ? 0 : 180;
+    const started = performance.now();
+    const advance = (now: number) => {
+      const progress = duration ? Math.min(1, (now - started) / duration) : 1;
+      const bottom = el.scrollHeight - el.clientHeight;
+      el.scrollTop = start + (bottom - start) * (1 - (1 - progress) ** 3);
+      if (progress < 1) jumpFrame.current = requestAnimationFrame(advance);
+      else {
+        jumping.current = false;
+        following.current = true;
+        followBottom();
+      }
+    };
+    jumpFrame.current = requestAnimationFrame(advance);
+  }, [followBottom]);
   // Let Virtuoso finish its initial positioning before our bottom follower can
   // write. Its early atBottom notification includes the empty, hidden list.
   useLayoutEffect(() => {
@@ -464,6 +508,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
         // Visible rows are ready to replace the placeholder even if a live
         // answer keeps changing height. Bottom-follow settling is independent.
         setPositioned(true);
+        updateJump();
         if (initialized.current) return;
         const position = `${el.scrollTop}:${el.scrollHeight}:${el.clientHeight}`;
         stable = previous === position ? stable + 1 : 0;
@@ -479,10 +524,11 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     };
     frame = requestAnimationFrame(initialize);
     return () => cancelAnimationFrame(frame);
-  }, [followBottom]);
+  }, [followBottom, updateJump]);
   useEffect(() => () => {
     cancelAnimationFrame(scrollFrame.current);
     cancelAnimationFrame(captureFrame.current);
+    cancelAnimationFrame(jumpFrame.current);
   }, []);
   useEffect(() => {
     const el = viewport.current;
@@ -494,7 +540,10 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       cancelRestore();
       initialized.current = true;
       following.current = false;
+      jumping.current = false;
+      cancelAnimationFrame(jumpFrame.current);
       cancelAnimationFrame(scrollFrame.current);
+      updateJump();
     };
     const wheel = (event: WheelEvent) => {
       if (event.deltaY < 0) pause();
@@ -530,7 +579,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       el.removeEventListener("keydown", key);
       root?.removeEventListener("pointerdown", scrollbar, true);
     };
-  }, []);
+  }, [updateJump]);
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
@@ -627,6 +676,17 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
         </div>}
     </div>}
   />
+    {positioned && <Tooltip>
+      <TooltipTrigger asChild>
+        <Button ref={jumpButton} type="button" variant="floating" size="icon"
+          aria-label="Scroll to bottom" hidden={!showJump}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full after:absolute after:-inset-1 after:rounded-full [&[hidden]]:hidden"
+          onMouseDown={event => event.preventDefault()} onClick={jumpToBottom}>
+          <ArrowDown aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Scroll to bottom</TooltipContent>
+    </Tooltip>}
     {!positioned && <div className="pointer-events-none absolute inset-0 bg-background px-4 pt-[calc(80px+var(--safe-top))]" data-transcript-loading>
       <ConversationLoading />
     </div>}
