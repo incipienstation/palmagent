@@ -165,6 +165,8 @@ export interface TaskHistoryEvent {
 }
 export interface TaskHistoryResponse {
   events: TaskHistoryEvent[];
+  // Compact summaries include the whole conversation (null). Full detail
+  // pages retain a cursor for loading older records in Verbose mode.
   before: number | null;
   // Durable per-task high-water mark captured with the REST page.
   cursor: number;

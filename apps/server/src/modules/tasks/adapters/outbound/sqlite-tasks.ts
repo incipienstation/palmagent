@@ -442,18 +442,23 @@ historyStart(taskId: string, before: number, limit = HISTORY_PAGE_EVENTS): numbe
   }
 
 historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId), includeActivityDetails = true): import("@palmagent/shared").TaskHistoryResponse {
-    const start = this.historyStart(taskId, before);
+    // Compact is the conversation, not a window over raw provider events. A
+    // single collapsed Activity can span thousands of those events; paging it
+    // would hide earlier messages and keep changing its count while reading.
+    const start = includeActivityDetails ? this.historyStart(taskId, before) : 1;
     const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
       WHERE e.task_id = ? AND e.seq >= ? AND e.seq < ? ORDER BY e.seq`)
-      .all(taskId, start, before) as EventJoinRow[];
-    return { events: rows.map((row) => {
+      .iterate(taskId, start, before) as IterableIterator<EventJoinRow>;
+    const events: import("@palmagent/shared").TaskHistoryEvent[] = [];
+    // Discard each bulky tool payload before reading the next row instead of
+    // materializing all full payloads for a compact conversation in memory.
+    for (const row of rows) {
       const event = rowToEvent(row).event;
-      if (includeActivityDetails) return { seq: row.seq, event };
-      const compact = deferActivityEventDetails(event);
-      return { seq: row.seq, ...compact };
-    }),
-      before: start > 1 ? start : null, cursor };
+      events.push(includeActivityDetails ? { seq: row.seq, event }
+        : { seq: row.seq, ...deferActivityEventDetails(event) });
+    }
+    return { events, before: start > 1 ? start : null, cursor };
   }
 
 historyChanges(taskId: string, after: number, through?: number, includeActivityDetails = true): import("@palmagent/shared").TaskHistoryChangesResponse {

@@ -537,6 +537,44 @@ test("REST history pages and bounded catch-up keep persisted events out of SSE",
   assert.equal(page.before, 1003);
 });
 
+test("compact history returns the complete conversation and defers tool payloads until expansion", async (t) => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "Original request", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  f.db.insertEvent("t", "status", { subtype: "dispatch", text: "Original request" }, 1);
+  for (let i = 0; i < 300; i++) {
+    f.db.insertEvent("t", "tool_call", { id: `tool-${i}`, name: "Read", input: { path: "fixture.txt" } }, i + 2);
+    f.db.insertEvent("t", "tool_result", { tool_use_id: `tool-${i}`, output: `Detail ${i}: ${"content ".repeat(500)}`, is_error: i === 0 }, i + 2);
+  }
+  f.db.insertEvent("t", "assistant_text", { text: "Complete answer", phase: "final" }, 302);
+  await f.service.init();
+
+  const response = await f.app.request("/api/tasks/t/history?details=summary");
+  assert.equal(response.status, 200);
+  const compact = await response.json() as import("@palmagent/shared").TaskHistoryResponse;
+  assert.equal(compact.cursor, 602);
+  assert.equal(compact.before, null, "collapsed work must not paginate the conversation");
+  assert.deepEqual(compact.events.map(row => row.seq), Array.from({ length: 602 }, (_, i) => i + 1));
+  assert.deepEqual(compact.events[0].event.payload, { subtype: "dispatch", text: "Original request" });
+  assert.deepEqual(compact.events.at(-1)!.event.payload, { text: "Complete answer", phase: "final" });
+  assert.ok(compact.events.slice(1, -1).every(row => row.detailsDeferred));
+  assert.deepEqual(compact.events[1].event.payload, { id: "tool-0", name: "Read" });
+  assert.deepEqual(compact.events[2].event.payload, { tool_use_id: "tool-0", is_error: true });
+  assert.doesNotMatch(JSON.stringify(compact), /fixture\.txt|Detail \d+|content /);
+
+  const detailsResponse = await f.app.request("/api/tasks/t/history/details?from=2&through=601");
+  const details = await detailsResponse.json() as import("@palmagent/shared").TaskActivityDetailsResponse;
+  assert.equal(detailsResponse.status, 200);
+  assert.equal(details.events.length, 600, "one Activity expansion covers more than a raw history page");
+  assert.deepEqual(details.events[0].event.payload, { id: "tool-0", name: "Read", input: { path: "fixture.txt" } });
+  assert.match(JSON.stringify(details.events.at(-1)!.event.payload), /Detail 299:/);
+
+  const verboseResponse = await f.app.request("/api/tasks/t/history?details=full");
+  const verbose = await verboseResponse.json() as import("@palmagent/shared").TaskHistoryResponse;
+  assert.equal(verbose.events.length, 200);
+  assert.equal(verbose.before, 403, "Verbose retains bounded full-payload pages");
+});
+
 test("snapshot-only inbox streams omit historical and live event bodies", async (t) => {
   const f = fixture(t, false);
   f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });

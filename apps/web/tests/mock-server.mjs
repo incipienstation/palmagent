@@ -216,12 +216,29 @@ const server = createServer(async (req, res) => {
         const stream = events[id] ?? [];
         const requestedBefore = url.searchParams.get("before");
         const cursor = requestedBefore === null ? stream.length : Number(requestedBefore) - 1;
-        let start = Math.max(0, Math.min(stream.length, cursor) - 200);
+        const compact = url.searchParams.get("details") === "summary";
+        let start = compact ? 0 : Math.max(0, Math.min(stream.length, cursor) - 200);
         while (start > 0 && stream[start]?.kind === "assistant_text" && stream[start - 1]?.kind === "assistant_text") start--;
         const agent = tasks.find((task) => task.taskId === id)?.agent ?? "codex";
-        return json(res, 200, { events: stream.slice(start, cursor).map((event, i) => ({
-          seq: start + i + 1, event: { taskId: id, agent, ts: 0, ...event },
-        })), before: start > 0 ? start + 1 : null, cursor: stream.length });
+        return json(res, 200, { events: stream.slice(start, cursor).map((event, i) => {
+          const detailsDeferred = compact && ["tool_call", "tool_result"].includes(event.kind);
+          const fields = event.kind === "tool_call" ? ["id", "tool_use_id", "name", "status", "is_error", "exit_code"]
+            : ["id", "tool_use_id", "status", "is_error", "exit_code"];
+          return { seq: start + i + 1, event: { taskId: id, agent, ts: 0, ...event,
+            ...(detailsDeferred ? { payload: Object.fromEntries(Object.entries(event.payload ?? {}).filter(([key]) => fields.includes(key))) } : {}),
+          }, ...(detailsDeferred ? { detailsDeferred: true } : {}) };
+        }), before: start > 0 ? start + 1 : null, cursor: stream.length });
+      }
+      const detailsMatch = /^\/api\/tasks\/([^/]+)\/history\/details$/.exec(pathname);
+      if (detailsMatch) {
+        const id = decodeURIComponent(detailsMatch[1]);
+        const stream = events[id] ?? [];
+        const from = Number(url.searchParams.get("from"));
+        const through = Math.min(Number(url.searchParams.get("through")), stream.length);
+        const agent = tasks.find((task) => task.taskId === id)?.agent ?? "codex";
+        return json(res, 200, { events: stream.slice(from - 1, through).flatMap((event, i) =>
+          ["tool_call", "tool_result"].includes(event.kind) ? [{ seq: from + i, event: { taskId: id, agent, ts: 0, ...event } }] : []),
+        from, through, cursor: stream.length });
       }
       if (pathname.startsWith("/api/tasks/")) {
         if (pathname.endsWith("/account-limits")) {
