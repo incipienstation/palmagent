@@ -273,7 +273,7 @@ guess which text is safe to fold.
   `Permission`, `Repo`, REST DTOs, `SseFrame`, and shared branding). Nothing is
   redefined. Type-only imports are erased by esbuild; shared intentionally uses
   source exports, so it needs no separate build step here.
-- **`EventSource`, not fetch streaming.** Each connection sends a task snapshot
+- **`EventSource`, not fetch streaming.** Each task-stream connection sends a task snapshot
   with a durable event boundary. Task detail loads any gap through that boundary
   from bounded REST history pages, then applies only events produced after the
   stream subscribed. The per-task `seq` in each SSE `id:` orders live deltas;
@@ -296,7 +296,20 @@ guess which text is safe to fold.
   requests with uncertain outcomes; other tabs receive invalidation signals.
   Foreground and online transitions expire REST reads and refresh mounted views. Task snapshots invalidate
   usage and run history. Authentication, settings, discovery, filesystem checks,
-  live task state, and account limits always reach the network.
+  and live task state always reach the network. Routine run history and terminal
+  lists refresh from inbox `read-change` events, including initial connection and
+  reconnect recovery. Terminal output continues to use WebSocket.
+- **Resource subscriptions:** agent installations (`/api/agents/stream`) and account
+  limits (`/api/agents/:agent/limits/stream`,
+  `/api/tasks/:id/account-limits/stream`) use authenticated SSE invalidations and
+  REST snapshots. Mounted views subscribe; navigation and session reset close the
+  streams. Invalidations during an active read coalesce into a trailing read.
+  Browsers do not poll these resources. The server shares external CLI reads across
+  subscribers: installation discovery refreshes every minute, account limits at
+  their five-minute cache expiry, and both stop refreshing when unobserved.
+  CLI update completion notifies immediately. Terminal registry file events carry
+  changes from independent hosts; periodic server reconciliation remains a repair
+  mechanism for lost notifications and unexpected process death.
 - **Conversation history:** REST returns the latest whole-message page and older
   pages on demand. Compact and full history variants share a per-task TanStack
   Query infinite cache retained for up to five minutes, within a five-conversation /

@@ -1,3 +1,4 @@
+import { terminalsChanged } from "../terminal-events";
 import { api } from "../api";
 import { cacheSession } from "../query-lifecycle";
 import { observeTaskActivity } from "../task-activity";
@@ -40,6 +41,7 @@ export function useInbox(): Inbox {
       refresh(clientReadKeys.usage());
       refresh(clientReadKeys.routines());
       refresh(clientReadKeys.routineRunsAll());
+      terminalsChanged();
     };
     const connection = connectSse(
       "/api/stream?snapshots=1",
@@ -58,11 +60,12 @@ export function useInbox(): Inbox {
           snapshot.current = next;
           setTasks(next);
           setLoading(false);
-          if (seenSnapshot && recoverReads) refreshReads();
+          if (!seenSnapshot || recoverReads) refreshReads();
           seenSnapshot = true;
           recoverReads = false;
         }
         if (frame.type === "read-change") {
+          if (frame.terminals) terminalsChanged();
           if (frame.repos) refresh(clientReadKeys.repos());
           if (frame.usage) refresh(clientReadKeys.usage());
           if (frame.routines || frame.routineId) refresh(clientReadKeys.routines());

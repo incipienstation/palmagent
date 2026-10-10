@@ -1,3 +1,4 @@
+import { readStream } from "../../../../platform/http/read-stream.js";
 import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
 import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
@@ -5,7 +6,7 @@ import { jsonBody, query, params } from "../../../../platform/http/input.js";
 import type { HttpDependencies } from "./http-dependencies.js";
 import { TaskImageQuerySchema } from "@palmagent/shared/requests";
 
-export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
+export function taskRoutes({ service, hub, config, shutdown }: Pick<HttpDependencies, "service" | "hub" | "config" | "shutdown">) {
   const app = new Hono();
   return app
     .get("/", query(TaskQuerySchema), (c) => c.json({ tasks: service.listTasks(c.req.valid("query").status) }, 200))
@@ -48,6 +49,23 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       c.header("Content-Security-Policy", "default-src 'none'; sandbox");
       const image = await service.readTaskImage(c.req.valid("param").id, c.req.valid("query").path);
       return c.body(new Uint8Array(image.bytes), 200, { "Content-Type": image.mediaType });
+    })
+    .get("/:id/account-limits/stream", params(IdParamsSchema), c => {
+      const id = c.req.valid("param").id;
+      const account = () => { const task = service.getTask(id); return JSON.stringify([task.agent, task.sessionControl?.home]); };
+      let current = account();
+      return readStream(c, changed => {
+        let off = service.observeAccountLimits(id, changed);
+        const offTasks = hub.onTasks(tasks => {
+          const task = tasks.find(task => task.taskId === id);
+          const next = task ? JSON.stringify([task.agent, task.sessionControl?.home]) : "removed";
+          if (next === current) return;
+          current = next; off();
+          off = task ? service.observeAccountLimits(id, changed) : () => {};
+          changed();
+        });
+        return () => { offTasks(); off(); };
+      }, config.keepAliveMs, shutdown);
     })
     .get("/:id/account-limits", params(IdParamsSchema), async (c) => {
       c.header("Cache-Control", "no-store");

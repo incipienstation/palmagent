@@ -167,6 +167,14 @@ const server = createServer(async (req, res) => {
   const m = req.method ?? "GET";
 
   if (pathname === "/api/stream") return handleStream(req, res, url);
+  if (pathname === "/api/agents/stream" || /^\/api\/agents\/(claude|codex)\/limits\/stream$/.test(pathname)
+      || /^\/api\/tasks\/[^/]+\/account-limits\/stream$/.test(pathname)) {
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+    res.write('data: {"type":"read-change"}\n\n');
+    const timer = setInterval(() => res.write(":keep-alive\n\n"), 15000);
+    res.on("close", () => clearInterval(timer));
+    return;
+  }
 
   if (pathname.startsWith("/api/")) {
     // ---- GET reads ----

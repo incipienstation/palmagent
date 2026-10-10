@@ -12,6 +12,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useReadStream } from "../hooks/useReadStream";
 import { useAgentUpdate } from "../hooks/useAgentUpdate";
 import { agentInstallationsQueryOptions, agentLimitsQueryOptions, usageQueryOptions } from "../client-queries";
 import { clientReadKeys } from "../client-query-keys";
@@ -89,6 +90,7 @@ function AgentCard({ agent, installation, canUpdate, stale, usage, usageUnavaila
   usage: AgentUsage | null | undefined; usageUnavailable: boolean; now: number;
 }) {
   const limits = useQuery({ ...agentLimitsQueryOptions(agent), enabled: Boolean(installation?.version) });
+  useReadStream(installation?.version ? `/api/agents/${agent}/limits/stream` : undefined, clientReadKeys.agentLimits(agent));
   return <Card role="region" aria-label={agentName(agent)}>
     <CardHeader>
       <CardTitle role="heading" aria-level={2}>{agentName(agent)}</CardTitle>
@@ -116,6 +118,7 @@ function AgentCard({ agent, installation, canUpdate, stale, usage, usageUnavaila
 export function UsageView() {
   const query = useQuery(usageQueryOptions());
   const installations = useQuery(agentInstallationsQueryOptions());
+  useReadStream("/api/agents/stream", clientReadKeys.agentInstallations());
   const client = useQueryClient();
   const [lastError, setLastError] = useState("");
   const [now, setNow] = useState(Date.now);

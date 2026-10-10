@@ -148,6 +148,7 @@ export interface SseTasksFrame {
 // Sent after the corresponding durable read has changed. The inbox stream
 // carries these even when conversation event bodies are disabled.
 export interface SseReadChangeFrame {
+  terminals?: true;
   repos?: true;
   type: "read-change";
   usage?: true;

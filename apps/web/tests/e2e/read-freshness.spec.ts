@@ -1,35 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import type { SseFrame } from "@palmagent/shared";
+import { test, expect } from "@playwright/test";
+import { installInbox, send, type InboxHarness } from "./_inbox-stream";
 import { repos, routines, tasks, usage } from "../fixtures.mjs";
 
 test.use({ serviceWorkers: "block" });
 
 function gate() { let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; }); return { wait, release }; }
-
-type InboxHarness = { inbox: { onopen?: (event: Event) => void; onerror?: (event: Event) => void; onmessage?: (event: MessageEvent) => void } };
-async function installInbox(page: Page) {
-  await page.addInitScript(tasks => {
-    class Stream {
-      onopen?: (event: Event) => void;
-      onerror?: (event: Event) => void;
-      onmessage?: (event: MessageEvent) => void;
-      constructor() {
-        Object.assign(window, { inbox: this });
-        queueMicrotask(() => {
-          this.onopen?.(new Event("open"));
-          this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "tasks", tasks }) }));
-        });
-      }
-      close() {}
-    }
-    window.EventSource = Stream as unknown as typeof EventSource;
-  }, tasks);
-}
-async function send(page: Page, frame: SseFrame) {
-  await page.evaluate(frame => (window as unknown as InboxHarness).inbox.onmessage?.(
-    new MessageEvent("message", { data: JSON.stringify(frame) }),
-  ), frame);
-}
 
 for (const warm of [false, true]) test(`stream changes during ${warm ? "cached" : "initial"} reads and their follow-up are not lost`, async ({ page }) => {
   await installInbox(page);
@@ -90,11 +65,12 @@ for (const trigger of ["reconnect", "deletion"] as const) test(`Spaces refresh a
 for (const scope of ["routines", "repos"] as const) test(`cached ${scope} stay mounted with visible refresh errors and retry`, async ({ page }) => {
   await installInbox(page);
   const retry = gate();
-  let reads = 0;
+  let reads = 0, failedRead = 0;
+  let phase: "initial" | "fail" | "retry" = "initial";
   await page.route(`**/api/${scope}`, async route => {
     const read = ++reads;
-    if (read === 2) return route.fulfill({ status: 503, json: { error: "Refresh unavailable" } });
-    if (read > 2) await retry.wait;
+    if (phase === "fail") { failedRead = read; phase = "retry"; return route.fulfill({ status: 503, json: { error: "Refresh unavailable" } }); }
+    if (phase === "retry") await retry.wait;
     return route.fulfill({ json: scope === "repos" ? { repos } : { routines } });
   });
   await page.goto(scope === "repos" ? "/#/spaces" : "/#/routines");
@@ -105,6 +81,7 @@ for (const scope of ["routines", "repos"] as const) test(`cached ${scope} stay m
   const input = scope === "repos" ? page.getByRole("searchbox", { name: "Search Spaces" }) : page.getByLabel("Title (optional)");
   await input.fill(scope === "repos" ? repos[0].name : "Unsaved routine title");
   const draft = await input.elementHandle();
+  phase = "fail";
   await send(page, { type: "read-change", [scope]: true });
   const alert = page.getByRole("alert").filter({ hasText: "Refresh unavailable" });
   await expect(alert).toBeVisible();
@@ -118,10 +95,10 @@ for (const scope of ["routines", "repos"] as const) test(`cached ${scope} stay m
   retry.release();
   await expect(alert).toHaveCount(0);
   expect(await row!.evaluate(el => el.isConnected)).toBe(true);
-  expect(reads).toBe(3);
+  expect(reads).toBe(failedRead + 1);
 });
 
-test("terminal polling lets requests slower than its interval finish", async ({ page }) => {
+test("terminal SSE changes coalesce during slow reads without idle polling", async ({ page }) => {
   await installInbox(page);
   await page.clock.install();
   const first = gate(), second = gate();
@@ -136,7 +113,7 @@ test("terminal polling lets requests slower than its interval finish", async ({ 
   expect(reads).toBe(1);
   first.release();
   await expect(page.getByText("Open a terminal to work in this directory.")).toBeVisible();
-  await page.clock.fastForward(5_000);
+  await send(page, { type: "read-change", terminals: true });
   await expect.poll(() => reads).toBe(2);
   await page.clock.fastForward(11_000);
   expect(reads).toBe(2);
@@ -144,7 +121,7 @@ test("terminal polling lets requests slower than its interval finish", async ({ 
   await expect(page.getByRole("combobox", { name: "Select terminal" })).toContainText("No terminal yet");
 });
 
-test("a pending terminal poll cannot remove a newly created terminal", async ({ page }) => {
+test("a pending terminal read cannot remove a newly created terminal", async ({ page }) => {
   await installInbox(page);
   await page.clock.install();
   const poll = gate(), refresh = gate();
@@ -160,7 +137,7 @@ test("a pending terminal poll cannot remove a newly created terminal", async ({ 
   await page.goto("/#/terminals/repo/repo-app");
   const create = page.getByRole("button", { name: "New terminal", exact: true });
   await expect(create).toBeEnabled();
-  await page.clock.fastForward(5_000);
+  await send(page, { type: "read-change", terminals: true });
   await expect.poll(() => reads).toBe(2);
   await create.click();
   await expect.poll(() => reads).toBe(3);
@@ -173,4 +150,36 @@ test("a pending terminal poll cannot remove a newly created terminal", async ({ 
   refresh.release();
   await expect(create).toBeEnabled();
   await expect(selection).toContainText("New shell");
+});
+
+test("terminal reconnect recovers remote edits and preserves an open rename draft", async ({ page }) => {
+  await installInbox(page);
+  await page.clock.install();
+  let title = "Original shell", reads = 0;
+  const id = "80a6a201-c6df-4229-ae7c-7b6b42b72d2f";
+  await page.route("**/api/terminals", route => {
+    reads++;
+    return route.fulfill({ json: { capabilities: { available: true, persistent: true }, terminals: [
+      { id, repoId: "repo-app", title, initialCwd: "/projects/sample-app", state: "exited", createdAt: 1 },
+    ] } });
+  });
+  await page.goto("/#/terminals");
+  const selection = page.getByRole("combobox", { name: "Select terminal" });
+  await expect(selection).toContainText("Original shell");
+  await page.getByRole("button", { name: "Terminal actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename terminal" }).click();
+  const draft = page.getByRole("textbox", { name: "Terminal name" });
+  await draft.fill("Unsubmitted name");
+  const before = reads;
+  await page.clock.fastForward(60_000);
+  expect(reads).toBe(before);
+  title = "Remote rename";
+  await page.evaluate(() => {
+    const inbox = (window as unknown as InboxHarness).inbox;
+    inbox.onerror?.(new Event("error")); inbox.onopen?.(new Event("open"));
+  });
+  await send(page, { type: "tasks", tasks });
+  await expect(selection).toContainText("Remote rename");
+  await expect(draft).toHaveValue("Unsubmitted name");
+  expect(reads).toBe(before + 1);
 });

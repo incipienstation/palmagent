@@ -1,3 +1,4 @@
+import { ReadObserver } from "../../../../kernel/read-observer.js";
 import { compatibleAgentCli } from "@palmagent/shared";
 import type { AgentInstallation, AgentKind } from "@palmagent/shared";
 import { ApplicationError } from "../../../../kernel/errors.js";
@@ -6,6 +7,10 @@ import type { AgentInstallationHost, InstalledAgent as Installed } from "../port
 const agents = ["claude", "codex"] as const;
 
 export class AgentInstallationService implements AgentInstallations {
+  private observer = new ReadObserver(() => this.list(), () => 60_000,
+    values => JSON.stringify(values.map(({ checkedAt: _checkedAt, ...value }) => value)));
+  observe(listener: () => void): () => void { return this.observer.subscribe(listener); }
+
   private cache = new Map<AgentKind, { expires: number; value: Promise<AgentInstallation> }>();
   private updates = new Map<AgentKind, AgentInstallation["update"]>();
   private running = new Map<AgentKind, Promise<void>>();
@@ -84,11 +89,13 @@ export class AgentInstallationService implements AgentInstallations {
       if (installed.version === latest) {
         this.record(agent, { state: "succeeded", message: `Already on the latest release, ${installed.version}.` });
         this.cache.delete(agent);
+        this.observer.refresh();
         this.running.delete(agent); unlock(); finish();
         return this.get(agent);
       }
       const status = await this.get(agent);
       this.record(agent, { state: "running" });
+      this.observer.refresh();
       const release = unlock;
       void this.apply(agent, installed).finally(() => { this.running.delete(agent); release(); finish(); });
       return { ...status, update: { state: "running" } };
@@ -108,8 +115,8 @@ export class AgentInstallationService implements AgentInstallations {
     } catch {
       const failed = { state: "failed" as const, message: "The update could not be verified. Check the installation on the host before retrying." };
       try { this.record(agent, failed); } catch { this.unreadableState = true; }
-    } finally { this.cache.delete(agent); }
+    } finally { this.cache.delete(agent); this.observer.refresh(); }
   }
 
-  async close(): Promise<void> { await Promise.all(this.running.values()); }
+  async close(): Promise<void> { this.observer.close(); await Promise.all(this.running.values()); }
 }

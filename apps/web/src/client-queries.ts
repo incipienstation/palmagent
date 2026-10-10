@@ -50,7 +50,6 @@ export const routineRunsQueryOptions = (routineId: string, kind: "agent" | "scri
   retry: false,
   refetchOnWindowFocus: false,
   refetchOnReconnect: false,
-  refetchInterval: (query) => query.state.data?.some((run) => run.status === "running") ? 3_000 : false,
 });
 
 export const skillsQueryOptions = (context?: SkillContext) => queryOptions({
@@ -77,13 +76,11 @@ export const agentInstallationsQueryOptions = () => queryOptions({
   queryFn: ({ signal }) => api.agentInstallations(signal),
   staleTime: 30_000,
   retry: false,
-  refetchInterval: query => query.state.data?.installations.some(agent => agent.update.state === "running") ? 2_000 : 60_000,
 });
 
 export const agentLimitsQueryOptions = (agent: AgentKind) => queryOptions({
   queryKey: clientReadKeys.agentLimits(agent),
   queryFn: ({ signal }) => api.agentLimits(agent, signal),
   staleTime: FIVE_MINUTES,
-  refetchInterval: FIVE_MINUTES,
   retry: false,
 });

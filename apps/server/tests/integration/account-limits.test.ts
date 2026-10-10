@@ -133,3 +133,33 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     }
   }
 });
+
+test("account limit subscriptions share the provider read and refresh at cache expiry only while observed", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1000 });
+  const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+  let reads = 0, changes = 0;
+  const reader = new AccountLimitReader(async () => {
+    reads++;
+    return { rateLimits: { primary: { usedPercent: reads, windowDurationMins: 300 } } };
+  });
+  t.after(() => reader.close());
+  await reader.get("codex", "/fixture/shared-home");
+  t.mock.timers.tick(120_000);
+  const a = reader.observe("codex", "/fixture/shared-home", () => changes++);
+  const b = reader.observe("codex", "/fixture/shared-home", () => changes++);
+  await settle();
+  assert.equal(reads, 1);
+  t.mock.timers.tick(179_999); await settle();
+  assert.equal(reads, 1);
+  const before = changes;
+  t.mock.timers.tick(1); await settle();
+  assert.equal(reads, 2);
+  assert.equal(changes, before + 2);
+  a(); b();
+  t.mock.timers.tick(600_000); await settle();
+  assert.equal(reads, 2);
+  const reconnect = reader.observe("codex", "/fixture/shared-home", () => changes++);
+  await settle();
+  assert.equal(reads, 3);
+  reconnect();
+});

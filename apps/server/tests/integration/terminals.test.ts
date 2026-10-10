@@ -387,3 +387,47 @@ test("idle claims are atomic, explicit takeover fences stale input, and release 
     assert.equal(reconnect.control().writable, false);
   } finally { host.close(); f.close(); }
 });
+
+test("terminal registry changes from another connection notify the service without a reconciliation tick", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const f = fixture();
+  const external = new TerminalStore(f.store.directory);
+  let changes = 0;
+  const service = new TerminalService(f.store, {
+    capabilities: { available: true, persistent: true }, launch: async () => {}, terminate: async () => {}, alive: async () => true,
+  }, { task: () => { throw new Error("unused"); }, repo: () => undefined, cleanup: () => {}, updating: () => false },
+  "release", process.execPath, terminalFiles, () => changes++);
+  t.after(async () => { external.close(); await service.close(); rmSync(f.directory, { recursive: true, force: true }); });
+  service.start();
+  const { record } = f.reserve();
+  await waitFor(() => changes > 0, "reservation notification");
+  const before = changes;
+  external.update(record.id, { title: "Renamed elsewhere", state: "running" });
+  await waitFor(() => changes > before, "external update notification");
+  assert.equal(service.getPublic(record.id).title, "Renamed elsewhere");
+  assert.equal(service.getPublic(record.id).state, "running");
+});
+
+test("terminal watcher does not turn an unchanged launch error into a retry loop", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const f = fixture();
+  const { record } = f.reserve();
+  let notify = () => {}, launches = 0;
+  f.store.watch = changed => { notify = changed; return () => {}; };
+  const service = new TerminalService(f.store, {
+    capabilities: { available: true, persistent: true },
+    launch: async () => { launches++; throw new Error("service unavailable"); },
+    terminate: async () => {}, alive: async () => true,
+  }, { task: () => { throw new Error("unused"); }, repo: () => undefined, cleanup: () => {}, updating: () => false },
+  "release", process.execPath, terminalFiles);
+  t.after(async () => { await service.close(); rmSync(f.directory, { recursive: true, force: true }); });
+  service.start(); await service.reconcile();
+  assert.equal(f.store.get(record.id)?.startErrorCode, "launch_unconfirmed");
+  assert.equal(launches, 1);
+  notify(); notify();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(launches, 1, "own WAL writes do not trigger another launch");
+  t.mock.timers.tick(5000);
+  await service.reconcile();
+  assert.equal(launches, 2, "the recovery timer can still retry later");
+});

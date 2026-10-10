@@ -1,8 +1,9 @@
+import { installReadStreams, changeRead } from "./_read-streams";
 import { test, expect, type Page } from "@playwright/test";
 import type { AccountLimits } from "@palmagent/shared";
 import { assertViewportLocked } from "./_helpers";
 
-// Route fixtures must also intercept polls after the first paint. A separate check
+// Route fixtures also intercept reads invalidated by SSE. A separate check
 // exercises network-only account reads through the real service worker.
 test.use({ serviceWorkers: "block" });
 
@@ -20,6 +21,7 @@ const codex: AccountLimits = {
   ],
 };
 async function show(page: Page, report: AccountLimits, id = report.agent === "claude" ? "t-idle-rich" : "t-run-charts") {
+  await installReadStreams(page);
   await page.clock.install({ time: now });
   await page.route(`**/api/tasks/${id}/account-limits`, route => route.fulfill({ json: report }));
   await page.goto(`/#/task/${id}`);
@@ -69,11 +71,13 @@ test("missing percentages stay unknown and expired windows await a fresh report"
   await expect(line.getByText(/%/)).toHaveCount(0);
 });
 
-test("the reset countdown advances and an idle refresh replaces old quota numbers", async ({ page }) => {
+test("the reset countdown advances locally and SSE replaces old quota numbers", async ({ page }) => {
   const line = await show(page, claude);
   await expect(line.getByText("72%")).toBeVisible();
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: { ...claude, checkedAt: now + 60000, fiveHour: { usedPercent: 40, resetsAt: reset } } }));
   await page.clock.fastForward(60000);
+  await expect(line.getByText("72%")).toBeVisible();
+  await changeRead(page, "/api/tasks/t-idle-rich/account-limits/stream");
   await expect(line.getByText("60%")).toBeVisible();
   await line.getByRole("button", { name: "Usage details" }).click();
   await expect(page.getByRole("dialog").getByText("Resets in 1h 39m")).toBeVisible();
@@ -84,7 +88,7 @@ test("failed and unsupported reads show no fabricated allowance", async ({ page 
   const line = await show(page, { agent: "claude", state: "unavailable", checkedAt: now, modelLimits: [] });
   await expect(line.getByText("Limits not reported")).toBeVisible();
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ status: 503, json: { error: "offline" } }));
-  await page.clock.fastForward(30000);
+  await changeRead(page, "/api/tasks/t-idle-rich/account-limits/stream");
   await expect(line.getByText("Limits unavailable")).toBeVisible();
   await expect(line.getByText(/%/)).toHaveCount(0);
 });
@@ -140,7 +144,7 @@ test("allowance details remain reachable on a narrow phone, including unknown or
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: {
     ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 95, resetsAt: now - 1000 },
   } }));
-  await page.clock.fastForward(30000);
+  await changeRead(page, "/api/tasks/t-idle-rich/account-limits/stream");
   await expect(line.getByText("Unknown")).toBeVisible();
   await expect(line.getByText("Refreshing")).toBeVisible();
   expect(await line.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
