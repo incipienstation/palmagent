@@ -10,3 +10,6 @@ allowBuilds:
   esbuild: true
   nx: true
   node-pty: true
+
+patchedDependencies:
+  react-virtuoso@4.18.13: patches/react-virtuoso@4.18.13.patch

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  react-virtuoso@4.18.13: bd157c0c0547ff7febe1b5841b0b1435ef2adb94ba496f25759c4a966b8f2548
+
 importers:
 
   .:
@@ -152,7 +155,7 @@ importers:
         version: 10.1.0(@types/react@19.3.0)(react@19.3.0)
       react-virtuoso:
         specifier: ^4.18.13
-        version: 4.18.13(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 4.18.13(patch_hash=bd157c0c0547ff7febe1b5841b0b1435ef2adb94ba496f25759c4a966b8f2548)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react-zoom-pan-pinch:
         specifier: ^4.2.0
         version: 4.2.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -10576,7 +10579,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  react-virtuoso@4.18.13(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  react-virtuoso@4.18.13(patch_hash=bd157c0c0547ff7febe1b5841b0b1435ef2adb94ba496f25759c4a966b8f2548)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)

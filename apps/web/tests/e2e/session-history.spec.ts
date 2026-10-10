@@ -186,6 +186,62 @@ for (const phase of ["touch", "momentum"] as const) test(`an older page arriving
   expect(Math.min(...samples.map(sample => sample.backward)), "Pagination must not reverse an upward gesture or its momentum").toBeGreaterThanOrEqual(-2);
 });
 
+test("a late prepend measurement preserves a paused reading position", async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeObserver = window.ResizeObserver;
+    let delayed = false;
+    window.ResizeObserver = class extends NativeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super((entries, observer) => {
+          const list = entries.find(({ target }) => target.matches('[data-testid="virtuoso-item-list"]'))?.target;
+          const first = list?.querySelector<HTMLElement>("[data-index]");
+          if (!delayed && document.documentElement.hasAttribute("data-delay-history-measurement")
+            && first && Number(first.dataset.index) >= 199) {
+            delayed = true;
+            // Model a late measurement after the direction tracker has become
+            // idle. The newly rendered range starts beyond the inserted page.
+            setTimeout(() => {
+              callback(entries, observer);
+              document.documentElement.setAttribute("data-history-measurement-complete", "true");
+            }, 100);
+          } else callback(entries, observer);
+        });
+      }
+    };
+  });
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/history?before=1801*", async route => {
+    await pending;
+    await route.fulfill({ json: { events: rows(1601, 1800), before: null, cursor: 2000 } });
+  });
+  await recent(page);
+  await viewport(page).evaluate(el => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+    el.scrollTop = el.clientHeight + 120;
+  });
+  await page.waitForTimeout(250);
+  const anchor = await viewport(page).evaluate(pane => {
+    const bounds = pane.getBoundingClientRect();
+    const row = Array.from(pane.querySelectorAll<HTMLElement>("[data-row-key]")).find(item => {
+      const rect = item.getBoundingClientRect();
+      return rect.top >= bounds.top && rect.top < bounds.bottom;
+    })!;
+    return { key: row.dataset.rowKey!, top: row.getBoundingClientRect().top - bounds.top };
+  });
+  await page.evaluate(() => document.documentElement.setAttribute("data-delay-history-measurement", "true"));
+  release();
+  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
+  await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBeGreaterThan(10_000);
+  await expect(page.locator("html")).toHaveAttribute("data-history-measurement-complete", "true");
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const offset = await viewport(page).evaluate((pane, key) => {
+    const row = Array.from(pane.querySelectorAll<HTMLElement>("[data-row-key]")).find(item => item.dataset.rowKey === key)!;
+    return row.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  }, anchor.key);
+  expect(Math.abs(offset - anchor.top), "A prepend correction must survive a pause in reader input").toBeLessThanOrEqual(2);
+});
+
 for (const first of ["catch-up", "older page"] as const) {
   test(`reconnect catch-up survives pagination when ${first} completes first`, async ({ page }) => {
     let releaseOlder!: () => void, releaseCatchup!: () => void;
@@ -565,10 +621,13 @@ test("expanded activity virtualizes its individual tool records and retains disc
   await disclosure.click();
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("tool_result: Activity record 2", { exact: true })).toBeVisible();
-  expect(await page.locator("[data-row-key]").count()).toBeLessThan(40);
+  // Short raw rows need more viewport/overscan nodes than regular messages.
+  // Keep the 1,000-record group bounded to a few dozen mounted rows.
+  expect(await page.locator("[data-row-key]").count()).toBeLessThan(60);
   await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(page.getByText("tool_result: Activity record 1000", { exact: true })).toBeVisible();
-  expect(await page.locator("[data-row-key]").count()).toBeLessThan(40);
+  await expectBottom(page);
+  expect(await page.locator("[data-row-key]").count()).toBeLessThan(60);
   await expect(disclosure).toHaveCount(0);
   await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
