@@ -28,7 +28,7 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
   return <div className="flex min-w-0 flex-wrap items-center gap-2">
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild><Button variant="outline" className="rounded-full"><SlidersHorizontal data-icon="inline-start" />Filters</Button></DrawerTrigger>
-      <DrawerContent onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
+      <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
         <DrawerHeader><DrawerHeaderRow><DrawerTitle>Task filters</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close filters" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
           <DrawerDescription>{repo ? `Tasks in ${repo.name}. Worktree filters only change this list.` : "Tasks across all your Spaces."}</DrawerDescription>
         </DrawerHeader>
@@ -66,7 +66,7 @@ export function SpaceDetails({ repo }: { repo: Repo }) {
   const close = useRef<HTMLButtonElement>(null);
   return <Drawer open={open} onOpenChange={setOpen}>
     <DrawerTrigger asChild><Button variant="ghost" size="icon-lg" aria-label="Space details"><MoreHorizontal /></Button></DrawerTrigger>
-    <DrawerContent onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
+    <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
       <DrawerHeader><DrawerHeaderRow><DrawerTitle className="min-w-0 break-words">{repo.name}</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close Space details" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
         <DrawerDescription>Space information and tools.</DrawerDescription>
       </DrawerHeader>

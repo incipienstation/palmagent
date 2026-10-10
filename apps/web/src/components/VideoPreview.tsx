@@ -39,8 +39,8 @@ export function VideoPreview({ src, poster, label = "Attached video", compact = 
       </Button>
     </DialogTrigger>
     <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden" aria-describedby={undefined}>
+      <DialogHeader className="pr-10"><DialogTitle className="break-words [overflow-wrap:anywhere]">{label}</DialogTitle></DialogHeader>
       <DialogBody contentClassName="flex flex-col gap-3" viewportProps={{ tabIndex: 0, "aria-label": "Video preview" }}>
-        <DialogHeader className="pr-8"><DialogTitle className="break-words [overflow-wrap:anywhere]">{label}</DialogTitle></DialogHeader>
         <video key={attempt} src={source} poster={poster} controls playsInline preload="metadata" aria-label={label}
           className="max-h-[70dvh] w-full rounded-lg" onLoadedMetadata={onLoad} onError={() => { setFailed(true); onLoad?.(); }} />
         <p className="text-sm text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>

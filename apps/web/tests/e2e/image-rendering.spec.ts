@@ -51,6 +51,11 @@ for (const parser of ["static", "streaming", "long"] as const) {
     await preview.click();
     const dialog = page.getByRole("dialog", { name: "Sandbox preview", exact: true });
     await expect(dialog).toBeVisible();
+    const close = dialog.getByRole("button", { name: "Exit image fullscreen", exact: true });
+    const closeBox = (await close.boundingBox())!;
+    expect(closeBox.width).toBeGreaterThanOrEqual(44);
+    expect(closeBox.height).toBeGreaterThanOrEqual(44);
+    await expect(close).toBeInViewport({ ratio: 1 });
     await expect.poll(() => dialog.getByRole("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
   });
 

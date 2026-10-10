@@ -225,9 +225,9 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     <Drawer open={!!conflictingSpace} onOpenChange={open => { if (!open) setConflictingSpace(undefined); }}>
       <DrawerContent><DrawerHeader><DrawerTitle>A draft is already saved in this Space</DrawerTitle><DrawerDescription>Your current draft will stay saved in its original Space.</DrawerDescription></DrawerHeader>
         <DrawerFooter className="pt-3">
-          <Button onClick={() => selectSpace(conflictingSpace!, false, true)}>Open saved draft</Button>
-          <Button variant="outline" onClick={() => selectSpace(conflictingSpace!, true)}>Replace saved draft with current draft</Button>
           <Button variant="ghost" onClick={() => setConflictingSpace(undefined)}>Cancel</Button>
+          <Button variant="outline" onClick={() => selectSpace(conflictingSpace!, true)}>Replace saved draft with current draft</Button>
+          <Button onClick={() => selectSpace(conflictingSpace!, false, true)}>Open saved draft</Button>
         </DrawerFooter>
       </DrawerContent>
     </Drawer></>;

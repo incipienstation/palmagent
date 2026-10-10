@@ -132,7 +132,7 @@ export function AppNavigation({ tasks, conn, children }: {
       <div className="min-w-0 flex-1">{children}</div>
     </div>
     <Drawer direction="left" open={open} onOpenChange={setOpen} autoFocus>
-      <DrawerContent side="left" onCloseAutoFocus={(event) => {
+      <DrawerContent showClose={false} side="left" onCloseAutoFocus={(event) => {
         event.preventDefault();
         const action = afterClose.current;
         afterClose.current = null;

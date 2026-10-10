@@ -1,4 +1,4 @@
-// Bottom sheets share the Drawer implementation, including Back handling,
+// Supporting sheets share the responsive Drawer implementation, including Back handling,
 // scrolling, spacing, and safe-area padding. Keep these semantic aliases for
 // existing supporting-control surfaces; do not fork the layout here.
 export {

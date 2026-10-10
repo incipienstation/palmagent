@@ -3,6 +3,7 @@ import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 
+import { Button } from "./button";
 import { ScrollArea } from "./scroll-area";
 import { cn } from "@/lib/utils";
 
@@ -47,19 +48,19 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-close={showClose || undefined}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(var(--app-height,100dvh)-2rem)] flex-col overflow-hidden w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-lg [&[data-close]_[data-slot=dialog-header]]:pr-10 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
       >
         {children}
         {showClose && (
-          <DialogPrimitive.Close
-            className="absolute top-3.5 right-3.5 rounded-md opacity-60 outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring/50 active:opacity-100 [&_svg]:size-4"
-            aria-label="Close"
-          >
-            <X />
+          <DialogPrimitive.Close asChild>
+            <Button variant="ghost" size="icon" className="absolute top-0.5 right-0.5 size-11" aria-label="Close">
+              <X />
+            </Button>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
@@ -72,14 +73,14 @@ function DialogBody(props: React.ComponentProps<typeof ScrollArea>) {
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="dialog-header" className={cn("flex flex-col gap-1.5", className)} {...props} />;
+  return <div data-slot="dialog-header" className={cn("flex shrink-0 flex-col gap-1.5", className)} {...props} />;
 }
 
 function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
+      className={cn("flex shrink-0 flex-col-reverse gap-2 [&>button]:w-full sm:flex-row sm:justify-end sm:[&>button]:w-auto", className)}
       {...props}
     />
   );

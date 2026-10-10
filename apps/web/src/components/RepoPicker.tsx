@@ -267,7 +267,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
   return (
     <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
-      <DrawerContent size="panel" onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus(); }}>
+      <DrawerContent showClose={false} size="panel" onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus(); }}>
         <DrawerHeader>
           <DrawerHeaderRow>
             {mode !== "search" && (
