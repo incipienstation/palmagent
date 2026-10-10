@@ -1,7 +1,7 @@
-import { useTaskMutations } from "../task-mutations";
+import { queueTaskArchive, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
-import { type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { ChevronDown, Inbox as InboxIcon, SquarePen, Search, Folder, Pin, Plus } from "lucide-react";
+import { isActiveTaskStatus, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
+import { Archive, ChevronDown, Inbox as InboxIcon, SquarePen, Search, Folder, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
 import { SessionActionsMenu } from "./SessionActionsMenu";
+import { SwipeToArchive } from "./SwipeToArchive";
+import { DropdownMenuItem } from "./ui/dropdown-menu";
 import { newTaskPath, spacePath, spaceQualifier, taskDirectoryFor } from "../space-context";
 
 // Resolve Space group headings from the shared repository snapshot.
@@ -126,27 +128,37 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
 
 // One calm row treatment for every state, with an inline question preview.
 const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
+  const pending = useTaskMutations().get(task.taskId)?.pending;
+  const canArchive = !pending && !isActiveTaskStatus(task.status) && task.status !== "archived"
+    && (!task.sessionControl || task.sessionControl.owner === "palmagent")
+    && task.messageQueue?.compaction?.status !== "running";
+  const archive = () => queueTaskArchive(task.taskId);
   const question = task.pendingInput?.questions[0];
   const preview = task.status === "awaiting_input" && question ? question.question : previewOf(task);
   return (
-    <div className="relative">
-      <button
-        className="block w-full px-4 py-3.5 text-left transition-colors active:bg-accent"
-        onClick={(e) => navIfInRow(e, task.taskId)}
-      >
-        <CardHeadline task={task} />
-        <CardContextLine task={task} />
-        {preview && (
-          <div className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-            {preview}
-          </div>
-        )}
-        <TaskMeta task={task} showTime />
-      </button>
-      <div className="absolute top-2 right-1">
-        <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} />
+    <SwipeToArchive disabled={!canArchive} onArchive={archive}>
+      <div className="relative">
+        <button
+          data-swipe-surface=""
+          className="block w-full px-4 py-3.5 text-left transition-colors active:bg-accent"
+          onClick={(e) => navIfInRow(e, task.taskId)}
+        >
+          <CardHeadline task={task} />
+          <CardContextLine task={task} />
+          {preview && (
+            <div className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+              {preview}
+            </div>
+          )}
+          <TaskMeta task={task} showTime />
+        </button>
+        <div className="absolute top-2 right-1">
+          <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} lifecycle={
+            <DropdownMenuItem disabled={!canArchive} onSelect={archive}><Archive />Archive</DropdownMenuItem>
+          } />
+        </div>
       </div>
-    </div>
+    </SwipeToArchive>
   );
 });
 

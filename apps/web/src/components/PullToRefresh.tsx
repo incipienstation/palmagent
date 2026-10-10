@@ -59,6 +59,8 @@ export function PullToRefresh({
     if (!el || !content || !spinner) return;
 
     let startY = 0;
+    let startX = 0;
+    let vertical = false;
     let armed = false; // gesture began at the top of the pane
     let pulling = false; // currently dragging down past the top
     let offset = 0;
@@ -74,7 +76,9 @@ export function PullToRefresh({
 
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
-      if (busy || !t || el.scrollTop > 0) {
+      if (busy || !t || e.touches.length !== 1 || el.scrollTop > 0) {
+        if (pulling) paint((offset = 0), false);
+        pulling = false;
         armed = false;
         return;
       }
@@ -82,10 +86,17 @@ export function PullToRefresh({
       pulling = false;
       offset = 0;
       startY = t.clientY;
+      startX = t.clientX;
+      vertical = false;
     };
     const onMove = (e: TouchEvent) => {
       const t = e.touches[0];
       if (!armed || busy || !t) return;
+      if (e.touches.length !== 1) {
+        armed = false; pulling = false;
+        paint((offset = 0), false);
+        return;
+      }
       if (el.scrollTop > 0) {
         if (pulling) paint((offset = 0), false);
         pulling = false;
@@ -93,6 +104,12 @@ export function PullToRefresh({
         return;
       }
       const delta = t.clientY - startY;
+      if (!vertical) {
+        const dx = Math.abs(t.clientX - startX);
+        if (Math.max(dx, Math.abs(delta)) < 10) return;
+        if (dx > Math.abs(delta)) { armed = false; return; }
+        vertical = true;
+      }
       if (delta <= 0) {
         if (pulling) paint((offset = 0), false);
         pulling = false;
@@ -125,17 +142,21 @@ export function PullToRefresh({
       pulling = false;
       offset = 0;
     };
+    const onCancel = () => {
+      armed = false; pulling = false; offset = 0;
+      paint(0, true);
+    };
 
     el.addEventListener("touchstart", onStart, { passive: true });
     el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd, { passive: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onCancel, { passive: true });
     return () => {
       disposed = true;
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("touchcancel", onCancel);
     };
   }, []);
 
