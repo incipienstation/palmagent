@@ -1,5 +1,5 @@
 diff --git a/dist/index.mjs b/dist/index.mjs
-index faf06c75ffb1135b62e15b50a9874f00145d390e..b02365660a5b5838f0edddf124567b9e2ea9a30d 100644
+index faf06c75ffb1135b62e15b50a9874f00145d390e..0948fc7d16c76a5c8ac14b0341141a17244776b1 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
 @@ -312,7 +312,7 @@ function $e(t, e, n) {
@@ -36,7 +36,7 @@ index faf06c75ffb1135b62e15b50a9874f00145d390e..b02365660a5b5838f0edddf124567b9e
  const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.test(navigator.userAgent)), sr = Z(
    ([
 -    { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r },
-+    { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r, headerHeight: readingHeaderHeight },
++    { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r, statefulScrollTop: readingScrollTopState, headerHeight: readingHeaderHeight },
      { isAtBottom: s, isScrolling: i, lastJumpDueToItemResize: l, scrollDirection: c },
      { listState: d },
 -    { beforeUnshiftWith: f, gap: v, shiftWithOffset: m, sizes: g },
@@ -85,7 +85,7 @@ index faf06c75ffb1135b62e15b50a9874f00145d390e..b02365660a5b5838f0edddf124567b9e
          })
        ),
        (x) => {
-+        const items = ot(d).items, readingTop = Math.max(0, ot(r) - ot(readingHeaderHeight));
++        const items = ot(d).items, readingTop = Math.max(0, ot(readingScrollTopState) - ot(readingHeaderHeight));
 +        prependAnchorIndex = (items.find((item) => item.offset + item.size > readingTop) ?? items[items.length - 1])?.index;
          a = { acknowledgeable: ot(t) !== x, offset: x }, M(t, x), requestAnimationFrame(T);
        }

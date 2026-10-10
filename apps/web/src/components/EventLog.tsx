@@ -14,7 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
-import { Virtuoso, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type SizeFunction, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
 import { useQueries } from "@tanstack/react-query";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -357,6 +357,9 @@ const TranscriptList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
 );
 const VIRTUAL_COMPONENTS = { Scroller: TranscriptScroller, List: TranscriptList, Header: HistoryHeader, Footer: () => <div className="h-2" /> };
 const rowKey = (_index: number, item: TranscriptRow) => item.key;
+// Preserve fractional line heights; rounding each row accumulates drift across
+// a prepended page and disagrees with the browser's actual layout.
+const rowSize: SizeFunction = (element, field) => element.getBoundingClientRect()[field === "offsetHeight" ? "height" : "width"];
 function activityRowKey(activity: Activity, historyFloor?: number): string {
   // Prepending an older page can extend this Activity backward. Keep its row
   // identity on the first event from the initially loaded range; older-only
@@ -592,6 +595,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     aria-busy={!positioned}
     data={rows}
     firstItemIndex={firstItemIndex}
+    itemSize={rowSize}
     skipAnimationFrameInResizeObserver
     {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}

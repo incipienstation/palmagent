@@ -18,7 +18,8 @@ rendered ranges do not share that row. Measurements still correct the position a
 reader pauses or changes direction; they no longer depend on the transient direction flag.
 The existing guards for count changes, recalculation, and programmatic scrolling remain.
 The application no longer restores a separate top-edge scroll target. Virtuoso owns the
-prepend correction without a timed correction window.
+prepend correction without a timed correction window. The application also preserves fractional
+row heights so per-row rounding cannot accumulate drift across a page.
 Only the ESM entry used by the web build is patched; the CommonJS entry is unused by Palmagent.
 
 When upgrading Virtuoso, review `upwardScrollFixSystem` and remove or rebase the patch. Run
