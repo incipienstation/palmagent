@@ -75,7 +75,7 @@ function compactHistory(data: TaskHistoryData | undefined): TaskHistoryData | un
 export function useTaskStream(taskId: string, enabled = true): TaskStream {
   const { mode } = useOutputMode();
   const queryKey = useMemo(() => taskHistoryKey(taskId, mode), [taskId, mode]);
-  const initialData = useMemo(() => {
+  const restoredData = useMemo(() => {
     const restored = restoredHistory(readUpdateSnapshot(`history:${taskId}`));
     if (!restored) return undefined;
     if (mode === "compact") return compactHistory(restored);
@@ -86,6 +86,10 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       item.kind !== "assistant_text" && item.detailsDeferred));
     return hasDeferredDetails ? undefined : restored;
   }, [taskId, mode]);
+  // An older client (or a Verbose checkpoint) may have saved only the latest
+  // pages. Paint those immediately while fetching the complete compact view;
+  // attach SSE only after its authoritative history cursor is available.
+  const initialData = mode === "compact" && restoredData?.pages[0]?.before != null ? undefined : restoredData;
   const history = useInfiniteQuery({
     queryKey,
     enabled,
@@ -95,7 +99,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     getNextPageParam: () => undefined,
     initialData,
     initialDataUpdatedAt: initialData ? Date.now() : undefined,
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData) => previousData ?? restoredData,
     // Persisted history changes are reconciled from REST against the stream
     // boundary. These defaults stay local to transcript queries.
     staleTime: Infinity,
@@ -106,7 +110,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     refetchOnWindowFocus: false,
   });
 
-  useUpdateSnapshot(`history:${taskId}`, () => queryClient.getQueryData<TaskHistoryData>(queryKey));
+  useUpdateSnapshot(`history:${taskId}`, () => queryClient.getQueryData<TaskHistoryData>(queryKey) ?? restoredData);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [streamTask, setStreamTask] = useState<{ taskId: string; task: TaskState }>();
   const loadingOlderRef = useRef<{ taskId: string; settled: Promise<unknown> } | undefined>(undefined);
@@ -349,8 +353,11 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     };
   }, [taskId, historyReady, queryKey, mode, enabled]);
 
-  const log = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data]);
-  const cachedTask = history.data?.pages.at(-1)?.task;
+  // Query placeholders disappear on a failed request. Retain the checkpoint
+  // beside the retry control while upgrading an older, partial compact view.
+  const displayedData = history.data ?? restoredData;
+  const log = useMemo(() => displayedData?.pages.flatMap((page) => page.items) ?? [], [displayedData]);
+  const cachedTask = displayedData?.pages.at(-1)?.task;
   const mutations = useTaskMutations();
   return {
     log,
