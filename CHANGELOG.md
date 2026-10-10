@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.168
+
 ### Fixed
 
 - Reading older messages keeps its position when conversation history contains answers with very different heights.
