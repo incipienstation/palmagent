@@ -14,7 +14,7 @@ import type { LiveEventStream } from "../kernel/events.js";
 export type HttpTaskUseCases = TaskUseCases;
 
 export type HttpDependencies = {
-  agentInstallations?: Pick<AgentInstallations, "list" | "update">;
+  agentInstallations?: Pick<AgentInstallations, "list" | "update" | "observe">;
   terminals?: Pick<TerminalUseCases, "list" | "capabilities" | "create" | "getPublic" | "rename" | "terminate">;
   terminalTickets?: Pick<TerminalTickets, "issue">;
   settings: Pick<SpaceSettings, "get" | "change">;

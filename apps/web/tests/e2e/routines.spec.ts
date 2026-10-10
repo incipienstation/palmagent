@@ -1,3 +1,4 @@
+import { installInbox, send } from "./_inbox-stream";
 import { routines } from "../fixtures.mjs";
 import { test, expect } from "@playwright/test";
 import { assertViewportLocked } from "./_helpers";
@@ -119,13 +120,18 @@ for (const width of [360, 1280]) {
   });
 }
 
-test("open script history refreshes running results without the agent history cache", async ({ page }) => {
+test("open script history refreshes from SSE without idle polling", async ({ page }) => {
+  await installInbox(page);
+  await page.clock.install();
   let reads = 0;
   await page.route("**/api/routines", route => route.fulfill({ json: { routines: [{ ...routines[0], kind: "script", script: { command: "true", timeoutSeconds: 60 } }] } }));
   await page.route("**/api/routines/*/runs", route => route.fulfill({ json: { runs: [{ id: 1, routineId: routines[0].id, firedAt: Date.now(), status: ++reads === 1 ? "running" : "succeeded" }] } }));
   await page.goto("/#/routines");
   await page.getByRole("button", { name: "History", exact: true }).click();
   await expect(page.getByText("Script running", { exact: true })).toBeVisible();
+  await page.clock.fastForward(30_000);
+  expect(reads).toBe(1);
+  await send(page, { type: "read-change", routineId: routines[0].id });
   await expect(page.getByText("Script succeeded", { exact: true })).toBeVisible({ timeout: 6000 });
   expect(reads).toBe(2);
 });

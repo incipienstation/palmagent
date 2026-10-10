@@ -141,3 +141,33 @@ test("a read started before update completion cannot pair the old version with a
   assert.equal(refreshed.version, "0.156.2");
   assert.equal(refreshed.update.state, "succeeded");
 });
+
+test("installation subscribers receive update completion immediately and external version changes without browser polling", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1000 });
+  const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+  let version = installed.version, finish!: () => void, changes = 0, inspections = 0;
+  const hold = new Promise<void>(resolve => { finish = resolve; });
+  const service = createAgentInstallationService(home, {
+    inspect: async () => { inspections++; return { ...installed, version }; },
+    latest: async () => "0.156.2", update: async () => { await hold; version = "0.156.2"; },
+  });
+  const off = service.observe(() => changes++);
+  t.after(() => service.close());
+  await settle();
+  await service.update("codex", version); await settle();
+  const running = changes;
+  assert.equal((await service.get("codex")).update.state, "running");
+  finish(); await settle();
+  assert.ok(changes > running, "completion does not wait for the refresh timer");
+  assert.equal((await service.get("codex")).version, "0.156.2");
+  assert.equal((await service.get("codex")).update.state, "succeeded");
+  version = "0.156.3";
+  const completed = changes;
+  t.mock.timers.tick(60_000); await settle();
+  assert.ok(changes > completed);
+  assert.equal((await service.get("codex")).version, "0.156.3");
+  off();
+  const stopped = inspections;
+  t.mock.timers.tick(120_000); await settle();
+  assert.equal(inspections, stopped);
+});
