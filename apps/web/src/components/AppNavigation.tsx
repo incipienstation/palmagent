@@ -91,13 +91,13 @@ export function AppNavigation({ tasks, conn, children }: {
   const navigationLinks = (
         <nav aria-label="Main navigation" className="shrink-0 flex flex-col gap-1 px-3 pb-4">
           {destinations.map(({ label, icon: Icon, active, onClick, attention: needsAttention }) => <Button key={label}
-            variant={active ? "selected" : "ghost"} className="h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium"
+            variant={active ? "selected" : "ghost"} size="navigation"
             aria-label={label} aria-description={needsAttention ? "Tasks need attention" : undefined} aria-current={active ? "page" : undefined} onClick={onClick}>
-            <Icon className="size-5" /><span className="flex-1 text-left">{label}</span>
+            <Icon data-icon="inline-start" /><span className="flex-1 text-left">{label}</span>
             {needsAttention && <span className="size-2 rounded-full bg-amber" aria-label="Tasks need attention" />}
-            {active && <Check className="size-4" />}
+            {active && <Check data-icon="inline-end" />}
           </Button>)}
-          {arcadeMode && <Button variant="ghost" className="h-12 w-full justify-start gap-3 px-3" onClick={event => {
+          {arcadeMode && <Button variant="ghost" size="navigation" onClick={event => {
             if (open) showAfterClose(() => { newGameConversation.current = false; setDelivery(undefined); setGameOpen(true); });
             else openGame(event.currentTarget);
           }}><Gamepad2 data-icon="inline-start" />Arcade</Button>}
