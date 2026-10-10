@@ -24,6 +24,8 @@ async function readAbove(page: Page, distance = 450) {
     for (let i = 0; i < 4; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     return Math.abs(el.scrollTop - top);
   })).toBeLessThanOrEqual(1);
+  await expect(button(page)).toHaveCSS("opacity", "1");
+  await expect(button(page)).toHaveCSS("pointer-events", "auto");
 }
 
 test("returning to latest preserves the draft and resumes streaming follow", async ({ page }) => {
@@ -35,6 +37,7 @@ test("returning to latest preserves the draft and resumes streaming follow", asy
   await event(page, "t-idle-rich", 2, "New output while reading\n\n".repeat(12));
   await expect(page.getByText("New output while reading", { exact: true })).toHaveCount(12);
   await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(top);
+  await expect(button(page)).toHaveCSS("opacity", "1");
   await button(page).click();
   await expectBottom(page);
   await expect(button(page)).toBeHidden();
@@ -100,12 +103,63 @@ test("keyboard activation supports reduced motion without focusing the composer"
   await page.emulateMedia({ reducedMotion: "reduce" });
   await longConversation(page);
   await readAbove(page);
+  await expect(button(page)).toHaveCSS("transition-property", "none");
   await button(page).focus();
   await page.keyboard.press("Enter");
   await expectBottom(page);
   await expect(button(page)).toBeHidden();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toBeFocused();
   await expect(viewport(page)).toBeFocused();
+});
+
+test("manual scrolling hides immediately and momentum delays the fade until idle", async ({ page }) => {
+  await longConversation(page);
+  await readAbove(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await viewport(page).dispatchEvent("wheel", { deltaY: -100 });
+  await expect(button(page)).toHaveCSS("opacity", "0");
+  await expect(button(page)).toHaveCSS("pointer-events", "none");
+  await expect(button(page)).toHaveCSS("transition-duration", "0s");
+  await page.clock.runFor(150);
+  // Momentum delivers scroll notifications after the last wheel/touch input.
+  await viewport(page).dispatchEvent("scroll");
+  await page.clock.runFor(199);
+  await expect(button(page)).toHaveCSS("opacity", "0");
+  await page.clock.runFor(1);
+  await expect(button(page)).toHaveCSS("pointer-events", "auto");
+  await expect(button(page)).toHaveCSS("transition-duration", "0.15s");
+  await expect(button(page)).toHaveCSS("opacity", "1");
+});
+
+test("touch, keyboard, and scrollbar input hide the control while focused access stays visible", async ({ page }) => {
+  await longConversation(page);
+  await readAbove(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  for (const input of ["touch", "keyboard", "scrollbar"]) {
+    await viewport(page).evaluate((el, input) => {
+      if (input === "touch") {
+        const touch = (clientY: number) => new Touch({ identifier: 0, target: el, clientY });
+        el.dispatchEvent(new TouchEvent("touchstart", { touches: [touch(200)] }));
+        el.dispatchEvent(new TouchEvent("touchmove", { touches: [touch(250)] }));
+        el.dispatchEvent(new TouchEvent("touchend", { touches: [] }));
+      } else if (input === "keyboard") {
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp" }));
+      } else {
+        el.closest("[data-transcript-root]")!.querySelector('[data-slot="scroll-area-scrollbar"]')!
+          .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      }
+    }, input);
+    await expect(button(page)).toHaveCSS("opacity", "0");
+    await button(page).focus();
+    await expect(button(page)).toHaveCSS("opacity", "1");
+    await expect(button(page)).toHaveCSS("pointer-events", "auto");
+    await viewport(page).focus();
+    await expect(button(page)).toHaveCSS("opacity", "0");
+    await page.clock.runFor(200);
+    await expect(button(page)).toHaveCSS("opacity", "1");
+  }
 });
 
 test("upward input interrupts the short return animation", async ({ page }) => {
