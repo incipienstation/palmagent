@@ -49,7 +49,7 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
   const primary = report?.state === "ready" && report.agent === "codex" ? report.buckets[0] : undefined;
   const usage = task.contextUsage;
   const remaining = compacting ? null : contextRemaining(usage);
-  const contextLabel = compacting ? "Compacting…" : remaining === null ? "—" : `${Number(remaining.toFixed(1))}% left`;
+  const contextLabel = remaining === null ? "—" : `${Number(remaining.toFixed(1))}% left`;
   const accountLabel = !report ? failed ? "Limits unavailable" : "Checking limits…"
     : report.state !== "ready" ? report.state === "error" ? "Limits unavailable" : "Limits not reported"
     : task.agent === "claude" ? "Claude account limits" : "Codex account credits";

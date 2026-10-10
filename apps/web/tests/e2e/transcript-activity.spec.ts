@@ -11,6 +11,15 @@ const prose = (text = "Answer", extra = {}): LogItem => ({ key: 2, kind: "assist
 const active = { running: true };
 const sending = { id: "send-1", text: "Continue", mode: "send", status: "sending", version: 1 } as PendingMessage;
 
+test("compaction completion stays out of conversation history in both output modes", () => {
+  const answer = prose();
+  const log = [answer, status("context_compacted")];
+  for (const mode of ["compact", "verbose"] as const) {
+    expect(presentTranscript(log, mode, false)).toEqual([{ type: "message", key: answer.key, item: answer }]);
+  }
+  expect(log).toHaveLength(2);
+});
+
 test("output supersedes lifecycle waiting and metadata cannot restart it", () => {
   const log = [status("turn_started")];
   expect(transcriptActivity(log, active)).toBe("working");

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { acceptMessageQueue, beginTaskAction } from "../task-activity";
 import { cacheSession } from "../query-lifecycle";
+import { toast } from "../components/ui/toaster";
 import { useTaskOperations } from "./remote-operations";
 import { usePersistedFlag } from "./useDraft";
 
@@ -12,13 +13,21 @@ export function useContextCompaction(task: TaskState | undefined, queue: Message
   const [intro, setIntro] = useState<"menu" | "command" | "statusline" | null>(null);
   const [error, setError] = useState<string>();
   const pending = useRef<CompactTaskRequest | undefined>(undefined);
+  const observedRequest = useRef<string | undefined>(undefined);
   const source = useRef<"menu" | "command" | "statusline">("menu");
   const currentTask = useRef(task?.taskId);
   currentTask.current = task?.taskId;
-  useEffect(() => { setIntro(null); setError(undefined); pending.current = undefined; }, [task?.taskId]);
+  useEffect(() => { setIntro(null); setError(undefined); pending.current = undefined; observedRequest.current = undefined; }, [task?.taskId]);
   const reason = task ? compactUnavailableReason({ ...task, messageQueue: queue }) : "Available after the first response.";
   const unavailable = reason ?? (busy ? "Wait for the current action to finish." : undefined);
   const state = queue?.compaction;
+  useEffect(() => {
+    if (state?.status === "running") observedRequest.current = state.requestId;
+    else if (state && observedRequest.current === state.requestId) {
+      observedRequest.current = undefined;
+      if (state.status === "completed") toast({ title: "Context compacted", variant: "success" });
+    }
+  }, [task?.taskId, state?.requestId, state?.status]);
   useEffect(() => { if (queue?.runId && !queue.compaction) setError(undefined); }, [queue?.runId, queue?.compaction]);
 
   async function execute() {
@@ -30,6 +39,8 @@ export function useContextCompaction(task: TaskState | undefined, queue: Message
     setError(undefined);
     const request = pending.current ?? { requestId: crypto.randomUUID(), expectedRevision: queue?.revision ?? 0 };
     pending.current = request;
+    // Also cover a request that completes before its running snapshot is rendered.
+    observedRequest.current = request.requestId;
     try {
       const updated = await operations.compact(request);
       if (generation !== cacheSession() || currentTask.current !== task.taskId) return;
