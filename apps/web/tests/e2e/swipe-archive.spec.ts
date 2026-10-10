@@ -100,8 +100,9 @@ test("menu archive supports keyboard access and Undo restores a batch", async ({
     await page.keyboard.press("Enter");
     await expect(row(page, task.taskId)).toHaveCount(0);
   }
-  await expect(page.getByTestId("toast").filter({ hasText: "2 tasks ready to archive" })).toBeVisible();
-  await page.locator('[data-testid="toast"][data-removed="false"]').getByRole("button", { name: "Undo", exact: true }).click();
+  const feedback = page.getByTestId("toast").filter({ hasText: "2 tasks ready to archive" });
+  await expect(feedback).toBeVisible();
+  await feedback.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(row(page)).toBeVisible();
   await expect(row(page, failed.taskId)).toBeVisible();
 });
