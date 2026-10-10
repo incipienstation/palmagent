@@ -18,7 +18,7 @@ export function SurvivorSheet({ open, onOpenChange, onCloseAutoFocus, tasks, tas
     : task?.status === "running" || task?.status === "queued" ? "Agent working" : task?.status === "idle" ? "Agent is idle"
     : task?.status === "failed" ? "Task failed" : delivery?.state === "sent" ? "Message delivered" : "Ready when you are";
   return <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
-    <SheetContent size="panel" className="survivor-game h-[900px] max-h-[calc(var(--app-height,100dvh)-8px)]" onCloseAutoFocus={onCloseAutoFocus}>
+    <SheetContent showClose={false} size="panel" className="survivor-game h-[900px] max-h-[calc(var(--app-height,100dvh)-8px)]" onCloseAutoFocus={onCloseAutoFocus}>
       <SheetHeader className="pb-1">
         <SheetHeaderRow><div className="flex min-w-0 flex-1 items-center gap-2"><div className="survivor-title-art"><RobotArt /></div><div><p className="survivor-eyebrow">ARCADE / SURVIVAL</p><SheetTitle>Scrap Survivor</SheetTitle></div></div><Button variant="ghost" size="icon-lg" aria-label="Close game" onClick={() => onOpenChange(false)}><X /></Button></SheetHeaderRow>
         <SheetDescription className="sr-only">Move to survive. Weapons fire automatically. Collect scrap and choose upgrades.</SheetDescription>

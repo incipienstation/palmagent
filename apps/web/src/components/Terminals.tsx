@@ -9,7 +9,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Alert } from "./ui/alert";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from "./ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "./ui/alert-dialog";
 import { AppBar } from "./AppShell";
@@ -154,7 +154,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     <Dialog open={details} onOpenChange={setDetails}>
       <DialogContent><DialogHeader><DialogTitle>Terminal details</DialogTitle>
         <DialogDescription>Leaving this screen keeps the shell and its commands running.</DialogDescription></DialogHeader>
-        <dl className="flex flex-col gap-2 text-sm"><dt className="text-muted-foreground">Started in</dt><dd className="break-all select-text">{active?.initialCwd}</dd></dl>
+        <DialogBody><dl className="flex flex-col gap-2 text-sm"><dt className="text-muted-foreground">Started in</dt><dd className="break-all select-text">{active?.initialCwd}</dd></dl></DialogBody>
       </DialogContent>
     </Dialog>
     <AlertDialog open={confirm} onOpenChange={setConfirm}>

@@ -69,7 +69,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
-      <SheetContent size="panel" onCloseAutoFocus={onCloseAutoFocus}>
+      <SheetContent showClose={false} size="panel" onCloseAutoFocus={onCloseAutoFocus}>
         <SheetHeader>
           <SheetHeaderRow>
             {!home && <Button variant="ghost" size="icon-lg" aria-label="Back to settings" onClick={() => setSection("general")}>
@@ -186,8 +186,8 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   <AlertDialogDescription>You'll need your passkey to sign back in on this device.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogAction variant="destructive" disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
                   <AlertDialogCancel>Stay</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

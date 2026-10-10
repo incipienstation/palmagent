@@ -10,6 +10,12 @@ An entry does not mean a version has been published.
 
 - Reading older messages keeps its position when conversation history contains answers with very different heights.
 
+## 0.1.0-alpha.165
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/071129e130c85092244a65a0d52666b05366dd3a...ff4daa2f5558211bd08bc460062c8ef480e74664) for details.
+
 ## 0.1.0-alpha.164
 
 ### Changed

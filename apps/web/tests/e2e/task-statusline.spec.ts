@@ -1,4 +1,5 @@
 import { installReadStreams, changeRead } from "./_read-streams";
+import { installScopedStream } from "./_scoped-stream";
 import { test, expect, type Page } from "@playwright/test";
 import type { AccountLimits } from "@palmagent/shared";
 import { assertViewportLocked } from "./_helpers";
@@ -72,6 +73,9 @@ test("missing percentages stay unknown and expired windows await a fresh report"
 });
 
 test("the reset countdown advances locally and SSE replaces old quota numbers", async ({ page }) => {
+  // Control the invalidation boundary: the real stream's initial quota frame
+  // can otherwise arrive after the HTTP fixture switches to the newer report.
+  await installScopedStream(page);
   const line = await show(page, claude);
   await expect(line.getByText("72%")).toBeVisible();
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: { ...claude, checkedAt: now + 60000, fiveHour: { usedPercent: 40, resetsAt: reset } } }));
