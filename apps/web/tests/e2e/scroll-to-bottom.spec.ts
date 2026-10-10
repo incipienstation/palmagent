@@ -54,12 +54,17 @@ test("the translucent control stays above the composer in both themes and a smal
   for (const theme of ["light", "dark"]) {
     await page.evaluate(theme => { document.documentElement.classList.toggle("dark", theme === "dark"); }, theme);
     await expect(button(page)).toBeVisible();
-    const control = await button(page).boundingBox();
-    const transcript = await viewport(page).boundingBox();
-    const composer = await page.getByRole("group", { name: "Message composer", exact: true }).boundingBox();
-    expect(Math.abs(control!.x + control!.width / 2 - (transcript!.x + transcript!.width / 2))).toBeLessThan(1);
-    expect(control!.y + control!.height).toBeLessThan(composer!.y);
-    expect(control!.width).toBe(40);
+    // Read all bounds in one frame while the composer height animates.
+    await expect.poll(() => button(page).evaluate(el => {
+      const control = el.getBoundingClientRect();
+      const transcript = document.querySelector('[aria-label="Session transcript"]')!.getBoundingClientRect();
+      const composer = document.querySelector('[aria-label="Message composer"]')!.getBoundingClientRect();
+      return {
+        centered: Math.abs(control.x + control.width / 2 - (transcript.x + transcript.width / 2)) < 1,
+        aboveComposer: control.bottom < composer.top,
+        width: control.width,
+      };
+    })).toEqual({ centered: true, aboveComposer: true, width: 40 });
     const style = await button(page).evaluate(el => ({
       background: getComputedStyle(el).backgroundColor,
       opacity: getComputedStyle(el).opacity,
