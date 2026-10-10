@@ -45,6 +45,23 @@ test("returning to latest preserves the draft and resumes streaming follow", asy
   await expect(button(page)).toBeHidden();
 });
 
+test("a pending bottom scroll notification does not cancel upward reading", async ({ page }) => {
+  await longConversation(page);
+  await viewport(page).evaluate(el => {
+    // A layout/follow notification can arrive after wheel input but before the
+    // browser applies that wheel's movement, while the pane is still at bottom.
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -450 }));
+    el.dispatchEvent(new Event("scroll"));
+    el.scrollTop -= 450;
+  });
+  await expect(button(page)).toBeVisible();
+  const top = await viewport(page).evaluate(el => el.scrollTop);
+  await event(page, "t-idle-rich", 2, "New output must not reclaim the reader's position");
+  await expect.poll(() => viewport(page).evaluate(el => el.scrollTop)).toBe(top);
+  await button(page).click();
+  await expectBottom(page);
+});
+
 test("the translucent control stays above the composer in both themes and a smaller viewport", async ({ page }) => {
   await longConversation(page);
   await readAbove(page);

@@ -433,7 +433,10 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     if (!initialized.current) return;
     const list = el.querySelector<HTMLElement>("[data-transcript-items]");
     if (list && getComputedStyle(list).visibility === "hidden") return;
-    if (!jumping.current && el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
+    // A queued bottom/resize notification can arrive between upward input and
+    // its native scroll. Resume following only when moving back down to bottom.
+    if (!jumping.current && previousTop !== undefined && el.scrollTop > previousTop
+      && el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
     // A scroll event can come from Virtuoso's measurement correction. Only
     // explicit upward input or scrollbar interaction detaches bottom following.
     captureAnchor();
@@ -538,6 +541,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     };
     const pause = () => {
       cancelRestore();
+      // Snapshot the DOM now: its last follow write may still have a scroll
+      // notification queued, which must not look like new downward movement.
+      lastScrollTop.current = el.scrollTop;
       initialized.current = true;
       following.current = false;
       jumping.current = false;
