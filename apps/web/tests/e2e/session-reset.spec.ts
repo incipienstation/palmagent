@@ -52,7 +52,7 @@ test("a remote session reset hides cached history, closes streams and discards i
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByText("Previous session response", { exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as unknown as SessionHarness).connections.filter(s => !s.closed).map(s => s.url).sort())).toEqual([
-    "/api/stream?snapshots=1", "/api/stream?task=t-idle-rich&details=summary", "/api/tasks/t-idle-rich/account-limits/stream",
+    "/api/stream?snapshots=1", "/api/stream?task=t-idle-rich&details=summary",
   ].sort());
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {

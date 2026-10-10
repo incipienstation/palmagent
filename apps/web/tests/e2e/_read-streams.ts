@@ -12,6 +12,11 @@ export async function installReadStreams(page: Page) {
       onerror?: (event: Event) => void;
       onopen?: (event: Event) => void;
       constructor(readonly url: string) {
+        if (url.startsWith("/api/stream?task=")) {
+          const stream = new Native(url);
+          streams.set(url, stream);
+          return stream as unknown as Stream;
+        }
         if (!url.endsWith("/stream") || !/\/api\/(agents|tasks)\//.test(url)) return new Native(url) as unknown as Stream;
         streams.set(url, this);
         queueMicrotask(() => {
@@ -29,6 +34,8 @@ export async function changeRead(page: Page, url: string, reconnect = false) {
     const stream = (window as unknown as Streams).readStreams.get(url);
     if (!stream) throw new Error(`No resource subscription for ${url}`);
     if (reconnect) { stream.onerror?.(new Event("error")); stream.onopen?.(new Event("open")); }
-    stream.onmessage?.(new MessageEvent("message", { data: '{"type":"read-change"}' }));
+    stream.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "read-change",
+      ...(url.startsWith("/api/stream?task=") ? { taskLimits: new URL(url, location.origin).searchParams.get("task") } : {}),
+    }) }));
   }, { url, reconnect });
 }

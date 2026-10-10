@@ -41,7 +41,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), new LocalAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader());
+    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }));
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: "https://localhost", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
@@ -109,7 +109,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/agents/codex/limits/stream", "/api/tasks/fixture/account-limits/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/agents/codex/limits/stream", "/api/unknown"]) {
     const denied = await fetch(base + path);
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get("cache-control"), "no-store");
@@ -952,24 +952,29 @@ test("resource streams use authenticated scopes and unsubscribe when clients dis
   }
   assert.deepEqual(scopes, ["installations", "codex"]);
   assert.equal((await f.app.request("/api/agents/unknown/limits/stream", { headers })).status, 400);
-  assert.equal((await f.app.request("/api/tasks/missing/account-limits/stream", { headers })).status, 404);
+  assert.equal((await f.app.request("/api/stream?task=missing", { headers })).status, 404);
 });
 
-test("task account streams release their provider subscription when the task disappears", async t => {
+test("task streams carry account changes and release the provider subscription when the task disappears", async t => {
   const f = fixture(t, false);
   f.db.insertRepo({ id: "limits-repo", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   f.db.insertTask({ taskId: "limits-task", repoId: "limits-repo", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   await f.service.init();
   let active = 0;
-  f.service.observeAccountLimits = id => {
+  let changed = () => {};
+  f.service.observeAccountLimits = (id, listener) => {
+    changed = listener;
     assert.equal(id, "limits-task"); active++;
     return () => { active--; };
   };
   const abort = new AbortController();
-  const response = await f.app.request("/api/tasks/limits-task/account-limits/stream", { signal: abort.signal });
+  const response = await f.app.request("/api/stream?task=limits-task", { signal: abort.signal });
   const reader = response.body!.getReader();
   await reader.read();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /"taskLimits":"limits-task"/);
   assert.equal(active, 1);
+  changed();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /"taskLimits":"limits-task"/);
   f.hub.emitTasks([]);
   assert.match(new TextDecoder().decode((await reader.read()).value), /read-change/);
   assert.equal(active, 0);

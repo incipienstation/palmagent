@@ -294,16 +294,15 @@ guess which text is safe to fold.
   30 seconds; usage and routine runs for 10 seconds. Concurrent reads share a
   request. Mutations invalidate before and after the request, including failed
   requests with uncertain outcomes; other tabs receive invalidation signals.
-  Foreground and online transitions expire REST reads and refresh mounted views. Task snapshots invalidate
+  Foreground and online transitions expire REST reads and refresh mounted views. Reconnect snapshots revalidate
   usage and run history. Authentication, settings, discovery, filesystem checks,
   and live task state always reach the network. Routine run history and terminal
   lists refresh from inbox `read-change` events, including initial connection and
   reconnect recovery. Terminal output continues to use WebSocket.
 - **Resource subscriptions:** agent installations (`/api/agents/stream`) and account
-  limits (`/api/agents/:agent/limits/stream`,
-  `/api/tasks/:id/account-limits/stream`) use authenticated SSE invalidations and
-  REST snapshots. Mounted views subscribe; navigation and session reset close the
-  streams. Invalidations during an active read coalesce into a trailing read.
+  limits (`/api/agents/:agent/limits/stream`) use authenticated SSE invalidations and
+  REST snapshots. Task account limits share the scoped conversation stream. Mounted
+  views subscribe; navigation and session reset close the streams. Invalidations during an active read coalesce into a trailing read.
   Browsers do not poll these resources. The server shares external CLI reads across
   subscribers: installation discovery refreshes every minute, account limits at
   their five-minute cache expiry, and both stop refreshing when unobserved.
@@ -336,9 +335,9 @@ guess which text is safe to fold.
 | Live transcript deltas | Scoped SSE sends only post-subscription events; REST fills reconnect gaps; Compact receives summary payloads |
 | Repositories (30s), routines (30s), usage (10s), model catalog (5m) | TanStack Query v5 in-memory cache with shared request deduplication and scoped invalidation |
 | Skills by task/repository context (10s) | Context-keyed TanStack Query cache; only fetched while the picker is open |
-| Routine run history | TanStack Query cache; agent history is fresh for 10s, script history is revalidated on open, and active runs poll every 3s |
+| Routine run history | TanStack Query cache; revalidated on open, routine events, and inbox reconnect |
 | Discovery, path validation, filesystem browse | Network so external settings and filesystem changes remain authoritative |
-| Account limits | Network in the client; provider-scoped server cache owns freshness |
+| Account limits | In-memory snapshots invalidated by SSE; provider-scoped server cache owns freshness |
 | Markdown rendering | Existing bounded content-keyed worker cache |
 | Theme, output mode, form drafts, selected space | Local preferences, not server response caches |
 | Update checkpoints | Existing per-tab IndexedDB handoff, consumed after reload |

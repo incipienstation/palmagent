@@ -60,7 +60,12 @@ export function useInbox(): Inbox {
           snapshot.current = next;
           setTasks(next);
           setLoading(false);
-          if (!seenSnapshot || recoverReads) refreshReads();
+          if (recoverReads) refreshReads();
+          else if (!seenSnapshot) {
+            refresh(clientReadKeys.routines());
+            refresh(clientReadKeys.routineRunsAll());
+            terminalsChanged();
+          }
           seenSnapshot = true;
           recoverReads = false;
         }

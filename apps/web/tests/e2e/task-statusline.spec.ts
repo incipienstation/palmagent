@@ -77,7 +77,7 @@ test("the reset countdown advances locally and SSE replaces old quota numbers", 
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: { ...claude, checkedAt: now + 60000, fiveHour: { usedPercent: 40, resetsAt: reset } } }));
   await page.clock.fastForward(60000);
   await expect(line.getByText("72%")).toBeVisible();
-  await changeRead(page, "/api/tasks/t-idle-rich/account-limits/stream");
+  await changeRead(page, "/api/stream?task=t-idle-rich&details=summary");
   await expect(line.getByText("60%")).toBeVisible();
   await line.getByRole("button", { name: "Usage details" }).click();
   await expect(page.getByRole("dialog").getByText("Resets in 1h 39m")).toBeVisible();
@@ -88,7 +88,7 @@ test("failed and unsupported reads show no fabricated allowance", async ({ page 
   const line = await show(page, { agent: "claude", state: "unavailable", checkedAt: now, modelLimits: [] });
   await expect(line.getByText("Limits not reported")).toBeVisible();
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ status: 503, json: { error: "offline" } }));
-  await changeRead(page, "/api/tasks/t-idle-rich/account-limits/stream");
+  await changeRead(page, "/api/stream?task=t-idle-rich&details=summary");
   await expect(line.getByText("Limits unavailable")).toBeVisible();
   await expect(line.getByText(/%/)).toHaveCount(0);
 });
@@ -144,7 +144,7 @@ test("allowance details remain reachable on a narrow phone, including unknown or
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: {
     ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 95, resetsAt: now - 1000 },
   } }));
-  await changeRead(page, "/api/tasks/t-idle-rich/account-limits/stream");
+  await changeRead(page, "/api/stream?task=t-idle-rich&details=summary");
   await expect(line.getByText("Unknown")).toBeVisible();
   await expect(line.getByText("Refreshing")).toBeVisible();
   expect(await line.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
