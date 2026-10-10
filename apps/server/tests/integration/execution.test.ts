@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { ExecutionStore } from "../../src/modules/agents/adapters/outbound/execution-store.js";
 import { ExecutionBackend } from "../../src/modules/agents/adapters/outbound/execution-client.js";
+import { drainExecutionCommands } from "../../src/modules/agents/adapters/outbound/execution-commands.js";
+import { ExecutionPersistence } from "../../src/modules/agents/adapters/outbound/execution-persistence.js";
+import { watchExecutions, notifyExecutionCommands } from "../../src/modules/agents/adapters/outbound/execution-wake.js";
 import type { RawEvent } from "../../src/modules/agents/domain/execution.js";
 import type { ExecutionStart } from "@palmagent/shared/executions";
 
@@ -95,10 +98,21 @@ for (const agent of ["claude", "codex"] as const) {
     assert.deepEqual(JSON.parse(readFileSync(marker(".ready"), "utf8")), original);
     assert(await handle.answer({ requestId: agent === "claude" ? "q1" : '"q1"', answers: [{ question: "Continue?", selected: ["Yes"] }] }));
     await until(() => existsSync(marker(".answer")), "answer reaches the original stdin");
+    // Final output must survive a writer held past the former five-second timeout.
+    const blocker = new ExecutionStore(store.directory);
+    t.after(() => blocker.close());
+    blocker.db.exec("BEGIN IMMEDIATE");
     writeFileSync(marker(".release"), "");
+    try {
+      await new Promise(resolve => setTimeout(resolve, 6_000));
+      assert.equal(children[0].exitCode, null, logs);
+      assert.equal(store.get(execution.id).state, "running");
+    } finally { blocker.db.exec("ROLLBACK"); }
     await handle.done;
     assert(replay.some((event) => JSON.stringify(event).includes(`${agent}:after`)), logs);
     assert.equal(store.get(execution.id).state, "finished");
+    assert.match(logs, /execution_store_busy/);
+    assert.match(logs, /execution_store_recovered/);
   });
 }
 
@@ -183,4 +197,101 @@ test("context compaction operation is preserved across the execution process bou
   assert.equal(record.args.operation, "compact");
   assert.equal(record.args.resumeId, "existing-thread");
   assert.equal(record.args.prompt, "");
+});
+
+test("empty command and admission checks do not acquire a write lock", t => {
+  const { store } = fixture(t);
+  const record = store.reserve(request("idle"), "/opt/releases/one", process.execPath);
+  store.admit(1); store.claim(record.id);
+  const blocker = new ExecutionStore(store.directory);
+  t.after(() => blocker.close());
+  store.db.pragma("busy_timeout = 0");
+  blocker.db.exec("BEGIN IMMEDIATE");
+  try {
+    assert.deepEqual(store.pending(record.id), []);
+    assert.deepEqual(store.admit(1), []);
+  } finally { blocker.db.exec("ROLLBACK"); }
+});
+
+test("command claim and receipt retry preserve one delivery under real write contention", async t => {
+  const { store } = fixture(t);
+  const record = store.reserve(request("receipt"), "/opt/releases/one", process.execPath);
+  store.admit(1); store.claim(record.id);
+  store.append(record.id, { taskId: record.taskId, kind: "question", payload: { requestId: "q", questions: [] } });
+  store.enqueue(record.id, "answer", { kind: "answer", answer: { requestId: "q", answers: [] } });
+  const blocker = new ExecutionStore(store.directory);
+  const reports: string[] = [];
+  const persistence = new ExecutionPersistence(message => reports.push(message));
+  t.after(() => { persistence.close(); blocker.close(); });
+  store.db.pragma("busy_timeout = 0");
+  const unlock = async <T>(operation: () => Promise<T>) => {
+    blocker.db.exec("BEGIN IMMEDIATE");
+    const result = operation();
+    try {
+      await until(() => reports.some(line => line.includes('"event":"execution_store_busy"')), "retry starts");
+    } finally { blocker.db.exec("ROLLBACK"); }
+    return result;
+  };
+  let deliveries = 0;
+  let releaseReceipt: Promise<void> | undefined;
+  const handle = {
+    answer: () => {
+      deliveries++;
+      assert.deepEqual(blocker.pending(record.id), [], "another reader cannot reclaim delivery");
+      blocker.db.exec("BEGIN IMMEDIATE");
+      releaseReceipt = until(() => reports.some(line => line.includes('"operation":"settle"')), "receipt retry starts")
+        .finally(() => blocker.db.exec("ROLLBACK"));
+      return true;
+    },
+    steer: () => false, approve: () => false, interrupt: () => false, cancel: () => {}, done: new Promise<void>(() => {}),
+  };
+  await unlock(() => drainExecutionCommands(store, persistence, record.id, handle, () => false));
+  await releaseReceipt;
+  await drainExecutionCommands(store, persistence, record.id, handle, () => false);
+  assert.equal(deliveries, 1);
+  assert.equal(store.command(record.id, "answer")?.result, "delivered");
+  assert.equal(store.get(record.id).question, null);
+  assert.equal(store.events(record.id, 0).filter(row => (row.event.payload as { subtype?: string }).subtype === "answer").length, 1);
+  assert.deepEqual(store.pending(record.id), []);
+  assert(reports.some(line => line.includes("execution_store_recovered")));
+});
+
+test("permanent persistence errors stop the ordered queue without retrying later writes", async t => {
+  const persistence = new ExecutionPersistence(() => {});
+  t.after(() => persistence.close());
+  let calls = 0;
+  const failure = Object.assign(new Error("synthetic storage failure"), { code: "SQLITE_FULL" });
+  await assert.rejects(persistence.run("event", () => { calls++; throw failure; }), failure);
+  await assert.rejects(persistence.run("finish", () => { calls++; }), failure);
+  assert.equal(calls, 1);
+});
+
+test("command hints wake only their execution and legacy clients retain periodic reconciliation", async t => {
+  const { store } = fixture(t);
+  let wakes = 0;
+  const dispose = watchExecutions(store.directory, () => { wakes++; }, "target");
+  t.after(dispose);
+  notifyExecutionCommands(store.directory, "other");
+  writeFileSync(join(store.directory, "executions.sqlite-wal-hint"), "unrelated output");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(wakes, 0);
+  notifyExecutionCommands(store.directory, "target");
+  await until(() => wakes > 0, "target hint");
+  const before = wakes;
+  await until(() => wakes > before, "periodic reconciliation without a hint");
+});
+
+test("an exhausted busy retry window fails explicitly and does not run later writes", async t => {
+  const reports: string[] = [];
+  const persistence = new ExecutionPersistence(message => reports.push(message), 0);
+  t.after(() => persistence.close());
+  const busy = Object.assign(new Error("synthetic lock contention"), { code: "SQLITE_BUSY" });
+  let calls = 0;
+  await assert.rejects(persistence.run("event", () => { calls++; throw busy; }), busy);
+  await assert.rejects(persistence.run("finish", () => { calls++; }), busy);
+  assert.equal(calls, 1);
+  persistence.close();
+  const metrics = JSON.parse(reports.find(line => line.includes("execution_store_metrics"))!);
+  assert.equal(metrics.operations.event.busyRetries, 1);
+  assert.equal(metrics.operations.event.calls, 0);
 });

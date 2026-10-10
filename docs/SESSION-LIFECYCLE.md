@@ -106,6 +106,29 @@ missed filesystem notifications for local execution state; it never checks relea
 availability. Releases are checked only on app connection/foreground return or an
 explicit check, with the existing access cache.
 
+Execution hosts watch command hints addressed to their own invocation. Hints are
+written after the command commits; losing a hint or using an older web client is
+safe because periodic reconciliation still reads the durable queue. Empty command
+and admission queues are checked without a write transaction. Command claiming
+rechecks the queue inside the transaction to preserve exclusive delivery.
+
+Host persistence runs in order with short SQLite waits and asynchronous backoff
+for `SQLITE_BUSY`. Each operation retries for up to 60 seconds, allowing provider
+pipes to drain while another process holds the write lock. Final output commits
+before the execution is marked finished. Only database operations are retried;
+provider commands are never resent because receipt persistence was delayed.
+Permanent errors or an exhausted retry window stop the host with an explicit
+storage failure, leaving uncertain delivery for reconciliation.
+
+Execution service journals include `execution_store_busy` and
+`execution_store_recovered` records. Once a minute and at shutdown,
+`execution_store_metrics` summarizes completed operation counts, busy retries,
+maximum database-attempt duration (`maxAttemptMs`), and maximum local persistence
+queue wait (`maxQueueMs`). Attempt duration includes SQLite lock waiting and SQL
+work; it is not a measurement of lock-holder duration. These records contain
+operation names and timings, without prompts or command content. Existing hosts
+retain their original release and gain these changes only in a new invocation.
+
 ## Update activation
 
 1. Resolve and retain one exact compatible version under the existing update lock.
