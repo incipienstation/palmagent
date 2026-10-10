@@ -109,7 +109,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/agents/codex/limits/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/unknown"]) {
     const denied = await fetch(base + path);
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get("cache-control"), "no-store");
@@ -938,7 +938,7 @@ test("resource streams use authenticated scopes and unsubscribe when clients dis
   f.service.observeProviderAccountLimits = agent => subscribe(agent);
   const now = Date.now(); f.db.createSession("stream-session", now, now + 60_000);
   const headers = { cookie: `${f.settings.cookieName}=stream-session` };
-  for (const path of ["/api/agents/stream", "/api/agents/codex/limits/stream"]) {
+  for (const path of ["/api/agents/stream"]) {
     assert.equal((await f.app.request(path)).status, 401);
     const controller = new AbortController();
     const response = await f.app.request(path, { headers, signal: controller.signal });
@@ -946,12 +946,11 @@ test("resource streams use authenticated scopes and unsubscribe when clients dis
     assert.match(response.headers.get("cache-control")!, /no-store/);
     const reader = response.body!.getReader();
     assert.match(new TextDecoder().decode((await reader.read()).value), /read-change/);
-    assert.equal(active, 1);
+    assert.equal(active, 3);
     controller.abort(); await reader.cancel();
     assert.equal(active, 0);
   }
-  assert.deepEqual(scopes, ["installations", "codex"]);
-  assert.equal((await f.app.request("/api/agents/unknown/limits/stream", { headers })).status, 400);
+  assert.deepEqual(scopes, ["installations", "claude", "codex"]);
   assert.equal((await f.app.request("/api/stream?task=missing", { headers })).status, 404);
 });
 

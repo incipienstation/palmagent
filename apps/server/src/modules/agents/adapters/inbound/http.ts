@@ -20,10 +20,12 @@ export function agentRoutes({ agentInstallations, service, auth, config, shutdow
     .get("/", async c => c.json({ installations: await installations().list(), canUpdate: auth.enabled }, 200))
     .get("/stream", c => {
       const source = installations();
-      return readStream(c, changed => source.observe(changed), config.keepAliveMs, shutdown);
+      return readStream(c, changed => {
+        const subscriptions = [source.observe(changed),
+          service.observeProviderAccountLimits("claude", changed), service.observeProviderAccountLimits("codex", changed)];
+        return () => { for (const off of subscriptions) off(); };
+      }, config.keepAliveMs, shutdown);
     })
-    .get("/:agent/limits/stream", params(AgentParams), c => readStream(c,
-      changed => service.observeProviderAccountLimits(c.req.valid("param").agent, changed), config.keepAliveMs, shutdown))
     .get("/:agent/limits", params(AgentParams), async c => c.json(await service.providerAccountLimits(c.req.valid("param").agent), 200))
     .post("/:agent/update", requireSignIn(auth.enabled, "Sign-in must be enabled to update agent installations."), params(AgentParams), jsonBody(UpdateAgent), async c => {
       if (service.updating) throw new ApplicationError("conflict", "Wait for the Palmagent update to finish.");

@@ -299,9 +299,8 @@ guess which text is safe to fold.
   and live task state always reach the network. Routine run history and terminal
   lists refresh from inbox `read-change` events, including initial connection and
   reconnect recovery. Terminal output continues to use WebSocket.
-- **Resource subscriptions:** agent installations (`/api/agents/stream`) and account
-  limits (`/api/agents/:agent/limits/stream`) use authenticated SSE invalidations and
-  REST snapshots. Task account limits share the scoped conversation stream. Mounted
+- **Resource subscriptions:** agent installations and provider account limits share
+  `/api/agents/stream` for authenticated SSE invalidations and REST snapshots. Task account limits share the scoped conversation stream. Mounted
   views subscribe; navigation and session reset close the streams. Invalidations during an active read coalesce into a trailing read.
   Browsers do not poll these resources. The server shares external CLI reads across
   subscribers: installation discovery refreshes every minute, account limits at

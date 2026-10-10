@@ -91,15 +91,14 @@ test("installation and allowance reads remain idle until SSE changes or reconnec
   await expect(card.getByText("72% left")).toBeVisible();
   // Finish any initial subscription revalidation before measuring idle traffic.
   await changeRead(page, "/api/agents/stream");
-  await changeRead(page, "/api/agents/codex/limits/stream");
   await expect(page.getByRole("button", { name: "Refresh agents" })).toBeEnabled();
   const before = { installations, limits };
   await page.clock.fastForward(600_000);
   expect({ installations, limits }).toEqual(before);
   used = 40;
-  await changeRead(page, "/api/agents/codex/limits/stream", true);
+  await changeRead(page, "/api/agents/stream", true);
   await expect(card.getByText("60% left")).toBeVisible();
-  expect(installations).toBe(before.installations);
+  expect(installations).toBe(before.installations + 1);
   await page.evaluate(() => { location.hash = "#/spaces"; });
   await expect.poll(() => page.evaluate(() => (window as unknown as { readStreams: Map<string, unknown> }).readStreams.size)).toBe(0);
 });

@@ -168,7 +168,7 @@ const server = createServer(async (req, res) => {
   const m = req.method ?? "GET";
 
   if (pathname === "/api/stream") return handleStream(req, res, url);
-  if (pathname === "/api/agents/stream" || /^\/api\/agents\/(claude|codex)\/limits\/stream$/.test(pathname)) {
+  if (pathname === "/api/agents/stream") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
     res.write('data: {"type":"read-change"}\n\n');
     const timer = setInterval(() => res.write(":keep-alive\n\n"), 15000);
