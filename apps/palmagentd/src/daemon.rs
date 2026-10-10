@@ -25,7 +25,10 @@ pub fn request(data: &Path, request: &Request) -> Result<Value> {
     let mut stream = Stream::connect(socket).context("Palmagent daemon is unavailable")?;
     stream.set_read_timeout(Some(Duration::from_secs(35)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    serde_json::to_writer(&mut stream, request)?;
+    serde_json::to_writer(
+        &mut stream,
+        &json!({ "protocol": PROTOCOL, "request": request }),
+    )?;
     stream.write_all(b"\n")?;
     let mut line = String::new();
     BufReader::new(stream).take(65_537).read_line(&mut line)?;
@@ -113,7 +116,12 @@ pub fn serve(data: &Path) -> Result<()> {
                         line.len() <= 65_536 && line.ends_with('\n'),
                         "Invalid daemon request"
                     );
-                    let request: Request = serde_json::from_str(&line)?;
+                    let envelope: Value = serde_json::from_str(&line)?;
+                    ensure!(
+                        envelope["protocol"] == PROTOCOL,
+                        "Incompatible daemon protocol"
+                    );
+                    let request: Request = serde_json::from_value(envelope["request"].clone())?;
                     match request {
                         Request::Status => Ok(
                             json!({ "version": VERSION, "sourceCommit": SOURCE_COMMIT, "pid": std::process::id(), "instance": instance,

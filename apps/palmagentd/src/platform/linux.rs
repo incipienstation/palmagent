@@ -322,7 +322,7 @@ impl Autostart for Linux {
                 && [user, group].iter().all(|value| !value.is_empty()
                     && value
                         .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))),
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))),
             "Invalid installation owner"
         );
         fn quote(path: &Path) -> Result<String> {

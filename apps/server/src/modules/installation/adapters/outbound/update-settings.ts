@@ -108,7 +108,7 @@ export function runUpdateSettingsCommand(args: string[], checkAvailability = che
         }
         if (ready) {
           prepareUpdateService(cfg);
-          // The executor also takes this lock; release before asking systemd to start it.
+          // The executor also takes this lock; release before asking the supervisor to start it.
           unlock?.(); unlock = undefined;
           startRequestedUpdate(cfg);
         }

@@ -1,6 +1,6 @@
 /** Linux boot/crash recovery adapter; never used by normal runtime activation. */
-import { copyFileSync, chmodSync, existsSync, renameSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { copyFileSync, chmodSync, existsSync, readFileSync, renameSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { ensurePrivateDirectory } from "../../../../platform/filesystem/private-files.js";
 import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 import type { InstallConfig } from "./config.js";
@@ -37,9 +37,26 @@ export function startDaemonBootstrap(): void {
 }
 
 export function removeDaemonBootstrap(cfg: InstallConfig): void {
-  daemonRequest(cfg.dataDir, { action: "stop" });
-  if (!sudo(["systemctl", "disable", "--now", daemonUnit]).ok ||
-      !sudo(["rm", "-f", join("/etc/systemd/system", daemonUnit)]).ok || !sudo(["systemctl", "daemon-reload"]).ok) {
+  let emptyGroup: string | undefined;
+  try { daemonRequest(cfg.dataDir, { action: "stop" }); }
+  catch (error) {
+    // A failed first start has no control endpoint. Only an empty bootstrap may
+    // be removed without its acknowledgment; active or uncertain hosts are retained.
+    const group = run("systemctl", ["show", daemonUnit, "--property=ControlGroup", "--value"]);
+    if (!group.ok) throw error;
+    const relative = group.stdout.trim();
+    if (relative) {
+      const path = resolve("/sys/fs/cgroup", "." + relative);
+      if (!path.startsWith("/sys/fs/cgroup/") || !path.endsWith("/" + daemonUnit)) throw error;
+      if (existsSync(join(path, "cgroup.events")) && !readFileSync(join(path, "cgroup.events"), "utf8").includes("populated 0")) throw error;
+      emptyGroup = path;
+    }
+  }
+  if (!sudo(["systemctl", "disable", "--now", daemonUnit]).ok) throw new Error("Could not stop the daemon bootstrap");
+  if (emptyGroup && existsSync(join(emptyGroup, "cgroup.events")) && !readFileSync(join(emptyGroup, "cgroup.events"), "utf8").includes("populated 0")) {
+    throw new Error("Bootstrap became populated during shutdown; retain its artifacts for recovery");
+  }
+  if (!sudo(["rm", "-f", join("/etc/systemd/system", daemonUnit)]).ok || !sudo(["systemctl", "daemon-reload"]).ok) {
     throw new Error("Could not remove the daemon bootstrap");
   }
 }

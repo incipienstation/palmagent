@@ -6,7 +6,7 @@ import { installTerminalUnits } from "./terminal-units.js";
 // Application install / setup / update / uninstall orchestration.
 // Host ingress and TLS are managed separately by the operator plugin. Every
 // mutating step is gated behind --dry-run (render + print, touch nothing) so the
-// flow is inspectable and CI-testable; real mutations need sudo.
+// flow is inspectable and CI-testable; only host bootstrap and legacy units need sudo.
 //
 // These commands are the packaged install/update path. Source mode supports a
 // checked-out maintainer build, but public self-update is package-only.

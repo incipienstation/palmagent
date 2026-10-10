@@ -7,11 +7,16 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+// Avoid inheriting another test thread's briefly writable executable across fork.
+static FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+
 struct Fixture {
+    _exclusive: MutexGuard<'static, ()>,
     data: PathBuf,
     binary: PathBuf,
     daemon: Child,
@@ -36,6 +41,9 @@ fn wait(mut check: impl FnMut() -> bool) {
 
 impl Fixture {
     fn new() -> Self {
+        let exclusive = FIXTURE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -82,6 +90,7 @@ impl Fixture {
             .spawn()
             .unwrap();
         let fixture = Self {
+            _exclusive: exclusive,
             data,
             binary,
             daemon,
@@ -251,4 +260,37 @@ fn update_executor_is_independent_and_finishes_without_a_web_request() {
     let fixture = Fixture::new();
     fixture.request(json!({ "action": "start-update" }));
     wait(|| fixture.data.join("releases/r1/update-finished").exists());
+}
+
+#[test]
+fn incompatible_protocol_is_rejected_before_mutation() {
+    use sha2::{Digest, Sha256};
+    use std::{
+        io::{BufRead, BufReader},
+        os::unix::net::UnixStream,
+    };
+    let fixture = Fixture::new();
+    let hash = format!(
+        "{:x}",
+        Sha256::digest(fixture.data.as_os_str().as_encoded_bytes())
+    );
+    let socket = PathBuf::from("/tmp").join(format!(
+        "palmagentd-{}-{}/control.sock",
+        unsafe { libc::geteuid() },
+        &hash[..20]
+    ));
+    let mut stream = UnixStream::connect(socket).unwrap();
+    writeln!(
+        stream,
+        "{}",
+        json!({ "protocol": 999, "request": { "action": "stop" } })
+    )
+    .unwrap();
+    let mut line = String::new();
+    BufReader::new(stream).read_line(&mut line).unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&line).unwrap()["ok"], false);
+    assert_eq!(
+        fixture.request(json!({ "action": "status" }))["protocol"],
+        1
+    );
 }

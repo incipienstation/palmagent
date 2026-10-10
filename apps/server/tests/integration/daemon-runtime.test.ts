@@ -5,6 +5,7 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { DaemonConfigurationSchema } from "@palmagent/shared/daemon";
+import { assertDaemonBootstrapSupported, removeDaemonBootstrap } from "../../src/modules/installation/adapters/outbound/daemon-bootstrap.js";
 import { activateDaemon, configureDaemon, daemonBinary, daemonStatus } from "../../src/modules/installation/adapters/outbound/daemon-runtime.js";
 import { configureAutoUpdate, prepareUpdateService, startRequestedUpdate } from "../../src/modules/installation/adapters/outbound/auto-update.js";
 import { DEFAULT_CAPS, saveConfig, loadConfig, type InstallConfig } from "../../src/modules/installation/adapters/outbound/config.js";
@@ -86,4 +87,26 @@ test("corrupt or unsupported native artifacts are rejected before changing activ
   assert.throws(() => daemonBinary(f.release, "win32"), /no compatible daemon/);
   assert.equal(readFileSync(join(f.root, "daemon/config.json"), "utf8"), prior);
   assert(!existsSync(f.privileged));
+});
+
+
+test("bootstrap migration rejects old systemd before privileged mutations", t => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, "bin/systemctl"), `#!${process.execPath}\nconsole.log('systemd 253');\n`, { mode: 0o700 });
+  assert.throws(() => assertDaemonBootstrapSupported(), /254 or newer/);
+  assert(!existsSync(f.privileged));
+});
+
+test("failed initial bootstrap can be removed only when its empty state is verified", t => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, "daemon/launcher"), `#!${process.execPath}\nprocess.exit(1);\n`);
+  writeFileSync(join(f.root, "bin/systemctl"), `#!${process.execPath}\nconsole.log('/unrelated-group');\n`, { mode: 0o700 });
+  assert.throws(() => removeDaemonBootstrap(f.cfg));
+  assert(!existsSync(f.privileged));
+  writeFileSync(join(f.root, "bin/systemctl"), `#!${process.execPath}\nconsole.log('');\n`, { mode: 0o700 });
+  writeFileSync(join(f.root, "bin/sudo"), `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(f.privileged)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
+  removeDaemonBootstrap(f.cfg);
+  const calls = readFileSync(f.privileged, "utf8");
+  assert.match(calls, /disable/);
+  assert.match(calls, /daemon-reload/);
 });
