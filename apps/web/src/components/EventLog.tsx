@@ -382,6 +382,16 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   const initialized = useRef(!!saved.current);
   const [positioned, setPositioned] = useState(false);
   const [showJump, setShowJump] = useState(false);
+  const [scrolling, setScrolling] = useState(false);
+  const scrollIdleTimer = useRef<number | undefined>(undefined);
+  const markScrollActivity = useCallback(() => {
+    setScrolling(true);
+    clearTimeout(scrollIdleTimer.current);
+    scrollIdleTimer.current = window.setTimeout(() => {
+      scrollIdleTimer.current = undefined;
+      setScrolling(false);
+    }, 200);
+  }, []);
   const jumpButton = useRef<HTMLButtonElement>(null);
   useUpdateSnapshot(`scroll:${location.hash}`, () => {
     let state: StateSnapshot | undefined;
@@ -425,6 +435,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   }, [captureAnchor]);
   useLayoutEffect(() => { lastScrollTop.current = viewport.current?.scrollTop ?? 0; }, []);
   const onScrollPosition = useCallback((el: HTMLElement) => {
+    // Extend manual scrolling through momentum without hiding for live output
+    // or Virtuoso's measurement corrections while the reader is idle.
+    if (scrollIdleTimer.current !== undefined) markScrollActivity();
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
     updateJump();
@@ -450,7 +463,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       return typeof text === "string" && text.length > 4000 ? [text] : [];
     }).slice(0, 16);
     prewarmMarkdown(texts);
-  }, [captureAnchor, rows, updateJump]);
+  }, [captureAnchor, rows, updateJump, markScrollActivity]);
   // Check the reading position when the frame runs, not when a resize was
   // scheduled: a delayed size update must not pull a reader back to the bottom.
   const followBottom = useCallback(() => {
@@ -531,6 +544,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     cancelAnimationFrame(scrollFrame.current);
     cancelAnimationFrame(captureFrame.current);
     cancelAnimationFrame(jumpFrame.current);
+    clearTimeout(scrollIdleTimer.current);
   }, []);
   useEffect(() => {
     const el = viewport.current;
@@ -551,6 +565,7 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       updateJump();
     };
     const wheel = (event: WheelEvent) => {
+      if (event.deltaY !== 0) markScrollActivity();
       if (event.deltaY < 0) pause();
       else if (event.deltaY > 0) cancelRestore();
     };
@@ -561,18 +576,25 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
     };
     const touchMove = (event: TouchEvent) => {
       const next = event.touches[0]?.clientY;
+      if (next !== undefined && touchY !== undefined && next !== touchY) markScrollActivity();
       if (next !== undefined && touchY !== undefined && next > touchY) pause();
       touchY = next;
     };
     const key = (event: KeyboardEvent) => {
+      if (["ArrowUp", "PageUp", "Home", "ArrowDown", "PageDown", "End", " "].includes(event.key)) markScrollActivity();
       if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause();
       else if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) cancelRestore();
     };
     const root = el.closest("[data-transcript-root]");
     const scrollbar = (event: Event) => {
-      if (event.target instanceof Element && event.target.closest('[data-slot="scroll-area-scrollbar"]')) pause();
+      if (event instanceof PointerEvent && event.type === "pointermove" && !(event.buttons & 1)) return;
+      if (event.target instanceof Element && event.target.closest('[data-slot="scroll-area-scrollbar"]')) {
+        markScrollActivity();
+        if (event.type === "pointerdown") pause();
+      }
     };
     root?.addEventListener("pointerdown", scrollbar, { capture: true, passive: true });
+    root?.addEventListener("pointermove", scrollbar, { capture: true, passive: true });
     el.addEventListener("wheel", wheel, { passive: true });
     el.addEventListener("touchstart", touchStart, { passive: true });
     el.addEventListener("touchmove", touchMove, { passive: true });
@@ -583,8 +605,9 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       el.removeEventListener("touchmove", touchMove);
       el.removeEventListener("keydown", key);
       root?.removeEventListener("pointerdown", scrollbar, true);
+      root?.removeEventListener("pointermove", scrollbar, true);
     };
-  }, [updateJump]);
+  }, [updateJump, markScrollActivity]);
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
@@ -685,7 +708,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
       <TooltipTrigger asChild>
         <Button ref={jumpButton} type="button" variant="floating" size="icon"
           aria-label="Scroll to bottom" hidden={!showJump}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full after:absolute after:-inset-1 after:rounded-full [&[hidden]]:hidden"
+          className={cn("absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full after:absolute after:-inset-1 after:rounded-full [&[hidden]]:hidden transition-opacity duration-150 motion-reduce:transition-none",
+            scrolling && "pointer-events-none opacity-0 duration-0 focus:pointer-events-auto focus:opacity-100")}
           onMouseDown={event => event.preventDefault()} onClick={jumpToBottom}>
           <ArrowDown aria-hidden />
         </Button>
