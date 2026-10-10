@@ -1,49 +1,47 @@
 diff --git a/dist/index.mjs b/dist/index.mjs
-index faf06c75ffb1135b62e15b50a9874f00145d390e..dfa72ba0736ee571cc3db99da433420912d1ac94 100644
+index faf06c75ffb1135b62e15b50a9874f00145d390e..5e488ca2eda7e893a3f79ec4bd858c79c8204584 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -2072,6 +2072,7 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
-     { log: y },
-     { recalcInProgress: R }
-   ]) => {
-+    let prependMeasurement = null;
+@@ -2065,7 +2065,7 @@ function oo(t) {
+ }
+ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.test(navigator.userAgent)), sr = Z(
+   ([
+-    { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r },
++    { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r, headerHeight: readingHeaderHeight },
+     { isAtBottom: s, isScrolling: i, lastJumpDueToItemResize: l, scrollDirection: c },
+     { listState: d },
+     { beforeUnshiftWith: f, gap: v, shiftWithOffset: m, sizes: g },
+@@ -2075,18 +2075,29 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
      const I = Ct(
        S(
          d,
-@@ -2080,7 +2081,12 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
-           ([, x, C, k], [{ bottom: u, items: p, offsetBottom: b, totalCount: z }, F]) => {
+-        D(l),
++        D(l, r, readingHeaderHeight),
+         kt(
+-          ([, x, C, k], [{ bottom: u, items: p, offsetBottom: b, totalCount: z }, F]) => {
++          ([, x, C, k], [{ bottom: u, items: p, offsetBottom: b, totalCount: z }, F, readingScrollTop, readingHeader]) => {
              const O = u + b;
              let V = 0;
 -            return C === z && x.length > 0 && p.length > 0 && (p[0].originalIndex === 0 && x[0].originalIndex === 0 || (V = O - k, V !== 0 && (V += F))), [V, p, z, O];
-+            // Overscan can keep index zero mounted while the reader is much
-+            // farther down. The first measurement after a prepend still needs
-+            // compensation, including any native clamp caused by its estimate.
-+            C === z && x.length > 0 && p.length > 0 && (p[0].originalIndex === 0 && x[0].originalIndex === 0 && !prependMeasurement || (V = O - k, V !== 0 && (V += F)));
-+            if (C === z && O !== k) prependMeasurement = null;
++            // Preserve the row at the reading position, including when overscan
++            // keeps index zero mounted. Total height also includes changes below
++            // the reader, which must not move their viewport.
++            if (C === z && x.length > 0 && p.length > 0) {
++              const readingTop = readingScrollTop + F - readingHeader;
++              const previous = x.find((item) => item.offset + item.size > readingTop) ?? x[x.length - 1];
++              const current = p.find((item) => item.originalIndex === previous.originalIndex);
++              V = current ? current.offset - previous.offset : O - k;
++              if (V !== 0) V += F;
++            }
 +            return [V, p, z, O];
            },
            [0, [], 0, 0]
          ),
-@@ -2114,9 +2120,12 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
-     function T() {
-       if (a === null)
-         return;
--      const { offset: x } = a;
-+      const { offset: x } = a, measurement = prependMeasurement;
-       a = null, M(n, { top: x }), requestAnimationFrame(() => {
-         M(t, 0), M(R, !1);
-+        // Size observers run after this commit, before the next frame. Do not
-+        // leave the exception active for later disclosure or live-row resizes.
-+        requestAnimationFrame(() => { if (prependMeasurement === measurement) prependMeasurement = null; });
-       });
-     }
-     return J(e, (x) => {
-@@ -2143,7 +2152,7 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
-         })
-       ),
-       (x) => {
--        a = { acknowledgeable: ot(t) !== x, offset: x }, M(t, x), requestAnimationFrame(T);
-+        prependMeasurement = ot(s) ? null : {}, a = { acknowledgeable: ot(t) !== x, offset: x }, M(t, x), requestAnimationFrame(T);
-       }
-     ), { deviation: t };
-   },
+         W(([x]) => x !== 0),
+         D(r, c, o, s, y, R),
+-        W(([, x, C, k, , , u]) => !u && !k && x !== 0 && C === ue),
++        // Measurements can arrive after the reader pauses or changes direction.
++        W(([, x, , k, , , u]) => !u && !k && x !== 0),
+         B(([[x], , , , , C]) => (C("Upward scrolling compensation", { amount: x }, mt.DEBUG), x))
+       )
+     );
