@@ -5,6 +5,7 @@ import { Toaster as Sonner, toast as notify } from "sonner";
 
 import { useTheme } from "../../ThemeProvider";
 import { updateToastClearance } from "../../hooks/useToastObstacle";
+import { Button } from "./button";
 
 export type ToastOptions = {
   title?: ReactNode;
@@ -12,23 +13,28 @@ export type ToastOptions = {
   variant?: "default" | "success" | "info" | "destructive";
   duration?: number;
   /** Fires once when feedback expires, is dismissed, or is replaced. */
-  onClose?: () => void;
+  onClose?: (reason: "dismiss" | "expire" | "replace") => void;
+  action?: { label: string; onClick: () => void };
 };
 
 let counter = 0;
-let current: { id: number; close: () => void } | undefined;
+let current: { id: number; close: (reason: "dismiss" | "expire" | "replace") => void } | undefined;
 
 /** Keep transient feedback to one message; callers can still dismiss by id. */
-export function toast({ title, description, variant, duration, onClose }: ToastOptions): number {
+export function toast({ title, description, variant, duration, onClose, action }: ToastOptions): number {
   updateToastClearance();
-  if (current) dismissToast(current.id);
+  if (current) {
+    const previous = current;
+    previous.close("replace");
+    notify.dismiss(previous.id);
+  }
   const id = ++counter;
   let closed = false;
-  const close = () => {
+  const close = (reason: "dismiss" | "expire" | "replace") => {
     if (closed) return;
     closed = true;
     if (current?.id === id) current = undefined;
-    onClose?.();
+    onClose?.(reason);
   };
   current = { id, close };
   notify(title ?? description, {
@@ -36,14 +42,15 @@ export function toast({ title, description, variant, duration, onClose }: ToastO
     description: title ? description : undefined,
     duration: duration ?? (variant === "destructive" ? 6000 : 2500),
     testId: "toast",
-    onDismiss: close,
-    onAutoClose: close,
+    action: action ? <Button variant="outline" className="mt-2" onClick={action.onClick}>{action.label}</Button> : undefined,
+    onDismiss: () => close("dismiss"),
+    onAutoClose: () => close("expire"),
   });
   return id;
 }
 
 export function dismissToast(id: number) {
-  if (current?.id === id) current.close();
+  if (current?.id === id) current.close("dismiss");
   notify.dismiss(id);
 }
 

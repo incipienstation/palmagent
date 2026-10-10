@@ -478,7 +478,7 @@ test("registration shows the pending path without exposing a fabricated reposito
   await page.getByRole("button", { name: "Connect Space", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "/projects/outer-repo · Connecting…" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connecting…", exact: true })).toBeDisabled();
-  expect(calls).toBe(1); delayed.release();
+  await expect.poll(() => calls).toBe(1); delayed.release();
   await expect(page.getByRole("button", { name: "Connect Space", exact: true })).toBeEnabled();
   await expect(page.getByTestId("toast")).toContainText("Directory unavailable");
 });
