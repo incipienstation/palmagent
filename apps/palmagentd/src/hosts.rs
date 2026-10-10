@@ -109,7 +109,7 @@ pub fn launch(
         .arg(id)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::from(storage::log_file(data, "supervisor")?));
     NativePlatform::detach(&mut command);
     // The child takes the same lock, so release it before waiting for readiness.
     let spawned = command.spawn();
