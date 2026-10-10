@@ -37,5 +37,13 @@ export function inspectPackage(path, { version, commit, publishable = false, all
   for (const name of ['cli.js', 'server.js', 'runner-daemon.js', 'web/index.html']) {
     if (!files[name]) throw new Error(`Package missing ${name}`);
   }
+  if (unique.has('package/daemon/manifest.json')) {
+    const manifest = JSON.parse(read('daemon/manifest.json'));
+    if (manifest.protocol !== 1 || manifest.version !== pkg.version || manifest.sourceCommit !== info?.sourceCommit) throw new Error('Native daemon identity mismatch');
+    for (const platform of ['linux-x64', 'linux-arm64']) {
+      const hash = files[`daemon/${platform}/palmagentd`];
+      if (!hash || manifest.artifacts?.[platform] !== hash) throw new Error('Native daemon artifact integrity mismatch');
+    }
+  }
   return { version: pkg.version, sourceCommit: info?.sourceCommit ?? null, sha256: hashFile(path), files };
 }

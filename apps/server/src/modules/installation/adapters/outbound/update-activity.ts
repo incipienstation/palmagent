@@ -25,5 +25,6 @@ export function bindUpdateActivity(hub: Hub, hasPending: () => boolean, resume: 
     if (idle && !wasIdle) void wake();
     wasIdle = idle;
   });
-  return { wake, close() { closed = true; off(); } };
+  const offRoutines = hub.onReadChange(change => { if (change.routineId) void wake(); });
+  return { wake, close() { closed = true; off(); offRoutines(); } };
 }

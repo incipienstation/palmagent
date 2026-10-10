@@ -22,6 +22,7 @@ import type { TaskEventPublisher } from "../../../../kernel/events.js";
 const TICK_MS = 15_000;
 
 export class RoutineService implements RoutineUseCases {
+  get activeScriptCount(): number { return this.scripts.size + this.results.size; }
   private timer?: ReturnType<typeof setInterval>;
   private scripts = new Map<string, { stop(reason?: string): void; done: Promise<void> }>();
   // Keep completed results until persistence recovers; never rerun the script.
@@ -152,6 +153,7 @@ export class RoutineService implements RoutineUseCases {
   }
 
   private completeScript(runId: number, routineId: string, result: RoutineScriptResult): void {
+    this.scripts.delete(routineId);
     this.results.set(runId, { routineId, result });
     this.persistResults();
   }

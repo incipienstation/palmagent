@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { createServer } from "node:net";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -26,7 +27,7 @@ function applicationResponse(input: string | URL | Request, version = "0.1.0-alp
   const pathname = new URL(typeof input === "string" || input instanceof URL ? input : input.url).pathname;
   if (pathname === "/") return new Response('<script src="/assets/app.js"></script>');
   if (pathname === "/assets/app.js") return new Response("fixture application");
-  return Response.json({ ok: true, updateMaintenance: true, executionProtocol: 1, build: { version, sourceCommit: "a".repeat(40), dirty: false } });
+  return Response.json({ ok: true, updateMaintenance: true, executionProtocol: 1, activeRoutineScripts: 0, build: { version, sourceCommit: "a".repeat(40), dirty: false } });
 }
 
 function fixture(t: TestContext) {
@@ -652,14 +653,44 @@ for (const command of ["update", "setup"]) {
 }
 
 
-for (const outcome of ["success", "contract", "rollback", "provision", "assets"]) test(`automatic independent application activation: ${outcome}`, async (t) => {
+const daemonFixture = `#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path');
+const data = process.argv[process.argv.indexOf('--data-dir') + 1];
+const request = JSON.parse(fs.readFileSync(0, 'utf8'));
+const generation = path.join(data, 'daemon/generation');
+if (request.action === 'replace') fs.writeFileSync(generation, String(Date.now()));
+const config = JSON.parse(fs.readFileSync(path.join(data, 'daemon/config.json'), 'utf8'));
+const build = JSON.parse(fs.readFileSync(path.join(config.release, 'build-info.json'), 'utf8'));
+console.log(JSON.stringify(request.action === 'status' ? { ...build, protocol: 1, pid: process.pid, instance: fs.existsSync(generation) ? fs.readFileSync(generation, 'utf8') : 'initial', isolation: 'cgroup', web: null } : {}));
+`;
+const daemonArtifactScript = `
+  const binary = path.join(pkg, 'daemon', process.platform + '-' + process.arch, 'palmagentd');
+  fs.mkdirSync(path.dirname(binary), { recursive: true });
+  fs.writeFileSync(binary, ${JSON.stringify(daemonFixture)}, { mode: 0o700 });
+  fs.writeFileSync(path.join(pkg, 'daemon/manifest.json'), JSON.stringify({ protocol: 1, artifacts: { [process.platform + '-' + process.arch]: require('node:crypto').createHash('sha256').update(fs.readFileSync(binary)).digest('hex') } }));
+`;
+for (const supervisor of [undefined, "palmagentd"] as const)
+for (const outcome of ["success", "contract", "rollback", "provision", "assets", ...(supervisor ? ["scripts"] : [])]) test(`automatic independent application activation (${supervisor ?? "systemd"}): ${outcome}`, async (t) => {
   const f = fixture(t);
   process.env.TEST_INDEPENDENT_OUTCOME = outcome;
+  if (supervisor) {
+    f.cfg.supervisor = supervisor;
+    process.env.TEST_NATIVE_SUPERVISOR = '1';
+    const binary = join(f.cfg.pkgDir!, `daemon/${process.platform}-${process.arch}/palmagentd`);
+    mkdirSync(dirname(binary), { recursive: true });
+    writeFileSync(binary, daemonFixture, { mode: 0o700 });
+    writeFileSync(join(f.cfg.pkgDir!, 'daemon/manifest.json'), JSON.stringify({ protocol: 1, artifacts: {
+      [`${process.platform}-${process.arch}`]: createHash('sha256').update(readFileSync(binary)).digest('hex'),
+    } }));
+    mkdirSync(join(f.cfg.dataDir, 'daemon'), { mode: 0o700 });
+    copyFileSync(binary, join(f.cfg.dataDir, 'daemon/launcher'));
+    writeFileSync(join(f.cfg.pkgDir!, 'build-info.json'), JSON.stringify({ version: '0.1.0-alpha.2', sourceCommit: 'a'.repeat(40) }));
+  }
   writeFileSync(join(f.root, "bin", "sleep"), `#!${process.execPath}\n`, { mode: 0o700 });
   f.cfg.executionNode = process.execPath;
   f.cfg.user = userInfo().username;
   for (const file of ["execution-host.js", "execution-launcher.js", "server.js", "cli.js"]) writeFileSync(join(f.cfg.pkgDir!, file), "// Retained fixture artifact\n");
-  writeFileSync(join(f.cfg.pkgDir!, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1 }));
+  writeFileSync(join(f.cfg.pkgDir!, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, ...(supervisor ? { daemonProtocol: 1 } : {}) }));
   saveConfig(f.cfg);
   setUserAutoUpdate(true);
   const executions = new ExecutionStore(join(f.cfg.dataDir, "executions"));
@@ -671,6 +702,7 @@ for (const outcome of ["success", "contract", "rollback", "provision", "assets"]
   t.after(() => db.close());
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     assert(isUpdateMaintenance(f.cfg.dbPath));
+    if (outcome === "scripts") return Response.json({ ok: true, updateMaintenance: true, executionProtocol: 1, activeRoutineScripts: 1 });
     if (outcome === "assets" && new URL(String(input)).pathname === "/assets/app.js") {
       process.env.TEST_UPDATE_HEALTH = "0.1.0-alpha.2"; // Previous application is healthy after restoration.
       return new Response("stale application");
@@ -688,8 +720,9 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   const pkg = path.join(args[args.indexOf('--prefix') + 1], 'node_modules', 'palmagent');
   fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
-  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1, ingressOwner: 'plugin' }));
+  fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1, ingressOwner: 'plugin', ...(process.env.TEST_NATIVE_SUPERVISOR ? { daemonProtocol: 1 } : {}) }));
   ${applicationFixtureScript}
+  if (process.env.TEST_NATIVE_SUPERVISOR) { ${daemonArtifactScript} }
   fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv[2] === 'runtime-setup' && process.env.TEST_INDEPENDENT_OUTCOME === 'provision') process.exit(1); if (process.argv[2] === 'runtime-setup') require('node:fs').writeFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'candidate-setup'), 'provisioned'); else console.log('0.1.0-alpha.3');");
   for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
 } else process.exit(1);
@@ -705,6 +738,15 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   checkUpdateAccess(f.cfg, true); requestUpdateAccess(f.cfg, true);
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
   process.env.TEST_UPDATE_HEALTH = ["rollback", "provision"].includes(outcome) ? "0.1.0-alpha.2" : request.targetVersion;
+  if (outcome === "scripts") {
+    assert.equal(await update({ ...f.flags, automatic: true, request }), 0);
+    assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "routine-scripts-active");
+    assert.equal(readUpdateAccess(f.cfg.dataDir).pending?.id, request.id);
+    assert.equal(loadConfig({ dataDir: f.cfg.dataDir }).pkgDir, f.cfg.pkgDir);
+    assert(!existsSync(join(f.root, "host.jsonl")));
+    assert(!existsSync(join(f.root, "candidate-setup")));
+    return;
+  }
   assert.equal(await update({ ...f.flags, automatic: true, request }), outcome === "success" ? 0 : 1);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, outcome === "success" ? "succeeded" : "failed");
   if (outcome !== "success") {
@@ -715,8 +757,9 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   assert.equal(executions.get(active.id).state, "running");
   assert.equal(executions.get(active.id).release, f.cfg.pkgDir);
   assert.equal(readFileSync(join(f.cfg.pkgDir!, "execution-host.js"), "utf8"), "// Retained fixture artifact\n");
-  const commands = readFileSync(join(f.root, "host.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
-  assert.equal(commands.some((args) => args.join(" ").includes("restart palmagent.service")), outcome !== "contract");
+  const commands = existsSync(join(f.root, "host.jsonl")) ? readFileSync(join(f.root, "host.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]) : [];
+  if (supervisor) assert.deepEqual(commands, [], "native update and rollback must never call sudo or systemctl");
+  assert.equal(commands.some((args) => args.join(" ").includes("restart palmagent.service")), !supervisor && outcome !== "contract");
   assert(!commands.some((args) => args.join(" ").includes("restart palmagent-runner.service")));
   assert(!commands.some((args) => args.includes("stop")));
   assert(!f.readCalls().some((args) => args.includes("-g")), "no global package tree is replaced");

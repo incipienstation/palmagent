@@ -44,6 +44,8 @@ export interface InstallConfig {
   pkgDir?: string;
   /** Retained Node runtime; presence enables independent execution hosts. */
   executionNode?: string;
+  /** Missing on legacy installations; migration happens through an idle setup. */
+  supervisor?: "palmagentd";
   /** source mode: the git checkout root. */
   repoDir?: string;
   /** systemd WorkingDirectory. */
@@ -122,6 +124,7 @@ const InstallEnv = z
     DATA_DIR: z.string().min(1).optional(),
     RUNNER_SOCKET: z.string().min(1).optional(),
     EXECUTION_NODE: z.string().min(1).optional(),
+    SUPERVISOR: z.literal("palmagentd").optional(),
     DISPATCHER_DB: z.string().min(1).optional(),
     WORKING_DIR: z.string().min(1).optional(),
     EXEC_PATH: z.string().min(1).optional(),
@@ -299,6 +302,7 @@ export function loadConfig(
     dataDir,
     runnerSocket: e.RUNNER_SOCKET ?? join(dataDir, "runner.sock"),
     executionNode: e.EXECUTION_NODE,
+    supervisor: e.SUPERVISOR,
     dbPath,
     pkgDir,
     repoDir,
@@ -342,6 +346,7 @@ export function saveConfig(cfg: InstallConfig): string {
     `EXEC_PATH=${cfg.execPath}`,
     cfg.pkgDir ? `PKG_DIR=${cfg.pkgDir}` : "",
     cfg.executionNode ? `EXECUTION_NODE=${cfg.executionNode}` : "",
+    cfg.supervisor ? `SUPERVISOR=${cfg.supervisor}` : "",
     cfg.repoDir ? `REPO_DIR=${cfg.repoDir}` : "",
     cfg.repoRoots ? `REPO_ROOTS=${cfg.repoRoots}` : "",
     cfg.claudeConfigDir ? `CLAUDE_CONFIG_DIR=${cfg.claudeConfigDir}` : "",

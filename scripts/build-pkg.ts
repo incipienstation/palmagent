@@ -72,6 +72,9 @@ async function main(): Promise<void> {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
 
+  execFileSync(process.execPath, [join(ROOT, "scripts", "build-daemon.mjs")], { cwd: ROOT, stdio: "inherit" });
+  cpSync(join(ROOT, "build", "daemon"), join(OUT, "daemon"), { recursive: true });
+
   const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
   const buildInfo = {
     version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version,
@@ -101,7 +104,7 @@ async function main(): Promise<void> {
   for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/bootstrap/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, ingressOwner: "plugin" }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, daemonProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
@@ -164,6 +167,7 @@ async function main(): Promise<void> {
       "execution-host.js",
       "execution-launcher.js",
       "runtime-contract.json",
+      "daemon",
       "build-info.json",
       "web",
       "README.md",
@@ -203,7 +207,8 @@ async function main(): Promise<void> {
     "- Node.js >= 22",
     "- At least one of the `claude` or `codex` CLIs on PATH and authenticated",
     "- A public domain pointing at this host (TLS + passkey auth need a real https origin)",
-    "- Linux with systemd and sudo (the CLI manages application units; the plugin manages host ingress)",
+    "- Linux x64 or arm64 with cgroup v2 and systemd for boot integration",
+    "- sudo for initial bootstrap/host setup; normal daemon execution and updates run as the installation owner",
     "",
     "## Quickstart",
     "",
@@ -215,7 +220,9 @@ async function main(): Promise<void> {
     "Both plugins share ~/.palmagent/config.json; settings survive updates and service reinstalls.",
     "Changing the saved channel does not deploy a release. Updates refuse downgrades and",
     "prereleases on Stable; a missing Stable release does not fall back to Preview.",
-    "Ask the plugin to enable automatic updates for idle periods within the current compatibility line.",
+    "Ask the plugin to enable access-triggered automatic updates within the current compatibility line.",
+    "Agent executions and terminals survive application updates. Running routine scripts delay activation.",
+    "Existing systemd installations migrate through setup after their executions and terminals finish.",
     "Automatic updates are off by default; a required plugin change or failed installation needs attention.",
     "",
     "Linux package installations include persistent Task and Space shells. Use the web app",

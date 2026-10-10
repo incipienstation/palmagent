@@ -10,6 +10,7 @@ import type { InstallConfig } from "./config.js";
 import { connectionInfo } from "./connection.js";
 import { runnerUnitName, webUnitName } from "./units.js";
 import { log, run, which } from "./sh.js";
+import { daemonStatus } from "./daemon-runtime.js";
 
 export type Level = "ok" | "warn" | "fail";
 export interface Check {
@@ -133,7 +134,13 @@ export function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibility: (
   const runner = runnerUnitName();
 
   // services
-  checks.push(
+  if (cfg.supervisor === "palmagentd") {
+    try {
+      const status = daemonStatus(cfg);
+      checks.push({ name: "palmagentd", level: status.isolation === "cgroup" && status.web?.alive ? "ok" : "fail",
+        detail: `version ${status.version}; ${status.isolation} isolation` });
+    } catch { checks.push({ name: "palmagentd", level: "fail", detail: "daemon control endpoint unavailable", fix: "inspect palmagent daemon status and the bootstrap journal" }); }
+  } else checks.push(
     unitActive(web)
       ? { name: `unit ${web}`, level: "ok", detail: "active" }
       : {
@@ -146,9 +153,11 @@ export function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibility: (
   if (cfg.executionNode) {
     try {
       verifyActiveExecutionCompatibility(cfg);
-      const probeId = "00000000-0000-4000-8000-000000000000";
-      const loaded = run("systemctl", ["show", HOST_ARTIFACTS.execution.unitName(probeId), "--property=LoadState", "--value"]);
-      if (!loaded.ok || loaded.stdout.trim() !== "loaded") throw new Error("Execution service template is unavailable");
+      if (!cfg.supervisor) {
+        const probeId = "00000000-0000-4000-8000-000000000000";
+        const loaded = run("systemctl", ["show", HOST_ARTIFACTS.execution.unitName(probeId), "--property=LoadState", "--value"]);
+        if (!loaded.ok || loaded.stdout.trim() !== "loaded") throw new Error("Execution service template is unavailable");
+      }
       checks.push({ name: "independent executions", level: "ok", detail: "retained artifacts and execution contract verified" });
     } catch (error) {
       checks.push({ name: "independent executions", level: "fail", detail: error instanceof Error ? error.message : "Execution verification failed" });

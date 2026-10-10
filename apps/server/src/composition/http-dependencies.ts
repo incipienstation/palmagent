@@ -25,7 +25,7 @@ export type HttpDependencies = {
     | "finishAuthentication" | "beginRegistration" | "finishRegistration" | "logout" | "mintEnrollToken"
   >;
   push: Pick<PushUseCases, "getPublicKey" | "subscribe" | "unsubscribe">;
-  routines: Pick<RoutineUseCases, "list" | "create" | "get" | "update" | "remove" | "runNow" | "stopRun" | "runs" | "context" | "start" | "stop">;
+  routines: Pick<RoutineUseCases, "list" | "create" | "get" | "update" | "remove" | "runNow" | "stopRun" | "runs" | "context" | "start" | "stop" | "activeScriptCount">;
   modelCatalog: Pick<ModelCatalog, "get">;
   config: { repoRoots: string[]; keepAliveMs: number; staticDir: string; cookieName: string };
   build?: { version: string; sourceCommit: string; dirty: boolean };

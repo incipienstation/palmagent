@@ -10,7 +10,8 @@
     "./updates": "./src/updates.ts",
     "./executions": "./src/executions.ts",
     "./http": "./src/http.ts",
-    "./terminals": "./src/terminals.ts"
+    "./terminals": "./src/terminals.ts",
+    "./daemon": "./src/daemon.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -7,6 +7,8 @@ import type { InstallConfig } from "./config.js";
 import { setUserAutoUpdate, userConfigPath } from "./user-config.js";
 import { canSudoNonInteractive, log, sudo, sudoWriteFile } from "./sh.js";
 import { quoteSystemd as quote } from "./systemd.js";
+import { daemonStatus } from "./daemon-runtime.js";
+import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 
 export const autoUpdateService = `${BRANDING.unitBase}-update@.service`;
 const legacyUpdateService = `${BRANDING.unitBase}-update.service`;
@@ -36,6 +38,11 @@ export function renderAutoUpdateUnits(cfg: InstallConfig, options = { node: proc
 
 /** Keep the executor independent of the web process, with no recurring schedule. */
 export function prepareUpdateService(cfg: InstallConfig): void {
+  if (cfg.supervisor === "palmagentd") {
+    if (cfg.user !== userInfo().username) throw new Error("Updates require the installation owner");
+    daemonStatus(cfg);
+    return;
+  }
   if (cfg.user !== userInfo().username || !canSudoNonInteractive()) throw new Error("update service requires installation-owner access");
   const units = renderAutoUpdateUnits(cfg);
   retireAutoUpdateTimer();
@@ -52,7 +59,8 @@ export function retireAutoUpdateTimer(unitDir = UNIT_DIR): void {
   }
 }
 
-export function startRequestedUpdate(): void {
+export function startRequestedUpdate(cfg?: InstallConfig): void {
+  if (cfg?.supervisor === "palmagentd") { daemonRequest(cfg.dataDir, { action: "start-update" }); return; }
   // A unique instance cannot lose a task-completion event to an older instance
   // that has released its lock but has not finished exiting in systemd yet.
   const instance = autoUpdateService.replace("@.", `@${randomUUID()}.`);
@@ -63,7 +71,7 @@ export function configureAutoUpdate(cfg: InstallConfig, enabled: boolean, dryRun
   setUserAutoUpdate(enabled, { dataDir: cfg.dataDir, dryRun: true });
   if (dryRun) {
     log.info(`[dry-run] would save automatic updates ${enabled ? "on" : "off"} and remove the legacy timer`);
-    if (enabled) log.plain(renderAutoUpdateUnits(cfg).service);
+    if (enabled && !cfg.supervisor) log.plain(renderAutoUpdateUnits(cfg).service);
     return;
   }
   if (cfg.user !== userInfo().username) throw new Error("updates must be configured by the installation owner");
@@ -73,7 +81,7 @@ export function configureAutoUpdate(cfg: InstallConfig, enabled: boolean, dryRun
   } else {
     // Persist the opt-out first even if removing a legacy timer fails.
     setUserAutoUpdate(false, { dataDir: cfg.dataDir });
-    retireAutoUpdateTimer();
+    if (!cfg.supervisor) retireAutoUpdateTimer();
   }
 }
 

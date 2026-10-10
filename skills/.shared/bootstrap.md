@@ -61,3 +61,17 @@ This is read-only. Shared settings live outside plugin/package caches and servic
 and survive updates, plugin reinstall, and service removal. Never edit `install.env` to
 change channels. For a preference-only request, use the `settings` skill. Initialization
 and service changes belong to the requested operation, not to CLI discovery.
+
+## Identify the runtime backend
+
+Read `SUPERVISOR` in the selected installation's `install.env`. `palmagentd` means
+one Linux bootstrap service (`palmagentd.service`) with user-owned host processes.
+Use `<data-dir>/daemon/logs/` for host output and the bootstrap journal for startup
+failures. Normal updates and settings need no service-management sudo in this mode.
+Absent `SUPERVISOR` retains legacy service diagnostics. Never restart a provider
+host or delete retained artifacts to repair the web process.
+
+New daemon installations require systemd 254+ and delegated cgroup v2 with
+`cgroup.kill`. Initial registration and removal still require sudo. Ordinary updates
+do not migrate legacy services; setup performs migration only after active work,
+terminals and routine scripts finish. Preserve the CLI's maintenance and retry holds.

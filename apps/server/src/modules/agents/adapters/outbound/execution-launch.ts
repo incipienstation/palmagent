@@ -4,9 +4,14 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, renameSync, openSync, closeSync, fsyncSync } from "node:fs";
 import { join } from "node:path";
 import type { ExecutionRecord, ExecutionStore } from "./execution-store.js";
+import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 
 export type ExecutionLauncher = (record: ExecutionRecord) => void;
 export function launchExecution(record: ExecutionRecord): void {
+  if (process.env.PALMAGENT_DAEMON_DATA) {
+    daemonRequest(process.env.PALMAGENT_DAEMON_DATA, { action: "launch", kind: "execution", id: record.id });
+    return;
+  }
   const result = spawnSync("sudo", ["-n", HOST_ARTIFACTS.execution.helperPath, record.id], { encoding: "utf8", timeout: 10_000 });
   if (result.status !== 0) throw new Error("Execution launch could not be confirmed; the invocation remains reserved");
 }

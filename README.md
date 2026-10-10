@@ -81,6 +81,7 @@ channel for a new installation. To opt into Preview, ask the plugin: **“Use Pr
 | --- | --- |
 | [User guide](docs/USER-GUIDE.md) | Spaces, routines, sessions, release channels, and updates |
 | [Message delivery](docs/MESSAGES.md) | Queues, delivery behavior, and recovery |
+| [Native supervisor](docs/DAEMON.md) | Rust runtime, OS adapters, updates and migration |
 | [Session lifecycle](docs/SESSION-LIFECYCLE.md) | Session ownership and application updates |
 | [Persistent shells](docs/terminals.md) | Task and Space shell access |
 | [Skills](docs/SKILLS.md) | Selecting skills for messages |
@@ -90,7 +91,8 @@ channel for a new installation. To opt into Preview, ask the plugin: **“Use Pr
 ## Development
 
 The [backend architecture policy](docs/ARCHITECTURE.md) defines feature ownership,
-ports, adapters, composition and dependency checks.
+ports, adapters, composition and dependency checks. Native runtime builds also require
+rustup and the toolchain pinned in [`rust-toolchain.toml`](rust-toolchain.toml).
 
 Use the Node.js version in [`.nvmrc`](.nvmrc) and the pnpm version pinned in
 [`package.json`](package.json):
