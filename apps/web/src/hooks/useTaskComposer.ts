@@ -6,6 +6,7 @@ import { useActionState } from "../action-state";
 import { cacheSession } from "../query-lifecycle";
 import { acceptMessageQueue, clearQueuePreview, beginTaskAction, useTaskActivity, isSendingAction, type QueuePreview, type TaskActionKind } from "../task-activity";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
+import { MessageRetryStopped } from "../message-retry";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION, PERMISSIONS } from "../api";
 import { modelSelection, useAgentCatalog } from "../model-catalog";
 import { useDraft, usePersistedString } from "./useDraft";
@@ -186,12 +187,15 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     } catch (e) {
       if (generation !== cacheSession()) return;
       clearQueuePreview(taskId);
-      toast({ title: errMsg(e), variant: "destructive" });
-      // Re-read after version/lease conflicts or lost responses. Never replay a
-      // send, or resurrect a queue entry already delivered by another client.
+      toast({ title: errMsg(e), variant: e instanceof MessageRetryStopped ? "default" : "destructive" });
+      // Once transport retries settle, refresh conflicts or lost receipts without
+      // starting another submission or resurrecting an already delivered entry.
       if (preview || kind === "acquireEdit") {
-        try { const actual = await taskOperations.getTask(); if (actual.messageQueue) setQueueOverride(actual.messageQueue); }
-        catch { /* The stream will reconcile when connectivity returns. */ }
+        // Recovery reads must not hold a restored draft or Stop retrying hostage
+        // to the same unavailable connection. Queue revisions reject stale reads.
+        void taskOperations.getTask().then(actual => {
+          if (generation === cacheSession() && actual.messageQueue) setQueueOverride(actual.messageQueue);
+        }).catch(() => { /* The stream will reconcile when connectivity returns. */ });
       }
     } finally { finish(); }
   }

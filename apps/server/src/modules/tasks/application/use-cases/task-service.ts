@@ -266,7 +266,7 @@ export class TaskService implements PrStatusSink {
   get updating(): boolean { return this.maintenance(); }
 
   private assertTaskAdmission(): void {
-    if (this.updating || this.shuttingDown) throw new ApplicationError("service_unavailable", "Palmagent is updating. Try starting the task again shortly.");
+    if (this.updating || this.shuttingDown) throw new ApplicationError("update_in_progress", "Palmagent is updating. Try starting the task again shortly.");
   }
 
   // Hydrate from DB and run restart recovery. Turns still alive in the runner

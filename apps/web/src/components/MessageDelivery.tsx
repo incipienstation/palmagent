@@ -12,6 +12,7 @@ export type DeliveryControls = {
   onDelete: (message: PendingMessage) => void; onResume: () => void;
   recovery?: { retry: () => void; check: () => void };
   pendingHint?: string;
+  waitingForConnection?: boolean;
 };
 
 // Normal delivery uses the transcript's Working label. Only actionable states

@@ -768,7 +768,9 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
     }
     const messages = new Map(delivery?.messages.map(message => [message.id, message]));
     const seen = new Set<string>();
-    const activity = transcriptActivity(log, { running: live, blocked, messages: delivery?.messages,
+    const activity = transcriptActivity(log, { running: live, blocked,
+      // An unsent local preview must not imply that an agent has started work.
+      messages: delivery?.waitingForConnection ? delivery.messages.filter(message => message.version !== 0) : delivery?.messages,
       loading: history.initial.status !== "ready" && history.initial.status !== "disabled",
     });
     for (const row of presentTranscript(log, mode, live && (activity === "working" || activity === "output"))) {
@@ -801,7 +803,7 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;
-  }, [log, mode, live, blocked, prompt, openActivity, toggled, delivery?.messages, historyFloor, history.initial.status, history.earlier.hasMore]);
+  }, [log, mode, live, blocked, prompt, openActivity, toggled, delivery?.messages, delivery?.waitingForConnection, historyFloor, history.initial.status, history.earlier.hasMore]);
   const deferredActivities = useMemo(() => transcriptRows.flatMap((row) => {
     if (row.type !== "activity" || !row.open || !row.activity.items.some((item) => item.kind !== "assistant_text" && item.detailsDeferred) || !taskId) return [];
     const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);

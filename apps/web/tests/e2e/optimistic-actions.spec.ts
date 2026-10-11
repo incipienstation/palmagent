@@ -354,7 +354,7 @@ test("delivery snapshots settle the optimistic bubble before a stale HTTP respon
   await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
 });
 
-test("a lost send acknowledgment keeps the same id and original run when retried after navigation", async ({ page }) => {
+test("a lost send acknowledgment automatically retries the same id and original run after navigation", async ({ page }) => {
   const task = await queueSetup(page);
   const delayed = gate(); const requests: any[] = [];
   await page.route("**/api/tasks/t-run/messages", async route => {
@@ -367,15 +367,14 @@ test("a lost send acknowledgment keeps the same id and original run when retried
   await page.evaluate(() => { location.hash = "/routines"; });
   await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
   task.messageQueue.runId = "run-2"; task.messageQueue.revision = 2;
-  delayed.release(); await expect(page.getByTestId("toast")).toBeVisible();
-  await page.evaluate(() => { location.hash = "/task/t-run"; });
-  await expect(page.getByRole("textbox")).toHaveValue("Only deliver once");
-  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
-  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  delayed.release();
   await expect.poll(() => requests.length).toBe(2);
   expect(requests[1]).toEqual(requests[0]);
+  await expect(page.getByTestId("toast")).toHaveCount(0);
+  await page.evaluate(() => { location.hash = "/task/t-run"; });
+  await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
   await expect(page.getByRole("textbox")).toHaveValue("");
+  await expect(page.getByRole("textbox")).toBeEnabled();
 });
 
 for (const action of ["delete", "send"] as const) test(`queued ${action} is immediate and a conflict cannot resurrect a delivered message`, async ({ page }) => {

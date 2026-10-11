@@ -15,6 +15,7 @@ const statusByCode: Record<ApplicationErrorCode, number> = {
   unsupported_media_type: 415,
   too_many_requests: 429,
   service_unavailable: 503,
+  update_in_progress: 503,
   insufficient_storage: 507,
 };
 
