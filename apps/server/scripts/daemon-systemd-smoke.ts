@@ -113,6 +113,19 @@ try {
   terminalChannel!.close(); frames.length = 0;
   const terminalPid = terminals.get(terminal.id)!.pid;
 
+  const { routine } = await api("routines", { repoId: repo.id, kind: "script", preset: "manual", script: {
+    command: `echo $$ > "$PROBE_CONTROL/routine.pid"; echo once >> "$PROBE_CONTROL/routine-invocations"; setsid sh -c 'echo $$ > "$PROBE_CONTROL/routine-escaped.pid"; exec sleep 600' & while [ ! -f "$PROBE_CONTROL/routine.release" ]; do sleep 0.1; done; printf routine-complete`, timeoutSeconds: 120,
+  } });
+  await api(`routines/${routine.id}/run`, {});
+  await until(() => existsSync(join(root, "control/routine.pid")) && existsSync(join(root, "control/routine-escaped.pid")), "routine starts with detached descendant");
+  const routinePid = Number(readFileSync(join(root, "control/routine.pid"), "utf8").trim());
+  const routineEscapedPid = Number(readFileSync(join(root, "control/routine-escaped.pid"), "utf8").trim());
+  const routineRun = (await api(`routines/${routine.id}/runs`)).runs[0];
+  const routineHostId = routineRun.id.toString(16);
+  assert(readFileSync(`/proc/${routinePid}/cgroup`, "utf8").includes(`${unit}/routines/${routineHostId}`));
+  assert.equal((await api("health")).activeRoutineScripts, 1);
+  assert.equal((await api("health")).updateBlockingRoutineScripts, 0);
+
   const before = DaemonStatusSchema.parse(daemonRequest(dataDir, { action: "status" }));
   daemonRequest(dataDir, { action: "replace" });
   await until(() => { try { return DaemonStatusSchema.parse(daemonRequest(dataDir, { action: "status" })).instance !== before.instance; } catch { return false; } }, "daemon replacement");
@@ -125,6 +138,15 @@ try {
   config.environment.EXECUTION_RELEASE = config.release; config.environment.STATIC_DIR = join(config.release, "web"); save();
   daemonRequest(dataDir, { action: "restart-web" });
   await until(async () => { try { return (await api("health")).executionProtocol === 1; } catch { return false; } }, "replacement web");
+  process.kill(routinePid, 0);
+  const retainedRoutine = daemonRequest(dataDir, { action: "inspect", kind: "routine", id: routineHostId }) as { release: string; alive: boolean };
+  assert.equal(retainedRoutine.release, release); assert(retainedRoutine.alive);
+  assert.equal((await api(`routines/${routine.id}/runs`)).runs[0].status, "running");
+  writeFileSync(join(root, "control/routine.release"), "");
+  await until(async () => (await api(`routines/${routine.id}/runs`)).runs[0].status === "succeeded", "routine result recovered after web activation");
+  assert.equal((await api(`routines/${routine.id}/runs`)).runs[0].output, "routine-complete");
+  assert.equal(readFileSync(join(root, "control/routine-invocations"), "utf8"), "once\n");
+  await until(() => !existsSync(`/proc/${routineEscapedPid}`), "routine detached descendant cleanup");
   await attach();
   assert(frames.some(frame => frame.type === "snapshot" && frame.data.includes("DAEMON-TERMINAL")));
   assert.equal(terminals.get(terminal.id)!.pid, terminalPid);
@@ -148,7 +170,7 @@ try {
   assert.deepEqual(executions.list().map(row => [row.id, row.pid, row.release]), identities.map(row => [row.id, row.pid, row.release]));
   assert(!existsSync(join(root, "forbidden-service-call")), "Runtime must not invoke sudo or systemctl");
   await until(() => { try { daemonRequest(dataDir, { action: "stop" }); return true; } catch { return false; } }, "idle runtime stops");
-  console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state and cgroup cleanup without privileged runtime calls");
+  console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results and cgroup cleanup without privileged runtime calls");
 } finally {
   terminalChannel?.close(); executions?.close(); terminals?.close();
   // The only privileged cleanup target is this run's uniquely named cgroup/unit.

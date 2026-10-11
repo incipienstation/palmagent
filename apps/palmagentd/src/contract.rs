@@ -41,6 +41,7 @@ pub struct Limits {
 pub enum Kind {
     Execution,
     Terminal,
+    Routine,
     Web,
     Update,
 }
@@ -50,6 +51,7 @@ impl Kind {
         match self {
             Self::Execution => "execution",
             Self::Terminal => "terminal",
+            Self::Routine => "routine",
             Self::Web => "web",
             Self::Update => "update",
         }
@@ -59,6 +61,7 @@ impl Kind {
         match self {
             Self::Execution => "executions",
             Self::Terminal => "terminals",
+            Self::Routine => "routines",
             Self::Web => "web",
             Self::Update => "updates",
         }

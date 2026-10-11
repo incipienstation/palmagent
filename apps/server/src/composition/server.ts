@@ -61,13 +61,14 @@ try {
     transport: terminalPlatform(true).transport, origin: runtime.config.authOrigin, cookieName: runtime.config.cookieName });
 
   resources.onStop(closeTerminals);
+  // Recover retained admissions before either control socket accepts new work.
+  runtime.start();
   const local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines);
   resources.defer(() => closeServer(local));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(runtime.config.port, runtime.config.host, () => { server.off("error", reject); resolve(); });
   });
-  runtime.start();
   void updateActivity.wake();
   console.log(`${BRANDING.productName} internal listener on ${runtime.config.host}:${runtime.config.port}  ·  TLS required at the public edge  ·  db=${runtime.config.dbPath}  ·  cap=${runtime.config.concurrency}`);
   return { close: () => resources.close() };

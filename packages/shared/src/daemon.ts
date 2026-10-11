@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** Rust supervisor wire contract. Product/execution storage remains owned by its existing modules. */
 export const DAEMON_PROTOCOL = 1;
-export const DaemonKindSchema = z.enum(["execution", "terminal", "web", "update"]);
+export const DaemonKindSchema = z.enum(["execution", "terminal", "routine", "web", "update"]);
 const host = { kind: DaemonKindSchema, id: z.string().regex(/^[a-f0-9-]{1,64}$/) };
 export const DaemonRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status") }).strict(),

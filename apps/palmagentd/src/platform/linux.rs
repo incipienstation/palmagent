@@ -158,10 +158,16 @@ impl ProcessIsolation for Linux {
             );
         }
         fs::write(root.join("cgroup.subtree_control"), "+memory +cpu +pids")?;
-        for kind in [Kind::Execution, Kind::Terminal, Kind::Web, Kind::Update] {
+        for kind in [
+            Kind::Execution,
+            Kind::Terminal,
+            Kind::Routine,
+            Kind::Web,
+            Kind::Update,
+        ] {
             let group = root.join(kind.directory());
             fs::create_dir_all(&group)?;
-            if matches!(kind, Kind::Execution | Kind::Terminal) {
+            if matches!(kind, Kind::Execution | Kind::Terminal | Kind::Routine) {
                 fs::write(
                     group.join("memory.high"),
                     config.limits.memory_high.to_string(),

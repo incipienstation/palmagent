@@ -66,7 +66,7 @@ pub fn launch(
     if path.exists() {
         return inspect(data, kind, id);
     }
-    let (release, node) = if matches!(kind, Kind::Execution | Kind::Terminal) {
+    let (release, node) = if matches!(kind, Kind::Execution | Kind::Terminal | Kind::Routine) {
         let directory = data.join(kind.directory());
         let descriptor: Descriptor = storage::read(&directory.join(format!("{id}.json")))?;
         ensure!(
@@ -195,11 +195,15 @@ fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> 
     let entry = match record.kind {
         Kind::Execution => "execution-host.js",
         Kind::Terminal => "terminal-host.js",
+        Kind::Routine => "routine-host.js",
         Kind::Web => "server.js",
         Kind::Update => "cli.js",
     };
     command.arg(record.release.join(entry));
-    if matches!(record.kind, Kind::Execution | Kind::Terminal) {
+    if matches!(
+        record.kind,
+        Kind::Execution | Kind::Terminal | Kind::Routine
+    ) {
         command
             .arg(data.join(record.kind.directory()))
             .arg(&record.id);
