@@ -338,6 +338,48 @@ test("SSE sends only post-subscription live events and releases slow or disconne
   await remaining.body!.cancel();
 });
 
+test("task SSE snapshots stay scoped and reuse published task lists", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const taskId of ["selected", "other"]) f.db.insertTask({ taskId, repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  const tasks = f.service.listTasks();
+  const listTasks = f.service.listTasks.bind(f.service);
+  let lists = 0;
+  f.service.listTasks = () => { lists++; return listTasks(); };
+  f.service.observeAccountLimits = () => () => {};
+  const inbox = (await f.app.request("/api/stream?snapshots=1")).body!.getReader();
+  const scoped = (await f.app.request("/api/stream?task=selected")).body!.getReader();
+  const frame = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    const text = new TextDecoder().decode((await reader.read()).value);
+    return JSON.parse(text.split("data: ")[1].split("\n")[0]);
+  };
+  assert.deepEqual((await frame(inbox)).tasks.map((task: { taskId: string }) => task.taskId), ["selected", "other"]);
+  const initial = await frame(scoped);
+  assert.deepEqual(initial.tasks.map((task: { taskId: string }) => task.taskId), ["selected"]);
+  assert.equal(initial.historyThrough, 0);
+  assert.equal((await frame(scoped)).taskLimits, "selected");
+  assert.equal(lists, 1, "only the initial inbox connection needs to build a list");
+
+  const otherChanged = tasks.map(task => task.taskId === "other" ? { ...task, title: "Other changed" } : task);
+  f.hub.emitTasks(otherChanged);
+  assert.equal((await frame(inbox)).tasks[1].title, "Other changed");
+  // An event acts as a fence: no unrelated snapshot may precede it.
+  f.hub.emitEvent({ id: 1, seq: 1, event: { taskId: "selected", agent: "codex", kind: "assistant_text", payload: { text: "live" }, ts: 1 } });
+  assert.equal((await frame(scoped)).type, "event");
+  const selectedChanged = otherChanged.map(task => task.taskId === "selected" ? { ...task, title: "Selected changed" } : task);
+  f.hub.emitTasks(selectedChanged);
+  assert.equal((await frame(inbox)).tasks[0].title, "Selected changed");
+  const update = await frame(scoped);
+  assert.equal(update.tasks.length, 1);
+  assert.equal(update.tasks[0].title, "Selected changed");
+  f.hub.emitTasks(selectedChanged.filter(task => task.taskId !== "selected"));
+  assert.equal((await frame(scoped)).taskLimits, "selected");
+  assert.deepEqual((await frame(scoped)).tasks, []);
+  assert.equal(lists, 1, "live subscribers use the publisher's snapshot");
+  await inbox.cancel(); await scoped.cancel();
+});
+
 test("PWA serving preserves shell and asset caching and rejects paths outside the static root", async (t) => {
   const f = fixture(t, false);
   mkdirSync(join(f.dir, "web/assets"), { recursive: true });

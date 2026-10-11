@@ -1,4 +1,4 @@
-import { deferActivityEventDetails } from "@palmagent/shared";
+import { deferActivityEventDetails, type TaskState } from "@palmagent/shared";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StreamQuerySchema } from "@palmagent/shared/requests";
@@ -20,14 +20,16 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
     const compact = taskId && query.details === "summary" ? deferActivityEventDetails(row.event) : undefined;
     return `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: compact?.event ?? row.event, ...(compact?.detailsDeferred ? { detailsDeferred: true } : {}) })}\n\n`;
   };
-  const snapshot = (historyThrough?: number) => `data: ${JSON.stringify({ type: "tasks", tasks: service.listTasks(), historyThrough, version: build?.version })}\n\n`;
+  const snapshot = (tasks: TaskState[], historyThrough?: number) => `data: ${JSON.stringify({ type: "tasks", tasks, historyThrough, version: build?.version })}\n\n`;
 
   const response = streamSSE(c, async (stream) => {
     // Capture a durable boundary and subscribe synchronously BEFORE the first
     // asynchronous write. Persisted events through this fence come from REST;
     // only events produced after subscription are published on this stream.
     const boundary = service.eventCursor(taskId);
-    const firstSnapshot = snapshot(taskId ? boundary : undefined);
+    const initialTasks = taskId ? [service.getTask(taskId)] : service.listTasks();
+    let lastTaskSnapshot = taskId ? JSON.stringify(initialTasks) : undefined;
+    const firstSnapshot = snapshot(initialTasks, taskId ? boundary : undefined);
     let pendingBytes = 0;
     const queue: string[] = [];
     let wake: (() => void) | undefined;
@@ -61,8 +63,15 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
           offLimits = task ? service.observeAccountLimits(taskId, limitsChanged) : () => {};
           limitsChanged();
         }
+        const selected = task ? [task] : [];
+        const serialized = JSON.stringify(selected);
+        if (serialized === lastTaskSnapshot) return;
+        lastTaskSnapshot = serialized;
+        enqueue(snapshot(selected));
+      } else {
+        // The publisher already built this snapshot once for every subscriber.
+        enqueue(snapshot(tasks));
       }
-      enqueue(snapshot());
     });
     // Share the task connection and revalidate changes missed before subscription.
     if (taskId) limitsChanged();
