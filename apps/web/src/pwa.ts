@@ -25,7 +25,18 @@ function coordinateStreams(paused: boolean) {
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
 const hidden = () => document.visibilityState === "hidden";
-const needsUpdate = () => activated || (controlled && Boolean(registration?.waiting)) || Boolean(serverVersion);
+const needsUpdate = () => activated || (controlled && Boolean(registration?.installing || registration?.waiting)) || Boolean(serverVersion);
+
+export type PwaUpdateStage = "checking" | "downloading" | "ready" | "saving" | "applying" | "paused";
+function updateStage(): PwaUpdateStage {
+  if (failed) return "paused";
+  // Activation stays ahead of checkpointing in other tabs or after a resume.
+  if (activated || applying) return "applying";
+  if (processing) return "saving";
+  if (registration?.waiting) return "ready";
+  if (registration?.installing) return "downloading";
+  return "checking";
+}
 
 function pauseUpdate() {
   applying = false; failed = true;
@@ -83,7 +94,7 @@ function schedule() {
 async function transition() {
   if (failed || processing || applying || composing || browserWorkPending() || hidden() || !navigator.onLine) return;
   if (!activated && !registration?.waiting) return; // discovery is bounded by watchProgress
-  processing = true;
+  processing = true; emit();
   try {
     failed = false;
     if (!await bounded(checkpointBrowserState())) { schedule(); return; }
@@ -102,7 +113,7 @@ async function transition() {
     activationTimer = setTimeout(pauseUpdate, 10_000);
   } catch {
     pauseUpdate();
-  } finally { processing = false; }
+  } finally { processing = false; emit(); }
 }
 
 function observeRegistration(value: ServiceWorkerRegistration) {
@@ -113,7 +124,9 @@ function observeRegistration(value: ServiceWorkerRegistration) {
     worker?.addEventListener("statechange", () => {
       if (worker.state === "installed") { failed = false; setTimeout(schedule, 0); }
       if (worker.state === "redundant") pauseUpdate();
+      emit();
     });
+    emit();
   };
   value.addEventListener("updatefound", installing);
   installing(); schedule();
@@ -149,7 +162,7 @@ export function startPwaUpdates() {
 export function checkPwaUpdate(): Promise<void> {
   if (!("serviceWorker" in navigator) || !import.meta.env.PROD) return Promise.resolve();
   if (checking) return checking;
-  failed = false; watchProgress();
+  failed = false; watchProgress(); emit();
   checking = bounded((async () => {
     const value = await navigator.serviceWorker.getRegistration()
       ?? await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
@@ -189,3 +202,4 @@ const subscribe = (listener: () => void) => { listeners.add(listener); return ()
 export function usePwaUpdate() { return useSyncExternalStore(subscribe, needsUpdate, () => false); }
 export function usePwaApplying() { return useSyncExternalStore(subscribe, () => applying, () => false); }
 export function usePwaFailure() { return useSyncExternalStore(subscribe, () => failed, () => false); }
+export function usePwaUpdateStage() { return useSyncExternalStore<PwaUpdateStage>(subscribe, updateStage, () => "checking"); }
