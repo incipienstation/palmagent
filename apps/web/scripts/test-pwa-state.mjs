@@ -12,7 +12,7 @@ const { code } = await transform(source, { loader: 'ts', format: 'cjs', define: 
   __PALMAGENT_WEB_VERSION__: '"1.0.0"', 'import.meta.env.PROD': 'true',
 } });
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-function setup(t, { workerVersion = '1.0.0', waiting = false, update = async () => {}, checkpoint = async () => true, browserWorkPending = () => false } = {}) {
+function setup(t, { workerVersion = '1.0.0', controlled = true, waiting = false, update = async () => {}, checkpoint = async () => true, browserWorkPending = () => false } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let reloads = 0;
   let streamChanges = 0;
@@ -24,7 +24,7 @@ function setup(t, { workerVersion = '1.0.0', waiting = false, update = async () 
   };
   const registration = new EventTarget();
   registration.update = update; registration.waiting = waiting ? { postMessage() {} } : null;
-  const serviceWorker = new EventTarget(); serviceWorker.controller = worker;
+  const serviceWorker = new EventTarget(); serviceWorker.controller = controlled ? worker : null;
   serviceWorker.getRegistration = serviceWorker.register = async () => registration;
   class MessageChannel {
     constructor() {
@@ -33,15 +33,19 @@ function setup(t, { workerVersion = '1.0.0', waiting = false, update = async () 
   }
   const module = { exports: {} };
   let stateChanged = () => {};
+  const snapshots = [];
   runInNewContext(code, { module, exports: module.exports, document, window,
     navigator: { onLine: true, serviceWorker }, MessageChannel, setTimeout, clearTimeout,
-    pauseStreams() { streamChanges++; }, useSyncExternalStore: (_, get) => get(),
+    pauseStreams() { streamChanges++; }, useSyncExternalStore: (subscribe, get) => {
+      subscribe(() => snapshots.push(get()));
+      return get();
+    },
     browserStateChanged() { stateChanged(); }, browserWorkPending,
     checkpointBrowserState: checkpoint, onBrowserStateChange(listener) { stateChanged = listener; },
   });
   const api = module.exports;
   api.startPwaUpdates();
-  return { api, registration, window, serviceWorker, streamChanges: () => streamChanges, reloads: () => reloads };
+  return { api, registration, window, serviceWorker, snapshots, streamChanges: () => streamChanges, reloads: () => reloads };
 }
 
 test('an unresolved message delays screen replacement until its receipt arrives', async (t) => {
@@ -56,6 +60,77 @@ test('an unresolved message delays screen replacement until its receipt arrives'
   window.dispatchEvent(new Event('input'));
   t.mock.timers.tick(1000); await flush();
   assert.equal(reloads(), 1);
+});
+
+for (const controlled of [true, false]) test(`a downloading worker ${controlled ? 'shows an update before a version header arrives' : 'does not show an update on first installation'}`, async (t) => {
+  const { api, registration } = setup(t, { controlled });
+  await flush();
+  registration.installing = new EventTarget();
+  registration.installing.state = 'installing';
+  registration.dispatchEvent(new Event('updatefound'));
+  assert.equal(api.usePwaUpdate(), controlled);
+});
+
+test('progress subscribers follow worker and checkpoint events, not elapsed time', async (t) => {
+  let finishCheckpoint;
+  const { api, registration, serviceWorker, snapshots, reloads } = setup(t, {
+    checkpoint: () => new Promise(resolve => { finishCheckpoint = resolve; }),
+  });
+  assert.equal(api.usePwaUpdateStage(), 'checking');
+  await flush(); api.observeServerVersion('2.0.0'); await flush();
+  t.mock.timers.tick(5_000); await flush();
+  assert.equal(snapshots.at(-1), 'checking');
+
+  const worker = new EventTarget();
+  worker.state = 'installing'; worker.postMessage = () => {};
+  registration.installing = worker;
+  registration.dispatchEvent(new Event('updatefound'));
+  assert.equal(snapshots.at(-1), 'downloading');
+  t.mock.timers.tick(5_000); await flush();
+  assert.equal(snapshots.at(-1), 'downloading');
+
+  registration.installing = null; registration.waiting = worker;
+  worker.state = 'installed'; worker.dispatchEvent(new Event('statechange'));
+  assert.equal(snapshots.at(-1), 'ready');
+  t.mock.timers.tick(0); await flush();
+  t.mock.timers.tick(750); await flush();
+  assert.equal(snapshots.at(-1), 'saving');
+  finishCheckpoint(true); await flush();
+  assert.equal(snapshots.at(-1), 'applying');
+  assert.equal(reloads(), 0);
+
+  registration.waiting = null;
+  serviceWorker.dispatchEvent(new Event('controllerchange'));
+  t.mock.timers.tick(750); await flush();
+  assert.equal(snapshots.at(-1), 'applying', 'activation must not jump back to saving');
+  finishCheckpoint(true); await flush();
+  assert.equal(reloads(), 1);
+});
+
+test('progress stays ready while composition defers applying the downloaded update', async (t) => {
+  const { api, window, snapshots } = setup(t, { waiting: true });
+  api.usePwaUpdateStage();
+  await flush(); window.dispatchEvent(new Event('compositionstart'));
+  t.mock.timers.tick(31_000); await flush();
+  assert.equal(snapshots.at(-1), 'ready');
+  window.dispatchEvent(new Event('compositionend'));
+  t.mock.timers.tick(750); await flush();
+  assert.equal(snapshots.at(-1), 'applying');
+});
+
+test('a failed checkpoint pauses progress and retry resumes from the downloaded update', async (t) => {
+  let blocked = true;
+  const { api, snapshots } = setup(t, { waiting: true, checkpoint: async () => {
+    if (blocked) throw new Error('Storage unavailable');
+    return true;
+  } });
+  api.usePwaUpdateStage(); await flush();
+  t.mock.timers.tick(750); await flush();
+  assert.equal(snapshots.at(-1), 'paused');
+  blocked = false; api.retryUpdate(); await flush();
+  assert.equal(snapshots.at(-1), 'ready');
+  t.mock.timers.tick(750); await flush();
+  assert.equal(snapshots.at(-1), 'applying');
 });
 
 test('a version returning to the running screen clears its stale banner without reloading', async (t) => {
