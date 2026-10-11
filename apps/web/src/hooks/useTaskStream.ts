@@ -42,7 +42,7 @@ function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferre
     const payload = event.payload ?? { text: "" }; // Historical records can predate typed payloads.
     const text = typeof payload.text === "string" ? payload.text : "";
     const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
-    const phase = payload.phase === "progress" || payload.phase === "final" ? payload.phase : undefined;
+    const phase = payload.phase === "progress" || payload.phase === "partial" || payload.phase === "final" ? payload.phase : undefined;
     const last = items.at(-1);
     if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && last.phase === phase) {
       items[items.length - 1] = { ...last, endSeq: seq, text: last.text + text };

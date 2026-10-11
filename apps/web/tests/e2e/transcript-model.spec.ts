@@ -118,3 +118,24 @@ test("old flat and paged update checkpoints migrate once while preserving cursor
   }
   expect(old).not.toHaveProperty("event.payload.code");
 });
+
+for (const phase of ["partial", undefined] as const) test(`answers separate work in chronological order (phase=${phase})`, () => {
+  const first = [event(1, "status", { subtype: "turn_started" }),
+    event(2, "tool_call", { id: "before", name: "Read" }),
+    prose(3, "A useful finding", { messageId: "p", phase })];
+  const initial = presentTranscript(first, "compact", true);
+  const log = [...first, event(4, "status", { subtype: "assistant_message", messageId: "p", phase }),
+    event(5, "tool_call", { id: "after", name: "bash" }),
+    event(6, "tool_result", { tool_use_id: "after", output: "done" }),
+    prose(7, "The final answer", { phase: "final" }), event(8, "result", {})];
+  const rows = presentTranscript(log, "compact", false);
+  expect(rows.map(row => row.type)).toEqual(["activity", "message", "activity", "message"]);
+  expect(rows[0].key).toBe(initial[0].key);
+  expect((rows[0] as Activity).items.map(item => item.key)).toEqual([1, 2, 4]);
+  expect((rows[2] as Activity).items.map(item => item.key)).toEqual([5, 6, 8]);
+  const paused = presentTranscript(log.slice(0, 4), "compact", true);
+  expect((paused[0] as Activity).items).toEqual((rows[0] as Activity).items);
+  expect(rows.filter(row => row.type === "message").map(row => row.key)).toEqual([3, 7]);
+  expect(presentTranscript(JSON.parse(JSON.stringify(log)), "compact", false)).toEqual(rows);
+  expect(presentTranscript(log, "verbose", false).map(row => row.key)).toEqual(log.map(item => item.key));
+});
