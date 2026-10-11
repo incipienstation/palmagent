@@ -9,6 +9,7 @@ import { getUserConfig } from "./user-config.js";
 import { discoverPlugins } from "./plugin-update.js";
 import { resolveUpdatePlan } from "./update-plan.js";
 import { readUpdateReceipt } from "./update-state.js";
+import { UpdateDiscoveryError } from "./update-discovery-error.js";
 
 const AccessStateSchema = z.object({
   discovery: UpdateDiscoverySchema.nullable(), pending: UpdateRequestSchema.nullable(),
@@ -17,6 +18,7 @@ type AccessState = z.infer<typeof AccessStateSchema>;
 export const updateAccessFile = "update-access.json";
 // This is a cache lifetime, never a scheduled wake-up.
 const CHECK_CACHE_MS = 15 * 60 * 1000;
+const FAILED_CHECK_CACHE_MS = 60 * 1000;
 
 export function readUpdateAccess(dataDir: string): AccessState {
   try { return AccessStateSchema.parse(JSON.parse(readFileSync(join(dataDir, updateAccessFile), "utf8"))); }
@@ -51,15 +53,17 @@ export function checkUpdateAccess(cfg: InstallConfig, force: boolean, now = Date
   const currentVersion = packageVersion(cfg);
   const cached = state.discovery;
   const age = cached ? now - Date.parse(cached.checkedAt) : Infinity;
-  if (!force && cached?.channel === channel && cached.currentVersion === currentVersion && (cached.error || cached.pluginsPending !== undefined) && age >= 0 && age < CHECK_CACHE_MS) return state;
+  if (!force && cached?.channel === channel && cached.currentVersion === currentVersion && (cached.error || cached.pluginsPending !== undefined) && age >= 0 && age < (cached.error ? FAILED_CHECK_CACHE_MS : CHECK_CACHE_MS)) return state;
   try {
     const plan = resolveUpdatePlan(currentVersion, channel, discoverPlugins(cfg));
     state.discovery = { channel, currentVersion, targetVersion: plan.targetVersion,
       eligible: plan.automaticEligible, pluginsPending: plan.plugins.filter((p) => p.action === "update").length, checkedAt: new Date(now).toISOString(), error: false };
-  } catch {
-    // Cache failures too, so reconnect storms cannot hammer the registry.
+  } catch (error) {
+    // Throttle reconnect storms, but let the next visit recover promptly from a
+    // transient failure. Old clients still understand the error boolean.
     state.discovery = { channel, currentVersion, targetVersion: null,
-      eligible: false, checkedAt: new Date(now).toISOString(), error: true };
+      eligible: false, checkedAt: new Date(now).toISOString(), error: true,
+      failure: error instanceof UpdateDiscoveryError ? error.failure : { source: "unknown", code: "unknown" } };
   }
   writeUpdateAccess(cfg.dataDir, state);
   return state;

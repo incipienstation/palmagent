@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { Check, ChevronRight, RefreshCw } from "lucide-react";
-import type { UpdateReceipt, UpdateSettingsState } from "@palmagent/shared";
+import type { UpdateDiscoveryFailure, UpdateReceipt, UpdateSettingsState } from "@palmagent/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -19,6 +19,26 @@ const unavailable: Record<Exclude<UpdateSettingsState["availability"], "availabl
   "authentication-required": "Sign-in must be enabled before installation settings can be changed from the app.",
   unavailable: "Update settings could not be read. Refresh status or ask the installation owner to check setup.",
 };
+
+function discoveryMessage(failure?: UpdateDiscoveryFailure): string {
+  if (!failure || failure.source === "unknown") return "Could not check for updates. Check again or use the doctor plugin to investigate.";
+  const source = { "codex-plugins": "Codex plugin check", "claude-plugins": "Claude plugin check", registry: "Package registry check", "release-policy": "Release compatibility check" }[failure.source];
+  const reasons: Record<UpdateDiscoveryFailure["code"], string> = {
+    "command-not-found": "The required command was not found in the server environment.",
+    "permission-denied": "Access was denied. Check the installation owner's permissions.",
+    timeout: "The check timed out. Try again.",
+    "output-limit": "The command returned more data than the check could read.",
+    "command-failed": "The command failed. Use the doctor plugin to inspect the installation.",
+    network: "The registry could not be reached. Check the connection and try again.",
+    "registry-auth": "The registry rejected authentication. Check its access settings.",
+    "release-unavailable": "The selected release is not available in the registry. Try again later.",
+    "invalid-response": "The response could not be read. Check the installed tools with the doctor plugin.",
+    "invalid-plugin": "Installed plugin records could not be verified. Use the update plugin to repair them.",
+    "incompatible-release": "The available release does not match this channel or would downgrade the application.",
+    unknown: "Check again or use the doctor plugin to investigate.",
+  };
+  return `${source} failed. ${reasons[failure.code]}`;
+}
 
 function updateMessage(result: UpdateReceipt): string {
   if (result.status === "failed") return "The last update failed. Automatic updates are paused; use the doctor or update plugin to recover.";
@@ -77,7 +97,7 @@ export function UpdateSettings() {
 
       {settings && <>
         {(discovery?.error || (newer && !discovery?.eligible) || pending || paused || last?.status === "deferred" || last?.pluginActivationPending) && <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
-          {discovery?.error && <Alert variant="warning">Could not check for updates. Try again when connected.</Alert>}
+          {discovery?.error && <Alert variant="warning">{discoveryMessage(discovery.failure)}</Alert>}
           {newer && !discovery?.eligible && <Alert>This release needs a matching operator plugin. Use the update plugin to continue.</Alert>}
           {pending && !paused && <p>{settings.independentExecutions ? `Preparing update to ${pending.targetVersion}. Your agent runs continue.` : `Update to ${pending.targetVersion} is scheduled. It will start after active tasks finish.`}</p>}
           {last && (paused || last.status === "deferred") && <Alert variant={last.status === "failed" ? "warning" : "default"}>{updateMessage(last)}</Alert>}

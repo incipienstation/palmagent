@@ -100,6 +100,17 @@ test("native inventories discover both installed plugins and verify their actual
   assert.throws(() => discoverPlugins(f.cfg, f.execute), /does not match its inventory/);
 });
 
+test("malformed Claude inventory retains its source without exposing parser input", (t) => {
+  const f = fixture(t);
+  assert.throws(() => discoverPlugins(f.cfg, (cmd, args, opts) => cmd === "claude"
+    ? { ok: true, code: 0, stdout: "private-invalid-inventory", stderr: "" }
+    : f.execute(cmd, args, opts)), (error: unknown) => {
+    assert.deepEqual((error as { failure: unknown }).failure, { source: "claude-plugins", code: "invalid-response" });
+    assert(!String(error).includes("private-invalid-inventory"));
+    return true;
+  });
+});
+
 test("same-version application updates refresh both managers and retain exact sources and recovery evidence", (t) => {
   const f = fixture(t);
   const result = f.refresh();
