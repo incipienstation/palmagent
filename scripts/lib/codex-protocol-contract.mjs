@@ -8,7 +8,9 @@ const input = { $items: { $variants: {
 } } };
 const item = { $variants: {
   userMessage: fields('id', 'type', 'clientId'),
-  agentMessage: fields('id', 'type', 'phase'),
+  // Unknown phases preserve visible prose and never terminate the turn.
+  // Only this field opts into additive enum values; lifecycle enums stay strict.
+  agentMessage: { ...fields('id', 'type'), phase: { $openEnum: true } },
   commandExecution: fields('id', 'type', 'command', 'aggregatedOutput', 'exitCode'),
   fileChange: fields('id', 'type', 'changes'),
   mcpToolCall: fields('id', 'type', 'result', 'tool'),

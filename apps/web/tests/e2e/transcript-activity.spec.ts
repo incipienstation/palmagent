@@ -24,7 +24,7 @@ test("output supersedes lifecycle waiting and metadata cannot restart it", () =>
   const log = [status("turn_started")];
   expect(transcriptActivity(log, active)).toBe("working");
   expect(presentTranscript(log, "compact", true)).toEqual([]);
-  for (const phase of [undefined, "progress", "final"]) {
+  for (const phase of [undefined, "progress", "partial", "final"]) {
     const output = [...log, prose("Answer", { messageId: "m1", phase })];
     expect(transcriptActivity(output, active)).toBe("output");
     for (const metadata of [status("usage"), status("assistant_message", { messageId: "m1", phase: "final" }),

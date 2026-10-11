@@ -24,6 +24,25 @@ test('every App Server method referenced by the adapter has a schema contract', 
   for (const method of referenced) assert.ok(declared.has(method), 'Missing consumed method contract: ' + method);
 });
 
+test('only explicitly open incoming enums tolerate new values while retaining type constraints', () => {
+  const mask = protocolContracts.find(([name]) => name === 'ServerNotification')[2]['item/completed'].item.$variants.agentMessage;
+  const phase = values => ({ anyOf: [{ oneOf: values.map(value => ({ type: 'string', enum: [value] })) }, { type: 'null' }] });
+  const before = object({ id: text, type: { type: 'string', enum: ['agentMessage'] }, phase: phase(['commentary', 'final_answer']) });
+  const after = clone(before);
+  after.properties.phase = phase(['commentary', 'partial_answer', 'final_answer', 'future_phase']);
+  const project = value => projectSchema(value, mask, value, [], 'in');
+  assert.deepEqual(schemaDifferences(project(before), project(after), 'in'), []);
+  assert.ok(schemaDifferences(projectSchema(before), projectSchema(after), 'in').length, 'other enums remain strict');
+  const invalidType = clone(after);
+  invalidType.properties.phase.anyOf[0].oneOf.push({ type: 'number' });
+  assert.ok(schemaDifferences(project(before), project(invalidType), 'in').length);
+  const invalidItem = clone(after); invalidItem.properties.type.enum.push('unknownItem');
+  assert.ok(schemaDifferences(project(before), project(invalidItem), 'in').length);
+  const missing = clone(after); delete missing.properties.phase;
+  assert.throws(() => project(missing), /Missing consumed property/);
+  assert.notDeepEqual(projectSchema(before, mask), projectSchema(after, mask), 'outgoing enums retain their values');
+});
+
 test('stable discovery advances one published release at a time without accepting prereleases or rollback', () => {
   const registry = { versions: ['0.160.0', '0.160.1', '0.161.0-alpha.1', '0.161.0', '0.162.0'],
     'dist-tags': { latest: '0.161.0' } };

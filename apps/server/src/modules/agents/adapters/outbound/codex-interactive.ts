@@ -104,7 +104,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
         if (item?.type === "contextCompaction") compactionCompleted = true;
         if (item?.type === "userMessage" && item.clientId) delivery(item.clientId, seq);
         else if (item?.type === "agentMessage") event("status", { subtype: "assistant_message", messageId: item.id,
-          phase: item.phase === "commentary" ? "progress" : item.phase === "final_answer" ? "final" : undefined }, seq);
+          phase: item.phase === "commentary" ? "progress" : item.phase === "partial_answer" ? "partial" : item.phase === "final_answer" ? "final" : undefined }, seq);
         else if (item?.type === "commandExecution") event("tool_result", { tool_use_id: item.id, output: item.aggregatedOutput, exit_code: item.exitCode }, seq);
         else if (item?.type === "fileChange") event("tool_call", { id: item.id, name: "file_change", changes: item.changes }, seq);
         else if (item?.type === "mcpToolCall" || item?.type === "webSearch") event("tool_result", { tool_use_id: item.id, content: item.result ?? item.action, name: item.tool ?? item.type }, seq);

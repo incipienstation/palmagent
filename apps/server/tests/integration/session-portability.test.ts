@@ -342,3 +342,17 @@ test("native Codex preview imports context usage and compaction boundaries witho
   f.task.sessionControl = synced.control;
   assert.equal(synchronizeSession(f.task, { preview: true }).events.length, 0);
 });
+
+test("native Codex history retains partial answers and unknown phases without ending the turn", t => {
+  const f = setup(t, "codex");
+  for (const phase of ["partial_answer", "future_phase"]) appendFileSync(f.transcript, line({ type: "response_item", payload: {
+    type: "message", role: "assistant", id: phase, phase, content: [{ type: "output_text", text: "Visible finding" }],
+  } }));
+  const synced = synchronizeSession(f.task);
+  assert.deepEqual(synced.events.map(e => ({ kind: e.kind, payload: e.payload })), [
+    { kind: "assistant_text", payload: { text: "Visible finding", messageId: "partial_answer", phase: "partial" } },
+    { kind: "assistant_text", payload: { text: "Visible finding", messageId: "future_phase" } },
+  ]);
+  f.task.sessionControl = synced.control;
+  assert.equal(synchronizeSession(f.task).events.length, 0);
+});

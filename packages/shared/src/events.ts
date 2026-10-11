@@ -11,7 +11,8 @@ export type AgentKind = "claude" | "codex";
 
 // Optional presentation metadata. Missing phase means unclassified prose and
 // must never be treated as disposable progress, including persisted old events.
-export type AssistantPhase = "progress" | "final";
+// Partial answers are user-facing content; only the turn result ends execution.
+export type AssistantPhase = "progress" | "partial" | "final";
 export interface AssistantTextPayload {
   text: string;
   messageId?: string;

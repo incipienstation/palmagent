@@ -20,6 +20,10 @@ export function projectSchema(schema, mask = true, root = schema, stack = [], di
   const result = {};
   for (const [key, value] of Object.entries(schema)) {
     if (annotation.has(key)) continue;
+    // Explicit consumer policy: this input field tolerates unknown enum values.
+    // Preserve types, requiredness, and every other constraint. Outgoing values
+    // and fields without this policy retain the conservative comparison.
+    if (key === 'enum' && direction === 'in' && mask?.$openEnum === true) continue;
     if (key === 'properties') {
       const selected = mask === true ? Object.keys(value) : Object.keys(mask).filter(name => !name.startsWith('$'));
       result.properties = {};

@@ -135,7 +135,7 @@ export function synchronizeSession(task: TaskState, { preview = false } = {}): {
     if (text && message.role === "user") emit("status", { subtype: "followup", text, source: "local" });
     if (text && message.role === "assistant") {
       const phase = task.agent === "codex"
-        ? message.phase === "commentary" ? "progress" : message.phase === "final_answer" ? "final" : undefined
+        ? message.phase === "commentary" ? "progress" : message.phase === "partial_answer" ? "partial" : message.phase === "final_answer" ? "final" : undefined
         : message.stop_reason === "tool_use" ? "progress" : message.stop_reason === "end_turn" ? "final" : undefined;
       emit("assistant_text", { text, ...(typeof message.id === "string" ? { messageId: message.id } : {}), ...(phase ? { phase } : {}) });
     }

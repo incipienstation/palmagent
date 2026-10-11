@@ -37,3 +37,13 @@ test("failed results and empty results do not invent final replies; new turns re
   expect(observe(prose(6, "Next answer", { phase: "final" }))).toBe(true);
   expect(observe(prose(6, "Next answer, continued", { phase: "final" }))).toBe(false);
 });
+
+for (const late of [false, true]) test(`partial answers never announce before successful completion (late=${late})`, () => {
+  const observe = createFinalReplyObserver();
+  expect(observe(prose(1, "First finding", { messageId: "p", ...(late ? {} : { phase: "partial" }) }))).toBe(false);
+  if (late) expect(observe(event(2, "status", { subtype: "assistant_message", messageId: "p", phase: "partial" }))).toBe(false);
+  expect(observe(event(3, "tool_call", { name: "bash" }))).toBe(false);
+  expect(observe(event(4, "result", { is_error: true }))).toBe(false);
+  expect(observe(event(5, "result", { is_error: false }))).toBe(true);
+  expect(observe(event(6, "result", { is_error: false }))).toBe(false);
+});
