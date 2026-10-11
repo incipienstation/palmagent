@@ -19,13 +19,30 @@ whole group, including descendants that create a new session. Process-group mode
 exists for development tests and does not offer the same containment guarantee.
 These are OS adapter boundaries; macOS and Windows implementations are not included.
 
-Systemd is only the Linux boot/crash-recovery adapter for new installations. Its
-single `palmagentd.service` launches a stable user-owned bootstrap, delegates CPU,
-memory and PID controllers, and leaves host lifetimes to the daemon. It requires
-systemd 254+ (`DelegateSubgroup=control`) and cgroup v2 with `cgroup.kill` support.
-The control subgroup lets systemd restart the daemon while other groups remain
-populated. Initial registration, migration and removal require sudo; ordinary
-execution, terminal control, settings and application updates do not.
+Systemd is only the Linux boot/crash-recovery adapter for new installations. A
+user service named `palmagentd-<data-directory-hash>.service` launches a stable
+user-owned bootstrap and delegates CPU, memory and PID controllers. It requires
+systemd 254+ (`DelegateSubgroup=control`), cgroup v2 with writable `cgroup.kill`,
+and an accessible systemd user manager. The control subgroup lets systemd restart
+the daemon while other groups remain populated. Account lingering keeps the user
+manager running after logout and starts it at boot, without a login session.
+
+Installation enables linger with `loginctl --no-ask-password enable-linger` when
+needed, verifies the manager's version and unit search path, then exercises the
+native isolation operations inside a disposable delegated user service. A denied
+linger policy or unavailable delegation stops installation without falling back
+to sudo or weaker isolation. A host administrator must resolve those prerequisites.
+Registration, removal, execution, settings and updates need no sudo on this path.
+Host packages, reverse proxies and TLS remain separate operator responsibilities.
+
+`DAEMON_SCOPE=user` and `DAEMON_UNIT_DIR` persist the service selection in
+`install.env`. Unit names derive from the absolute data directory; repeated installs
+use setup for the existing installation. Commands always address the installation
+owner's standard user-manager bus, even from a shell with a private session bus.
+The CLI implements explicit checks and failure paths for a given package, inputs
+and host state; external permissions and service availability can still make a
+run fail. Uninstall preserves account lingering because other user services may
+rely on it.
 
 ## Updates and migration
 
@@ -47,17 +64,26 @@ its health. Both releases and the activation receipt remain available; database
 changes are not rolled back. An interrupted updater leaves its retry hold for
 explicit recovery. A full machine reboot ends active processes.
 
-Existing systemd execution installations keep their backend during package updates.
+Existing systemd execution installations and native system-service installations
+keep their backend and scope during package updates. An absent `DAEMON_SCOPE`
+means the legacy system scope; an update never silently migrates it.
 `palmagent setup` migrates them only during verified idle maintenance: executions,
 terminals and routine scripts must finish first. It retains previous configuration,
-registers the bootstrap, starts and checks the daemon, and removes the obsolete
-service helpers after success. Source installations retain their current backend.
+checks user-service prerequisites before stopping the old runtime, registers the
+bootstrap, starts and checks the daemon, and removes obsolete system services
+after success. This one-time cleanup needs sudo. A failed candidate restores the
+previous configuration and startup registration and verifies recovery. A retained
+`daemon-migration.json` records interrupted work; rerunning setup retries old-service
+cleanup when the user runtime is healthy. If neither runtime is healthy, inspect
+the receipt and journals before recovery. Source installations retain their current backend.
 
 ## Diagnostics and verification
 
 `palmagent doctor` checks the selected supervisor. For daemon installations, inspect
-`systemctl status palmagentd.service` and `journalctl -u palmagentd.service` for
-bootstrap failures. Host output lives in `<data-dir>/daemon/logs/`; private host
+`systemctl --user status <service-name>` and
+`journalctl --user -u <service-name>` for user-bootstrap failures. Doctor reports
+the service name, enabled/active state and lingering. Legacy system scope uses
+`systemctl status palmagentd.service` and `journalctl -u palmagentd.service`. Host output lives in `<data-dir>/daemon/logs/`; private host
 records and configuration live beside it. Do not publish those files or delete
 retained releases referenced by live hosts. Stopping the bootstrap alone stops
 the control plane; use the CLI uninstall flow for verified idle shutdown.
@@ -73,7 +99,9 @@ After building the package, run the delegated Linux acceptance on a test host:
 pnpm exec tsx apps/server/scripts/daemon-systemd-smoke.ts
 ```
 
-It uses fixture providers, a unique temporary service and isolated state. It checks
+It installs and removes a unique user service with sudo blocked, using fixture
+providers and isolated state. Pass the package path followed by `--system` to
+exercise the legacy system bootstrap instead (requires non-interactive sudo). It checks
 original provider PIDs and pending input, terminal screen continuity, routine PID/result continuity, daemon crash
 recovery, web activation and detached descendant cleanup while blocking runtime
 sudo/systemctl calls. It removes only its own service and confirmed-empty fixture.

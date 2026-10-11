@@ -13,7 +13,7 @@ use platform::storage;
 fn run() -> anyhow::Result<()> {
     use anyhow::{Context, ensure};
     use contract::{Kind, PROTOCOL, Request, SOURCE_COMMIT, VERSION};
-    use platform::{Autostart, NativePlatform, ProcessControl};
+    use platform::{Autostart, NativePlatform, ProcessControl, ProcessIsolation};
     use serde_json::json;
     use std::{io::Read, path::PathBuf};
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -59,15 +59,41 @@ fn run() -> anyhow::Result<()> {
         }
         "bootstrap-unit" => {
             let launcher = PathBuf::from(flag(&args, "--launcher")?);
+            let scope = if args.iter().any(|arg| arg == "--scope") {
+                flag(&args, "--scope")?
+            } else {
+                "system"
+            };
+            ensure!(
+                ["user", "system"].contains(&scope),
+                "Invalid bootstrap scope"
+            );
             print!(
                 "{}",
                 NativePlatform::render(
                     &data,
                     &launcher,
                     flag(&args, "--user")?,
-                    flag(&args, "--group")?
+                    flag(&args, "--group")?,
+                    scope == "user"
                 )?
             );
+            Ok(())
+        }
+        "check-isolation" => {
+            // Runs only in a disposable delegated service before installing or migrating.
+            // Only limits are exercised; this probe never launches configured artifacts.
+            let config: contract::Configuration =
+                storage::read(&storage::state_directory(&data).join("config.json"))?;
+            ensure!(
+                config.isolation == contract::Isolation::Cgroup,
+                "Cgroup isolation is required"
+            );
+            let root = NativePlatform::initialize(&data, &config)?;
+            let group = NativePlatform::create_group(root.as_deref(), Kind::Execution, "probe")?
+                .context("Missing delegated group")?;
+            std::fs::write(group.join("cgroup.kill"), "1")?;
+            println!("delegated-isolation-ready");
             Ok(())
         }
         _ => anyhow::bail!("Unknown daemon command"),

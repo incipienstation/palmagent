@@ -33,8 +33,9 @@ directory, then apply:
 ```
 
 Setup may migrate an existing package to the native daemon during an idle window;
-this registers its Linux bootstrap and removes obsolete service helpers after health
-verification. The CLI enforces activity checks for service activation. Preserve active work and do not
+this verifies lingering and user-service delegation, registers its user bootstrap, and
+removes obsolete system services after health verification using one-time sudo.
+Existing native system services migrate through this same idle setup path. The CLI enforces activity checks for service activation. Preserve active work and do not
 manually restart services to bypass a refusal. Configure/adopt ingress through its actual
 owner, following the shared reference's ownership, validation and recovery procedure.
 If only application settings changed, an unchanged route requires no rewrite or reload.
