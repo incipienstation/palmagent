@@ -6,7 +6,7 @@ import { useRepos } from "../hooks/useRepos";
 import { useActionState } from "../action-state";
 import { useUpdateState } from "../update-state";
 import { navigate } from "../router";
-import { spaceActivity, spacePath, spaceQualifier } from "../space-context";
+import { spaceActivities, spaceActivitySummary, spacePath, spaceQualifier } from "../space-context";
 
 import { AppBar, AppShell } from "./AppShell";
 import { EmptyState } from "./EmptyState";
@@ -25,12 +25,13 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
   // Freeze the initial activity order while browsing; live counters can update
   // without moving the row under a pointer. Newly connected Spaces append.
   const order = useRef<string[]>([]);
+  const activities = useMemo(() => spaceActivities(tasks), [tasks]);
   const rows = useMemo(() => {
-    const sorted = [...repos.values()].sort((a, b) => spaceActivity(b.id, tasks).latest - spaceActivity(a.id, tasks).latest || a.name.localeCompare(b.name));
+    const sorted = [...repos.values()].sort((a, b) => (activities.get(b.id)?.latest ?? 0) - (activities.get(a.id)?.latest ?? 0) || a.name.localeCompare(b.name));
     if (!loading) for (const repo of sorted) if (!order.current.includes(repo.id)) order.current.push(repo.id);
     const positions = new Map(order.current.map((id, index) => [id, index]));
     return sorted.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
-  }, [repos, tasks, loading]);
+  }, [repos, activities, loading]);
   const needle = query.trim().toLocaleLowerCase();
   const matches = rows.filter(repo => `${repo.name} ${repo.path}`.toLocaleLowerCase().includes(needle));
   const pending = reposLoading || loading;
@@ -49,7 +50,7 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
         </div> : <>
           {matches.length > 0 && <section aria-label="Spaces list">
             <div className="flex justify-between px-2 pb-2 text-xs text-muted-foreground"><h2>Spaces</h2><span>Recent activity</span></div>
-            {matches.map(repo => <SpaceRow key={repo.id} repo={repo} repos={repos} summary={spaceActivity(repo.id, tasks).summary}
+            {matches.map(repo => <SpaceRow key={repo.id} repo={repo} repos={repos} summary={spaceActivitySummary(activities.get(repo.id))}
               matchedPath={!!needle && !repo.name.toLocaleLowerCase().includes(needle)} />)}
           </section>}
           {!matches.length && !error && <EmptyState icon={needle ? Search : Folder} title={needle ? "No Spaces found" : "Connect your first Space"}
