@@ -69,6 +69,13 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
         continue;
       }
       if (item.kind === "result" && failure) failure.completed = true;
+      // Late message classification belongs to the preceding disclosure. Do not
+      // move its membership (and open state) when work resumes after an answer.
+      if (item.kind === "status" && p.subtype === "assistant_message") {
+        const previous = rows.slice(start).findLast((row): row is Activity => row.type === "activity");
+        previous?.items.push(item);
+        continue;
+      }
       const machinery = item.kind === "status" || item.kind === "tool_call" || item.kind === "tool_result" || item.kind === "result";
       const background = machinery || phaseOf(item) === "progress";
       if (background) {

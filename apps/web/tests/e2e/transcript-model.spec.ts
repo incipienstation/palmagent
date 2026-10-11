@@ -131,8 +131,10 @@ for (const phase of ["partial", undefined] as const) test(`answers separate work
   const rows = presentTranscript(log, "compact", false);
   expect(rows.map(row => row.type)).toEqual(["activity", "message", "activity", "message"]);
   expect(rows[0].key).toBe(initial[0].key);
-  expect((rows[0] as Activity).items.map(item => item.key)).toEqual([1, 2]);
-  expect((rows[2] as Activity).items.map(item => item.key)).toEqual([4, 5, 6, 8]);
+  expect((rows[0] as Activity).items.map(item => item.key)).toEqual([1, 2, 4]);
+  expect((rows[2] as Activity).items.map(item => item.key)).toEqual([5, 6, 8]);
+  const paused = presentTranscript(log.slice(0, 4), "compact", true);
+  expect((paused[0] as Activity).items).toEqual((rows[0] as Activity).items);
   expect(rows.filter(row => row.type === "message").map(row => row.key)).toEqual([3, 7]);
   expect(presentTranscript(JSON.parse(JSON.stringify(log)), "compact", false)).toEqual(rows);
   expect(presentTranscript(log, "verbose", false).map(row => row.key)).toEqual(log.map(item => item.key));

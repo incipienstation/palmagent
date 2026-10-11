@@ -19,7 +19,7 @@ for (const width of [360, 1280]) test(`partial answers retain reading order, dra
   const answer = page.getByText("The session uses an expired token.", { exact: true });
   await expect(answer).toBeVisible();
   await expect(page.getByText("Working…", { exact: true })).toHaveCount(0);
-  const groups = page.locator("[data-activity]");
+  const groups = page.locator("[data-activity]").filter({ has: page.locator("button[aria-expanded]") });
   const first = groups.first().getByRole("button").first();
   await first.click();
   await expect(first).toHaveAttribute("aria-expanded", "true");
@@ -29,6 +29,7 @@ for (const width of [360, 1280]) test(`partial answers retain reading order, dra
   await emit("assistant_text", { messageId: "work", text: "Verifying the token refresh.", phase: "progress" });
   await emit("tool_call", { id: "verify", name: "bash", command: "Run session tests" });
   await expect(groups).toHaveCount(2);
+  await expect(groups.nth(1).getByRole("button").first()).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText("Working…", { exact: true })).toBeVisible();
   await expect(first).toHaveAttribute("aria-expanded", "true");
   await expect(input).toHaveValue("Keep this unsent draft");

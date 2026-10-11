@@ -293,6 +293,10 @@ for (const first of ["catch-up", "older page"] as const) {
 
 test("prepending older history keeps a cross-page Activity row mounted", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
+  // Only uninterrupted work extends across the page boundary; visible answers
+  // before that work keep their own separate activity groups.
+  const older = toolActivityRows(1601, 1800);
+  older.splice(-2, 2, ...toolActivityRows(1799, 1800));
   let release!: () => void;
   let requested = false;
   const pending = new Promise<void>((resolve) => { release = resolve; });
@@ -301,7 +305,7 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
     if (url.searchParams.has("before")) {
       requested = true;
       await pending;
-      await route.fulfill({ json: { events: toolActivityRows(1601, 1800), before: 1601, cursor: 2000 } });
+      await route.fulfill({ json: { events: older, before: 1601, cursor: 2000 } });
       return;
     }
     await route.fulfill({ json: { events: toolActivityRows(1801, 2000), before: 1801, cursor: 2000 } });
@@ -317,7 +321,7 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
   await activity.evaluate((element) => Object.assign(window, { savedHistoryActivity: element }));
 
   release();
-  await expect(page.getByRole("button", { name: "Activity · 20 tools", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Activity · 2 tools", exact: true })).toBeVisible();
   const restored = await page.evaluate(() => {
     const element = (window as unknown as { savedHistoryActivity: HTMLElement }).savedHistoryActivity;
     return { connected: element.isConnected, key: element.dataset.rowKey, top: element.getBoundingClientRect().y };
