@@ -1,13 +1,16 @@
 import { useEffect, useId, useSyncExternalStore } from "react";
 
-import { cn } from "@/lib/utils";
+import { FieldContent, FieldLabel } from "@/components/ui/field";
+import { Separator } from "@/components/ui/separator";
+import { SettingsField } from "./SettingsLayout";
 import { Switch } from "@/components/ui/switch";
 import { getPushPreference, refreshPushPreference, setPushPreference, subscribePushPreference } from "../push-preference";
 
 // Device notification preference; unsupported platforms do not show this row.
-export function PushToggle({ className }: { className?: string }) {
+export function PushToggle() {
   const { status, checked, pending, requestingPermission } = useSyncExternalStore(subscribePushPreference, getPushPreference);
-  const descriptionId = useId();
+  const id = useId();
+  const descriptionId = `${id}-description`;
 
   useEffect(() => {
     void refreshPushPreference();
@@ -19,21 +22,23 @@ export function PushToggle({ className }: { className?: string }) {
     : status === "denied" ? "Blocked in browser settings" : null;
 
   return (
-    <label className={cn("flex min-h-[44px] items-center justify-between gap-3 py-2", className)}>
-      <span className="flex min-w-0 flex-col">
-        <span className="text-sm font-medium text-foreground">Push notifications</span>
-        <span id={descriptionId} role="status" className="text-[12.5px] text-muted-foreground">
-          {description}
-        </span>
-      </span>
-      <Switch
-        checked={checked}
-        disabled={requestingPermission}
-        onCheckedChange={setPushPreference}
-        aria-label="Push notifications"
-        aria-describedby={descriptionId}
-        aria-busy={pending}
-      />
-    </label>
+    <>
+      <Separator />
+      <SettingsField>
+        <FieldContent>
+          <FieldLabel variant="setting" htmlFor={id}>Push notifications</FieldLabel>
+          {description && <p id={descriptionId} role="status" className="text-xs text-muted-foreground">{description}</p>}
+        </FieldContent>
+        <Switch
+          id={id}
+          checked={checked}
+          disabled={requestingPermission}
+          onCheckedChange={setPushPreference}
+          aria-label="Push notifications"
+          aria-describedby={description ? descriptionId : undefined}
+          aria-busy={pending}
+        />
+      </SettingsField>
+    </>
   );
 }

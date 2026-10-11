@@ -106,3 +106,38 @@ test("keyboard navigation returns focus and keeps narrow settings within the vie
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeFocused();
 });
+
+for (const width of [360, 1280]) {
+  test(`settings keep consistent labels and panel bounds across sections at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 780 });
+    await page.goto("/");
+    await openSettings(page);
+    const settings = page.getByRole("dialog");
+    const settle = async () => {
+      await settings.evaluate(async el => {
+        await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+      });
+    };
+    await settle();
+    const bounds = (await settings.boundingBox())!;
+    const labelStyle = async (text: string) => page.locator('[data-slot="field-label"]').filter({ hasText: text }).first().evaluate(el => {
+      const style = getComputedStyle(el);
+      return { fontSize: style.fontSize, fontWeight: style.fontWeight, color: style.color };
+    });
+    const appearance = await labelStyle("Appearance");
+    expect(await labelStyle("Push notifications")).toEqual(appearance);
+    expect(await labelStyle("Arcade mode")).toEqual(appearance);
+    for (const [section, label] of [["Updates", "Automatic updates"], ["Repository search paths", "Add search folder"], ["Space settings", "Base branch"]]) {
+      await page.getByRole("button", { name: section, exact: true }).click();
+      await expect(page.getByRole("heading", { name: section, exact: true, level: 2 })).toBeVisible();
+      await expect(page.locator('[data-slot="settings-scroll"]:visible [data-slot="field-label"]').first()).toBeVisible();
+      await settle();
+      const actual = (await settings.boundingBox())!;
+      for (const dimension of ["x", "y", "width", "height"] as const) expect(actual[dimension]).toBeCloseTo(bounds[dimension], 0);
+      expect(await labelStyle(label)).toEqual(appearance);
+      await assertViewportLocked(page);
+      await page.getByRole("button", { name: "Back to settings", exact: true }).click();
+      await expect(page.getByRole("button", { name: section, exact: true })).toBeFocused();
+    }
+  });
+}
