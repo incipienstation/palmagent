@@ -3,11 +3,11 @@ import * as LabelPrimitive from "@radix-ui/react-label";
 
 import { cn } from "@/lib/utils";
 
-function Label({ className, ...props }: React.ComponentProps<typeof LabelPrimitive.Root>) {
+function Label({ className, variant = "default", ...props }: React.ComponentProps<typeof LabelPrimitive.Root> & { variant?: "default" | "setting" }) {
   return (
     <LabelPrimitive.Root
       data-slot="label"
-      className={cn("block text-xs leading-none text-muted-foreground select-none", className)}
+      className={cn("block leading-none select-none", variant === "setting" ? "text-sm font-medium text-foreground" : "text-xs text-muted-foreground", className)}
       {...props}
     />
   );

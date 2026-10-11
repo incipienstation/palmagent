@@ -1,14 +1,15 @@
 import { useId } from "react";
-import { Check, ChevronRight, RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import type { UpdateDiscoveryFailure, UpdateReceipt, UpdateSettingsState } from "@palmagent/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { SettingsCard, SettingsField, SettingsHelp, SettingsPanel } from "./SettingsLayout";
 import { useUpdateSettings } from "../hooks/useUpdateSettings";
 
 const unavailable: Record<Exclude<UpdateSettingsState["availability"], "available">, string> = {
@@ -71,7 +72,7 @@ export function UpdateSettings() {
   const progress = saving ? "Saving…" : action === "install" ? "Requesting update…" : busy && status ? "Checking…" : null;
 
   return (
-    <section aria-label="Updates" className="flex flex-col gap-4">
+    <SettingsPanel aria-label="Updates">
       <div className="flex items-center gap-3 rounded-xl border border-border bg-background/50 p-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-xs text-muted-foreground">{stale && status ? "Last seen version" : "Current version"}</span>
@@ -106,35 +107,29 @@ export function UpdateSettings() {
         {newer && discovery?.eligible && !settings.autoUpdate && <Button disabled={disabled || busy || Boolean(pending) || paused}
           onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
 
-        <FieldGroup className="gap-0 rounded-xl border border-border bg-background/50 px-3">
-          <Field orientation="horizontal" data-disabled={disabled} className="min-h-14 py-2">
-            <FieldLabel htmlFor={automaticId}>Automatic updates</FieldLabel>
+        <SettingsCard>
+          <SettingsField data-disabled={disabled}>
+            <FieldLabel variant="setting" htmlFor={automaticId}>Automatic updates</FieldLabel>
             <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled} aria-busy={saving}
               onCheckedChange={(autoUpdate) => void change({ autoUpdate })} />
-          </Field>
+          </SettingsField>
           <Separator />
-          <Field orientation="horizontal" data-disabled={disabled} className="min-h-14 flex-wrap py-2">
-            <FieldLabel id={channelId}>Channel</FieldLabel>
+          <SettingsField data-disabled={disabled} className="flex-wrap">
+            <FieldLabel variant="setting" id={channelId}>Channel</FieldLabel>
             <ToggleGroup type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled} aria-busy={saving}
               onValueChange={(channel) => { if (channel === "stable" || channel === "preview") void change({ channel }); }}>
               <ToggleGroupItem value="stable" className="px-3">Stable</ToggleGroupItem>
               <ToggleGroupItem value="preview" className="px-3">Preview</ToggleGroupItem>
             </ToggleGroup>
-          </Field>
-        </FieldGroup>
+          </SettingsField>
+        </SettingsCard>
 
-        <details className="group text-xs text-muted-foreground">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden="true" />
-            Update details
-          </summary>
-          <div className="flex flex-col gap-2 pb-2 pl-6">
-            <p>{settings.independentExecutions ? "Automatic updates run when you open the app. Agent runs continue." : "Automatic updates run when you open the app, after active tasks finish."}</p>
-            <p>Stable uses stable releases. Preview includes alpha, beta, and release candidates. Changing channel does not install or downgrade immediately.</p>
-            {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
-          </div>
-        </details>
+        <SettingsHelp title="Update details">
+          <p>{settings.independentExecutions ? "Automatic updates run when you open the app. Agent runs continue." : "Automatic updates run when you open the app, after active tasks finish."}</p>
+          <p>Stable uses stable releases. Preview includes alpha, beta, and release candidates. Changing channel does not install or downgrade immediately.</p>
+          {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
+        </SettingsHelp>
       </>}
-    </section>
+    </SettingsPanel>
   );
 }
