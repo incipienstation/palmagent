@@ -291,12 +291,16 @@ for (const first of ["catch-up", "older page"] as const) {
   });
 }
 
-test("prepending older history keeps a cross-page Activity row mounted", async ({ page }) => {
+for (const olderAnswers of [false, true]) test(`prepending older history preserves a cross-page Activity (older answers=${olderAnswers})`, async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
-  // Only uninterrupted work extends across the page boundary; visible answers
-  // before that work keep their own separate activity groups.
   const older = toolActivityRows(1601, 1800);
-  older.splice(-2, 2, ...toolActivityRows(1799, 1800));
+  if (olderAnswers) {
+    // Earlier answers stay separate from the work crossing the page boundary.
+    older.splice(-2, 2, ...toolActivityRows(1799, 1800));
+  } else {
+    // Explicit progress makes this one continuous disclosure across both pages.
+    for (const { event } of older) if (event.kind === "assistant_text") event.payload.phase = "progress";
+  }
   let release!: () => void;
   let requested = false;
   const pending = new Promise<void>((resolve) => { release = resolve; });
@@ -321,14 +325,15 @@ test("prepending older history keeps a cross-page Activity row mounted", async (
   await activity.evaluate((element) => Object.assign(window, { savedHistoryActivity: element }));
 
   release();
-  await expect(page.getByRole("button", { name: "Activity · 2 tools", exact: true })).toBeVisible();
-  const restored = await page.evaluate(() => {
-    const element = (window as unknown as { savedHistoryActivity: HTMLElement }).savedHistoryActivity;
-    return { connected: element.isConnected, key: element.dataset.rowKey, top: element.getBoundingClientRect().y };
-  });
-  expect(restored.connected).toBe(true);
-  expect(restored.key).toBe("activity-1801");
-  expect(Math.abs(restored.top - top)).toBeLessThanOrEqual(2);
+  await expect(page.getByRole("button", { name: `Activity · ${olderAnswers ? 2 : 11} tools`, exact: true })).toBeVisible();
+  await expect.poll(async () => Math.abs((await activity.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
+  if (!olderAnswers) {
+    const restored = await page.evaluate(() => {
+      const element = (window as unknown as { savedHistoryActivity: HTMLElement }).savedHistoryActivity;
+      return { connected: element.isConnected, key: element.dataset.rowKey };
+    });
+    expect(restored).toEqual({ connected: true, key: "activity-1801" });
+  }
 });
 
 test("fast upward scrolling formats long Markdown before it reaches the viewport", async ({ page }) => {
