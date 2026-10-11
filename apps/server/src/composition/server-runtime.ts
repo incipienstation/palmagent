@@ -31,6 +31,7 @@ import { CodexModelCatalogService } from "../modules/agents/adapters/outbound/mo
 import { NodeIdentifierGenerator } from "../platform/process/id-generator.js";
 import { LocalNativeSessionAdapter } from "../modules/tasks/adapters/outbound/native-session-adapter.js";
 import { LocalRepositoryPaths } from "../modules/spaces/adapters/outbound/repository-paths.js";
+import { DaemonRoutineScriptRunner } from "../modules/routines/adapters/outbound/daemon-script-runner.js";
 import { LocalRoutineScriptRunner } from "../modules/routines/adapters/outbound/local-script-runner.js";
 
 async function selectBackend(): Promise<RunnerBackend> {
@@ -98,7 +99,10 @@ export async function createRuntime() {
     terminalsOwnStore = true;
     resources.defer(() => terminals.close());
     await service.init();
-    const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), hub);
+    const scriptRunner = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
+      ? new DaemonRoutineScriptRunner(config.dataDir, config.executionRelease, config.executionNode, worktrees)
+      : new LocalRoutineScriptRunner(worktrees);
+    const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub);
     resources.defer(() => routines.stop());
     github = new GithubService(service, config.githubToken);
     resources.onStop(() => github?.stop());

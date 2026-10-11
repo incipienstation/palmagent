@@ -101,10 +101,10 @@ async function main(): Promise<void> {
     banner: { js: "#!/usr/bin/env node" },
   });
 
-  for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher"]) {
+  for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher", "routine-host"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/bootstrap/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, daemonProtocol: 1, ingressOwner: "plugin" }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
@@ -163,6 +163,7 @@ async function main(): Promise<void> {
       "server.js",
       "runner-daemon.js",
       "terminal-host.js",
+      "routine-host.js",
       "terminal-launcher.js",
       "execution-host.js",
       "execution-launcher.js",
@@ -221,7 +222,7 @@ async function main(): Promise<void> {
     "Changing the saved channel does not deploy a release. Updates refuse downgrades and",
     "prereleases on Stable; a missing Stable release does not fall back to Preview.",
     "Ask the plugin to enable access-triggered automatic updates within the current compatibility line.",
-    "Agent executions and terminals survive application updates. Running routine scripts delay activation.",
+    "Agent executions, terminals and daemon-managed routine scripts survive application updates.",
     "Existing systemd installations migrate through setup after their executions and terminals finish.",
     "Automatic updates are off by default; a required plugin change or failed installation needs attention.",
     "",

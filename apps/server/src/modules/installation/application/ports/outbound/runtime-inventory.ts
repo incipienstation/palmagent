@@ -4,4 +4,5 @@ export interface RetainedRuntime {
 export interface RuntimeInventory {
   terminals(directory: string): { list(): RetainedRuntime[]; close(): void };
   executions(directory: string): { list(): RetainedRuntime[]; close(): void };
+  routines(directory: string): RetainedRuntime[];
 }

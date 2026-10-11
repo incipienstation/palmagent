@@ -725,8 +725,9 @@ const daemonArtifactScript = `
   fs.writeFileSync(path.join(pkg, 'daemon/manifest.json'), JSON.stringify({ protocol: 1, artifacts: { [process.platform + '-' + process.arch]: require('node:crypto').createHash('sha256').update(fs.readFileSync(binary)).digest('hex') } }));
 `;
 for (const supervisor of [undefined, "palmagentd"] as const)
-for (const outcome of ["success", "contract", "rollback", "provision", "assets", ...(supervisor ? ["scripts"] : [])]) test(`automatic independent application activation (${supervisor ?? "systemd"}): ${outcome}`, async (t) => {
+for (const outcome of ["success", "contract", "rollback", "provision", "assets", ...(supervisor ? ["scripts", "independent-scripts", "invalid-script-count"] : [])]) test(`automatic independent application activation (${supervisor ?? "systemd"}): ${outcome}`, async (t) => {
   const f = fixture(t);
+  const succeeds = ["success", "independent-scripts"].includes(outcome);
   process.env.TEST_INDEPENDENT_OUTCOME = outcome;
   if (supervisor) {
     f.cfg.supervisor = supervisor;
@@ -762,7 +763,11 @@ for (const outcome of ["success", "contract", "rollback", "provision", "assets",
       process.env.TEST_UPDATE_HEALTH = "0.1.0-alpha.2"; // Previous application is healthy after restoration.
       return new Response("stale application");
     }
-    return applicationResponse(input);
+    const response = applicationResponse(input);
+    if (["independent-scripts", "invalid-script-count"].includes(outcome) && new URL(String(input)).pathname === "/api/health") {
+      return Response.json({ ...await response.json(), activeRoutineScripts: 1, updateBlockingRoutineScripts: outcome === "independent-scripts" ? 0 : -1 });
+    }
+    return response;
   });
   writeFileSync(join(f.root, "bin", "npm"), `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path');
@@ -802,13 +807,13 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
     assert(!existsSync(join(f.root, "candidate-setup")));
     return;
   }
-  assert.equal(await update({ ...f.flags, automatic: true, request }), outcome === "success" ? 0 : 1);
-  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, outcome === "success" ? "succeeded" : "failed");
-  if (outcome !== "success") {
+  assert.equal(await update({ ...f.flags, automatic: true, request }), succeeds ? 0 : 1);
+  assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, succeeds ? "succeeded" : "failed");
+  if (!succeeds) {
     assert.equal(loadConfig({ dataDir: f.cfg.dataDir }).pkgDir, f.cfg.pkgDir);
     if (["rollback", "provision", "assets"].includes(outcome)) assert.equal(JSON.parse(readFileSync(join(f.cfg.dataDir, "application-activation.json"), "utf8")).status, "restored");
   }
-  assert.equal(existsSync(join(f.root, 'candidate-setup')), ['success', 'rollback', 'assets'].includes(outcome));
+  assert.equal(existsSync(join(f.root, 'candidate-setup')), ['success', 'independent-scripts', 'rollback', 'assets'].includes(outcome));
   assert.equal(executions.get(active.id).state, "running");
   assert.equal(executions.get(active.id).release, f.cfg.pkgDir);
   assert.equal(readFileSync(join(f.cfg.pkgDir!, "execution-host.js"), "utf8"), "// Retained fixture artifact\n");
@@ -818,7 +823,7 @@ else if (args[0] === 'install' && args.includes('--prefix')) {
   assert(!commands.some((args) => args.join(" ").includes("restart palmagent-runner.service")));
   assert(!commands.some((args) => args.includes("stop")));
   assert(!f.readCalls().some((args) => args.includes("-g")), "no global package tree is replaced");
-  if (outcome === "success") assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
+  if (succeeds) assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
 });
 
 

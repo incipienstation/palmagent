@@ -10,12 +10,13 @@ import { EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
 import { DAEMON_PROTOCOL } from "@palmagent/shared/daemon";
 import { daemonBinary } from "./daemon-runtime.js";
 
-export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number }
+export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number; routineProtocol?: number }
 export function releaseContract(directory: string): ReleaseContract {
   const contract = JSON.parse(readFileSync(join(directory, "runtime-contract.json"), "utf8"));
   if (contract.executionProtocol !== EXECUTION_PROTOCOL || contract.productStorage !== 1 || contract.applicationApi !== 1) throw new Error("Candidate runtime or storage contract is incompatible");
   if (contract.terminalProtocol !== undefined && contract.terminalProtocol !== TERMINAL_PROTOCOL) throw new Error("Candidate terminal protocol is incompatible");
   if (contract.hostSetup !== undefined && contract.hostSetup !== 1) throw new Error("Candidate host setup protocol is incompatible");
+  if (contract.routineProtocol !== undefined && (contract.routineProtocol !== 1 || !existsSync(join(directory, "routine-host.js")))) throw new Error("Candidate routine host contract is incompatible or incomplete");
   if (contract.daemonProtocol !== undefined) {
     if (contract.daemonProtocol !== DAEMON_PROTOCOL) throw new Error("Candidate daemon protocol is incompatible");
     daemonBinary(directory);
@@ -77,6 +78,14 @@ function verifyActiveExecutionCompatibility(cfg: InstallConfig): void {
   if (!cfg.executionNode || !cfg.pkgDir) throw new Error("Independent execution is not enabled");
   const contract = releaseContract(cfg.pkgDir);
   if (cfg.supervisor === "palmagentd" && contract.daemonProtocol !== DAEMON_PROTOCOL) throw new Error("Candidate cannot control this daemon installation");
+  const routineDirectory = join(cfg.dataDir, "routines");
+  if (existsSync(routineDirectory)) {
+    for (const record of inventory.routines(routineDirectory)) {
+      if (contract.routineProtocol !== record.protocol || !existsSync(record.node) || !existsSync(join(record.release, "routine-host.js"))) {
+        throw new Error("Candidate cannot control or recover a retained routine script");
+      }
+    }
+  }
   const terminalDirectory = join(cfg.dataDir, "terminals");
   if (existsSync(terminalDirectory)) {
     const terminals = inventory.terminals(terminalDirectory);
@@ -97,6 +106,8 @@ function verifyActiveExecutionCompatibility(cfg: InstallConfig): void {
 }
 
 function assertExecutionsFinished(cfg: InstallConfig): void {
+  const routineDirectory = join(cfg.dataDir, "routines");
+  if (existsSync(routineDirectory) && inventory.routines(routineDirectory).length) throw new Error("Routine scripts must finish and record their results before removing the installation");
   const terminalDirectory = join(cfg.dataDir, "terminals");
   if (existsSync(terminalDirectory)) {
     const terminals = inventory.terminals(terminalDirectory);

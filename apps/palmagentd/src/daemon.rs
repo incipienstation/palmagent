@@ -129,7 +129,7 @@ pub fn serve(data: &Path) -> Result<()> {
                         ),
                         Request::Launch { kind, id } => {
                             ensure!(
-                                matches!(kind, Kind::Execution | Kind::Terminal),
+                                matches!(kind, Kind::Execution | Kind::Terminal | Kind::Routine),
                                 "Use the dedicated operation for this host kind"
                             );
                             hosts::launch(data, &config, root.as_deref(), kind, &id)
@@ -178,7 +178,7 @@ pub fn serve(data: &Path) -> Result<()> {
                                 let record: HostRecord = storage::read(&path)?;
                                 if matches!(
                                     record.kind,
-                                    Kind::Execution | Kind::Terminal | Kind::Update
+                                    Kind::Execution | Kind::Terminal | Kind::Routine | Kind::Update
                                 ) && record.state != State::Exited
                                 {
                                     ensure!(

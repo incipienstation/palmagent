@@ -718,10 +718,12 @@ async function update(flags: Flags): Promise<number> {
 async function verifyIndependentActivation(cfg: InstallConfig): Promise<boolean> {
   verifyActiveExecutionCompatibility(cfg);
   const response = await fetch(`${connectionInfo(cfg).upstream}/api/health`, { signal: AbortSignal.timeout(5000) });
-  const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number };
+  const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number };
   if (!response.ok || !health.ok || !health.updateMaintenance || health.executionProtocol !== 1) throw new Error("Cannot verify independent application activation");
   if (cfg.supervisor && !Number.isSafeInteger(health.activeRoutineScripts)) throw new Error("Cannot verify routine script activity");
-  return (health.activeRoutineScripts ?? 0) === 0;
+  const blocking = health.updateBlockingRoutineScripts ?? health.activeRoutineScripts ?? 0;
+  if (!Number.isSafeInteger(blocking) || blocking < 0) throw new Error("Cannot verify routine script update safety");
+  return blocking === 0;
 }
 
 /** Runs inside the target package, under its updater parent's admission barrier. */

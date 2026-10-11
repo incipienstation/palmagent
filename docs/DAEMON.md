@@ -7,13 +7,13 @@ TypeScript. Nx runs the Rust build and checks alongside the existing projects.
 ## Ownership and platform boundary
 
 `palmagentd` owns host reservations, process identity, launch, inspection, cleanup,
-web recovery and update executor launch. Each execution, terminal, web process and
+web recovery and update executor launch. Each execution, terminal, routine script, web process and
 updater has an independent guardian from its retained release. Guardians own their
 Node child, output pipes and bounded log files. Replacing or crashing the control
 daemon does not replace those guardians or their provider input channels.
 
 The Linux adapter implements PID/start-time/boot identity, pidfd signaling, private
-Unix IPC, locking and delegated cgroup v2 isolation. Execution and terminal groups
+Unix IPC, locking and delegated cgroup v2 isolation. Execution, terminal and routine groups
 have separate aggregate memory, CPU and task limits. Cancellation cleans up the
 whole group, including descendants that create a new session. Process-group mode
 exists for development tests and does not offer the same containment guarantee.
@@ -35,8 +35,12 @@ updater, which stages an immutable package and pinned Node runtime. Activation
 verifies daemon protocol and artifact hashes, writes private configuration,
 replaces the daemon with `exec` (preserving its bootstrap PID), verifies the new
 build identity, and replaces the web process. Existing hosts keep their original
-release. Routine scripts currently belong to the web process, so activation waits
-for them to finish and retains the pending update request.
+release. Daemon-managed routine scripts also keep their original release and process. Scheduling,
+admission and run history remain in TypeScript; the script host persists its result
+independently and the replacement web process recovers it without rerunning the command.
+Timeouts and explicit cancellation still clean up the script and its descendants.
+Source and legacy installations keep web-owned scripts, so activation still waits
+for those scripts to finish and retains the pending update request.
 
 Failed activation attempts restore the previous runtime configuration and check
 its health. Both releases and the activation receipt remain available; database
@@ -70,6 +74,6 @@ pnpm exec tsx apps/server/scripts/daemon-systemd-smoke.ts
 ```
 
 It uses fixture providers, a unique temporary service and isolated state. It checks
-original provider PIDs and pending input, terminal screen continuity, daemon crash
+original provider PIDs and pending input, terminal screen continuity, routine PID/result continuity, daemon crash
 recovery, web activation and detached descendant cleanup while blocking runtime
 sudo/systemctl calls. It removes only its own service and confirmed-empty fixture.

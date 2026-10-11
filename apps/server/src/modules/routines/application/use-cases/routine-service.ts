@@ -8,7 +8,7 @@ import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { nextRun, parseCron, presetToCron } from "../../domain/schedule.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import type { IdentifierGenerator } from "../../../../kernel/identifiers.js";
-import type { RoutineRepository, RoutineScriptResult, RoutineScriptRunner, RoutineTaskUseCases } from "../ports/outbound/routines.js";
+import type { RoutineRepository, RoutineScriptExecution, RoutineScriptResult, RoutineScriptRunner, RoutineTaskUseCases } from "../ports/outbound/routines.js";
 import type { TaskEventPublisher } from "../../../../kernel/events.js";
 
 // Routines: recurring agent tasks or scripts. Agent fires create a fresh task;
@@ -23,8 +23,9 @@ const TICK_MS = 15_000;
 
 export class RoutineService implements RoutineUseCases {
   get activeScriptCount(): number { return this.scripts.size + this.results.size; }
+  get updateBlockingScriptCount(): number { return this.scriptRunner.persistent ? 0 : this.activeScriptCount; }
   private timer?: ReturnType<typeof setInterval>;
-  private scripts = new Map<string, { stop(reason?: string): void; done: Promise<void> }>();
+  private scripts = new Map<number, { routineId: string; stop(reason?: string): void; detach?(): void; done: Promise<void> }>();
   // Keep completed results until persistence recovers; never rerun the script.
   private results = new Map<number, { routineId: string; result: RoutineScriptResult }>();
   private stopping = false;
@@ -40,7 +41,9 @@ export class RoutineService implements RoutineUseCases {
   start(): void {
     if (this.timer) return;
     this.stopping = false;
-    this.db.interruptRoutineRuns();
+    if (this.scriptRunner.recover) {
+      for (const run of this.db.runningRoutineRuns()) this.track(run.id, run.routineId, this.scriptRunner.recover(run), run.worktreePath);
+    } else this.db.interruptRoutineRuns();
     const now = Date.now();
     for (const r of this.db.listRoutines()) {
       if (!r.enabled || r.preset === "manual" || !r.schedule) continue;
@@ -67,8 +70,13 @@ export class RoutineService implements RoutineUseCases {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    for (const run of this.scripts.values()) run.stop();
-    await Promise.all([...this.scripts.values()].map(run => run.done));
+    if (this.scriptRunner.persistent) {
+      for (const run of this.scripts.values()) run.detach?.();
+      this.scripts.clear();
+    } else {
+      for (const run of this.scripts.values()) run.stop();
+      await Promise.all([...this.scripts.values()].map(run => run.done));
+    }
     this.persistResults();
     if (this.results.size) throw new Error("Completed script results could not be persisted before shutdown");
   }
@@ -89,7 +97,7 @@ export class RoutineService implements RoutineUseCases {
   private fire(r: Routine, now: number, manual = false): void {
     if (r.kind === "script") {
       if (this.stopping || this.tasks.updating) throw new ApplicationError("service_unavailable", "Palmagent is restarting");
-      const full = this.scripts.has(r.id) || this.scripts.size >= ROUTINE_POLICY.scriptConcurrency;
+      const full = this.hasPendingScript(r.id) || this.scripts.size >= ROUTINE_POLICY.scriptConcurrency;
       if (full && manual) throw new ApplicationError("conflict", `A script is already running or all ${ROUTINE_POLICY.scriptConcurrency} script slots are busy`);
       // Commit admission and cadence together before any process can execute.
       const next = { ...r, lastRunAt: now, updatedAt: now,
@@ -104,16 +112,12 @@ export class RoutineService implements RoutineUseCases {
         try {
           const repo = this.db.getRepo(r.repoId);
           if (!repo || !r.script) throw new Error("Script or space no longer exists");
-          const prepared = this.scriptRunner.prepare(repo, r.script);
+          const prepared = this.scriptRunner.prepare(repo, r.script, { id: runId, routineId: r.id });
           worktreePath = prepared.worktreePath;
           // Record the retained worktree before allowing the process to start.
           this.db.finishRoutineRun(runId, { status: "running", worktreePath });
           const execution = prepared.start();
-          const done = execution.done.then(
-            result => this.completeScript(runId, r.id, result),
-            error => this.completeScript(runId, r.id, { status: "failed", worktreePath, finishedAt: Date.now(), note: String(error) }),
-          ).finally(() => { this.scripts.delete(r.id); });
-          this.scripts.set(r.id, { stop: reason => execution.stop(reason), done });
+          this.track(runId, r.id, execution, worktreePath);
         } catch (error) {
           this.completeScript(runId, r.id, { status: "failed", worktreePath, finishedAt: Date.now(), note: String(error) });
         }
@@ -152,8 +156,23 @@ export class RoutineService implements RoutineUseCases {
     this.events.emitReadChange({ type: "read-change", routineId: r.id });
   }
 
+  private hasPendingScript(routineId: string): boolean {
+    return [...this.scripts.values(), ...this.results.values()].some(run => run.routineId === routineId);
+  }
+
+  private track(runId: number, routineId: string, execution: RoutineScriptExecution, worktreePath?: string): void {
+    const current = { routineId, stop: execution.stop, detach: execution.detach, done: Promise.resolve() };
+    current.done = execution.done.then(result => {
+      if (this.scripts.get(runId) === current) this.completeScript(runId, routineId, result);
+    }, error => {
+      if (this.scripts.get(runId) === current) this.completeScript(runId, routineId,
+        { status: "failed", worktreePath, finishedAt: Date.now(), note: String(error) });
+    });
+    this.scripts.set(runId, current);
+  }
+
   private completeScript(runId: number, routineId: string, result: RoutineScriptResult): void {
-    this.scripts.delete(routineId);
+    this.scripts.delete(runId);
     this.results.set(runId, { routineId, result });
     this.persistResults();
   }
@@ -162,6 +181,7 @@ export class RoutineService implements RoutineUseCases {
     for (const [runId, { routineId, result }] of this.results) {
       try {
         this.db.finishRoutineRun(runId, result);
+        this.scriptRunner.acknowledge?.(runId);
         this.results.delete(runId);
       } catch {
         console.error(`[routines] result ${runId} is awaiting persistence`);
@@ -279,7 +299,7 @@ export class RoutineService implements RoutineUseCases {
   }
 
   remove(id: string): Routine {
-    if (this.scripts.has(id)) throw new ApplicationError("conflict", "Wait for the running script before deleting this routine");
+    if (this.hasPendingScript(id)) throw new ApplicationError("conflict", "Wait for the running script before deleting this routine");
     const r = this.get(id);
     this.db.deleteRoutine(id);
     this.events.emitReadChange({ type: "read-change", routines: true });
@@ -295,9 +315,9 @@ export class RoutineService implements RoutineUseCases {
   async stopRun(id: string): Promise<Routine> {
     const r = this.get(id);
     if (r.kind !== "script") throw new ApplicationError("bad_request", "Stop agent runs from their task");
-    const execution = this.scripts.get(id);
-    execution?.stop("interrupted by user");
-    await execution?.done;
+    const executions = [...this.scripts.values()].filter(run => run.routineId === id);
+    for (const execution of executions) execution.stop("interrupted by user");
+    await Promise.all(executions.map(execution => execution.done));
     return this.get(id);
   }
 

@@ -129,6 +129,10 @@ hasRunningRoutine(repoId: string): boolean {
     return !!this.db.prepare("SELECT 1 FROM routine_runs rr JOIN routines r ON r.id = rr.routine_id WHERE r.repo_id = ? AND rr.status = 'running' LIMIT 1").get(repoId);
   }
 
+runningRoutineRuns(): RoutineRun[] {
+    return (this.db.prepare("SELECT * FROM routine_runs WHERE status = 'running' ORDER BY id").all() as RoutineRunRow[]).map(rowToRoutineRun);
+  }
+
 interruptRoutineRuns() {
     this.db.prepare("UPDATE routine_runs SET status = 'interrupted', note = 'server stopped before completion was recorded' WHERE status = 'running'").run();
   }

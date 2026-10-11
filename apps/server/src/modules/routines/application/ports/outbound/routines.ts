@@ -5,6 +5,7 @@ export interface RoutineRepository {
   listRepos(): Repo[];
   transaction<T>(work: () => T): T;
   interruptRoutineRuns(): void;
+  runningRoutineRuns(): RoutineRun[];
   listRoutines(): Routine[];
   updateRoutine(routine: Routine): void;
   insertRoutineRun(run: Omit<RoutineRun, "id">): number;
@@ -20,6 +21,7 @@ export type RoutineScriptResult = Pick<RoutineRun, "status" | "note" | "finished
 
 export interface RoutineScriptExecution {
   stop(reason?: string): void;
+  detach?(): void;
   done: Promise<RoutineScriptResult>;
 }
 
@@ -29,7 +31,10 @@ export interface PreparedRoutineScript {
 }
 
 export interface RoutineScriptRunner {
-  prepare(repo: Repo, script: NonNullable<Routine["script"]>): PreparedRoutineScript;
+  readonly persistent?: boolean;
+  prepare(repo: Repo, script: NonNullable<Routine["script"]>, run: { id: number; routineId: string }): PreparedRoutineScript;
+  recover?(run: RoutineRun): RoutineScriptExecution;
+  acknowledge?(runId: number): void;
 }
 
 export interface RoutineTaskUseCases {

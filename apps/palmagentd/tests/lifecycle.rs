@@ -57,6 +57,7 @@ impl Fixture {
             "runtimes",
             "executions",
             "terminals",
+            "routines",
         ] {
             let path = data.join(directory);
             fs::create_dir_all(&path).unwrap();
@@ -66,7 +67,12 @@ impl Fixture {
         let binary = release.join("palmagentd");
         fs::copy(env!("CARGO_BIN_EXE_palmagentd"), &binary).unwrap();
         fs::copy("/bin/sh", data.join("runtimes/sh")).unwrap();
-        for file in ["server.js", "execution-host.js", "terminal-host.js"] {
+        for file in [
+            "server.js",
+            "execution-host.js",
+            "terminal-host.js",
+            "routine-host.js",
+        ] {
             fs::write(
                 release.join(file),
                 "trap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n",
@@ -133,6 +139,8 @@ impl Fixture {
     fn launch(&mut self, kind: &str, id: &str) -> Value {
         let directory = self.data.join(if kind == "terminal" {
             "terminals"
+        } else if kind == "routine" {
+            "routines"
         } else {
             "executions"
         });
@@ -183,6 +191,7 @@ fn hosts_and_web_survive_daemon_replacement_and_crash_without_duplicate_launches
     let execution = fixture.launch("execution", id);
     let duplicate = fixture.request(json!({ "action": "launch", "kind": "execution", "id": id }));
     assert_eq!(execution["child"], duplicate["child"]);
+    let routine = fixture.launch("routine", "abcd");
     let before = fixture.request(json!({ "action": "status" }));
     fixture.request(json!({ "action": "replace" }));
     wait(|| {
@@ -209,6 +218,14 @@ fn hosts_and_web_survive_daemon_replacement_and_crash_without_duplicate_launches
         before["web"]["child"],
         fixture.request(json!({ "action": "status" }))["web"]["child"]
     );
+    fixture.request(json!({ "action": "restart-web" }));
+    let recovered_routine =
+        fixture.request(json!({ "action": "inspect", "kind": "routine", "id": "abcd" }));
+    assert_eq!(routine["child"], recovered_routine["child"]);
+    let duplicate_routine =
+        fixture.request(json!({ "action": "launch", "kind": "routine", "id": "abcd" }));
+    assert_eq!(routine["child"], duplicate_routine["child"]);
+    assert!(fixture.try_request(json!({ "action": "stop" })).is_none());
 }
 
 #[test]

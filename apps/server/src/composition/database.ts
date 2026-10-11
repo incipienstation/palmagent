@@ -21,6 +21,7 @@ export class Db {
   readonly insertRoutineRun: SqliteRoutines["insertRoutineRun"];
   readonly finishRoutineRun: SqliteRoutines["finishRoutineRun"];
   readonly hasRunningRoutine: SqliteRoutines["hasRunningRoutine"];
+  readonly runningRoutineRuns: SqliteRoutines["runningRoutineRuns"];
   readonly interruptRoutineRuns: SqliteRoutines["interruptRoutineRuns"];
   readonly listRoutineRuns: SqliteRoutines["listRoutineRuns"];
   readonly insertCredential: SqliteAuth["insertCredential"];
@@ -101,6 +102,7 @@ export class Db {
     this.insertRoutineRun = routines.insertRoutineRun.bind(routines);
     this.finishRoutineRun = routines.finishRoutineRun.bind(routines);
     this.hasRunningRoutine = routines.hasRunningRoutine.bind(routines);
+    this.runningRoutineRuns = routines.runningRoutineRuns.bind(routines);
     this.interruptRoutineRuns = routines.interruptRoutineRuns.bind(routines);
     this.listRoutineRuns = routines.listRoutineRuns.bind(routines);
     const auth = new SqliteAuth(this.connection);

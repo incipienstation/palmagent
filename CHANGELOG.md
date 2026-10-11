@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Routine scripts on daemon installations continue through application updates and web restarts, preserving cancellation, timeouts and recorded results.
+
 ## 0.1.0-alpha.181
 
 ### Fixed

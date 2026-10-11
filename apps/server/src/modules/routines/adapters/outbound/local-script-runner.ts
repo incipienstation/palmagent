@@ -16,7 +16,7 @@ child.on("exit", (code, signal) => { if (signal) console.error("terminated by " 
 
 // Scripts run as the installation owner, without an agent or an interactive shell.
 // Retain isolated worktrees: script output/files may be the user's result.
-function runRoutineScript(cwd: string, script: NonNullable<Routine["script"]>, worktreePath?: string): RoutineScriptExecution {
+export function runRoutineScript(cwd: string, script: NonNullable<Routine["script"]>, worktreePath?: string, guardianCleanup = false): RoutineScriptExecution {
   let stop = (_reason?: string) => {};
   const done = new Promise<RoutineScriptResult>((resolve) => {
     const finish = (result: RoutineScriptResult) => resolve({ ...result, worktreePath, finishedAt: Date.now() });
@@ -26,6 +26,7 @@ function runRoutineScript(cwd: string, script: NonNullable<Routine["script"]>, w
       });
       let output = "", bytes = 0, truncated = false, reason: string | undefined, settled = false;
       let force: NodeJS.Timeout | undefined;
+      let drain: NodeJS.Timeout | undefined;
       const kill = (signal: NodeJS.Signals) => {
         if (child.pid) { try { process.kill(-child.pid, signal); } catch { /* already exited */ } }
       };
@@ -50,13 +51,20 @@ function runRoutineScript(cwd: string, script: NonNullable<Routine["script"]>, w
         settled = true;
         clearTimeout(timeout);
         if (force) clearTimeout(force);
+        if (drain) clearTimeout(drain);
         // A script must not leave background descendants behind after its shell exits.
         kill("SIGKILL");
         finish({ status: reason?.startsWith("interrupted") ? "interrupted" : code === 0 && !reason && !error ? "succeeded" : "failed",
           exitCode: code ?? undefined, note: reason ?? error, output: output + (truncated ? "\n[output truncated]" : "") });
       };
       child.once("error", error => complete(null, error.message));
-      child.once("exit", () => kill("SIGKILL"));
+      child.once("exit", () => {
+        kill("SIGKILL");
+        // An escaped descendant can retain pipe FDs after the shell exits. Bound
+        // draining in a retained host so it can exit and its guardian can kill
+        // the entire cgroup, including processes outside this process group.
+        if (guardianCleanup) drain = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy(); }, 1000);
+      });
       child.once("close", (code, signal) => complete(code, signal ? `terminated by ${signal}` : undefined));
     } catch (error) {
       finish({ status: "failed", note: error instanceof Error ? error.message : String(error) });
