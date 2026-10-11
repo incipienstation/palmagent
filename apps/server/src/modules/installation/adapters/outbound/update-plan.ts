@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BRANDING } from "@palmagent/shared";
-import { compatiblePlugin, channelTag, compareProductVersions, validateUpdateTarget, type ReleaseChannel } from "../../domain/release-policy.js";
+import { compatiblePlugin, channelTag, compareProductVersions, productVersion, validateUpdateTarget, type ReleaseChannel } from "../../domain/release-policy.js";
 import { run } from "./sh.js";
+import { discoveryCommandFailure, discoveryStep, UpdateDiscoveryError } from "./update-discovery-error.js";
 
 export interface PluginVersion { manifest: string; version: string }
 export interface UpdatePlan {
@@ -49,10 +50,17 @@ export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plug
   if (requested !== undefined) validateUpdateTarget(current, requested, channel);
   const spec = requested ?? channelTag(channel);
   const result = run("npm", ["view", `${BRANDING.packageName}@${spec}`, "version", "--json"], { timeout: 30_000 });
-  if (!result.ok) throw new Error(`could not resolve ${BRANDING.packageName}@${spec}; the selected channel may not be published yet (no fallback)`);
-  let target: unknown;
-  try { target = JSON.parse(result.stdout); } catch { throw new Error("npm did not return one exact version"); }
-  if (typeof target !== "string") throw new Error("npm did not return one exact version");
-  if (requested && target !== requested) throw new Error("npm resolved a different version than requested");
-  return planUpdate(current, target, channel, plugins);
+  if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure("registry", result), `could not resolve ${BRANDING.packageName}@${spec}; the selected channel may not be published yet (no fallback)`);
+  const target = discoveryStep({ source: "registry", code: "invalid-response" }, "npm did not return one exact version", () => {
+    const value: unknown = JSON.parse(result.stdout);
+    if (typeof value !== "string" || (requested && value !== requested)) throw new Error("invalid registry version");
+    productVersion(value);
+    return value;
+  });
+  try { return planUpdate(current, target, channel, plugins); }
+  catch (error) {
+    // Keep the CLI's existing channel/downgrade explanation; only the category
+    // crosses into persisted discovery diagnostics.
+    throw new UpdateDiscoveryError({ source: "release-policy", code: "incompatible-release" }, error instanceof Error ? error.message : "Incompatible release");
+  }
 }

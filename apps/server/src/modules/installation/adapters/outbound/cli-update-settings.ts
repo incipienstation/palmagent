@@ -15,9 +15,10 @@ const execute = promisify(execFile);
 const unavailable = (availability: UpdateSettingsState["availability"]): UpdateSettingsState => ({ availability, settings: null });
 
 /** Host changes stay in the installed CLI. Requests cannot select an executable,
- * path or shell command. An install request must match the checked version. The updater runs in systemd,
- * so a later web restart does not kill it with the web service's cgroup. */
+ * path or shell command. An install request must match the checked version. The
+ * selected supervisor keeps the updater independent of web restarts. */
 export function createUpdateSettingsService(options: { packageDir?: string; dataDir: string; dbPath: string }): UpdateSettingsService {
+  let loggedFailureAt: string | undefined;
   async function command(change?: UpdateSettingsChange, action?: UpdateAction | { action: "resume" }): Promise<UpdateSettingsState> {
     const mutating = Boolean(change || action);
     if (!options.packageDir) {
@@ -51,6 +52,14 @@ export function createUpdateSettingsService(options: { packageDir?: string; data
       throw new ApplicationError("service_unavailable", response.error === "unavailable"
         ? "Update settings are unavailable for this installation. Refresh its status."
         : "Could not save the update setting. Refresh its status before trying again.");
+    }
+    const discovery = response.state.settings?.discovery;
+    if (discovery?.error && discovery.checkedAt !== loggedFailureAt) {
+      // Log validated public fields once per result, so later successful checks
+      // do not erase the evidence. Never forward the subprocess's stderr.
+      console.warn(JSON.stringify({ event: "update_discovery_failed", checkedAt: discovery.checkedAt,
+        ...(discovery.failure ?? { source: "unknown", code: "unknown" }) }));
+      loggedFailureAt = discovery.checkedAt;
     }
     return response.state;
   }

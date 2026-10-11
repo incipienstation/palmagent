@@ -16,6 +16,8 @@ import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from
 import { beginUpdateMaintenance, isUpdateMaintenance, maintenancePath } from "../../src/modules/installation/adapters/outbound/update-maintenance.js";
 import { ExecutionStore } from "../../src/modules/agents/adapters/outbound/execution-store.js";
 import { update, setup, prepareIndependentRuntime, type Flags } from "../../src/composition/installation.js";
+import { run } from "../../src/modules/installation/adapters/outbound/sh.js";
+import { discoveryCommandFailure } from "../../src/modules/installation/adapters/outbound/update-discovery-error.js";
 
 const applicationFixtureScript = `
   fs.mkdirSync(path.join(pkg, 'web', 'assets'), { recursive: true });
@@ -355,8 +357,61 @@ test("access checks reuse a short cache, refresh on demand/channel change, and k
   const failed = checkUpdateAccess(f.cfg, false, now + 16 * 60_000 + 1);
   assert.equal(failed.discovery?.error, true, "a prerelease in Stable is not reported as current");
   assert.equal(failed.discovery?.targetVersion, null);
+  assert.deepEqual(failed.discovery?.failure, { source: "release-policy", code: "incompatible-release" });
   checkUpdateAccess(f.cfg, false, now + 16 * 60_000 + 2);
   assert.equal(f.readCalls().length, 4, "failed checks are throttled too");
+});
+
+test("a failed registry lookup retains only safe diagnostics and recovers on a later visit after one minute", (t) => {
+  const f = fixture(t);
+  const npm = join(f.root, "bin", "npm");
+  const healthy = readFileSync(npm, "utf8");
+  writeFileSync(npm, `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(f.calls)}, '[]\\n');
+console.error('npm error code ECONNRESET\\nprivate-output-marker'); process.exit(1);
+`);
+  const now = Date.now();
+  const failed = checkUpdateAccess(f.cfg, false, now);
+  assert.deepEqual(failed.discovery?.failure, { source: "registry", code: "network", exitCode: 1 });
+  assert.equal(failed.discovery?.targetVersion, null);
+  assert.equal(failed.pending, null);
+  assert(!readFileSync(join(f.cfg.dataDir, "update-access.json"), "utf8").includes("private-output-marker"));
+  writeFileSync(npm, healthy);
+  assert.deepEqual(checkUpdateAccess(f.cfg, false, now + 59_999), failed);
+  assert.equal(f.readCalls().length, 1, "reconnects still share a bounded failure cache");
+  const recovered = checkUpdateAccess(f.cfg, false, now + 60_000);
+  assert.equal(recovered.discovery?.error, false);
+  assert.equal(recovered.discovery?.failure, undefined);
+  assert.equal(recovered.discovery?.targetVersion, "0.1.0-alpha.3");
+  assert.equal(recovered.pending, null, "a check never queues installation by itself");
+  assert.equal(f.readCalls().length, 2);
+  checkUpdateAccess(f.cfg, false, now + 61_000);
+  assert.equal(f.readCalls().length, 2, "successful checks retain their longer cache");
+});
+
+test("a plugin command failure is identified before registry discovery, without retaining its output", (t) => {
+  const f = fixture(t);
+  mkdirSync(join(process.env.CODEX_HOME!, "plugins"), { recursive: true });
+  writeFileSync(join(f.root, "bin", "codex"), `#!${process.execPath}\nconsole.error('private-plugin-marker'); process.exit(17);\n`, { mode: 0o700 });
+  const failed = checkUpdateAccess(f.cfg, true);
+  assert.deepEqual(failed.discovery?.failure, { source: "codex-plugins", code: "command-failed", exitCode: 17 });
+  assert.equal(f.readCalls().length, 0);
+  assert(!JSON.stringify(failed).includes("private-plugin-marker"));
+  writeFileSync(join(f.root, "bin", "codex"), `#!${process.execPath}\nconsole.log('private-invalid-json');\n`);
+  assert.deepEqual(checkUpdateAccess(f.cfg, true).discovery?.failure, { source: "codex-plugins", code: "invalid-response" });
+});
+
+test("spawn diagnostics distinguish a missing executable, a timeout and an output limit", (t) => {
+  const f = fixture(t);
+  const missing = run(join(f.root, "missing"), []);
+  assert.equal(missing.errorCode, "ENOENT");
+  assert.equal(discoveryCommandFailure("registry", missing).code, "command-not-found");
+  const timedOut = run(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeout: 100 });
+  assert.equal(timedOut.errorCode, "ETIMEDOUT");
+  assert.equal(discoveryCommandFailure("codex-plugins", timedOut).code, "timeout");
+  const tooLarge = run(process.execPath, ["-e", "process.stdout.write('x'.repeat(2 ** 21))"]);
+  assert.equal(tooLarge.errorCode, "ENOBUFS");
+  assert.equal(discoveryCommandFailure("claude-plugins", tooLarge).code, "output-limit");
 });
 
 test("an install request pins the displayed target and cannot cross channel, version, or preference changes", (t) => {

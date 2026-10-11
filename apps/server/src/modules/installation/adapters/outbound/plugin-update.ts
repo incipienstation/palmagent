@@ -11,6 +11,7 @@ import type { InstallConfig } from "./config.js";
 import { readPluginVersions, type PluginVersion, type UpdatePlan } from "./update-plan.js";
 import { run } from "./sh.js";
 import { compatiblePlugin, compareProductVersions } from "../../domain/release-policy.js";
+import { discoveryCommandFailure, discoveryStep, UpdateDiscoveryError } from "./update-discovery-error.js";
 
 const id = `${BRANDING.packageName}@${BRANDING.packageName}`;
 const repository = `${DISTRIBUTION.repositoryUrl}.git`;
@@ -39,7 +40,7 @@ function command(context: Context, args: string[], execute: PluginCommand): stri
     env: { ...process.env, [context.manager === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: context.home },
     cwd: context.cwd, timeout: args.includes("--help") || args[0] === "list" || args[1] === "list" ? 5_000 : 120_000,
   });
-  if (!result.ok) throw new Error(`${context.manager} plugin ${args[0]} failed; inspect the native manager before retrying`);
+  if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure(`${context.manager}-plugins`, result), `${context.manager} plugin ${args[0]} failed; inspect the native manager before retrying`);
   return result.stdout;
 }
 
@@ -48,28 +49,34 @@ export function discoverPlugins(cfg: Pick<InstallConfig, "claudeConfigDir">, exe
   const result: NativePlugin[] = [];
   const codexHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
   if (existsSync(join(codexHome, "plugins"))) {
-    const context = { manager: "codex" as const, home: codexHome, cwd: codexHome };
-    const inventory = codexInventory.parse(JSON.parse(command(context, ["list", "--json"], execute)));
-    if (inventory.installed.some((p) => p.pluginId.endsWith("@palmagent") && p.pluginId !== id)) throw new Error("Palmagent marketplace has unrelated installed plugins");
-    for (const plugin of inventory.installed.filter((p) => p.pluginId === id)) {
-      version.parse(plugin.version);
-      result.push({ ...context, scope: "user", enabled: plugin.enabled, policy: plugin.installPolicy,
-        ...readPluginVersions([join(codexHome, "plugins/cache/palmagent/palmagent", plugin.version, ".codex-plugin/plugin.json")])[0] });
-      if (result.at(-1)!.version !== plugin.version) throw new Error("Codex installed manifest does not match its inventory");
-    }
+    discoveryStep({ source: "codex-plugins", code: "invalid-plugin" }, "Could not verify installed Codex plugin manifests", () => {
+      const context = { manager: "codex" as const, home: codexHome, cwd: codexHome };
+      const inventory = discoveryStep({ source: "codex-plugins", code: "invalid-response" }, "Codex returned an invalid plugin inventory",
+        () => codexInventory.parse(JSON.parse(command(context, ["list", "--json"], execute))));
+      if (inventory.installed.some((p) => p.pluginId.endsWith("@palmagent") && p.pluginId !== id)) throw new Error("Palmagent marketplace has unrelated installed plugins");
+      for (const plugin of inventory.installed.filter((p) => p.pluginId === id)) {
+        version.parse(plugin.version);
+        result.push({ ...context, scope: "user", enabled: plugin.enabled, policy: plugin.installPolicy,
+          ...readPluginVersions([join(codexHome, "plugins/cache/palmagent/palmagent", plugin.version, ".codex-plugin/plugin.json")])[0] });
+        if (result.at(-1)!.version !== plugin.version) throw new UpdateDiscoveryError({ source: "codex-plugins", code: "invalid-plugin" }, "Codex installed manifest does not match its inventory");
+      }
+    });
   }
   const homes = new Set([process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), cfg.claudeConfigDir].filter(Boolean).map((p) => resolve(p)));
   for (const home of homes) {
     if (!existsSync(join(home, "plugins"))) continue;
-    const context = { manager: "claude" as const, home, cwd: home };
-    const inventory = claudeInventory.parse(JSON.parse(command(context, ["list", "--json"], execute)));
-    for (const plugin of inventory.filter((p) => p.id === id)) {
-      version.parse(plugin.version);
-      const manifest = readPluginVersions([join(plugin.installPath, ".claude-plugin/plugin.json")])[0];
-      if (manifest.version !== plugin.version) throw new Error("Claude installed manifest does not match its inventory");
-      result.push({ ...context, ...manifest, scope: plugin.scope, enabled: plugin.enabled,
-        cwd: plugin.projectPath || home });
-    }
+    discoveryStep({ source: "claude-plugins", code: "invalid-plugin" }, "Could not verify installed Claude plugin manifests", () => {
+      const context = { manager: "claude" as const, home, cwd: home };
+      const inventory = discoveryStep({ source: "claude-plugins", code: "invalid-response" }, "Claude returned an invalid plugin inventory",
+        () => claudeInventory.parse(JSON.parse(command(context, ["list", "--json"], execute))));
+      for (const plugin of inventory.filter((p) => p.id === id)) {
+        version.parse(plugin.version);
+        const manifest = readPluginVersions([join(plugin.installPath, ".claude-plugin/plugin.json")])[0];
+        if (manifest.version !== plugin.version) throw new Error("Claude installed manifest does not match its inventory");
+        result.push({ ...context, ...manifest, scope: plugin.scope, enabled: plugin.enabled,
+          cwd: plugin.projectPath || home });
+      }
+    });
   }
   return result;
 }
