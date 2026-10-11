@@ -94,7 +94,7 @@ async function run() {
       navigator.serviceWorker.controller.postMessage({ type: "PALMAGENT_VERSION" }, [channel.port2]);
     }));
     assert.equal(workerVersion, JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8")).version);
-    assert.equal(await page.getByText("Updating Palmagent…", { exact: true }).count(), 0, "first installation is not an update");
+    assert.equal(await page.getByRole("progressbar", { name: "Palmagent update" }).count(), 0, "first installation is not an update");
     if (!swState.controller) throw new Error("SW is not controlling the page after install");
 
     // Two tabs have different drafts; activation in one must preserve both.
