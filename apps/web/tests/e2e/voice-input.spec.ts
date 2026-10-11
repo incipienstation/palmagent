@@ -6,18 +6,25 @@ async function microphone(page: Page, mode = "ok", delayStart = false) {
     const state: any = (window as any).voiceTest = { speaking: false, stopped: 0, closed: 0, audioClosed: 0, workletMessages: [] };
     const track = { stop: () => state.stopped++, onended: null };
     const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
+    const Motion = class {};
+    (Motion as any).requestPermission = () => Promise.resolve("granted");
+    Object.defineProperty(window, "DeviceMotionEvent", { configurable: true, value: Motion });
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: () => {
       if (mode === "denied") return Promise.reject(new DOMException("denied", "NotAllowedError"));
       if (mode === "pending") return new Promise(resolve => { state.allow = () => resolve(stream); });
       return Promise.resolve(stream);
     } } });
     (window as any).AudioContext = class {
-      resume() { return Promise.resolve(); }
+      state = "running";
+      resume() { this.state = "running"; return Promise.resolve(); }
       close() { state.audioClosed++; return Promise.resolve(); }
-      createMediaStreamSource() { return { connect() {} }; }
-      createMediaStreamDestination() { return { stream: { getAudioTracks: () => [{ stop() {}, onended: null }] } }; }
+      createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+      createMediaStreamDestination() {
+        const tracks = [{ stop() {}, onended: null }];
+        return { stream: { getAudioTracks: () => tracks, getTracks: () => tracks } };
+      }
       audioWorklet = { addModule: () => Promise.resolve() };
-      createAnalyser() { return { fftSize: 1024, getFloatTimeDomainData(array: Float32Array) { array.fill(state.speaking ? 0.04 : 0); } }; }
+      createAnalyser() { return { fftSize: 1024, getFloatTimeDomainData(array: Float32Array) { array.fill(state.speaking ? 0.04 : 0); }, disconnect() {} }; }
     };
     (window as any).AudioWorkletNode = class {
       port: any;
@@ -346,4 +353,78 @@ for (const draft of ["text", "image", "skill"]) test(`recording keeps a ${draft}
   if (draft === "skill") await expect(page.getByRole("button", { name: "Remove check skill" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel voice input" }).click();
   await expect(input).toBeVisible();
+});
+
+test("shake opt-in starts and stops dictation in a visible conversation and keeps send manual", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const calls = await microphone(page);
+  let submissions = 0;
+  page.on("request", request => { if (request.method() === "POST" && request.url().endsWith("/messages")) submissions++; });
+  await page.goto("/#/task/t-idle-interrupted");
+
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const shake = settings.getByRole("switch", { name: "Shake to dictate" });
+  await expect(shake).toBeVisible();
+  await expect(shake).not.toBeChecked();
+  await shake.click();
+  await expect(shake).toBeChecked();
+
+  const emit = (times: number[]) => page.evaluate(async (values) => {
+    const motion = (x: number) => {
+      const event = new Event("devicemotion");
+      Object.defineProperty(event, "acceleration", { value: { x, y: 0, z: 0 } });
+      window.dispatchEvent(event);
+    };
+    motion(0);
+    for (const value of values) {
+      motion(value);
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+  }, times);
+  await emit([4, 0, 4, 0, 4]);
+  expect(calls.starts()).toBe(0);
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(settings).toBeVisible();
+  await expect(settings).toHaveAttribute("data-state", "open");
+  await emit([4, 0, 4, 0, 4]);
+  expect(calls.starts()).toBe(0);
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+
+  await emit([4, 0, 4, 0, 4]);
+  await expect(page.getByRole("button", { name: "Stop voice input" })).toBeVisible();
+  await expect.poll(calls.starts).toBe(1);
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  await page.evaluate(() => (window as any).voiceTest.emit("shake", " Shake draft"));
+  await expect(input).toHaveValue("Shake draft");
+
+  await emit([0, 0, 0, 0, 0, 0, 0, 0]);
+  await emit([4, 0, 4, 0, 4]);
+  await expect(page.getByText("Finishing transcription…")).toBeAttached();
+  await expect(input).toHaveValue("Shake draft");
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
+  await expect.poll(calls.stops).toBe(1);
+
+  expect(submissions).toBe(0);
+});
+
+test("denied microphone permission leaves shake input off and explains the fallback", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await microphone(page, "denied");
+  await page.goto("/#/task/t-idle-interrupted");
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const shake = settings.getByRole("switch", { name: "Shake to dictate" });
+  await shake.click();
+  await expect(settings.getByText("Allow microphone access to start voice input by shaking.")).toBeVisible();
+  await expect(shake).not.toBeChecked();
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Start voice input" })).toBeEnabled();
 });

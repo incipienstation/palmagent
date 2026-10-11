@@ -1,6 +1,7 @@
 import type { SkillContext, VoiceClientTimings } from "@palmagent/shared";
 import { api } from "./api";
 import { beginBrowserWork } from "./update-state";
+import { beginVoiceAudioUse, getVoiceAudioContext } from "./voice-audio-context";
 
 export type VoiceState = "idle" | "recording" | "stopping";
 export const VOICE_METER_BARS = 128;
@@ -8,6 +9,7 @@ export const VOICE_METER_INTERVAL_MS = 100;
 const elapsedMs = (start: number) => Math.round((performance.now() - start) * 10) / 10;
 const VOICE_BUFFER_MAX_SECONDS = 27;
 const VOICE_BUFFER_WORKLET_URL = new URL("voice-buffer-worklet.js", document.baseURI).href;
+const workletModules = new WeakMap<AudioContext, Promise<{ ok: true } | { ok: false; error: unknown }>>();
 
 // Only one microphone per page. This also covers two mounted composers.
 let current: VoiceInput | undefined;
@@ -16,8 +18,12 @@ export class VoiceInput {
   private finishing = false;
   private controller = new AbortController();
   private release = beginBrowserWork();
+  private releaseAudio = beginVoiceAudioUse();
   private stream?: MediaStream;
   private audio?: AudioContext;
+  private source?: MediaStreamAudioSourceNode;
+  private analyser?: AnalyserNode;
+  private destination?: MediaStreamAudioDestinationNode;
   private processor?: AudioWorkletNode;
   private peer?: RTCPeerConnection;
   private channel?: RTCDataChannel;
@@ -51,13 +57,15 @@ export class VoiceInput {
         throw new Error("Voice input needs HTTPS and a browser with microphone support.");
       }
       // Resume inside the button gesture for mobile audio policies.
-      this.audio = new AudioContext();
+      this.audio = getVoiceAudioContext();
       const canBuffer = !!this.audio.audioWorklet?.addModule && typeof AudioWorkletNode !== "undefined" && !!this.audio.createMediaStreamDestination;
-      const workletReady = canBuffer
-        ? this.audio.audioWorklet!.addModule(VOICE_BUFFER_WORKLET_URL).then(
+      let workletReady = workletModules.get(this.audio);
+      if (canBuffer && !workletReady) {
+        workletReady = this.audio.audioWorklet!.addModule(VOICE_BUFFER_WORKLET_URL).then(
           () => ({ ok: true as const }), error => ({ ok: false as const, error }),
-        )
-        : undefined;
+        );
+        workletModules.set(this.audio, workletReady);
+      }
       const audioResumeAt = performance.now();
       await this.audio.resume();
       this.clientTimings.audioContextResumeMs = elapsedMs(audioResumeAt);
@@ -74,8 +82,8 @@ export class VoiceInput {
       this.stream = stream;
       const peer = this.peer = new RTCPeerConnection();
       for (const track of stream.getTracks()) track.onended = () => { if (!this.finishing) this.fail("The microphone disconnected. Start it again."); };
-      const analyser = this.audio.createAnalyser(); analyser.fftSize = 1024;
-      const source = this.audio.createMediaStreamSource(stream);
+      const analyser = this.analyser = this.audio.createAnalyser(); analyser.fftSize = 1024;
+      const source = this.source = this.audio.createMediaStreamSource(stream);
       source.connect(analyser);
       if (canBuffer) {
         const processor = this.processor = new AudioWorkletNode(this.audio, "palmagent-voice-buffer", {
@@ -84,7 +92,7 @@ export class VoiceInput {
           processorOptions: { maxSeconds: VOICE_BUFFER_MAX_SECONDS },
         });
         this.bufferDrained = false;
-        const destination = this.audio.createMediaStreamDestination();
+        const destination = this.destination = this.audio.createMediaStreamDestination();
         processor.port.onmessage = event => {
           if (event.data?.type === "overflow") return this.fail("Voice input took too long to connect. Try again.");
           if (event.data?.type === "drained") { this.bufferDrained = true; this.finishAfterBuffer(); }
@@ -201,9 +209,11 @@ export class VoiceInput {
     this.stream?.getTracks().forEach(track => track.stop());
     this.processor?.port.postMessage({ type: "cancel" });
     this.processor?.disconnect(); this.processor?.port.close();
-    this.channel?.close(); this.peer?.close(); void this.audio?.close().catch(() => {});
+    this.source?.disconnect(); this.analyser?.disconnect(); this.destination?.stream.getTracks().forEach(track => track.stop());
+    this.channel?.close(); this.peer?.close();
     if (this.id) void api.voice.stop(this.id, { outcome, ...this.clientTimings }).catch(() => {});
     if (current === this) current = undefined;
+    this.releaseAudio();
     this.release(); this.meter(Array(VOICE_METER_BARS).fill(0)); this.status("idle");
   }
   private fail(message: string) {

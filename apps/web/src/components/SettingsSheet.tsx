@@ -18,6 +18,7 @@ import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useArcadeMode } from "../ArcadeModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
 import { useSendShortcut } from "../SendShortcutProvider";
+import { useShakeToDictate } from "../ShakeToDictateProvider";
 import { useUpdateState } from "../update-state";
 import { SettingsCard, SettingsField, SettingsPanel } from "./SettingsLayout";
 import { PushToggle } from "./PushToggle";
@@ -37,6 +38,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const { mode, setMode } = useOutputMode();
   const { enabled: arcadeMode, setEnabled: setArcadeMode } = useArcadeMode();
   const { shortcut, setShortcut } = useSendShortcut();
+  const shake = useShakeToDictate();
   const [section, setSection] = useUpdateState("settings:section", "general");
   const title = useRef<HTMLHeadingElement>(null);
   const searchPathsLink = useRef<HTMLButtonElement>(null);
@@ -47,6 +49,9 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const detailId = useId();
   const shortcutId = useId();
   const arcadeId = useId();
+  const shakeId = useId();
+  const shakeDescriptionId = `${shakeId}-description`;
+  const shakeErrorId = `${shakeId}-error`;
   const home = section === "general";
   useBackLayer(open && !home, () => setSection("general"), 150);
 
@@ -111,6 +116,20 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   </ToggleGroup>
                 </SettingsField>
                 <PushToggle />
+                <Separator />
+                <SettingsField>
+                  <FieldContent>
+                    <FieldLabel variant="setting" htmlFor={shakeId}>Shake to dictate</FieldLabel>
+                    <p id={shakeDescriptionId} className="text-xs text-muted-foreground">
+                      Motion and mic permission required. In a conversation, shake to toggle; audio is used only while dictating.
+                    </p>
+                    {shake.error && <p id={shakeErrorId} role="status" className="text-xs text-destructive">{shake.error}</p>}
+                  </FieldContent>
+                  <Switch id={shakeId} checked={shake.enabled} disabled={shake.status === "requesting"}
+                    onCheckedChange={value => { void shake.setEnabled(value); }}
+                    aria-describedby={shake.error ? `${shakeDescriptionId} ${shakeErrorId}` : shakeDescriptionId}
+                    aria-busy={shake.status === "requesting"} />
+                </SettingsField>
                 <Separator />
                 <SettingsField>
                   <FieldContent>

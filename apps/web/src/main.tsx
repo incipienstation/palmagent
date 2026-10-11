@@ -4,6 +4,7 @@ import { App } from "./App";
 import { ArcadeModeProvider } from "./ArcadeModeProvider";
 import { OutputModeProvider } from "./OutputModeProvider";
 import { SendShortcutProvider } from "./SendShortcutProvider";
+import { ShakeToDictateProvider } from "./ShakeToDictateProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { setupNavigation } from "./navigation";
 import { Toaster } from "./components/ui/toaster";
@@ -34,10 +35,12 @@ async function boot() {
           <ArcadeModeProvider>
             <OutputModeProvider>
               <SendShortcutProvider>
-                <TooltipProvider>
-                  <App />
-                  <Toaster />
-                </TooltipProvider>
+                <ShakeToDictateProvider>
+                  <TooltipProvider>
+                    <App />
+                    <Toaster />
+                  </TooltipProvider>
+                </ShakeToDictateProvider>
               </SendShortcutProvider>
             </OutputModeProvider>
           </ArcadeModeProvider>
