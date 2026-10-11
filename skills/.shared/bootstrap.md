@@ -64,14 +64,21 @@ and service changes belong to the requested operation, not to CLI discovery.
 
 ## Identify the runtime backend
 
-Read `SUPERVISOR` in the selected installation's `install.env`. `palmagentd` means
-one Linux bootstrap service (`palmagentd.service`) with user-owned host processes.
-Use `<data-dir>/daemon/logs/` for host output and the bootstrap journal for startup
-failures. Normal updates and settings need no service-management sudo in this mode.
+Read `SUPERVISOR` and `DAEMON_SCOPE` in the selected installation's `install.env`.
+`SUPERVISOR=palmagentd` uses the native daemon. New installations persist
+`DAEMON_SCOPE=user` and their unit directory; doctor reports the per-installation
+`palmagentd-<data-directory-hash>.service` name. Use `systemctl --user` and
+`journalctl --user -u <service-name>` for that scope. Missing `DAEMON_SCOPE` retains
+the existing system `palmagentd.service`. Host output lives in `<data-dir>/daemon/logs/`.
 Absent `SUPERVISOR` retains legacy service diagnostics. Never restart a provider
 host or delete retained artifacts to repair the web process.
 
-New daemon installations require systemd 254+ and delegated cgroup v2 with
-`cgroup.kill`. Initial registration and removal still require sudo. Ordinary updates
-do not migrate legacy services; setup performs migration only after active work,
-terminals and routine scripts finish. Preserve the CLI's maintenance and retry holds.
+New daemon installations require systemd 254+, an accessible user manager, account
+lingering and writable delegated cgroup v2 with CPU, memory, PID and `cgroup.kill`
+support. The CLI enables lingering without an authentication prompt and probes
+isolation before registration. If host policy denies it, stop and report the
+specific prerequisite; do not add sudo or downgrade isolation. User-service
+installation and removal need no sudo; removal preserves shared account lingering.
+Ordinary updates retain service scope. Setup migrates legacy system services only
+after executions, terminals and routine scripts finish; removing old system
+registration needs one-time sudo. Preserve maintenance, migration and retry receipts.

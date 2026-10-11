@@ -9,6 +9,9 @@ import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
+import { DEFAULT_CAPS, type InstallConfig } from "../src/modules/installation/adapters/outbound/config.js";
+import { installDaemonBootstrap, removeDaemonBootstrap, startDaemonBootstrap } from "../src/modules/installation/adapters/outbound/daemon-bootstrap.js";
+import { daemonServiceName, prepareUserService, userServiceDirectory, userServiceEnvironment, verifyUserIsolation } from "../src/modules/installation/adapters/outbound/user-service.js";
 import { daemonBinary } from "../src/modules/installation/adapters/outbound/daemon-runtime.js";
 import { daemonRequest } from "../src/platform/process/daemon-client.js";
 import { DaemonStatusSchema } from "@palmagent/shared/daemon";
@@ -21,10 +24,11 @@ import type { TerminalFrame } from "@palmagent/shared/terminals";
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const artifact = resolve(process.argv[2] ?? join(repository, "build/pkg"));
 assert(existsSync(join(artifact, "daemon/manifest.json")), "Build the native package before acceptance");
-execFileSync("sudo", ["-n", "true"], { stdio: "pipe" });
+const systemScope = process.argv.includes("--system");
+if (systemScope) execFileSync("sudo", ["-n", "true"], { stdio: "pipe" });
 const root = mkdtempSync(join(tmpdir(), "palmagentd-acceptance-"));
 const dataDir = join(root, "data");
-const unit = `palmagentd-test-${randomUUID().replaceAll("-", "")}.service`;
+let unit = `palmagentd-test-${randomUUID().replaceAll("-", "")}.service`;
 const admin = (...args: string[]) => execFileSync("/usr/bin/sudo", ["-n", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const until = async (predicate: () => unknown | Promise<unknown>, label: string) => {
   for (let i = 0; i < 600; i++) {
@@ -37,6 +41,8 @@ let executions: ExecutionStore | undefined, terminals: TerminalStore | undefined
 let terminalChannel: Awaited<ReturnType<typeof unixTransport.connect>> | undefined;
 let cgroup: string | undefined;
 let cleanupConfirmed = false;
+let installed: InstallConfig | undefined;
+const originalEnvironment = { ...process.env };
 try {
   for (const directory of ["home", "control", "bin", "repo", "data/daemon", "data/releases/first"]) mkdirSync(join(root, directory), { recursive: true, mode: 0o700 });
   const packed = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", root], { cwd: artifact, encoding: "utf8" }));
@@ -67,10 +73,33 @@ try {
   };
   const save = () => writeFileSync(join(dataDir, "daemon/config.json"), JSON.stringify(config), { mode: 0o600 });
   save();
+  if (systemScope) {
   admin("systemd-run", "--quiet", "--collect", `--unit=${unit}`, `--uid=${userInfo().username}`,
     "--property=Delegate=cpu memory pids", "--property=DelegateSubgroup=control", "--property=KillMode=process", "--property=Restart=on-failure", "--property=RestartSec=1",
     "--property=LimitNOFILE=65536", "--property=TasksMax=infinity", binary, "serve", "--data-dir", dataDir);
-  cgroup = admin("systemctl", "show", unit, "--property=ControlGroup", "--value").trim();
+    cgroup = admin("systemctl", "show", unit, "--property=ControlGroup", "--value").trim();
+  } else {
+    const installerBin = join(root, "installer-bin");
+    mkdirSync(installerBin);
+    copyFileSync(join(root, "bin/sudo"), join(installerBin, "sudo"));
+    process.env.PATH = installerBin + ":" + process.env.PATH;
+    installed = {
+      mode: "package", supervisor: "palmagentd", daemonScope: "user", daemonUnitDir: userServiceDirectory(),
+      user: userInfo().username, group: userInfo().username, dataDir, pkgDir: release, workingDir: release,
+      executionNode: node, execPath: config.environment.PATH, runnerSocket: join(dataDir, "runner.sock"),
+      dbPath: config.environment.DISPATCHER_DB, host: "localhost", port, domain: "palmagent.example.com",
+      concurrency: 2, rpId: "palmagent.example.com", rpName: "Palmagent", authOrigin: "https://palmagent.example.com",
+      caps: DEFAULT_CAPS, pushSubject: "", repoRoots: join(root, "repo"), claudeConfigDir: "",
+    };
+    unit = daemonServiceName(installed);
+    prepareUserService(installed);
+    verifyUserIsolation(installed);
+    installDaemonBootstrap(installed);
+    startDaemonBootstrap(installed);
+    cgroup = execFileSync("/usr/bin/systemctl", ["--user", "show", unit, "--property=ControlGroup", "--value"], { encoding: "utf8", env: userServiceEnvironment() }).trim();
+    assert(cgroup.includes(`/user@${process.getuid!()}.service/`));
+    assert.equal(execFileSync("/usr/bin/systemctl", ["--user", "is-enabled", unit], { encoding: "utf8", env: userServiceEnvironment() }).trim(), "enabled");
+  }
   assert(cgroup.includes(unit));
   const api = async (route: string, body?: unknown): Promise<any> => {
     const response = await fetch(`http://localhost:${port}/api/${route}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(2000) });
@@ -170,18 +199,27 @@ try {
   assert.deepEqual(executions.list().map(row => [row.id, row.pid, row.release]), identities.map(row => [row.id, row.pid, row.release]));
   assert(!existsSync(join(root, "forbidden-service-call")), "Runtime must not invoke sudo or systemctl");
   await until(() => { try { daemonRequest(dataDir, { action: "stop" }); return true; } catch { return false; } }, "idle runtime stops");
+  if (installed) { removeDaemonBootstrap(installed); installed = undefined; }
+  assert(!existsSync(join(root, "forbidden-service-call")), "User installation and removal must not invoke sudo");
   console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results and cgroup cleanup without privileged runtime calls");
 } finally {
   terminalChannel?.close(); executions?.close(); terminals?.close();
   // The only privileged cleanup target is this run's uniquely named cgroup/unit.
-  spawnSync("/usr/bin/sudo", ["-n", "systemctl", "stop", unit], { stdio: "pipe" });
+  if (systemScope) spawnSync("/usr/bin/sudo", ["-n", "systemctl", "stop", unit], { stdio: "pipe" });
+  else spawnSync("/usr/bin/systemctl", ["--user", "stop", unit], { stdio: "pipe", env: userServiceEnvironment() });
   if (cgroup?.includes(unit)) {
     const group = join("/sys/fs/cgroup", cgroup);
-    if (existsSync(join(group, "cgroup.kill"))) spawnSync("/usr/bin/sudo", ["-n", "sh", "-c", 'printf 1 > "$1/cgroup.kill"', "cleanup", group], { stdio: "pipe" });
+    if (!systemScope && existsSync(join(group, "cgroup.kill"))) writeFileSync(join(group, "cgroup.kill"), "1");
+    if (systemScope && existsSync(join(group, "cgroup.kill"))) spawnSync("/usr/bin/sudo", ["-n", "sh", "-c", 'printf 1 > "$1/cgroup.kill"', "cleanup", group], { stdio: "pipe" });
     await until(() => !existsSync(join(group, "cgroup.events")) || readFileSync(join(group, "cgroup.events"), "utf8").includes("populated 0"), "fixture cleanup").catch(() => {});
     cleanupConfirmed = !existsSync(join(group, "cgroup.events")) || readFileSync(join(group, "cgroup.events"), "utf8").includes("populated 0");
   } else cleanupConfirmed = !cgroup;
-  spawnSync("/usr/bin/sudo", ["-n", "systemctl", "reset-failed", unit], { stdio: "pipe" });
+  if (systemScope) spawnSync("/usr/bin/sudo", ["-n", "systemctl", "reset-failed", unit], { stdio: "pipe" });
+  else {
+    if (installed) removeDaemonBootstrap(installed);
+    spawnSync("/usr/bin/systemctl", ["--user", "reset-failed", unit], { stdio: "pipe", env: userServiceEnvironment() });
+  }
+  process.env = originalEnvironment;
   if (cleanupConfirmed) rmSync(root, { recursive: true, force: true });
   else console.error("Acceptance fixture retained because process cleanup could not be confirmed");
 }

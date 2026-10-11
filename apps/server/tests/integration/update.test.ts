@@ -894,6 +894,7 @@ test("preflight and doctor do not require or invoke host ingress tools", async t
   const f = fixture(t);
   fakeRuntimeTools(f.root);
   assert(!preflight().some(check => check.level === "fail"));
+  assert.equal(existsSync(join(f.root, "host.jsonl")), false, "preflight must not invoke sudo or host ingress tools");
   const checks = doctor(f.cfg);
   assert(!checks.some(check => /nginx|TLS|certbot/.test(check.name)));
   assert.equal(checks.find(check => check.name === "local HTTP")?.level, "ok");

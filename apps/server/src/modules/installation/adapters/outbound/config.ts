@@ -46,6 +46,10 @@ export interface InstallConfig {
   executionNode?: string;
   /** Missing on legacy installations; migration happens through an idle setup. */
   supervisor?: "palmagentd";
+  /** Absent on existing native installations, which keep their system bootstrap until setup. */
+  daemonScope?: "user" | "system";
+  /** Persist the user unit directory so removal does not depend on the caller's XDG environment. */
+  daemonUnitDir?: string;
   /** source mode: the git checkout root. */
   repoDir?: string;
   /** systemd WorkingDirectory. */
@@ -125,6 +129,8 @@ const InstallEnv = z
     RUNNER_SOCKET: z.string().min(1).optional(),
     EXECUTION_NODE: z.string().min(1).optional(),
     SUPERVISOR: z.literal("palmagentd").optional(),
+    DAEMON_SCOPE: z.enum(["user", "system"]).optional(),
+    DAEMON_UNIT_DIR: z.string().startsWith("/").optional(),
     DISPATCHER_DB: z.string().min(1).optional(),
     WORKING_DIR: z.string().min(1).optional(),
     EXEC_PATH: z.string().min(1).optional(),
@@ -217,7 +223,7 @@ export function assertSafeInstallerIdentity(
 ): void {
   if (uid === 0) {
     throw new Error(
-      `do not run ${BRANDING.cliName} install/setup with sudo or as root; run it as the account that should own the agent processes (the CLI invokes sudo only for system files)`,
+      `do not run ${BRANDING.cliName} install/setup with sudo or as root; run it as the account that should own the agent processes`,
     );
   }
 }
@@ -303,6 +309,8 @@ export function loadConfig(
     runnerSocket: e.RUNNER_SOCKET ?? join(dataDir, "runner.sock"),
     executionNode: e.EXECUTION_NODE,
     supervisor: e.SUPERVISOR,
+    daemonScope: e.DAEMON_SCOPE,
+    daemonUnitDir: e.DAEMON_UNIT_DIR,
     dbPath,
     pkgDir,
     repoDir,
@@ -347,6 +355,8 @@ export function saveConfig(cfg: InstallConfig): string {
     cfg.pkgDir ? `PKG_DIR=${cfg.pkgDir}` : "",
     cfg.executionNode ? `EXECUTION_NODE=${cfg.executionNode}` : "",
     cfg.supervisor ? `SUPERVISOR=${cfg.supervisor}` : "",
+    cfg.daemonScope ? `DAEMON_SCOPE=${cfg.daemonScope}` : "",
+    cfg.daemonUnitDir ? `DAEMON_UNIT_DIR=${cfg.daemonUnitDir}` : "",
     cfg.repoDir ? `REPO_DIR=${cfg.repoDir}` : "",
     cfg.repoRoots ? `REPO_ROOTS=${cfg.repoRoots}` : "",
     cfg.claudeConfigDir ? `CLAUDE_CONFIG_DIR=${cfg.claudeConfigDir}` : "",

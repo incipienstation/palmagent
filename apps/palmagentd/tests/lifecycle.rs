@@ -311,3 +311,33 @@ fn incompatible_protocol_is_rejected_before_mutation() {
         1
     );
 }
+
+#[test]
+fn bootstrap_scope_preserves_isolation_and_escapes_paths() {
+    let fixture = Fixture::new();
+    for scope in ["user", "system"] {
+        let output = Command::new(&fixture.binary)
+            .args(["bootstrap-unit", "--data-dir"])
+            .arg(&fixture.data)
+            .args([
+                "--launcher",
+                "/example/a % $ launcher",
+                "--user",
+                "owner",
+                "--group",
+                "owner",
+                "--scope",
+                scope,
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains("Delegate=cpu memory pids"));
+        assert!(text.contains("DelegateSubgroup=control"));
+        assert!(text.contains("KillMode=process"));
+        assert!(text.contains("/example/a %% $$ launcher"));
+        assert_eq!(text.contains("User=owner"), scope == "system");
+        assert_eq!(text.contains("WantedBy=default.target"), scope == "user");
+    }
+}

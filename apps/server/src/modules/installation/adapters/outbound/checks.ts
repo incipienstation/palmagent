@@ -11,6 +11,7 @@ import { connectionInfo } from "./connection.js";
 import { runnerUnitName, webUnitName } from "./units.js";
 import { log, run, which } from "./sh.js";
 import { daemonStatus } from "./daemon-runtime.js";
+import { daemonServiceName, lingerEnabled, userSystemctl } from "./user-service.js";
 
 export type Level = "ok" | "warn" | "fail";
 export interface Check {
@@ -114,16 +115,6 @@ export function preflight(): Check[] {
   need("git", "install git");
   checks.push(...checkAgents());
 
-  checks.push(
-    run("sudo", ["-n", "true"]).ok
-      ? { name: "sudo", level: "ok", detail: "passwordless sudo available" }
-      : {
-          name: "sudo",
-          level: "warn",
-          detail: "sudo will prompt for a password",
-          fix: "install needs sudo for application systemd services",
-        },
-  );
   return checks;
 }
 
@@ -135,6 +126,17 @@ export function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibility: (
 
   // services
   if (cfg.supervisor === "palmagentd") {
+    if (cfg.daemonScope === "user") {
+      const unit = daemonServiceName(cfg);
+      try {
+        checks.push({ name: "user lingering", level: lingerEnabled(cfg) ? "ok" : "fail",
+          detail: "required for startup before login and after logout", fix: "run palmagent setup to verify and enable user lingering" });
+        const active = userSystemctl(["is-active", "--quiet", unit]).ok;
+        const enabled = userSystemctl(["is-enabled", "--quiet", unit]).ok;
+        checks.push({ name: "user service", level: active && enabled ? "ok" : "fail", detail: `${unit}; active=${active}; enabled=${enabled}`,
+          fix: `systemctl --user status ${unit}; journalctl --user -u ${unit}` });
+      } catch (error) { checks.push({ name: "user service", level: "fail", detail: error instanceof Error ? error.message : "User manager unavailable" }); }
+    }
     try {
       const status = daemonStatus(cfg);
       checks.push({ name: "palmagentd", level: status.isolation === "cgroup" && status.web?.alive ? "ok" : "fail",

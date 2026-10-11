@@ -52,7 +52,8 @@ are authorized by diagnosis alone. Investigate any remaining user symptom.
 
 For each failing area, gather the live evidence the CLI does not print. Inspect
 the saved installation configuration and doctor report to identify its execution
-mode. For `SUPERVISOR=palmagentd`, inspect `palmagentd.service` and
+mode. For `SUPERVISOR=palmagentd`, use the saved scope and service name from the
+doctor report; `DAEMON_SCOPE=user` requires `systemctl --user`/`journalctl --user`. Inspect
 `<data-dir>/daemon/logs/` as described in the shared bootstrap guidance. The daemon
 owns web recovery; individual provider hosts must not be restarted.
 

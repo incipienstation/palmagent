@@ -14,6 +14,9 @@ For authorized removal, run the same command without `--dry-run`; add `--purge` 
 when data deletion is requested. If active executions or terminals block it, retain the
 route and let work finish; do not bypass the refusal by killing sessions.
 
+User-service removal uses the saved scope and unit directory without sudo. Keep account
+lingering enabled because other user services may depend on it.
+
 After successful application removal, clean up exclusively owned, unchanged ingress
 resources using the shared reference. The CLI preserves all proxy/TLS resources, even
 with `--purge`. Keep shared or manually modified resources and report why. Store the

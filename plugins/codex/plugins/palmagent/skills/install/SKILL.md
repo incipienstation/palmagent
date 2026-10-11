@@ -13,7 +13,7 @@ the plugin chooses and configures the reverse proxy and TLS using the actual hos
 2. Read [host ingress](../.shared/ingress.md). Inspect DNS, listeners, routing and certificate
    ownership before choosing the connection method. Ask for the public domain if missing;
    use CLI defaults for optional runtime settings unless the user has supplied others.
-   The runtime requires Linux with systemd 254+, cgroup v2, Node, git, initial-setup sudo and at least one authenticated Claude
+   The runtime requires Linux with systemd 254+, a user manager with lingering and delegated cgroup v2, Node, git, and at least one authenticated Claude
    or Codex CLI. Resolve missing dependencies within the authorized installation; vendor
    sign-in remains interactive. nginx and Certbot are not CLI prerequisites.
 3. Preview the application changes with `<cli> install --dry-run --non-interactive
@@ -21,7 +21,8 @@ the plugin chooses and configures the reverse proxy and TLS using the actual hos
 4. For authorized installation, initialize preferences with `<cli> config init` using the
    same data directory, then run `<cli> install --non-interactive <resolved-config-flags>`.
    Use `--domain <hostname>` and preserve any requested runtime settings. Run as the agent
-   owner, not root; the CLI escalates only the application service operations that require it.
+   owner, not root. New runtime installs use a user service without sudo; host ingress or
+   missing OS dependencies may require administrator access.
 5. Read `<cli> connection --data-dir <installed-data-dir>`, configure and verify ingress using
    its contract and the shared reference. The CLI's local health success is not HTTPS success.
 6. Once HTTPS works, run `<cli> passkey --data-dir <installed-data-dir>` and give the user the

@@ -1,12 +1,13 @@
 import { installedHostArtifactPaths } from "../../../../platform/process/host-artifacts.js";
 import { activateDaemon, configureDaemon, daemonConfiguration } from "./daemon-runtime.js";
-import { assertDaemonBootstrapSupported, installDaemonBootstrap, removeDaemonBootstrap, startDaemonBootstrap } from "./daemon-bootstrap.js";
+import { assertDaemonBootstrapSupported, installDaemonBootstrap, removeDaemonBootstrap, removeDaemonRegistration, restoreDaemonBootstrap, startDaemonBootstrap, stopDaemonBootstrap } from "./daemon-bootstrap.js";
+import { assertInstallationOwner, daemonServiceName, prepareUserService, userServiceDirectory, verifyUserIsolation } from "./user-service.js";
 import { applicationChecks, applicationIdentity, verifyApplication } from "./application-verification.js";
 import { installTerminalUnits } from "./terminal-units.js";
 // Application install / setup / update / uninstall orchestration.
 // Host ingress and TLS are managed separately by the operator plugin. Every
 // mutating step is gated behind --dry-run (render + print, touch nothing) so the
-// flow is inspectable and CI-testable; only host bootstrap and legacy units need sudo.
+// flow is inspectable and CI-testable; only legacy system services need sudo.
 //
 // These commands are the packaged install/update path. Source mode supports a
 // checked-out maintainer build, but public self-update is package-only.
@@ -14,7 +15,7 @@ import { writePrivateFileAtomic } from "../../../../platform/filesystem/private-
 import { releaseContract, retainInstalledRelease } from "./execution-release.js";
 import { installExecutionUnits } from "./execution-units.js";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { BRANDING } from "@palmagent/shared";
 import {
@@ -210,6 +211,10 @@ async function gatherConfig(
     ...authFromDomain(input.domain),
     supervisor: base.supervisor ?? (rt.mode === "package" && rt.pkgDir && existsSync(join(rt.pkgDir, "daemon", "manifest.json")) ? "palmagentd" : undefined),
   };
+  if (cfg.supervisor === "palmagentd") {
+    cfg.daemonScope = "user";
+    cfg.daemonUnitDir = base.daemonUnitDir ?? userServiceDirectory();
+  }
   return cfg;
 }
 
@@ -320,7 +325,7 @@ function restartWeb(cfg: InstallConfig): void {
 }
 
 function startServices(cfg: InstallConfig): void {
-  if (cfg.supervisor === "palmagentd") { startDaemonBootstrap(); return; }
+  if (cfg.supervisor === "palmagentd") { startDaemonBootstrap(cfg); return; }
   const units = renderUnits(cfg);
   if (units.runner.name !== runnerUnitName() || units.web.name !== webUnitName()) {
     throw new Error("rendered unit names do not match the installed Palmagent units");
@@ -352,6 +357,7 @@ async function healthcheck(cfg: InstallConfig, expectedVersion?: string): Promis
 async function install(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} install`);
   if (!flags.dryRun) assertSafeInstallerIdentity();
+  if (existsSync(join(resolveDataDir(flags.get("data-dir")), "install.env"))) return setup(flags);
   const pf = preflight();
   const code = printChecks("Preflight", pf);
   if (code !== 0 && !flags.force) {
@@ -360,12 +366,11 @@ async function install(flags: Flags): Promise<number> {
     );
     return 1;
   }
-  if (!flags.dryRun && !canSudoNonInteractive()) {
-    log.warn("sudo will prompt for a password during install.");
-  }
-
   const cfg = await gatherConfig(flags);
   if (cfg.supervisor) assertDaemonBootstrapSupported();
+  if (cfg.daemonScope !== "user" && !flags.dryRun && !canSudoNonInteractive()) {
+    log.warn("sudo will prompt for legacy system service registration.");
+  }
   log.step("Configuration");
   log.info(
     `mode=${cfg.mode}  domain=${cfg.domain}  port=${cfg.port}  user=${cfg.user}  data=${cfg.dataDir}`,
@@ -378,11 +383,17 @@ async function install(flags: Flags): Promise<number> {
     return 1;
 
   if (!flags.dryRun) {
+    if (cfg.daemonScope === "user") prepareUserService(cfg);
     retainInstalledRelease(cfg);
+    if (cfg.daemonScope === "user") verifyUserIsolation(cfg);
     persistUserChannel(cfg, flags);
     const saved = saveConfig(cfg);
     log.ok(`wrote ${saved}`);
   } else {
+    if (cfg.daemonScope === "user") {
+      prepareUserService(cfg, true);
+      log.info("[dry-run] would enable user lingering if needed, verify delegated isolation, and register a user service without sudo");
+    }
     log.info("[dry-run] would write install.env");
   }
 
@@ -396,7 +407,7 @@ async function install(flags: Flags): Promise<number> {
     const ok = await healthcheck(cfg);
     if (!ok) {
       log.err(
-        `service did not become healthy — see: journalctl -u ${webUnitName()} -n 50`,
+        `service did not become healthy — see: journalctl ${cfg.daemonScope === "user" ? "--user " : ""}-u ${cfg.supervisor ? daemonServiceName(cfg) : webUnitName()} -n 50`,
       );
       return 1;
     }
@@ -415,6 +426,20 @@ async function install(flags: Flags): Promise<number> {
   return 0;
 }
 
+function finishMigrationCleanup(previous: InstallConfig): void {
+  if (previous.supervisor === "palmagentd") removeDaemonRegistration(previous);
+  else {
+    removeAutoUpdateTimer();
+    for (const unit of [webUnitName(), runnerUnitName()]) {
+      if (!sudo(["rm", "-f", join(SYSTEMD_DIR, unit)]).ok) throw new Error("Could not remove an idle legacy service");
+    }
+    for (const path of installedHostArtifactPaths()) {
+      if (!sudo(["rm", "-f", path]).ok) throw new Error("Could not remove an idle legacy service artifact");
+    }
+    if (!sudo(["systemctl", "daemon-reload"]).ok) throw new Error("Could not reload bootstrap configuration");
+  }
+}
+
 async function setup(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} setup (reconfigure)`);
   if (!flags.dryRun) assertSafeInstallerIdentity();
@@ -422,47 +447,71 @@ async function setup(flags: Flags): Promise<number> {
   // Check the current listener, even when reconfiguration selects a new port.
   const installed = loadInstalledConfig(flags);
   return withIdleActivation(installed, flags, async () => {
-    const migration = cfg.supervisor === "palmagentd" && installed.supervisor !== "palmagentd";
+    const receiptPath = join(cfg.dataDir, "daemon-migration.json");
+    if (!flags.dryRun && installed.daemonScope === "user" && existsSync(receiptPath)) {
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as { previous: InstallConfig; target: InstallConfig };
+      if (receipt.previous.dataDir !== installed.dataDir || receipt.previous.user !== installed.user ||
+          receipt.previous.daemonScope === "user" || receipt.target.dataDir !== installed.dataDir || receipt.target.daemonScope !== "user") {
+        throw new Error("Migration receipt does not match this installation; inspect it before continuing");
+      }
+      if (!await healthcheck(installed)) throw new Error("Interrupted migration needs recovery: the user runtime is not healthy; previous services have been retained");
+      finishMigrationCleanup(receipt.previous);
+      rmSync(receiptPath);
+    }
+    const migration = cfg.supervisor === "palmagentd" && (installed.supervisor !== "palmagentd" || installed.daemonScope !== "user");
+    if (migration && flags.dryRun) {
+      assertDaemonBootstrapSupported();
+      prepareUserService(cfg, true);
+      log.info("[dry-run] would verify an idle installation and user isolation, migrate to a user service, and remove the previous system services after health verification (one-time sudo)");
+      return 0;
+    }
     if (migration && !flags.dryRun) {
       assertDaemonBootstrapSupported();
       const response = await fetch(`${connectionInfo(installed).upstream}/api/health`, { signal: AbortSignal.timeout(5000) });
       const health = await response.json() as { activeRoutineScripts?: number };
       if (!response.ok || health.activeRoutineScripts !== 0) throw new Error("Migration requires verified idle routine scripts; update the existing runtime first if its health contract is older");
       assertExecutionsFinished(installed);
+      prepareUserService(cfg);
       retainInstalledRelease(cfg);
       daemonConfiguration(cfg); // Validate all artifacts before stopping the previous web service.
-      writePrivateFileAtomic(join(cfg.dataDir, "daemon-migration.json"), JSON.stringify({ previous: installed, target: cfg }) + "\n");
-      configureDaemon(cfg);
-      installDaemonBootstrap(cfg);
+      verifyUserIsolation(cfg);
+      const previousDaemonConfig = installed.supervisor === "palmagentd" ? readFileSync(join(installed.dataDir, "daemon/config.json"), "utf8") : undefined;
+      writePrivateFileAtomic(join(cfg.dataDir, "daemon-migration.json"), JSON.stringify({ previous: installed, previousDaemonConfig, target: cfg }) + "\n");
       // Existing hosts cannot be transferred with their cgroups. Migration requires an idle window.
+      let candidateStarted = false;
       try {
-        for (const unit of [webUnitName(), ...(!installed.executionNode ? [runnerUnitName()] : [])]) {
-          if (!sudo(["systemctl", "disable", "--now", unit]).ok) throw new Error("Could not stop a legacy service");
+        installDaemonBootstrap(cfg, false);
+        if (installed.supervisor === "palmagentd") stopDaemonBootstrap(installed);
+        else {
+          for (const unit of [webUnitName(), ...(!installed.executionNode ? [runnerUnitName()] : [])]) {
+            if (!sudo(["systemctl", "disable", "--now", unit]).ok) throw new Error("Could not stop a legacy service");
+          }
         }
-        saveConfig(cfg); startDaemonBootstrap();
+        configureDaemon(cfg);
+        saveConfig(cfg); candidateStarted = true; restoreDaemonBootstrap(cfg);
         if (!await healthcheck(cfg)) throw new Error("Daemon migration health check failed");
       } catch (error) {
         // Stop the candidate web through its owner before restoring the old listener.
-        try { removeDaemonBootstrap(cfg); }
+        try { if (candidateStarted) removeDaemonBootstrap(cfg); else removeDaemonRegistration(cfg); }
         catch {
           throw new Error("Migration failed and daemon shutdown could not be verified; retained both configurations for recovery", { cause: error });
         }
         saveConfig(installed);
-        const units = [webUnitName(), ...(!installed.executionNode ? [runnerUnitName()] : [])];
-        if (!sudo(["systemctl", "enable", ...units]).ok) throw new Error("Could not restore legacy startup", { cause: error });
-        startServices(installed);
+        if (previousDaemonConfig !== undefined) {
+          writePrivateFileAtomic(join(installed.dataDir, "daemon/config.json"), previousDaemonConfig);
+          restoreDaemonBootstrap(installed);
+        } else {
+          const units = [webUnitName(), ...(!installed.executionNode ? [runnerUnitName()] : [])];
+          if (!sudo(["systemctl", "enable", ...units]).ok) throw new Error("Could not restore legacy startup", { cause: error });
+          startServices(installed);
+        }
         if (!await healthcheck(installed)) throw new Error("Legacy recovery health check failed", { cause: error });
+        rmSync(join(cfg.dataDir, "daemon-migration.json"), { force: true });
         throw error;
       }
       persistUserChannel(cfg, flags);
-      removeAutoUpdateTimer();
-      for (const unit of [webUnitName(), runnerUnitName()]) {
-        if (!sudo(["rm", "-f", join(SYSTEMD_DIR, unit)]).ok) throw new Error("Could not remove an idle legacy service");
-      }
-      for (const path of installedHostArtifactPaths()) {
-        if (!sudo(["rm", "-f", path]).ok) throw new Error("Could not remove an idle legacy service artifact");
-      }
-      if (!sudo(["systemctl", "daemon-reload"]).ok) throw new Error("Could not reload bootstrap configuration");
+      finishMigrationCleanup(installed);
+      rmSync(join(cfg.dataDir, "daemon-migration.json"), { force: true });
       if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
       log.ok("migrated to the user-owned daemon runtime during verified idle maintenance");
       return 0;
@@ -472,6 +521,10 @@ async function setup(flags: Flags): Promise<number> {
 }
 
 async function applySetup(cfg: InstallConfig, flags: Flags): Promise<number> {
+  if (cfg.daemonScope === "user") {
+    prepareUserService(cfg, flags.dryRun);
+    if (!flags.dryRun) { retainInstalledRelease(cfg); verifyUserIsolation(cfg); installDaemonBootstrap(cfg); }
+  }
   const artifactChanged = runnerArtifactChanged(cfg);
   if (!flags.dryRun) {
     persistUserChannel(cfg, flags);
@@ -535,6 +588,7 @@ function npmGlobalInstall(pkg: string, version: string, globalRoot: string): boo
 
 async function update(flags: Flags): Promise<number> {
   const cfg = loadInstalledConfig(flags);
+  if (cfg.daemonScope === "user") assertInstallationOwner(cfg);
   cfg.releaseChannel = flags.get("channel") !== undefined
     ? setUserChannel(flags.get("channel")!, { dryRun: true }).channel
     : getUserConfig({ dataDir: cfg.dataDir }).channel;
@@ -871,6 +925,7 @@ async function activateInstalledUpdate(cfg: InstallConfig, flags: Flags, expecte
 async function uninstall(flags: Flags): Promise<number> {
   log.step(`${BRANDING.productName} uninstall`);
   const cfg = loadInstalledConfig(flags);
+  if (cfg.daemonScope === "user") assertInstallationOwner(cfg);
   if (flags.purge) {
     assertSafePurgeTarget(cfg.dataDir);
     assertUserConfigPreserved(cfg.dataDir);
@@ -878,7 +933,7 @@ async function uninstall(flags: Flags): Promise<number> {
   const units = renderUnits(cfg);
   if (flags.dryRun) {
     log.info(
-      `[dry-run] would stop+disable ${units.web.name} and ${units.runner.name}, remove their application unit files; preserve host proxy and TLS resources`,
+      `[dry-run] would stop+disable ${cfg.supervisor ? daemonServiceName(cfg) : `${units.web.name} and ${units.runner.name}`} (${cfg.daemonScope ?? "system"} scope), remove its service files; preserve host proxy, TLS and user lingering`,
     );
     if (flags.purge)
       log.info(`[dry-run] --purge would DELETE the data dir ${cfg.dataDir}`);
@@ -901,14 +956,16 @@ async function uninstall(flags: Flags): Promise<number> {
     initUserConfig({ dataDir: cfg.dataDir });
     if (cfg.supervisor === "palmagentd") removeDaemonBootstrap(cfg);
     else removeAutoUpdateTimer();
-    for (const name of [units.web.name, units.runner.name]) {
-      sudo(["systemctl", "disable", "--now", name]);
-      sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
+    if (!cfg.supervisor) {
+      for (const name of [units.web.name, units.runner.name]) {
+        sudo(["systemctl", "disable", "--now", name]);
+        sudo(["rm", "-f", join(SYSTEMD_DIR, name)]);
+      }
+      if (cfg.executionNode) {
+        for (const path of installedHostArtifactPaths()) sudo(["rm", "-f", path]);
+      }
+      sudo(["systemctl", "daemon-reload"]);
     }
-    if (cfg.executionNode) {
-      for (const path of installedHostArtifactPaths()) sudo(["rm", "-f", path]);
-    }
-    sudo(["systemctl", "daemon-reload"]);
     log.ok("application services removed; host proxy and TLS resources preserved for operator cleanup");
 
     if (flags.purge) {
@@ -919,9 +976,11 @@ async function uninstall(flags: Flags): Promise<number> {
           false,
         ));
       if (approved) {
-        const removed = sudo(["rm", "-rf", cfg.dataDir]);
-        if (!removed.ok)
-          throw new Error(`failed to purge ${cfg.dataDir}:\n${removed.stderr}`);
+        if (cfg.daemonScope === "user") rmSync(cfg.dataDir, { recursive: true });
+        else {
+          const removed = sudo(["rm", "-rf", cfg.dataDir]);
+          if (!removed.ok) throw new Error(`failed to purge ${cfg.dataDir}:\n${removed.stderr}`);
+        }
         log.ok(`purged ${cfg.dataDir}`);
       } else {
         log.info(`data preserved at ${cfg.dataDir}`);

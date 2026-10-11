@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- New Linux runtime installations use a user service with lingering, removing sudo from runtime installation and removal on supported hosts. Existing system services migrate during idle setup; ordinary updates preserve their service scope.
+
 ## 0.1.0-alpha.182
 
 ### Changed
