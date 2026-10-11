@@ -224,9 +224,9 @@ test("a failed plugin lookup explains its cause and Check again clears the stale
   });
   await openSettings(page);
   await expect(page.getByText("Codex plugin check failed. The check timed out. Try again.")).toBeVisible();
-  await expect(page.getByText("You are up to date.")).toHaveCount(0);
+  await expect(page.getByText("Up to date", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Check again", exact: true }).click();
-  await expect(page.getByText("You are up to date.")).toBeVisible();
+  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
   await expect(page.getByText(/Codex plugin check failed/)).toHaveCount(0);
 });
 
