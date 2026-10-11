@@ -11,6 +11,8 @@ export interface RunResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  /** Preserve spawn failures separately from a command's exit status. */
+  errorCode?: string;
 }
 
 /** Run a command, capturing output. Never throws — inspect `.ok`. */
@@ -31,6 +33,7 @@ export function run(
     code: r.status,
     stdout: (r.stdout ?? "").toString(),
     stderr: (r.stderr ?? "").toString(),
+    ...(r.error ? { errorCode: (r.error as NodeJS.ErrnoException).code } : {}),
   };
 }
 

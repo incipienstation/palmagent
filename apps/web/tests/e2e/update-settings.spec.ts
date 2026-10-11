@@ -203,6 +203,26 @@ test("Settings checks the registry and requests the displayed update without ena
   expect(actions).toContainEqual({ action: "install", version: "0.1.0-alpha.5" });
 });
 
+test("a failed plugin lookup explains its cause and Check again clears the stale failure", async ({ page }) => {
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  state.settings!.discovery = { channel: "preview", currentVersion: state.currentVersion!, targetVersion: null,
+    checkedAt: new Date().toISOString(), eligible: false, error: true,
+    failure: { source: "codex-plugins", code: "timeout", exitCode: null } };
+  await page.route("**/api/settings/updates", async route => {
+    if (route.request().method() === "POST" && route.request().postDataJSON().action === "check") {
+      state.settings!.discovery = { channel: "preview", currentVersion: state.currentVersion!, targetVersion: state.currentVersion,
+        checkedAt: new Date().toISOString(), eligible: true, pluginsPending: 0, error: false };
+    }
+    await route.fulfill({ json: state });
+  });
+  await openSettings(page);
+  await expect(page.getByText("Codex plugin check failed. The check timed out. Try again.")).toBeVisible();
+  await expect(page.getByText("You are up to date.")).toHaveCount(0);
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.getByText("You are up to date.")).toBeVisible();
+  await expect(page.getByText(/Codex plugin check failed/)).toHaveCount(0);
+});
+
 test("a changed server keeps the screen open when worker registration is blocked", async ({ page }) => {
   await page.route("**/api/settings/updates", (route) => route.fulfill({
     json: updateSettings, headers: { "x-palmagent-version": "0.1.0-alpha.999" },

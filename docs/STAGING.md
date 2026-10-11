@@ -36,8 +36,15 @@ Palmagent configuration home; use separate owner accounts or explicitly isolated
 Eligible product changes merged into `develop` trigger Preview preparation,
 verification, and publication. The installed updater discovers the published version
 when the signed-in app connects or returns to the foreground. Ordinary access reuses
-a 15-minute discovery cache; **Check again** refreshes it. Merely waiting does not
+a 15-minute successful discovery cache; failed checks are retried on the next access
+after one minute. **Check again** bypasses either cache. Merely waiting does not
 trigger a check, and a tag or successful CI run does not prove installation.
+
+Failed lookups retain a safe source and error category in `auto-update status`, and
+Settings shows the corresponding cause. Plugin inventory failures, missing commands,
+timeouts, registry failures and incompatible releases are distinct; command output,
+credentials and private paths are not included. Older failure records may have no
+details; check again to obtain a current result.
 
 Enabling automatic updates authorizes eligible updates under that saved policy;
 do not add another staging approval for each release. Updates stay within the current
