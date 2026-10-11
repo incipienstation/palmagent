@@ -47,21 +47,28 @@ test("settings sections fit the desktop viewport", async ({ page }) => {
   await page.goto("/");
   const settings = await openSettings(page);
   await expect(settings.getByRole("region", { name: "On this device" })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "On this device" }).getByText("Shake to dictate", { exact: true })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Experimental" })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Experimental" }).getByText("Auto-open games", { exact: true })).toBeVisible();
   await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
   await assertViewportLocked(page);
   expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
 });
 
-test("mobile settings fit, preserve preferences, and keep sign-out cancellable", async ({ page }) => {
+test("mobile settings scroll, preserve preferences, and keep sign-out cancellable", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await page.goto("/");
   const settings = await openSettings(page);
   await expect(settings.getByRole("region", { name: "On this device" })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Experimental" })).toBeVisible();
+  await expect(settings.getByRole("region", { name: "Experimental" }).getByText("Auto-open games", { exact: true })).toBeVisible();
   await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
   await assertViewportLocked(page);
   expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  await expect(settings.getByRole("button", { name: "Sign out", exact: true })).toBeInViewport();
   await expect(settings).toHaveScreenshot("compact-settings.png");
+  const signOut = settings.getByRole("button", { name: "Sign out", exact: true });
+  await signOut.scrollIntoViewIfNeeded();
+  await expect(signOut).toBeInViewport();
   const light = page.getByRole("radio", { name: "Light theme" });
   await light.click();
   await light.click();

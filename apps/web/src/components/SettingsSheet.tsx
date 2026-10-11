@@ -131,10 +131,15 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                     aria-busy={shake.status === "requesting"} />
                 </SettingsField>
                 <Separator />
+              </SettingsCard>
+            </SettingsGroup>
+
+            <SettingsGroup label="Experimental">
+              <SettingsCard>
                 <SettingsField>
                   <FieldContent>
                     <FieldLabel variant="setting" htmlFor={arcadeId}>Arcade mode</FieldLabel>
-                    <p id={`${arcadeId}-description`} className="text-xs text-muted-foreground">Auto-open games · Experimental</p>
+                    <p id={`${arcadeId}-description`} className="text-xs text-muted-foreground">Auto-open games</p>
                   </FieldContent>
                   <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
                 </SettingsField>
