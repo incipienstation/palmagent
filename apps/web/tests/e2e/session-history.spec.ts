@@ -535,17 +535,19 @@ test("scrolling away and back preserves a tool row's collapsed override", async 
   // Verbose starts expanded. Retain a non-default override across unmounting.
   await row.getByRole("button").click();
   await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
-  // As with expectBottom, require the post-collapse layout to remain in view
-  // across frames. A single visible frame can precede Virtuoso's measurement
-  // correction and race the next synthetic scroll.
+  // Require a quiet layout interval after collapse. Four fast frames can finish
+  // before Virtuoso's 150ms scroll-target retry and race the next wheel input.
   await expect.poll(() => viewport(page).evaluate(async (el) => {
-    for (let frame = 0; frame < 4; frame++) {
+    const top = el.scrollTop, height = el.scrollHeight;
+    const until = performance.now() + 250;
+    do {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      if (Math.abs(el.scrollTop - top) > 1 || el.scrollHeight !== height) return false;
       const row = el.querySelector('[data-message-key="2001"]');
       const box = row?.getBoundingClientRect();
       const pane = el.getBoundingClientRect();
       if (!box || box.top < pane.top - 1 || box.bottom > pane.bottom + 1) return false;
-    }
+    } while (performance.now() < until);
     return true;
   })).toBe(true);
   // Use browser input so wheel handling and the resulting scroll run in their
