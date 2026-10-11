@@ -10,6 +10,9 @@ import { useToastObstacle } from "../hooks/useToastObstacle";
 import { SendControl } from "./SendControl";
 import { MessageQueue as QueuePanel } from "./MessageQueue";
 import { useUpdateState } from "../update-state";
+import { MessageRetryStatus } from "./MessageRetryStatus";
+import type { DeliveryControls } from "./MessageDelivery";
+import { useMessageRetry } from "../message-retry";
 import { useEffect, useRef, useState } from "react";
 import { needsTaskAttention, type TaskState } from "@palmagent/shared";
 import { notifyConversation } from "../conversation-notifications";
@@ -51,6 +54,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const taskId = existingId ?? "new";
   const navigation = useAppNavigation();
   const creating = !existingId;
+  const messageRetry = useMessageRetry(creating ? "dispatch" : taskId);
   const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -86,6 +90,11 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   };
   const heading = creating ? "New task" : task ? taskTitle(task) : "Conversation";
   const showingFirstMessage = !!newChat.preview && !history.earlier.hasMore && !log.some(item => item.kind === "status" && (item.event.payload as { subtype?: string })?.subtype === "dispatch");
+  const delivery: DeliveryControls = creating ? newChat.delivery : {
+    messages: [...(showingFirstMessage ? newChat.delivery.messages : []), ...pendingDeliveries],
+    paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit, resumeDisabled,
+    onDelete: m => void queueAction(m, "delete"), onResume: () => void resume(true),
+  };
 
   return (
     <div className={terminalOpen ? "mx-auto flex max-w-[1600px]" : undefined}>
@@ -149,13 +158,12 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
         <EventLog taskId={existingId} log={log} live={running && !compaction.running} blocked={status === "awaiting_input" || status === "awaiting_approval"} history={history}
           empty={creating ? <p className="text-center font-sans text-lg text-muted-foreground">What should we work on?</p> : undefined}
           prompt={showingFirstMessage ? undefined : task?.prompt}
-          delivery={creating ? newChat.delivery : { messages: [...(showingFirstMessage ? newChat.delivery.messages : []), ...pendingDeliveries], paused: queue?.paused ?? false, disabled: busy || localOwner || !!edit,
-            resumeDisabled, onDelete: m => void queueAction(m, "delete"),
-            onResume: () => void resume(true) }} />
+          delivery={{ ...delivery, waitingForConnection: !!messageRetry, pendingHint: messageRetry ? undefined : delivery.pendingHint }} />
 
         {/* Composer + conditional answer/approval zones — plane-2 sticky footer,
             keyboard-safe (interactive-widget=resizes-content). */}
         <div ref={toastObstacle} className="relative flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
+          <MessageRetryStatus scope={creating ? "dispatch" : taskId} />
           <div className="pointer-events-none absolute inset-x-3 top-0 h-4 overflow-hidden" aria-live="polite">
             {(compaction.running || activity.label && !isSendingAction(activity.kind)) &&
               <p role="status" className="truncate text-xs leading-4 text-muted-foreground">{activity.label ?? (status === "queued" ? "Waiting to compact context…" : "Compacting context…")}</p>}

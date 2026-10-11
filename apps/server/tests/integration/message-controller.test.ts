@@ -100,3 +100,21 @@ test("failed skill validation before spawn is rejected, never recorded as uncert
   assert.equal(f.c.snapshot("t").messages[0].error, "Skill is unavailable");
   assert.equal(f.c.snapshot("t").paused, true);
 });
+
+test("lost submission receipts survive replacement without replaying delivery or reopening admission", t => {
+  const f = fixture(t);
+  const request = { clientMessageId: randomUUID(), mode: "send" as const, text: "One delivery", expectedRunId: f.c.state("t").runId };
+  f.c.submit("t", request);
+  assert.deepEqual(f.steers, ["One delivery"]);
+  f.restart(true);
+  f.writable(false);
+  const recovered = f.c.submit("t", request);
+  assert.equal(recovered.messages[0].status, "unknown");
+  assert.equal(recovered.paused, true);
+  assert.deepEqual(f.steers, ["One delivery"], "HTTP replay only reads the durable receipt");
+  assert.throws(() => f.c.submit("t", { ...request, text: "Changed" }), /different content/);
+  assert.throws(() => f.c.submit("t", { ...request, clientMessageId: randomUUID() }), /local owner/);
+  f.c.delivered("t", request.clientMessageId);
+  assert.deepEqual(f.c.submit("t", request).messages, []);
+  assert.deepEqual(f.steers, ["One delivery"]);
+});

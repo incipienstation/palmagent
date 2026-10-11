@@ -31,6 +31,19 @@ Channel and auto-update preferences are shared by installations using the same
 Palmagent configuration home; use separate owner accounts or explicitly isolated
 `PALMAGENT_HOME` values when installations must have different preferences.
 
+Message submissions wait through a brief maintenance window or connection interruption for up
+to two minutes. The browser retains the submitted text, attachments and request ID, shows the
+wait, and lets the user stop automatic retries. A pending submission delays automatic screen
+replacement until it settles. If the wait expires, the input remains available for recovery;
+closing the browser is not a background delivery mechanism.
+
+Task creation and message submission carry a separate compatibility version defined in
+`packages/shared/src/http.ts`. Matching message contracts can cross application build versions;
+other writes still require the current screen. Incompatible changes to either submission's
+request, response or delivery semantics must advance that contract. Authentication, maintenance
+admission and the original target run remain enforced. Retrying an accepted request only reads
+its stored result and never retries an uncertain provider delivery.
+
 ## Follow Preview
 
 Eligible product changes merged into `develop` trigger Preview preparation,

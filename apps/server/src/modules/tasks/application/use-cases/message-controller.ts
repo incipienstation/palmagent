@@ -97,10 +97,12 @@ export class MessageController {
     m.status = "delivered"; m.error = undefined; this.save(id, s);
   }
   submit(id: string, req: SubmitMessage) {
-    this.host.assertWritable(id);
     const s = this.state(id), fingerprint = this.ids.digest(JSON.stringify(req));
     const old = s.messages.find(m => m.id === req.clientMessageId);
     if (old) { if (old.fingerprint !== fingerprint) conflict("This message ID was already used with different content."); return this.snapshot(id); }
+    // A lost HTTP receipt is a read of an already accepted submission. Return it
+    // even if maintenance or the task's lifecycle now prevents new messages.
+    this.host.assertWritable(id);
     if (s.messages.filter(m => m.status !== "delivered" && m.status !== "cancelled").length >= 100) conflict("The message queue is full.");
     if (req.mode === "send" && req.expectedRunId !== s.runId) conflict("The active run changed. Review the message and send again.");
     if (req.mode === "send") {

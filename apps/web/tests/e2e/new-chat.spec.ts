@@ -81,7 +81,7 @@ test("unknown creation checks its ID before retry and never changes the submitte
   await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(1);
 });
 
-test("a lost response reconnects to the created task without another POST", async ({ page }) => {
+test("a lost response automatically reconnects to the created task without another POST", async ({ page }) => {
   let writes = 0; let id = "";
   await page.route("**/api/tasks", route => {
     if (route.request().method() !== "POST") return route.continue();
@@ -92,7 +92,7 @@ test("a lost response reconnects to the created task without another POST", asyn
   await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).fill("Reconnect me");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
-  await page.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect.poll(() => id).not.toBe("");
   await expect(page).toHaveURL(new RegExp(`task/t_${id}$`));
   expect(writes).toBe(1);
   expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt:repo-app"))).toBeNull();

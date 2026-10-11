@@ -3,6 +3,8 @@ import { cacheSession, invalidateClientReads, type ClientReadScope } from "./que
 import { hc } from "hono/client";
 import type { AppType } from "@palmagent/server/http-api";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
+import { retryMessage } from "./message-retry";
 import type {
   AgentKind, AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
   CreateTaskRequest, FollowupRequest, MessageAction, PushSubscribeRequest,
@@ -38,18 +40,19 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
 
   // Hono owns paths, query encoding, bodies, and response types. Keep the product's
   // auth/update lifecycle around the typed call, including response consumption.
-  async function request<T>(send: () => Promise<JsonResponse<T>>, opts?: {
+  async function request<T>(send: (signal?: AbortSignal) => Promise<JsonResponse<T>>, opts?: {
     write?: boolean; authProbe?: boolean; sessionChange?: boolean; invalidates?: readonly ClientReadScope[];
+    messageScope?: string;
   }): Promise<T> {
     const finish = opts?.write ? beginBrowserWork() : undefined;
     // Invalidate on both sides: reads racing a write cannot refill the cache,
     // including when a failed response leaves the write outcome uncertain.
     // Keep a pending sign-out on its current screen. Retire the session only
     // when the auth write succeeds (or a 401 confirms it is already invalid).
-    if (opts?.write && !opts.sessionChange) await invalidateClientReads(false, opts.invalidates);
     const generation = cacheSession();
-    const load = async () => {
-      const res = await send();
+    const load = async (signal?: AbortSignal) => {
+      if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
+      const res = await send(signal);
       if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
       observeServerVersion(res.headers.get("x-palmagent-version"));
       if (!res.ok) {
@@ -70,12 +73,21 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       return value;
     };
     try {
-      const value = await load();
+      if (opts?.write && !opts.sessionChange) await invalidateClientReads(false, opts.invalidates);
+      const value = opts?.messageScope ? await retryMessage(opts.messageScope, load, error => {
+        if (error instanceof ApiError) {
+          if (error.status === 503 && error.code === "update_in_progress") return "Waiting for update…";
+          if (error.status === 502 || error.status === 504) return "Reconnecting to send…";
+        }
+        if (error instanceof TypeError || error instanceof DOMException && error.name === "TimeoutError") return "Reconnecting to send…";
+        return undefined;
+      }) : await load();
       if (opts?.sessionChange) await invalidateClientReads(true);
       return value;
     } finally {
-      if (opts?.write && !opts.sessionChange && generation === cacheSession()) await invalidateClientReads(false, opts.invalidates);
-      finish?.();
+      try {
+        if (opts?.write && !opts.sessionChange && generation === cacheSession()) await invalidateClientReads(false, opts.invalidates);
+      } finally { finish?.(); }
     }
   }
   const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false, sessionChange = false, invalidates: readonly ClientReadScope[] = []) =>
@@ -101,7 +113,12 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       get: () => request(() => client.settings.repos.$get()),
       change: (json: RepoSettingsChange) => write(() => client.settings.repos.$patch({ json })),
     },
-    submitMessage: (id: string, json: SubmitMessage) => write(() => tasks.messages.$post({ param: idParam(id), json })),
+    submitMessage: (id: string, input: SubmitMessage) => {
+      const json = structuredClone(input);
+      return request(signal => tasks.messages.$post({ param: idParam(id), json }, {
+        headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
+      }), { write: true, messageScope: id });
+    },
     messageAction: (id: string, messageId: string, json: MessageAction) => write(() => tasks.messages[":messageId"].$post({ param: { ...idParam(id), messageId: encodeURIComponent(messageId) }, json })),
     resumeQueue: (id: string) => write(() => tasks.queue.resume.$post({ param: idParam(id), json: {} })),
     compact: (id: string, json: import("@palmagent/shared").CompactTaskRequest) => write(() => tasks.compact.$post({ param: idParam(id), json })).then(r => r.task),
@@ -130,7 +147,22 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     }, { init: { signal } })),
     getTask: (id: string) => request(() => tasks.$get({ param: idParam(id) })).then((r) => r.task),
     getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
-    createTask: (json: CreateTaskRequest) => write(() => client.tasks.$post({ json })).then((r) => r.task),
+    createTask: (input: CreateTaskRequest) => {
+      const json = structuredClone(input);
+      // Legacy callers without an idempotency key must never be replayed.
+      let attempted = false;
+      return (json.clientRequestId ? request(async signal => {
+        if (attempted) {
+          const found = await tasks.$get({ param: idParam(`t_${json.clientRequestId}`) }, requestOptions(signal));
+          if (found.status !== 404) return found;
+        }
+        signal?.throwIfAborted();
+        attempted = true;
+        return client.tasks.$post({ json }, {
+          headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
+        });
+      }, { write: true, messageScope: "dispatch" }) : write(() => client.tasks.$post({ json }))).then(r => r.task);
+    },
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
     agentInstallations: (signal?: AbortSignal) => request(() => client.agents.$get({}, requestOptions(signal))),

@@ -12,7 +12,7 @@ const { code } = await transform(source, { loader: 'ts', format: 'cjs', define: 
   __PALMAGENT_WEB_VERSION__: '"1.0.0"', 'import.meta.env.PROD': 'true',
 } });
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-function setup(t, { workerVersion = '1.0.0', controlled = true, waiting = false, update = async () => {}, checkpoint = async () => true } = {}) {
+function setup(t, { workerVersion = '1.0.0', controlled = true, waiting = false, update = async () => {}, checkpoint = async () => true, browserWorkPending = () => false } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let reloads = 0;
   let streamChanges = 0;
@@ -40,13 +40,27 @@ function setup(t, { workerVersion = '1.0.0', controlled = true, waiting = false,
       subscribe(() => snapshots.push(get()));
       return get();
     },
-    browserStateChanged() { stateChanged(); }, browserWorkPending: () => false,
+    browserStateChanged() { stateChanged(); }, browserWorkPending,
     checkpointBrowserState: checkpoint, onBrowserStateChange(listener) { stateChanged = listener; },
   });
   const api = module.exports;
   api.startPwaUpdates();
   return { api, registration, window, serviceWorker, snapshots, streamChanges: () => streamChanges, reloads: () => reloads };
 }
+
+test('an unresolved message delays screen replacement until its receipt arrives', async (t) => {
+  let pending = true;
+  const { api, serviceWorker, window, reloads } = setup(t, { browserWorkPending: () => pending });
+  await flush();
+  api.observeServerVersion('2.0.0');
+  serviceWorker.dispatchEvent(new Event('controllerchange'));
+  t.mock.timers.tick(1000); await flush();
+  assert.equal(reloads(), 0);
+  pending = false;
+  window.dispatchEvent(new Event('input'));
+  t.mock.timers.tick(1000); await flush();
+  assert.equal(reloads(), 1);
+});
 
 for (const controlled of [true, false]) test(`a downloading worker ${controlled ? 'shows an update before a version header arrives' : 'does not show an update on first installation'}`, async (t) => {
   const { api, registration } = setup(t, { controlled });

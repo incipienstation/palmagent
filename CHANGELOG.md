@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Messages and new conversations wait through brief updates and connection interruptions, retrying the same submission without duplicate delivery. Pending sends show their status and let you stop retrying; compatible screens can finish sending before refreshing.
+
 ## 0.1.0-alpha.180
 
 ### Changed

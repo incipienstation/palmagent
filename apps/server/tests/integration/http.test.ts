@@ -34,6 +34,7 @@ import { sessionSocket } from "../../src/modules/tasks/adapters/inbound/session-
 import { startSessionControl } from "../../src/composition/session-control.js";
 import type { HttpDependencies } from "../../src/composition/http-dependencies.js";
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
 function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations">> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
@@ -61,6 +62,52 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   });
   return { dir, db, hub, service, auth, settings, repoSettings, shutdown, modelCatalog, app, closeListener };
 }
+
+test("compatible message submissions cross build versions without opening other writes or bypassing auth", async t => {
+  const f = fixture(t, true, { build: { version: "new-build", sourceCommit: "fixture", dirty: false } });
+  const task = { taskId: "t", repoId: "r", agent: "codex" as const, prompt: "Hello", status: "idle" as const,
+    interrupted: false, permission: "read-only", createdAt: 1, updatedAt: 1, lastActivityAt: 1 };
+  const created = t.mock.method(f.service, "createTask", () => task);
+  const submitted = t.mock.method(f.service, "submitMessage", () => ({ revision: 1, paused: false, runId: null, messages: [] }));
+  t.mock.method(f.service, "resolveMessageSkills", async () => undefined);
+  f.db.createSession("message-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=message-session`, "content-type": "application/json",
+    "x-palmagent-version": "old-build", [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION };
+  const first = { repoId: "r", agent: "codex", prompt: "Hello", clientRequestId: "11111111-1111-4111-8111-111111111111" };
+  const message = { text: "Hello", mode: "send", expectedRunId: null, clientMessageId: first.clientRequestId };
+  for (const [path, body, success] of [["/api/tasks", first, 201], ["/api/tasks/t/messages", message, 202]] as const) {
+    const request = (extra = {}) => f.app.request(path, { method: "POST", headers: { ...headers, ...extra }, body: JSON.stringify(body) });
+    const accepted = await request();
+    assert.equal(accepted.status, success);
+    assert.equal(accepted.headers.get("x-palmagent-version"), "new-build");
+    for (const protocol of ["", "future-protocol"]) {
+      const refused = await request({ [MESSAGE_PROTOCOL_HEADER]: protocol });
+      assert.equal(refused.status, 409);
+      assert.equal((await refused.json()).code, "update-required");
+    }
+    assert.equal((await request({ cookie: "" })).status, 401);
+    assert.equal((await request({ origin: "https://other.example" })).status, 403);
+  }
+  assert.equal(created.mock.callCount(), 1);
+  assert.equal(submitted.mock.callCount(), 1);
+  for (const path of ["/api/tasks/t/stop", "/api/tasks/t/messages/m", "/api/settings/updates"]) {
+    assert.equal((await f.app.request(path, { method: "POST", headers, body: "{}" })).status, 409, path);
+  }
+  f.shutdown.abort();
+  const restarting = await f.app.request("/api/tasks", { method: "POST", headers, body: JSON.stringify(first) });
+  assert.equal(restarting.status, 503);
+  assert.equal((await restarting.json()).code, "update_in_progress");
+});
+
+test("maintenance identifies retryable task admission without accepting a new message", t => {
+  const f = fixture(t);
+  Object.defineProperty(f.service, "updating", { get: () => true });
+  assert.throws(() => f.service.createTask({ repoId: "r", agent: "codex", prompt: "Wait" }), { code: "update_in_progress" });
+  assert.throws(() => f.service.submitMessage("t", {
+    clientMessageId: "11111111-1111-4111-8111-111111111111", mode: "queue", text: "Wait", expectedRunId: null,
+  }), { code: "update_in_progress" });
+  assert.equal(f.db.readMessageState("t"), undefined);
+});
 
 test("voice routes require authentication, reject non-Codex contexts and resolve the native home server-side", async t => {
   const f = fixture(t);

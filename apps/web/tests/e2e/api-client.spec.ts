@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { mock } from "node:test";
 import { test } from "@playwright/test";
 import { createApi, ApiError } from "../../src/api-client";
 import { cacheSession, resetClientSession } from "../../src/query-lifecycle";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
 test("browser RPC preserves URL encoding, version headers, write tracking, and abort signals", async () => {
   let active = 0;
@@ -143,4 +145,92 @@ test("auth writes retire the session only after confirmed success", async () => 
   response.resolve(Response.json({ ok: true }));
   await successful;
   assert.equal(cacheSession(), generation + 1);
+});
+
+test("message retry retains the exact payload and browser-work hold through maintenance and a lost response", async () => {
+  let active = 0;
+  const bodies: string[] = [];
+  const input = { clientMessageId: "11111111-1111-4111-8111-111111111111", text: "Original", mode: "send" as const, expectedRunId: "original-run" };
+  const api = createApi({
+    version: () => "old-screen", observeServerVersion: () => {},
+    beginBrowserWork: () => { active++; return () => { active--; }; }, onUnauthorized: () => assert.fail("unexpected 401"),
+  }, async (_url, init) => {
+    assert.equal(active, 1, "the PWA must not replace an unresolved submission");
+    assert.equal(new Headers(init?.headers).get(MESSAGE_PROTOCOL_HEADER), MESSAGE_PROTOCOL_VERSION);
+    bodies.push(String(init?.body));
+    if (bodies.length === 1) {
+      input.text = "A later draft";
+      return Response.json({ error: "Updating", code: "update_in_progress" }, { status: 503 });
+    }
+    if (bodies.length === 2) throw new TypeError("Failed to fetch");
+    return Response.json({ revision: 2, paused: false, runId: "original-run", messages: [] });
+  });
+  const queue = await api.submitMessage("retry-fixture", input);
+  assert.equal(queue.revision, 2);
+  assert.equal(bodies.length, 3);
+  assert.equal(new Set(bodies).size, 1);
+  assert.equal(JSON.parse(bodies[0]).text, "Original");
+  assert.equal(active, 0);
+});
+
+test("first-message retry keeps its creation ID; legacy creation without an ID never retries", async () => {
+  const bodies: string[] = [];
+  const api = createApi({ version: () => "fixture", observeServerVersion: () => {}, beginBrowserWork: () => () => {}, onUnauthorized: () => {} },
+    async (_url, init) => {
+      if (init?.method === "GET") return Response.json({ error: "Not found" }, { status: 404 });
+      bodies.push(String(init?.body));
+      const input = JSON.parse(String(init?.body));
+      if (!input.clientRequestId || bodies.length === 1) return Response.json({ error: "Updating", code: "update_in_progress" }, { status: 503 });
+      return Response.json({ task: { taskId: `t_${input.clientRequestId}` } });
+    });
+  const request = { repoId: "r", agent: "codex" as const, prompt: "Hello", clientRequestId: "11111111-1111-4111-8111-111111111111" };
+  assert.equal((await api.createTask(request)).taskId, `t_${request.clientRequestId}`);
+  assert.equal(bodies[0], bodies[1]);
+  await assert.rejects(api.createTask({ repoId: "r", agent: "codex", prompt: "Legacy" }), { status: 503 });
+  assert.equal(bodies.length, 3);
+});
+
+test("a session change cancels a pending retry before it can submit with new credentials", async () => {
+  let active = 0, calls = 0;
+  let sent!: () => void;
+  const called = new Promise<void>(resolve => { sent = resolve; });
+  const api = createApi({ version: () => "fixture", observeServerVersion: () => {},
+    beginBrowserWork: () => { active++; return () => { active--; }; }, onUnauthorized: () => {} }, async () => {
+    calls++; sent();
+    return Response.json({ error: "Updating", code: "update_in_progress" }, { status: 503 });
+  });
+  const pending = api.submitMessage("session-retry", { clientMessageId: "11111111-1111-4111-8111-111111111111", text: "Private", mode: "queue", expectedRunId: null });
+  await called;
+  resetClientSession();
+  await assert.rejects(pending, /Session changed/);
+  assert.equal(calls, 1);
+  assert.equal(active, 0);
+});
+
+for (const code of ["update-required", "conflict", "unauthorized"]) test(`message retries stop on ${code}`, async () => {
+  let calls = 0;
+  const api = createApi({ version: () => "fixture", observeServerVersion: () => {}, beginBrowserWork: () => () => {}, onUnauthorized: () => {} },
+    async () => { calls++; return Response.json({ error: code, code }, { status: code === "unauthorized" ? 401 : 409 }); });
+  await assert.rejects(api.submitMessage(`no-retry-${code}`, { clientMessageId: "11111111-1111-4111-8111-111111111111", text: "Hello", mode: "queue", expectedRunId: null }));
+  assert.equal(calls, 1);
+});
+
+test("a hung submission has a bounded wait and always releases the PWA hold", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  let active = 0;
+  let sent!: () => void;
+  const called = new Promise<void>(resolve => { sent = resolve; });
+  const api = createApi({ version: () => "fixture", observeServerVersion: () => {},
+    beginBrowserWork: () => { active++; return () => { active--; }; }, onUnauthorized: () => {} }, async () => {
+    sent(); return new Promise<Response>(() => {});
+  });
+  try {
+    const rejected = assert.rejects(api.submitMessage("timeout-fixture", {
+      clientMessageId: "11111111-1111-4111-8111-111111111111", text: "Preserve this", mode: "queue", expectedRunId: null,
+    }), /Connection did not recover/);
+    await called;
+    mock.timers.tick(120_000);
+    await rejected;
+    assert.equal(active, 0);
+  } finally { mock.timers.reset(); }
 });

@@ -1,4 +1,5 @@
 import type { ApiErrorResponse } from "@palmagent/shared/http";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 import type { MiddlewareHandler } from "hono";
 import { ApplicationError } from "../../kernel/errors.js";
 import { getCookie } from "hono/cookie";
@@ -35,8 +36,11 @@ export function requireCurrentClient({ build }: HttpRuntime): MiddlewareHandler 
   return async (c, next) => {
     const version = c.req.header("x-palmagent-version");
     const path = c.req.path;
+    const compatibleMessage = c.req.method === "POST" &&
+      (path === "/api/tasks" || /^\/api\/tasks\/[^/]+\/messages$/.test(path)) &&
+      c.req.header(MESSAGE_PROTOCOL_HEADER) === MESSAGE_PROTOCOL_VERSION;
     if (build && version && version !== build.version && path.startsWith("/api/") &&
-        !path.startsWith("/api/auth/") && !["GET", "HEAD"].includes(c.req.method)) {
+        !compatibleMessage && !path.startsWith("/api/auth/") && !["GET", "HEAD"].includes(c.req.method)) {
       return c.json({ error: "Palmagent was updated. Refresh the app before making changes.", code: "update-required" } satisfies ApiErrorResponse, 409);
     }
     await next();
@@ -49,7 +53,7 @@ export function requestAdmission({ shutdown }: HttpRuntime): MiddlewareHandler {
     // from allocating a live SSE subscription.
     if (c.req.method === "HEAD") return c.notFound();
     try { decodeURIComponent(c.req.path); } catch { return c.json({ error: "invalid URL encoding" }, 400); }
-    if (shutdown?.aborted) return c.json({ error: "server is shutting down" }, 503);
+    if (shutdown?.aborted) return c.json({ error: "server is shutting down", code: "update_in_progress" } satisfies ApiErrorResponse, 503);
     await next();
   };
 }
