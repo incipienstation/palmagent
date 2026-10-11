@@ -54,7 +54,8 @@ for (const width of [360, 1280]) {
 }
 
 test("Settings stays centered, preserves scroll across resizing, and restores nested confirmation focus", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 780 });
+  // Keep this viewport short enough to exercise scroll restoration with compact settings.
+  await page.setViewportSize({ width: 1280, height: 568 });
   await page.goto("/?__theme=light");
   const trigger = page.getByRole("button", { name: "Settings", exact: true });
   await trigger.click();
@@ -62,7 +63,7 @@ test("Settings stays centered, preserves scroll across resizing, and restores ne
   await settled(dialog);
   const bounds = (await dialog.boundingBox())!;
   expect(bounds.x).toBeCloseTo((1280 - bounds.width) / 2, 0);
-  expect(bounds.y).toBeCloseTo((780 - bounds.height) / 2, 0);
+  expect(bounds.y).toBeCloseTo((568 - bounds.height) / 2, 0);
   await expect(dialog.locator('[data-slot="drawer-handle"]')).toBeHidden();
   // Dragging a desktop title must not move or dismiss the dialog.
   const title = dialog.getByRole("heading", { name: "Settings", exact: true });
@@ -75,11 +76,11 @@ test("Settings stays centered, preserves scroll across resizing, and restores ne
   const scroll = await viewport.evaluate(el => el.scrollTop);
   expect(scroll).toBeGreaterThan(0);
   await captureForReview(page, "dialog-settings-desktop.png");
-  await page.setViewportSize({ width: 360, height: 780 });
+  await page.setViewportSize({ width: 360, height: 568 });
   await settled(dialog);
   await expect(dialog.locator('[data-slot="drawer-handle"]')).toBeVisible();
   expect(await viewport.evaluate(el => el.scrollTop)).toBeCloseTo(scroll, 0);
-  await page.setViewportSize({ width: 1280, height: 780 });
+  await page.setViewportSize({ width: 1280, height: 568 });
   await settled(dialog);
   expect(await viewport.evaluate(el => el.scrollTop)).toBeCloseTo(scroll, 0);
   const signOut = dialog.getByRole("button", { name: "Sign out", exact: true });
