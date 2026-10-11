@@ -45,6 +45,8 @@ Settings shows the corresponding cause. Plugin inventory failures, missing comma
 timeouts, registry failures and incompatible releases are distinct; command output,
 credentials and private paths are not included. Older failure records may have no
 details; check again to obtain a current result.
+The web host logs an `update_discovery_failed` event once per failed result, so a
+later successful check does not erase its diagnostic evidence.
 
 Enabling automatic updates authorizes eligible updates under that saved policy;
 do not add another staging approval for each release. Updates stay within the current

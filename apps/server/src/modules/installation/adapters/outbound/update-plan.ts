@@ -50,12 +50,17 @@ export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plug
   if (requested !== undefined) validateUpdateTarget(current, requested, channel);
   const spec = requested ?? channelTag(channel);
   const result = run("npm", ["view", `${BRANDING.packageName}@${spec}`, "version", "--json"], { timeout: 30_000 });
-  if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure("registry", result), "Could not query the package registry");
+  if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure("registry", result), `could not resolve ${BRANDING.packageName}@${spec}; the selected channel may not be published yet (no fallback)`);
   const target = discoveryStep({ source: "registry", code: "invalid-response" }, "npm did not return one exact version", () => {
     const value: unknown = JSON.parse(result.stdout);
     if (typeof value !== "string" || (requested && value !== requested)) throw new Error("invalid registry version");
     productVersion(value);
     return value;
   });
-  return discoveryStep({ source: "release-policy", code: "incompatible-release" }, "The registry release does not match the selected channel or installed version", () => planUpdate(current, target, channel, plugins));
+  try { return planUpdate(current, target, channel, plugins); }
+  catch (error) {
+    // Keep the CLI's existing channel/downgrade explanation; only the category
+    // crosses into persisted discovery diagnostics.
+    throw new UpdateDiscoveryError({ source: "release-policy", code: "incompatible-release" }, error instanceof Error ? error.message : "Incompatible release");
+  }
 }

@@ -39,6 +39,20 @@ test("the web bridge invokes only its own CLI, validates input/output, and hides
   assert.deepEqual(JSON.parse(readFileSync(join(root, "call.json"), "utf8")), {
     args: ["update-settings", "status", "--data-dir", "/srv/palmagent state", "--expected-db", "/srv/db/palmagent.db"], nonInteractive: "1",
   });
+  const warnings: string[] = [];
+  t.mock.method(console, "warn", (message: string) => warnings.push(message));
+  const failed = { ...state, settings: { ...state.settings, discovery: {
+    channel: "preview", currentVersion: "0.1.0-alpha.2", targetVersion: null,
+    checkedAt: "2026-01-01T00:00:00.000Z", eligible: false, error: true,
+    failure: { source: "codex-plugins", code: "timeout", exitCode: null, stderr: "private-output-marker" },
+  } } };
+  response({ ok: true, state: failed });
+  await service.status(); await service.status();
+  assert.deepEqual(warnings.map(message => JSON.parse(message)), [{ event: "update_discovery_failed",
+    checkedAt: "2026-01-01T00:00:00.000Z", source: "codex-plugins", code: "timeout", exitCode: null }]);
+  response({ ok: true, state });
+  await service.status();
+  assert.equal(warnings.length, 1, "successful checks do not erase or duplicate the failure log");
   await service.change({ autoUpdate: true });
   assert.deepEqual(JSON.parse(readFileSync(join(root, "call.json"), "utf8")).args.slice(-2), ["--auto-update", "true"]);
   await service.change({ channel: "stable" });
