@@ -347,7 +347,9 @@ guess which text is safe to fold.
 `src/brand.json` owns the Palm Teal palette for light and dark mode. Change its
 semantic color pairs to replace the brand: `primary` / `primary-foreground` for
 filled actions, `primary-active` for pressed actions, `accent` / `accent-foreground`
-for selection and hover, and `chrome` for browser and installed-app chrome.
+for selection and hover. `chrome` controls browser and installed-app chrome;
+keep it aligned with each theme's `--background` in `src/index.css` so the
+system bars blend into the conversation background.
 Vite injects these as `--brand-*` variables before first paint; `src/index.css`
 maps them to the UI's semantic tokens. Theme changes and the PWA manifest read
 that same palette. Keep neutral surfaces and status colors independent.
