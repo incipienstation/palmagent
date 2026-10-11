@@ -7,7 +7,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetClose, SheetBody, SheetContent, SheetHeaderRow, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -23,13 +23,6 @@ import { PushToggle } from "./PushToggle";
 import { UpdateSettings } from "./UpdateSettings";
 import { SpaceSettings } from "./SpaceSettings";
 import { RepoSettings } from "./RepoSettings";
-
-const themeLabels: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
-const modeLabels: Record<OutputMode, string> = { compact: "Compact", verbose: "Verbose" };
-const modeDescriptions: Record<OutputMode, string> = {
-  compact: "Focus on answers. Keep background activity folded.",
-  verbose: "Show all recorded activity in the conversation.",
-};
 
 // Keep panels mounted while open so navigation preserves edits and scroll positions.
 export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
@@ -69,7 +62,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
-      <SheetContent showClose={false} size="panel" onCloseAutoFocus={onCloseAutoFocus}>
+      <SheetContent showClose={false} size={section === "updates" ? "content" : "panel"} className="max-w-lg" onCloseAutoFocus={onCloseAutoFocus}>
         <SheetHeader>
           <SheetHeaderRow>
             {!home && <Button variant="ghost" size="icon-lg" aria-label="Back to settings" onClick={() => setSection("general")}>
@@ -80,66 +73,50 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
             </SheetTitle>
             <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
           </SheetHeaderRow>
-          <SheetDescription className={home ? undefined : "sr-only"}>
+          <SheetDescription className="sr-only">
             {home ? "Preferences and installation" : section === "spaces" ? "Manage folders searched for repositories on this installation." : "Manage Palmagent updates on this installation."}
           </SheetDescription>
         </SheetHeader>
 
         <SheetBody hidden={!home} data-slot="settings-scroll" className={cn(!home && "hidden")}>
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4">
             <SettingsGroup label="On this device">
-              <FieldGroup className="gap-0 rounded-xl border border-border bg-background/50 px-3.5">
-                <Field className="gap-2.5 py-3.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <FieldLabel id={appearanceId} className="text-sm">Appearance</FieldLabel>
-                    <span className="text-xs text-muted-foreground">{themeLabels[theme]}</span>
-                  </div>
-                  <ToggleGroup type="single" value={theme} aria-labelledby={appearanceId}
+              <FieldGroup className="gap-0 rounded-xl border border-border bg-background/50 px-3">
+                <Field orientation="horizontal" className="min-h-14 justify-between py-2">
+                  <FieldLabel id={appearanceId}>Appearance</FieldLabel>
+                  <ToggleGroup type="single" value={theme} aria-labelledby={appearanceId} className="w-auto shrink-0"
                     onValueChange={(value) => value && setTheme(value as Theme)}>
-                    <ToggleGroupItem value="system" aria-label="System theme" className="gap-1.5"><Monitor className="size-4" />System</ToggleGroupItem>
-                    <ToggleGroupItem value="light" aria-label="Light theme" className="gap-1.5"><Sun className="size-4" />Light</ToggleGroupItem>
-                    <ToggleGroupItem value="dark" aria-label="Dark theme" className="gap-1.5"><Moon className="size-4" />Dark</ToggleGroupItem>
+                    <ToggleGroupItem value="system" aria-label="System theme" title="System theme" className="w-11"><Monitor className="size-4" /></ToggleGroupItem>
+                    <ToggleGroupItem value="light" aria-label="Light theme" title="Light theme" className="w-11"><Sun className="size-4" /></ToggleGroupItem>
+                    <ToggleGroupItem value="dark" aria-label="Dark theme" title="Dark theme" className="w-11"><Moon className="size-4" /></ToggleGroupItem>
                   </ToggleGroup>
                 </Field>
                 <Separator />
-                <Field className="gap-2.5 py-3.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <FieldLabel id={detailId} className="text-sm">Output detail</FieldLabel>
-                    <span className="text-xs text-muted-foreground">{modeLabels[mode]}</span>
-                  </div>
-                  <ToggleGroup type="single" value={mode} aria-labelledby={detailId} aria-describedby={`${detailId}-description`}
+                <Field orientation="horizontal" className="min-h-14 justify-between py-2">
+                  <FieldLabel id={detailId}>Output detail</FieldLabel>
+                  <ToggleGroup type="single" value={mode} aria-labelledby={detailId} className="w-auto shrink-0"
                     onValueChange={(value) => value && setMode(value as OutputMode)}>
-                    <ToggleGroupItem value="compact" aria-label="Compact output">Compact</ToggleGroupItem>
-                    <ToggleGroupItem value="verbose" aria-label="Verbose output">Verbose</ToggleGroupItem>
+                    <ToggleGroupItem value="compact" aria-label="Compact output" className="px-2">Compact</ToggleGroupItem>
+                    <ToggleGroupItem value="verbose" aria-label="Verbose output" className="px-2">Verbose</ToggleGroupItem>
                   </ToggleGroup>
-                  <FieldDescription id={`${detailId}-description`} className="text-xs">{modeDescriptions[mode]}</FieldDescription>
                 </Field>
                 <Separator />
-                <Field className="gap-2.5 py-3.5">
-                  <FieldLabel id={shortcutId} className="text-sm">Send message with</FieldLabel>
-                  <ToggleGroup type="single" value={shortcut} aria-labelledby={shortcutId} aria-describedby={`${shortcutId}-description`}
+                <Field orientation="horizontal" className="min-h-14 justify-between py-2">
+                  <FieldLabel id={shortcutId}>Send <span className="sr-only">message </span>with</FieldLabel>
+                  <ToggleGroup type="single" value={shortcut} aria-labelledby={shortcutId} className="w-auto shrink-0 whitespace-nowrap"
                     onValueChange={(value) => { if (value === "enter" || value === "modifier-enter") setShortcut(value); }}>
-                    <ToggleGroupItem value="enter">Enter</ToggleGroupItem>
-                    <ToggleGroupItem value="modifier-enter">Cmd/Ctrl + Enter</ToggleGroupItem>
+                    <ToggleGroupItem value="enter" className="px-2">Enter</ToggleGroupItem>
+                    <ToggleGroupItem value="modifier-enter" className="px-2">Cmd/Ctrl + Enter</ToggleGroupItem>
                   </ToggleGroup>
-                  <FieldDescription id={`${shortcutId}-description`} className="text-xs">
-                    {shortcut === "enter" ? "Shift + Enter adds a new line." : "Enter adds a new line. Cmd + Enter (Mac) or Ctrl + Enter sends."}
-                  </FieldDescription>
                 </Field>
-                <PushToggle className="border-t border-border py-3.5" />
-              </FieldGroup>
-            </SettingsGroup>
-
-            <SettingsGroup label="Experimental">
-              <FieldGroup className="rounded-xl border border-border bg-background/50 px-3.5">
-                <Field className="gap-2.5 py-3.5">
-                  <div className="flex min-h-11 items-center justify-between gap-3">
+                <PushToggle className="border-t border-border py-2" />
+                <Separator />
+                <Field orientation="horizontal" className="min-h-14 py-2">
+                  <FieldContent>
                     <FieldLabel htmlFor={arcadeId}>Arcade mode</FieldLabel>
-                    <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
-                  </div>
-                  <FieldDescription id={`${arcadeId}-description`}>
-                    Play games while your agent works. Opens automatically when you send a message.
-                  </FieldDescription>
+                    <p id={`${arcadeId}-description`} className="text-xs text-muted-foreground">Auto-open games · Experimental</p>
+                  </FieldContent>
+                  <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
                 </Field>
               </FieldGroup>
             </SettingsGroup>
@@ -147,50 +124,46 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
             <SettingsGroup label="Installation">
               <div className="flex flex-col">
                 <Button ref={spaceSettingsLink} variant="ghost" aria-label="Space settings" onClick={() => setSection("base-branches")}
-                  className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left">
+                  className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
                   <GitBranch data-icon="inline-start" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Space settings</span><span className="text-xs font-normal text-muted-foreground">Base branches for isolated tasks & routines</span></span>
+                  <span className="min-w-0 flex-1">Space settings</span>
                   <ChevronRight data-icon="inline-end" />
                 </Button>
                 <Separator />
                 <Button ref={searchPathsLink} variant="ghost" aria-label="Repository search paths" onClick={() => setSection("spaces")}
-                  className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left hover:bg-accent">
-                  <FolderSearch className="text-muted-foreground" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Repository search paths</span><span className="text-xs font-normal text-muted-foreground">Folders to search for repositories</span></span>
-                  <ChevronRight className="text-muted-foreground" />
+                  className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
+                  <FolderSearch data-icon="inline-start" />
+                  <span className="min-w-0 flex-1">Repository search paths</span>
+                  <ChevronRight data-icon="inline-end" />
                 </Button>
                 <Separator />
                 <Button ref={updatesLink} variant="ghost" aria-label="Updates" onClick={() => setSection("updates")}
-                  className="h-auto min-h-16 justify-start gap-3 whitespace-normal px-1 py-3 text-left hover:bg-accent">
-                  <ArrowUpCircle className="text-muted-foreground" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium">Updates</span><span className="text-xs font-normal text-muted-foreground">Version, channel & automatic updates</span></span>
-                  <ChevronRight className="text-muted-foreground" />
+                  className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
+                  <ArrowUpCircle data-icon="inline-start" />
+                  <span className="min-w-0 flex-1">Updates</span>
+                  <ChevronRight data-icon="inline-end" />
                 </Button>
-                {conn && <>
-                  <Separator />
-                  <div className="flex min-h-11 items-center justify-between gap-3 px-1 py-2">
-                    <span className="text-xs text-muted-foreground">Server connection</span>
-                    <ConnLabel conn={conn} />
-                  </div>
-                </>}
               </div>
             </SettingsGroup>
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button disabled={signingOut} variant="ghost" className="w-full justify-start px-1 font-medium text-destructive hover:bg-destructive/5">{signingOut ? "Signing out…" : "Sign out"}</Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Sign out?</AlertDialogTitle>
-                  <AlertDialogDescription>You'll need your passkey to sign back in on this device.</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Stay</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <div className="flex items-center justify-between gap-3">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button disabled={signingOut} variant="ghost" className="justify-start px-1">{signingOut ? "Signing out…" : "Sign out"}</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                    <AlertDialogDescription>You'll need your passkey to sign back in on this device.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Stay</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" disabled={signingOut} onClick={signOut}>Sign out</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              {conn && <ConnLabel conn={conn} />}
+            </div>
           </div>
         </SheetBody>
         <SheetBody hidden={section !== "spaces"} data-slot="settings-scroll" className={cn(section !== "spaces" && "hidden")}>
