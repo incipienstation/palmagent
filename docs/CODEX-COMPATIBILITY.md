@@ -1,6 +1,6 @@
 # Codex compatibility verification
 
-The declared Codex range is `>=0.154.0 <0.161.1`.
+The declared Codex range is `>=0.154.0 <0.162.1`.
 The shared metadata is copied to both operator plugins by `node scripts/sync-skills.mjs`.
 
 On 2026-09-27, authenticated tests against Codex CLI 0.154.0, 0.155.0,
@@ -89,7 +89,9 @@ flags, and an isolated App Server `initialize` handshake. It also runs hermetic
 server contracts against a known supported baseline and the candidate. Additive
 optional fields and unrelated methods do not fail the schema check. Removed
 consumed fields, incompatible types, new required request fields, and unknown
-constraint changes do. The handshake never starts an inference turn.
+constraint changes do. Message phases explicitly allow additional enum values:
+unknown phases preserve visible answer text and cannot complete a turn. Lifecycle
+and approval enums retain strict checks. The handshake never starts an inference turn.
 
 Registry, installation, dependency setup, and baseline failures stop before
 repair. Candidate execution failures are retried once before escalation.

@@ -126,7 +126,7 @@ export class CodexRunner implements AgentRunner {
         case "agent_message":
           e({ taskId, kind: "assistant_text", sessionId, payload: { text: item.text, messageId: item.id,
             ...(item.phase === "commentary" ? { phase: "progress" } :
-              item.phase === "final_answer" ? { phase: "final" } : {}) } });
+              item.phase === "partial_answer" ? { phase: "partial" } : item.phase === "final_answer" ? { phase: "final" } : {}) } });
           break;
         case "reasoning":
           e({ taskId, kind: "status", sessionId, payload: { subtype: "reasoning", text: item.text } });

@@ -46,7 +46,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
     const phases = new Map<string, AssistantPhase>();
     for (const item of turn) {
       const p = payload(item);
-      if (p.subtype === "assistant_message" && typeof p.messageId === "string" && (p.phase === "progress" || p.phase === "final")) {
+      if (p.subtype === "assistant_message" && typeof p.messageId === "string" && (p.phase === "progress" || p.phase === "partial" || p.phase === "final")) {
         phases.set(p.messageId, p.phase);
       }
     }
@@ -79,7 +79,10 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
         group.items.push(item);
         if (item === latestProgress && active && item.kind === "assistant_text") group.preview = item.text;
       }
+      // Visible answers and images separate consecutive work groups. Never move
+      // later tools above content the user has already started reading.
       if (!background) {
+        group = undefined;
         rows.push({ type: "message", key: item.key, item });
       }
       if (item.kind === "result" && !failed(item) && typeof p.result === "string" && p.result.trim() && !texts.has(p.result.trim())) {

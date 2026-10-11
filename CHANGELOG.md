@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Partial answers stay in the conversation while subsequent activity appears below them; completion notifications still wait for a final answer or successful turn completion.
+
 ## 0.1.0-alpha.176
 
 ### Changed

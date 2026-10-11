@@ -665,21 +665,23 @@ test("Codex preserves supplied message phases and stable tool identities without
   const backend = new FakeBackend();
   const capture = captureEvents();
   const handle = new CodexRunner().start(startArgs(), capture.emit, backend);
-  for (const [id, phase] of [["m1", "commentary"], ["m2", "final_answer"], ["m3", undefined]]) {
+  for (const [id, phase] of [["m1", "commentary"], ["m2", "final_answer"], ["m3", undefined], ["m4", "partial_answer"], ["m5", "future_phase"]]) {
     backend.proc.emit({ type: "item.completed", item: { type: "agent_message", id, phase, text: id } });
   }
   backend.proc.emit({ type: "item.started", item: { type: "command_execution", id: "t1", command: "false", status: "in_progress" } });
   backend.proc.emit({ type: "item.completed", item: { type: "command_execution", id: "t1", command: "false", status: "failed", exit_code: 1 } });
   const data = capture.events.map(({ event }) => event.payload as Record<string, unknown>);
-  assert.deepEqual(data.slice(0, 3), [
+  assert.deepEqual(data.slice(0, 5), [
     { text: "m1", messageId: "m1", phase: "progress" },
     { text: "m2", messageId: "m2", phase: "final" },
     { text: "m3", messageId: "m3" },
+    { text: "m4", messageId: "m4", phase: "partial" },
+    { text: "m5", messageId: "m5" },
   ]);
-  assert.equal(data[3].id, "t1");
-  assert.equal(data[4].id, "t1");
-  assert.equal(data[5].tool_use_id, "t1");
-  assert.equal(data[5].exit_code, 1);
+  assert.equal(data[5].id, "t1");
+  assert.equal(data[6].id, "t1");
+  assert.equal(data[7].tool_use_id, "t1");
+  assert.equal(data[7].exit_code, 1);
   backend.proc.exit(0);
   await handle.done;
 });
@@ -913,5 +915,24 @@ test("Codex forwards context capacity and invalidates the last reading when comp
   assert.deepEqual(events.find(e => eventSubtype(e) === "usage")?.payload, { subtype: "usage", usage });
   backend.proc.emit({ method: "item/started", params: { threadId: "thread-1", item: { type: "contextCompaction" } } });
   assert.equal(events.filter(e => eventSubtype(e) === "context_compaction_started").length, 1);
+  backend.proc.exit(0); await handle.done;
+});
+
+for (const reattach of [false, true]) test(`Codex partial answer metadata preserves an active turn (reattach=${reattach})`, async () => {
+  const backend = new FakeBackend(), events: RawEvent[] = [];
+  const handle = new CodexRunner().start(startArgs({ interactive: true, reattach }), e => events.push(e), backend);
+  backend.proc.emit({ id: "initialize", result: {} });
+  backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+  backend.proc.emit({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1" } } });
+  for (const [id, phase] of [["partial", "partial_answer"], ["unknown", "future_phase"]]) {
+    backend.proc.emit({ method: "item/agentMessage/delta", params: { threadId: "thread-1", itemId: id, delta: "Readable answer" } });
+    backend.proc.emit({ method: "item/completed", params: { threadId: "thread-1", item: { type: "agentMessage", id, phase } } });
+  }
+  assert.equal(events.filter(e => e.kind === "assistant_text").length, 2);
+  assert.ok(events.some(e => e.kind === "status" && (e.payload as any).phase === "partial"));
+  assert.equal(events.filter(e => e.kind === "result").length, 0);
+  assert.equal(handle.interrupt(), true, "a partial answer must leave the turn active and stoppable");
+  backend.proc.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } } });
+  assert.equal(events.filter(e => e.kind === "result").length, 1);
   backend.proc.exit(0); await handle.done;
 });

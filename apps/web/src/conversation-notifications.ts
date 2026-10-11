@@ -31,7 +31,7 @@ export function createFinalReplyObserver() {
       messages.set(key, message);
       ready = message.text && message.phase === "final";
     } else if (item.kind === "status" && p.subtype === "assistant_message" && typeof p.messageId === "string"
-      && (p.phase === "progress" || p.phase === "final")) {
+      && (p.phase === "progress" || p.phase === "partial" || p.phase === "final")) {
       const text = messages.get(p.messageId)?.text ?? false;
       messages.set(p.messageId, { text, phase: p.phase });
       ready = text && p.phase === "final";
