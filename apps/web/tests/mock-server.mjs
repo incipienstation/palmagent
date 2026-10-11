@@ -109,9 +109,9 @@ function openSse(res) {
   });
   res.write(": connected\n\n");
 }
-const tasksFrame = (res, historyThrough) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks, historyThrough })}\n\n`);
+const tasksFrame = (res, historyThrough, taskId) => res.write(`data: ${JSON.stringify({ type: "tasks", tasks: taskId ? tasks.filter(task => task.taskId === taskId) : tasks, historyThrough })}\n\n`);
 
-const taskClients = new Set();
+const taskClients = new Map();
 
 function handleStream(req, res, url) {
   const taskId = url.searchParams.get("task") || undefined;
@@ -119,11 +119,11 @@ function handleStream(req, res, url) {
     return json(res, 404, { error: `no such task: ${taskId}` });
   }
   openSse(res);
-  taskClients.add(res);
+  taskClients.set(res, taskId);
   const stream = events[taskId] ?? [];
   // Persisted rows are served by REST. This boundary marks the point after
   // which newly produced events belong on the live stream.
-  tasksFrame(res, taskId ? stream.length : undefined);
+  tasksFrame(res, taskId ? stream.length : undefined, taskId);
   if (taskId) res.write(`data: ${JSON.stringify({ type: "read-change", taskLimits: taskId })}\n\n`);
 
   const keepAlive = setInterval(() => {
@@ -300,13 +300,13 @@ const server = createServer(async (req, res) => {
         if (input.pinned && task.status === "archived") return json(res, 409, { error: "archived" });
         task.pinnedAt = input.pinned ? task.pinnedAt ?? Math.max(Date.now(), ...tasks.map(t => (t.pinnedAt ?? 0) + 1)) : undefined;
         task.updatedAt = Date.now();
-        for (const client of taskClients) tasksFrame(client);
+        for (const [client, taskId] of taskClients) tasksFrame(client, undefined, taskId);
         return json(res, 200, { task });
       }
       const title = typeof input?.title === "string" ? input.title.trim() : "";
       if (!title || title.length > 200 || /[\r\n]/.test(title)) return json(res, 400, { error: "invalid title" });
       task.title = title;
-      for (const client of taskClients) tasksFrame(client);
+      for (const [client, taskId] of taskClients) tasksFrame(client, undefined, taskId);
       return json(res, 200, { task });
     }
     const first = tasks[0];
