@@ -60,6 +60,8 @@ test("mobile settings fit, preserve preferences, and keep sign-out cancellable",
   await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
   await assertViewportLocked(page);
   expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  await expect(settings.getByRole("button", { name: "Sign out", exact: true })).toBeInViewport();
+  await expect(settings).toHaveScreenshot("compact-settings.png");
   const light = page.getByRole("radio", { name: "Light theme" });
   await light.click();
   await light.click();

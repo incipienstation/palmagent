@@ -32,6 +32,13 @@ test("settings show the running version, save shared preferences, and remain usa
   await openSettings(page);
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
   await expect(page).toHaveScreenshot("update-settings.png");
+  const details = page.getByText("Update details", { exact: true });
+  await expect(page.getByText(/Changing channel does not/)).toBeHidden();
+  await details.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/Changing channel does not/)).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/Changing channel does not/)).toBeHidden();
   const automatic = page.getByRole("switch", { name: "Automatic updates" });
   await expect(automatic).not.toBeChecked();
   await automatic.click();
@@ -254,9 +261,9 @@ test("plugin-only updates remain actionable and explain when new skills become a
     await route.fulfill({ json: state });
   });
   await openSettings(page);
-  await expect(page.getByText("Operator plugin updates are available.")).toBeVisible();
+  await expect(page.getByText("Plugin updates available")).toBeVisible();
   await page.getByRole("button", { name: "Update", exact: true }).click();
-  await expect(page.getByText("Operator plugins were updated. Start a new agent session to load the new skills.")).toBeVisible();
+  await expect(page.getByText("Plugins updated. Start a new session to use them.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
   await expect(page.getByTestId("current-version")).toHaveText(state.currentVersion!);
 });

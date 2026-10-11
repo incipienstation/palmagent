@@ -1,8 +1,11 @@
 import { useId } from "react";
+import { Check, ChevronRight, RefreshCw } from "lucide-react";
 import type { UpdateReceipt, UpdateSettingsState } from "@palmagent/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -44,60 +47,74 @@ export function UpdateSettings() {
   const newer = discovery?.targetVersion && (discovery.targetVersion !== status?.currentVersion || Boolean(discovery.pluginsPending));
   const paused = last?.status === "failed" || last?.status === "applying";
 
+  const current = Boolean(discovery && !discovery.error && !newer && !pending && !paused && last?.status !== "deferred" && !stale);
+  const progress = saving ? "Saving…" : action === "install" ? "Requesting update…" : busy && status ? "Checking…" : null;
+
   return (
-    <section aria-label="Updates" className="flex flex-col gap-3 py-3">
-      <p className="text-xs text-muted-foreground">Keep Palmagent up to date across your devices.</p>
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="text-muted-foreground">{stale && status ? "Last seen version" : "Current version"}</span>
-        {status ? <span className="break-all text-right font-medium text-foreground" data-testid="current-version">
-          {status.currentVersion ?? "Development build"}
-        </span> : busy ? <Skeleton className="h-4 w-28" aria-label="Loading current version" /> : <span>Unavailable</span>}
+    <section aria-label="Updates" className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-background/50 p-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-xs text-muted-foreground">{stale && status ? "Last seen version" : "Current version"}</span>
+          {status ? <span className="break-all text-base font-semibold" data-testid="current-version">
+            {status.currentVersion ?? "Development build"}
+          </span> : busy ? <Skeleton className="h-5 w-28" aria-label="Loading current version" /> : <span>Unavailable</span>}
+          {settings && <div role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {current && !progress && <Check className="size-3.5" aria-hidden="true" />}
+            <span>{progress ?? (paused ? last?.status === "failed" ? "Update paused" : "Updating…"
+              : pending ? "Update scheduled" : last?.status === "deferred" ? "Update postponed"
+              : discovery?.error ? "Check failed" : newer ? discovery.targetVersion === status?.currentVersion ? "Plugin updates available" : `Version ${discovery.targetVersion} is available.`
+              : current ? "Up to date" : "Not checked yet")}</span>
+          </div>}
+        </div>
+        <Button variant="ghost" size="icon-lg" disabled={busy} aria-label="Check again" title="Check again" onClick={() => void reload()}>
+          <RefreshCw className={cn(busy && "animate-spin")} />
+        </Button>
       </div>
 
       {error && <Alert variant="destructive">{error}</Alert>}
       {!status && busy && <Skeleton className="h-24 w-full" aria-label="Loading update settings" />}
       {status && status.availability !== "available" && <Alert>{unavailable[status.availability]}</Alert>}
 
-      {settings && <FieldGroup className="gap-3">
-        <Field orientation="horizontal" data-disabled={disabled}>
-          <FieldContent className="gap-1">
-            <FieldLabel htmlFor={automaticId}>Automatic updates</FieldLabel>
-            <FieldDescription className="text-xs">{settings.independentExecutions ? "Checks when you open the app and updates automatically. Agent runs continue." : "Checks when you open the app and updates after active tasks finish."}</FieldDescription>
-          </FieldContent>
-          <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled} aria-busy={saving}
-            onCheckedChange={(autoUpdate) => void change({ autoUpdate })} />
-        </Field>
-        <Field orientation="horizontal" data-disabled={disabled} className="flex-wrap">
-          <FieldLabel id={channelId}>Release channel</FieldLabel>
-          <ToggleGroup type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled} aria-busy={saving}
-            onValueChange={(channel) => { if (channel === "stable" || channel === "preview") void change({ channel }); }}>
-            <ToggleGroupItem value="stable" className="px-3">Stable</ToggleGroupItem>
-            <ToggleGroupItem value="preview" className="px-3">Preview</ToggleGroupItem>
-          </ToggleGroup>
-        </Field>
-        <p className="text-xs text-muted-foreground">
-          {settings.channel === "preview" ? "Preview includes alpha, beta, and release candidates." : "Stable follows stable releases only."}
-          {" "}Changing channel does not install or downgrade immediately.
-        </p>
-        <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
-          {discovery?.error ? <Alert variant="warning">Could not check for updates. Try again when connected.</Alert>
-            : newer ? <p>{discovery.targetVersion === status?.currentVersion ? "Operator plugin updates are available." : `Version ${discovery.targetVersion} is available.`}</p>
-            : discovery ? <p>You are up to date.</p> : <p>No update checks yet.</p>}
+      {settings && <>
+        {(discovery?.error || (newer && !discovery?.eligible) || pending || paused || last?.status === "deferred" || last?.pluginActivationPending) && <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
+          {discovery?.error && <Alert variant="warning">Could not check for updates. Try again when connected.</Alert>}
           {newer && !discovery?.eligible && <Alert>This release needs a matching operator plugin. Use the update plugin to continue.</Alert>}
           {pending && !paused && <p>{settings.independentExecutions ? `Preparing update to ${pending.targetVersion}. Your agent runs continue.` : `Update to ${pending.targetVersion} is scheduled. It will start after active tasks finish.`}</p>}
-          {last && (paused || last.status === "deferred") && <p>{updateMessage(last)}</p>}
-          {last?.pluginActivationPending && <p>Operator plugins were updated. Start a new agent session to load the new skills.</p>}
-          {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
-        </div>
-      </FieldGroup>}
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground" role="status">{saving ? "Saving…" : action === "install" ? "Requesting update…" : busy && status ? "Checking for updates…" : ""}</span>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" disabled={busy} onClick={() => void reload()}>Check again</Button>
-          {newer && discovery?.eligible && !settings?.autoUpdate && <Button disabled={disabled || busy || Boolean(pending) || paused}
-            onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
-        </div>
-      </div>
+          {last && (paused || last.status === "deferred") && <Alert variant={last.status === "failed" ? "warning" : "default"}>{updateMessage(last)}</Alert>}
+          {last?.pluginActivationPending && <p>Plugins updated. Start a new session to use them.</p>}
+        </div>}
+        {newer && discovery?.eligible && !settings.autoUpdate && <Button disabled={disabled || busy || Boolean(pending) || paused}
+          onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
+
+        <FieldGroup className="gap-0 rounded-xl border border-border bg-background/50 px-3">
+          <Field orientation="horizontal" data-disabled={disabled} className="min-h-14 py-2">
+            <FieldLabel htmlFor={automaticId}>Automatic updates</FieldLabel>
+            <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled} aria-busy={saving}
+              onCheckedChange={(autoUpdate) => void change({ autoUpdate })} />
+          </Field>
+          <Separator />
+          <Field orientation="horizontal" data-disabled={disabled} className="min-h-14 flex-wrap py-2">
+            <FieldLabel id={channelId}>Channel</FieldLabel>
+            <ToggleGroup type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled} aria-busy={saving}
+              onValueChange={(channel) => { if (channel === "stable" || channel === "preview") void change({ channel }); }}>
+              <ToggleGroupItem value="stable" className="px-3">Stable</ToggleGroupItem>
+              <ToggleGroupItem value="preview" className="px-3">Preview</ToggleGroupItem>
+            </ToggleGroup>
+          </Field>
+        </FieldGroup>
+
+        <details className="group text-xs text-muted-foreground">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden="true" />
+            Update details
+          </summary>
+          <div className="flex flex-col gap-2 pb-2 pl-6">
+            <p>{settings.independentExecutions ? "Automatic updates run when you open the app. Agent runs continue." : "Automatic updates run when you open the app, after active tasks finish."}</p>
+            <p>Stable uses stable releases. Preview includes alpha, beta, and release candidates. Changing channel does not install or downgrade immediately.</p>
+            {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
+          </div>
+        </details>
+      </>}
     </section>
   );
 }
