@@ -1,19 +1,33 @@
-import { useToastObstacle } from "../hooks/useToastObstacle";
-import { RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { retryUpdate, usePwaApplying, usePwaFailure } from "../pwa";
+import { Progress } from "@/components/ui/progress";
+import { useToastObstacle } from "../hooks/useToastObstacle";
+import { retryUpdate, usePwaFailure } from "../pwa";
 
 export function UpdateBanner() {
   const toastObstacle = useToastObstacle();
-  const applying = usePwaApplying();
   const failed = usePwaFailure();
-  return <div ref={toastObstacle} role="status" className="flex shrink-0 items-center gap-3 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(12px+var(--safe-bottom))]">
-    <RefreshCw className={cn("size-5 text-primary", applying && "animate-spin")} />
-    <div className="min-w-0 flex-1">
-      <p className="text-sm font-semibold text-strong">{failed ? "Update paused" : "Updating Palmagent…"}</p>
-      <p className="text-xs text-muted-foreground">{failed ? "Your screen is still open. We could not safely finish the update." : "Your session keeps running. This screen will update automatically."}</p>
+  const [progress, setProgress] = useState(10);
+
+  useEffect(() => {
+    if (failed) return;
+    setProgress(10);
+    // Visual feedback only: the worker has no measurable download progress.
+    // Approach 90%; the existing update flow reloads on success.
+    const timer = setInterval(() => setProgress((value) => value + (90 - value) * 0.1), 800);
+    return () => clearInterval(timer);
+  }, [failed]);
+
+  return <div ref={toastObstacle} role="status" className="flex shrink-0 items-center gap-3 bg-card/95 px-4 pt-2 pb-[calc(8px+var(--safe-bottom))]">
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <p className="text-xs text-muted-foreground">{failed ? "Update paused" : "Updating Palmagent…"}</p>
+      {!failed && <Progress
+        value={progress}
+        aria-label="Palmagent update"
+        aria-valuetext="Updating Palmagent"
+        className="h-1"
+      />}
     </div>
-    {failed && <Button size="sm" onClick={retryUpdate}>Retry</Button>}
+    {failed && <Button variant="outline" size="sm" onClick={retryUpdate}>Retry</Button>}
   </div>;
 }
