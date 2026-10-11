@@ -1,7 +1,7 @@
 import type { AgentEvent } from "./events.js";
 
-const TOOL_CALL_SUMMARY_FIELDS = ["id", "tool_use_id", "name", "status", "is_error", "exit_code"] as const;
-const TOOL_RESULT_SUMMARY_FIELDS = ["id", "tool_use_id", "status", "is_error", "exit_code"] as const;
+export const TOOL_CALL_SUMMARY_FIELDS = ["id", "tool_use_id", "name", "status", "is_error", "exit_code"] as const;
+export const TOOL_RESULT_SUMMARY_FIELDS = ["id", "tool_use_id", "status", "is_error", "exit_code"] as const;
 
 /** Keep the fields needed for a collapsed Activity row and defer its full payload. */
 export function deferActivityEventDetails(event: AgentEvent): { event: AgentEvent; detailsDeferred: boolean } {

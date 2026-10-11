@@ -1,6 +1,8 @@
 import { projectContextUsage } from "./context-usage.js";
 import { projectConfirmedPrs } from "../../domain/pr-projection.js";
 import Database from "better-sqlite3";
+import { initializeCompactHistory } from "./compact-history.js";
+import { initializeUsageRevision } from "./usage-revision.js";
 import { PrEvidence, type PrEvidenceState } from "./pr-evidence.js";
 import type { AgentEvent, AgentKind, AgentUsage, Permission, PermissionRequest, PrRef, PushSubscriptionJson, QuestionRequest, TaskState, TaskStatus } from "@palmagent/shared";
 import { deferActivityEventDetails, HISTORY_PAGE_EVENTS, makePrRef } from "@palmagent/shared";
@@ -113,11 +115,16 @@ function rowToEvent(r: EventJoinRow): EventRow {
 export class SqliteTasks {
 private insertEventStmt: Database.Statement;
 private getSeqStmt: Database.Statement;
+private usageRevisionStmt: Database.Statement;
+private usageCache?: { revision: number; value: AgentUsage[] };
 constructor(private readonly db: Database.Database) {
+ initializeCompactHistory(db);
+ initializeUsageRevision(db);
  this.initializeContextUsage();
  this.initializePrEvidence();
  this.insertEventStmt = db.prepare(`INSERT INTO events (task_id, seq, kind, payload_json, ts) VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE task_id = ?), ?, ?, ?)`);
  this.getSeqStmt = db.prepare("SELECT seq FROM events WHERE id = ?");
+ this.usageRevisionStmt = db.prepare("SELECT revision FROM task_usage_revision WHERE id = 1");
 }
 private initializeContextUsage(): void {
     this.db.exec(`CREATE TABLE IF NOT EXISTS task_context_usage (
@@ -446,13 +453,14 @@ historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId), i
     // single collapsed Activity can span thousands of those events; paging it
     // would hide earlier messages and keep changing its count while reading.
     const start = includeActivityDetails ? this.historyStart(taskId, before) : 1;
-    const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+    const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind,
+      ${includeActivityDetails ? "e.payload_json" : "COALESCE(c.payload_json, e.payload_json)"} AS payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
+      ${includeActivityDetails ? "" : "LEFT JOIN event_compact_payloads c ON c.event_id = e.id"}
       WHERE e.task_id = ? AND e.seq >= ? AND e.seq < ? ORDER BY e.seq`)
       .iterate(taskId, start, before) as IterableIterator<EventJoinRow>;
     const events: import("@palmagent/shared").TaskHistoryEvent[] = [];
-    // Discard each bulky tool payload before reading the next row instead of
-    // materializing all full payloads for a compact conversation in memory.
+    // Compact reads use the persisted projection without parsing tool details.
     for (const row of rows) {
       const event = rowToEvent(row).event;
       events.push(includeActivityDetails ? { seq: row.seq, event }
@@ -464,8 +472,10 @@ historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId), i
 historyChanges(taskId: string, after: number, through?: number, includeActivityDetails = true): import("@palmagent/shared").TaskHistoryChangesResponse {
     const cursor = this.eventCursor(taskId);
     const end = Math.max(after, Math.min(through ?? cursor, cursor));
-    const rows = end <= after ? [] : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+    const rows = end <= after ? [] : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind,
+      ${includeActivityDetails ? "e.payload_json" : "COALESCE(c.payload_json, e.payload_json)"} AS payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
+      ${includeActivityDetails ? "" : "LEFT JOIN event_compact_payloads c ON c.event_id = e.id"}
       WHERE e.task_id = ? AND e.seq > ? AND e.seq <= ? ORDER BY e.seq LIMIT ?`)
       .all(taskId, after, end, HISTORY_PAGE_EVENTS + 1) as EventJoinRow[];
     const hasMore = rows.length > HISTORY_PAGE_EVENTS;
@@ -494,6 +504,19 @@ latestHistoryPage(taskId: string, includeActivityDetails = true): import("@palma
   }
 
 usageByAgent(): AgentUsage[] {
+    // Do not retain a value observed inside a caller's transaction: a rollback
+    // could otherwise leave a cache entry for a revision a later write reuses.
+    const cacheable = !this.db.inTransaction;
+    return this.db.transaction(() => {
+      const { revision } = this.usageRevisionStmt.get() as { revision: number };
+      if (cacheable && this.usageCache?.revision === revision) return structuredClone(this.usageCache.value);
+      const value = this.aggregateUsageByAgent();
+      if (cacheable) this.usageCache = { revision, value: structuredClone(value) };
+      return value;
+    })();
+  }
+
+private aggregateUsageByAgent(): AgentUsage[] {
     const acc = new Map<AgentKind, AgentUsage>();
     const bucket = (agent: AgentKind): AgentUsage => {
       let u = acc.get(agent);

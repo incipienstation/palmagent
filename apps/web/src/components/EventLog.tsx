@@ -823,7 +823,7 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
         const key = taskActivityDetailsKey(taskId, from);
         const cached = queryClient.getQueryData<{ through: number }>(key);
         const state = queryClient.getQueryState(key);
-        if (cached && cached.through < through && state?.fetchStatus !== "fetching") {
+        if (cached && cached.through < through && state?.fetchStatus !== "fetching" && state?.status !== "error") {
           void queryClient.invalidateQueries({ queryKey: key, exact: true });
         }
       }
@@ -834,22 +834,19 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
   const rows = useMemo<TranscriptRow[]>(() => {
     const rows: TranscriptRow[] = [];
     for (const row of transcriptRows) {
-      if (row.type !== "activity") { rows.push(row); continue; }
+      if (row.type !== "activity" || !row.open) { rows.push(row); continue; }
       const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);
       const from = deferred.length ? Math.min(...deferred.map((item) => item.key)) : 0;
-      const through = deferred.length ? Math.max(...deferred.map((item) => item.endSeq ?? item.key)) : 0;
       const query = deferred.length ? activityQueryByRange.get(`${from}`) : undefined;
-      const loadedItems = query?.data ? historyLogItems(query.data.events).filter((item) => deferred.some((source) => source.key === item.key)) : [];
-      const loadedKeys = new Set(loadedItems.map((item) => item.key));
-      const visibleItems = [...row.activity.items.filter((item) => item.kind === "assistant_text" || !item.detailsDeferred || !loadedKeys.has(item.key)), ...loadedItems]
-        .sort((a, b) => a.key - b.key);
+      const loadedItems = new Map(query?.data ? historyLogItems(query.data.events).map(item => [item.key, item]) : []);
+      const visibleItems = row.activity.items.map(item => item.kind !== "assistant_text" && item.detailsDeferred
+        ? loadedItems.get(item.key) ?? item : item);
       const hasDeferred = deferred.length > 0;
       rows.push({ ...row,
         detailsLoading: row.open && hasDeferred && !query?.data && !!query?.isPending,
         detailsError: row.open && hasDeferred && !!query?.isError,
         retryDetails: query?.refetch,
       });
-      if (!row.open) continue;
       const displayItems = hasDeferred && !query?.data
         ? row.activity.items.filter((item) => item.kind === "assistant_text" || !item.detailsDeferred) : visibleItems;
       const renderedItems = displayItems.filter(visible);

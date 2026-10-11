@@ -1,6 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { repos, tasks } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
+import { installInbox, send } from "./_inbox-stream";
+import { spaceActivities, spaceActivitySummary } from "../../src/space-context";
+import type { TaskState } from "@palmagent/shared";
 
 test.use({ serviceWorkers: "block" });
 const fixtureRepos = [
@@ -19,6 +22,42 @@ async function setup(page: Page, path = "/") {
   await page.goto(path);
 }
 const mainSpace = (page: Page) => page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /customer-experience/ });
+
+test("Space activity groups counts once and preserves summary priorities and archived exclusion", () => {
+  const snapshot = [
+    { ...tasks[0], repoId: "main", status: "awaiting_input", lastActivityAt: 1 },
+    { ...tasks[0], repoId: "main", status: "awaiting_approval", lastActivityAt: 2 },
+    { ...tasks[0], repoId: "main", status: "running", lastActivityAt: 3 },
+    { ...tasks[0], repoId: "main", status: "queued", lastActivityAt: 4 },
+    { ...tasks[0], repoId: "main", status: "archived", lastActivityAt: 999999 },
+    { ...tasks[0], repoId: "other", status: "queued", lastActivityAt: 5 },
+    { ...tasks[0], repoId: "idle", status: "idle", lastActivityAt: 60000 },
+  ] as TaskState[];
+  const activities = spaceActivities(snapshot);
+  expect(activities.get("main")).toEqual({ latest: 4, attention: 2, running: 1, queued: 1 });
+  expect(spaceActivitySummary(activities.get("main"))).toBe("2 need attention · 1 working");
+  expect(spaceActivitySummary(activities.get("other"))).toBe("1 queued");
+  expect(spaceActivitySummary(activities.get("idle"), 120000)).toBe("Last active 1m ago");
+  expect(spaceActivitySummary(activities.get("missing"))).toBe("No tasks yet");
+});
+
+test("live Space summaries update without moving rows while browsing", async ({ page }) => {
+  await installInbox(page);
+  await page.route("**/api/repos", route => route.fulfill({ json: { repos: fixtureRepos } }));
+  await page.goto("/#/spaces");
+  const list = page.getByRole("region", { name: "Spaces list" });
+  await expect(list.getByRole("button")).toHaveCount(3);
+  const order = () => list.getByRole("button").evaluateAll(rows => rows.map(row =>
+    row.textContent?.includes("customer-experience") ? "main" : row.textContent?.includes("experiments") ? "other" : "long"));
+  const before = await order();
+  await send(page, { type: "tasks", tasks: [
+    { ...fixtureTasks[0], status: "running", lastActivityAt: Date.now() },
+    { ...fixtureTasks[2], status: "awaiting_input", lastActivityAt: Date.now() + 1 },
+  ] });
+  await expect(mainSpace(page)).toContainText("1 working");
+  await expect(list.getByRole("button", { name: /experiments/ })).toContainText("1 need attention");
+  expect(await order()).toEqual(before);
+});
 
 test("Tasks ignores legacy filters and Spaces has searchable, distinct rows", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });

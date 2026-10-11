@@ -9,7 +9,7 @@ import { navigate, useRoute } from "../router";
 import { compareTasks } from "../lib/task-order";
 import { taskTitle } from "../lib/task-title";
 import { useRepos } from "../hooks/useRepos";
-import { newTaskPath, spaceActivity, spacePath } from "../space-context";
+import { newTaskPath, spaceActivities, spacePath } from "../space-context";
 import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
@@ -113,7 +113,9 @@ export function AppNavigation({ tasks, conn, children }: {
           </Button>)}
         </section>
   );
-  const recentSpaces = [...repos.values()].sort((a, b) => spaceActivity(b.id, tasks).latest - spaceActivity(a.id, tasks).latest || a.name.localeCompare(b.name)).slice(0, 6);
+  const activities = useMemo(() => spaceActivities(tasks), [tasks]);
+  const recentSpaces = useMemo(() => [...repos.values()].sort((a, b) =>
+    (activities.get(b.id)?.latest ?? 0) - (activities.get(a.id)?.latest ?? 0) || a.name.localeCompare(b.name)).slice(0, 6), [repos, activities]);
   const newTask = () => go(newTaskPath(route.name === "space" ? route.repoId : undefined));
   return <NavigationContext.Provider value={context}>
     <div className={desktopSidebar ? "mx-auto flex max-w-[1360px]" : undefined}>
