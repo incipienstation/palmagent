@@ -116,6 +116,18 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   </ToggleGroup>
                 </SettingsField>
                 <PushToggle />
+              </SettingsCard>
+            </SettingsGroup>
+
+            <SettingsGroup label="Experimental">
+              <SettingsCard>
+                <SettingsField>
+                  <FieldContent>
+                    <FieldLabel variant="setting" htmlFor={arcadeId}>Arcade mode</FieldLabel>
+                    <p id={`${arcadeId}-description`} className="text-xs text-muted-foreground">Auto-open games</p>
+                  </FieldContent>
+                  <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
+                </SettingsField>
                 <Separator />
                 <SettingsField>
                   <FieldContent>
@@ -129,19 +141,6 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                     onCheckedChange={value => { void shake.setEnabled(value); }}
                     aria-describedby={shake.error ? `${shakeDescriptionId} ${shakeErrorId}` : shakeDescriptionId}
                     aria-busy={shake.status === "requesting"} />
-                </SettingsField>
-                <Separator />
-              </SettingsCard>
-            </SettingsGroup>
-
-            <SettingsGroup label="Experimental">
-              <SettingsCard>
-                <SettingsField>
-                  <FieldContent>
-                    <FieldLabel variant="setting" htmlFor={arcadeId}>Arcade mode</FieldLabel>
-                    <p id={`${arcadeId}-description`} className="text-xs text-muted-foreground">Auto-open games</p>
-                  </FieldContent>
-                  <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
                 </SettingsField>
               </SettingsCard>
             </SettingsGroup>
