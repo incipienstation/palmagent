@@ -136,11 +136,17 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     validateRepoPath: (path: string, signal?: AbortSignal) => request(() => client.repos.validate.$get({ query: { path } }, requestOptions(signal))),
     listFs: (path?: string, signal?: AbortSignal) => request(() => client.fs.list.$get({ query: { path } }, requestOptions(signal))),
     listTasks: (status?: TaskStatus) => request(() => client.tasks.$get({ query: { status } })).then((r) => r.tasks),
-    taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal) => request(() => tasks.history.$get({
-      param: idParam(id), query: { ...(before === undefined ? {} : { before: String(before) }), ...(details === "summary" ? { details } : {}) },
+    taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false) => request(() => tasks.history.$get({
+      param: idParam(id), query: { ...(transcript ? { format: "transcript" as const } : {}), ...(before === undefined ? {} : { before: String(before) }), ...(details === "summary" ? { details } : {}) },
     }, { init: { signal } })),
-    taskHistoryChanges: (id: string, after: number, through: number, details: "summary" | "full" = "full", signal?: AbortSignal) => request(() => tasks.history.changes.$get({
-      param: idParam(id), query: { after: String(after), through: String(through), ...(details === "summary" ? { details } : {}) },
+    taskHistoryChanges: (id: string, after: number, through: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false, afterKey?: number) => request(() => tasks.history.changes.$get({
+      param: idParam(id), query: { ...(transcript ? { format: "transcript" as const } : {}), ...(afterKey === undefined ? {} : { afterKey: String(afterKey) }), after: String(after), through: String(through), ...(details === "summary" ? { details } : {}) },
+    }, { init: { signal } })),
+    conversationDetails: (id: string, key: number, after?: number, signal?: AbortSignal) => request(() => tasks.history.items.$get({
+      param: idParam(id), query: { key: String(key), ...(after === undefined ? {} : { after: String(after) }) },
+    }, { init: { signal } })),
+    conversationContent: (id: string, ref: import("@palmagent/shared").ConversationContentRef, offset: number, signal?: AbortSignal) => request(() => tasks.history.content.$get({
+      param: idParam(id), query: { key: String(ref.key), version: ref.version, offset: String(offset), ...(ref.member === undefined ? {} : { member: String(ref.member) }) },
     }, { init: { signal } })),
     taskActivityDetails: (id: string, from: number, through: number, signal?: AbortSignal) => request(() => tasks.history.details.$get({
       param: idParam(id), query: { from: String(from), through: String(through) },

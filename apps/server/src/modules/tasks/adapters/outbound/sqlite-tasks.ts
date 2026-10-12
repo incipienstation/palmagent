@@ -1,3 +1,4 @@
+import { ConversationHistory } from "./conversation-history.js";
 import { projectContextUsage } from "./context-usage.js";
 import { projectConfirmedPrs } from "../../domain/pr-projection.js";
 import Database from "better-sqlite3";
@@ -113,6 +114,7 @@ function rowToEvent(r: EventJoinRow): EventRow {
 }
 
 export class SqliteTasks {
+private readonly conversation: ConversationHistory;
 private insertEventStmt: Database.Statement;
 private getSeqStmt: Database.Statement;
 private usageRevisionStmt: Database.Statement;
@@ -122,6 +124,7 @@ constructor(private readonly db: Database.Database) {
  initializeUsageRevision(db);
  this.initializeContextUsage();
  this.initializePrEvidence();
+ this.conversation = new ConversationHistory(db);
  this.insertEventStmt = db.prepare(`INSERT INTO events (task_id, seq, kind, payload_json, ts) VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE task_id = ?), ?, ?, ?)`);
  this.getSeqStmt = db.prepare("SELECT seq FROM events WHERE id = ?");
  this.usageRevisionStmt = db.prepare("SELECT revision FROM task_usage_revision WHERE id = 1");
@@ -310,6 +313,7 @@ setTaskTitle(id: string, title: string, now: number) {
 appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[] {
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));
+      this.conversation.update(taskId);
       this.projectPrEvents(taskId, events);
       this.projectContextEvents(taskId, events);
       if (rawSeq !== undefined) this.setTaskRawSeq(taskId, rawSeq);
@@ -321,6 +325,7 @@ appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventR
 importSessionEvents(task: TaskState, events: AgentEvent[]): EventRow[] {
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
+      this.conversation.update(task.taskId);
       this.projectPrEvents(task.taskId, events);
       this.projectContextEvents(task.taskId, events);
       this.setSessionControl(task.taskId, task.sessionControl);
@@ -435,6 +440,11 @@ eventsAfterSeq(taskId: string, afterSeq: number, limit = 5000): EventRow[] {
     ).all(taskId, afterSeq, limit) as EventJoinRow[];
     return rows.map(rowToEvent);
   }
+
+conversationPage(taskId: string, before?: number) { return this.conversation.page(taskId, before); }
+conversationChanges(taskId: string, after: number, through?: number, afterKey?: number) { return this.conversation.changes(taskId, after, through, afterKey); }
+conversationDetails(taskId: string, key: number, after?: number) { return this.conversation.details(taskId, key, after); }
+conversationContent(taskId: string, key: number, version: string, offset: number, member?: number) { return this.conversation.content(taskId, key, version, offset, member); }
 
 historyStart(taskId: string, before: number, limit = HISTORY_PAGE_EVENTS): number {
     const edge = this.db.prepare(`SELECT seq, kind FROM events

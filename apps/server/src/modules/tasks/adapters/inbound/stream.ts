@@ -17,6 +17,7 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
   const snapshotsOnly = query.snapshots === "1";
   const idOf = (row: EventRow) => taskId ? row.seq : row.id;
   const frame = (row: EventRow) => {
+    if (taskId && query.format === "transcript") return `data: ${JSON.stringify({ type: "history-change", taskId, through: row.seq })}\n\n`;
     const compact = taskId && query.details === "summary" ? deferActivityEventDetails(row.event) : undefined;
     return `id: ${idOf(row)}\ndata: ${JSON.stringify({ type: "event", event: compact?.event ?? row.event, ...(compact?.detailsDeferred ? { detailsDeferred: true } : {}) })}\n\n`;
   };

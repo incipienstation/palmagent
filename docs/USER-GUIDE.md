@@ -68,6 +68,12 @@ Use **+ → Videos** to attach an MP4, WebM, or MOV video up to 20 MiB. The brow
 must be able to decode it. The original stays available for playback, and the agent
 receives up to eight timestamped frames for visual analysis. Audio is not sent.
 
+Compact conversations open with the latest messages and Activity summaries. Scroll
+up to read older pages; your reading position stays
+in place as they arrive. Activity counts describe the entire group. Expand a group
+to inspect its details, then use **Load more activity** for additional entries.
+Very large messages and images offer a separate load button for their full content.
+
 ## Space base branches
 
 When registering a Git Space, leave **Base branch** blank to detect the remote's

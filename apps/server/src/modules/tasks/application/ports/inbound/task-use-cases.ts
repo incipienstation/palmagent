@@ -13,6 +13,10 @@ export interface TaskUseCases {
   observeProviderAccountLimits(agent: AgentKind, listener: () => void): () => void;
   readAttachment(taskId: string, attachmentId: string): { bytes: Uint8Array; mediaType: string; };
   readTaskImage(taskId: string, requestedPath: string | string[]): Promise<{ bytes: Uint8Array; mediaType: string; }>;
+  conversationPage(taskId: string, before?: number): TaskHistoryResponse;
+  conversationChanges(taskId: string, after: number, through?: number, afterKey?: number): TaskHistoryChangesResponse;
+  conversationDetails(taskId: string, key: number, after?: number): import("@palmagent/shared").ConversationDetails;
+  conversationContent(taskId: string, key: number, version: string, offset: number, member?: number): import("@palmagent/shared").ConversationContent;
   eventCursor(taskId?: string): number;
   taskHistory(taskId: string, before?: number, includeActivityDetails?: boolean): TaskHistoryResponse;
   taskHistoryChanges(taskId: string, after: number, through?: number, includeActivityDetails?: boolean): TaskHistoryChangesResponse;

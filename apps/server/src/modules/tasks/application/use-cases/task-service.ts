@@ -77,6 +77,24 @@ export class TaskService implements PrStatusSink {
     return this.taskImages.read(task.worktreePath, requestedPath);
   }
 
+  conversationPage(taskId: string, before?: number) {
+    this.getTask(taskId);
+    return this.db.conversationPage(taskId, before);
+  }
+  conversationChanges(taskId: string, after: number, through?: number, afterKey?: number) {
+    this.getTask(taskId);
+    if (through !== undefined && through < after) throw badRequest("through must be at least after");
+    return this.db.conversationChanges(taskId, after, through, afterKey);
+  }
+  conversationDetails(taskId: string, key: number, after?: number) {
+    this.getTask(taskId);
+    return this.db.conversationDetails(taskId, key, after);
+  }
+  conversationContent(taskId: string, key: number, version: string, offset: number, member?: number) {
+    this.getTask(taskId);
+    return this.db.conversationContent(taskId, key, version, offset, member);
+  }
+
   eventCursor(taskId?: string): number { return this.db.eventCursor(taskId); }
 
   taskHistory(taskId: string, before?: number, includeActivityDetails = true) {

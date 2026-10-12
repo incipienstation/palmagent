@@ -1,3 +1,5 @@
+import { ConversationActivityDetails, ConversationContent } from "./ConversationDetails";
+import type { ConversationContentRef, ConversationItem, TranscriptRow as ConversationRow } from "@palmagent/shared";
 import { SkillChips } from "./SkillPicker";
 import { AttachmentSchema, attachmentUrl, type Attachment, type PendingMessage, type ImageAttachment, type InputAttachment, SelectedSkillsSchema } from "@palmagent/shared";
 import { readUpdateSnapshot, useUpdateSnapshot, useUpdateState } from "../update-state";
@@ -192,7 +194,7 @@ function MachineryLine({
   );
 }
 
-type TranscriptRow = { key: string; seq: number } & (
+type TranscriptRow = { key: string; seq: number; content?: ConversationContentRef; revision?: number } & (
   | { type: "prompt"; text: string }
   | { type: "delivery"; message: PendingMessage }
   | { type: "working" }
@@ -201,9 +203,18 @@ type TranscriptRow = { key: string; seq: number } & (
   | { type: "failure"; failure: RunFailure; open: boolean }
 );
 type HistoryControls = {
+  taskId?: string;
   history: TaskHistoryControls;
   onScrollPosition?: (element: HTMLElement) => void;
 };
+
+function ConversationRecord({ taskId, row, onImageLoad }: { taskId: string; row: ConversationRow & { content?: ConversationContentRef }; onImageLoad: () => void }) {
+  if (row.content) return <ConversationContent taskId={taskId} content={row.content}
+    preview={row.type === "message" && row.item.kind === "assistant_text" && row.item.text ? <p className="whitespace-pre-wrap">{row.item.text}</p> : undefined}
+    render={loaded => <ConversationRecord taskId={taskId} row={loaded} onImageLoad={onImageLoad} />} />;
+  if (row.type === "message") return <EventRow item={row.item} live={false} expanded raw toggle={() => {}} onImageLoad={onImageLoad} />;
+  return <>{row.items.map(item => <EventRow key={item.key} item={item} live={false} expanded raw toggle={() => {}} onImageLoad={onImageLoad} />)}</>;
+}
 
 // Filter before virtualization: invisible rows must not create zero-height items.
 function visible(item: LogItem): boolean {
@@ -372,7 +383,7 @@ function activityRowKey(activity: Activity, historyFloor?: number): string {
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
-function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivity, following, delivery, ...context }: {
+function VirtualTranscript({ taskId, rows, liveKey, mode, toggled, toggle, toggleActivity, following, delivery, ...context }: {
   rows: TranscriptRow[]; liveKey?: number; mode: OutputMode; delivery?: DeliveryControls;
   toggled: Set<number>; toggle: (key: number) => void;
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
@@ -694,10 +705,12 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
           {delivery && <MessageDelivery {...delivery} message={row.message} />}
         </div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
-        <ActivitySummary activity={row.activity} mode={mode} open={row.open}
+        <><ActivitySummary activity={row.activity} mode={mode} open={row.open}
           detailsLoading={row.detailsLoading} detailsError={row.detailsError} onRetry={row.retryDetails}
           onToggle={toggleActivityRow} />
-        : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined} data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
+          {row.open && row.activity.details && taskId && <ConversationActivityDetails taskId={taskId} itemKey={row.activity.key} revision={row.revision ?? 0}
+            render={item => <ConversationRecord taskId={taskId} row={item} onImageLoad={followBottom} />} />}</>
+        : row.content && taskId ? <ConversationRecord taskId={taskId} row={{ type: "message", key: row.seq, item: row.item, content: row.content }} onImageLoad={followBottom} /> : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined} data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
           <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
             expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggleRow} onImageLoad={followBottom} />
           {row.delivery && delivery && <MessageDelivery {...delivery} message={row.delivery} />}
@@ -722,8 +735,8 @@ function VirtualTranscript({ rows, liveKey, mode, toggled, toggle, toggleActivit
   </>;
 }
 
-export function EventLog({ log, live, blocked = false, prompt, taskId, delivery, empty, history }: {
-  log: LogItem[]; live: boolean; blocked?: boolean; prompt?: string; taskId?: string; delivery?: DeliveryControls; empty?: ReactNode;
+export function EventLog({ log, transcript, live, blocked = false, prompt, taskId, delivery, empty, history }: {
+  log: LogItem[]; transcript?: ConversationItem[]; live: boolean; blocked?: boolean; prompt?: string; taskId?: string; delivery?: DeliveryControls; empty?: ReactNode;
 } & HistoryControls) {
   const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
@@ -755,7 +768,8 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
     following.current = false;
     setOpenActivity((prev) => {
       const next = new Set(prev);
-      for (const item of activity.items) { if (open) next.add(item.key); else next.delete(item.key); }
+      const keys = activity.details ? [activity.key] : activity.items.map(item => item.key);
+      for (const key of keys) { if (open) next.add(key); else next.delete(key); }
       return next;
     });
   }, []);
@@ -768,12 +782,15 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
     }
     const messages = new Map(delivery?.messages.map(message => [message.id, message]));
     const seen = new Set<string>();
-    const activity = transcriptActivity(log, { running: live, blocked,
+    const activity = transcriptActivity(log, { running: live, blocked, projected: history.activity,
       // An unsent local preview must not imply that an agent has started work.
       messages: delivery?.waitingForConnection ? delivery.messages.filter(message => message.version !== 0) : delivery?.messages,
       loading: history.initial.status !== "ready" && history.initial.status !== "disabled",
     });
-    for (const row of presentTranscript(log, mode, live && (activity === "working" || activity === "output"))) {
+    const source = transcript ?? presentTranscript(log, mode, live && (activity === "working" || activity === "output"));
+    for (const sourceRow of source) {
+      const row = sourceRow.type === "activity" && transcript
+        ? { ...sourceRow, live: sourceRow.live && live && (activity === "working" || activity === "output"), preview: live ? sourceRow.preview : undefined } : sourceRow;
       if (row.type === "message") {
         const p = payload(row.item);
         const messageId = row.item.kind === "status" && ["followup", "steer", "dispatch"].includes(String(p.subtype)) && typeof p.messageId === "string" ? p.messageId : undefined;
@@ -788,8 +805,8 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
           groupEnd: index === row.items.length - 1,
         });
       } else {
-        const open = row.items.some((item) => openActivity.has(item.key));
-        rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, open });
+        const open = row.details ? openActivity.has(row.key) : row.items.some((item) => openActivity.has(item.key));
+        rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, open, revision: "revision" in row ? Number(row.revision) : undefined });
       }
     }
     const pending = [...messages.values()].filter(message => !seen.has(message.id));
@@ -803,7 +820,7 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;
-  }, [log, mode, live, blocked, prompt, openActivity, toggled, delivery?.messages, delivery?.waitingForConnection, historyFloor, history.initial.status, history.earlier.hasMore]);
+  }, [log, transcript, mode, live, blocked, prompt, history.activity, openActivity, toggled, delivery?.messages, delivery?.waitingForConnection, historyFloor, history.initial.status, history.earlier.hasMore]);
   const deferredActivities = useMemo(() => transcriptRows.flatMap((row) => {
     if (row.type !== "activity" || !row.open || !row.activity.items.some((item) => item.kind !== "assistant_text" && item.detailsDeferred) || !taskId) return [];
     const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);
@@ -863,7 +880,7 @@ export function EventLog({ log, live, blocked = false, prompt, taskId, delivery,
   const showInitialState = initialPending && !rows.some(row => row.type !== "working");
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
     {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows}
-      liveKey={live ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} history={history} /> : !showInitialState && empty ?
+      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} history={history} /> : !showInitialState && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={{ history }} />
