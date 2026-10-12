@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, openSync, closeSync, fsyncSync, writeFileSync, renameSync, linkSync, unlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, openSync, closeSync, fsyncSync, writeFileSync, renameSync, linkSync, unlinkSync, symlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -28,6 +28,20 @@ export function writePrivateFileAtomic(path: string, content: string | Uint8Arra
     try { writeFileSync(fd, content); fsyncSync(fd); } finally { closeSync(fd); }
     if (options.exclusive) linkSync(temporary, path);
     else renameSync(temporary, path);
+    const directory = openSync(dirname(path), "r");
+    try { fsyncSync(directory); } finally { closeSync(directory); }
+  } finally {
+    try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
+}
+
+/** Publish an executable selection without modifying a running binary's inode. */
+export function replaceSymlinkAtomic(path: string, target: string): void {
+  ensurePrivateParent(dirname(path));
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    symlinkSync(target, temporary);
+    renameSync(temporary, path);
     const directory = openSync(dirname(path), "r");
     try { fsyncSync(directory); } finally { closeSync(directory); }
   } finally {

@@ -12,7 +12,7 @@ import { createServer } from "node:net";
 import { DEFAULT_CAPS, type InstallConfig } from "../src/modules/installation/adapters/outbound/config.js";
 import { installDaemonBootstrap, removeDaemonBootstrap, startDaemonBootstrap } from "../src/modules/installation/adapters/outbound/daemon-bootstrap.js";
 import { daemonServiceName, prepareUserService, userServiceDirectory, userServiceEnvironment, verifyUserIsolation } from "../src/modules/installation/adapters/outbound/user-service.js";
-import { daemonBinary } from "../src/modules/installation/adapters/outbound/daemon-runtime.js";
+import { daemonBinary, writeDaemonConfiguration } from "../src/modules/installation/adapters/outbound/daemon-runtime.js";
 import { daemonRequest } from "../src/platform/process/daemon-client.js";
 import { DaemonStatusSchema } from "@palmagent/shared/daemon";
 import { pinNode } from "../src/modules/installation/adapters/outbound/execution-release.js";
@@ -51,7 +51,8 @@ try {
   const release = join(prefix, "node_modules/palmagent");
   const node = pinNode(dataDir);
   const binary = daemonBinary(release);
-  copyFileSync(binary, join(dataDir, "daemon/launcher"));
+  // Keep a deliberately unusable old launcher: direct control must not invoke it.
+  writeFileSync(join(dataDir, "daemon/launcher"), "#!/bin/sh\nexit 97\n", { mode: 0o700 });
   const providerFixture = join(repository, "apps/server/tests/support/lifecycle-cli.cjs");
   for (const agent of ["claude", "codex"]) writeFileSync(join(root, "bin", agent), `#!${process.execPath}\nprocess.argv.splice(2,0,${JSON.stringify(agent)}); require(${JSON.stringify(providerFixture)});\n`, { mode: 0o700 });
   // Any runtime use of privileged service management fails this acceptance run.
@@ -71,7 +72,7 @@ try {
       DISPATCH_CONCURRENCY: "2", PALMAGENT_EXECUTION_CONCURRENCY: "2", DISPATCHER_DATA_DIR: dataDir,
       DISPATCHER_DB: join(dataDir, "dispatcher.db"), REPO_ROOTS: join(root, "repo"), EXECUTION_RELEASE: release, EXECUTION_NODE: node, STATIC_DIR: join(release, "web") },
   };
-  const save = () => writeFileSync(join(dataDir, "daemon/config.json"), JSON.stringify(config), { mode: 0o600 });
+  const save = () => writeDaemonConfiguration(dataDir, config);
   save();
   if (systemScope) {
   admin("systemd-run", "--quiet", "--collect", `--unit=${unit}`, `--uid=${userInfo().username}`,
@@ -122,7 +123,7 @@ try {
   const { record: terminal } = terminals.reserve({ requestId: randomUUID(), repoId: repo.id, title: "Acceptance", initialCwd: join(root, "repo"),
     directory: terminals.directory, release, node, cols: 80, rows: 24 });
   writeFileSync(join(terminals.directory, terminal.id + ".json"), JSON.stringify({ protocol: 1, id: terminal.id, directory: terminals.directory, release, node }), { mode: 0o600 });
-  daemonRequest(dataDir, { action: "launch", kind: "terminal", id: terminal.id });
+  await daemonRequest(dataDir, { action: "launch", kind: "terminal", id: terminal.id });
   await until(() => terminals!.get(terminal.id)?.state === "running", "terminal starts");
   const frames: TerminalFrame[] = [];
   const attach = async () => {
@@ -155,20 +156,20 @@ try {
   assert.equal((await api("health")).activeRoutineScripts, 1);
   assert.equal((await api("health")).updateBlockingRoutineScripts, 0);
 
-  const before = DaemonStatusSchema.parse(daemonRequest(dataDir, { action: "status" }));
-  daemonRequest(dataDir, { action: "replace" });
-  await until(() => { try { return DaemonStatusSchema.parse(daemonRequest(dataDir, { action: "status" })).instance !== before.instance; } catch { return false; } }, "daemon replacement");
+  const before = DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" }));
+  await daemonRequest(dataDir, { action: "replace" });
+  await until(async () => { try { return DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" })).instance !== before.instance; } catch { return false; } }, "daemon replacement");
   process.kill(before.pid, "SIGKILL");
-  await until(() => { try { return DaemonStatusSchema.parse(daemonRequest(dataDir, { action: "status" })).pid !== before.pid; } catch { return false; } }, "bootstrap recovers daemon crash");
+  await until(async () => { try { return DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" })).pid !== before.pid; } catch { return false; } }, "bootstrap recovers daemon crash");
 
   const replacement = join(dataDir, "releases/second");
   cpSync(prefix, replacement, { recursive: true });
   config.release = join(replacement, "node_modules/palmagent"); config.daemon = daemonBinary(config.release);
   config.environment.EXECUTION_RELEASE = config.release; config.environment.STATIC_DIR = join(config.release, "web"); save();
-  daemonRequest(dataDir, { action: "restart-web" });
+  await daemonRequest(dataDir, { action: "restart-web" });
   await until(async () => { try { return (await api("health")).executionProtocol === 1; } catch { return false; } }, "replacement web");
   process.kill(routinePid, 0);
-  const retainedRoutine = daemonRequest(dataDir, { action: "inspect", kind: "routine", id: routineHostId }) as { release: string; alive: boolean };
+  const retainedRoutine = await daemonRequest(dataDir, { action: "inspect", kind: "routine", id: routineHostId }) as { release: string; alive: boolean };
   assert.equal(retainedRoutine.release, release); assert(retainedRoutine.alive);
   assert.equal((await api(`routines/${routine.id}/runs`)).runs[0].status, "running");
   writeFileSync(join(root, "control/routine.release"), "");
@@ -180,7 +181,7 @@ try {
   assert(frames.some(frame => frame.type === "snapshot" && frame.data.includes("DAEMON-TERMINAL")));
   assert.equal(terminals.get(terminal.id)!.pid, terminalPid);
   terminalChannel!.close();
-  daemonRequest(dataDir, { action: "terminate", kind: "terminal", id: terminal.id });
+  await daemonRequest(dataDir, { action: "terminate", kind: "terminal", id: terminal.id });
   const escaped = Number(readFileSync(escapedPid, "utf8").trim());
   await until(() => !existsSync(`/proc/${escaped}`), "detached descendant cleanup");
 
@@ -198,8 +199,8 @@ try {
   }
   assert.deepEqual(executions.list().map(row => [row.id, row.pid, row.release]), identities.map(row => [row.id, row.pid, row.release]));
   assert(!existsSync(join(root, "forbidden-service-call")), "Runtime must not invoke sudo or systemctl");
-  await until(() => { try { daemonRequest(dataDir, { action: "stop" }); return true; } catch { return false; } }, "idle runtime stops");
-  if (installed) { removeDaemonBootstrap(installed); installed = undefined; }
+  await until(async () => { try { await daemonRequest(dataDir, { action: "stop" }); return true; } catch { return false; } }, "idle runtime stops");
+  if (installed) { await removeDaemonBootstrap(installed); installed = undefined; }
   assert(!existsSync(join(root, "forbidden-service-call")), "User installation and removal must not invoke sudo");
   console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results and cgroup cleanup without privileged runtime calls");
 } finally {
@@ -216,7 +217,7 @@ try {
   } else cleanupConfirmed = !cgroup;
   if (systemScope) spawnSync("/usr/bin/sudo", ["-n", "systemctl", "reset-failed", unit], { stdio: "pipe" });
   else {
-    if (installed) removeDaemonBootstrap(installed);
+    if (installed) await removeDaemonBootstrap(installed);
     spawnSync("/usr/bin/systemctl", ["--user", "reset-failed", unit], { stdio: "pipe", env: userServiceEnvironment() });
   }
   process.env = originalEnvironment;

@@ -1,32 +1,58 @@
-import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { lstatSync, realpathSync } from "node:fs";
+import { createConnection } from "node:net";
 import { join } from "node:path";
-import { DaemonRequestSchema, type DaemonRequest } from "@palmagent/shared/daemon";
+import { DAEMON_PROTOCOL, DaemonRequestSchema, type DaemonRequest } from "@palmagent/shared/daemon";
 
-/** The stable private launcher speaks the versioned local protocol. Never falls back to sudo. */
-export function daemonRequest(dataDir: string, request: DaemonRequest): unknown {
-  const input = JSON.stringify(DaemonRequestSchema.parse(request));
-  const result = spawnSync(join(dataDir, "daemon", "launcher"), ["request", "--data-dir", dataDir], {
-    input, encoding: "utf8", timeout: 40_000, maxBuffer: 128 * 1024,
-  });
-  if (result.status !== 0) throw new Error("Palmagent daemon request failed; inspect daemon status and private runtime logs");
-  return JSON.parse(result.stdout);
+const MAX_FRAME = 65_536;
+
+/** Match the native transport's canonical installation path and private socket. */
+function controlSocket(dataDir: string): string {
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error("Daemon transport requires a Unix installation owner");
+  const hash = createHash("sha256").update(realpathSync(dataDir)).digest("hex").slice(0, 20);
+  const directory = `/tmp/palmagentd-${uid}-${hash}`;
+  const socket = join(directory, "control.sock");
+  for (const path of [directory, socket]) {
+    const stat = lstatSync(path);
+    if (stat.uid !== uid || (stat.mode & 0o077) !== 0 ||
+        (path === directory ? !stat.isDirectory() : !stat.isSocket())) {
+      throw new Error("Daemon control endpoint must be private and owned by the installation user");
+    }
+  }
+  return socket;
 }
 
-/** Async requests keep host reconciliation from blocking HTTP and provider event delivery. */
-export function daemonRequestAsync(dataDir: string, request: DaemonRequest): Promise<unknown> {
-  const input = JSON.stringify(DaemonRequestSchema.parse(request));
+/** Speak directly to the daemon. Never retry a request with unknown delivery. */
+export async function daemonRequest(dataDir: string, request: DaemonRequest): Promise<unknown> {
+  const input = Buffer.from(JSON.stringify({ protocol: DAEMON_PROTOCOL, request: DaemonRequestSchema.parse(request) }) + "\n");
+  if (input.length > MAX_FRAME) throw new Error("Daemon request is too large");
+  const path = controlSocket(dataDir);
   return new Promise((resolve, reject) => {
-    const child = spawn(join(dataDir, "daemon", "launcher"), ["request", "--data-dir", dataDir], { stdio: ["pipe", "pipe", "ignore"] });
-    let output = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), 40_000);
-    child.stdin.on("error", () => {});
-    child.stdout.on("data", chunk => { output += chunk.toString(); if (output.length > 128 * 1024) child.kill("SIGKILL"); });
-    child.once("error", error => { clearTimeout(timer); reject(error); });
-    child.once("close", code => {
+    const socket = createConnection(path);
+    let output = Buffer.alloc(0), settled = false;
+    const finish = (error?: Error, value?: unknown) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      if (code !== 0) { reject(new Error("Palmagent daemon request failed; inspect daemon status and private runtime logs")); return; }
-      try { resolve(JSON.parse(output)); } catch (error) { reject(error); }
+      socket.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => finish(new Error("Daemon request timed out; delivery is unconfirmed")), 40_000);
+    socket.once("connect", () => socket.write(input));
+    socket.on("data", chunk => {
+      output = Buffer.concat([output, chunk]);
+      if (output.length > MAX_FRAME) { finish(new Error("Daemon response is too large")); return; }
+      const end = output.indexOf(10);
+      if (end < 0) return;
+      try {
+        const reply = JSON.parse(output.subarray(0, end).toString("utf8"));
+        if (reply?.protocol !== DAEMON_PROTOCOL) throw new Error("Incompatible daemon protocol");
+        if (reply.ok !== true) throw new Error("Palmagent daemon request failed; inspect private runtime logs");
+        finish(undefined, reply.result);
+      } catch (error) { finish(error instanceof Error ? error : new Error("Invalid daemon response")); }
     });
-    child.stdin.end(input);
+    socket.once("error", () => finish(new Error("Daemon connection failed; delivery is unconfirmed")));
+    socket.once("close", () => finish(new Error("Daemon connection closed before acknowledgment; delivery is unconfirmed")));
   });
 }

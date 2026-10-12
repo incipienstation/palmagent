@@ -21,7 +21,7 @@ These are OS adapter boundaries; macOS and Windows implementations are not inclu
 
 Systemd is only the Linux boot/crash-recovery adapter for new installations. A
 user service named `palmagentd-<data-directory-hash>.service` launches a stable
-user-owned bootstrap and delegates CPU, memory and PID controllers. It requires
+user-owned `daemon/current` executable link and delegates CPU, memory and PID controllers. It requires
 systemd 254+ (`DelegateSubgroup=control`), cgroup v2 with writable `cgroup.kill`,
 and an accessible systemd user manager. The control subgroup lets systemd restart
 the daemon while other groups remain populated. Account lingering keeps the user
@@ -49,7 +49,8 @@ rely on it.
 Automatic update discovery, Stable/Preview selection, compatibility checks, receipts
 and retry holds retain their existing behavior. The daemon starts an independent
 updater, which stages an immutable package and pinned Node runtime. Activation
-verifies daemon protocol and artifact hashes, writes private configuration,
+verifies daemon protocol and artifact hashes, writes private configuration and atomically
+selects the native executable through `daemon/current`,
 replaces the daemon with `exec` (preserving its bootstrap PID), verifies the new
 build identity, and replaces the web process. Existing hosts keep their original
 release. Daemon-managed routine scripts also keep their original release and process. Scheduling,
@@ -59,7 +60,15 @@ Timeouts and explicit cancellation still clean up the script and its descendants
 Source and legacy installations keep web-owned scripts, so activation still waits
 for those scripts to finish and retains the pending update request.
 
-Failed activation attempts restore the previous runtime configuration and check
+App and CLI control requests use the private daemon socket directly, with bounded frames,
+protocol validation and no automatic resend after unknown delivery. They do not execute a
+launcher. Existing `daemon/launcher` paths become compatibility links for retained older
+hosts and existing service units; new installations do not create them. The selected
+release supplies any compatibility commands, so an old copied command parser cannot
+block a new request. The startup command reads the authoritative configuration before
+executing the daemon, including during an interrupted executable-link update.
+
+Failed activation attempts restore the previous runtime configuration and executable selection and check
 its health. Both releases and the activation receipt remain available; database
 changes are not rolled back. An interrupted updater leaves its retry hold for
 explicit recovery. A full machine reboot ends active processes.

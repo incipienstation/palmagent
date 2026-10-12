@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Existing daemon installations receive new control operations after updates without manually replacing a stale launcher. Application control now connects directly to the daemon, while executable links preserve startup and retained-host compatibility.
+
 ## 0.1.0-alpha.186
 
 ### Changed

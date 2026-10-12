@@ -34,10 +34,10 @@ export function autoUpdateStatus(cfg: InstallConfig) {
 }
 
 /** The caller holds the shared installation/update lock for a real mutation. */
-export function applyUpdateSettings(cfg: InstallConfig, input: UpdateSettingsChange, dryRun = false): void {
+export async function applyUpdateSettings(cfg: InstallConfig, input: UpdateSettingsChange, dryRun = false): Promise<void> {
   const change = UpdateSettingsChangeSchema.parse(input);
   if ("channel" in change) setUserChannel(change.channel, { dataDir: cfg.dataDir, dryRun });
-  else configureAutoUpdate(cfg, change.autoUpdate, dryRun);
+  else await configureAutoUpdate(cfg, change.autoUpdate, dryRun);
   if (!dryRun && ("channel" in change || readUpdateAccess(cfg.dataDir).pending?.automatic)) clearUpdateRequest(cfg);
 }
 
@@ -54,7 +54,7 @@ function installation(dataDir: string, expectedDb: string): { cfg?: InstallConfi
   return { cfg, availability: owner && process.platform === "linux" && (cfg.supervisor === "palmagentd" || canSudoNonInteractive()) ? "available" : "permission-required" };
 }
 
-export function runUpdateSettingsCommand(args: string[], checkAvailability = checkUpdateAccess): UpdateSettingsCommandResult {
+export async function runUpdateSettingsCommand(args: string[], checkAvailability = checkUpdateAccess): Promise<UpdateSettingsCommandResult> {
   let unlock: (() => void) | undefined;
   let changing = false;
   let action = "status";
@@ -80,7 +80,7 @@ export function runUpdateSettingsCommand(args: string[], checkAvailability = che
     const { cfg, availability } = installation(values["data-dir"], values["expected-db"]);
     if (changing && (availability !== "available" || !cfg)) return { ok: false, error: "unavailable" };
     if (cfg && changing) {
-      if (change) applyUpdateSettings(cfg, change);
+      if (change) await applyUpdateSettings(cfg, change);
       if (!cfg.supervisor) retireAutoUpdateTimer();
       const check = action === "visit" || action === "check" || (change && ("channel" in change || change.autoUpdate));
       if (check) {
@@ -107,10 +107,10 @@ export function runUpdateSettingsCommand(args: string[], checkAvailability = che
           finally { db.close(); }
         }
         if (ready) {
-          prepareUpdateService(cfg);
+          await prepareUpdateService(cfg);
           // The executor also takes this lock; release before asking the supervisor to start it.
           unlock?.(); unlock = undefined;
-          startRequestedUpdate(cfg);
+          await startRequestedUpdate(cfg);
         }
       }
     }

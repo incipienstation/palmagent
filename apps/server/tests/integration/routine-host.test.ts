@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync, spawn } from "node:child_process";
@@ -12,7 +13,7 @@ import { DaemonRoutineScriptRunner } from "../../src/modules/routines/adapters/o
 import { RoutineHostStore } from "../../src/modules/routines/adapters/outbound/routine-host-store.js";
 import { WorktreeManager } from "../../src/modules/spaces/adapters/outbound/worktree.js";
 import { NodeIdentifierGenerator } from "../../src/platform/process/id-generator.js";
-import { daemonRequestAsync } from "../../src/platform/process/daemon-client.js";
+import { daemonRequest } from "../../src/platform/process/daemon-client.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import type { RoutineTaskUseCases } from "../../src/modules/routines/application/ports/outbound/routines.js";
 import { createReleaseOperations } from "../../src/modules/installation/adapters/outbound/execution-release.js";
@@ -45,7 +46,7 @@ test("daemon routine hosts preserve admission and results through web detach, re
     environment: { PATH: process.env.PATH }, isolation: "process-group",
     limits: { memoryHigh: 1024, memoryMax: 2048, tasks: 64, webTasks: 64, cpuPercent: 100, nofile: 1024 } }), { mode: 0o600 });
   const daemon = spawn(binary, ["serve", "--data-dir", root], { stdio: "ignore" });
-  const request = (action: "status" | "replace" | "restart-web" | "stop") => daemonRequestAsync(root, { action });
+  const request = (action: "status" | "replace" | "restart-web" | "stop") => daemonRequest(root, { action });
   let db = new Db(join(root, "state.db"));
   db.insertRepo({ id: "space", name: "test", path: join(root, "repo"), vcs: "none", defaultBaseRef: "HEAD", createdAt: 1 });
   const tasks = { updating: false, createTask() { throw new Error("Scripts must not invoke an agent"); } } as unknown as RoutineTaskUseCases;
@@ -88,17 +89,18 @@ test("daemon routine hosts preserve admission and results through web detach, re
   assert.equal(readFileSync(join(root, "repo/invocations"), "utf8"), "once\n");
   assert(store.recorded(store.id(run.id)));
 
+  const controlSocket = `/tmp/palmagentd-${process.getuid!()}-${createHash("sha256").update(root).digest("hex").slice(0, 20)}/control.sock`;
   // Control-plane uncertainty retains admission, even if the script finishes meanwhile.
   const unavailable = create("echo ready > unavailable-ready; while [ ! -f unavailable-release ]; do sleep 0.1; done; printf recovered");
   service.runNow(unavailable.id);
   await until(() => existsSync(join(root, "repo/unavailable-ready")), "uncertain host starts");
-  renameSync(join(root, "daemon/launcher"), join(root, "daemon/launcher-offline"));
+  renameSync(controlSocket, controlSocket + ".offline");
   try {
     writeFileSync(join(root, "repo/unavailable-release"), "");
     await new Promise(resolve => setTimeout(resolve, 1200));
     assert.equal(service.runs(unavailable.id)[0].status, "running");
     assert.throws(() => service.runNow(unavailable.id), /already running/);
-  } finally { renameSync(join(root, "daemon/launcher-offline"), join(root, "daemon/launcher")); }
+  } finally { renameSync(controlSocket + ".offline", controlSocket); }
   assert.equal((await finished(unavailable.id)).output, "recovered");
 
   // Completion during web downtime is recovered from the host's durable result.

@@ -1,3 +1,4 @@
+import { startDaemonControlFixture } from "../support/daemon-control.js";
 import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { createServer } from "node:net";
@@ -543,7 +544,7 @@ test("public automatic updates still reject explicit version and channel overrid
   assert.deepEqual(f.readCalls(), []);
 });
 
-test("migration disables and removes only the legacy recurring timer", (t) => {
+test("migration disables and removes only the legacy recurring timer", async (t) => {
   const f = fixture(t);
   const unitDir = join(f.root, "units"); mkdirSync(unitDir);
   writeFileSync(join(unitDir, "palmagent-update.timer"), "[Timer]\nOnCalendar=daily\n");
@@ -556,7 +557,7 @@ require('node:fs').appendFileSync(${JSON.stringify(f.calls)}, JSON.stringify(pro
     ["rm", "-f", join(unitDir, "palmagent-update.timer")],
     ["systemctl", "daemon-reload"],
   ]);
-  startRequestedUpdate(); startRequestedUpdate();
+  await startRequestedUpdate(); await startRequestedUpdate();
   const starts = f.readCalls().slice(-2);
   assert(starts.every((args) => args.slice(0, 3).join(" ") === "systemctl start --no-block"));
   assert(starts.every((args) => /^palmagent-update@[a-f0-9-]+\.service$/.test(args[3])));
@@ -740,6 +741,7 @@ for (const outcome of ["success", "contract", "rollback", "provision", "assets",
     } }));
     mkdirSync(join(f.cfg.dataDir, 'daemon'), { mode: 0o700 });
     copyFileSync(binary, join(f.cfg.dataDir, 'daemon/launcher'));
+    await startDaemonControlFixture(t, f.cfg.dataDir);
     writeFileSync(join(f.cfg.pkgDir!, 'build-info.json'), JSON.stringify({ version: '0.1.0-alpha.2', sourceCommit: 'a'.repeat(40) }));
   }
   writeFileSync(join(f.root, "bin", "sleep"), `#!${process.execPath}\n`, { mode: 0o700 });
@@ -895,11 +897,11 @@ test("preflight and doctor do not require or invoke host ingress tools", async t
   fakeRuntimeTools(f.root);
   assert(!preflight().some(check => check.level === "fail"));
   assert.equal(existsSync(join(f.root, "host.jsonl")), false, "preflight must not invoke sudo or host ingress tools");
-  const checks = doctor(f.cfg);
+  const checks = await doctor(f.cfg);
   assert(!checks.some(check => /nginx|TLS|certbot/.test(check.name)));
   assert.equal(checks.find(check => check.name === "local HTTP")?.level, "ok");
   writeFileSync(join(f.root, "bin", "curl"), `#!${process.execPath}\nconsole.log('invalid health');\n`, { mode: 0o700 });
-  assert.equal(doctor(f.cfg).find(check => check.name === "local HTTP")?.level, "fail");
+  assert.equal((await doctor(f.cfg)).find(check => check.name === "local HTTP")?.level, "fail");
   assert.doesNotMatch(readFileSync(join(f.root, "host.jsonl"), "utf8"), /nginx|certbot|letsencrypt|openssl|caddy/);
 });
 

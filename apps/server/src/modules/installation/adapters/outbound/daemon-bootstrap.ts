@@ -1,7 +1,7 @@
 /** Linux boot/crash recovery adapter; never used by normal runtime activation. */
-import { copyFileSync, chmodSync, existsSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { ensurePrivateDirectory, writePrivateFileAtomic } from "../../../../platform/filesystem/private-files.js";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { writePrivateFileAtomic } from "../../../../platform/filesystem/private-files.js";
 import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 import type { InstallConfig } from "./config.js";
 import { daemonBinary } from "./daemon-runtime.js";
@@ -30,13 +30,8 @@ export function installDaemonBootstrap(cfg: InstallConfig, enable = true): void 
   assertInstallationOwner(cfg);
   assertDaemonBootstrapSupported();
   const binary = daemonBinary(cfg.pkgDir!);
-  const launcher = join(cfg.dataDir, "daemon", "launcher");
-  ensurePrivateDirectory(dirname(launcher));
-  // The bootstrap ABI remains v1. Keep this launcher immutable across application updates.
-  if (!existsSync(launcher)) {
-    copyFileSync(binary, launcher + ".tmp"); chmodSync(launcher + ".tmp", 0o700); renameSync(launcher + ".tmp", launcher);
-  }
-  const rendered = run(binary, ["bootstrap-unit", "--data-dir", cfg.dataDir, "--launcher", launcher, "--user", cfg.user, "--group", cfg.group, "--scope", cfg.daemonScope ?? "system"]);
+  const executable = join(cfg.dataDir, "daemon", "current");
+  const rendered = run(binary, ["bootstrap-unit", "--data-dir", cfg.dataDir, "--executable", executable, "--user", cfg.user, "--group", cfg.group, "--scope", cfg.daemonScope ?? "system"]);
   if (!rendered.ok) throw new Error("Could not render the daemon bootstrap");
   const path = daemonUnitPath(cfg), unit = daemonServiceName(cfg);
   if (cfg.daemonScope === "user") {
@@ -58,7 +53,7 @@ export function startDaemonBootstrap(cfg: InstallConfig): void {
   if (!control(cfg, ["start", daemonServiceName(cfg)], true).ok) throw new Error("Could not start the daemon bootstrap");
 }
 
-export function stopDaemonBootstrap(cfg: InstallConfig): void {
+export async function stopDaemonBootstrap(cfg: InstallConfig): Promise<void> {
   assertInstallationOwner(cfg);
   if (cfg.daemonScope === "user") {
     const path = daemonUnitPath(cfg);
@@ -70,7 +65,7 @@ export function stopDaemonBootstrap(cfg: InstallConfig): void {
   }
   const unit = daemonServiceName(cfg);
   let emptyGroup: string | undefined;
-  try { daemonRequest(cfg.dataDir, { action: "stop" }); }
+  try { await daemonRequest(cfg.dataDir, { action: "stop" }); }
   catch (error) {
     // A failed first start has no control endpoint. Only an empty bootstrap may
     // be removed without its acknowledgment; active or uncertain hosts are retained.
@@ -111,7 +106,7 @@ export function restoreDaemonBootstrap(cfg: InstallConfig): void {
   startDaemonBootstrap(cfg);
 }
 
-export function removeDaemonBootstrap(cfg: InstallConfig): void {
-  stopDaemonBootstrap(cfg);
+export async function removeDaemonBootstrap(cfg: InstallConfig): Promise<void> {
+  await stopDaemonBootstrap(cfg);
   removeDaemonRegistration(cfg);
 }

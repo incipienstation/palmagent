@@ -36,7 +36,7 @@ pub trait ProcessIsolation {
 pub trait Autostart {
     fn render(
         data: &Path,
-        launcher: &Path,
+        executable: &Path,
         user: &str,
         group: &str,
         user_service: bool,

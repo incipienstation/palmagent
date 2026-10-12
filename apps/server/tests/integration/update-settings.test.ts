@@ -96,9 +96,9 @@ function installedFixture(t: test.TestContext) {
   return { root, data, db, args, executable, content };
 }
 
-test("CLI settings share preferences, preserve other keys, and exclude concurrent installation changes", (t) => {
+test("CLI settings share preferences, preserve other keys, and exclude concurrent installation changes", async (t) => {
   const f = installedFixture(t);
-  const initial = runUpdateSettingsCommand(["status", ...f.args]);
+  const initial = await runUpdateSettingsCommand(["status", ...f.args]);
   assert.equal(initial.ok, true);
   if (!initial.ok) return;
   assert.equal(initial.state.settings?.autoUpdate, false);
@@ -107,54 +107,54 @@ test("CLI settings share preferences, preserve other keys, and exclude concurren
   setUserAutoUpdate(true, { dataDir: f.data });
   const saved = JSON.parse(readFileSync(userConfigPath(), "utf8"));
   writeFileSync(userConfigPath(), JSON.stringify({ ...saved, futurePreference: "retained" }));
-  assert.equal(runUpdateSettingsCommand(["set", ...f.args, "--channel", "preview"]).ok, true);
+  assert.equal((await runUpdateSettingsCommand(["set", ...f.args, "--channel", "preview"])).ok, true);
   assert.deepEqual(getUserConfig(), { ...saved, channel: "preview", futurePreference: "retained" });
   const unlock = acquireUpdateLock(dirname(userConfigPath()));
   try {
-    assert.deepEqual(runUpdateSettingsCommand(["set", ...f.args, "--channel", "stable"]), { ok: false, error: "busy" });
-    assert.equal(runUpdateSettingsCommand(["status", ...f.args]).ok, true);
+    assert.deepEqual(await runUpdateSettingsCommand(["set", ...f.args, "--channel", "stable"]), { ok: false, error: "busy" });
+    assert.equal((await runUpdateSettingsCommand(["status", ...f.args])).ok, true);
     assert.equal(getUserConfig().channel, "preview");
   } finally { unlock(); }
   const bytes = readFileSync(userConfigPath(), "utf8");
-  assert.equal(runUpdateSettingsCommand(["set", ...f.args, "--channel", "stable", "--auto-update", "false"]).ok, false);
+  assert.equal((await runUpdateSettingsCommand(["set", ...f.args, "--channel", "stable", "--auto-update", "false"])).ok, false);
   assert.equal(readFileSync(userConfigPath(), "utf8"), bytes);
   f.executable("sudo", "exit 1");
-  const denied = runUpdateSettingsCommand(["status", ...f.args]);
+  const denied = await runUpdateSettingsCommand(["status", ...f.args]);
   assert(denied.ok && denied.state.availability === "permission-required");
-  assert.equal(runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "false"]).ok, false);
+  assert.equal((await runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "false"])).ok, false);
   assert.equal(readFileSync(userConfigPath(), "utf8"), bytes);
 });
 
-test("settings fail closed for mismatched installations and invalid files, and retain custom service paths", (t) => {
+test("settings fail closed for mismatched installations and invalid files, and retain custom service paths", async (t) => {
   const f = installedFixture(t);
-  const mismatched = runUpdateSettingsCommand(["status", "--data-dir", f.data, "--expected-db", join(f.root, "other.db")]);
+  const mismatched = await runUpdateSettingsCommand(["status", "--data-dir", f.data, "--expected-db", join(f.root, "other.db")]);
   assert(mismatched.ok && mismatched.state.availability === "installation-mismatch");
   writeFileSync(join(f.data, "install.env"), f.content.replace("MODE=package", "MODE=source"));
-  const source = runUpdateSettingsCommand(["status", ...f.args]);
+  const source = await runUpdateSettingsCommand(["status", ...f.args]);
   assert(source.ok && source.state.availability === "source-install");
   writeFileSync(join(f.data, "install.env"), f.content);
   setUserChannel("preview");
   writeFileSync(userConfigPath(), "{invalid JSON");
-  assert.deepEqual(runUpdateSettingsCommand(["status", ...f.args]), { ok: false, error: "unavailable" });
-  assert.equal(runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"]).ok, false);
+  assert.deepEqual(await runUpdateSettingsCommand(["status", ...f.args]), { ok: false, error: "unavailable" });
+  assert.equal((await runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"])).ok, false);
   assert.equal(readFileSync(userConfigPath(), "utf8"), "{invalid JSON");
   const rendered = renderUnits(loadConfig({ dataDir: f.data, requireInstalled: true }), { settingsHome: "/srv/settings % owner" });
   assert(rendered.web.text.includes(`Environment="DISPATCHER_DATA_DIR=${f.data}"`));
   assert(rendered.web.text.includes('Environment="PALMAGENT_HOME=/srv/settings %% owner"'));
 });
 
-test("automatic settings are saved only after executor preparation and preserve the selected channel", (t) => {
+test("automatic settings are saved only after executor preparation and preserve the selected channel", async (t) => {
   const f = installedFixture(t);
   setUserChannel("preview");
   f.executable("sudo", 'case "$*" in *"daemon-reload"*) exit 1;; *) exit 0;; esac');
-  assert.deepEqual(runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"]), { ok: false, error: "save-failed" });
+  assert.deepEqual(await runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"]), { ok: false, error: "save-failed" });
   assert.equal(getUserConfig().autoUpdate, undefined);
   assert.equal(getUserConfig().channel, "preview");
   f.executable("sudo", "exit 0");
-  assert.equal(runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"]).ok, true);
+  assert.equal((await runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "true"])).ok, true);
   assert.equal(getUserConfig().autoUpdate, true);
   assert.equal(getUserConfig().channel, "preview");
-  assert.equal(runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "false"]).ok, true);
+  assert.equal((await runUpdateSettingsCommand(["set", ...f.args, "--auto-update", "false"])).ok, true);
   assert.equal(getUserConfig().autoUpdate, false);
   assert.equal(getUserConfig().channel, "preview");
 });

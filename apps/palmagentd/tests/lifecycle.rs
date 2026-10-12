@@ -320,8 +320,8 @@ fn bootstrap_scope_preserves_isolation_and_escapes_paths() {
             .args(["bootstrap-unit", "--data-dir"])
             .arg(&fixture.data)
             .args([
-                "--launcher",
-                "/example/a % $ launcher",
+                "--executable",
+                "/example/a % $ daemon",
                 "--user",
                 "owner",
                 "--group",
@@ -336,7 +336,7 @@ fn bootstrap_scope_preserves_isolation_and_escapes_paths() {
         assert!(text.contains("Delegate=cpu memory pids"));
         assert!(text.contains("DelegateSubgroup=control"));
         assert!(text.contains("KillMode=process"));
-        assert!(text.contains("/example/a %% $$ launcher"));
+        assert!(text.contains("/example/a %% $$ daemon"));
         assert_eq!(text.contains("User=owner"), scope == "system");
         assert_eq!(text.contains("WantedBy=default.target"), scope == "user");
     }

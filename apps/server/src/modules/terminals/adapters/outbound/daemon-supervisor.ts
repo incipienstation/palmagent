@@ -5,11 +5,11 @@ import type { TerminalSupervisor } from "../../application/ports/outbound/termin
 export function daemonTerminalSupervisor(dataDir: string): TerminalSupervisor {
   return {
     capabilities: { available: true, persistent: true },
-    async inspect() { DaemonStatusSchema.parse(daemonRequest(dataDir, { action: "status" })); },
-    async launch(record) { daemonRequest(dataDir, { action: "launch", kind: "terminal", id: record.id }); },
-    async terminate(record) { daemonRequest(dataDir, { action: "terminate", kind: "terminal", id: record.id }); },
+    async inspect() { DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" })); },
+    async launch(record) { await daemonRequest(dataDir, { action: "launch", kind: "terminal", id: record.id }); },
+    async terminate(record) { await daemonRequest(dataDir, { action: "terminate", kind: "terminal", id: record.id }); },
     async alive(record) {
-      const state = DaemonHostStateSchema.parse(daemonRequest(dataDir, { action: "inspect", kind: "terminal", id: record.id }));
+      const state = DaemonHostStateSchema.parse(await daemonRequest(dataDir, { action: "inspect", kind: "terminal", id: record.id }));
       // An ambiguous start retains its admission/worktree, exactly as the legacy supervisor does.
       return state.alive;
     },
