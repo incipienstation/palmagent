@@ -8,6 +8,9 @@ description: Scope a requested Palmagent monorepo change before implementation, 
 1. Apply [context discipline](../../../AGENTS.md#context-and-scope), reusing unchanged instructions
    already read. Load only the package, app, plugin, or documentation contracts in scope.
 2. Inspect current code and relevant history when needed to decide whether to import, adapt, or build.
+   For Palmagent CLI changes, identify affected operator instructions and command contracts using the
+   [CLI/plugin contract-change workflow](../release/references/channels-and-updates.md#changing-the-cli-plugin-contract).
+   Include required plugin edits and the release compatibility boundary in the implementation scope.
 3. Follow the [skill source guidance](../garden/SKILL.md#skill-sources) for
    repository-maintenance skills and operator plugin skills.
 4. Identify proportionate verification and explicit merge, release, or deployment gates.
