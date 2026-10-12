@@ -90,6 +90,35 @@ maintainer source testing. Plugin managers control refresh/caching separately, s
 update is not evidence of a plugin update. The coordinated update skill uses native
 manager operations and verifies installed manifests separately from runtime health.
 
+### Changing the CLI/plugin contract
+
+Treat Palmagent CLI changes and their operator plugins as one contract change. During planning,
+inspect commands, flags, output shapes, exit behavior, and runtime assumptions used by `skills/`
+and platform prompts. Update affected canonical skills and references in the implementation PR,
+then regenerate both plugin copies with `node scripts/sync-skills.mjs`.
+
+For a breaking change:
+
+1. Declare the incompatible old/new CLI-plugin combinations and required upgrade path. Under the
+   current same-`x.x.x` rule in `release-policy.ts`, choose a new base version according to
+   [version policy](policy.md#version-policy); an `alpha.N` increment alone cannot break that promise.
+   If the compatibility rule itself changes, update its implementation, checks, and operator
+   bootstrap guidance together so older CLIs cannot silently accept unsupported instructions.
+2. Use the release workflow and `release:prepare` to advance the root product version and both
+   Claude and Codex plugin manifest versions together. Do not bump a plugin independently or race
+   an active Preview preparation. Declare the new compatibility line before the breaking change
+   ships; automatic Preview allocates prerelease numbers and does not infer breaking changes.
+3. Add focused compatibility coverage for the supported new pair and each newly incompatible
+   old/new pairing. Verify the public compatibility check and coordinated update plan reject or
+   route those pairs correctly, and run skill synchronization and `release:check`.
+4. Record the boundary and operator upgrade steps in `CHANGELOG.md`. At release verification,
+   check the exact published plugin manifests as well as the CLI package; publication and an
+   installed plugin refresh remain separate facts.
+
+Compatible CLI additions still require updating affected operator instructions and shipping them
+in the coordinated product release. Agent CLI ranges in `agent-compatibility.json` concern
+Claude/Codex adapters and do not substitute for this Palmagent CLI/plugin compatibility boundary.
+
 ### Coordinated and automatic updates
 
 The package is one update unit containing the CLI, server, PWA, and runner. The

@@ -42,4 +42,7 @@ Read the relevant skill before its stage or action; load supporting references o
   [garden](.harness/skills/garden/SKILL.md).
 - Release intervention, version/tag/publication changes, `main` merges, hotfixes,
   merge-policy or repository-visibility changes: [release](.harness/skills/release/SKILL.md).
+- Palmagent CLI changes: review affected operator skills and follow the
+  [CLI/plugin contract-change workflow](.harness/skills/release/references/channels-and-updates.md#changing-the-cli-plugin-contract),
+  including coordinated plugin versions and compatibility checks for breaking changes.
 - Host operations: [validation environments](docs/STAGING.md) and the relevant operator skill.

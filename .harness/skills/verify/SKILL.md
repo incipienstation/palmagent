@@ -37,6 +37,11 @@ checks when selected lanes do not cover the change. Reuse successful checks only
 and environment remain unchanged; rerun affected checks after changes or failures. Required CI must
 pass on the current PR head.
 
+For Palmagent CLI breaking changes, verify the accepted new CLI/plugin pair and rejected
+incompatible pairs under the [contract-change workflow](../release/references/channels-and-updates.md#changing-the-cli-plugin-contract).
+Require synchronized release manifests, updated affected operator guidance, and the declared
+compatibility boundary before shipping; matching manifest versions alone do not prove compatibility.
+
 If generated operator skills are out of sync, run `node scripts/sync-skills.mjs` and verify again.
 For repository-skill links, follow [skill source guidance](../garden/SKILL.md#skill-sources).
 `scripts/validate.mjs` checks version-controlled source and prints only `file:line`; inspect those
