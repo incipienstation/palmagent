@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SkillContext } from "@palmagent/shared";
 import { toast } from "sonner";
+import { vibrate } from "./haptics";
 import { ShakeDetector } from "./shake-detector";
 import { useShakeToDictate } from "./ShakeToDictateProvider";
 import { closeVoiceAudioContext } from "./voice-audio-context";
@@ -46,9 +47,10 @@ export function useVoiceInput(context: SkillContext | undefined, scope: string, 
     let sensorTimer = 0;
     const motion = (event: DeviceMotionEvent) => {
       if (stateRef.current === "stopping") return;
-      const sample = event.acceleration ?? event.accelerationIncludingGravity;
-      if (sample?.x != null && sample.y != null && sample.z != null
-        && Number.isFinite(sample.x) && Number.isFinite(sample.y) && Number.isFinite(sample.z)) {
+      const hasUsableMotion = [event.acceleration, event.accelerationIncludingGravity].some(sample =>
+        sample?.x != null && sample.y != null && sample.z != null
+        && Number.isFinite(sample.x) && Number.isFinite(sample.y) && Number.isFinite(sample.z));
+      if (hasUsableMotion) {
         hasMotionData = true;
         window.clearTimeout(sensorTimer);
       }
@@ -56,6 +58,7 @@ export function useVoiceInput(context: SkillContext | undefined, scope: string, 
       const active = stateRef.current !== "idle";
       toast(active ? "Finishing voice input…" : "Voice input started");
       toggleRef.current();
+      vibrate(active ? [12, 40, 12] : 24);
     };
     const attach = () => {
       if (listening || document.visibilityState !== "visible") return;

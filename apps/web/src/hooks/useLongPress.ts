@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent, type MouseEvent, type KeyboardEvent } from "react";
+import { vibrate } from "../haptics";
 
 export function haptic(kind: "open" | "select") {
-  try { navigator.vibrate?.(kind === "open" ? 12 : 6); } catch { /* visual feedback is always available */ }
+  vibrate(kind === "open" ? 12 : 6);
 }
 
 // Long press opens controls; its synthetic click must never submit. Movement,

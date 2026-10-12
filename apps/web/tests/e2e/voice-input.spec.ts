@@ -361,6 +361,16 @@ test("shake opt-in starts and stops dictation in a visible conversation and keep
   let submissions = 0;
   page.on("request", request => { if (request.method() === "POST" && request.url().endsWith("/messages")) submissions++; });
   await page.goto("/#/task/t-idle-interrupted");
+  await page.evaluate(() => {
+    (window as any).vibrationCalls = [];
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      value: (pattern: number | number[]) => {
+        (window as any).vibrationCalls.push(pattern);
+        return true;
+      },
+    });
+  });
 
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -371,10 +381,11 @@ test("shake opt-in starts and stops dictation in a visible conversation and keep
   await shake.click();
   await expect(shake).toBeChecked();
 
-  const emit = (times: number[]) => page.evaluate(async (values) => {
+  const emit = (times: number[], gravityFallback = false) => page.evaluate(async ({ values, useGravityFallback }) => {
     const motion = (x: number) => {
       const event = new Event("devicemotion");
-      Object.defineProperty(event, "acceleration", { value: { x, y: 0, z: 0 } });
+      Object.defineProperty(event, "acceleration", { value: useGravityFallback ? null : { x, y: 0, z: 0 } });
+      Object.defineProperty(event, "accelerationIncludingGravity", { value: { x, y: 0, z: 9.8 } });
       window.dispatchEvent(event);
     };
     motion(0);
@@ -382,8 +393,8 @@ test("shake opt-in starts and stops dictation in a visible conversation and keep
       motion(value);
       await new Promise(resolve => setTimeout(resolve, 80));
     }
-  }, times);
-  await emit([4, 0, 4, 0, 4]);
+  }, { values: times, useGravityFallback: gravityFallback });
+  await emit([20, 0, -20, 0, 20], true);
   expect(calls.starts()).toBe(0);
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
 
@@ -391,24 +402,33 @@ test("shake opt-in starts and stops dictation in a visible conversation and keep
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(settings).toBeVisible();
   await expect(settings).toHaveAttribute("data-state", "open");
-  await emit([4, 0, 4, 0, 4]);
+  await emit([20, 0, -20, 0, 20], true);
   expect(calls.starts()).toBe(0);
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
 
-  await emit([4, 0, 4, 0, 4]);
+  await emit([8, 0, 8, 0, 8]);
+  expect(calls.starts()).toBe(0);
+  expect(await page.evaluate(() => (window as any).vibrationCalls)).toEqual([]);
+
+  await emit([20, 0, -20, 0, 20], true);
   await expect(page.getByRole("button", { name: "Stop voice input" })).toBeVisible();
   await expect.poll(calls.starts).toBe(1);
+  expect(await page.evaluate(() => (window as any).vibrationCalls)).toEqual([24]);
+  await emit([20, 0, 20, 0, 20]);
+  expect(calls.stops()).toBe(0);
+  expect(await page.evaluate(() => (window as any).vibrationCalls)).toEqual([24]);
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await page.evaluate(() => (window as any).voiceTest.emit("shake", " Shake draft"));
   await expect(input).toHaveValue("Shake draft");
 
-  await emit([0, 0, 0, 0, 0, 0, 0, 0]);
-  await emit([4, 0, 4, 0, 4]);
+  await emit(Array(12).fill(0), true);
+  await emit([20, 0, -20, 0, 20], true);
   await expect(page.getByText("Finishing transcription…")).toBeAttached();
   await expect(input).toHaveValue("Shake draft");
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
   await expect.poll(calls.stops).toBe(1);
+  expect(await page.evaluate(() => (window as any).vibrationCalls)).toEqual([24, [12, 40, 12]]);
 
   expect(submissions).toBe(0);
 });
