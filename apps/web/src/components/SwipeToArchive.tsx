@@ -29,6 +29,7 @@ export function SwipeToArchive({ children, disabled, onArchive }: {
     };
     const settle = (next: boolean) => {
       opened.current = next;
+      element.toggleAttribute("data-swipe-open", next);
       setOpen(next);
       offset = next ? -WIDTH : 0;
       paint(offset, true);

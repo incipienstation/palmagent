@@ -39,6 +39,7 @@ test("left swipe reveals Archive without navigating; body tap, Escape, and right
   await expect(archive).toHaveCount(0);
   await swipe(page, target, -135, 15);
   await expect(archive).toBeVisible();
+  await expect(target).toHaveAttribute("data-swipe-open", "");
   await expect(page).not.toHaveURL(/task\//);
   await expect(page.getByRole("status").filter({ hasText: "Refreshing…" })).toHaveCount(0);
   await assertViewportLocked(page);
@@ -52,18 +53,22 @@ test("left swipe reveals Archive without navigating; body tap, Escape, and right
   await swipe(page, target, -135);
   await swipe(page, target, 130);
   await expect(archive).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   // A regular tap still opens the session.
   await target.locator("button[data-swipe-surface]").click({ position: { x: 180, y: 25 } });
   await expect(page).toHaveURL(/task\/t-idle-rich/);
 });
 
-test("short, rightward, and cancelled gestures leave Archive hidden", async ({ page }) => {
+test("short and cancelled gestures leave Archive hidden; a right swipe opens navigation", async ({ page }) => {
   const target = row(page);
-  for (const [dx, cancel] of [[-25, false], [110, false], [-130, true]] as const) {
+  for (const [dx, cancel] of [[-25, false], [-130, true]] as const) {
     await swipe(page, target, dx, 0, cancel);
     await expect(target.getByRole("button", { name: "Archive", exact: true })).toHaveCount(0);
     await expect(page).not.toHaveURL(/task\//);
   }
+  await swipe(page, target, 110);
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page).not.toHaveURL(/task\//);
 });
 
 test("vertical gestures scroll the list without revealing Archive", async ({ page }) => {
