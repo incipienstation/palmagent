@@ -83,10 +83,11 @@ Service removal removes the update executor while retaining the preference for r
 Settings in the signed-in app offer **Check again**, and **Update** when automatic
 updates are disabled. Enabled automatic updates refresh both the app and older
 compatible installed plugins, even when only plugins need updating, without an
-additional update click. New skills load in a new agent session. Checks reuse a
-15-minute result on ordinary access; explicit checks bypass that cache. Elapsed
-time alone never triggers a check. An explicit Update pins the displayed version
-and activates independently of running execution hosts. Legacy installations
+additional update click. New skills load in a new agent session. Ordinary access
+reuses successful discovery for 15 minutes and failed discovery for one minute;
+explicit checks bypass those caches. Elapsed time alone never triggers a check.
+An explicit Update pins the displayed version and activates independently of
+running execution hosts. Legacy installations
 wait for active tasks to finish; completion resumes their pending requests. Changing channel
 cancels the old request and checks the new channel without immediately installing.
 

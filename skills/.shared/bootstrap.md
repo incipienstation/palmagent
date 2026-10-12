@@ -70,8 +70,11 @@ Read `SUPERVISOR` and `DAEMON_SCOPE` in the selected installation's `install.env
 `palmagentd-<data-directory-hash>.service` name. Use `systemctl --user` and
 `journalctl --user -u <service-name>` for that scope. Missing `DAEMON_SCOPE` retains
 the existing system `palmagentd.service`. Host output lives in `<data-dir>/daemon/logs/`.
-Absent `SUPERVISOR` retains legacy service diagnostics. Never restart a provider
-host or delete retained artifacts to repair the web process.
+Absent `SUPERVISOR` retains legacy service diagnostics. The native daemon's
+`daemon/current` link selects its retained executable; an existing `daemon/launcher`
+is a compatibility alias. CLI control goes directly through the private daemon socket.
+Ordinary updates switch the selection without rewriting service registration. Never
+restart a provider host or delete retained artifacts to repair the web process.
 
 New daemon installations require systemd 254+, an accessible user manager, account
 lingering and writable delegated cgroup v2 with CPU, memory, PID and `cgroup.kill`

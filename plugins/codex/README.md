@@ -1,7 +1,7 @@
 # Palmagent — Codex operator plugin
 
 This is the Codex operator plugin for Palmagent, paired with the Claude Code plugin in
-`plugins/claude/`. Both invoke the same `palmagent` CLI by its bin name. Skills locate the CLI
+`plugins/claude/`. Both use the same Palmagent CLI. Skills resolve an exact compatible command
 and coordinate the requested operation; `doctor` also guides diagnosis using service journals.
 The CLI manages application services and data. Operator plugins inspect and manage host
 ingress and TLS, preserving the host's existing routing owner.
@@ -35,6 +35,7 @@ plugins/codex/                                  ← marketplace ROOT (pass THIS 
     └── palmagent/                              ← the plugin (folder name == plugin.json "name")
         ├── .codex-plugin/plugin.json            ← required manifest
         └── skills/
+            ├── routine/  SKILL.md + agents/openai.yaml
             ├── dispatch/ SKILL.md + agents/openai.yaml
             ├── settings/ SKILL.md + agents/openai.yaml
             ├── install/  SKILL.md + agents/openai.yaml
@@ -102,7 +103,8 @@ Both agent platforms share `~/.palmagent/config.json`, outside plugin caches. Th
 `settings` skill reads and changes this file through the internal configuration API.
 A saved channel survives new threads, plugin refreshes, and service reinstalls.
 Automatic updates are opt-in through the same skill. They follow the saved channel
-within the current compatibility line, retain plugins, and defer during active work.
+within the current compatibility line and refresh older compatible plugins. Independent
+execution hosts continue running; legacy migration waits for idle.
 The update skill coordinates a required plugin change through Codex's native manager.
 
 A pinned marketplace does not advance when npm `latest` or `next` changes. A plugin
