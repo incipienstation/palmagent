@@ -1,9 +1,10 @@
+import { startDaemonControlFixture } from "../support/daemon-control.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, lstatSync, realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -66,19 +67,45 @@ test("daemon configuration pins native and Node artifacts and preserves the supe
   assert(!existsSync(f.privileged));
 });
 
-test("daemon settings, independent update requests and activation never invoke privileged service commands", t => {
+test("release selection adopts a frozen launcher as an alias and restores both paths on rollback", t => {
+  const f = fixture(t);
+  const oldBytes = readFileSync(f.binary);
+  configureDaemon(f.cfg);
+  assert(lstatSync(join(f.root, "daemon/current")).isSymbolicLink());
+  assert(lstatSync(join(f.root, "daemon/launcher")).isSymbolicLink());
+  const release = join(f.root, "releases/r2");
+  cpSync(f.release, release, { recursive: true });
+  configureDaemon({ ...f.cfg, pkgDir: release });
+  assert.equal(realpathSync(join(f.root, "daemon/current")), daemonBinary(release));
+  assert.equal(realpathSync(join(f.root, "daemon/launcher")), daemonBinary(release));
+  configureDaemon(f.cfg);
+  assert.equal(realpathSync(join(f.root, "daemon/current")), f.binary);
+  assert.equal(realpathSync(join(f.root, "daemon/launcher")), f.binary);
+  assert.deepEqual(readFileSync(f.binary), oldBytes, "retained executable contents never change");
+});
+
+test("a fresh runtime has a current executable link and no compatibility launcher", t => {
+  const f = fixture(t);
+  rmSync(join(f.root, "daemon/launcher"));
+  configureDaemon(f.cfg);
+  assert.equal(realpathSync(join(f.root, "daemon/current")), f.binary);
+  assert(!existsSync(join(f.root, "daemon/launcher")));
+});
+
+test("daemon settings, independent update requests and activation never invoke privileged service commands", async t => {
   const f = fixture(t);
   configureDaemon(f.cfg);
-  prepareUpdateService(f.cfg);
-  configureAutoUpdate(f.cfg, true);
+  await startDaemonControlFixture(t, f.root);
+  await prepareUpdateService(f.cfg);
+  await configureAutoUpdate(f.cfg, true);
   assert.equal(getUserConfig({ dataDir: f.root }).autoUpdate, true);
-  startRequestedUpdate(f.cfg);
-  activateDaemon(f.cfg);
-  assert.equal(daemonStatus(f.cfg).instance, "replacement");
+  await startRequestedUpdate(f.cfg);
+  await activateDaemon(f.cfg);
+  assert.match((await daemonStatus(f.cfg)).instance, /^replacement-/);
   const actions = readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line).action);
   assert(actions.includes("start-update"));
   assert(actions.indexOf("replace") < actions.indexOf("restart-web"));
-  configureAutoUpdate(f.cfg, false);
+  await configureAutoUpdate(f.cfg, false);
   assert.equal(getUserConfig({ dataDir: f.root }).autoUpdate, false);
   assert(!existsSync(f.privileged));
 });
@@ -102,15 +129,15 @@ test("bootstrap migration rejects old systemd before privileged mutations", t =>
   assert(!existsSync(f.privileged));
 });
 
-test("failed initial bootstrap can be removed only when its empty state is verified", t => {
+test("failed initial bootstrap can be removed only when its empty state is verified", async t => {
   const f = fixture(t);
   writeFileSync(join(f.root, "daemon/launcher"), `#!${process.execPath}\nprocess.exit(1);\n`);
   writeFileSync(join(f.root, "bin/systemctl"), `#!${process.execPath}\nconsole.log('/unrelated-group');\n`, { mode: 0o700 });
-  assert.throws(() => removeDaemonBootstrap(f.cfg));
+  await assert.rejects(() => removeDaemonBootstrap(f.cfg));
   assert(!existsSync(f.privileged));
   writeFileSync(join(f.root, "bin/systemctl"), `#!${process.execPath}\nconsole.log('');\n`, { mode: 0o700 });
   writeFileSync(join(f.root, "bin/sudo"), `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(f.privileged)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
-  removeDaemonBootstrap(f.cfg);
+  await removeDaemonBootstrap(f.cfg);
   const calls = readFileSync(f.privileged, "utf8");
   assert.match(calls, /disable/);
   assert.match(calls, /daemon-reload/);
@@ -186,10 +213,11 @@ test("user scope and unit directory survive environment changes; absent scope st
   assert.equal(daemonServiceName(loadConfig({ dataDir: f.root })), "palmagentd.service");
 });
 
-test("user bootstrap registration and removal never invoke sudo or disable account lingering", t => {
+test("user bootstrap registration and removal never invoke sudo or disable account lingering", async t => {
   const f = userFixture(t);
   configureDaemon(f.cfg);
-  // Bootstrap rendering is a separate command; request behavior remains in the retained launcher.
+  await startDaemonControlFixture(t, f.root);
+  // Bootstrap rendering is independent of the socket control peer.
   writeFileSync(f.binary, `#!${process.execPath}\nconsole.log('[Service]\\nExecStart=/example/launcher\\n[Install]\\nWantedBy=default.target');\n`, { mode: 0o700 });
   writeFileSync(join(f.release, "daemon/manifest.json"), JSON.stringify({ protocol: 1, artifacts: {
     [`${process.platform}-${process.arch}`]: createHash("sha256").update(readFileSync(f.binary)).digest("hex"),
@@ -198,7 +226,7 @@ test("user bootstrap registration and removal never invoke sudo or disable accou
   installDaemonBootstrap(f.cfg);
   const path = join(f.cfg.daemonUnitDir!, daemonServiceName(f.cfg));
   assert(existsSync(path));
-  removeDaemonBootstrap(f.cfg);
+  await removeDaemonBootstrap(f.cfg);
   assert(!existsSync(path));
   assert(!existsSync(f.privileged));
   assert(!readFileSync(f.serviceCalls, "utf8").includes("disable-linger"));
@@ -243,6 +271,7 @@ for (const outcome of ["busy", "start-failed", "health-failed", "healthy", "fres
       writeFileSync(join(f.root, "bin/curl"), `#!${process.execPath}\nif (require('node:fs').existsSync(${JSON.stringify(unhealthy)})) process.exit(1); console.log(JSON.stringify({ok:true}));\n`, { mode: 0o700 });
       writeFileSync(join(f.root, "bin/sleep"), `#!${process.execPath}\n`, { mode: 0o700 });
     }
+    await startDaemonControlFixture(t, f.root);
     const result = spawnSync(process.execPath, [entry], { encoding: "utf8", timeout: 30_000 });
     assert.equal(result.status, ["healthy", "fresh"].includes(outcome) ? 0 : 1, result.stdout + result.stderr);
     const current = loadConfig({ dataDir: f.root });
@@ -266,12 +295,12 @@ for (const outcome of ["busy", "start-failed", "health-failed", "healthy", "fres
   });
 }
 
-test("removal refuses an unmanaged user service before stopping the daemon", t => {
+test("removal refuses an unmanaged user service before stopping the daemon", async t => {
   const f = userFixture(t);
   configureDaemon(f.cfg);
   mkdirSync(f.cfg.daemonUnitDir!);
   writeFileSync(join(f.cfg.daemonUnitDir!, daemonServiceName(f.cfg)), "# Independently managed service\n");
-  assert.throws(() => removeDaemonBootstrap(f.cfg), /unmanaged user service/);
+  await assert.rejects(() => removeDaemonBootstrap(f.cfg), /unmanaged user service/);
   assert(!existsSync(f.calls));
   assert(!existsSync(f.privileged));
 });

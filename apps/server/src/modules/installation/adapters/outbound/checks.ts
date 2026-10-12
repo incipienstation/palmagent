@@ -119,7 +119,7 @@ export function preflight(): Check[] {
 }
 
 // ------------------------------------------------------------------- doctor
-export function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibility: (cfg: InstallConfig) => void): Check[] {
+export async function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibility: (cfg: InstallConfig) => void): Promise<Check[]> {
   const checks: Check[] = [];
   const web = webUnitName();
   const runner = runnerUnitName();
@@ -138,7 +138,7 @@ export function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibility: (
       } catch (error) { checks.push({ name: "user service", level: "fail", detail: error instanceof Error ? error.message : "User manager unavailable" }); }
     }
     try {
-      const status = daemonStatus(cfg);
+      const status = await daemonStatus(cfg);
       checks.push({ name: "palmagentd", level: status.isolation === "cgroup" && status.web?.alive ? "ok" : "fail",
         detail: `version ${status.version}; ${status.isolation} isolation` });
     } catch { checks.push({ name: "palmagentd", level: "fail", detail: "daemon control endpoint unavailable", fix: "inspect palmagent daemon status and the bootstrap journal" }); }

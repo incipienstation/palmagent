@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { userInfo } from "node:os";
 import { DAEMON_PROTOCOL, DaemonConfigurationSchema, DaemonStatusSchema } from "@palmagent/shared/daemon";
-import { ensurePrivateDirectory, writePrivateFileAtomic } from "../../../../platform/filesystem/private-files.js";
+import { ensurePrivateDirectory, writePrivateFileAtomic, replaceSymlinkAtomic } from "../../../../platform/filesystem/private-files.js";
 import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 import type { InstallConfig } from "./config.js";
 import { userConfigPath } from "./user-config.js";
@@ -58,30 +58,41 @@ export function daemonConfiguration(cfg: InstallConfig) {
 
 /** Normal activation mutates only user-owned state. Bootstrap registration is separate. */
 export function configureDaemon(cfg: InstallConfig): void {
-  const configuration = daemonConfiguration(cfg);
-  const directory = join(cfg.dataDir, "daemon");
-  ensurePrivateDirectory(directory);
-  writePrivateFileAtomic(join(directory, "config.json"), JSON.stringify(configuration) + "\n");
+  writeDaemonConfiguration(cfg.dataDir, daemonConfiguration(cfg));
 }
 
-export function daemonStatus(cfg: InstallConfig) { return DaemonStatusSchema.parse(daemonRequest(cfg.dataDir, { action: "status" })); }
+/** Configuration remains authoritative for startup and activation rollback. */
+export function writeDaemonConfiguration(dataDir: string, input: unknown): void {
+  const configuration = DaemonConfigurationSchema.parse(input);
+  const binary = realpathSync(configuration.daemon);
+  const directory = join(dataDir, "daemon");
+  ensurePrivateDirectory(directory);
+  writePrivateFileAtomic(join(directory, "config.json"), JSON.stringify(configuration) + "\n");
+  replaceSymlinkAtomic(join(directory, "current"), binary);
+  // Retained older hosts and existing service units still use this pathname.
+  // Keep only an alias, never a frozen executable with its own request parser.
+  const legacy = join(directory, "launcher");
+  if (lstatSync(legacy, { throwIfNoEntry: false })) replaceSymlinkAtomic(legacy, "current");
+}
 
-export function activateDaemon(cfg: InstallConfig, replace = true): void {
+export async function daemonStatus(cfg: InstallConfig) { return DaemonStatusSchema.parse(await daemonRequest(cfg.dataDir, { action: "status" })); }
+
+export async function activateDaemon(cfg: InstallConfig, replace = true): Promise<void> {
   configureDaemon(cfg);
   if (replace) {
-    const prior = daemonStatus(cfg);
-    daemonRequest(cfg.dataDir, { action: "replace" });
+    const prior = await daemonStatus(cfg);
+    await daemonRequest(cfg.dataDir, { action: "replace" });
     // Replacement preserves the bootstrap PID. Verify the new binary identity before changing web.
     const expected = JSON.parse(readFileSync(join(cfg.pkgDir!, "build-info.json"), "utf8"));
     let ready = false;
     for (let attempt = 0; attempt < 50; attempt++) {
       try {
-        const status = daemonStatus(cfg);
+        const status = await daemonStatus(cfg);
         if (status.instance !== prior.instance && status.version === expected.version && status.sourceCommit === expected.sourceCommit) { ready = true; break; }
       } catch { /* CLOEXEC briefly removes the control endpoint. */ }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     if (!ready) throw new Error("Replacement daemon identity could not be verified");
   }
-  daemonRequest(cfg.dataDir, { action: "restart-web" });
+  await daemonRequest(cfg.dataDir, { action: "restart-web" });
 }

@@ -58,7 +58,8 @@ fn run() -> anyhow::Result<()> {
             hosts::run(&data, kind, flag(&args, "--id")?)
         }
         "bootstrap-unit" => {
-            let launcher = PathBuf::from(flag(&args, "--launcher")?);
+            let executable =
+                PathBuf::from(flag(&args, "--executable").or_else(|_| flag(&args, "--launcher"))?);
             let scope = if args.iter().any(|arg| arg == "--scope") {
                 flag(&args, "--scope")?
             } else {
@@ -72,7 +73,7 @@ fn run() -> anyhow::Result<()> {
                 "{}",
                 NativePlatform::render(
                     &data,
-                    &launcher,
+                    &executable,
                     flag(&args, "--user")?,
                     flag(&args, "--group")?,
                     scope == "user"

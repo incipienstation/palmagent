@@ -37,10 +37,10 @@ export function renderAutoUpdateUnits(cfg: InstallConfig, options = { node: proc
 }
 
 /** Keep the executor independent of the web process, with no recurring schedule. */
-export function prepareUpdateService(cfg: InstallConfig): void {
+export async function prepareUpdateService(cfg: InstallConfig): Promise<void> {
   if (cfg.supervisor === "palmagentd") {
     if (cfg.user !== userInfo().username) throw new Error("Updates require the installation owner");
-    daemonStatus(cfg);
+    await daemonStatus(cfg);
     return;
   }
   if (cfg.user !== userInfo().username || !canSudoNonInteractive()) throw new Error("update service requires installation-owner access");
@@ -59,15 +59,15 @@ export function retireAutoUpdateTimer(unitDir = UNIT_DIR): void {
   }
 }
 
-export function startRequestedUpdate(cfg?: InstallConfig): void {
-  if (cfg?.supervisor === "palmagentd") { daemonRequest(cfg.dataDir, { action: "start-update" }); return; }
+export async function startRequestedUpdate(cfg?: InstallConfig): Promise<void> {
+  if (cfg?.supervisor === "palmagentd") { await daemonRequest(cfg.dataDir, { action: "start-update" }); return; }
   // A unique instance cannot lose a task-completion event to an older instance
   // that has released its lock but has not finished exiting in systemd yet.
   const instance = autoUpdateService.replace("@.", `@${randomUUID()}.`);
   if (!sudo(["systemctl", "start", "--no-block", instance]).ok) throw new Error("could not start the update service");
 }
 
-export function configureAutoUpdate(cfg: InstallConfig, enabled: boolean, dryRun = false): void {
+export async function configureAutoUpdate(cfg: InstallConfig, enabled: boolean, dryRun = false): Promise<void> {
   setUserAutoUpdate(enabled, { dataDir: cfg.dataDir, dryRun: true });
   if (dryRun) {
     log.info(`[dry-run] would save automatic updates ${enabled ? "on" : "off"} and remove the legacy timer`);
@@ -76,7 +76,7 @@ export function configureAutoUpdate(cfg: InstallConfig, enabled: boolean, dryRun
   }
   if (cfg.user !== userInfo().username) throw new Error("updates must be configured by the installation owner");
   if (enabled) {
-    prepareUpdateService(cfg);
+    await prepareUpdateService(cfg);
     setUserAutoUpdate(true, { dataDir: cfg.dataDir });
   } else {
     // Persist the opt-out first even if removing a legacy timer fails.

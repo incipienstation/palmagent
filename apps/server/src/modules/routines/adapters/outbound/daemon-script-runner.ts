@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Repo, Routine, RoutineRun } from "@palmagent/shared";
 import { DaemonHostStateSchema } from "@palmagent/shared/daemon";
-import { daemonRequestAsync } from "../../../../platform/process/daemon-client.js";
+import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 import type { RoutineScriptExecution, RoutineScriptResult, RoutineScriptRunner } from "../../application/ports/outbound/routines.js";
 import { RoutineHostStore } from "./routine-host-store.js";
 
@@ -33,7 +33,7 @@ export class DaemonRoutineScriptRunner implements RoutineScriptRunner {
       try {
         const descriptor = this.store.get(id);
         if (descriptor && descriptor.routineId !== routineId) throw new Error("Routine run ownership mismatch");
-        const state = DaemonHostStateSchema.parse(await daemonRequestAsync(this.dataDir, { action: "inspect", kind: "routine", id }));
+        const state = DaemonHostStateSchema.parse(await daemonRequest(this.dataDir, { action: "inspect", kind: "routine", id }));
         if (detached) return;
         // Wait for the guardian to confirm all descendants have left before releasing admission.
         if (!state.alive) {
@@ -46,7 +46,7 @@ export class DaemonRoutineScriptRunner implements RoutineScriptRunner {
     };
     void (async () => {
       if (launch) {
-        try { await daemonRequestAsync(this.dataDir, { action: "launch", kind: "routine", id }); }
+        try { await daemonRequest(this.dataDir, { action: "launch", kind: "routine", id }); }
         catch { /* The daemon may have reserved or started the host. Reconcile; do not relaunch. */ }
       }
       if (!detached) await inspect();

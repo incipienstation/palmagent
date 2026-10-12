@@ -1,5 +1,5 @@
 import { installedHostArtifactPaths } from "../../../../platform/process/host-artifacts.js";
-import { activateDaemon, configureDaemon, daemonConfiguration } from "./daemon-runtime.js";
+import { activateDaemon, configureDaemon, daemonConfiguration, writeDaemonConfiguration } from "./daemon-runtime.js";
 import { assertDaemonBootstrapSupported, installDaemonBootstrap, removeDaemonBootstrap, removeDaemonRegistration, restoreDaemonBootstrap, startDaemonBootstrap, stopDaemonBootstrap } from "./daemon-bootstrap.js";
 import { assertInstallationOwner, daemonServiceName, prepareUserService, userServiceDirectory, verifyUserIsolation } from "./user-service.js";
 import { applicationChecks, applicationIdentity, verifyApplication } from "./application-verification.js";
@@ -75,7 +75,7 @@ export interface Flags {
 }
 
 export function createInstaller(dependencies: ReturnType<typeof import("./execution-release.js").createReleaseOperations> & {
-  doctor(cfg: InstallConfig): import("./checks.js").Check[];
+  doctor(cfg: InstallConfig): import("./checks.js").Check[] | Promise<import("./checks.js").Check[]>;
 }) {
 const { stageRelease, verifyActiveExecutionCompatibility, assertExecutionsFinished, doctor } = dependencies;
 function loadInstalledConfig(flags: Flags): InstallConfig {
@@ -317,21 +317,21 @@ function restartRunner(cfg: InstallConfig): void {
   recordRunnerArtifact(cfg);
 }
 
-function restartWeb(cfg: InstallConfig): void {
-  if (cfg.supervisor === "palmagentd") { activateDaemon(cfg); return; }
+async function restartWeb(cfg: InstallConfig): Promise<void> {
+  if (cfg.supervisor === "palmagentd") { await activateDaemon(cfg); return; }
   const restarted = sudo(["systemctl", "restart", webUnitName()]);
   if (!restarted.ok)
     throw new Error(`failed to restart ${webUnitName()}:\n${restarted.stderr}`);
 }
 
-function startServices(cfg: InstallConfig): void {
+async function startServices(cfg: InstallConfig): Promise<void> {
   if (cfg.supervisor === "palmagentd") { startDaemonBootstrap(cfg); return; }
   const units = renderUnits(cfg);
   if (units.runner.name !== runnerUnitName() || units.web.name !== webUnitName()) {
     throw new Error("rendered unit names do not match the installed Palmagent units");
   }
   if (!cfg.executionNode) restartRunner(cfg);
-  restartWeb(cfg);
+  await restartWeb(cfg);
 }
 
 function runtimeIsHealthy(cfg: InstallConfig, expectedVersion?: string): boolean {
@@ -403,7 +403,7 @@ async function install(flags: Flags): Promise<number> {
 
   if (!flags.dryRun) {
     log.step("starting services");
-    startServices(cfg);
+    await startServices(cfg);
     const ok = await healthcheck(cfg);
     if (!ok) {
       log.err(
@@ -415,7 +415,7 @@ async function install(flags: Flags): Promise<number> {
       `host-local health check passed; public origin is https://${cfg.domain}`,
     );
     if (!cfg.supervisor) retireAutoUpdateTimer();
-    if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
+    if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) await configureAutoUpdate(cfg, true);
     log.info(`After the operator plugin verifies public HTTPS, run ${BRANDING.cliName} passkey to enroll the first device.`);
   }
 
@@ -481,7 +481,7 @@ async function setup(flags: Flags): Promise<number> {
       let candidateStarted = false;
       try {
         installDaemonBootstrap(cfg, false);
-        if (installed.supervisor === "palmagentd") stopDaemonBootstrap(installed);
+        if (installed.supervisor === "palmagentd") await stopDaemonBootstrap(installed);
         else {
           for (const unit of [webUnitName(), ...(!installed.executionNode ? [runnerUnitName()] : [])]) {
             if (!sudo(["systemctl", "disable", "--now", unit]).ok) throw new Error("Could not stop a legacy service");
@@ -492,18 +492,18 @@ async function setup(flags: Flags): Promise<number> {
         if (!await healthcheck(cfg)) throw new Error("Daemon migration health check failed");
       } catch (error) {
         // Stop the candidate web through its owner before restoring the old listener.
-        try { if (candidateStarted) removeDaemonBootstrap(cfg); else removeDaemonRegistration(cfg); }
+        try { if (candidateStarted) await removeDaemonBootstrap(cfg); else removeDaemonRegistration(cfg); }
         catch {
           throw new Error("Migration failed and daemon shutdown could not be verified; retained both configurations for recovery", { cause: error });
         }
         saveConfig(installed);
         if (previousDaemonConfig !== undefined) {
-          writePrivateFileAtomic(join(installed.dataDir, "daemon/config.json"), previousDaemonConfig);
+          writeDaemonConfiguration(installed.dataDir, JSON.parse(previousDaemonConfig));
           restoreDaemonBootstrap(installed);
         } else {
           const units = [webUnitName(), ...(!installed.executionNode ? [runnerUnitName()] : [])];
           if (!sudo(["systemctl", "enable", ...units]).ok) throw new Error("Could not restore legacy startup", { cause: error });
-          startServices(installed);
+          await startServices(installed);
         }
         if (!await healthcheck(installed)) throw new Error("Legacy recovery health check failed", { cause: error });
         rmSync(join(cfg.dataDir, "daemon-migration.json"), { force: true });
@@ -512,7 +512,7 @@ async function setup(flags: Flags): Promise<number> {
       persistUserChannel(cfg, flags);
       finishMigrationCleanup(installed);
       rmSync(join(cfg.dataDir, "daemon-migration.json"), { force: true });
-      if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
+      if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) await configureAutoUpdate(cfg, true);
       log.ok("migrated to the user-owned daemon runtime during verified idle maintenance");
       return 0;
     }
@@ -541,11 +541,11 @@ async function applySetup(cfg: InstallConfig, flags: Flags): Promise<number> {
     } else {
       log.ok("runner unchanged — leaving it up so in-flight turns survive");
     }
-    restartWeb(cfg);
+    await restartWeb(cfg);
     const ok = await healthcheck(cfg);
     log[ok ? "ok" : "err"](ok ? "healthy" : "not healthy after restart");
     if (ok && !cfg.supervisor) retireAutoUpdateTimer();
-    if (ok && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
+    if (ok && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) await configureAutoUpdate(cfg, true);
     return ok ? 0 : 1;
   }
   return 0;
@@ -836,10 +836,10 @@ async function updateIndependentRelease(cfg: InstallConfig, version: string, fla
     changed = true;
     provisionIndependentRuntime(candidate, flags);
     saveConfig(candidate);
-    restartWeb(candidate);
+    await restartWeb(candidate);
     if (!await healthcheck(candidate, version)) throw new Error("Candidate application health check failed");
     await verifyApplication(identity, connectionInfo(candidate).upstream);
-    if (settings.autoUpdate) configureAutoUpdate(candidate, true);
+    if (settings.autoUpdate) await configureAutoUpdate(candidate, true);
     const pluginPaths = flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []);
     if (readPluginVersions(pluginPaths).some((plugin) => !compatiblePlugin(version, plugin.version))) throw new Error("An operator plugin changed during activation");
     persistUserChannel(candidate, flags);
@@ -850,9 +850,9 @@ async function updateIndependentRelease(cfg: InstallConfig, version: string, fla
     if (changed) {
       let restored = false;
       try {
-        provisionIndependentRuntime(cfg, flags); saveConfig(cfg); restartWeb(cfg);
+        provisionIndependentRuntime(cfg, flags); saveConfig(cfg); await restartWeb(cfg);
         restored = await healthcheck(cfg, installedVersion(cfg.pkgDir));
-        if (restored && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
+        if (restored && getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) await configureAutoUpdate(cfg, true);
       } catch { /* Retain both releases for explicit recovery. */ }
       writePrivateFileAtomic(join(cfg.dataDir, "application-activation.json"), JSON.stringify({ previous: cfg, target: candidate, status: restored ? "restored" : "recovery-required" }) + "\n");
     }
@@ -910,13 +910,13 @@ async function activateInstalledUpdate(cfg: InstallConfig, flags: Flags, expecte
   } else {
     log.ok("runner unchanged — leaving it up so in-flight turns survive");
   }
-  restartWeb(cfg);
+  await restartWeb(cfg);
   const ok = await healthcheck(cfg, expectedVersion);
   if (ok) {
     if (!cfg.supervisor) retireAutoUpdateTimer();
     persistUserChannel(cfg, flags);
     saveConfig(cfg);
-    if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) configureAutoUpdate(cfg, true);
+    if (getUserConfig({ dataDir: cfg.dataDir }).autoUpdate) await configureAutoUpdate(cfg, true);
   }
   log[ok ? "ok" : "err"](ok ? `updated + healthy` : "not healthy after update");
   return ok ? 0 : 1;
@@ -954,7 +954,7 @@ async function uninstall(flags: Flags): Promise<number> {
     assertExecutionsFinished(cfg);
     // Preserve a legacy channel before service data can be removed.
     initUserConfig({ dataDir: cfg.dataDir });
-    if (cfg.supervisor === "palmagentd") removeDaemonBootstrap(cfg);
+    if (cfg.supervisor === "palmagentd") await removeDaemonBootstrap(cfg);
     else removeAutoUpdateTimer();
     if (!cfg.supervisor) {
       for (const name of [units.web.name, units.runner.name]) {
@@ -1017,7 +1017,7 @@ async function runDoctor(flags: Flags): Promise<number> {
   } catch {
     log.warn("Update channel is unknown: user or legacy settings could not be read");
   }
-  const checks = [...doctor(cfg), ...await applicationChecks(cfg)];
+  const checks = [...await doctor(cfg), ...await applicationChecks(cfg)];
   const code = printChecks(`${BRANDING.productName} doctor — ${cfg.domain}`, checks);
   return code || (updateFailure ? 1 : 0);
 }

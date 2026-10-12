@@ -186,7 +186,7 @@ async function main(): Promise<void> {
     if (!["status", "restart"].includes(action)) throw new Error("usage: daemon status|restart [--data-dir <path>]");
     const cfg = loadConfig({ dataDir: parseFlags(options).get("data-dir"), requireInstalled: true });
     if (cfg.supervisor !== "palmagentd") throw new Error("This installation uses the legacy supervisor; run setup during an idle window to migrate");
-    console.log(JSON.stringify(daemonRequest(cfg.dataDir, { action: action === "restart" ? "replace" : "status" })));
+    console.log(JSON.stringify(await daemonRequest(cfg.dataDir, { action: action === "restart" ? "replace" : "status" })));
     return;
   }
   if (cmd === "routine") return routineCommand(rest);
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
   }
   if (cmd === "update-settings") {
     process.env.PALMAGENT_NON_INTERACTIVE = "1";
-    console.log(JSON.stringify(runUpdateSettingsCommand(rest)));
+    console.log(JSON.stringify(await runUpdateSettingsCommand(rest)));
     return;
   }
   if (cmd === "update-request") {
