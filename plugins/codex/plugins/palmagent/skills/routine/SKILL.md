@@ -76,5 +76,8 @@ After a requested run, inspect `routine runs <id>`: agent runs link to a task; s
 record running/succeeded/failed/interrupted, exit code, bounded combined output, and a
 retained worktree path. A run request being accepted is not completion. Scripts have
 no overlapping runs per routine and share four execution slots. Missed or capacity-limited
-scheduled runs are skipped, not queued for catch-up. Server shutdown interrupts scripts;
-restart does not retry them. Disabling only prevents future scheduled runs; `stop` interrupts the current script.
+scheduled runs are skipped, not queued for catch-up. On native daemon installations,
+running scripts survive web restarts and updates; the web process reconnects to their
+retained hosts and results without rerunning them. Legacy local script runners stop
+with the server and do not retry after restart. Disabling only prevents future
+scheduled runs; `stop` interrupts the current script.

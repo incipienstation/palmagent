@@ -5,13 +5,10 @@ description: Use when an operator reports a Palmagent instance is unhealthy or w
 
 # Diagnose a Palmagent instance
 
-Thin wrapper over the `palmagent` CLI's `doctor` subcommand, PLUS adaptive
-diagnosis when it reports a fault. The CLI runs the deterministic structured
-checks (web unit active? independent execution artifacts/template valid, or legacy
-runner unit/socket available? claude/codex installed + authed?
-package build and local/public PWA hashes match? SQLite present? VAPID keys present? port
-loopback-only? PWA dist present? disk headroom?) and **exits non-zero on any
-failure**. Your added value is correlating its findings with the live logs.
+Run `palmagent doctor` and correlate any failures with the detected runtime's logs.
+The CLI checks service and daemon health, retained execution artifacts, agent CLIs,
+application identity and local/public PWA hashes, storage, and loopback binding.
+It exits non-zero on failures; warnings are reported separately.
 
 ## 1. Inspect without changing the installation
 
@@ -64,7 +61,8 @@ systemctl status palmagent.service --no-pager
 journalctl -u palmagent.service --no-pager -n 50
 ```
 
-Independent package installations use **`palmagent-execution@<uuid>.service`**
+Older independent systemd installations without `SUPERVISOR=palmagentd` use
+**`palmagent-execution@<uuid>.service`**
 for each invocation, with retained package and Node paths. Inspect the failing
 execution's actual unit and journal; an idle installation need not have an active
 execution unit. Doctor verifies retained artifacts, compatibility, and template
@@ -82,28 +80,31 @@ journalctl -u palmagent-runner.service --no-pager -n 50
 Correlate the doctor finding with the logs and explain the failure in plain terms,
 then propose the concrete fix. Common patterns to recognize:
 
-- **Web unit dead / restart-looping** → read the journal stack trace. A
-  `better-sqlite3` / native-module error usually means a rebuild is needed
+- **Web process dead / restart-looping** → read daemon host logs or, for legacy
+  services, the unit journal. A `better-sqlite3` / native-module error usually
+  means a rebuild is needed
   (`npm rebuild better-sqlite3`); an `EADDRINUSE` means the port is taken; a
   missing-file error often means the PWA dist or data dir moved.
 - **Configured runner unavailable** → check the legacy runner unit's status,
   journal, and configured socket. Web startup fails rather than falling back to
   an in-process backend. Independent package installations do not require this runner.
 - **Independent execution check failed** → inspect the reported retained package,
-  Node path, compatibility contract, and execution service template. Correlate a
-  failing invocation with its own unit and journal; a web restart does not restart
-  or resume it. Preserve referenced artifacts and running executions during recovery.
-- **`claude`/`codex` not found by the service** → the unit's baked `PATH=`
-  doesn't resolve the CLI; `journalctl` shows the spawn error. Point at the
-  install config's `EXEC_PATH`.
+  Node path, and compatibility contract. For the native daemon, inspect the host
+  state and logs; inspect execution templates and unit journals only for older
+  independent systemd installations. A web restart does not restart or resume an
+  invocation. Preserve referenced artifacts and running executions during recovery.
+- **`claude`/`codex` not found by a host** → inspect its spawn error and effective
+  executable search path. Compare the daemon configuration or legacy unit environment
+  with the saved installation's `EXEC_PATH`.
 - **502/TLS/stream errors** → identify the actual ingress owner, upstream, certificate
   renewal and logs using the shared reference. Do not assume nginx or Certbot, or change
   unrelated sites. Public transport failures are separate from CLI runtime health.
 - **Auth/passkey failures** → check that the RP id/origin match the live domain
   (a domain change without `setup` desyncs them).
-- **Automatic updates paused** → inspect the last update result and the update
-  service journal. Determine the actual installed and running package versions
-  before restoring a plugin or retrying the exact release through `update`.
+- **Automatic updates paused** → inspect the last update result and the daemon
+  updater logs or legacy update service journal. Determine the actual installed and
+  running package versions before restoring a plugin or retrying the exact release
+  through `update`.
   Package replacement does not restore a database; plan downgrades separately.
 
 Name the **exact remediation command** and its effects before running it. Apply the

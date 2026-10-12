@@ -36,8 +36,8 @@ only for an explicitly requested exact release. Planning contacts npm, returns
 JSON, and changes no package, preferences, services, or plugin state.
 
 Explain the current and target package versions and which plugins can stay or
-need updating. The package includes the CLI, server, web app, and runner. A plan
-with `packageAction: keep` may still need a plugin repair. A request only to check
+need updating. The package includes the CLI, server, web app, native daemon, and
+execution hosts. A plan with `packageAction: keep` may still need a plugin repair. A request only to check
 or plan stops here. An update request authorizes the resulting update flow; do
 not ask the same permission again.
 
@@ -86,11 +86,11 @@ public access. The new CLI preserves existing proxy/TLS resources on update. Rec
 existing routes and renewal ownership without rewriting healthy configuration; after
 activation compare `<cli> connection` with the route and verify HTTPS separately.
 
-
-Preserve every running Codex and Claude session. Independent-execution package
-installations stage an exact release, retain the previous artifacts, and restart
-only the web service. Existing invocation hosts keep their provider connection,
-process, release, and runtime. A web reconnect never resumes an agent.
+Preserve every running Codex and Claude session. Native daemon installations stage
+an exact release, switch the selected executable, replace the daemon, and restart
+the web process through the CLI. Existing execution, terminal, and routine hosts
+retain their processes and artifacts. Older independent systemd installations
+restart only their web service. A web reconnect never resumes an agent.
 
 The first migration from a legacy runner and source-update `setup` still require
 an idle maintenance window. Active or unverifiable legacy work defers the update,

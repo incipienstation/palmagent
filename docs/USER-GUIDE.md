@@ -233,8 +233,8 @@ cached input; cached input and reasoning output are subsets, not additional usag
 
 Ask **“Check for Palmagent updates”** to see the target version and which plugins
 need changing. Ask **“Update Palmagent”** to apply that plan. The CLI, server, web
-app, and runner ship together. Older compatible operator plugins update through
-their native managers, even when the app is already current.
+app, native daemon, and execution hosts ship together. Older compatible operator
+plugins update through their native managers, even when the app is already current.
 
 Ask **“Turn on automatic updates”** to install eligible updates discovered when
 you open or return to the app. Automatic updates are off by default and follow
