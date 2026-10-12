@@ -1,3 +1,4 @@
+import { ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
 import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
 import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
@@ -59,6 +60,16 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       const input = c.req.valid("json");
       return c.json({ task: service.rename(c.req.valid("param").id, input.title) }, 200);
     })
+    .get("/:id/history/items", params(IdParamsSchema), query(ConversationDetailsQuerySchema), (c) => {
+      const { key, after } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(service.conversationDetails(c.req.valid("param").id, Number(key), after === undefined ? undefined : Number(after)), 200);
+    })
+    .get("/:id/history/content", params(IdParamsSchema), query(ConversationContentQuerySchema), (c) => {
+      const { key, version, offset, member } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(service.conversationContent(c.req.valid("param").id, Number(key), version, Number(offset), member === undefined ? undefined : Number(member)), 200);
+    })
     .get("/:id/history/details", params(IdParamsSchema), query(ActivityDetailsQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;
       const { from, through } = c.req.valid("query");
@@ -67,19 +78,20 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
     })
     .get("/:id/history/changes", params(IdParamsSchema), query(HistoryChangesQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;
-      const { after: afterText, through: throughText, details } = c.req.valid("query");
+      const { after: afterText, through: throughText, details, format, afterKey } = c.req.valid("query");
       const after = Number(afterText);
       const through = throughText === undefined ? undefined : Number(throughText);
       c.header("cache-control", "no-store");
-      return c.json(service.taskHistoryChanges(taskId, after, through, details !== "summary"), 200);
+      return c.json(format === "transcript" ? service.conversationChanges(taskId, after, through, afterKey === undefined ? undefined : Number(afterKey))
+        : service.taskHistoryChanges(taskId, after, through, details !== "summary"), 200);
     })
     .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;
-      const { before: beforeText, details } = c.req.valid("query");
+      const { before: beforeText, details, format } = c.req.valid("query");
       c.header("cache-control", "no-store");
       const before = beforeText === undefined ? undefined : Number(beforeText);
       const includeActivityDetails = details !== "summary";
-      return c.json(service.taskHistory(taskId, before, includeActivityDetails), 200);
+      return c.json(format === "transcript" ? service.conversationPage(taskId, before) : service.taskHistory(taskId, before, includeActivityDetails), 200);
     })
     .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))

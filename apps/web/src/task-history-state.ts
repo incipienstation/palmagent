@@ -10,6 +10,7 @@ export interface TaskHistoryState {
   earlier: EarlierHistoryState;
 }
 export interface TaskHistoryControls extends TaskHistoryState {
+  activity?: import("@palmagent/shared").ConversationActivity;
   retryInitial: () => void;
   loadEarlier: () => void;
 }

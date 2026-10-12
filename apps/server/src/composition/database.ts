@@ -74,6 +74,10 @@ export class Db {
   readonly eventCursor: SqliteTasks["eventCursor"];
   readonly eventsAfterGlobal: SqliteTasks["eventsAfterGlobal"];
   readonly eventsAfterSeq: SqliteTasks["eventsAfterSeq"];
+  readonly conversationPage: SqliteTasks["conversationPage"];
+  readonly conversationChanges: SqliteTasks["conversationChanges"];
+  readonly conversationDetails: SqliteTasks["conversationDetails"];
+  readonly conversationContent: SqliteTasks["conversationContent"];
   readonly historyStart: SqliteTasks["historyStart"];
   readonly historyPage: SqliteTasks["historyPage"];
   readonly historyChanges: SqliteTasks["historyChanges"];
@@ -157,6 +161,10 @@ export class Db {
     this.eventCursor = tasks.eventCursor.bind(tasks);
     this.eventsAfterGlobal = tasks.eventsAfterGlobal.bind(tasks);
     this.eventsAfterSeq = tasks.eventsAfterSeq.bind(tasks);
+    this.conversationPage = tasks.conversationPage.bind(tasks);
+    this.conversationChanges = tasks.conversationChanges.bind(tasks);
+    this.conversationDetails = tasks.conversationDetails.bind(tasks);
+    this.conversationContent = tasks.conversationContent.bind(tasks);
     this.historyStart = tasks.historyStart.bind(tasks);
     this.historyPage = tasks.historyPage.bind(tasks);
     this.historyChanges = tasks.historyChanges.bind(tasks);

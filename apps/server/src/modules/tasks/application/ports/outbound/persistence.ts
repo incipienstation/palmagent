@@ -33,6 +33,10 @@ export interface MessageStateRepository {
 }
 
 export interface TaskHistoryReader {
+  conversationPage(taskId: string, before?: number): TaskHistoryResponse;
+  conversationChanges(taskId: string, after: number, through?: number, afterKey?: number): TaskHistoryChangesResponse;
+  conversationDetails(taskId: string, key: number, after?: number): import("@palmagent/shared").ConversationDetails;
+  conversationContent(taskId: string, key: number, version: string, offset: number, member?: number): import("@palmagent/shared").ConversationContent;
   eventCursor(taskId?: string): number;
   historyPage(taskId: string, before: number, cursor?: number, includeActivityDetails?: boolean): TaskHistoryResponse;
   latestHistoryPage(taskId: string, includeActivityDetails?: boolean): TaskHistoryResponse;

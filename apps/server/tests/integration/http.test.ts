@@ -156,7 +156,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   f.db.createSession("expired-session", now - 1000, now - 1);
   const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
-  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/unknown"]) {
+  for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/t/history?format=transcript", "/api/tasks/t/history/items?key=1", "/api/tasks/t/history/content?key=1", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/unknown"]) {
     const denied = await fetch(base + path);
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get("cache-control"), "no-store");
@@ -626,7 +626,44 @@ test("REST history pages and bounded catch-up keep persisted events out of SSE",
   assert.equal(page.before, 1003);
 });
 
-test("compact history returns the complete conversation and defers tool payloads until expansion", async (t) => {
+test("display-record history is bounded and its scoped stream invalidates durable records", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "Original request", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  for (let i = 0; i < 40; i++) {
+    f.db.insertEvent("t", "status", { subtype: "followup", text: `Question ${i}` }, i);
+    f.db.insertEvent("t", "assistant_text", { text: `Answer ${i}`, messageId: `answer-${i}`, phase: "final" }, i);
+  }
+  await f.service.init();
+  const response = await f.app.request("/api/tasks/t/history?details=summary&format=transcript");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const page = await response.json() as import("@palmagent/shared").TaskHistoryResponse;
+  assert.equal(page.transcript!.length, 30);
+  assert.equal(page.before, 51);
+  assert.deepEqual(page.events, []);
+  const stream = await f.app.request("/api/stream?task=t&format=transcript");
+  const reader = stream.body!.getReader();
+  let text = new TextDecoder().decode((await reader.read()).value);
+  assert.ok(text.includes('"historyThrough":80'));
+  const live = f.db.insertEvent("t", "assistant_text", { text: " extended", messageId: "answer-39", phase: "final" }, 100);
+  f.hub.emitEvent(f.db.eventsAfterSeq("t", 80)[0]);
+  while (!text.includes('"type":"history-change"')) text += new TextDecoder().decode((await reader.read()).value);
+  assert.ok(text.includes(`"through":${live.seq}`));
+  assert.ok(!text.includes("extended"), "compact streams must not resend raw token or tool payloads");
+  await reader.cancel();
+  const changes = await f.app.request(`/api/tasks/t/history/changes?format=transcript&after=80&through=${live.seq}`);
+  const patch = await changes.json() as import("@palmagent/shared").TaskHistoryChangesResponse;
+  assert.equal(patch.transcript!.length, 1);
+  assert.equal(patch.transcript![0].key, 80);
+  assert.ok(JSON.stringify(patch).includes("Answer 39 extended"));
+  assert.equal((await f.app.request("/api/tasks/missing/history?format=transcript")).status, 404);
+  for (const path of ["history/items?key=0", "history/content?key=1&offset=0&version=bad", "history/changes?format=transcript&after=0&afterKey=-1"]) {
+    assert.equal((await f.app.request(`/api/tasks/t/${path}`)).status, 400);
+  }
+});
+
+test("legacy compact history returns the complete conversation and defers tool payloads until expansion", async (t) => {
   const f = fixture(t, false);
   f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "Original request", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });

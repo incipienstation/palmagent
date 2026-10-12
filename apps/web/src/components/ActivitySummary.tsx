@@ -29,6 +29,7 @@ export const ActivitySummary = memo(function ActivitySummary({ activity, mode, o
     </div>}
   </div>;
 }, (previous, next) => previous.activity.key === next.activity.key &&
+  previous.activity.summary?.label === next.activity.summary?.label && previous.activity.summary?.count === next.activity.summary?.count &&
   previous.activity.items.length === next.activity.items.length && previous.activity.live === next.activity.live &&
   previous.activity.preview === next.activity.preview && previous.mode === next.mode && previous.open === next.open &&
   previous.detailsLoading === next.detailsLoading && previous.detailsError === next.detailsError && previous.onRetry === next.onRetry);

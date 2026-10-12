@@ -35,3 +35,6 @@ export * from "./event-migrations.js";
 export * from "./agent-media.js";
 
 export * from "./context-usage.js";
+
+export * from "./conversation.js";
+export * from "./conversation-activity.js";

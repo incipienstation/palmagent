@@ -1,10 +1,12 @@
+import { conversationLogItems, mergeConversationChanges, retainedConversation } from "../conversation-history";
+import type { ConversationItem, ConversationActivity } from "@palmagent/shared";
 import { clientReadKeys } from "../client-query-keys";
 import { refreshClientReads } from "../query-client";
 import { createFinalReplyObserver, notifyConversation } from "../conversation-notifications";
 import { restoredHistory } from "../history-checkpoint";
 import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { deferActivityEventDetails, type AgentEvent, type AgentEventKind, type AgentKind, type AssistantTextPayload, type SseFrame, type TaskHistoryResponse, type TaskState } from "@palmagent/shared";
+import { deferActivityEventDetails, type AgentEvent, type SseFrame, type TaskHistoryResponse, type TaskState } from "@palmagent/shared";
 import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
@@ -16,12 +18,13 @@ import { taskHistoryState, type TaskHistoryControls } from "../task-history-stat
 
 // The first event's durable sequence is the row key. Replacing a growing text
 // item preserves every other row's identity for memoized transcript rendering.
-export type LogItem =
-  | { key: number; endSeq?: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
-  | { key: number; endSeq?: number; kind: Exclude<AgentEventKind, "assistant_text">; event: AgentEvent; detailsDeferred?: boolean };
+export type { LogItem } from "@palmagent/shared";
+import { appendHistoryEvent as append, type LogItem } from "@palmagent/shared";
 export type { ConnState };
 
-interface TaskHistoryPage {
+export interface TaskHistoryPage {
+  transcript?: ConversationItem[];
+  activity?: ConversationActivity;
   items: LogItem[];
   before: number | null;
   cursor: number;
@@ -30,24 +33,12 @@ interface TaskHistoryPage {
 export type TaskHistoryData = InfiniteData<TaskHistoryPage, number | null>;
 
 export interface TaskStream {
+  transcript?: ConversationItem[];
   log: LogItem[];
   conn: ConnState;
   history: TaskHistoryControls;
   // The scoped snapshot remains authoritative even if the inbox was suspended.
   task?: TaskState;
-}
-
-function append(items: LogItem[], event: AgentEvent, seq: number, detailsDeferred = false): void {
-  if (event.kind === "assistant_text") {
-    const payload = event.payload ?? { text: "" }; // Historical records can predate typed payloads.
-    const text = typeof payload.text === "string" ? payload.text : "";
-    const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
-    const phase = payload.phase === "progress" || payload.phase === "partial" || payload.phase === "final" ? payload.phase : undefined;
-    const last = items.at(-1);
-    if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && last.phase === phase) {
-      items[items.length - 1] = { ...last, endSeq: seq, text: last.text + text };
-    } else items.push({ key: seq, endSeq: seq, kind: "assistant_text", agent: event.agent, text, messageId, phase });
-  } else items.push({ key: seq, endSeq: seq, kind: event.kind, event, ...(detailsDeferred ? { detailsDeferred: true } : {}) });
 }
 
 export function historyLogItems(events: TaskHistoryResponse["events"]): LogItem[] {
@@ -57,7 +48,7 @@ export function historyLogItems(events: TaskHistoryResponse["events"]): LogItem[
 }
 
 function pageItems(response: TaskHistoryResponse): TaskHistoryPage {
-  return { items: historyLogItems(response.events), before: response.before, cursor: response.cursor };
+  return { transcript: response.transcript, activity: response.activity, items: response.transcript ? conversationLogItems(response.transcript) : historyLogItems(response.events), before: response.before, cursor: response.cursor };
 }
 
 function compactHistory(data: TaskHistoryData | undefined): TaskHistoryData | undefined {
@@ -82,18 +73,20 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     // A compact checkpoint intentionally omits tool payloads. Reuse a verbose
     // checkpoint across a screen update so its loaded pages and scroll anchor
     // survive, but fetch full history when the checkpoint contains summaries.
-    const hasDeferredDetails = restored.pages.some((page) => page.items.some((item) =>
+    const hasDeferredDetails = restored.pages.some((page) => page.transcript !== undefined || page.items.some((item) =>
       item.kind !== "assistant_text" && item.detailsDeferred));
     return hasDeferredDetails ? undefined : restored;
   }, [taskId, mode]);
-  // An older client (or a Verbose checkpoint) may have saved only the latest
-  // pages. Paint those immediately while fetching the complete compact view;
-  // attach SSE only after its authoritative history cursor is available.
-  const initialData = mode === "compact" && restoredData?.pages[0]?.before != null ? undefined : restoredData;
+  // Reuse paged conversation checkpoints and their reader anchor. A legacy
+  // partial event checkpoint remains a placeholder until the first display page
+  // supplies an authoritative boundary for the new stream format.
+  const needsCompactUpgrade = mode === "compact" && restoredData?.pages[0]?.before != null &&
+    restoredData.pages.some(page => page.transcript === undefined);
+  const initialData = needsCompactUpgrade ? undefined : restoredData;
   const history = useInfiniteQuery({
     queryKey,
     enabled,
-    queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, mode === "verbose" ? "full" : "summary", signal)),
+    queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, mode === "verbose" ? "full" : "summary", signal, mode === "compact" && (pageParam === null || !!queryClient.getQueryData<TaskHistoryData>(queryKey)?.pages.at(-1)?.transcript))),
     initialPageParam: null as number | null,
     getPreviousPageParam: (firstPage) => firstPage.before ?? undefined,
     getNextPageParam: () => undefined,
@@ -138,6 +131,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     if (!enabled || !historyReady) return;
     const currentData = () => queryClient.getQueryData<TaskHistoryData>(queryKey);
     const initial = currentData();
+    const projected = mode === "compact" && initial?.pages.at(-1)?.transcript !== undefined;
     // A just-created task can already contain its first reply when REST wins
     // the race with the scoped stream. Consumers distinguish this from live text.
     const finalReply = createFinalReplyObserver();
@@ -158,6 +152,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     let catchupPromise: Promise<void> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let catchupFailures = 0;
+    let projectionTimer: ReturnType<typeof setTimeout> | undefined;
     let overflowReconnectRequested = false;
     let connection: ReturnType<typeof connectSse> | undefined;
 
@@ -225,14 +220,15 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
           while (!disposed && appliedSeq < catchupTarget) {
             const through = catchupTarget;
             let after = appliedSeq;
-            while (!disposed && after < through) {
+            let afterKey: number | undefined;
+            while (!disposed && (after < through || afterKey !== undefined)) {
               const key = taskHistoryChangesKey(taskId, after, through, mode);
               let page;
               try {
                 page = await queryClient.fetchQuery({
                   queryKey: key,
                   queryFn: ({ signal }) => api.taskHistoryChanges(taskId, after, through,
-                    mode === "compact" ? "summary" : "full", signal),
+                    mode === "compact" ? "summary" : "full", signal, projected, afterKey),
                   staleTime: Number.POSITIVE_INFINITY,
                   gcTime: TASK_HISTORY_GC_TIME,
                   retry: false,
@@ -249,8 +245,19 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
               if (disposed) return;
               if (page.after !== after || page.through !== through) throw new Error("History catch-up boundary changed");
               const nextAfter = page.nextAfter ?? page.through;
-              if (nextAfter < after || nextAfter > through || (page.nextAfter !== null && nextAfter === after)) {
+              if (nextAfter < after || nextAfter > through || (page.nextAfter !== null && nextAfter === after && (page.nextKey === undefined || page.nextKey <= (afterKey ?? -1)))) {
                 throw new Error("Invalid history catch-up cursor");
+              }
+              if (projected && page.transcript) {
+                const safeCursor = page.nextKey === undefined ? nextAfter : Math.max(appliedSeq, nextAfter - 1);
+                queryClient.setQueryData<TaskHistoryData>(queryKey, data => mergeConversationChanges(data, page.transcript!, safeCursor, page.activity));
+                for (const patch of page.transcript) {
+                  if (patch.item) for (const item of conversationLogItems([patch.item])) if (finalReply(item)) notifyConversation(taskId);
+                }
+                appliedSeq = safeCursor;
+                receivedSeq = Math.max(receivedSeq, appliedSeq);
+                after = nextAfter; afterKey = page.nextKey;
+                continue;
               }
               let newReply = false;
               if (!updateLatestPage((historyPage) => {
@@ -295,10 +302,18 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     };
 
     connection = connectSse(
-      `/api/stream?task=${encodeURIComponent(taskId)}${mode === "compact" ? "&details=summary" : ""}`,
+      `/api/stream?task=${encodeURIComponent(taskId)}${mode === "compact" ? "&details=summary" : ""}${projected ? "&format=transcript" : ""}`,
       (message) => {
         let frame: SseFrame;
         try { frame = JSON.parse(message.data) as SseFrame; } catch { return; }
+        if (frame.type === "history-change" && projected && frame.taskId === taskId) {
+          catchupTarget = Math.max(catchupTarget, frame.through);
+          if (!projectionTimer) projectionTimer = setTimeout(() => {
+            projectionTimer = undefined;
+            beginCatchup();
+          }, 100);
+          return;
+        }
         if (frame.type === "read-change" && frame.taskLimits === taskId) {
           if (document.visibilityState !== "hidden") void refreshClientReads(clientReadKeys.taskLimits(taskId));
           return;
@@ -344,6 +359,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       disposed = true;
       connection?.close();
       if (retryTimer) clearTimeout(retryTimer);
+      if (projectionTimer) clearTimeout(projectionTimer);
       cancelAnimationFrame(animation);
       pendingEvents = [];
       pendingBytes = 0;
@@ -356,13 +372,15 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
   // Query placeholders disappear on a failed request. Retain the checkpoint
   // beside the retry control while upgrading an older, partial compact view.
   const displayedData = history.data ?? restoredData;
-  const log = useMemo(() => displayedData?.pages.flatMap((page) => page.items) ?? [], [displayedData]);
+  const transcript = useMemo(() => retainedConversation(displayedData), [displayedData]);
+  const log = useMemo(() => transcript ? conversationLogItems(transcript) : displayedData?.pages.flatMap((page) => page.items) ?? [], [displayedData, transcript]);
   const cachedTask = displayedData?.pages.at(-1)?.task;
   const mutations = useTaskMutations();
   return {
     log,
+    transcript,
     conn,
     task: projectTask(streamTask?.taskId === taskId ? streamTask.task : cachedTask, mutations),
-    history: { ...historyState, retryInitial, loadEarlier },
+    history: { ...historyState, activity: displayedData?.pages.at(-1)?.activity, retryInitial, loadEarlier },
   };
 }

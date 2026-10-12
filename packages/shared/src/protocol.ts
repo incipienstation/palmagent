@@ -1,3 +1,4 @@
+import type { ConversationItem, ConversationPatch, ConversationActivity } from "./conversation.js";
 // Wire protocol between the dispatcher backend and clients (the PWA, demo, and
 // operator tooling). The browser reads with SSE and controls tasks with REST.
 import type { AgentEvent, AgentKind } from "./events.js";
@@ -164,14 +165,19 @@ export interface TaskHistoryEvent {
   detailsDeferred?: boolean;
 }
 export interface TaskHistoryResponse {
+  transcript?: ConversationItem[];
+  activity?: ConversationActivity;
   events: TaskHistoryEvent[];
-  // Compact summaries include the whole conversation (null). Full detail
-  // pages retain a cursor for loading older records in Verbose mode.
+  // Exclusive key for the preceding display-record or legacy event page.
   before: number | null;
   // Durable per-task high-water mark captured with the REST page.
   cursor: number;
 }
 export interface TaskHistoryChangesResponse {
+  transcript?: ConversationPatch[];
+  activity?: ConversationActivity;
+  // A revision can replace several rows; this tie-breaker resumes within it.
+  nextKey?: number;
   events: TaskHistoryEvent[];
   after: number;
   through: number;
@@ -185,7 +191,7 @@ export interface TaskActivityDetailsResponse {
   cursor: number;
 }
 export const HISTORY_PAGE_EVENTS = 200;
-export type SseFrame = SseEventFrame | SseTasksFrame | SseReadChangeFrame | { type: "updates" };
+export type SseFrame = { type: "history-change"; taskId: string; through: number } | SseEventFrame | SseTasksFrame | SseReadChangeFrame | { type: "updates" };
 
 // ---- auth (in-app WebAuthn / passkeys) ----
 // GET /api/auth/me. The WebAuthn options/response payloads (login/register) are
