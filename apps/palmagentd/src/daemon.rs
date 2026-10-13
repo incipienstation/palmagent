@@ -11,9 +11,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 
 use crate::{
-    contract::{
-        Configuration, HostRecord, Kind, PROTOCOL, Reply, Request, SOURCE_COMMIT, State, VERSION,
-    },
+    contract::{Configuration, HostRecord, Kind, PROTOCOL, Request, SOURCE_COMMIT, State, VERSION},
+    control::Connection,
     hosts,
     platform::{Listener, NativePlatform, ProcessControl, ProcessIsolation, Stream},
     storage,
@@ -60,27 +59,208 @@ fn current_web(data: &Path) -> Result<Option<String>> {
     Ok(Some(id))
 }
 
-fn start_web(data: &Path, config: &Configuration, root: Option<&Path>) -> Result<Value> {
+fn start_web(data: &Path, config: &Configuration, root: Option<&Path>) -> Result<Operation> {
     if let Some(id) = current_web(data)? {
         let state = hosts::inspect(data, Kind::Web, &id)?;
         if state["alive"] == true {
-            return Ok(state);
+            return Ok(Operation::Reply(state, None));
         }
     }
     let id = storage::unique_id()?;
     // Store the selected identity first, so a crashed supervisor never races an uncertain launch.
     storage::atomic(&storage::state_directory(data).join("web.json"), &id)?;
-    hosts::launch(data, config, root, Kind::Web, &id)
+    launch(data, config, root, Kind::Web, id)
 }
 
-fn stop_web(data: &Path) -> Result<()> {
+fn launch(
+    data: &Path,
+    config: &Configuration,
+    root: Option<&Path>,
+    kind: Kind,
+    id: String,
+) -> Result<Operation> {
+    if hosts::launch(data, config, root, kind, &id)? {
+        Ok(Operation::Launch(
+            kind,
+            id,
+            Instant::now() + Duration::from_secs(5),
+        ))
+    } else {
+        Ok(Operation::Reply(hosts::inspect(data, kind, &id)?, None))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Exit {
+    Stop,
+    Replace,
+}
+
+enum AfterStop {
+    Inspect,
+    Restart(Configuration),
+    Shutdown,
+}
+
+enum Operation {
+    Reply(Value, Option<Exit>),
+    Launch(Kind, String, Instant),
+    Stop(Kind, String, Instant, AfterStop),
+}
+
+impl Operation {
+    fn owns_web(&self) -> bool {
+        matches!(
+            self,
+            Self::Launch(Kind::Web, ..) | Self::Stop(Kind::Web, ..)
+        )
+    }
+
+    fn poll(
+        &mut self,
+        data: &Path,
+        config: &mut Configuration,
+        root: Option<&Path>,
+    ) -> Result<Option<(Value, Option<Exit>)>> {
+        match self {
+            Self::Reply(value, exit) => return Ok(Some((value.take(), *exit))),
+            Self::Launch(kind, id, deadline) => {
+                if hosts::launch_finished(data, *kind, id)? {
+                    return Ok(Some((hosts::inspect(data, *kind, id)?, None)));
+                }
+                ensure!(
+                    Instant::now() < *deadline,
+                    "Host launch is unconfirmed; its reservation is retained"
+                );
+            }
+            Self::Stop(kind, id, deadline, after) => {
+                let state = hosts::inspect(data, *kind, id)?;
+                if state["alive"] == false {
+                    match after {
+                        AfterStop::Inspect => return Ok(Some((state, None))),
+                        AfterStop::Shutdown => {
+                            return Ok(Some((json!({ "stopped": true }), Some(Exit::Stop))));
+                        }
+                        AfterStop::Restart(candidate) => {
+                            *config = candidate.clone();
+                            *self = start_web(data, config, root)?;
+                        }
+                    }
+                } else {
+                    ensure!(
+                        Instant::now() < *deadline,
+                        "Host termination could not be confirmed"
+                    );
+                }
+            }
+        }
+        Ok(None)
+    }
+}
+
+fn stop_web(data: &Path, after: AfterStop) -> Result<Operation> {
     if let Some(id) = current_web(data)? {
         hosts::stop(data, Kind::Web, &id, true)?;
+        Ok(Operation::Stop(
+            Kind::Web,
+            id,
+            Instant::now() + Duration::from_secs(15),
+            after,
+        ))
+    } else {
+        Ok(Operation::Reply(
+            json!({ "stopped": true }),
+            Some(Exit::Stop),
+        ))
     }
-    Ok(())
+}
+
+fn begin(
+    request: Request,
+    data: &Path,
+    config: &mut Configuration,
+    root: Option<&Path>,
+    instance: &str,
+) -> Result<Operation> {
+    match request {
+        Request::Status => Ok(Operation::Reply(
+            json!({ "version": VERSION, "sourceCommit": SOURCE_COMMIT, "pid": std::process::id(), "instance": instance,
+                "protocol": PROTOCOL, "isolation": config.isolation, "web": current_web(data)?.map(|id| hosts::inspect(data, Kind::Web, &id)).transpose()? }),
+            None,
+        )),
+        Request::Inspect { kind, id } => {
+            Ok(Operation::Reply(hosts::inspect(data, kind, &id)?, None))
+        }
+        Request::Launch { kind, id } => {
+            ensure!(
+                matches!(kind, Kind::Execution | Kind::Terminal | Kind::Routine),
+                "Use the dedicated operation for this host kind"
+            );
+            launch(data, config, root, kind, id)
+        }
+        Request::Terminate { kind, id } => {
+            ensure!(
+                kind == Kind::Terminal,
+                "Execution cancellation belongs to its durable command channel"
+            );
+            hosts::stop(data, kind, &id, false)?;
+            Ok(Operation::Stop(
+                kind,
+                id,
+                Instant::now() + Duration::from_secs(15),
+                AfterStop::Inspect,
+            ))
+        }
+        Request::RestartWeb => {
+            let candidate = storage::configuration(data)?;
+            ensure!(
+                candidate.isolation == config.isolation,
+                "Changing isolation requires an idle setup"
+            );
+            if current_web(data)?.is_none() {
+                *config = candidate;
+                start_web(data, config, root)
+            } else {
+                stop_web(data, AfterStop::Restart(candidate))
+            }
+        }
+        Request::Replace => {
+            let candidate = storage::configuration(data)?;
+            ensure!(
+                candidate.isolation == config.isolation,
+                "Changing isolation requires an idle setup"
+            );
+            Ok(Operation::Reply(
+                json!({ "replacing": true, "instance": instance }),
+                Some(Exit::Replace),
+            ))
+        }
+        Request::StartUpdate => launch(data, config, root, Kind::Update, storage::unique_id()?),
+        Request::Stop => {
+            for entry in fs::read_dir(storage::state_directory(data).join("hosts"))? {
+                let path = entry?.path();
+                if path.extension().is_none_or(|ext| ext != "json") {
+                    continue;
+                }
+                let record: HostRecord = storage::read(&path)?;
+                if matches!(
+                    record.kind,
+                    Kind::Execution | Kind::Terminal | Kind::Routine | Kind::Update
+                ) && record.state != State::Exited
+                {
+                    ensure!(
+                        hosts::inspect(data, record.kind, &record.id)?["alive"] == false,
+                        "Active hosts must finish before stopping the installation"
+                    );
+                }
+            }
+            stop_web(data, AfterStop::Shutdown)
+        }
+    }
 }
 
 pub fn serve(data: &Path) -> Result<()> {
+    const MAX_CONNECTIONS: usize = 32;
     let directory = storage::state_directory(data);
     storage::private_directory(&directory)?;
     storage::private_directory(&directory.join("hosts"))?;
@@ -101,110 +281,75 @@ pub fn serve(data: &Path) -> Result<()> {
     let instance = storage::unique_id()?;
     storage::atomic(&directory.join("identity.json"), &identity)?;
     let mut last_start = Instant::now() - Duration::from_secs(3);
-    let mut replace = false;
-    while !stopped.load(Ordering::Relaxed) && !replace {
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-                stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-                let result = (|| -> Result<Value> {
-                    let mut line = String::new();
-                    BufReader::new(stream.try_clone()?)
-                        .take(65_537)
-                        .read_line(&mut line)?;
-                    ensure!(
-                        line.len() <= 65_536 && line.ends_with('\n'),
-                        "Invalid daemon request"
-                    );
-                    let envelope: Value = serde_json::from_str(&line)?;
-                    ensure!(
-                        envelope["protocol"] == PROTOCOL,
-                        "Incompatible daemon protocol"
-                    );
-                    let request: Request = serde_json::from_value(envelope["request"].clone())?;
-                    match request {
-                        Request::Status => Ok(
-                            json!({ "version": VERSION, "sourceCommit": SOURCE_COMMIT, "pid": std::process::id(), "instance": instance,
-                            "protocol": PROTOCOL, "isolation": config.isolation, "web": current_web(data)?.map(|id| hosts::inspect(data, Kind::Web, &id)).transpose()? }),
-                        ),
-                        Request::Launch { kind, id } => {
-                            ensure!(
-                                matches!(kind, Kind::Execution | Kind::Terminal | Kind::Routine),
-                                "Use the dedicated operation for this host kind"
-                            );
-                            hosts::launch(data, &config, root.as_deref(), kind, &id)
-                        }
-                        Request::Inspect { kind, id } => hosts::inspect(data, kind, &id),
-                        Request::Terminate { kind, id } => {
-                            ensure!(
-                                kind == Kind::Terminal,
-                                "Execution cancellation belongs to its durable command channel"
-                            );
-                            hosts::stop(data, kind, &id, false)?;
-                            hosts::inspect(data, kind, &id)
-                        }
-                        Request::RestartWeb => {
-                            let candidate = storage::configuration(data)?;
-                            ensure!(
-                                candidate.isolation == config.isolation,
-                                "Changing isolation requires an idle setup"
-                            );
-                            stop_web(data)?;
-                            config = candidate;
-                            start_web(data, &config, root.as_deref())
-                        }
-                        Request::Replace => {
-                            let candidate = storage::configuration(data)?;
-                            ensure!(
-                                candidate.isolation == config.isolation,
-                                "Changing isolation requires an idle setup"
-                            );
-                            replace = true;
-                            Ok(json!({ "replacing": true, "instance": instance }))
-                        }
-                        Request::StartUpdate => hosts::launch(
-                            data,
-                            &config,
-                            root.as_deref(),
-                            Kind::Update,
-                            &storage::unique_id()?,
-                        ),
-                        Request::Stop => {
-                            for entry in fs::read_dir(directory.join("hosts"))? {
-                                let path = entry?.path();
-                                if path.extension().is_none_or(|ext| ext != "json") {
-                                    continue;
-                                }
-                                let record: HostRecord = storage::read(&path)?;
-                                if matches!(
-                                    record.kind,
-                                    Kind::Execution | Kind::Terminal | Kind::Routine | Kind::Update
-                                ) && record.state != State::Exited
-                                {
-                                    ensure!(
-                                        hosts::inspect(data, record.kind, &record.id)?["alive"]
-                                            == false,
-                                        "Active hosts must finish before stopping the installation"
-                                    );
-                                }
-                            }
-                            stop_web(data)?;
-                            stopped.store(true, Ordering::Relaxed);
-                            Ok(json!({ "stopped": true }))
-                        }
+    let mut connections: Vec<Connection> = Vec::new();
+    let mut next_id = 0;
+    let mut pending: Option<(u64, Operation)> = None;
+    let mut exiting: Option<(u64, Exit)> = None;
+    while !stopped.load(Ordering::Relaxed) {
+        // Admission and each frame are bounded. One slow peer cannot hold the control loop.
+        for _ in 0..MAX_CONNECTIONS {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    if connections.len() < MAX_CONNECTIONS {
+                        connections.push(Connection::new(next_id, stream)?);
+                        next_id += 1;
                     }
-                })();
-                let reply = Reply::from_result(result);
-                let _ = serde_json::to_writer(&mut stream, &reply);
-                let _ = stream.write_all(b"\n");
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => return Err(error.into()),
             }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(25))
-            }
-            Err(error) => return Err(error.into()),
         }
-        if !stopped.load(Ordering::Relaxed)
-            && !replace
+        for connection in &mut connections {
+            connection.poll();
+        }
+        if let Some((id, mut operation)) = pending.take() {
+            match operation.poll(data, &mut config, root.as_deref()) {
+                Ok(None) => pending = Some((id, operation)),
+                completed => {
+                    let reply = match completed {
+                        Ok(Some((value, exit))) => {
+                            exiting = exit.map(|exit| (id, exit));
+                            Ok(value)
+                        }
+                        Err(error) => Err(error),
+                        Ok(None) => unreachable!(),
+                    };
+                    if let Some(connection) = connections
+                        .iter_mut()
+                        .find(|connection| connection.id == id)
+                    {
+                        connection.reply(reply);
+                    }
+                }
+            }
+        }
+        for connection in &mut connections {
+            let read_only = matches!(
+                connection.request(),
+                Some(Request::Status | Request::Inspect { .. })
+            );
+            if !read_only && (pending.is_some() || exiting.is_some()) {
+                continue;
+            }
+            if let Some(request) = connection.take_request() {
+                match begin(request, data, &mut config, root.as_deref(), &instance) {
+                    Ok(Operation::Reply(value, exit)) => {
+                        if let Some(exit) = exit {
+                            exiting = Some((connection.id, exit));
+                        }
+                        connection.reply(Ok(value));
+                    }
+                    Ok(operation) => pending = Some((connection.id, operation)),
+                    Err(error) => connection.reply(Err(error)),
+                }
+            }
+        }
+        // Recovery can launch while another host is becoming ready or terminating. Only a
+        // deliberate web transition suppresses it; no lifecycle mutation is run concurrently.
+        if exiting.is_none()
+            && !pending
+                .as_ref()
+                .is_some_and(|(_, operation)| operation.owns_web())
             && last_start.elapsed() >= Duration::from_secs(2)
         {
             if let Err(error) = start_web(data, &config, root.as_deref())
@@ -214,14 +359,24 @@ pub fn serve(data: &Path) -> Result<()> {
             }
             last_start = Instant::now();
         }
+        for connection in &mut connections {
+            connection.poll();
+        }
+        connections.retain(|connection| !connection.closed());
         NativePlatform::reap();
-    }
-    if replace {
-        // exec preserves the bootstrap's MainPID. Independent host guardians keep their pipes,
-        // pinned binaries and cgroups; CLOEXEC closes only this supervisor's lock and socket.
-        let config = storage::configuration(data)?;
-        return NativePlatform::replace(&config.daemon, data)
-            .context("Cannot replace daemon; the bootstrap will recover it");
+        if let Some((id, action)) = exiting
+            && !connections.iter().any(|connection| connection.id == id)
+        {
+            if matches!(action, Exit::Replace) {
+                // All lifecycle waits are settled. exec keeps MainPID and retained guardians;
+                // CLOEXEC drops the control sockets and lock, including incomplete peers.
+                let config = storage::configuration(data)?;
+                return NativePlatform::replace(&config.daemon, data)
+                    .context("Cannot replace daemon; the bootstrap will recover it");
+            }
+            break;
+        }
+        thread::sleep(Duration::from_millis(25));
     }
     let _ = fs::remove_file(socket);
     Ok(())

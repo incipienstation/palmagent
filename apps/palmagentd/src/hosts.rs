@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 
 use crate::{
@@ -57,14 +57,14 @@ pub fn launch(
     root: Option<&Path>,
     kind: Kind,
     id: &str,
-) -> Result<Value> {
+) -> Result<bool> {
     let path = storage::host_path(data, kind, id)?;
     if path.exists() {
-        return inspect(data, kind, id);
+        return Ok(false);
     }
     let _lock = storage::lock(&path.with_extension("lock"))?;
     if path.exists() {
-        return inspect(data, kind, id);
+        return Ok(false);
     }
     let (release, node) = if matches!(kind, Kind::Execution | Kind::Terminal | Kind::Routine) {
         let directory = data.join(kind.directory());
@@ -82,7 +82,7 @@ pub fn launch(
     } else {
         (config.release.clone(), config.node.clone())
     };
-    let record = HostRecord {
+    let mut record = HostRecord {
         protocol: PROTOCOL,
         kind,
         id: id.into(),
@@ -99,33 +99,42 @@ pub fn launch(
     };
     // The reservation commits before spawn. Ambiguous starts never create a second invocation.
     storage::write_host(data, &record)?;
-    let mut command = Command::new(&config.daemon);
-    command
-        .args(["host", "--data-dir"])
-        .arg(data)
-        .arg("--kind")
-        .arg(kind.name())
-        .arg("--id")
-        .arg(id)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(storage::log_file(data, "supervisor")?));
-    NativePlatform::detach(&mut command);
-    // The child takes the same lock, so release it before waiting for readiness.
-    let spawned = command.spawn();
-    drop(_lock);
+    let spawned = (|| {
+        let mut command = Command::new(&config.daemon);
+        command
+            .args(["host", "--data-dir"])
+            .arg(data)
+            .arg("--kind")
+            .arg(kind.name())
+            .arg("--id")
+            .arg(id)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(storage::log_file(data, "supervisor")?));
+        NativePlatform::detach(&mut command);
+        Ok::<_, anyhow::Error>(command.spawn()?)
+    })();
     if let Err(error) = spawned {
-        return Err(error).context("Host launch is uncertain; its reservation is retained");
+        // No guardian was exec'd. Commit a terminal reservation while still holding
+        // ownership, so web recovery can use a new identity without replaying this ID.
+        ensure!(
+            !NativePlatform::populated(&record)?,
+            "Host launch cleanup is unconfirmed"
+        );
+        NativePlatform::remove_group(&record)?;
+        record.state = State::Exited;
+        record.exit_code = Some(-1);
+        storage::write_host(data, &record)?;
+        return Err(error).context("Cannot start host guardian");
     }
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        let current: HostRecord = storage::read(&path)?;
-        if current.child.is_some() || current.state == State::Exited {
-            return inspect(data, kind, id);
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    bail!("Host launch is unconfirmed; its reservation is retained")
+    // The guardian takes the same lock. Readiness is polled by the supervisor;
+    // a successful spawn with an unconfirmed outcome must retain its reservation.
+    Ok(true)
+}
+
+pub fn launch_finished(data: &Path, kind: Kind, id: &str) -> Result<bool> {
+    let record: HostRecord = storage::read(&storage::host_path(data, kind, id)?)?;
+    Ok(record.child.is_some() || record.state == State::Exited)
 }
 
 fn drain(data: PathBuf, name: String, mut input: impl Read) {
@@ -272,12 +281,5 @@ pub fn stop(data: &Path, kind: Kind, id: &str, graceful: bool) -> Result<()> {
     } else {
         NativePlatform::terminate(&record)?;
     }
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        if inspect(data, kind, id)?["alive"] == false {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    bail!("Host termination could not be confirmed")
+    Ok(())
 }

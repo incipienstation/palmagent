@@ -61,8 +61,19 @@ Source and legacy installations keep web-owned scripts, so activation still wait
 for those scripts to finish and retains the pending update request.
 
 App and CLI control requests use the private daemon socket directly, with bounded frames,
-protocol validation and no automatic resend after unknown delivery. They do not execute a
-launcher. Existing `daemon/launcher` paths become compatibility links for retained older
+protocol validation and no automatic resend after unknown delivery. The supervisor bounds
+concurrent connections and uses absolute read/write deadlines. Host readiness and shutdown
+are polled while lifecycle mutations remain serialized; status checks and web recovery
+continue during slow requests and waits for other hosts. An accepted operation continues
+even if its caller disconnects.
+
+A confirmed guardian spawn failure is recorded as an exited reservation. The same host ID
+cannot be relaunched; web recovery can select a new ID after the underlying fault is repaired.
+A successfully spawned guardian whose outcome is unknown retains its reservation and is never
+automatically replayed.
+
+Control requests do not execute a launcher. Existing `daemon/launcher` paths become
+compatibility links for retained older
 hosts and existing service units; new installations do not create them. The selected
 release supplies any compatibility commands, so an old copied command parser cannot
 block a new request. The startup command reads the authoritative configuration before

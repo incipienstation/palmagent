@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Restore web recovery after a confirmed runtime host start failure without replaying uncertain or completed tasks.
+- Keep daemon status and web recovery responsive while control requests arrive slowly or other hosts start and stop.
+
 ## 0.1.0-alpha.190
 
 ### Changed
