@@ -1,6 +1,8 @@
 #[cfg(target_os = "linux")]
 mod contract;
 #[cfg(target_os = "linux")]
+mod control;
+#[cfg(target_os = "linux")]
 mod daemon;
 #[cfg(target_os = "linux")]
 mod hosts;
