@@ -24,14 +24,8 @@ const claudeInventory = z.array(z.object({
   installPath: z.string(), projectPath: z.string().optional(),
 }));
 
-export interface NativePlugin extends PluginVersion {
-  manager: "codex" | "claude";
-  home: string;
-  scope: string;
-  cwd: string;
-  enabled: boolean;
-  policy?: string;
-}
+import type { NativePlugin } from "../../domain/installation-observations.js";
+export type { NativePlugin } from "../../domain/installation-observations.js";
 type Context = Pick<NativePlugin, "manager" | "home" | "cwd">;
 export type PluginCommand = typeof run;
 

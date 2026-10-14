@@ -25,11 +25,12 @@ import {
 } from "../src/modules/installation/adapters/outbound/config.js";
 import {
   type Flags,
-  gatherConfig,
   loadInstalledConfig,
-  postUpgradeArgs,
   update,
 } from "../src/composition/installation.js";
+import { installationOptions } from "../src/modules/installation/adapters/inbound/cli.js";
+import { installationConfiguration } from "../src/modules/installation/adapters/outbound/installation-configuration.js";
+import { postUpgradeArgs } from "../src/modules/installation/adapters/outbound/installation-releases.js";
 import { renderTerminalUnits } from "../src/modules/installation/adapters/outbound/terminal-units.js";
 import {
   recordRunnerArtifact,
@@ -329,10 +330,10 @@ try {
     "runner fingerprint state is owner-readable only",
   );
   check(
-    postUpgradeArgs(fingerprinted, customFlags).includes(scratch),
+    postUpgradeArgs(fingerprinted, installationOptions(customFlags)).includes(scratch),
     "the upgraded CLI re-exec preserves an explicit data directory",
   );
-  check(postUpgradeArgs({ ...fingerprinted, releaseChannel: "preview" }, { ...customFlags, get: (key) => key === "channel" ? "preview" : customFlags.get(key) }).includes("preview"),
+  check(postUpgradeArgs({ ...fingerprinted, releaseChannel: "preview" }, installationOptions({ ...customFlags, get: (key) => key === "channel" ? "preview" : customFlags.get(key) })).includes("preview"),
     "upgraded CLI receives the chosen channel before it has been saved");
   const captured: string[] = [];
   const originalLog = console.log;
@@ -480,7 +481,7 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
       key === "data-dir" ? join(scratch, "missing-install") : undefined,
   };
   try {
-    await gatherConfig(missingFlags, true);
+    await installationConfiguration.resolve(installationOptions(missingFlags), true);
   } catch {
     setupRequiresInstall = true;
   }

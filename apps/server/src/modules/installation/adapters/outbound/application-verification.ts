@@ -4,11 +4,8 @@ import { join } from "node:path";
 import type { InstallConfig } from "./config.js";
 import { connectionInfo } from "./connection.js";
 
-export interface ApplicationIdentity {
-  version: string;
-  sourceCommit: string;
-  files: Record<string, string>;
-}
+import type { ApplicationIdentity } from "../../domain/installation-observations.js";
+export type { ApplicationIdentity } from "../../domain/installation-observations.js";
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 /** Capture expected bytes before activation, independently of the served shell. */

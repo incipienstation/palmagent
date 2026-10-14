@@ -1,3 +1,4 @@
+import type { RetainedReleaseOperations } from "../../application/ports/outbound/installation.js";
 import { activeTerminal, activeExecution, verifyRetainedTerminal, verifyRetainedExecution } from "../../domain/runtime-retention.js";
 import { TERMINAL_PROTOCOL } from "@palmagent/shared/terminals";
 import { createHash, randomUUID } from "node:crypto";
@@ -52,7 +53,7 @@ export function retainInstalledRelease(cfg: InstallConfig): void {
   cfg.workingDir = cfg.pkgDir;
   cfg.executionNode = pinNode(cfg.dataDir);
 }
-export function createReleaseOperations(inventory: import("../../application/ports/outbound/runtime-inventory.js").RuntimeInventory) {
+export function createReleaseOperations(inventory: import("../../application/ports/outbound/runtime-inventory.js").RuntimeInventory): RetainedReleaseOperations {
 function stageRelease(cfg: InstallConfig, version: string): InstallConfig {
   const directory = join(cfg.dataDir, "releases", randomUUID());
   ensurePrivateDirectory(directory);
