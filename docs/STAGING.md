@@ -54,7 +54,10 @@ after one minute. **Check again** bypasses either cache. Merely waiting does not
 trigger a check, and a tag or successful CI run does not prove installation.
 
 Failed lookups retain a safe source and error category in `auto-update status`, and
-Settings shows the corresponding cause. Plugin inventory failures, missing commands,
+Settings shows the corresponding cause. A plugin inventory timeout gets one automatic
+retry with a ten-second limit, shared across the managers in that check. Persistent
+failures still report their cause; update commands are not retried this way.
+Plugin inventory failures, missing commands,
 timeouts, registry failures and incompatible releases are distinct; command output,
 credentials and private paths are not included. Older failure records may have no
 details; check again to obtain a current result.
