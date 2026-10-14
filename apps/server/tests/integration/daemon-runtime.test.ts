@@ -255,7 +255,7 @@ for (const outcome of ["busy", "start-failed", "health-failed", "healthy", "fres
     writeFileSync(join(f.root, "bin/curl"), `#!${process.execPath}\nconsole.log(JSON.stringify({ok:true}));\n`, { mode: 0o700 });
     const entry = join(f.release, "test-installer.mjs");
     await build({ stdin: { contents: `
-      import { createInstaller } from ${JSON.stringify(fileURLToPath(new URL("../../src/modules/installation/adapters/outbound/install.ts", import.meta.url)))};
+      import { createInstaller } from ${JSON.stringify(fileURLToPath(new URL("../../src/composition/installation.ts", import.meta.url)))};
       globalThis.fetch = async () => Response.json({ok:true, updateMaintenance:true, executionProtocol:1, activeRoutineScripts:0, updateBlockingRoutineScripts:0});
       const installer = createInstaller({ stageRelease() {}, verifyActiveExecutionCompatibility() {},
         assertExecutionsFinished() { ${outcome === "busy" ? "throw new Error('active terminal');" : ""} }, doctor() { return []; } });

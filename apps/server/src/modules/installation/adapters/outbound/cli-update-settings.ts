@@ -4,12 +4,7 @@ import { promisify } from "node:util";
 import { UpdateActionSchema, type UpdateAction, UpdateSettingsChangeSchema, UpdateSettingsCommandResultSchema, type UpdateSettingsChange, type UpdateSettingsState } from "@palmagent/shared/updates";
 import { ApplicationError } from "../../../../kernel/errors.js";
 
-export interface UpdateSettingsService {
-  status(): Promise<UpdateSettingsState>;
-  change(change: UpdateSettingsChange): Promise<UpdateSettingsState>;
-  action(action: UpdateAction): Promise<UpdateSettingsState>;
-  resume(): Promise<UpdateSettingsState>;
-}
+import type { UpdateUseCases } from "../../application/ports/inbound/update-use-cases.js";
 
 const execute = promisify(execFile);
 const unavailable = (availability: UpdateSettingsState["availability"]): UpdateSettingsState => ({ availability, settings: null });
@@ -17,7 +12,7 @@ const unavailable = (availability: UpdateSettingsState["availability"]): UpdateS
 /** Host changes stay in the installed CLI. Requests cannot select an executable,
  * path or shell command. An install request must match the checked version. The
  * selected supervisor keeps the updater independent of web restarts. */
-export function createUpdateSettingsService(options: { packageDir?: string; dataDir: string; dbPath: string }): UpdateSettingsService {
+export function createUpdateSettingsService(options: { packageDir?: string; dataDir: string; dbPath: string }): UpdateUseCases {
   let loggedFailureAt: string | undefined;
   async function command(change?: UpdateSettingsChange, action?: UpdateAction | { action: "resume" }): Promise<UpdateSettingsState> {
     const mutating = Boolean(change || action);

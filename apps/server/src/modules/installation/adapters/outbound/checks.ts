@@ -13,13 +13,8 @@ import { log, run, which } from "./sh.js";
 import { daemonStatus } from "./daemon-runtime.js";
 import { daemonServiceName, lingerEnabled, userSystemctl } from "./user-service.js";
 
-export type Level = "ok" | "warn" | "fail";
-export interface Check {
-  name: string;
-  level: Level;
-  detail: string;
-  fix?: string;
-}
+import type { Level, Check } from "../../domain/installation-observations.js";
+export type { Level, Check } from "../../domain/installation-observations.js";
 
 function unitActive(name: string): boolean {
   return run("systemctl", ["is-active", "--quiet", name]).ok;

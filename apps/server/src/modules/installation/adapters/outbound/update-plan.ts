@@ -1,21 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BRANDING } from "@palmagent/shared";
-import { compatiblePlugin, channelTag, compareProductVersions, productVersion, validateUpdateTarget, type ReleaseChannel } from "../../domain/release-policy.js";
+import { compatiblePlugin, channelTag, productVersion, validateUpdateTarget, type ReleaseChannel } from "../../domain/release-policy.js";
 import { run } from "./sh.js";
 import { discoveryCommandFailure, discoveryStep, UpdateDiscoveryError } from "./update-discovery-error.js";
 
-export interface PluginVersion { manifest: string; version: string }
-export interface UpdatePlan {
-  schemaVersion: 1;
-  pluginManagement: "native";
-  channel: ReleaseChannel;
-  currentVersion: string;
-  targetVersion: string;
-  packageAction: "keep" | "update";
-  plugins: Array<PluginVersion & { action: "keep" | "update"; targetVersion: string }>;
-  automaticEligible: boolean;
-}
+import { planUpdate } from "../../domain/update-plan.js";
+import type { PluginVersion, UpdatePlan } from "../../domain/update-plan.js";
+export { planUpdate } from "../../domain/update-plan.js";
+export type { PluginVersion, UpdatePlan } from "../../domain/update-plan.js";
 
 export function readPluginVersions(paths: string[]): PluginVersion[] {
   return [...new Set(paths.map((path) => resolve(path)))].map((manifest) => {
@@ -29,20 +22,6 @@ export function readPluginVersions(paths: string[]): PluginVersion[] {
     compatiblePlugin(value.version, value.version);
     return { manifest, version: value.version };
   });
-}
-
-export function planUpdate(currentVersion: string, targetVersion: string, channel: ReleaseChannel, plugins: PluginVersion[]): UpdatePlan {
-  validateUpdateTarget(currentVersion, targetVersion, channel);
-  const decisions = plugins.map((plugin) => {
-    const keep = compatiblePlugin(targetVersion, plugin.version) && compareProductVersions(plugin.version, targetVersion) >= 0;
-    return { ...plugin, action: keep ? "keep" as const : "update" as const, targetVersion: keep ? plugin.version : targetVersion };
-  });
-  return {
-    schemaVersion: 1, pluginManagement: "native", channel, currentVersion, targetVersion,
-    packageAction: currentVersion === targetVersion ? "keep" : "update",
-    plugins: decisions,
-    automaticEligible: compatiblePlugin(currentVersion, targetVersion) && plugins.every((plugin) => compatiblePlugin(targetVersion, plugin.version)),
-  };
 }
 
 /** Resolve once. Applying the returned target never reuses a moving dist-tag. */
