@@ -138,7 +138,7 @@ test("allowance details remain reachable on a narrow phone, including unknown or
   await expect(line.getByText("72%", { exact: true })).toBeVisible();
   const action = await line.getByRole("button", { name: "Usage details" }).boundingBox();
   expect(action!.width).toBeGreaterThanOrEqual(44);
-  expect(action!.height).toBe(40);
+  expect(action!.height).toBe(32);
   await line.getByText("72%", { exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Session usage" })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -161,7 +161,8 @@ test("low allowance shows its reset, but expired or stale readings never show a 
   const line = await show(page, report);
   await expect(line.getByText("5h low · Resets in 1h 40m")).toBeVisible();
   const action = await line.getByRole("button", { name: "Usage details" }).boundingBox();
-  expect(action!.height).toBe(40);
+  expect(action!.height).toBeGreaterThanOrEqual(32);
+  expect(action!.height).toBeLessThan(40);
   await assertViewportLocked(page);
   await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: report }));
   await page.clock.fastForward(390000);

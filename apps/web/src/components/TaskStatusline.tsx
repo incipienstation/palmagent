@@ -56,16 +56,16 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
   return <section aria-label="Session usage" className="min-w-0">
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button ref={triggerRef} variant="ghost" className="h-auto min-h-10 w-full justify-start rounded-xl px-1 py-0.5" aria-label="Usage details" aria-describedby={summaryId}>
+        <Button ref={triggerRef} variant="ghost" className="h-auto min-h-8 w-full justify-start rounded-xl px-1 py-0" aria-label="Usage details" aria-describedby={summaryId}>
           <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left text-xs font-normal text-muted-foreground">
             {primary && primary.id !== "codex" && <span className="truncate">{primary.name}</span>}
-            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex flex-wrap items-center gap-x-3">
               {task.agent === "codex" && <span className="inline-flex items-center gap-1 whitespace-nowrap" aria-label={`Context ${contextLabel}`}>
                 <span>Context</span>
                 {remaining !== null && <AllowanceGauge remaining={remaining} />}
                 <span className={cn("tabular-nums", remaining !== null && "text-foreground")}>{contextLabel}</span>
               </span>}
-              {available.length ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              {available.length ? <span className="inline-flex flex-wrap items-center gap-x-2">
                 <span>{stale ? "Outdated" : "Remaining"}</span>
                 {available.map(({ name, limit }, index) => <WindowSummary key={index} name={name} limit={limit} now={now} stale={stale} />)}
               </span> : <span>{accountLabel}</span>}

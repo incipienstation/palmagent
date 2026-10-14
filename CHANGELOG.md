@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Reduce the session usage status line from 40px to 32px in its standard layout, while allowing longer warnings to expand.
+
 ## 0.1.0-alpha.192
 
 ### Changed
