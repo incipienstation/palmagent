@@ -212,6 +212,9 @@ test("Settings checks the registry and requests the displayed update without ena
 
 test("a failed plugin lookup explains its cause and Check again clears the stale failure", async ({ page }) => {
   const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  state.settings!.lastUpdate = { schemaVersion: 1, status: "succeeded", previousVersion: state.currentVersion!,
+    targetVersion: state.currentVersion!, reason: "plugins-updated", pluginsUpdated: 1, pluginActivationPending: true,
+    checkedAt: "2026-01-01T00:00:00.000Z" };
   state.settings!.discovery = { channel: "preview", currentVersion: state.currentVersion!, targetVersion: null,
     checkedAt: new Date().toISOString(), eligible: false, error: true,
     failure: { source: "codex-plugins", code: "timeout", exitCode: null } };
@@ -225,6 +228,11 @@ test("a failed plugin lookup explains its cause and Check again clears the stale
   await openSettings(page);
   await expect(page.getByText("Codex plugin check failed. The check timed out. Try again.")).toBeVisible();
   await expect(page.getByText("Up to date", { exact: true })).toHaveCount(0);
+  const history = page.getByText("Last update included plugins. New agent sessions use the updated plugins.");
+  await expect(history).toBeHidden();
+  await page.getByText("Update details", { exact: true }).click();
+  await expect(history).toBeVisible();
+  await expect(page.getByText("Plugins updated. Start a new session to use them.")).toHaveCount(0);
   await page.getByRole("button", { name: "Check again", exact: true }).click();
   await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
   await expect(page.getByText(/Codex plugin check failed/)).toHaveCount(0);
@@ -283,7 +291,8 @@ test("plugin-only updates remain actionable and explain when new skills become a
   await openSettings(page);
   await expect(page.getByText("Plugin updates available")).toBeVisible();
   await page.getByRole("button", { name: "Update", exact: true }).click();
-  await expect(page.getByText("Plugins updated. Start a new session to use them.")).toBeVisible();
+  await page.getByText("Update details", { exact: true }).click();
+  await expect(page.getByText("Last update included plugins. New agent sessions use the updated plugins.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
   await expect(page.getByTestId("current-version")).toHaveText(state.currentVersion!);
 });

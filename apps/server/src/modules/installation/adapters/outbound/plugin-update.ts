@@ -35,10 +35,10 @@ export interface NativePlugin extends PluginVersion {
 type Context = Pick<NativePlugin, "manager" | "home" | "cwd">;
 export type PluginCommand = typeof run;
 
-function command(context: Context, args: string[], execute: PluginCommand): string {
+function command(context: Context, args: string[], execute: PluginCommand, timeout?: number): string {
   const result = execute(context.manager, ["plugin", ...args], {
     env: { ...process.env, [context.manager === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: context.home },
-    cwd: context.cwd, timeout: args.includes("--help") || args[0] === "list" || args[1] === "list" ? 5_000 : 120_000,
+    cwd: context.cwd, timeout: timeout ?? (args.includes("--help") || args[0] === "list" || args[1] === "list" ? 5_000 : 120_000),
   });
   if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure(`${context.manager}-plugins`, result), `${context.manager} plugin ${args[0]} failed; inspect the native manager before retrying`);
   return result.stdout;
@@ -47,12 +47,24 @@ function command(context: Context, args: string[], execute: PluginCommand): stri
 /** Only existing installations belonging to the installation owner participate. */
 export function discoverPlugins(cfg: Pick<InstallConfig, "claudeConfigDir">, execute: PluginCommand = run): NativePlugin[] {
   const result: NativePlugin[] = [];
+  // Retry only a read-only inventory timeout, once across all managers. Three
+  // initial inventories (Codex and up to two Claude homes) plus this retry take
+  // at most 25s, leaving room for npm's 30s lookup inside the 60s CLI bridge.
+  let retried = false;
+  function readInventory(context: Context): string {
+    try { return command(context, ["list", "--json"], execute); }
+    catch (error) {
+      if (retried || !(error instanceof UpdateDiscoveryError) || error.failure.code !== "timeout") throw error;
+      retried = true;
+      return command(context, ["list", "--json"], execute, 10_000);
+    }
+  }
   const codexHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
   if (existsSync(join(codexHome, "plugins"))) {
     discoveryStep({ source: "codex-plugins", code: "invalid-plugin" }, "Could not verify installed Codex plugin manifests", () => {
       const context = { manager: "codex" as const, home: codexHome, cwd: codexHome };
       const inventory = discoveryStep({ source: "codex-plugins", code: "invalid-response" }, "Codex returned an invalid plugin inventory",
-        () => codexInventory.parse(JSON.parse(command(context, ["list", "--json"], execute))));
+        () => codexInventory.parse(JSON.parse(readInventory(context))));
       if (inventory.installed.some((p) => p.pluginId.endsWith("@palmagent") && p.pluginId !== id)) throw new Error("Palmagent marketplace has unrelated installed plugins");
       for (const plugin of inventory.installed.filter((p) => p.pluginId === id)) {
         version.parse(plugin.version);
@@ -68,7 +80,7 @@ export function discoverPlugins(cfg: Pick<InstallConfig, "claudeConfigDir">, exe
     discoveryStep({ source: "claude-plugins", code: "invalid-plugin" }, "Could not verify installed Claude plugin manifests", () => {
       const context = { manager: "claude" as const, home, cwd: home };
       const inventory = discoveryStep({ source: "claude-plugins", code: "invalid-response" }, "Claude returned an invalid plugin inventory",
-        () => claudeInventory.parse(JSON.parse(command(context, ["list", "--json"], execute))));
+        () => claudeInventory.parse(JSON.parse(readInventory(context))));
       for (const plugin of inventory.filter((p) => p.id === id)) {
         version.parse(plugin.version);
         const manifest = readPluginVersions([join(plugin.installPath, ".claude-plugin/plugin.json")])[0];

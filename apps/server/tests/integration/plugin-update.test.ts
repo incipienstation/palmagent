@@ -100,6 +100,63 @@ test("native inventories discover both installed plugins and verify their actual
   assert.throws(() => discoverPlugins(f.cfg, f.execute), /does not match its inventory/);
 });
 
+for (const manager of ["codex", "claude"] as const) {
+  test(`${manager} inventory recovers from one timeout with a longer read-only retry`, (t) => {
+    const f = fixture(t);
+    const timeouts: Array<number | undefined> = [];
+    const inventory = discoverPlugins(f.cfg, (cmd, args, opts) => {
+      if (cmd === manager) {
+        assert.deepEqual(args, ["plugin", "list", "--json"]);
+        timeouts.push(opts?.timeout);
+        if (timeouts.length === 1) return { ok: false, code: null, errorCode: "ETIMEDOUT", stdout: "", stderr: "" };
+      }
+      return f.execute(cmd, args, opts);
+    });
+    assert.deepEqual(inventory.map((p) => p.version), [old, old]);
+    assert.deepEqual(timeouts, [5_000, 10_000]);
+  });
+}
+
+test("persistent inventory timeouts stop after one retry and retain safe diagnostics", (t) => {
+  const f = fixture(t);
+  let attempts = 0;
+  assert.throws(() => discoverPlugins(f.cfg, () => {
+    attempts++;
+    return { ok: false, code: null, errorCode: "ETIMEDOUT", stdout: "private-output", stderr: "private-error" };
+  }), (error: unknown) => {
+    assert.deepEqual((error as { failure: unknown }).failure, { source: "codex-plugins", code: "timeout", exitCode: null });
+    assert(!String(error).includes("private-"));
+    return true;
+  });
+  assert.equal(attempts, 2);
+});
+
+test("inventory retry allowance is shared across managers", (t) => {
+  const f = fixture(t);
+  const calls: string[] = [];
+  assert.throws(() => discoverPlugins(f.cfg, (cmd, args, opts) => {
+    calls.push(cmd);
+    if (calls.length === 2) return f.execute(cmd, args, opts);
+    return { ok: false, code: null, errorCode: "ETIMEDOUT", stdout: "", stderr: "" };
+  }), (error: unknown) => {
+    assert.deepEqual((error as { failure: unknown }).failure, { source: "claude-plugins", code: "timeout", exitCode: null });
+    return true;
+  });
+  assert.deepEqual(calls, ["codex", "codex", "claude"]);
+});
+
+test("non-timeout inventory failures are not retried", (t) => {
+  const f = fixture(t);
+  for (const errorCode of ["ENOENT", "EACCES", "ENOBUFS", undefined]) {
+    let attempts = 0;
+    assert.throws(() => discoverPlugins(f.cfg, () => {
+      attempts++;
+      return { ok: false, code: 1, errorCode, stdout: "", stderr: "" };
+    }));
+    assert.equal(attempts, 1);
+  }
+});
+
 test("malformed Claude inventory retains its source without exposing parser input", (t) => {
   const f = fixture(t);
   assert.throws(() => discoverPlugins(f.cfg, (cmd, args, opts) => cmd === "claude"
@@ -146,6 +203,21 @@ test("partial failure restores the failed catalog, retains successful compatible
   const receipt = JSON.parse(readFileSync(join(f.cfg.dataDir, "plugin-update.json"), "utf8"));
   assert.equal(receipt.status, "failed-catalog-restored");
   assert.equal(receipt.updated.length, 1);
+});
+
+test("a timed-out plugin installation is not retried", (t) => {
+  const f = fixture(t);
+  const native = discoverPlugins(f.cfg, f.execute);
+  let attempts = 0;
+  assert.throws(() => refreshPlugins(f.cfg, planUpdate(target, target, "preview", native), native, (cmd, args, opts) => {
+    if (cmd === "claude" && args[1] === "update" && !args.includes("--help")) {
+      attempts++;
+      return { ok: false, code: null, errorCode: "ETIMEDOUT", stdout: "", stderr: "" };
+    }
+    return f.execute(cmd, args, opts);
+  }), /previous marketplace restored/);
+  assert.equal(attempts, 1);
+  assert.equal(f.registered.claude, f.original.claude);
 });
 
 test("a successful native command is insufficient when the installed version remains old", (t) => {

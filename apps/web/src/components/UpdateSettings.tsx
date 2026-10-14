@@ -97,12 +97,11 @@ export function UpdateSettings() {
       {status && status.availability !== "available" && <Alert>{unavailable[status.availability]}</Alert>}
 
       {settings && <>
-        {(discovery?.error || (newer && !discovery?.eligible) || pending || paused || last?.status === "deferred" || last?.pluginActivationPending) && <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
+        {(discovery?.error || (newer && !discovery?.eligible) || pending || paused || last?.status === "deferred") && <div className="flex flex-col gap-2 text-xs text-muted-foreground" role="status">
           {discovery?.error && <Alert variant="warning">{discoveryMessage(discovery.failure)}</Alert>}
           {newer && !discovery?.eligible && <Alert>This release needs a matching operator plugin. Use the update plugin to continue.</Alert>}
           {pending && !paused && <p>{settings.independentExecutions ? `Preparing update to ${pending.targetVersion}. Your agent runs continue.` : `Update to ${pending.targetVersion} is scheduled. It will start after active tasks finish.`}</p>}
           {last && (paused || last.status === "deferred") && <Alert variant={last.status === "failed" ? "warning" : "default"}>{updateMessage(last)}</Alert>}
-          {last?.pluginActivationPending && <p>Plugins updated. Start a new session to use them.</p>}
         </div>}
         {newer && discovery?.eligible && !settings.autoUpdate && <Button disabled={disabled || busy || Boolean(pending) || paused}
           onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
@@ -125,6 +124,7 @@ export function UpdateSettings() {
         </SettingsCard>
 
         <SettingsHelp title="Update details">
+          {last?.pluginActivationPending && <p>Last update included plugins. New agent sessions use the updated plugins.</p>}
           <p>{settings.independentExecutions ? "Automatic updates run when you open the app. Agent runs continue." : "Automatic updates run when you open the app, after active tasks finish."}</p>
           <p>Stable uses stable releases. Preview includes alpha, beta, and release candidates. Changing channel does not install or downgrade immediately.</p>
           {checkedAt && Number.isFinite(checkedAt.getTime()) && <p>Last checked: <time dateTime={discovery!.checkedAt}>{checkedAt.toLocaleString()}</time></p>}
