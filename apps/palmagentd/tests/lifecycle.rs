@@ -105,7 +105,7 @@ impl Fixture {
         wait(|| {
             fixture
                 .try_request(json!({ "action": "status" }))
-                .is_some_and(|status| status["web"]["alive"] == true)
+                .is_some_and(|status| status["web"]["child"]["pid"].is_u64())
         });
         fixture
     }
@@ -565,4 +565,265 @@ fn disconnected_restart_finishes_while_status_bypasses_serialized_mutations() {
     let after = fixture.request(json!({ "action": "status" }));
     assert_ne!(before["web"]["child"], after["web"]["child"]);
     assert!(after["web"]["child"]["pid"].is_u64());
+}
+
+fn host_record(fixture: &Fixture, kind: &str, id: &str) -> (PathBuf, Value) {
+    let path = fixture
+        .data
+        .join("daemon/hosts")
+        .join(format!("{kind}-{id}.json"));
+    let value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    (path, value)
+}
+fn readiness_manifest(fixture: &Fixture) {
+    fs::create_dir_all(fixture.data.join("releases/r1/daemon")).unwrap();
+    fs::write(
+        fixture.data.join("releases/r1/daemon/manifest.json"),
+        r#"{"hostReadiness":1}"#,
+    )
+    .unwrap();
+}
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+#[test]
+fn readiness_requires_the_actual_host_identity_and_survives_daemon_replacement() {
+    let mut fixture = Fixture::new();
+    readiness_manifest(&fixture);
+    fixture.descriptor("terminal", "abc004");
+    let stream = fixture.send(json!({"action":"launch","kind":"terminal","id":"abc004"}));
+    wait(|| {
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc004"}))["child"]["pid"]
+            .is_u64()
+    });
+    let before = fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc004"}));
+    assert_eq!(before["lifecycle"]["phase"], "starting");
+    let (path, record) = host_record(&fixture, "terminal", "abc004");
+    write(
+        &path.with_extension("ready"),
+        &json!({"pid":record["child"]["pid"],"start":"wrong-identity","readyAt":now_ms()}),
+    );
+    assert_eq!(
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc004"}))["lifecycle"]["phase"],
+        "starting"
+    );
+    fs::write(path.with_extension("ready"), "invalid readiness").unwrap();
+    assert_eq!(
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc004"}))["lifecycle"]["phase"],
+        "starting"
+    );
+    let mut ready = record["child"].clone();
+    ready["readyAt"] = json!(now_ms());
+    write(&path.with_extension("ready"), &ready);
+    assert_eq!(reply(stream)["result"]["lifecycle"]["phase"], "ready");
+    let instance = fixture.request(json!({"action":"status"}))["instance"].clone();
+    fixture.request(json!({"action":"replace"}));
+    wait(|| {
+        fixture
+            .try_request(json!({"action":"status"}))
+            .is_some_and(|s| s["instance"] != instance)
+    });
+    let after = fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc004"}));
+    assert_eq!(after["child"], before["child"]);
+    assert_eq!(after["lifecycle"]["phase"], "ready");
+}
+
+#[test]
+fn web_startup_deadline_records_the_reason_and_preserves_other_hosts() {
+    let mut fixture = Fixture::new();
+    let terminal = fixture.launch("terminal", "abc005");
+    readiness_manifest(&fixture);
+    let web = fixture.request(json!({"action":"status"}))["web"].clone();
+    unsafe {
+        libc::kill(web["guard"]["pid"].as_i64().unwrap() as i32, libc::SIGTERM);
+    }
+    wait(|| fixture.request(json!({"action":"status"}))["web"]["lifecycle"]["phase"] == "starting");
+    let id: String =
+        serde_json::from_slice(&fs::read(fixture.data.join("daemon/web.json")).unwrap()).unwrap();
+    wait(|| fixture.request(json!({"action":"status"}))["web"]["child"]["pid"].is_u64());
+    let (path, mut record) = host_record(&fixture, "web", &id);
+    record["lifecycle"]["createdAt"] = json!(now_ms() - 31_000);
+    write(&path, &record);
+    // The supervisor stops only the unready web host; the guardian commits the cause.
+    wait(|| {
+        let state = fixture.request(json!({"action":"inspect","kind":"web","id":id}));
+        state["alive"] == false && state["lifecycle"]["reason"] == "readiness_timeout"
+    });
+    assert_eq!(
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc005"}))["child"],
+        terminal["child"]
+    );
+    fs::remove_file(fixture.data.join("releases/r1/daemon/manifest.json")).unwrap();
+}
+
+#[test]
+fn crash_backoff_is_durable_and_a_repaired_web_recovers() {
+    let fixture = Fixture::new();
+    let script = fixture.data.join("releases/r1/server.js");
+    fs::write(&script, "exit 17\n").unwrap();
+    fixture.request(json!({"action":"restart-web"}));
+    wait(|| {
+        fixture.request(json!({"action":"status"}))["recovery"]["consecutiveFailures"]
+            .as_u64()
+            .unwrap()
+            >= 2
+    });
+    let before = fixture.request(json!({"action":"status"}));
+    let deadline = before["recovery"]["nextAttemptAt"].as_u64().unwrap();
+    assert!(deadline > now_ms() + 2_000);
+    fixture.request(json!({"action":"replace"}));
+    wait(|| {
+        fixture
+            .try_request(json!({"action":"status"}))
+            .is_some_and(|s| s["instance"] != before["instance"])
+    });
+    assert_eq!(
+        fixture.request(json!({"action":"status"}))["recovery"]["nextAttemptAt"],
+        deadline
+    );
+    fs::write(
+        &script,
+        "trap 'exit 0' TERM INT\nwhile :; do sleep 0.1; done\n",
+    )
+    .unwrap();
+    wait(|| fixture.request(json!({"action":"status"}))["web"]["lifecycle"]["phase"] == "running");
+}
+
+#[test]
+fn dead_guardian_records_reconcile_without_replaying_the_invocation() {
+    let mut fixture = Fixture::new();
+    fixture.launch("terminal", "abc006");
+    fixture.request(json!({"action":"terminate","kind":"terminal","id":"abc006"}));
+    let (path, mut record) = host_record(&fixture, "terminal", "abc006");
+    // Model a guardian that died before committing its terminal record, with no remaining child.
+    record["state"] = json!("running");
+    record["lifecycle"]["finishedAt"] = Value::Null;
+    write(&path, &record);
+    wait(|| {
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc006"}))["lifecycle"]["reason"]
+            == "guardian_lost"
+    });
+    let retried = fixture.request(json!({"action":"launch","kind":"terminal","id":"abc006"}));
+    assert_eq!(retried["state"], "exited");
+    assert_eq!(retried["child"], record["child"]);
+    // In development mode, a missing child identity cannot prove no child escaped spawn.
+    let ambiguous_path = fixture.data.join("daemon/hosts/terminal-abc009.json");
+    record["id"] = json!("abc009");
+    record["child"] = Value::Null;
+    write(&ambiguous_path, &record);
+    wait(|| {
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc009"}))["lifecycle"]["reason"]
+            == "guardian_lost"
+    });
+    let ambiguous = fixture.request(json!({"action":"launch","kind":"terminal","id":"abc009"}));
+    assert_eq!(ambiguous["state"], "unknown");
+    assert_eq!(ambiguous["alive"], true);
+    record["state"] = json!("exited");
+    write(&ambiguous_path, &record);
+}
+
+#[test]
+fn retention_compacts_completed_records_but_keeps_deduplication_and_uncertain_logs() {
+    let mut fixture = Fixture::new();
+    fixture.launch("terminal", "abc007");
+    fixture.request(json!({"action":"terminate","kind":"terminal","id":"abc007"}));
+    let (_, template) = host_record(&fixture, "terminal", "abc007");
+    let logs = fixture.data.join("daemon/logs");
+    for number in 0..40 {
+        let id = format!("d{number:04x}");
+        let mut record = template.clone();
+        record["id"] = json!(id);
+        record["guard"] = Value::Null;
+        record["child"] = Value::Null;
+        record["environment"] = json!({"RETIRED_TEST_VALUE":"discard"});
+        record["lifecycle"]["finishedAt"] = json!(now_ms() - 8 * 24 * 60 * 60 * 1000);
+        write(
+            &fixture
+                .data
+                .join("daemon/hosts")
+                .join(format!("terminal-{id}.json")),
+            &record,
+        );
+        write(
+            &logs.join(format!("terminal-{id}-out.log")),
+            &json!("old log"),
+        );
+    }
+    let mut uncertain = template.clone();
+    uncertain["id"] = json!("ee000");
+    uncertain["state"] = json!("starting");
+    uncertain["guard"] = Value::Null;
+    uncertain["child"] = Value::Null;
+    uncertain["lifecycle"]["finishedAt"] = Value::Null;
+    let uncertain_path = fixture.data.join("daemon/hosts/terminal-ee000.json");
+    write(&uncertain_path, &uncertain);
+    let protected = logs.join("terminal-ee000-out.log");
+    write(&protected, &json!("keep"));
+    wait(|| !logs.join("terminal-d0027-out.log").exists());
+    assert!(protected.exists());
+    let (_, compacted) = host_record(&fixture, "terminal", "d0000");
+    assert_eq!(compacted["environment"], json!({}));
+    assert_eq!(compacted["lifecycle"]["compacted"], true);
+    assert_eq!(
+        fixture.request(json!({"action":"launch","kind":"terminal","id":"d0000"}))["state"],
+        "exited"
+    );
+    let page = fixture.request(json!({"action":"list"}));
+    assert_eq!(page["hosts"].as_array().unwrap().len(), 32);
+    let next = fixture.request(json!({"action":"list","after":page["next"]}));
+    assert!(next["hosts"].as_array().unwrap().len() >= 10);
+    assert!(next["next"].is_null());
+    assert!(serde_json::to_vec(&page).unwrap().len() < 65_000);
+    uncertain["state"] = json!("exited");
+    write(&uncertain_path, &uncertain);
+}
+
+#[test]
+fn total_log_budget_removes_oldest_completed_logs_and_protects_active_output() {
+    let mut fixture = Fixture::new();
+    fixture.launch("terminal", "abc008");
+    fixture.request(json!({"action":"terminate","kind":"terminal","id":"abc008"}));
+    let (_, template) = host_record(&fixture, "terminal", "abc008");
+    let logs = fixture.data.join("daemon/logs");
+    let active: String =
+        serde_json::from_slice(&fs::read(fixture.data.join("daemon/web.json")).unwrap()).unwrap();
+    let protected = logs.join(format!("web-{active}-out.log"));
+    fs::File::create(&protected)
+        .unwrap()
+        .set_len(4 * 1024 * 1024)
+        .unwrap();
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o600)).unwrap();
+    for number in 0..17 {
+        let id = format!("f{number:04x}");
+        let mut record = template.clone();
+        record["id"] = json!(id);
+        record["guard"] = Value::Null;
+        record["child"] = Value::Null;
+        record["lifecycle"]["finishedAt"] = json!(now_ms() - 100_000 + number);
+        write(
+            &fixture
+                .data
+                .join("daemon/hosts")
+                .join(format!("terminal-{id}.json")),
+            &record,
+        );
+        let log = logs.join(format!("terminal-{id}-out.log"));
+        fs::File::create(&log)
+            .unwrap()
+            .set_len(4 * 1024 * 1024)
+            .unwrap();
+        fs::set_permissions(&log, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    wait(|| !logs.join("terminal-f0000-out.log").exists());
+    wait(|| fixture.request(json!({"action":"status"}))["inventory"]["overBudget"] == false);
+    assert!(protected.exists());
+    assert!(logs.join("terminal-f0010-out.log").exists());
+    assert_eq!(
+        fixture.request(json!({"action":"launch","kind":"terminal","id":"f0000"}))["state"],
+        "exited"
+    );
 }

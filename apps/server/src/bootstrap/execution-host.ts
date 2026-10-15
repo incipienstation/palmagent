@@ -1,3 +1,4 @@
+import { createHostReadiness } from "../platform/process/host-readiness.js";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ExecutionIdSchema, EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
@@ -11,6 +12,7 @@ import { InProcessBackend } from "../modules/agents/adapters/outbound/inproc-bac
 import type { RunHandle } from "../modules/agents/domain/run-handle.js";
 import type { RawEvent } from "../modules/agents/domain/execution.js";
 
+const ready = createHostReadiness();
 const directory = process.argv[2];
 const id = ExecutionIdSchema.parse(process.argv[3]);
 if (!directory) throw new Error("Execution state directory is required");
@@ -95,6 +97,7 @@ try {
   emit({ taskId: record.taskId, kind: "status", payload: { subtype: "execution_started" } });
   handle = getRunner(record.args.agent).start({ ...record.args, skills: record.skills }, emit, backend);
   dispose = watchExecutions(store.directory, () => { void drain().catch(fatal); }, id);
+  ready();
   void drain().catch(fatal);
   void handle.done.then(() => finish(), () => finish(true)).catch(fatal);
 } catch {

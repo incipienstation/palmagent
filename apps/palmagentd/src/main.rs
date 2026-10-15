@@ -7,7 +7,11 @@ mod daemon;
 #[cfg(target_os = "linux")]
 mod hosts;
 #[cfg(target_os = "linux")]
+mod maintenance;
+#[cfg(target_os = "linux")]
 mod platform;
+#[cfg(target_os = "linux")]
+mod recovery;
 #[cfg(target_os = "linux")]
 use platform::storage;
 

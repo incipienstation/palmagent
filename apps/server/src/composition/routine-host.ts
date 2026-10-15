@@ -1,7 +1,7 @@
 import { RoutineHostStore } from "../modules/routines/adapters/outbound/routine-host-store.js";
 import { runRoutineScript } from "../modules/routines/adapters/outbound/local-script-runner.js";
 
-export async function runRoutineHost(directory: string, id: string): Promise<void> {
+export async function runRoutineHost(directory: string, id: string, ready: () => void = () => {}): Promise<void> {
   const store = new RoutineHostStore(directory);
   const descriptor = store.get(id);
   if (!descriptor) throw new Error("Routine host descriptor is missing");
@@ -20,6 +20,7 @@ export async function runRoutineHost(directory: string, id: string): Promise<voi
     catch { execution.stop("interrupted by unavailable host storage"); }
   }, 100);
   try {
+    ready();
     const result = await execution.done;
     // Keep the completed result in memory and retain ownership while storage is unavailable.
     for (;;) {

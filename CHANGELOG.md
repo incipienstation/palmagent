@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Report host readiness, supervision failures and paginated native runtime inventory through daemon diagnostics.
+- Reconcile lost guardians without replaying tasks, persist web restart backoff, and bound completed-host log retention while preserving execution identities.
+
 ## 0.1.0-alpha.193
 
 ### Changed

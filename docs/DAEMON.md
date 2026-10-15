@@ -44,6 +44,62 @@ and host state; external permissions and service availability can still make a
 run fail. Uninstall preserves account lingering because other user services may
 rely on it.
 
+## Readiness and recovery
+
+New packages advertise `hostReadiness: 1` in the daemon artifact manifest. Their Node
+hosts publish a private readiness marker bound to PID, process start time and boot
+identity. Web reports ready after its listeners start; terminal after PTY and local
+transport initialization; execution after its command handler is installed; routine
+after its script controller is installed; updater after reading its durable request.
+The marker capability is removed from the environment before spawning descendants.
+Older retained packages remain supported and report readiness as `unsupported`.
+A running process alone is not proof that its service is ready.
+
+The existing `state`/`alive` fields remain compatible. Additive `lifecycle` metadata
+reports `starting`, `ready`, `running` (legacy readiness unknown), `stopping`, `exited`
+or `unknown`, together with supervision state, timestamps and a failure reason.
+Launch requests wait up to 15 seconds for readiness when supported; a timeout does
+not replay or cancel user work. An automatically recovering web host that has not
+become ready within 30 seconds is stopped. Explicit web transitions finish their
+bounded lifecycle operation before automatic recovery resumes.
+
+Web failures back off for 2, 4, 8, 16, 32, then at most 60 seconds. Failure count and
+retry deadline survive daemon replacement/restart. Thirty seconds of continuously
+ready operation resets the count; legacy hosts use guarded process liveness for
+that stability check. An explicit web restart can bypass a pending retry delay.
+This is startup readiness, not an ongoing HTTP responsiveness watchdog.
+
+The daemon incrementally reconciles host records. It acquires the guardian's lock
+and verifies its recorded process identity has ended before changing ownership.
+For an orphaned host in its own delegated cgroup, it terminates remaining descendants,
+confirms the group is empty and records `guardian_lost`. Only the web is automatically
+replaced; executions, terminals, routines and updater invocations are never replayed.
+Unconfirmed reservations with no recorded guardian remain reserved. Development
+process-group mode reports live orphans without automatically signaling stale groups.
+
+## Inventory and retention
+
+`palmagent daemon status` includes web recovery state and an inventory summary.
+`palmagent daemon hosts --data-dir <data-dir>` returns up to 32 host records and a
+`next` cursor; pass it as `--after <cursor>` to continue. These are incremental,
+eventually consistent observations: `checkedAt` identifies the last completed scan
+and `scanning` indicates work in progress. Full retained release paths remain in the
+individual native `inspect` response; inventory never includes host environments.
+Older daemons without inventory support must be updated before using `daemon hosts`.
+Doctor warns about orphaned or uncertain ownership, inspection failures, restart
+backoff and protected logs exceeding the cleanup target.
+
+Each output file still rotates around 4 MiB. Completed-host logs expire after seven
+days, or earlier, oldest first, when the daemon log directory exceeds a 64 MiB cleanup
+target. Ownership and exit are rechecked before deletion. Active, uncertain, unrecognized
+and supervisor logs are protected from this cleanup; protected data can exceed the
+target and is reported, never deleted just to satisfy the target.
+After seven days, confirmed completed host records are compacted: environment and
+process details are removed, while identity, release references, exit metadata and
+the terminal reservation remain. Reservation files and their locks are retained
+indefinitely to prevent the same host ID from being launched again. This policy does
+not delete execution journals, task history, worktrees, retained packages or Node runtimes.
+
 ## Updates and migration
 
 Automatic update discovery, Stable/Preview selection, compatibility checks, receipts

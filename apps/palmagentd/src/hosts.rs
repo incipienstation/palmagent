@@ -14,7 +14,7 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 
 use crate::{
-    contract::{Configuration, Descriptor, HostRecord, Kind, PROTOCOL, State},
+    contract::{Configuration, Descriptor, HostRecord, Kind, Lifecycle, PROTOCOL, State},
     platform::{NativePlatform, ProcessControl, ProcessIsolation, alive},
     storage,
 };
@@ -29,7 +29,11 @@ pub fn inspect(data: &Path, kind: Kind, id: &str) -> Result<Value> {
         record.protocol == PROTOCOL && record.kind == kind && record.id == id,
         "Host identity mismatch"
     );
-    let populated = NativePlatform::populated(&record)?;
+    describe(data, &record)
+}
+
+pub fn describe(data: &Path, record: &HostRecord) -> Result<Value> {
+    let populated = NativePlatform::populated(record)?;
     let guard_alive = record
         .guard
         .as_ref()
@@ -45,10 +49,82 @@ pub fn inspect(data: &Path, kind: Kind, id: &str) -> Result<Value> {
     } else {
         "unknown"
     };
+    let supervision = if guard_alive {
+        "guarded"
+    } else if record.state == State::Exited && !populated {
+        "ended"
+    } else if record.guard.is_some() {
+        "orphaned"
+    } else {
+        "unconfirmed"
+    };
+    let ready_at = ready_at(data, record)?;
+    let stopping = storage::host_path(data, record.kind, &record.id)?
+        .with_extension("stop")
+        .exists();
+    let phase = if record.state == State::Exited && !populated {
+        "exited"
+    } else if supervision != "guarded" {
+        "unknown"
+    } else if stopping {
+        "stopping"
+    } else if ready_at.is_some() {
+        "ready"
+    } else if record.lifecycle.readiness_required || record.child.is_none() {
+        "starting"
+    } else {
+        "running"
+    };
     Ok(
-        json!({ "state": state, "alive": populated || guard_alive || state == "unknown", "guard": record.guard,
-        "child": record.child, "release": record.release, "exitCode": record.exit_code }),
+        json!({ "state": state, "alive": populated || guard_alive || state == "unknown",
+        "guard": record.guard, "child": record.child, "release": record.release, "exitCode": record.exit_code,
+        "lifecycle": { "phase": phase, "supervision": supervision,
+            "readiness": if ready_at.is_some() { "ready" } else if record.lifecycle.readiness_required { "pending" } else { "unsupported" },
+            "createdAt": record.lifecycle.created_at, "startedAt": record.lifecycle.started_at,
+            "readyAt": ready_at, "finishedAt": record.lifecycle.finished_at,
+            "reason": record.lifecycle.reason, "compacted": record.lifecycle.compacted } }),
     )
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Ready {
+    pid: u32,
+    start: String,
+    ready_at: u64,
+}
+
+pub fn ready_at(data: &Path, record: &HostRecord) -> Result<Option<u64>> {
+    if record.lifecycle.ready_at.is_some() {
+        return Ok(record.lifecycle.ready_at);
+    }
+    let path = storage::host_path(data, record.kind, &record.id)?.with_extension("ready");
+    if !path.exists() {
+        return Ok(None);
+    }
+    // Missing, stale or malformed evidence never proves readiness and must not prevent
+    // inspection/recovery of a host that subsequently exits.
+    let Ok(ready) = storage::read::<Ready>(&path) else {
+        return Ok(None);
+    };
+    Ok(record
+        .child
+        .as_ref()
+        .filter(|child| child.pid == ready.pid && child.start == ready.start)
+        .map(|_| ready.ready_at))
+}
+
+fn readiness_required(release: &Path) -> Result<bool> {
+    let path = release.join("daemon/manifest.json");
+    if !path.exists() {
+        return Ok(false);
+    }
+    ensure!(
+        std::fs::metadata(&path)?.len() <= 65_536,
+        "Daemon manifest is too large"
+    );
+    let manifest: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    Ok(manifest["hostReadiness"] == 1)
 }
 
 pub fn launch(
@@ -82,6 +158,7 @@ pub fn launch(
     } else {
         (config.release.clone(), config.node.clone())
     };
+    let readiness_required = readiness_required(&release)?;
     let mut record = HostRecord {
         protocol: PROTOCOL,
         kind,
@@ -96,6 +173,11 @@ pub fn launch(
         guard: None,
         child: None,
         exit_code: None,
+        lifecycle: Lifecycle {
+            created_at: storage::now(),
+            readiness_required,
+            ..Default::default()
+        },
     };
     // The reservation commits before spawn. Ambiguous starts never create a second invocation.
     storage::write_host(data, &record)?;
@@ -124,6 +206,8 @@ pub fn launch(
         NativePlatform::remove_group(&record)?;
         record.state = State::Exited;
         record.exit_code = Some(-1);
+        record.lifecycle.finished_at = Some(storage::now());
+        record.lifecycle.reason = Some("guardian_spawn_failed".into());
         storage::write_host(data, &record)?;
         return Err(error).context("Cannot start host guardian");
     }
@@ -134,7 +218,12 @@ pub fn launch(
 
 pub fn launch_finished(data: &Path, kind: Kind, id: &str) -> Result<bool> {
     let record: HostRecord = storage::read(&storage::host_path(data, kind, id)?)?;
-    Ok(record.child.is_some() || record.state == State::Exited)
+    Ok(record.state == State::Exited
+        || if record.lifecycle.readiness_required {
+            ready_at(data, &record)?.is_some()
+        } else {
+            record.child.is_some()
+        })
 }
 
 fn drain(data: PathBuf, name: String, mut input: impl Read) {
@@ -179,6 +268,7 @@ pub fn run(data: &Path, kind: Kind, id: &str) -> Result<()> {
     let result = run_child(data, &mut record, stopped);
     if result.is_err() {
         record.exit_code = Some(-1);
+        record.lifecycle.reason = Some("host_start_failed".into());
     }
     // Never release a terminal's worktree while descendants may still exist.
     NativePlatform::terminate(&record)?;
@@ -193,6 +283,17 @@ pub fn run(data: &Path, kind: Kind, id: &str) -> Result<()> {
     );
     NativePlatform::remove_group(&record)?;
     record.state = State::Exited;
+    record.lifecycle.finished_at = Some(storage::now());
+    let stop_path = path.with_extension("stop");
+    if stop_path.exists() {
+        let stop: Value = storage::read(&stop_path)?;
+        if stop["reason"] == "readiness_timeout" {
+            record.lifecycle.reason = Some("readiness_timeout".into());
+        }
+    }
+    if record.lifecycle.reason.is_none() && record.exit_code != Some(0) {
+        record.lifecycle.reason = Some("child_failed".into());
+    }
     storage::write_host(data, &record)?;
     result
 }
@@ -228,10 +329,17 @@ fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> 
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if record.lifecycle.readiness_required {
+        command.env(
+            "PALMAGENT_HOST_READY",
+            storage::host_path(data, record.kind, &record.id)?.with_extension("ready"),
+        );
+    }
     NativePlatform::contain(&mut command, record)?;
     let mut child = command.spawn().context("Cannot start retained runtime")?;
     record.child = NativePlatform::identity(child.id())?;
     record.state = State::Running;
+    record.lifecycle.started_at = Some(storage::now());
     storage::write_host(data, record)?;
     let output_data = data.to_owned();
     let error_data = data.to_owned();
@@ -243,6 +351,12 @@ fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> 
     let err = thread::spawn(move || drain(error_data, error_name, error));
     let mut stopping_since = None;
     loop {
+        if record.lifecycle.ready_at.is_none()
+            && let Some(ready) = ready_at(data, record)?
+        {
+            record.lifecycle.ready_at = Some(ready);
+            storage::write_host(data, record)?;
+        }
         if let Some(status) = child.try_wait()? {
             record.exit_code = status.code().or(Some(-1));
             break;
@@ -269,11 +383,18 @@ fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> 
 }
 
 pub fn stop(data: &Path, kind: Kind, id: &str, graceful: bool) -> Result<()> {
+    stop_reason(data, kind, id, graceful, "requested")
+}
+fn stop_reason(data: &Path, kind: Kind, id: &str, graceful: bool, reason: &str) -> Result<()> {
     let path = storage::host_path(data, kind, id)?;
     let record: HostRecord = storage::read(&path)?;
     if record.state == State::Exited {
         return Ok(());
     }
+    storage::atomic(
+        &path.with_extension("stop"),
+        &json!({ "at": storage::now(), "reason": reason }),
+    )?;
     if graceful {
         if let Some(guard) = &record.guard {
             NativePlatform::signal(guard, false)?;
@@ -282,4 +403,9 @@ pub fn stop(data: &Path, kind: Kind, id: &str, graceful: bool) -> Result<()> {
         NativePlatform::terminate(&record)?;
     }
     Ok(())
+}
+
+/// A readiness deadline applies only to the replaceable web service, never to user work.
+pub fn stop_unready(data: &Path, id: &str) -> Result<()> {
+    stop_reason(data, Kind::Web, id, true, "readiness_timeout")
 }

@@ -5,6 +5,7 @@
 //
 // Bundled to `<pkg>/cli.js` (esbuild, scripts/build-pkg.ts) and exposed as the
 // package `bin`. server.js, runner-daemon.js, and web/ sit beside it.
+import { createHostReadiness } from "../platform/process/host-readiness.js";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -132,7 +133,7 @@ Commands:
   routine      Manage scheduled agent tasks and scripts (run routine --help)
   settings     Manage Space search paths (run settings --help)
   terminal     Manage persistent shells (run terminal --help)
-  daemon       Inspect or replace the native supervisor (status|restart)
+  daemon       Inspect or replace the native supervisor (status|hosts|restart)
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove application units (proxy/TLS preserved; --purge removes data)
@@ -183,10 +184,21 @@ async function main(): Promise<void> {
   if (cmd === "terminal") return terminalCommand(rest);
   if (cmd === "daemon") {
     const [action, ...options] = rest;
-    if (!["status", "restart"].includes(action)) throw new Error("usage: daemon status|restart [--data-dir <path>]");
-    const cfg = loadConfig({ dataDir: parseFlags(options).get("data-dir"), requireInstalled: true });
+    if (action === "--help" || action === "-h") {
+      console.log("usage: daemon status|hosts|restart [--data-dir <path>] [--after <cursor>]\nHosts returns up to 32 records; pass its next cursor as --after. Inventory is refreshed incrementally.");
+      return;
+    }
+    if (!["status", "hosts", "restart"].includes(action)) throw new Error("usage: daemon status|hosts|restart [--data-dir <path>] [--after <cursor>]");
+    const values = action === "hosts" ? parseArgs({ args: options, strict: true, allowPositionals: false,
+      options: { "data-dir": { type: "string" }, after: { type: "string" } } }).values
+      : { "data-dir": parseFlags(options).get("data-dir"), after: undefined };
+    const cfg = loadConfig({ dataDir: values["data-dir"], requireInstalled: true });
     if (cfg.supervisor !== "palmagentd") throw new Error("This installation uses the legacy supervisor; run setup during an idle window to migrate");
-    console.log(JSON.stringify(await daemonRequest(cfg.dataDir, { action: action === "restart" ? "replace" : "status" })));
+    if (action === "hosts") {
+      const status = await daemonRequest(cfg.dataDir, { action: "status" });
+      if (!status || typeof status !== "object" || !("inventory" in status)) throw new Error("This daemon does not support host inventory; update the runtime first");
+    }
+    console.log(JSON.stringify(await daemonRequest(cfg.dataDir, action === "hosts" ? { action: "list", after: values.after } : { action: action === "restart" ? "replace" : "status" })));
     return;
   }
   if (cmd === "routine") return routineCommand(rest);
@@ -201,9 +213,11 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "update-request") {
+    const ready = createHostReadiness();
     const { values } = parseArgs({ args: rest, strict: true, allowPositionals: false, options: { "data-dir": { type: "string" } } });
     if (!values["data-dir"]) throw new Error("update request requires an installation");
     const request = readUpdateAccess(values["data-dir"]).pending;
+    ready();
     if (!request) return;
     process.env.PALMAGENT_NON_INTERACTIVE = "1";
     process.exitCode = await update({ dryRun: false, nonInteractive: true, force: false, purge: false,

@@ -117,7 +117,11 @@ try {
   }
   executions = new ExecutionStore(join(dataDir, "executions"));
   const identities = executions.list();
-  for (const record of identities) assert(readFileSync(`/proc/${record.pid}/cgroup`, "utf8").includes(`${unit}/executions/${record.id}`));
+  for (const record of identities) {
+    assert(readFileSync(`/proc/${record.pid}/cgroup`, "utf8").includes(`${unit}/executions/${record.id}`));
+    const host = await daemonRequest(dataDir, { action: "inspect", kind: "execution", id: record.id }) as { lifecycle: { phase: string } };
+    assert.equal(host.lifecycle.phase, "ready");
+  }
 
   terminals = new TerminalStore(join(dataDir, "terminals"));
   const { record: terminal } = terminals.reserve({ requestId: randomUUID(), repoId: repo.id, title: "Acceptance", initialCwd: join(root, "repo"),
@@ -153,6 +157,8 @@ try {
   const routineRun = (await api(`routines/${routine.id}/runs`)).runs[0];
   const routineHostId = routineRun.id.toString(16);
   assert(readFileSync(`/proc/${routinePid}/cgroup`, "utf8").includes(`${unit}/routines/${routineHostId}`));
+  const routineState = await daemonRequest(dataDir, { action: "inspect", kind: "routine", id: routineHostId }) as { lifecycle: { phase: string } };
+  assert.equal(routineState.lifecycle.phase, "ready");
   assert.equal((await api("health")).activeRoutineScripts, 1);
   assert.equal((await api("health")).updateBlockingRoutineScripts, 0);
 
@@ -161,6 +167,13 @@ try {
   await until(async () => { try { return DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" })).instance !== before.instance; } catch { return false; } }, "daemon replacement");
   process.kill(before.pid, "SIGKILL");
   await until(async () => { try { return DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" })).pid !== before.pid; } catch { return false; } }, "bootstrap recovers daemon crash");
+
+  const oldWeb = (await daemonRequest(dataDir, { action: "status" }) as { web: { guard: { pid: number }; child: { pid: number } } }).web;
+  process.kill(oldWeb.guard.pid, "SIGKILL");
+  await until(async () => {
+    const web = DaemonStatusSchema.parse(await daemonRequest(dataDir, { action: "status" })).web;
+    return web?.lifecycle?.phase === "ready" && (web.child as { pid: number } | undefined)?.pid !== oldWeb.child.pid;
+  }, "web guardian loss recovers a ready replacement");
 
   const replacement = join(dataDir, "releases/second");
   cpSync(prefix, replacement, { recursive: true });
@@ -181,7 +194,13 @@ try {
   assert(frames.some(frame => frame.type === "snapshot" && frame.data.includes("DAEMON-TERMINAL")));
   assert.equal(terminals.get(terminal.id)!.pid, terminalPid);
   terminalChannel!.close();
-  await daemonRequest(dataDir, { action: "terminate", kind: "terminal", id: terminal.id });
+  const terminalHost = await daemonRequest(dataDir, { action: "inspect", kind: "terminal", id: terminal.id }) as { guard: { pid: number }; lifecycle: { readiness: string } };
+  assert.equal(terminalHost.lifecycle.readiness, "ready");
+  process.kill(terminalHost.guard.pid, "SIGKILL");
+  await until(async () => {
+    const host = await daemonRequest(dataDir, { action: "inspect", kind: "terminal", id: terminal.id }) as { alive: boolean; lifecycle: { reason: string } };
+    return !host.alive && host.lifecycle.reason === "guardian_lost";
+  }, "orphaned terminal is reconciled without replay");
   const escaped = Number(readFileSync(escapedPid, "utf8").trim());
   await until(() => !existsSync(`/proc/${escaped}`), "detached descendant cleanup");
 
@@ -198,11 +217,16 @@ try {
     await until(async () => (await api(`tasks/${run.taskId}`)).task.status === "idle", `${run.key} completes`);
   }
   assert.deepEqual(executions.list().map(row => [row.id, row.pid, row.release]), identities.map(row => [row.id, row.pid, row.release]));
+  // No pending update: the independent CLI still reports readiness and exits without mutation.
+  const updater = await daemonRequest(dataDir, { action: "start-update" }) as { lifecycle: { readyAt: number | null } };
+  assert.equal(typeof updater.lifecycle.readyAt, "number");
+  const inventory = await daemonRequest(dataDir, { action: "list" }) as { hosts: unknown[] };
+  assert(inventory.hosts.length > 0 && inventory.hosts.length <= 32);
   assert(!existsSync(join(root, "forbidden-service-call")), "Runtime must not invoke sudo or systemctl");
   await until(async () => { try { await daemonRequest(dataDir, { action: "stop" }); return true; } catch { return false; } }, "idle runtime stops");
   if (installed) { await removeDaemonBootstrap(installed); installed = undefined; }
   assert(!existsSync(join(root, "forbidden-service-call")), "User installation and removal must not invoke sudo");
-  console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results and cgroup cleanup without privileged runtime calls");
+  console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results, readiness and orphan cgroup cleanup without privileged runtime calls");
 } finally {
   terminalChannel?.close(); executions?.close(); terminals?.close();
   // The only privileged cleanup target is this run's uniquely named cgroup/unit.

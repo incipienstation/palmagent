@@ -1,3 +1,4 @@
+import { createHostReadiness } from "../platform/process/host-readiness.js";
 import { resolve } from "node:path";
 import { TerminalId, TERMINAL_PROTOCOL, TERMINAL_STARTUP_TIMEOUT_MS } from "@palmagent/shared/terminals";
 import { TerminalStore } from "../modules/terminals/adapters/outbound/sqlite-terminal-store.js";
@@ -5,6 +6,7 @@ import { TerminalHost } from "../modules/terminals/adapters/outbound/terminal-ho
 import { terminalPlatform } from "../modules/terminals/adapters/outbound/terminal-platform.js";
 import { processIdentity } from "../modules/tasks/adapters/outbound/native-session.js";
 
+const ready = createHostReadiness();
 const directory = process.argv[2];
 const id = TerminalId.parse(process.argv[3]);
 const platform = terminalPlatform(true);
@@ -37,6 +39,7 @@ try {
     host.terminate(); finish(1, true);
   } else {
     clearTimeout(startupExpiry);
+    ready();
     if (record.diagnostic) {
       // A killed diagnostic CLI must not leave a background test shell indefinitely.
       diagnosticExpiry = setTimeout(() => { host?.terminate(); finish(124); }, Math.max(1, record.createdAt + 120_000 - Date.now()));
