@@ -14,7 +14,9 @@ use crate::{
     contract::{Configuration, HostRecord, Kind, PROTOCOL, Request, SOURCE_COMMIT, State, VERSION},
     control::Connection,
     hosts,
+    maintenance::Maintenance,
     platform::{Listener, NativePlatform, ProcessControl, ProcessIsolation, Stream},
+    recovery::{Action, Recovery},
     storage,
 };
 
@@ -83,7 +85,7 @@ fn launch(
         Ok(Operation::Launch(
             kind,
             id,
-            Instant::now() + Duration::from_secs(5),
+            Instant::now() + Duration::from_secs(15),
         ))
     } else {
         Ok(Operation::Reply(hosts::inspect(data, kind, &id)?, None))
@@ -181,13 +183,16 @@ fn begin(
     config: &mut Configuration,
     root: Option<&Path>,
     instance: &str,
+    maintenance: &Maintenance,
+    recovery: &Recovery,
 ) -> Result<Operation> {
     match request {
         Request::Status => Ok(Operation::Reply(
             json!({ "version": VERSION, "sourceCommit": SOURCE_COMMIT, "pid": std::process::id(), "instance": instance,
-                "protocol": PROTOCOL, "isolation": config.isolation, "web": current_web(data)?.map(|id| hosts::inspect(data, Kind::Web, &id)).transpose()? }),
+                "protocol": PROTOCOL, "isolation": config.isolation, "inventory": maintenance.status(), "recovery": recovery.status(), "web": current_web(data)?.map(|id| hosts::inspect(data, Kind::Web, &id)).transpose()? }),
             None,
         )),
+        Request::List { after } => Ok(Operation::Reply(maintenance.list(after.as_deref())?, None)),
         Request::Inspect { kind, id } => {
             Ok(Operation::Reply(hosts::inspect(data, kind, &id)?, None))
         }
@@ -265,6 +270,7 @@ pub fn serve(data: &Path) -> Result<()> {
     storage::private_directory(&directory)?;
     storage::private_directory(&directory.join("hosts"))?;
     let _lock = storage::lock(&directory.join("lifecycle.lock"))?;
+    NativePlatform::subreaper()?;
     let mut config = storage::configuration(data)?;
     let root = NativePlatform::initialize(data, &config)?;
     let socket = storage::socket_path(data)?;
@@ -280,7 +286,9 @@ pub fn serve(data: &Path) -> Result<()> {
         .context("Cannot establish daemon identity")?;
     let instance = storage::unique_id()?;
     storage::atomic(&directory.join("identity.json"), &identity)?;
-    let mut last_start = Instant::now() - Duration::from_secs(3);
+    let mut maintenance = Maintenance::new();
+    let mut recovery = Recovery::load(data)?;
+    let mut last_recovery = Instant::now() - Duration::from_secs(1);
     let mut connections: Vec<Connection> = Vec::new();
     let mut next_id = 0;
     let mut pending: Option<(u64, Operation)> = None;
@@ -326,13 +334,21 @@ pub fn serve(data: &Path) -> Result<()> {
         for connection in &mut connections {
             let read_only = matches!(
                 connection.request(),
-                Some(Request::Status | Request::Inspect { .. })
+                Some(Request::Status | Request::Inspect { .. } | Request::List { .. })
             );
             if !read_only && (pending.is_some() || exiting.is_some()) {
                 continue;
             }
             if let Some(request) = connection.take_request() {
-                match begin(request, data, &mut config, root.as_deref(), &instance) {
+                match begin(
+                    request,
+                    data,
+                    &mut config,
+                    root.as_deref(),
+                    &instance,
+                    &maintenance,
+                    &recovery,
+                ) {
                     Ok(Operation::Reply(value, exit)) => {
                         if let Some(exit) = exit {
                             exiting = Some((connection.id, exit));
@@ -344,20 +360,44 @@ pub fn serve(data: &Path) -> Result<()> {
                 }
             }
         }
-        // Recovery can launch while another host is becoming ready or terminating. Only a
-        // deliberate web transition suppresses it; no lifecycle mutation is run concurrently.
+        // Bound maintenance work per control tick, including orphan cleanup and log retention.
+        if let Err(error) = maintenance.tick(data, root.as_deref())
+            && let Ok(mut log) = storage::log_file(data, "supervisor")
+        {
+            let _ = writeln!(log, "Host maintenance deferred: {error}");
+        }
         if exiting.is_none()
             && !pending
                 .as_ref()
                 .is_some_and(|(_, operation)| operation.owns_web())
-            && last_start.elapsed() >= Duration::from_secs(2)
+            && last_recovery.elapsed() >= Duration::from_millis(250)
         {
-            if let Err(error) = start_web(data, &config, root.as_deref())
+            let recover = (|| -> Result<()> {
+                let id = current_web(data)?;
+                let state = id
+                    .as_ref()
+                    .map(|id| hosts::inspect(data, Kind::Web, id))
+                    .transpose()?
+                    .unwrap_or(Value::Null);
+                match recovery.tick(data, id.as_deref(), &state)? {
+                    Action::Start => {
+                        start_web(data, &config, root.as_deref())?;
+                    }
+                    Action::StopUnready => {
+                        if let Some(id) = id {
+                            hosts::stop_unready(data, &id)?;
+                        }
+                    }
+                    Action::None => {}
+                }
+                Ok(())
+            })();
+            if let Err(error) = recover
                 && let Ok(mut log) = storage::log_file(data, "supervisor")
             {
                 let _ = writeln!(log, "Web recovery deferred: {error}");
             }
-            last_start = Instant::now();
+            last_recovery = Instant::now();
         }
         for connection in &mut connections {
             connection.poll();

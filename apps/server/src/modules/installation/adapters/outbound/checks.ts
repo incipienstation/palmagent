@@ -134,8 +134,20 @@ export async function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibil
     }
     try {
       const status = await daemonStatus(cfg);
-      checks.push({ name: "palmagentd", level: status.isolation === "cgroup" && status.web?.alive ? "ok" : "fail",
-        detail: `version ${status.version}; ${status.isolation} isolation` });
+      const lifecycle = status.web?.lifecycle;
+      const healthy = status.web?.alive && (!lifecycle || lifecycle.supervision === "guarded" && ["ready", "running"].includes(lifecycle.phase));
+      checks.push({ name: "palmagentd", level: status.isolation === "cgroup" && healthy ? "ok" : "fail",
+        detail: `version ${status.version}; ${status.isolation} isolation; web ${lifecycle?.phase ?? "readiness unknown"}` });
+      if (status.inventory) {
+        const inventory = status.inventory;
+        checks.push({ name: "daemon hosts", level: inventory.checkedAt === null || inventory.orphaned || inventory.unconfirmed || inventory.inspectionErrors ? "warn" : "ok",
+          detail: `${inventory.hosts} hosts; ${inventory.orphaned} orphaned; ${inventory.unconfirmed} unconfirmed; ${inventory.inspectionErrors} inspection errors${inventory.checkedAt === null ? "; initial scan pending" : ""}`,
+          fix: "inspect palmagent daemon hosts and private host logs; never replay an uncertain invocation" });
+        if (inventory.overBudget) checks.push({ name: "daemon logs", level: "warn",
+          detail: "retained logs exceed the cleanup target; active or uncertain hosts are protected" });
+      }
+      if (status.recovery?.consecutiveFailures) checks.push({ name: "web recovery", level: "warn",
+        detail: `${status.recovery.consecutiveFailures} consecutive failures; ${status.recovery.reason ?? "unknown"}; retry deadline ${status.recovery.nextAttemptAt}` });
     } catch { checks.push({ name: "palmagentd", level: "fail", detail: "daemon control endpoint unavailable", fix: "inspect palmagent daemon status and the bootstrap journal" }); }
   } else checks.push(
     unitActive(web)

@@ -53,6 +53,17 @@ mode. For `SUPERVISOR=palmagentd`, use the saved scope and service name from the
 doctor report; `DAEMON_SCOPE=user` requires `systemctl --user`/`journalctl --user`. Inspect
 `<data-dir>/daemon/logs/` as described in the shared bootstrap guidance. The daemon
 owns web recovery; individual provider hosts must not be restarted.
+For a CLI that advertises `daemon hosts` in `daemon --help`, inspect
+`<cli> daemon status --data-dir <data-dir>` and
+`<cli> daemon hosts --data-dir <data-dir>`; follow a non-null `next` cursor with
+`--after <cursor>`. Older daemons may require an update before inventory is available.
+Treat inventory as incremental: an initial scan or inspection error is not proof of
+idle state. Distinguish `lifecycle.phase` readiness from `alive`, and inspect
+`lifecycle.supervision`, failure reason, recovery retry deadline and log-budget warnings.
+An orphan's cgroup may be cleaned up by the supervisor, but its invocation must never
+be replayed. Retain unconfirmed reservations and completed identity records; do not
+remove them to unblock launches. Automatic log retention protects active and uncertain
+hosts and never removes task history, execution journals or retained release artifacts.
 
 Legacy installations use **`palmagent.service`** for the web/SSE server:
 

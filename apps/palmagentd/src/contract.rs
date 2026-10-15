@@ -72,6 +72,7 @@ impl Kind {
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
     Status,
+    List { after: Option<String> },
     Launch { kind: Kind, id: String },
     Inspect { kind: Kind, id: String },
     Terminate { kind: Kind, id: String },
@@ -111,6 +112,21 @@ pub struct HostRecord {
     pub guard: Option<Identity>,
     pub child: Option<Identity>,
     pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub lifecycle: Lifecycle,
+}
+
+/// Additive metadata: retained older guardians may omit it when writing their final record.
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lifecycle {
+    pub created_at: u64,
+    pub started_at: Option<u64>,
+    pub ready_at: Option<u64>,
+    pub finished_at: Option<u64>,
+    pub reason: Option<String>,
+    pub readiness_required: bool,
+    pub compacted: bool,
 }
 
 #[derive(Deserialize)]

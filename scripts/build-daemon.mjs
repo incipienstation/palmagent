@@ -34,4 +34,4 @@ for (const [platform, target] of Object.entries(targets)) {
   chmodSync(binary, 0o755);
   artifacts[platform] = createHash('sha256').update(readFileSync(binary)).digest('hex');
 }
-writeFileSync(join(output, 'manifest.json'), JSON.stringify({ protocol: 1, version, sourceCommit, artifacts }, null, 2) + '\n');
+writeFileSync(join(output, 'manifest.json'), JSON.stringify({ protocol: 1, hostReadiness: 1, version, sourceCommit, artifacts }, null, 2) + '\n');

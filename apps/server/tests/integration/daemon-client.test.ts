@@ -68,3 +68,13 @@ test("a non-private control socket is rejected before sending", async t => {
   await assert.rejects(daemonRequest(f.data, { action: "status" }), /private and owned/);
   assert.equal(f.requests(), 0);
 });
+
+
+test("host inventory sends an explicit read-only pagination cursor", async t => {
+  const f = await fixture(t, (socket, envelope) => {
+    assert.deepEqual(envelope, { protocol: 1, request: { action: "list", after: "terminal-ab" } });
+    socket.end(JSON.stringify({ protocol: 1, ok: true, result: { hosts: [], next: null } }) + "\n");
+  });
+  assert.deepEqual(await daemonRequest(f.data, { action: "list", after: "terminal-ab" }), { hosts: [], next: null });
+  assert.equal(f.requests(), 1);
+});

@@ -59,6 +59,12 @@ impl Connection {
         }
         let mut bytes = serde_json::to_vec(&Reply::from_result(result))
             .expect("Daemon replies contain only JSON values");
+        if bytes.len() >= MAX_FRAME {
+            bytes = serde_json::to_vec(&Reply::from_result(Err(anyhow::anyhow!(
+                "Daemon response is too large"
+            ))))
+            .expect("Error reply is serializable");
+        }
         bytes.push(b'\n');
         self.phase = Phase::Writing(bytes, 0, Instant::now() + IO_TIMEOUT);
     }
