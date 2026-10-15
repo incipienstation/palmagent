@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.194
+
 ### Added
 
 - Report host readiness, supervision failures and paginated native runtime inventory through daemon diagnostics.
