@@ -4,7 +4,7 @@ import { useActionState } from "../action-state";
 import { beginBrowserWork } from "../update-state";
 import { useCallback, useRef, type ClipboardEvent } from "react";
 import type { InputAttachment } from "@palmagent/shared";
-import { Camera, ImagePlus, Loader2, Plus, X, Video } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Plus, X, Video, FilePlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import {
   imageFilesFromClipboard,
   MAX_ATTACHMENTS,
 } from "../images";
+import { FileAttachment } from "./FileAttachment";
 import { VideoPreview } from "./VideoPreview";
 
 // Leave room for the prompt and JSON envelope before the shared upload cap.
@@ -41,7 +42,7 @@ export function useImageAttachments(onError: (msg: string) => void, key = `image
             return cur;
           }
           if (attachmentsWireSize(next) > INPUT_IMAGE_POLICY.maxWireBytes - 100_000) {
-            onError("Attachments exceed the upload limit. Remove or trim a video, then retry.");
+            onError("Attachments exceed the upload limit. Remove an attachment or choose a smaller file, then retry.");
             return cur;
           }
           return next;
@@ -82,6 +83,7 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd,
   const photos = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const videos = useRef<HTMLInputElement>(null);
+  const files = useRef<HTMLInputElement>(null);
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
@@ -111,8 +113,12 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd,
         <DropdownMenuItem size="lg" onSelect={() => videos.current?.click()}>
           <Video /> Videos
         </DropdownMenuItem>
+        <DropdownMenuItem size="lg" onSelect={() => files.current?.click()}>
+          <FilePlus /> Files
+        </DropdownMenuItem>
       </DropdownMenuGroup></DropdownMenuContent>
     </DropdownMenu>
+    <input ref={files} aria-label="Attach files" type="file" multiple hidden disabled={disabled} onChange={pick} />
     <input ref={photos} aria-label="Attach photos" type="file" accept="image/*" multiple hidden disabled={disabled} onChange={pick} />
     <input ref={videos} aria-label="Attach videos" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple hidden disabled={disabled} onChange={pick} />
     <input ref={camera} aria-label="Take a photo" type="file" accept="image/*" capture="environment" hidden disabled={disabled} onChange={pick} />
@@ -125,10 +131,10 @@ export function AttachmentTray({ images, disabled, onRemove }: {
   return <div className="min-w-0 w-full">
     <ScrollArea orientation="horizontal" contentClassName="flex w-max min-w-full gap-2 py-1" viewportProps={{ "aria-label": "Attachments" }}>
       {images.map((img, i) => <span className="relative inline-flex shrink-0 pr-2 pt-2" key={i}>
-        {img.video ? <VideoPreview src={attachmentPreviewUrl(img)} poster={attachmentPreviewUrl(img.video.frames[0].image)} label={`attachment ${i + 1}`} compact />
+        {img.file ? <FileAttachment name={img.file.name} size={Math.floor(img.data.length * 3 / 4) - (img.data.endsWith("==") ? 2 : img.data.endsWith("=") ? 1 : 0)} /> : img.video ? <VideoPreview src={attachmentPreviewUrl(img)} poster={attachmentPreviewUrl(img.video.frames[0].image)} label={`attachment ${i + 1}`} compact />
           : <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />}
         <Button type="button" variant="secondary" size="icon-sm" className="absolute top-0 right-0"
-          aria-label={`Remove ${img.video ? "video" : "image"} ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
+          aria-label={img.file ? `Remove file ${img.file.name}` : `Remove ${img.video ? "video" : "image"} ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>
       </span>)}
     </ScrollArea>
     {images.some(image => image.video) && <p className="py-1 text-xs text-muted-foreground">Agents receive sampled frames. Audio is not included.</p>}

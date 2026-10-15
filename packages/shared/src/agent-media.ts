@@ -4,6 +4,7 @@ import type { ImageAttachment, InputAttachment } from "./requests.js";
 export function sampledAgentInput(text: string, attachments: readonly InputAttachment[] = []): { text: string; images: ImageAttachment[] } {
   const images: ImageAttachment[] = [], notes: string[] = [];
   attachments.forEach((attachment, index) => {
+    if (attachment.file) throw new Error("File attachments must be staged on the execution host before building provider input");
     if (!attachment.video) { images.push(attachment); return; }
     const { duration, frames } = attachment.video;
     const first = images.length + 1;

@@ -936,3 +936,58 @@ for (const reattach of [false, true]) test(`Codex partial answer metadata preser
   assert.equal(events.filter(e => e.kind === "result").length, 1);
   backend.proc.exit(0); await handle.done;
 });
+
+for (const agent of ["claude", "codex"] as const) test(`${agent} receives local files on initial and live messages, retaining bytes through reattach`, async () => {
+  const backend = new FakeBackend();
+  const file = { mediaType: "application/octet-stream", data: Buffer.from("file body").toString("base64"), file: { name: "n".repeat(251) + ".txt" } };
+  const args = startArgs({ taskId: `file-${agent}`, interactive: true, images: [file] });
+  const handle = getRunner(agent).start(args, () => {}, backend);
+  if (agent === "codex") {
+    backend.proc.emit({ id: "initialize", result: {} });
+    backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+    backend.proc.emit({ id: "start", result: { turn: { id: "turn-1" } } });
+  }
+  const textOf = (proc: FakeProc) => {
+    const message = writtenJson(proc).slice().reverse().find((value: any) => agent === "claude" ? value.type === "user" : ["turn/start", "turn/steer"].includes(value.method));
+    const blocks = agent === "claude" ? message.message.content : message.params.input;
+    assert(!blocks.some((block: any) => block.type === "image"));
+    return blocks.find((block: any) => block.type === "text").text as string;
+  };
+  const pathOf = (text: string) => JSON.parse(text.split("\n\n").at(-1)!.replace(/^.* bytes\): /, "")) as string;
+  const path = pathOf(textOf(backend.proc));
+  assert.equal(readFileSync(path, "utf8"), "file body");
+  const second = { ...file, data: Buffer.from("updated body").toString("base64") };
+  const sent = handle.send!("Read this too", [second], "file-send");
+  if (agent === "claude") {
+    // Claude interrupts and waits for the preceding result before writing a live message.
+    backend.proc.emit({ type: "result", subtype: "success", session_id: "session-1", result: "done" });
+  }
+  const secondPath = pathOf(textOf(backend.proc));
+  assert.notEqual(secondPath, path);
+  assert.equal(readFileSync(secondPath, "utf8"), "updated body");
+  if (agent === "codex") backend.proc.emit({ id: "message:file-send", result: {} });
+  else backend.proc.emit({ type: "user", uuid: "file-send", message: { role: "user", content: [] } });
+  assert.equal(await sent, "delivered");
+  const replay = new FakeBackend();
+  const recovered = getRunner(agent).start({ ...args, reattach: true }, () => {}, replay);
+  assert.deepEqual(replay.proc.writes, []);
+  assert.equal(readFileSync(path, "utf8"), "file body");
+  assert.equal(readFileSync(secondPath, "utf8"), "updated body");
+  replay.proc.exit(0); await recovered.done;
+  backend.proc.exit(0); await handle.done;
+  assert(!existsSync(path)); assert(!existsSync(secondPath));
+  assert.equal(await handle.send!("Too late", [file], "late"), "rejected");
+  assert(!existsSync(path));
+});
+
+test("Codex exec receives general files through prompt paths, never image flags", async () => {
+  const backend = new FakeBackend();
+  const file = { mediaType: "application/octet-stream", data: "", file: { name: "empty.txt" } };
+  const handle = getRunner("codex").start(startArgs({ taskId: "file-exec", images: [file] }), () => {}, backend);
+  const argv = backend.specs[0].argv;
+  assert(!argv.includes("-i"));
+  const path = JSON.parse(argv[1].split("\n\n").at(-1)!.replace(/^.* bytes\): /, ""));
+  assert.equal(readFileSync(path).length, 0);
+  backend.proc.exit(0); await handle.done;
+  assert(!existsSync(path));
+});

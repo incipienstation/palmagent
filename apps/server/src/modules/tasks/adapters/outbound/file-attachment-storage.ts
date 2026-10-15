@@ -1,4 +1,4 @@
-import { INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, isVideoMediaType } from "@palmagent/shared";
+import { FILE_MEDIA_TYPE, INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, isVideoMediaType } from "@palmagent/shared";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, statfsSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -14,6 +14,7 @@ import { videoMediaType } from "../../application/attachments/video-input.js";
 
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const reference = ({ id, mediaType, size }: AttachmentRecord, image: InputAttachment): Attachment => ({ id, mediaType, size,
+  ...(image.file ? { file: image.file } : {}),
   ...(image.width && image.height ? { width: image.width, height: image.height } : {}) });
 
 /** Immutable private files with a task-scoped SQLite index. Only the index grants access. */
@@ -40,6 +41,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
         // A single transaction serializes admission across processes using this DB.
         const refs = prepared.map(image => {
           const existing = this.db.attachmentByDigest(taskId, image.digest);
+          if (existing && existing.mediaType !== image.mediaType) throw new ApplicationError("bad_request", "This content was already attached with a different media type");
           if (existing && existing.expiredAt === null) {
             try {
               this.read(taskId, existing.id);
@@ -81,9 +83,9 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     try {
       fd = openSync(join(this.directory, record.id), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size !== record.size || stat.size > (isVideoMediaType(record.mediaType) ? INPUT_VIDEO_POLICY.maxBytes : INPUT_IMAGE_POLICY.maxBytes)) throw new Error("Invalid stored attachment");
+      if (!stat.isFile() || stat.size !== record.size || stat.size > (record.mediaType === FILE_MEDIA_TYPE ? INPUT_FILE_POLICY.maxBytes : isVideoMediaType(record.mediaType) ? INPUT_VIDEO_POLICY.maxBytes : INPUT_IMAGE_POLICY.maxBytes)) throw new Error("Invalid stored attachment");
       const bytes = readFileSync(fd);
-      if (digest(bytes) !== record.digest || (isVideoMediaType(record.mediaType) ? videoMediaType(bytes) : rasterMediaType(bytes)) !== record.mediaType) throw new Error("Invalid stored attachment");
+      if (digest(bytes) !== record.digest || (record.mediaType !== FILE_MEDIA_TYPE && (isVideoMediaType(record.mediaType) ? videoMediaType(bytes) : rasterMediaType(bytes)) !== record.mediaType)) throw new Error("Invalid stored attachment");
       return { bytes, mediaType: record.mediaType };
     } catch {
       throw new ApplicationError("not_found", "Attachment unavailable");
@@ -92,7 +94,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
   load(taskId: string, attachments?: readonly Attachment[]): InputAttachment[] | undefined {
     return attachments?.map(attachment => {
       const { bytes, mediaType } = this.read(taskId, attachment.id);
-      return { mediaType, data: bytes.toString("base64"), ...(attachment.video ? { video: {
+      return { mediaType, data: bytes.toString("base64"), ...(attachment.file ? { file: attachment.file } : {}), ...(attachment.video ? { video: {
         duration: attachment.video.duration, frames: attachment.video.frames.map(frame => {
           const stored = this.read(taskId, frame.id);
           return { timestamp: frame.timestamp, image: { mediaType: stored.mediaType, data: stored.bytes.toString("base64") } };

@@ -1,5 +1,5 @@
 import { ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
-import { AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
+import { FILE_MEDIA_TYPE, AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
 import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../../../../platform/http/input.js";
@@ -24,6 +24,7 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       const { id, attachmentId } = c.req.valid("param");
       const attachment = service.readAttachment(id, attachmentId), size = attachment.bytes.length;
       c.header("Content-Type", attachment.mediaType);
+      if (attachment.mediaType === FILE_MEDIA_TYPE) c.header("Content-Disposition", "attachment");
       c.header("Accept-Ranges", "bytes");
       const range = c.req.header("If-Range") ? undefined : c.req.header("Range");
       if (range) {

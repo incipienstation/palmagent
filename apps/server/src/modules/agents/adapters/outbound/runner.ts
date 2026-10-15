@@ -1,3 +1,4 @@
+import { startWithInputFiles } from "./input-files.js";
 import { ClaudeRunner } from "./claude.js";
 import { CodexRunner } from "./codex.js";
 import type { AgentKind } from "@palmagent/shared";
@@ -12,7 +13,7 @@ const runners: Record<AgentKind, AgentRunner> = {
 export function getRunner(agent: AgentKind): AgentRunner {
   const r = runners[agent];
   if (!r) throw new Error(`unknown agent: ${agent}`);
-  return r;
+  return { agent, start: (args, emit, backend) => startWithInputFiles(r, args, emit, backend) };
 }
 
 /** Bind provider protocol handling to its transport at the composition boundary. */

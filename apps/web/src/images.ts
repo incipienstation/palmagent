@@ -1,5 +1,5 @@
-import { IMAGE_MEDIA_TYPES, INPUT_IMAGE_POLICY, isVideoMediaType } from "@palmagent/shared";
-// Client-side attachment preparation. The images wire field also carries videos.
+import { FILE_MEDIA_TYPE, FileMetadataSchema, INPUT_FILE_POLICY, IMAGE_MEDIA_TYPES, INPUT_IMAGE_POLICY, isVideoMediaType } from "@palmagent/shared";
+// Client-side attachment preparation. The images wire field also carries videos and files.
 // Big images are downscaled to Claude's optimal long edge and re-encoded as
 // JPEG so a screenshot stays well under the proxy/body limits; small ones are
 // passed through untouched.
@@ -16,7 +16,7 @@ const ACCEPTED = new Set<string>(IMAGE_MEDIA_TYPES);
 export function imageFilesFromClipboard(dt: DataTransfer | null): File[] {
   if (!dt) return [];
   return Array.from(dt.items)
-    .filter((it) => it.kind === "file" && (it.type.startsWith("image/") || isVideoMediaType(it.type)))
+    .filter((it) => it.kind === "file")
     .map((it) => it.getAsFile())
     .filter((f): f is File => !!f);
 }
@@ -24,9 +24,14 @@ export function imageFilesFromClipboard(dt: DataTransfer | null): File[] {
 export async function fileToAttachment(file: File | Blob): Promise<InputAttachment> {
   const extension = file instanceof File ? file.name.split(".").pop()?.toLowerCase() : undefined;
   const inferred = !file.type || file.type === "application/octet-stream" ? ({ mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" } as Record<string, string>)[extension ?? ""] : undefined;
-  if (file.type.startsWith("video/") || inferred) return (await import("./videos")).videoToAttachment(inferred ? file.slice(0, file.size, inferred) : file);
-  const type = file.type || "image/png";
-  if (!type.startsWith("image/")) throw new Error(`not an image: ${type}`);
+  if (isVideoMediaType(file.type) || inferred) return (await import("./videos")).videoToAttachment(inferred ? file.slice(0, file.size, inferred) : file);
+  const type = file.type || "application/octet-stream";
+  if (!type.startsWith("image/") || type === "image/svg+xml") {
+    if (file.size > INPUT_FILE_POLICY.maxBytes) throw new Error("Files must be 20 MiB or smaller.");
+    const metadata = FileMetadataSchema.safeParse({ name: file instanceof File ? file.name : "attachment" });
+    if (!metadata.success) throw new Error("Use a shorter filename without slashes or control characters.");
+    return { mediaType: FILE_MEDIA_TYPE, data: await blobToBase64(file), file: metadata.data };
+  }
 
   // GIFs lose animation on canvas; pass small ones through, downscale-to-still otherwise.
   const bitmap = await loadBitmap(file);

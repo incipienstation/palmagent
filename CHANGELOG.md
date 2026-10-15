@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Attach files from the composer’s Files menu, send them to Claude or Codex, and download originals from conversation history.
+
 ## 0.1.0-alpha.194
 
 ### Added

@@ -1145,3 +1145,24 @@ test("task streams carry account changes and release the provider subscription w
   f.hub.emitTasks(f.service.listTasks());
   assert.equal(active, 0, "the task listener is also removed on disconnect");
 });
+
+test("general file downloads require task access and force inert binary responses", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "files", repoId: "r", agent: "codex", prompt: "fixture", worktreePath: f.dir,
+    permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  const bytes = Buffer.from("<script>document.cookie</script>");
+  const [ref] = f.service.attachments.save("files", [{ mediaType: "application/octet-stream", data: bytes.toString("base64"), file: { name: "report.html" } }])!;
+  const path = `/api/tasks/files/attachments/${ref.id}`;
+  assert.equal((await f.app.request(path)).status, 401);
+  f.db.createSession("file-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=file-session` };
+  const response = await f.app.request(path, { headers });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/octet-stream");
+  assert.equal(response.headers.get("content-disposition"), "attachment");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+  assert.equal((await f.app.request(`/api/tasks/other/attachments/${ref.id}`, { headers })).status, 404);
+});

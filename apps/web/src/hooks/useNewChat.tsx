@@ -127,7 +127,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     if (busy) return;
     setError("");
     if (!saved && !repos.some(repo => repo.id === repoId)) { setError("Choose a Space first."); return; }
-    const text = prompt.trim() || (skills.length ? "Use the selected skill." : att.images.length ? att.images.some(image => image.video) ? "See the attached media." : "See the attached image(s)." : "");
+    const text = prompt.trim() || (skills.length ? "Use the selected skill." : att.images.length ? att.images.some(image => image.file) ? "See the attached file(s)." : att.images.some(image => image.video) ? "See the attached media." : "See the attached image(s)." : "");
     if (!saved && !text) return;
     const next: Submission = saved ?? { draft: prompt, status: "sending", request: {
       clientRequestId: crypto.randomUUID(), repoId, agent, prompt: text, permission,
