@@ -138,7 +138,7 @@ test("allowance details remain reachable on a narrow phone, including unknown or
   await expect(line.getByText("72%", { exact: true })).toBeVisible();
   const action = await line.getByRole("button", { name: "Usage details" }).boundingBox();
   expect(action!.width).toBeGreaterThanOrEqual(44);
-  expect(action!.height).toBe(32);
+  expect(action!.height).toBe(24);
   await line.getByText("72%", { exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Session usage" })).toBeVisible();
   await page.keyboard.press("Escape");

@@ -8,7 +8,7 @@ An entry does not mean a version has been published.
 
 ### Changed
 
-- Reduce the session usage status line from 40px to 32px in its standard layout, while allowing longer warnings to expand.
+- Reduce the session usage status line to 24px with concise labels that fit a single row on narrow phones, while keeping text size unchanged and allowing longer warnings to expand.
 
 ## 0.1.0-alpha.192
 
