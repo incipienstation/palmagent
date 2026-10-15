@@ -14,6 +14,13 @@ const row = (page: Page, id = idle.taskId) => page.locator("[data-swipe-row]").f
 
 async function swipe(page: Page, target: Locator, dx: number, dy = 0, cancel = false) {
   await target.scrollIntoViewIfNeeded();
+  // Measure the next touch after the preceding slide finishes, otherwise its
+  // coordinates can land on the moving menu button instead of the row surface.
+  await target.evaluate(async element => {
+    await Promise.all(element.getAnimations({ subtree: true })
+      .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})));
+  });
   const box = (await target.boundingBox())!;
   const x = box.x + (dx < 0 ? box.width - 70 : 35);
   const y = box.y + 25;
@@ -48,9 +55,11 @@ test("left swipe reveals Archive without navigating; body tap, Escape, and right
   await expect(archive).toHaveCount(0);
   await expect(page).not.toHaveURL(/task\//);
   await swipe(page, target, -135);
+  await expect(archive).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(archive).toHaveCount(0);
   await swipe(page, target, -135);
+  await expect(target).toHaveAttribute("data-swipe-open", "");
   await swipe(page, target, 130);
   await expect(archive).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(0);
