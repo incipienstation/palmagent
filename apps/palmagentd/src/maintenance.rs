@@ -287,20 +287,20 @@ fn maintain_host(data: &Path, root: Option<&Path>, path: &Path) -> Result<HostRe
             storage::write_host(data, &record)?;
         }
     }
-    if record.state == State::Exited
-        && !record.lifecycle.compacted
-        && !NativePlatform::populated(&record)?
-    {
+    if record.state == State::Exited && !NativePlatform::populated(&record)? {
         let finished = finished_at(path, &record)?;
         if storage::now().saturating_sub(finished) >= RETAIN_MS {
-            record.lifecycle.ready_at = hosts::ready_at(data, &record)?;
-            record.lifecycle.finished_at = Some(finished);
-            record.lifecycle.compacted = true;
-            record.environment.clear();
-            record.guard = None;
-            record.child = None;
-            record.group = None;
-            storage::write_host(data, &record)?;
+            if !record.lifecycle.compacted {
+                record.lifecycle.ready_at = hosts::ready_at(data, &record)?;
+                record.lifecycle.finished_at = Some(finished);
+                record.lifecycle.compacted = true;
+                record.environment.clear();
+                record.guard = None;
+                record.child = None;
+                record.group = None;
+                storage::write_host(data, &record)?;
+            }
+            // Retry after an interrupted cleanup even if the compact record already committed.
             for extension in ["ready", "stop"] {
                 let sidecar = path.with_extension(extension);
                 if sidecar.exists() {
@@ -345,7 +345,7 @@ fn collect_logs(data: &Path, path: &Path, record: &HostRecord, sweep: &mut Sweep
                 record.id
             ));
             let bytes = log_bytes(&log)?;
-            if bytes > 0 && completed {
+            if completed && log.exists() {
                 sweep.logs.push(Log {
                     record: path.to_owned(),
                     path: log,

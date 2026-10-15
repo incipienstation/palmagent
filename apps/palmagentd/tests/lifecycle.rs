@@ -753,6 +753,9 @@ fn retention_compacts_completed_records_but_keeps_deduplication_and_uncertain_lo
             &json!("old log"),
         );
     }
+    let empty_log = logs.join("terminal-d0000-err.log");
+    fs::File::create(&empty_log).unwrap();
+    fs::set_permissions(&empty_log, fs::Permissions::from_mode(0o600)).unwrap();
     let mut uncertain = template.clone();
     uncertain["id"] = json!("ee000");
     uncertain["state"] = json!("starting");
@@ -765,6 +768,10 @@ fn retention_compacts_completed_records_but_keeps_deduplication_and_uncertain_lo
     write(&protected, &json!("keep"));
     wait(|| !logs.join("terminal-d0027-out.log").exists());
     assert!(protected.exists());
+    assert!(!empty_log.exists());
+    let leftover = fixture.data.join("daemon/hosts/terminal-d0000.stop");
+    write(&leftover, &json!({ "at": 1 }));
+    wait(|| !leftover.exists());
     let (_, compacted) = host_record(&fixture, "terminal", "d0000");
     assert_eq!(compacted["environment"], json!({}));
     assert_eq!(compacted["lifecycle"]["compacted"], true);
