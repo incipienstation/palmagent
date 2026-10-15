@@ -49,24 +49,25 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
   const primary = report?.state === "ready" && report.agent === "codex" ? report.buckets[0] : undefined;
   const usage = task.contextUsage;
   const remaining = compacting ? null : contextRemaining(usage);
-  const contextLabel = remaining === null ? "—" : `${Number(remaining.toFixed(1))}% left`;
+  const contextValue = remaining === null ? "—" : `${Number(remaining.toFixed(1))}%`;
+  const contextLabel = remaining === null ? contextValue : `${contextValue} left`;
   const accountLabel = !report ? failed ? "Limits unavailable" : "Checking limits…"
     : report.state !== "ready" ? report.state === "error" ? "Limits unavailable" : "Limits not reported"
     : task.agent === "claude" ? "Claude account limits" : "Codex account credits";
   return <section aria-label="Session usage" className="min-w-0">
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button ref={triggerRef} variant="ghost" className="h-auto min-h-8 w-full justify-start rounded-xl px-1 py-0" aria-label="Usage details" aria-describedby={summaryId}>
+        <Button ref={triggerRef} variant="ghost" className="h-auto min-h-6 w-full justify-start rounded-xl px-1 py-0" aria-label="Usage details" aria-describedby={summaryId}>
           <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left text-xs font-normal text-muted-foreground">
             {primary && primary.id !== "codex" && <span className="truncate">{primary.name}</span>}
-            <span className="flex flex-wrap items-center gap-x-3">
+            <span className="flex flex-wrap items-center gap-x-2">
               {task.agent === "codex" && <span className="inline-flex items-center gap-1 whitespace-nowrap" aria-label={`Context ${contextLabel}`}>
                 <span>Context</span>
                 {remaining !== null && <AllowanceGauge remaining={remaining} />}
-                <span className={cn("tabular-nums", remaining !== null && "text-foreground")}>{contextLabel}</span>
+                <span className={cn("tabular-nums", remaining !== null && "text-foreground")}>{contextValue}{remaining !== null && <span className="sr-only"> left</span>}</span>
               </span>}
               {available.length ? <span className="inline-flex flex-wrap items-center gap-x-2">
-                <span>{stale ? "Outdated" : "Remaining"}</span>
+                <span className={stale ? undefined : "sr-only"}>{stale ? "Outdated" : "Remaining"}</span>
                 {available.map(({ name, limit }, index) => <WindowSummary key={index} name={name} limit={limit} now={now} stale={stale} />)}
               </span> : <span>{accountLabel}</span>}
             </span>
