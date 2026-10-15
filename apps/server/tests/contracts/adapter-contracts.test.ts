@@ -996,3 +996,21 @@ test("Codex exec receives general files through prompt paths, never image flags"
   backend.proc.exit(0); await handle.done;
   assert(!existsSync(path));
 });
+
+test("an uncertain launch retains staged files until a recovered provider exits", async () => {
+  let path = "";
+  const args = startArgs({ taskId: "file-launch-uncertain", images: [{ mediaType: "application/octet-stream", data: "aGk=", file: { name: "note.txt" } }] });
+  const backend: ProcessBackend = {
+    start(spec) {
+      path = JSON.parse(spec.argv[1].split("\n\n").at(-1)!.replace(/^.* bytes\): /, ""));
+      throw new Error("Launch outcome unknown");
+    },
+    attach() { return undefined; },
+  };
+  assert.throws(() => getRunner("codex").start(args, () => {}, backend), /unknown/);
+  assert.equal(readFileSync(path, "utf8"), "hi");
+  const replay = new FakeBackend();
+  const handle = getRunner("codex").start({ ...args, reattach: true }, () => {}, replay);
+  replay.proc.exit(0); await handle.done;
+  assert(!existsSync(path));
+});

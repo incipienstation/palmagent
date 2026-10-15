@@ -63,11 +63,11 @@ export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: 
       return proc;
     },
   };
-  let handle: RunHandle;
-  try {
-    const input = args.reattach ? undefined : prepare(args.prompt, args.images);
-    handle = runner.start(input ? { ...args, prompt: input.text, images: input.images } : args, emit, transport);
-  } catch (error) { if (!args.reattach) cleanup(); throw error; }
+  let input: ReturnType<typeof prepare> | undefined;
+  try { input = args.reattach ? undefined : prepare(args.prompt, args.images); }
+  catch (error) { cleanup(); throw error; }
+  // A launch exception can be uncertain too: the provider may already exist.
+  const handle = runner.start(input ? { ...args, prompt: input.text, images: input.images } : args, emit, transport);
   return {
     ...handle,
     ...(handle.send ? { send: (text, images, messageId, skills) => {
@@ -79,7 +79,9 @@ export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: 
     } } : {}),
     steer: (text, images) => {
       if (finished) return false;
-      try { const input = prepare(text, images); return handle.steer(input.text, input.images); } catch { return false; }
+      let input: ReturnType<typeof prepare>;
+      try { input = prepare(text, images); } catch { return false; }
+      return handle.steer(input.text, input.images);
     },
     done: handle.done.finally(() => {
       finished = true;
