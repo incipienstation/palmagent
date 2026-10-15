@@ -54,11 +54,20 @@ export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: 
       rmSync(directory, { recursive: true, force: true });
     } catch { /* Cleanup must not change a confirmed provider result. */ }
   };
+  let attached = !args.reattach;
+  const transport: ProcessBackend = {
+    start: spec => backend.start(spec),
+    attach: (id, sequence) => {
+      const proc = backend.attach(id, sequence);
+      attached = !!proc;
+      return proc;
+    },
+  };
   let handle: RunHandle;
   try {
     const input = args.reattach ? undefined : prepare(args.prompt, args.images);
-    handle = runner.start(input ? { ...args, prompt: input.text, images: input.images } : args, emit, backend);
-  } catch (error) { cleanup(); throw error; }
+    handle = runner.start(input ? { ...args, prompt: input.text, images: input.images } : args, emit, transport);
+  } catch (error) { if (!args.reattach) cleanup(); throw error; }
   return {
     ...handle,
     ...(handle.send ? { send: (text, images, messageId, skills) => {
@@ -72,6 +81,10 @@ export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: 
       if (finished) return false;
       try { const input = prepare(text, images); return handle.steer(input.text, input.images); } catch { return false; }
     },
-    done: handle.done.finally(cleanup),
+    done: handle.done.finally(() => {
+      finished = true;
+      // Failed reattachment does not establish that the provider has exited.
+      if (attached) cleanup();
+    }),
   };
 }

@@ -968,6 +968,11 @@ for (const agent of ["claude", "codex"] as const) test(`${agent} receives local 
   if (agent === "codex") backend.proc.emit({ id: "message:file-send", result: {} });
   else backend.proc.emit({ type: "user", uuid: "file-send", message: { role: "user", content: [] } });
   assert.equal(await sent, "delivered");
+  const disconnected: ProcessBackend = { start() { throw new Error("Must not start another provider"); }, attach() { return undefined; } };
+  const unavailable = getRunner(agent).start({ ...args, reattach: true }, () => {}, disconnected);
+  await unavailable.done;
+  assert.equal(readFileSync(path, "utf8"), "file body");
+  assert.equal(readFileSync(secondPath, "utf8"), "updated body");
   const replay = new FakeBackend();
   const recovered = getRunner(agent).start({ ...args, reattach: true }, () => {}, replay);
   assert.deepEqual(replay.proc.writes, []);
