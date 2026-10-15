@@ -1,3 +1,4 @@
+import { FileAttachment } from "./FileAttachment";
 import { ConversationActivityDetails, ConversationContent } from "./ConversationDetails";
 import type { ConversationContentRef, ConversationItem, TranscriptRow as ConversationRow } from "@palmagent/shared";
 import { SkillChips } from "./SkillPicker";
@@ -101,12 +102,12 @@ export function UserBubble({ text, meta, skills, attachments, images, onImageLoa
         <SkillChips skills={skills} />
         {text}
         {!attachments?.length && !!images?.length && <div className="flex flex-wrap gap-2">
-          {images.map((image, index) => image.video ? <VideoPreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
+          {images.map((image, index) => image.file ? <FileAttachment key={index} name={image.file.name} /> : image.video ? <VideoPreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
             poster={`data:${image.video.frames[0].image.mediaType};base64,${image.video.frames[0].image.data}`} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
             alt={`Attached image ${index + 1}`} width={image.width} height={image.height} onLoad={onImageLoad} />)}
         </div>}
         {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
-          {attachments.map((attachment, index) => attachment.video ? <VideoPreview key={`${attachment.id}-${index}`}
+          {attachments.map((attachment, index) => attachment.file ? <FileAttachment key={`${attachment.id}-${index}`} name={attachment.file.name} size={attachment.size} href={attachmentUrl(taskId, attachment.id)} /> : attachment.video ? <VideoPreview key={`${attachment.id}-${index}`}
             src={attachmentUrl(taskId, attachment.id)} poster={attachmentUrl(taskId, attachment.video.frames[0].id)} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={`${attachment.id}-${index}`}
             src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`}
             width={attachment.width} height={attachment.height} onLoad={onImageLoad} />)}

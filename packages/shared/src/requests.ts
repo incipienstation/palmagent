@@ -1,6 +1,6 @@
 import { TASK_STATUSES } from "./task.js";
 import { ROUTINE_POLICY } from "./routine-policy.js";
-import { ImageDimensionSchema, INPUT_VIDEO_POLICY } from "./attachments.js";
+import { FileMetadataSchema, ImageDimensionSchema, INPUT_VIDEO_POLICY } from "./attachments.js";
 import { SelectedSkillsSchema } from "./skills.js";
 import { z } from "zod";
 export { UpdateSettingsChangeSchema } from "./updates.js";
@@ -17,6 +17,7 @@ export const ImageAttachmentSchema = z.object({ mediaType: text, data: text,
   width: imageDimension.optional(), height: imageDimension.optional() })
   .refine(({ width, height }) => (width === undefined) === (height === undefined));
 export const InputAttachmentSchema = z.object({ mediaType: text, data: text,
+  file: FileMetadataSchema.optional(),
   width: imageDimension.optional(), height: imageDimension.optional(),
   video: z.object({ duration: z.number().finite().positive(),
     frames: z.array(z.object({ timestamp: z.number().finite().nonnegative(), image: ImageAttachmentSchema })).min(1).max(INPUT_VIDEO_POLICY.maxFrames),

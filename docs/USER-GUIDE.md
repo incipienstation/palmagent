@@ -64,6 +64,12 @@ beside the message. Retry reconnects to the same creation attempt without starti
 duplicate chat. A rejected message offers **Edit message**, preserving its text and
 attachments. Name the conversation afterward through its **⋮** menu.
 
+Use **+ → Files** to attach documents, source files, or other files up to 20 MiB
+each. A message can contain up to eight attachments within the shared upload limit.
+Filenames appear in your draft and conversation; sent files can be downloaded later.
+Claude and Codex receive the original files at local paths during the turn and use
+their available tools to read them. File format support depends on those tools.
+
 Use **+ → Videos** to attach an MP4, WebM, or MOV video up to 20 MiB. The browser
 must be able to decode it. The original stays available for playback, and the agent
 receives up to eight timestamped frames for visual analysis. Audio is not sent.

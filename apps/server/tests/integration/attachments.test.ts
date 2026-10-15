@@ -358,3 +358,41 @@ test("MP4 and MOV containers retain their original media type and require a matc
     assert.throws(() => f.storage.save("two", [{ ...input, mediaType: "video/webm" }]), /Invalid video/);
   }
 });
+
+test("general files preserve names, bytes, queue editing, and retention across restart", t => {
+  const f = fixture(t);
+  const file = { mediaType: "application/octet-stream", data: Buffer.from("<html>not a preview</html>").toString("base64"), file: { name: "report.html" } };
+  const empty = { ...file, data: "", file: { name: "empty.txt" } };
+  const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
+    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator());
+  t.after(() => c.close());
+  const message = c.submit("one", { clientMessageId: randomUUID(), mode: "queue", text: "Read files", images: [file, empty], expectedRunId: null }).messages[0];
+  const refs = message.attachments!;
+  assert(refs.every(ref => AttachmentSchema.safeParse(ref).success));
+  assert.deepEqual(refs.map(ref => ref.file?.name), ["report.html", "empty.txt"]);
+  assert(!JSON.stringify(f.db.readMessageState("one")).includes(file.data));
+  assert.deepEqual(c.action("one", message.id, { action: "edit", token: randomUUID(), version: 1 }).messages[0].images, [file, empty]);
+  assert.throws(() => f.storage.read("two", refs[0].id), { code: "not_found" });
+  remember(f.db, "one", refs); f.restart();
+  assert.deepEqual(f.storage.load("one", refs), [file, empty]);
+  assert.equal(f.storage.save("one", [{ ...file, file: { name: "renamed.html" } }])![0].file?.name, "renamed.html");
+  assert.equal(refs[0].file?.name, "report.html");
+  f.db.writeMessageState("one", { revision: 1, runId: null, paused: false, messages: [] });
+  f.db.setTaskStatus("one", "archived", false, 1);
+  new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => 10_000).prune();
+  assert.throws(() => f.storage.read("one", refs[0].id), { code: "gone" });
+});
+
+test("file validation rejects unsafe names, malformed bytes, mixed metadata and oversized batches atomically", t => {
+  const f = fixture(t), file = { mediaType: "application/octet-stream", data: "aGVsbG8=", file: { name: "readme.txt" } };
+  for (const invalid of [
+    ...["../escape", "a/b", "a\\b", ".", "..", "", "bad\nname", "x".repeat(256), "한".repeat(100)].map(name => ({ ...file, file: { name } })),
+    { ...file, data: "%%%" }, { ...file, data: "aGVsbG8" }, { ...file, file: undefined },
+    { ...file, mediaType: "text/html" }, { ...file, width: 1, height: 1 }, { ...file, video: video.video },
+    { ...file, data: Buffer.alloc(20 * 1024 * 1024 + 1).toString("base64") },
+  ]) assert.throws(() => f.storage.save("one", [image, invalid]), /Invalid file/);
+  assert.equal(f.db.attachmentIds().size, 0);
+  assert.throws(() => f.storage.save("one", Array(9).fill(file)), /Too many/);
+  assert.throws(() => buildClaudeUserMessage("Read", [file]), /must be staged/);
+  assert.throws(() => codexInput("Read", [file]), /must be staged/);
+});

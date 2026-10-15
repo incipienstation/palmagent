@@ -178,13 +178,19 @@ no sound or permanent progression system.
 
 <a id="sent-image-attachments"></a>
 
-New attachments appear in your message and open in the existing enlarged
-viewer. Video attachments open a player with playback controls. They remain
+Image attachments appear in your message and open in the existing enlarged
+viewer. General files appear with a filename and download control. Video attachments open a player with playback controls. They remain
 available after reload, on other signed-in devices, after a server restart, and after archiving the conversation. Older attachments are not
 migrated. Each message accepts up to eight attachments. PNG, JPEG, GIF, and WebP
 images are prepared to fit 4.5 MiB each. MP4, WebM, and MOV videos must be playable
 in your browser and no larger than 20 MiB each; all attachments must fit the shared
-request limit. Trim or compress a video if it exceeds these limits.
+request limit. General files accept any format up to 20 MiB each and are downloaded
+as binary data, never rendered as active page content. Trim or compress attachments
+if they exceed these limits.
+
+General files are staged privately on the execution host for Claude or Codex to
+read with their tools during the receiving turn. Temporary copies are removed when
+the provider exits; the durable original remains available in conversation history.
 
 The original video is retained for playback. Claude and Codex receive up to eight
 frames sampled across its duration, with timestamps. Audio and motion between

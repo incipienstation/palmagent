@@ -1,8 +1,9 @@
-import { INPUT_IMAGE_POLICY, isVideoMediaType } from "@palmagent/shared";
+import { FILE_MEDIA_TYPE, FileMetadataSchema, INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, isVideoMediaType } from "@palmagent/shared";
 import type { InputAttachment } from "@palmagent/shared";
 import { rasterImage } from "./output-images.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 
+import { decodeBase64, encodeBase64 } from "./binary.js";
 import { videoAttachment } from "./video-input.js";
 
 const MAX_BYTES = INPUT_IMAGE_POLICY.maxBytes;
@@ -17,6 +18,15 @@ export function sanitizeImages(raw: unknown): InputAttachment[] | undefined {
   return raw.map((value, index) => {
     const mediaType = String(value?.mediaType ?? "");
     const data = String(value?.data ?? "").replace(/^data:[^,]*,/, "").replace(/\s+/g, "");
+    if (value?.file !== undefined || mediaType === FILE_MEDIA_TYPE) {
+      const file = FileMetadataSchema.safeParse(value?.file);
+      const bytes = data.length <= Math.ceil(INPUT_FILE_POLICY.maxBytes / 3) * 4 ? decodeBase64(data) : undefined;
+      if (!file.success || mediaType !== FILE_MEDIA_TYPE || value.video || value.width !== undefined || value.height !== undefined
+        || !bytes || bytes.length > INPUT_FILE_POLICY.maxBytes || encodeBase64(bytes) !== data) {
+        throw new ApplicationError("bad_request", `Invalid file name, content, type, or size at index ${index}`);
+      }
+      return { mediaType, data, file: file.data };
+    }
     if (isVideoMediaType(mediaType)) {
       const video = videoAttachment({ ...value, data });
       if (!video) throw new ApplicationError("bad_request", `Invalid video content, frames, type, or size at index ${index}`);
