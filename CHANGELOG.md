@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.193
+
 ### Changed
 
 - Reduce the session usage status line to 24px with concise labels that fit a single row on narrow phones, while keeping text size unchanged and allowing longer warnings to expand.
