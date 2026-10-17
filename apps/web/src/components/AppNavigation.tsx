@@ -94,7 +94,7 @@ export function AppNavigation({ tasks, conn, children }: {
     const onTouchStart = (event: TouchEvent) => {
       if (openRef.current || event.touches.length !== 1) { touchStart = undefined; return; }
       const target = event.target instanceof Element ? event.target : null;
-      if (!target || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [data-swipe-open]') || hasScrollableHorizontalAncestor(target)) {
+      if (!target || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="dialog"], [role="alertdialog"], [data-swipe-open]') || hasScrollableHorizontalAncestor(target)) {
         touchStart = undefined;
         return;
       }
