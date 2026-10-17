@@ -36,15 +36,21 @@ flowchart LR
 
 | Capability | What it does |
 | --- | --- |
-| **Coordinate coding tasks** | Run Claude Code and Codex from one interface, see live progress, and queue follow-up messages with the [persistent message queue](docs/MESSAGES.md). |
-| **Keep project context** | Find repositories through server-side [Spaces](docs/USER-GUIDE.md#space-search-paths) and schedule [routines](docs/USER-GUIDE.md#routines). |
+| **Coordinate coding tasks** | Run Claude Code and Codex from one interface, [attach files](docs/USER-GUIDE.md#start-a-chat), see live progress, and queue follow-up messages with the [persistent message queue](docs/MESSAGES.md). |
+| **Keep project context** | Organize tasks by [Space](docs/USER-GUIDE.md#spaces), optionally isolate work in Git worktrees, and schedule agent tasks or scripts with [routines](docs/USER-GUIDE.md#routines). |
 | **Move between app and CLI** | [Hand off native CLI sessions](docs/USER-GUIDE.md#sessions-and-working-directories) or use [persistent Task and Space shells](docs/terminals.md). |
-| **Manage from one place** | Use the Palmagent operator plugin to manage service setup, [release channels](docs/USER-GUIDE.md#choose-a-release-channel), and [updates](docs/USER-GUIDE.md#updates). |
+| **Manage from one place** | Use the Palmagent operator plugin for service setup and maintenance, and manage [release channels](docs/USER-GUIDE.md#choose-a-release-channel) and [updates](docs/USER-GUIDE.md#updates) through the plugin or app settings. |
 
 ## Quick start
 
-Install the Palmagent plugin for Claude Code or Codex from a published `v<version>` tag. Use a
-stable release tag for Stable or a prerelease tag for Preview.
+The host needs Linux with systemd 254+, Node.js 22+, Git, and at least one authenticated
+Claude Code or Codex CLI. Installation also checks the [user-service requirements](docs/DAEMON.md#ownership-and-platform-boundary),
+including account lingering and delegated cgroup v2. Prepare a domain pointing to the host
+for [HTTPS access](docs/HOST-INGRESS.md).
+
+On that host, install the Palmagent plugin for Claude Code or Codex from a
+[published release](https://github.com/incipienstation/palmagent/releases), replacing `v<version>`
+below with its tag. Use a stable release tag for Stable or a prerelease tag for Preview.
 
 ### Claude Code
 
@@ -64,8 +70,14 @@ codex plugin add palmagent@palmagent
 Keep the Codex checkout at its original path because it is the local marketplace source. See the
 [Codex plugin guide](plugins/codex/README.md) for version changes and recovery.
 
-After installing, start a new agent session and ask it to install Palmagent. Stable is the default
-channel for a new installation. To opt into Preview, ask the plugin: **“Use Preview for Palmagent.”**
+After installing the plugin, start a new agent session. Stable is the default when no channel
+preference is saved. For Preview, first ask **“Use Preview for Palmagent.”** Selecting a
+prerelease plugin tag does not change that preference; an unavailable Stable release does not
+fall back to Preview.
+
+Ask **“Install Palmagent for example.com”**, using your domain. The plugin installs the service,
+configures HTTPS, and provides a single-use passkey enrollment link. Open it on your phone or
+desktop to register access, then choose a Space and start a task.
 
 ## Before you expose Palmagent
 
