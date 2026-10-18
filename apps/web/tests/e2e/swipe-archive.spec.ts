@@ -68,7 +68,7 @@ test("left swipe reveals Archive without navigating; body tap, Escape, and right
   await expect(page).toHaveURL(/task\/t-idle-rich/);
 });
 
-test("short and cancelled gestures leave Archive hidden; a right swipe opens navigation", async ({ page }) => {
+test("short, cancelled, and right swipes leave navigation and Archive closed", async ({ page }) => {
   const target = row(page);
   for (const [dx, cancel] of [[-25, false], [-130, true]] as const) {
     await swipe(page, target, dx, 0, cancel);
@@ -76,7 +76,7 @@ test("short and cancelled gestures leave Archive hidden; a right swipe opens nav
     await expect(page).not.toHaveURL(/task\//);
   }
   await swipe(page, target, 110);
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).not.toHaveURL(/task\//);
 });
 

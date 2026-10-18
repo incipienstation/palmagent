@@ -1,3 +1,4 @@
+import { useBlockNavigationGestures } from "@/NavigationGestureProvider";
 import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { ScrollArea } from "./scroll-area";
@@ -17,6 +18,7 @@ const subscribeDesktop = (notify: () => void) => {
 const isDesktop = () => window.matchMedia(desktopQuery).matches;
 function Drawer(props: React.ComponentProps<typeof DrawerPrimitive.Root>) {
   const { depth, ...back } = useBackDismiss(props);
+  useBlockNavigationGestures(back.open && props.modal !== false);
   const desktop = React.useSyncExternalStore(subscribeDesktop, isDesktop, () => false);
   const centered = desktop && (!props.direction || props.direction === "bottom");
   return <BackLayerScope depth={depth}><DrawerPrimitive.Root data-slot="drawer" {...props} {...back}

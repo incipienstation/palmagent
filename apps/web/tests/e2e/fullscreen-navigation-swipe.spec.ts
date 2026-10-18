@@ -45,13 +45,15 @@ for (const kind of ["diagram", "image"] as const) {
     await swipeRight(page, canvas.x + 100, canvas.y + canvas.height / 2);
     await expect(page.getByRole("button", { name: "Close navigation" })).toHaveCount(0);
     await expect.poll(() => image.evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element.parentElement!).transform).m41)).toBeGreaterThan(before);
+    await swipeRight(page, 8, canvas.y + canvas.height / 2);
+    await expect(page.locator('[data-side="left"][data-slot="drawer-content"]')).toHaveCount(0);
     const header = (await dialog.getByRole("heading", { name: label, exact: true }).boundingBox())!;
     await swipeRight(page, header.x + 10, header.y + header.height / 2);
     await expect(page.getByRole("button", { name: "Close navigation" })).toHaveCount(0);
     await dialog.getByRole("button", { name: `Exit ${kind} fullscreen` }).click();
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
-    await swipeRight(page, 100, 400);
+    await swipeRight(page, 8, 400);
     await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
   });
 }

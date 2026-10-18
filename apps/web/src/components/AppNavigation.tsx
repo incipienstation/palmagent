@@ -12,7 +12,7 @@ import { useRepos } from "../hooks/useRepos";
 import { newTaskPath, spaceActivities, spacePath } from "../space-context";
 import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "./ui/drawer";
+import { NavigationDrawer, NavigationDrawerDescription, NavigationDrawerTitle } from "./NavigationDrawer";
 import { SettingsSheet } from "./SettingsSheet";
 import { useArcadeMode } from "../ArcadeModeProvider";
 import { SurvivorSheet } from "../games/SurvivorSheet";
@@ -26,24 +26,12 @@ const NavigationContext = createContext<{
 
 export const useAppNavigation = () => useContext(NavigationContext);
 
-const NAVIGATION_SWIPE_THRESHOLD = 72;
-const NAVIGATION_SWIPE_AXIS_RATIO = 1.3;
-
-function hasScrollableHorizontalAncestor(target: Element) {
-  for (let element: Element | null = target; element; element = element.parentElement) {
-    const overflowX = getComputedStyle(element).overflowX;
-    if ((overflowX === "auto" || overflowX === "scroll") && element.scrollWidth > element.clientWidth + 1) return true;
-  }
-  return false;
-}
-
 // Keep navigation outside route views so closing a drawer never loses its
 // animation, focus restoration, or the app's single shared inbox stream.
 export function AppNavigation({ tasks, conn, children }: {
   tasks: TaskState[]; conn: ConnState; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const openRef = useRef(open);
   const { enabled: arcadeMode } = useArcadeMode();
   const [gameOpen, setGameOpen] = useState(false);
   const [delivery, setDelivery] = useState<GameDelivery>();
@@ -78,65 +66,12 @@ export function AppNavigation({ tasks, conn, children }: {
   const attention = tasks.some(task => needsTaskAttention(task.status));
   const openNavigation = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
-    openRef.current = true;
     setOpen(true);
   }, []);
   const openGame = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
     newGameConversation.current = false;
     setDelivery(undefined); setGameOpen(true);
-  }, []);
-  useEffect(() => { openRef.current = open; }, [open]);
-  useEffect(() => {
-    let touchStart: { x: number; y: number } | undefined;
-    let suppressClick = false;
-    let clickReset: number | undefined;
-    const onTouchStart = (event: TouchEvent) => {
-      if (openRef.current || event.touches.length !== 1) { touchStart = undefined; return; }
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="dialog"], [role="alertdialog"], [data-swipe-open]') || hasScrollableHorizontalAncestor(target)) {
-        touchStart = undefined;
-        return;
-      }
-      const touch = event.touches[0];
-      touchStart = touch ? { x: touch.clientX, y: touch.clientY } : undefined;
-    };
-    const onTouchEnd = (event: TouchEvent) => {
-      const start = touchStart;
-      touchStart = undefined;
-      const touch = event.changedTouches[0];
-      if (!start || !touch || openRef.current) return;
-      const dx = touch.clientX - start.x;
-      const dy = touch.clientY - start.y;
-      if (dx < NAVIGATION_SWIPE_THRESHOLD || dx < Math.abs(dy) * NAVIGATION_SWIPE_AXIS_RATIO) return;
-      const button = document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
-      if (!button || button.getClientRects().length === 0) return;
-      trigger.current = button;
-      openRef.current = true;
-      setOpen(true);
-      suppressClick = true;
-      window.clearTimeout(clickReset);
-      clickReset = window.setTimeout(() => { suppressClick = false; }, 700);
-    };
-    const onTouchCancel = () => { touchStart = undefined; };
-    const onClickCapture = (event: MouseEvent) => {
-      if (!suppressClick || event.detail === 0) return;
-      suppressClick = false;
-      window.clearTimeout(clickReset);
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchend", onTouchEnd, { passive: true });
-    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
-    document.addEventListener("click", onClickCapture, true);
-    return () => {
-      document.removeEventListener("touchstart", onTouchStart);
-      document.removeEventListener("touchend", onTouchEnd);
-      document.removeEventListener("touchcancel", onTouchCancel);
-      document.removeEventListener("click", onClickCapture, true);
-      window.clearTimeout(clickReset);
-    };
   }, []);
   const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
   const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: arcadeMode ? openGame : undefined }), [openNavigation, desktopSidebar, arcadeMode, openGame]);
@@ -198,19 +133,20 @@ export function AppNavigation({ tasks, conn, children }: {
       </aside>}
       <div className="min-w-0 flex-1">{children}</div>
     </div>
-    <Drawer direction="left" open={open} onOpenChange={setOpen} autoFocus>
-      <DrawerContent showClose={false} side="left" onCloseAutoFocus={(event) => {
-        event.preventDefault();
+    <NavigationDrawer open={open} desktopSidebar={desktopSidebar} onOpenChange={next => {
+      if (next) trigger.current = document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
+      setOpen(next);
+    }} onAfterClose={() => {
         const action = afterClose.current;
         afterClose.current = null;
         if (action) action();
         else restoreFocus();
       }}>
         <div className="flex shrink-0 items-center gap-3 px-5 pt-[calc(12px+var(--safe-top))] pb-4">
-          <DrawerTitle className="text-xl tracking-tight">Palmagent</DrawerTitle>
+          <NavigationDrawerTitle className="min-w-0 flex-1 text-xl font-semibold tracking-tight text-strong">Palmagent</NavigationDrawerTitle>
           <Button variant="ghost" size="icon-lg" aria-label="Close navigation" onClick={() => setOpen(false)}><PanelLeftClose /></Button>
         </div>
-        <DrawerDescription className="sr-only">Navigate your tasks, spaces, and settings.</DrawerDescription>
+        <NavigationDrawerDescription className="sr-only">Navigate your tasks, spaces, and settings.</NavigationDrawerDescription>
         <ScrollArea className="flex-1">
         {navigationLinks}
 
@@ -231,8 +167,7 @@ export function AppNavigation({ tasks, conn, children }: {
           <Button className="rounded-full px-5" onClick={newTask}><SquarePen />New task</Button>
           <Button variant="ghost" size="icon-lg" className="ml-auto rounded-full" aria-label="Settings" onClick={() => showAfterClose(() => setSettingsOpen(true))}><Settings /></Button>
         </div>
-      </DrawerContent>
-    </Drawer>
+    </NavigationDrawer>
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
     {arcadeMode && <SurvivorSheet open={gameOpen} onOpenChange={setGameOpen}
