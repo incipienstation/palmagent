@@ -14,7 +14,6 @@ import { Sheet, SheetClose, SheetBody, SheetContent, SheetHeaderRow, SheetDescri
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
-import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import { useArcadeMode } from "../ArcadeModeProvider";
 import { useTheme, type Theme } from "../ThemeProvider";
 import { useSendShortcut } from "../SendShortcutProvider";
@@ -35,7 +34,6 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
 }) {
   const { signingOut, signOut } = useSignOut();
   const { theme, setTheme } = useTheme();
-  const { mode, setMode } = useOutputMode();
   const { enabled: arcadeMode, setEnabled: setArcadeMode } = useArcadeMode();
   const { shortcut, setShortcut } = useSendShortcut();
   const shake = useShakeToDictate();
@@ -46,7 +44,6 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const updatesLink = useRef<HTMLButtonElement>(null);
   const previousSection = useRef(section);
   const appearanceId = useId();
-  const detailId = useId();
   const shortcutId = useId();
   const arcadeId = useId();
   const shakeId = useId();
@@ -95,15 +92,6 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                     <ToggleGroupItem value="system" aria-label="System theme" title="System theme" className="w-11"><Monitor className="size-4" /></ToggleGroupItem>
                     <ToggleGroupItem value="light" aria-label="Light theme" title="Light theme" className="w-11"><Sun className="size-4" /></ToggleGroupItem>
                     <ToggleGroupItem value="dark" aria-label="Dark theme" title="Dark theme" className="w-11"><Moon className="size-4" /></ToggleGroupItem>
-                  </ToggleGroup>
-                </SettingsField>
-                <Separator />
-                <SettingsField>
-                  <FieldLabel variant="setting" id={detailId}>Output detail</FieldLabel>
-                  <ToggleGroup type="single" value={mode} aria-labelledby={detailId} className="w-auto shrink-0"
-                    onValueChange={(value) => value && setMode(value as OutputMode)}>
-                    <ToggleGroupItem value="compact" aria-label="Compact output" className="px-2">Compact</ToggleGroupItem>
-                    <ToggleGroupItem value="verbose" aria-label="Verbose output" className="px-2">Verbose</ToggleGroupItem>
                   </ToggleGroup>
                 </SettingsField>
                 <Separator />

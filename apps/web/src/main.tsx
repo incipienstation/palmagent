@@ -2,7 +2,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ArcadeModeProvider } from "./ArcadeModeProvider";
-import { OutputModeProvider } from "./OutputModeProvider";
 import { SendShortcutProvider } from "./SendShortcutProvider";
 import { ShakeToDictateProvider } from "./ShakeToDictateProvider";
 import { ThemeProvider } from "./ThemeProvider";
@@ -33,7 +32,6 @@ async function boot() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ArcadeModeProvider>
-            <OutputModeProvider>
               <SendShortcutProvider>
                 <ShakeToDictateProvider>
                   <TooltipProvider>
@@ -42,7 +40,6 @@ async function boot() {
                   </TooltipProvider>
                 </ShakeToDictateProvider>
               </SendShortcutProvider>
-            </OutputModeProvider>
           </ArcadeModeProvider>
         </ThemeProvider>
       </QueryClientProvider>

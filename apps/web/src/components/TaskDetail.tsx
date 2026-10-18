@@ -16,7 +16,7 @@ import { useMessageRetry } from "../message-retry";
 import { useEffect, useRef, useState } from "react";
 import { needsTaskAttention, type TaskState } from "@palmagent/shared";
 import { notifyConversation } from "../conversation-notifications";
-import { Archive, Check, Minimize2, Gamepad2, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
+import { Archive, Check, Minimize2, Gamepad2, ListTree, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
 import { useAppNavigation } from "./AppNavigation";
 
 import {
@@ -40,6 +40,7 @@ import { Composer } from "./Composer";
 import { permissionLabel } from "./PermissionPicker";
 import { AgentTag, StatusBadge } from "./chips";
 import { PrList } from "./PrChip";
+import { ExecutionRecords } from "./ExecutionRecords";
 import { EventLog } from "./EventLog";
 import { QuestionCard } from "./QuestionCard";
 import { ApprovalCard } from "./ApprovalCard";
@@ -58,6 +59,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
   const statuslineTrigger = useRef<HTMLButtonElement>(null);
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
@@ -108,7 +110,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
           </Button>
           {task && <>
             <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} triggerRef={taskActionsTrigger} onTerminal={() => setTerminalOpen(true)}
-              onDetails={() => setDetailsOpen(true)} onCompact={() => compaction.request()} compactReason={compaction.unavailable}
+              onDetails={() => setDetailsOpen(true)} onRecords={() => setRecordsOpen(true)} onCompact={() => compaction.request()} compactReason={compaction.unavailable}
               onCancel={() => void cancel()}
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
           </>}
@@ -133,6 +135,8 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
           </SheetBody>
         </SheetContent>
       </Sheet>
+
+      {!creating && <ExecutionRecords taskId={taskId} open={recordsOpen} onOpenChange={setRecordsOpen} trigger={taskActionsTrigger} />}
 
       <AlertDialog open={compaction.intro !== null} onOpenChange={open => { if (!open) compaction.closeIntro(); }}>
         <AlertDialogContent onCloseAutoFocus={event => {
@@ -233,6 +237,7 @@ function TaskActionsMenu({
   canArchive,
   triggerRef,
   onDetails,
+  onRecords,
   onCancel,
   onArchive,
   onTerminal,
@@ -245,6 +250,7 @@ function TaskActionsMenu({
   canArchive: boolean;
   triggerRef: { current: HTMLButtonElement | null };
   onDetails: () => void;
+  onRecords: () => void;
   onCancel: () => void;
   onArchive: () => void;
   onTerminal: () => void;
@@ -272,6 +278,7 @@ function TaskActionsMenu({
           </span>
         </DropdownMenuItem>}
         <DropdownMenuItem disabled={busy} onSelect={onTerminal}><Terminal />Open terminal</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onRecords}><ListTree />Execution records</DropdownMenuItem>
         <DropdownMenuItem onSelect={onDetails}><Info />Session details</DropdownMenuItem>
       </SessionActionsMenu>
 

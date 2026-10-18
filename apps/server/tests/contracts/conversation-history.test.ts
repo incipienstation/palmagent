@@ -182,3 +182,100 @@ test("existing events backfill atomically once and survive an interrupted upgrad
   f.connection.exec("CREATE TRIGGER no_repeat_conversation_backfill BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already indexed'); END");
   assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), expected);
 });
+
+test("Trace lists contain bounded metadata and hydrate only the selected operation across reply boundaries", t => {
+  const f = fixture(t);
+  f.add([user("Inspect"), event("tool_call", { id: "one", name: "bash", command: "pnpm test" }),
+    message("Intervening answer"), event("tool_result", { tool_use_id: "one", output: "Only load this when opened", exit_code: 0 }),
+    event("tool_call", { id: "two", name: "Read" }), event("tool_result", { tool_use_id: "two", output: "Unrelated output" })]);
+  const activity = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
+  const prepare = f.connection.prepare.bind(f.connection);
+  const noRaw = t.mock.method(f.connection, "prepare", (sql: string) => {
+    assert.ok(!sql.includes("FROM events"), "step lists must use the retained summary projection");
+    return prepare(sql);
+  });
+  const steps = f.tasks.conversationSteps("task", activity.key);
+  bounded(steps);
+  assert.equal(steps.steps[0].title, "pnpm test");
+  assert.equal(steps.steps[0].state, "completed");
+  assert.ok(!JSON.stringify(steps).includes("Only load"));
+  assert.ok(!JSON.stringify(steps).includes("members"));
+  noRaw.mock.restore();
+  const detail = f.tasks.conversationStepDetails("task", activity.key, steps.steps[0].key);
+  bounded(detail);
+  assert.ok(JSON.stringify(detail).includes("Only load this when opened"));
+  assert.ok(!JSON.stringify(detail).includes("Unrelated output"));
+  assert.throws(() => f.tasks.conversationStepDetails("other-task", activity.key, steps.steps[0].key), /no longer available/);
+});
+
+test("Trace operation pagination, oversized output and raw execution records preserve all information", t => {
+  const f = fixture(t), output = "Unicode 😀 한글\n".repeat(10000);
+  f.add([user("Inspect"), ...Array.from({ length: 70 }, (_, i) => [
+    event("tool_call", { id: `a-${i}`, name: "Read", input: { path: `file-${i}` } }),
+    event("tool_result", { tool_use_id: `a-${i}`, output: i === 0 ? output : `Result ${i}` }),
+  ]).flat(), event("result", {}), event("status", { subtype: "process_exit", code: 0 })]);
+  const activity = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
+  const first = f.tasks.conversationSteps("task", activity.key), next = f.tasks.conversationSteps("task", activity.key, first.nextAfter!);
+  assert.equal(first.steps.length, 50); assert.equal(next.steps.length, 20); assert.equal(next.nextAfter, null);
+  const details = f.tasks.conversationStepDetails("task", activity.key, first.steps[0].key);
+  const ref = details.items.find(item => item.content)!.content!;
+  let offset = 0, text = "";
+  do {
+    const chunk = f.tasks.conversationContent("task", ref.key, ref.version, offset, ref.member);
+    text += chunk.chunk;
+    if (chunk.nextOffset === null) break;
+    offset = chunk.nextOffset;
+  } while (true);
+  assert.equal(JSON.parse(text).item.event.payload.output, output);
+  let before: number | undefined;
+  const records: import("@palmagent/shared").ExecutionRecord[] = [];
+  do {
+    const page = f.tasks.executionRecords("task", before); bounded(page);
+    records.unshift(...page.records); before = page.before ?? undefined;
+  } while (before !== undefined);
+  assert.equal(records.length, 143);
+  assert.equal(new Set(records.map(record => record.key)).size, 143);
+  assert.ok(records.some(record => record.body?.includes("process_exit")));
+  const large = records.find(record => !record.body)!;
+  offset = 0; text = "";
+  do {
+    const chunk = f.tasks.executionRecordContent("task", large.key, large.version, offset); bounded(chunk);
+    text += chunk.chunk;
+    if (chunk.nextOffset === null) break;
+    offset = chunk.nextOffset;
+  } while (true);
+  assert.equal(JSON.parse(text).payload.output, output);
+  assert.throws(() => f.tasks.executionRecordContent("other-task", large.key, large.version, 0), /no longer available/);
+});
+
+
+test("late classification retains the disclosure identity while its ordering key changes", t => {
+  const f = fixture(t);
+  f.add([event("assistant_text", { text: "Inspecting files", messageId: "progress" }), event("tool_call", { id: "one", name: "Read" })]);
+  const before = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
+  f.add([event("status", { subtype: "assistant_message", messageId: "progress", phase: "progress" })]);
+  const after = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
+  assert.equal(before.type, "activity"); assert.equal(after.type, "activity");
+  if (before.type !== "activity" || after.type !== "activity") return;
+  assert.notEqual(before.key, after.key);
+  assert.equal(before.disclosureKey, after.disclosureKey);
+  assert.ok(f.tasks.conversationSteps("task", after.key).steps.some(step => step.key === 2));
+});
+
+
+test("existing conversation projections upgrade to Trace metadata once without losing original output", t => {
+  const f = fixture(t);
+  f.add([user("Existing"), event("tool_call", { id: "one", name: "Read", input: { path: "existing.txt" } }),
+    event("tool_result", { tool_use_id: "one", output: "Preserved output" })]);
+  f.connection.exec(`DELETE FROM event_compact_version; DELETE FROM conversation_projection_version;
+    UPDATE event_compact_payloads SET payload_json = json_remove(payload_json, '$.traceTitle');
+    UPDATE conversation_rows SET body_json = json_remove(body_json, '$.operations', '$.disclosureKey') WHERE body_json IS NOT NULL;`);
+  const upgraded = new SqliteTasks(f.connection);
+  const activity = upgraded.conversationPage("task").transcript!.find(row => row.type === "activity")!;
+  const step = upgraded.conversationSteps("task", activity.key).steps[0];
+  assert.equal(step.title, "Read existing.txt");
+  assert.equal(step.state, "completed");
+  assert.ok(JSON.stringify(upgraded.conversationStepDetails("task", activity.key, step.key)).includes("Preserved output"));
+  f.connection.exec("CREATE TRIGGER no_trace_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
+  assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), upgraded.conversationPage("task"));
+});

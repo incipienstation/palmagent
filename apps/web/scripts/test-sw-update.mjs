@@ -203,7 +203,7 @@ async function run() {
     await page.goto("/#/task/t-run");
     await page.reload();
     const transcript = page.locator('[aria-label="Session transcript"]');
-    await page.getByText("tool_result: Transition tool 440", { exact: true }).waitFor();
+    await page.getByText("Transition message 439", { exact: true }).waitFor();
     const olderPage = page.waitForResponse((response) => response.url().includes("/history?before=241"));
     await transcript.evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
     await olderPage;

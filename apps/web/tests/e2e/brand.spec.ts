@@ -43,7 +43,7 @@ for (const theme of ["light", "dark"] as const) {
     const selected = page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Tasks", exact: true });
     await expectReadable(selected);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
-    const selection = page.getByRole("radio", { name: "Compact output", exact: true });
+    const selection = page.getByRole("radio", { name: theme === "light" ? "Light theme" : "Dark theme", exact: true });
     await expectReadable(selection);
     const next = theme === "light" ? "dark" : "light";
     await page.getByRole("radio", { name: `${next === "light" ? "Light" : "Dark"} theme` }).click();

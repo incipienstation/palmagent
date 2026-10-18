@@ -1,8 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { AgentKind, SkillContext, TaskActivityDetailsResponse } from "@palmagent/shared";
+import type { AgentKind, SkillContext } from "@palmagent/shared";
 import { api } from "./api";
 import { clientReadKeys } from "./client-query-keys";
-import { queryClient, taskActivityDetailsKey, TASK_ACTIVITY_DETAILS_GC_TIME } from "./task-history-query";
 
 const FIVE_MINUTES = 5 * 60_000;
 
@@ -60,25 +59,6 @@ export const skillsQueryOptions = (context?: SkillContext) => queryOptions({
   },
   staleTime: 10_000,
   gcTime: 60_000,
-  retry: false,
-});
-
-export const taskActivityDetailsQueryOptions = (taskId: string, from: number, through: number) => queryOptions({
-  queryKey: taskActivityDetailsKey(taskId, from),
-  queryFn: async ({ signal }) => {
-    const cached = queryClient.getQueryData<TaskActivityDetailsResponse>(taskActivityDetailsKey(taskId, from));
-    if (cached && cached.through >= through) return cached;
-    const nextFrom = cached ? cached.through + 1 : from;
-    const next = await api.taskActivityDetails(taskId, nextFrom, through, signal);
-    if (next.from !== nextFrom || next.through < nextFrom - 1 || next.through > through) {
-      throw new Error("Activity detail boundary changed");
-    }
-    // One stable cache entry owns the Activity. Only the missing tail crosses
-    // the network; a failed or cancelled request leaves loaded details intact.
-    return cached ? { ...next, from, events: [...cached.events, ...next.events] } : next;
-  },
-  staleTime: Infinity,
-  gcTime: TASK_ACTIVITY_DETAILS_GC_TIME,
   retry: false,
 });
 

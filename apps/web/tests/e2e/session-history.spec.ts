@@ -55,11 +55,11 @@ async function installLatestHistory(page: Page, entries: TaskHistoryEvent[], bef
   });
   return () => reads;
 }
-async function recent(page: Page, mode = "verbose") {
+async function recent(page: Page, _mode = "unified") {
   const reads = await installLatestHistory(page, rows(1801, 2000), 1801, 2000);
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2000 });
-  await expect(page.getByText(mode === "verbose" ? "tool_result: Tool 2000" : "History message 1999", { exact: true })).toBeVisible();
+  await expect(page.getByText("History message 1999", { exact: true })).toBeVisible();
   await expectBottom(page);
   return reads;
 }
@@ -87,7 +87,7 @@ test("recent history and thousands of live events keep mounted rows bounded", as
     Object.assign(window, { textChanges: () => changes, stopObserving: () => observer.disconnect() });
   });
   await deliver(page, rows(2001, 6000));
-  await expect(page.getByText("tool_result: Tool 6000", { exact: true })).toBeVisible();
+  await expect(page.getByText("History message 5999", { exact: true })).toBeVisible();
   await expectBottom(page);
   expect(await page.locator("[data-message-key]").count()).toBeLessThan(40);
   const changes = await page.evaluate(() => {
@@ -122,7 +122,7 @@ test("prepending an older page preserves the visible message through simultaneou
   // Wait for its scroll adjustment before comparing the preserved anchor.
   await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
   await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
-  await expect(page.getByText("tool_result: Tool 2020", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("History message 2019", { exact: true })).toHaveCount(0);
   expect(requested).toBe(1);
 });
 
@@ -282,12 +282,12 @@ for (const first of ["catch-up", "older page"] as const) {
     await expect(page.locator('[aria-label="Session transcript"]')).toHaveCount(0);
     await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
     await expect(page.getByText("History message 2001", { exact: true })).toBeVisible();
-    await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();
+    await expect(page.getByText("History message 2001", { exact: true })).toBeVisible();
     expect(latestReads()).toBe(1);
     // Duplicate frames cannot re-add a recovered event after its cursor advances.
     await deliver(page, rows(2001, 2002));
     await expect(page.getByText("History message 2001", { exact: true })).toHaveCount(1);
-    await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("History message 2001", { exact: true })).toHaveCount(1);
   });
 }
 
@@ -345,7 +345,7 @@ test("fast upward scrolling formats long Markdown before it reaches the viewport
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1816 });
   await expectBottom(page);
-  await expect(page.getByText("tool_result: Tool 1816", { exact: true })).toBeVisible();
+  await expect(page.getByText("History entry 1815", { exact: true })).toBeVisible();
   const target = page.locator('[data-message-key="1801"]');
   await expect(target).toHaveCount(0);
   const samples = await page.evaluate(() => new Promise<Array<{ formatted: boolean; height: number }>>((resolve) => {
@@ -532,40 +532,25 @@ test("earlier history pauses offline while keeping current messages and resumes 
   expect(latestRequests()).toBe(1);
 });
 
-test("scrolling away and back preserves a tool row's collapsed override", async ({ page }) => {
+test("scrolling away and back preserves a step disclosure", async ({ page }) => {
   await recent(page);
   const full = "Expanded tool output\n".repeat(80) + "Expansion survived remount";
   await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 2001, kind: "tool_result", payload: { output: full } } }, 2001);
-  const row = page.locator('[data-message-key="2001"]');
-  // Wait for the tall row to finish measuring; the collapse must preserve its
-  // position even when it is the only row mounted at the bottom.
   await expectBottom(page);
-  await page.waitForTimeout(800);
-  // Verbose starts expanded. Retain a non-default override across unmounting.
-  await row.getByRole("button").click();
-  await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
-  // Require a quiet layout interval after collapse. Four fast frames can finish
-  // before Virtuoso's 150ms scroll-target retry and race the next wheel input.
-  await expect.poll(() => viewport(page).evaluate(async (el) => {
-    const top = el.scrollTop, height = el.scrollHeight;
-    const until = performance.now() + 250;
-    do {
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      if (Math.abs(el.scrollTop - top) > 1 || el.scrollHeight !== height) return false;
-      const row = el.querySelector('[data-message-key="2001"]');
-      const box = row?.getBoundingClientRect();
-      const pane = el.getBoundingClientRect();
-      if (!box || box.top < pane.top - 1 || box.bottom > pane.bottom + 1) return false;
-    } while (performance.now() < until);
-    return true;
-  })).toBe(true);
-  // Use browser input so wheel handling and the resulting scroll run in their
-  // normal order, rather than racing pending virtualizer layout in one script.
-  await viewport(page).hover();
-  await page.mouse.wheel(0, -3000);
-  await expect(row).toHaveCount(0);
-  await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
-  await expect(row.getByRole("button")).toHaveAttribute("aria-expanded", "false");
+  const activity = page.locator('[data-row-key="activity-2000"]');
+  await activity.getByRole("button").first().click();
+  const step = page.locator('[data-trace-step="2001"]');
+  await step.click();
+  await expect(page.getByText(/Expansion survived remount/)).toBeVisible();
+  await step.click();
+  await expect(step).toHaveAttribute("aria-expanded", "false");
+  // Wait through disclosure measurement, then move far enough to unmount the row.
+  await expect.poll(async () => {
+    await viewport(page).evaluate(el => { el.scrollTop = 0; });
+    return step.count();
+  }).toBe(0);
+  await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(step).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText(/Expansion survived remount/)).toHaveCount(0);
 });
 
@@ -580,7 +565,7 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
   await installLatestHistory(page, rows(201, 400), 201, 400);
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 400 });
-  await expect(page.getByText("tool_result: Tool 400", { exact: true })).toBeVisible();
+  await expect(page.getByText("History message 399", { exact: true })).toBeVisible();
   await expectBottom(page);
   await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
   await expect.poll(() => requested).toBe(true);
@@ -617,31 +602,26 @@ test("compact mode automatically skips consecutive pages of hidden status events
   expect(cursors).toEqual(["latest", "201", "101"]);
 });
 
-test("expanded activity virtualizes its individual tool records and retains disclosure state", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "default"));
+test("large legacy activities reveal a bounded number of steps and retain disclosure state", async ({ page }) => {
   await installLatestHistory(page, [], null, 0);
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
   const entries: TaskHistoryEvent[] = Array.from({ length: 1000 }, (_, index) => {
     const seq = index + 1;
     return { seq, event: { taskId, agent: "codex", ts: seq, kind: seq % 2 ? "tool_call" : "tool_result",
-      payload: seq % 2 ? { id: `tool-${seq}`, name: "bash", command: `echo ${seq}` } : { output: `Activity record ${seq}` } } };
+      payload: seq % 2 ? { id: `tool-${seq}`, name: "bash", command: `echo ${seq}` } : { tool_use_id: `tool-${seq - 1}`, output: `Activity record ${seq}` } } };
   });
   await deliver(page, entries);
   const disclosure = page.getByRole("button", { name: "Activity · 500 tools", exact: true });
   await disclosure.click();
-  await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("[data-trace-step]")).toHaveCount(50);
+  const step = page.locator('[data-trace-step="1"]'); await step.click();
   await expect(page.getByText("tool_result: Activity record 2", { exact: true })).toBeVisible();
-  // Short raw rows need more viewport/overscan nodes than regular messages.
-  // Keep the 1,000-record group bounded to a few dozen mounted rows.
-  expect(await page.locator("[data-row-key]").count()).toBeLessThan(60);
-  await viewport(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
-  await expect(page.getByText("tool_result: Activity record 1000", { exact: true })).toBeVisible();
-  await expectBottom(page);
-  expect(await page.locator("[data-row-key]").count()).toBeLessThan(60);
-  await expect(disclosure).toHaveCount(0);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
-  await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("tool_result: Activity record 1000", { exact: true })).toHaveCount(0);
+  await disclosure.click(); await disclosure.click();
+  await expect(step).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Load more steps", exact: true }).click();
+  await expect(page.locator("[data-trace-step]")).toHaveCount(100);
 });
 
 for (const mode of ["compact"]) {
@@ -720,13 +700,13 @@ test("returning to a conversation keeps messages and resumes only missed events"
   await page.evaluate(() => { location.hash = "/"; });
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
-  await expect(page.getByText("tool_result: Tool 2000", { exact: true })).toBeVisible();
+  await expect(page.getByText("History message 1999", { exact: true })).toBeVisible();
   const urls = await page.evaluate(() => (window as unknown as Harness).scopedUrls);
   expect(new URL(urls.at(-1)!).searchParams.has("lastEventId")).toBe(false);
   expect(latestRequests()).toBe(1);
   await deliver(page, rows(2000, 2002));
-  await expect(page.getByText("tool_result: Tool 2002", { exact: true })).toBeVisible();
-  await expect(page.locator('[data-message-key="2000"]')).toHaveCount(1);
+  await expect(page.getByText("History message 2001", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-row-key="activity-2000"]')).toHaveCount(1);
 });
 
 for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {

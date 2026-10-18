@@ -38,3 +38,4 @@ export * from "./context-usage.js";
 
 export * from "./conversation.js";
 export * from "./conversation-activity.js";
+export * from "./conversation-trace.js";

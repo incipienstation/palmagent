@@ -1,5 +1,6 @@
 import { TURN_RESULT_MISSING } from "./events.js";
 import type { AgentEvent, AgentEventKind, AgentKind, AssistantPhase, AssistantTextPayload } from "./events.js";
+import type { TraceOperation } from "./conversation-trace.js";
 export type OutputMode = "compact" | "verbose";
 export type LogItem =
   | { key: number; endSeq?: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
@@ -48,7 +49,8 @@ export function userMessage(item: LogItem): boolean {
   return item.kind === "status" && ["dispatch", "followup", "steer", "answer"].includes(String(payload(item).subtype));
 }
 
-export type Activity = { type: "activity"; key: number; items: LogItem[]; live: boolean; preview?: string; summary?: { label: string; count: number }; details?: boolean };
+export type Activity = { type: "activity"; key: number; items: LogItem[]; live: boolean; preview?: string;
+  disclosureKey?: number; operations?: TraceOperation[]; summary?: { label: string; count: number; running?: string; failed?: number }; details?: boolean };
 export type RunFailure = { type: "failure"; key: number; items: LogItem[]; previous: boolean; completed?: boolean };
 export type TranscriptRow = Activity | RunFailure | { type: "message"; key: number; item: LogItem };
 
@@ -175,6 +177,12 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
 
 export function activityLabel(group: Activity, mode: OutputMode): string {
   if (group.summary) return group.summary.label;
+  if (group.operations) {
+    const tools = group.operations.filter(step => step.kind === "tool").length;
+    const failures = group.operations.filter(step => step.state === "error").length;
+    const count = tools ? `${tools} ${tools === 1 ? "tool" : "tools"}` : `${group.operations.length} ${group.operations.length === 1 ? "step" : "steps"}`;
+    return `Activity · ${count}${failures ? ` · ${failures} failed` : ""}`;
+  }
   const tools = new Map<string | number, string>();
   const failures = new Set<string | number>();
   for (const item of group.items) {

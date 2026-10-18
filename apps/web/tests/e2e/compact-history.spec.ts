@@ -33,169 +33,76 @@ test.beforeEach(async ({ page }) => {
   await installScopedStream(page);
 });
 
-test("compact history renders before SSE and fetches a whole Activity only when opened", async ({ page }) => {
-  const rows = conversation();
-  const pending = gate();
-  const historyReads: string[] = [];
-  const detailReads: string[] = [];
-  await page.route(historyPath, route => {
-    historyReads.push(route.request().url());
-    return route.fulfill({ json: { events: rows.map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: rows.length } });
-  });
+test("legacy summaries load only the selected operation and retain its cached details", async ({ page }) => {
+  const rows = conversation(), pending = gate();
+  const reads: number[] = [];
+  await page.route(historyPath, route => route.fulfill({ json: { events: rows.map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: rows.length } }));
   await page.route(detailsPath, async route => {
-    detailReads.push(route.request().url());
+    const q = new URL(route.request().url()).searchParams, from = Number(q.get("from")), through = Number(q.get("through"));
+    reads.push(from); expect(through).toBe(from);
     await pending.wait;
-    await route.fulfill({ json: { events: rows.slice(1, -1), from: 2, through: 501, cursor: rows.length } });
+    await route.fulfill({ json: { events: rows.filter(row => row.seq === from), from, through, cursor: rows.length } });
   });
-  await page.goto(`/#/task/${taskId}`);
-  // No first SSE snapshot has been delivered. REST alone makes the entire
-  // compact conversation readable, including a work group over 200 events.
-  await expect(page.getByText("Original request", { exact: true })).toBeVisible();
-  await expect(page.getByText("Complete answer", { exact: true })).toBeVisible();
-  const activity = page.getByRole("button", { name: "Activity · 250 tools", exact: true });
-  await expect(activity).toBeVisible();
-  await expect(activity).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toHaveCount(0);
-  expect(detailReads).toEqual([]);
-  expect(historyReads).toHaveLength(1);
-  expect(new URL(historyReads[0]).searchParams.get("details")).toBe("summary");
-  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-
-  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: rows.length });
-  await event(page, taskId, rows.length + 1, "\n\nNew streamed answer");
-  await expect(page.getByText("New streamed answer", { exact: true })).toBeVisible();
-  expect(detailReads).toEqual([]);
-
-  await activity.focus();
-  await page.keyboard.press("Enter");
-  await expect.poll(() => detailReads.length).toBe(1);
-  expect(new URL(detailReads[0]).searchParams.get("from")).toBe("2");
-  expect(new URL(detailReads[0]).searchParams.get("through")).toBe("501");
-  await expect(page.getByText("Loading activity details…", { exact: true })).toBeVisible();
-  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-  pending.release();
-  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
-  await expect(page.getByText("Loading activity details…", { exact: true })).toHaveCount(0);
-  expect(await page.locator("[data-message-key]").count()).toBeLessThan(50);
-  await activity.click();
-  await expect(page.getByText("Complete answer", { exact: true })).toBeVisible();
-  await activity.click();
-  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
-  expect(detailReads).toHaveLength(1);
-  expect(historyReads).toHaveLength(1);
-});
-
-test("an Activity detail failure stays within its disclosure and retries without reloading history", async ({ page }) => {
-  const rows = conversation();
-  let historyReads = 0, detailReads = 0;
-  await page.route(historyPath, route => {
-    historyReads++;
-    return route.fulfill({ json: { events: rows.map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: rows.length } });
-  });
-  await page.route(detailsPath, route => ++detailReads === 1
-    ? route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } })
-    : route.fulfill({ json: { events: rows.slice(1, -1), from: 2, through: 501, cursor: rows.length } }));
   await page.goto(`/#/task/${taskId}`);
   const activity = page.getByRole("button", { name: "Activity · 250 tools", exact: true });
-  await activity.click();
-  await expect(page.getByRole("alert")).toContainText("Couldn’t load activity details.");
   await expect(page.getByText("Complete answer", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
-  expect(detailReads).toBe(2);
-  expect(historyReads).toBe(1);
-});
-
-for (const failure of [false, true]) test(`an open Activity fetches only missing details${failure ? " after a failed tail and retry" : " while its range grows during a request"}`, async ({ page }) => {
-  const rows = conversation().slice(0, 3);
-  const pending = gate();
-  const reads: Array<{ from: number; through: number }> = [];
-  await page.route(historyPath, route => route.fulfill({ json: {
-    events: rows.map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: rows.length,
-  } }));
-  await page.route(detailsPath, async route => {
-    const url = new URL(route.request().url());
-    const from = Number(url.searchParams.get("from")), through = Number(url.searchParams.get("through"));
-    reads.push({ from, through });
-    if (reads.length === 2) {
-      await pending.wait;
-      if (failure) return route.fulfill({ status: 503, json: { error: "Tail unavailable" } });
-    }
-    await route.fulfill({ json: { events: rows.filter(row => row.seq >= from && row.seq <= through), from, through, cursor: rows.length } });
-  });
-  await page.goto(`/#/task/${taskId}`);
-  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
-  const activity = page.getByRole("button", { name: /^Activity · \d+ tools?$/ });
   await activity.click();
-  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
-  expect(reads).toEqual([{ from: 2, through: 3 }]);
-  const addTool = async (id: number) => {
-    for (const [kind, payload] of [
-      ["tool_call", { id: `tool-${id}`, name: "Read", input: { path: `file-${id}.txt` } }],
-      ["tool_result", { tool_use_id: `tool-${id}`, output: `Expanded output ${id}` }],
-    ] as const) {
-      const seq = rows.length + 1;
-      const event = { taskId, agent: "codex" as const, kind, payload, ts: seq };
-      rows.push({ seq, event });
-      await send(page, taskId, { type: "event", ...deferActivityEventDetails(event) }, seq);
-    }
-  };
-  await addTool(1);
+  await expect(page.locator("[data-trace-step]")).toHaveCount(50);
+  expect(reads).toEqual([]);
+  await page.locator('[data-trace-step="2"]').click();
   await expect.poll(() => reads.length).toBe(2);
-  expect(reads[1]).toEqual({ from: 4, through: 5 });
-  await addTool(2);
-  await expect(activity).toContainText("3 tools");
+  expect(reads.sort()).toEqual([2, 3]);
+  await expect(page.getByText("Loading step details…", { exact: true })).toBeVisible();
   pending.release();
-  if (failure) {
-    await expect(page.getByRole("alert")).toContainText("Couldn’t load activity details.");
-    await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
+  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
+  await expect(page.getByText("Expanded output 1", { exact: false })).toHaveCount(0);
+  await activity.click(); await activity.click();
+  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
+  expect(reads).toHaveLength(2);
+});
+
+for (const fail of [false, true]) test(`an opened legacy step fetches only its late result${fail ? " and retries a failed detail" : ""}`, async ({ page }) => {
+  const rows = conversation().slice(0, 3), reads: number[] = [];
+  let failed = false;
+  await page.route(historyPath, route => route.fulfill({ json: { events: rows.slice(0, 2).map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: 2 } }));
+  await page.route(detailsPath, route => {
+    const from = Number(new URL(route.request().url()).searchParams.get("from")); reads.push(from);
+    if (from === 3 && fail && !failed) { failed = true; return route.fulfill({ status: 503, json: { error: "Unavailable" } }); }
+    return route.fulfill({ json: { events: rows.filter(row => row.seq === from), from, through: from, cursor: 3 } });
+  });
+  await page.goto(`/#/task/${taskId}`);
+  const activity = page.getByRole("button", { name: "Activity · 1 tool", exact: true });
+  await activity.click(); await page.locator('[data-trace-step="2"]').click();
+  await expect.poll(() => reads).toEqual([2]);
+  await expect(page.getByText("Loading step details…", { exact: true })).toHaveCount(0);
+  await send(page, taskId, { type: "event", ...deferActivityEventDetails(rows[2].event) }, 3);
+  if (fail) {
+    await expect(page.getByRole("alert")).toContainText("Couldn’t load details.");
     await page.getByRole("button", { name: "Retry", exact: true }).click();
   }
-  await expect.poll(() => reads.length).toBe(3);
-  expect(reads[2]).toEqual({ from: failure ? 4 : 6, through: 7 });
-  for (let i = 0; i < 3; i++) await expect(page.getByText(`Expanded output ${i}`, { exact: false })).toHaveCount(1);
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await activity.click();
-  await addTool(3);
-  await expect(activity).toContainText("4 tools");
-  expect(reads).toHaveLength(3);
-  await activity.click();
-  await expect.poll(() => reads.length).toBe(4);
-  expect(reads[3]).toEqual({ from: 8, through: 9 });
-  await expect(page.getByText("Expanded output 3", { exact: false })).toHaveCount(1);
+  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
+  expect(reads).toEqual(fail ? [2, 3, 3] : [2, 3]);
 });
 
-test("closing an Activity cancels its tail without advancing the cached boundary", async ({ page }) => {
-  const rows = conversation().slice(0, 5);
-  const pending = gate();
-  const reads: number[] = [];
+test("closing legacy details cancels only pending members and keeps completed member caches", async ({ page }) => {
+  const rows = conversation().slice(0, 3), pending = gate(), reads: number[] = [];
   let cancelled = 0;
   page.on("requestfailed", request => { if (detailsPath.test(request.url())) cancelled++; });
-  await page.route(historyPath, route => route.fulfill({ json: {
-    events: rows.slice(0, 3).map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: 3,
-  } }));
+  await page.route(historyPath, route => route.fulfill({ json: { events: rows.map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: 3 } }));
   await page.route(detailsPath, async route => {
-    const url = new URL(route.request().url());
-    const from = Number(url.searchParams.get("from")), through = Number(url.searchParams.get("through"));
-    reads.push(from);
-    if (reads.length === 2) await pending.wait;
-    await route.fulfill({ json: { events: rows.filter(row => row.seq >= from && row.seq <= through), from, through, cursor: 5 } });
+    const from = Number(new URL(route.request().url()).searchParams.get("from")); reads.push(from);
+    if (from === 3) await pending.wait;
+    await route.fulfill({ json: { events: rows.filter(row => row.seq === from), from, through: from, cursor: 3 } });
   });
   await page.goto(`/#/task/${taskId}`);
-  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
-  const activity = page.getByRole("button", { name: /^Activity · \d+ tools?$/ });
-  await activity.click();
-  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
-  for (const { seq, event } of rows.slice(3)) await send(page, taskId, { type: "event", ...deferActivityEventDetails(event) }, seq);
+  const activity = page.getByRole("button", { name: "Activity · 1 tool", exact: true });
+  await activity.click(); await page.locator('[data-trace-step="2"]').click();
   await expect.poll(() => reads.length).toBe(2);
-  await activity.click();
-  await expect.poll(() => cancelled).toBe(1);
-  pending.release();
-  await activity.click();
-  await expect(page.getByText("Expanded output 1", { exact: false })).toBeVisible();
-  expect(reads).toEqual([2, 4, 4]);
-  await expect(page.getByText("Expanded output 0", { exact: false })).toHaveCount(1);
+  await expect(page.getByText('Read {"path":"file-0.txt"}', { exact: false })).toBeVisible();
+  await activity.click(); await expect.poll(() => cancelled).toBe(1);
+  pending.release(); await activity.click();
+  await expect(page.getByText("Expanded output 0", { exact: false })).toBeVisible();
+  expect(reads).toEqual([2, 3, 3]);
 });
 
 for (const failure of [false, true]) test(`an old paged checkpoint stays visible during compact upgrade${failure ? " and retry" : ""} before SSE attaches`, async ({ page }) => {

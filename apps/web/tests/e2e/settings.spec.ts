@@ -76,13 +76,10 @@ test("mobile settings scroll, preserve preferences, and keep sign-out cancellabl
   await expect(signOut).toBeInViewport();
   const light = page.getByRole("radio", { name: "Light theme" });
   await light.click();
-  await light.click();
   await expect(light).toBeChecked();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
-  const verbose = page.getByRole("radio", { name: "Verbose output" });
-  await verbose.click();
-  await verbose.click();
-  await expect(verbose).toBeChecked();
+  await expect(settings.getByText("Output detail", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "Verbose output" })).toHaveCount(0);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toBeVisible();
@@ -93,7 +90,7 @@ test("mobile settings scroll, preserve preferences, and keep sign-out cancellabl
   await page.reload();
   await openSettings(page);
   await expect(light).toBeChecked();
-  await expect(verbose).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Verbose output" })).toHaveCount(0);
 });
 
 test("keyboard navigation returns focus and keeps narrow settings within the viewport", async ({ page }) => {

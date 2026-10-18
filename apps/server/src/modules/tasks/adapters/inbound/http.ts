@@ -1,4 +1,4 @@
-import { ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
+import { ConversationStepDetailsQuerySchema, ExecutionRecordsQuerySchema, ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
 import { FILE_MEDIA_TYPE, AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
 import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
@@ -60,6 +60,26 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
     .patch("/:id", params(IdParamsSchema), jsonBody(RenameTaskSchema), (c) => {
       const input = c.req.valid("json");
       return c.json({ task: service.rename(c.req.valid("param").id, input.title) }, 200);
+    })
+    .get("/:id/history/steps", params(IdParamsSchema), query(ConversationDetailsQuerySchema), (c) => {
+      const { key, after } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(service.conversationSteps(c.req.valid("param").id, Number(key), after === undefined ? undefined : Number(after)), 200);
+    })
+    .get("/:id/history/step-details", params(IdParamsSchema), query(ConversationStepDetailsQuerySchema), (c) => {
+      const { key, step, after } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(service.conversationStepDetails(c.req.valid("param").id, Number(key), Number(step), after === undefined ? undefined : Number(after)), 200);
+    })
+    .get("/:id/history/records", params(IdParamsSchema), query(ExecutionRecordsQuerySchema), (c) => {
+      const { before } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(service.executionRecords(c.req.valid("param").id, before === undefined ? undefined : Number(before)), 200);
+    })
+    .get("/:id/history/record-content", params(IdParamsSchema), query(ConversationContentQuerySchema), (c) => {
+      const { key, version, offset } = c.req.valid("query");
+      c.header("cache-control", "no-store");
+      return c.json(service.executionRecordContent(c.req.valid("param").id, Number(key), version, Number(offset)), 200);
     })
     .get("/:id/history/items", params(IdParamsSchema), query(ConversationDetailsQuerySchema), (c) => {
       const { key, after } = c.req.valid("query");

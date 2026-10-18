@@ -12,7 +12,6 @@ import { observeTaskMutation, projectTask, useTaskMutations } from "../task-muta
 import { readUpdateSnapshot, useUpdateSnapshot } from "../update-state";
 import { api } from "../api";
 import { queryClient, taskHistoryChangesKey, taskHistoryKey, TASK_HISTORY_GC_TIME } from "../task-history-query";
-import { useOutputMode } from "../OutputModeProvider";
 import { connectSse, type ConnState } from "./sse";
 import { taskHistoryState, type TaskHistoryControls } from "../task-history-state";
 
@@ -64,29 +63,22 @@ function compactHistory(data: TaskHistoryData | undefined): TaskHistoryData | un
 }
 
 export function useTaskStream(taskId: string, enabled = true): TaskStream {
-  const { mode } = useOutputMode();
-  const queryKey = useMemo(() => taskHistoryKey(taskId, mode), [taskId, mode]);
+  const queryKey = useMemo(() => taskHistoryKey(taskId), [taskId]);
   const restoredData = useMemo(() => {
     const restored = restoredHistory(readUpdateSnapshot(`history:${taskId}`));
     if (!restored) return undefined;
-    if (mode === "compact") return compactHistory(restored);
-    // A compact checkpoint intentionally omits tool payloads. Reuse a verbose
-    // checkpoint across a screen update so its loaded pages and scroll anchor
-    // survive, but fetch full history when the checkpoint contains summaries.
-    const hasDeferredDetails = restored.pages.some((page) => page.transcript !== undefined || page.items.some((item) =>
-      item.kind !== "assistant_text" && item.detailsDeferred));
-    return hasDeferredDetails ? undefined : restored;
-  }, [taskId, mode]);
+    return compactHistory(restored);
+  }, [taskId]);
   // Reuse paged conversation checkpoints and their reader anchor. A legacy
   // partial event checkpoint remains a placeholder until the first display page
   // supplies an authoritative boundary for the new stream format.
-  const needsCompactUpgrade = mode === "compact" && restoredData?.pages[0]?.before != null &&
+  const needsCompactUpgrade = restoredData?.pages[0]?.before != null &&
     restoredData.pages.some(page => page.transcript === undefined);
   const initialData = needsCompactUpgrade ? undefined : restoredData;
   const history = useInfiniteQuery({
     queryKey,
     enabled,
-    queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, mode === "verbose" ? "full" : "summary", signal, mode === "compact" && (pageParam === null || !!queryClient.getQueryData<TaskHistoryData>(queryKey)?.pages.at(-1)?.transcript))),
+    queryFn: async ({ pageParam, signal }) => pageItems(await api.taskHistory(taskId, pageParam ?? undefined, "summary", signal, (pageParam === null || !!queryClient.getQueryData<TaskHistoryData>(queryKey)?.pages.at(-1)?.transcript))),
     initialPageParam: null as number | null,
     getPreviousPageParam: (firstPage) => firstPage.before ?? undefined,
     getNextPageParam: () => undefined,
@@ -131,7 +123,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     if (!enabled || !historyReady) return;
     const currentData = () => queryClient.getQueryData<TaskHistoryData>(queryKey);
     const initial = currentData();
-    const projected = mode === "compact" && initial?.pages.at(-1)?.transcript !== undefined;
+    const projected = initial?.pages.at(-1)?.transcript !== undefined;
     // A just-created task can already contain its first reply when REST wins
     // the race with the scoped stream. Consumers distinguish this from live text.
     const finalReply = createFinalReplyObserver();
@@ -222,13 +214,13 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
             let after = appliedSeq;
             let afterKey: number | undefined;
             while (!disposed && (after < through || afterKey !== undefined)) {
-              const key = taskHistoryChangesKey(taskId, after, through, mode);
+              const key = taskHistoryChangesKey(taskId, after, through);
               let page;
               try {
                 page = await queryClient.fetchQuery({
                   queryKey: key,
                   queryFn: ({ signal }) => api.taskHistoryChanges(taskId, after, through,
-                    mode === "compact" ? "summary" : "full", signal, projected, afterKey),
+                    "summary", signal, projected, afterKey),
                   staleTime: Number.POSITIVE_INFINITY,
                   gcTime: TASK_HISTORY_GC_TIME,
                   retry: false,
@@ -302,7 +294,7 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
     };
 
     connection = connectSse(
-      `/api/stream?task=${encodeURIComponent(taskId)}${mode === "compact" ? "&details=summary" : ""}${projected ? "&format=transcript" : ""}`,
+      `/api/stream?task=${encodeURIComponent(taskId)}&details=summary${projected ? "&format=transcript" : ""}`,
       (message) => {
         let frame: SseFrame;
         try { frame = JSON.parse(message.data) as SseFrame; } catch { return; }
@@ -365,9 +357,9 @@ export function useTaskStream(taskId: string, enabled = true): TaskStream {
       pendingBytes = 0;
       pendingTask = undefined;
       resumeLiveRef.current = () => {};
-      if (mode === "compact") queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => compactHistory(data));
+      queryClient.setQueryData<TaskHistoryData>(queryKey, (data) => compactHistory(data));
     };
-  }, [taskId, historyReady, queryKey, mode, enabled]);
+  }, [taskId, historyReady, queryKey, enabled]);
 
   // Query placeholders disappear on a failed request. Retain the checkpoint
   // beside the retry control while upgrading an older, partial compact view.

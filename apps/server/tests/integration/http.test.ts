@@ -684,9 +684,9 @@ test("legacy compact history returns the complete conversation and defers tool p
   assert.deepEqual(compact.events[0].event.payload, { subtype: "dispatch", text: "Original request" });
   assert.deepEqual(compact.events.at(-1)!.event.payload, { text: "Complete answer", phase: "final" });
   assert.ok(compact.events.slice(1, -1).every(row => row.detailsDeferred));
-  assert.deepEqual(compact.events[1].event.payload, { id: "tool-0", name: "Read" });
+  assert.deepEqual(compact.events[1].event.payload, { id: "tool-0", name: "Read", traceTitle: "Read fixture.txt" });
   assert.deepEqual(compact.events[2].event.payload, { tool_use_id: "tool-0", is_error: true });
-  assert.doesNotMatch(JSON.stringify(compact), /fixture\.txt|Detail \d+|content /);
+  assert.doesNotMatch(JSON.stringify(compact), /Detail \d+|content /);
 
   const detailsResponse = await f.app.request("/api/tasks/t/history/details?from=2&through=601");
   const details = await detailsResponse.json() as import("@palmagent/shared").TaskActivityDetailsResponse;
@@ -1165,4 +1165,28 @@ test("general file downloads require task access and force inert binary response
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
   assert.equal((await f.app.request(`/api/tasks/other/attachments/${ref.id}`, { headers })).status, 404);
+});
+
+
+test("Trace HTTP queries separate summaries, selected output and execution records", async t => {
+  const f = fixture(t, false);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  f.db.insertEvent("t", "tool_call", { id: "a", name: "bash", command: "check" }, 1);
+  f.db.insertEvent("t", "tool_result", { tool_use_id: "a", output: "Selected output", exit_code: 0 }, 2);
+  f.db.insertEvent("t", "status", { subtype: "context_compacted" }, 3);
+  const summaries = await f.app.request("/api/tasks/t/history/steps?key=1");
+  assert.equal(summaries.status, 200); assert.equal(summaries.headers.get("cache-control"), "no-store");
+  const steps = await summaries.json() as import("@palmagent/shared").ConversationSteps;
+  assert.equal(steps.steps.length, 1); assert.equal(steps.steps[0].title, "check");
+  assert.doesNotMatch(JSON.stringify(steps), /Selected output/);
+  const details = await f.app.request("/api/tasks/t/history/step-details?key=1&step=1");
+  assert.equal(details.status, 200); assert.match(await details.text(), /Selected output/);
+  const records = await f.app.request("/api/tasks/t/history/records");
+  assert.equal(records.status, 200); assert.match(await records.text(), /context_compacted/);
+  for (const path of ["steps?key=-1", "step-details?key=1&step=0", "records?before=-1", "record-content?key=1&version=bad&offset=0"]) {
+    assert.equal((await f.app.request(`/api/tasks/t/history/${path}`)).status, 400);
+  }
+  assert.equal((await f.app.request("/api/tasks/missing/history/records")).status, 404);
 });

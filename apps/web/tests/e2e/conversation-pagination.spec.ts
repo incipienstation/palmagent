@@ -51,6 +51,16 @@ async function routes(page: Page, history: History, older?: ReturnType<typeof ga
     changes.push(Buffer.byteLength(JSON.stringify(response)));
     await route.fulfill({ json: response });
   });
+  await page.route(new RegExp(`/api/tasks/${taskId}/history/steps(?:\\?.*)?$`), async route => {
+    const q = new URL(route.request().url()).searchParams;
+    const response = history.tasks.conversationSteps(taskId, Number(q.get("key")), Number(q.get("after") ?? 0));
+    details.push(response.steps.length);
+    await route.fulfill({ json: response });
+  });
+  await page.route(new RegExp(`/api/tasks/${taskId}/history/step-details(?:\\?.*)?$`), async route => {
+    const q = new URL(route.request().url()).searchParams;
+    await route.fulfill({ json: history.tasks.conversationStepDetails(taskId, Number(q.get("key")), Number(q.get("step")), Number(q.get("after") ?? 0)) });
+  });
   await page.route(new RegExp(`/api/tasks/${taskId}/history/items(?:\\?.*)?$`), async route => {
     const q = new URL(route.request().url()).searchParams;
     const response = history.tasks.conversationDetails(taskId, Number(q.get("key")), Number(q.get("after") ?? 0));
@@ -93,32 +103,32 @@ test("Compact first loads 30 display records and retains the reader during prepe
   await expect(page.getByRole("status", { name: "Loading conversation", exact: true })).toHaveCount(0);
 });
 
-test("Activity summary stays complete while expanded details load in explicit pages", async ({ page, history }) => {
+test("Activity summary stays complete while operation summaries load in explicit pages", async ({ page, history }) => {
   history.add([user("Inspect files"), ...Array.from({ length: 400 }, (_, i) => [
-    event("tool_call", { id: `tool-${i}`, name: "Read", input: { path: "fixture.txt" } }),
+    event("tool_call", { id: `tool-${i}`, name: "Read", input: { path: `fixture-${i}.txt` } }),
     event("tool_result", { tool_use_id: `tool-${i}`, output: `Detail result ${i}` }),
   ]).flat(), message("Inspection finished")]);
   const requests = await routes(page, history);
   let failedDetails = false;
-  await page.route(new RegExp(`/api/tasks/${taskId}/history/items(?:\\?.*)?$`), async route => {
+  await page.route(new RegExp(`/api/tasks/${taskId}/history/steps(?:\\?.*)?$`), async route => {
     if (!failedDetails) { failedDetails = true; await route.abort(); } else await route.fallback();
   });
   await page.goto(`/#/task/${taskId}`);
   const activity = page.getByRole("button", { name: "Activity · 400 tools", exact: true });
-  await expect(activity).toBeVisible();
-  expect(requests.details).toEqual([]);
-  await activity.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Couldn’t load activity details.", { exact: true })).toBeVisible();
+  await expect(activity).toBeVisible(); expect(requests.details).toEqual([]);
+  await activity.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByText("Couldn’t load details.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(page.getByText("Detail result 0", { exact: false })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Completed: Read fixture-0.txt", exact: true })).toBeVisible();
   expect(requests.details).toEqual([50]);
-  await expect(page.getByText("Detail result 399", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "Load more activity", exact: true }).click();
-  await expect(page.getByText("Detail result 49", { exact: false })).toHaveCount(1);
+  await expect(page.getByText("Detail result 0", { exact: false })).toHaveCount(0);
+  await page.getByRole("button", { name: "Completed: Read fixture-0.txt", exact: true }).click();
+  await expect(page.getByText("Detail result 0", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Load more steps", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Completed: Read fixture-99.txt", exact: true })).toBeVisible();
+  await expect(page.getByText("Detail result 99", { exact: false })).toHaveCount(0);
   expect(requests.details).toEqual([50, 50]);
-  await expect(activity).toHaveAttribute("aria-expanded", "true");
-  expect(requests.reads).toHaveLength(1);
+  await expect(activity).toHaveAttribute("aria-expanded", "true"); expect(requests.reads).toHaveLength(1);
 });
 
 test("oversized content is explicitly loaded through bounded chunks", async ({ page, history }) => {
@@ -188,11 +198,7 @@ for (const mode of ["compact", "verbose"] as const) test(`a projected checkpoint
   }, { taskId, snapshot });
   await page.goto(`/?checkpoint=projected#/task/${taskId}`);
   await expect(page.getByText("Checkpoint answer", { exact: true })).toBeVisible();
-  if (mode === "compact") {
-    await expect(page.getByRole("button", { name: "Activity · 1 tool", exact: true })).toBeVisible();
-    expect(reads).toBe(0);
-  } else {
-    await expect(page.getByText("Checkpoint tool detail", { exact: false })).toBeVisible();
-    expect(reads).toBe(1);
-  }
+  await expect(page.getByRole("button", { name: "Activity · 1 tool", exact: true })).toBeVisible();
+  await expect(page.getByText("Checkpoint tool detail", { exact: false })).toHaveCount(0);
+  expect(reads).toBe(0);
 });

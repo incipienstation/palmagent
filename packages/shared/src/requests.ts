@@ -88,6 +88,8 @@ export const HistoryChangesQuerySchema = z.object({
   details: z.enum(["summary", "full"]).optional(),
 });
 export const ConversationDetailsQuerySchema = z.object({ key: historyCursor, after: eventCursor.optional() });
+export const ConversationStepDetailsQuerySchema = ConversationDetailsQuerySchema.extend({ step: historyCursor });
+export const ExecutionRecordsQuerySchema = z.object({ before: historyCursor.optional() });
 export const ConversationContentQuerySchema = z.object({ key: historyCursor, version: z.string().regex(/^[a-f0-9]{64}$/), offset: eventCursor, member: historyCursor.optional() });
 export const ActivityDetailsQuerySchema = z.object({ from: historyCursor, through: historyCursor });
 export const TaskImageQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });

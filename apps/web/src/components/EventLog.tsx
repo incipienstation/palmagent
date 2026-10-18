@@ -1,5 +1,5 @@
 import { FileAttachment } from "./FileAttachment";
-import { ConversationActivityDetails, ConversationContent } from "./ConversationDetails";
+import { ConversationContent } from "./ConversationDetails";
 import type { ConversationContentRef, ConversationItem, TranscriptRow as ConversationRow } from "@palmagent/shared";
 import { SkillChips } from "./SkillPicker";
 import { AttachmentSchema, attachmentUrl, type Attachment, type PendingMessage, type ImageAttachment, type InputAttachment, SelectedSkillsSchema } from "@palmagent/shared";
@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import { Virtuoso, type SizeFunction, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
-import { useQueries } from "@tanstack/react-query";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -27,22 +26,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { describeEvent } from "../format";
-import { useOutputMode, type OutputMode } from "../OutputModeProvider";
 import type { LogItem } from "../hooks/useTaskStream";
 import { Markdown } from "./Markdown";
 import { VideoPreview } from "./VideoPreview";
 import { ImagePreview, ImageTaskContext } from "./ImagePreview";
-import { failed, presentTranscript, runInterrupted, type Activity, type RunFailure } from "../transcript";
+import { failed, runInterrupted, type Activity, type RunFailure } from "../transcript";
 import { MessageDelivery, type DeliveryControls } from "./MessageDelivery";
 import { WorkingLabel } from "./WorkingLabel";
 import { transcriptActivity } from "../transcript-activity";
 import { ConversationLoading } from "./ConversationLoading";
-import { ActivitySummary } from "./ActivitySummary";
+import { ActivityTrace } from "./ActivityTrace";
+import { projectConversation } from "@palmagent/shared";
 import { ApprovalRequest } from "./ApprovalCard";
 import { payload } from "../transcript";
-import { queryClient, taskActivityDetailsKey } from "../task-history-query";
-import { taskActivityDetailsQueryOptions } from "../client-queries";
-import { historyLogItems } from "../hooks/useTaskStream";
 import type { TaskHistoryControls } from "../task-history-state";
 import { prewarmMarkdown } from "../markdown-worker";
 import { useHistoryPrefetch } from "../hooks/useHistoryPrefetch";
@@ -377,6 +373,7 @@ function activityRowKey(activity: Activity, historyFloor?: number): string {
   // Prepending an older page can extend this Activity backward. Keep its row
   // identity on the first event from the initially loaded range; older-only
   // groups use their newest member so subsequent prepends do not remount them.
+  if (activity.disclosureKey !== undefined) return `activity-${activity.disclosureKey}`;
   const stableMember = historyFloor === undefined ? undefined
     : activity.items.find((item) => item.key >= historyFloor)?.key ?? activity.items.at(-1)?.key;
   return `activity-${stableMember ?? activity.key}`;
@@ -384,9 +381,10 @@ function activityRowKey(activity: Activity, historyFloor?: number): string {
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
-function VirtualTranscript({ taskId, rows, liveKey, mode, toggled, toggle, toggleActivity, following, delivery, ...context }: {
-  rows: TranscriptRow[]; liveKey?: number; mode: OutputMode; delivery?: DeliveryControls;
+function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled, toggle, toggleSteps, toggleActivity, following, delivery, ...context }: {
+  rows: TranscriptRow[]; running: boolean; sourceLog: LogItem[]; liveKey?: number; delivery?: DeliveryControls;
   toggled: Set<number>; toggle: (key: number) => void;
+  toggleSteps: (keys: number[], open: boolean) => void;
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
 } & HistoryControls) {
   const virtuoso = useRef<VirtuosoHandle>(null);
@@ -645,16 +643,17 @@ function VirtualTranscript({ taskId, rows, liveKey, mode, toggled, toggle, toggl
   // A disclosure changes measured height without prepending data. Keep the
   // interacted row in view while Virtuoso refines its estimates, including when
   // the expanded row was taller than the entire viewport.
-  const disclosure = useRef<{ key: string; offset: number }>(undefined);
-  const rememberDisclosure = useCallback((key: string) => {
+  const disclosure = useRef<{ key: string; offset: number; step?: number }>(undefined);
+  const rememberDisclosure = useCallback((key: string, step?: number) => {
     const el = viewport.current;
     const row = el?.querySelector<HTMLElement>(`[data-row-key="${key}"]`);
     if (!el || !row) return;
-    disclosure.current = { key, offset: Math.max(0, row.getBoundingClientRect().top - el.getBoundingClientRect().top) };
+    const anchor = step === undefined ? row : row.querySelector<HTMLElement>(`[data-trace-step="${step}"]`) ?? row;
+    disclosure.current = { key, step, offset: Math.max(0, anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) };
     restoring.current = true;
   }, []);
   const toggleActivityRow = useCallback((activity: Activity, open: boolean) => {
-    if (!open) rememberDisclosure(`activity-${activity.key}`);
+    if (!open) rememberDisclosure(`activity-${activity.disclosureKey ?? activity.key}`);
     toggleActivity(activity, open);
   }, [rememberDisclosure, toggleActivity]);
   const toggleRow = useCallback((key: number) => {
@@ -669,8 +668,11 @@ function VirtualTranscript({ taskId, rows, liveKey, mode, toggled, toggle, toggl
     const index = rows.findIndex(row => row.key === saved.key);
     if (index < 0) { disclosure.current = undefined; restoring.current = false; return; }
     const frame = requestAnimationFrame(() => {
+      const row = viewport.current?.querySelector<HTMLElement>(`[data-row-key="${saved.key}"]`);
+      const anchor = saved.step === undefined ? undefined : row?.querySelector<HTMLElement>(`[data-trace-step="${saved.step}"]`);
+      const withinRow = row && anchor ? anchor.getBoundingClientRect().top - row.getBoundingClientRect().top : 0;
       virtuoso.current?.scrollIntoView({ index, align: "start",
-        calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: -saved.offset }),
+        calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: withinRow - saved.offset }),
         done: () => { disclosure.current = undefined; restoring.current = false; },
       });
     });
@@ -706,14 +708,17 @@ function VirtualTranscript({ taskId, rows, liveKey, mode, toggled, toggle, toggl
           {delivery && <MessageDelivery {...delivery} message={row.message} />}
         </div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
-        <><ActivitySummary activity={row.activity} mode={mode} open={row.open}
-          detailsLoading={row.detailsLoading} detailsError={row.detailsError} onRetry={row.retryDetails}
-          onToggle={toggleActivityRow} />
-          {row.open && row.activity.details && taskId && <ConversationActivityDetails taskId={taskId} itemKey={row.activity.key} revision={row.revision ?? 0}
-            render={item => <ConversationRecord taskId={taskId} row={item} onImageLoad={followBottom} />} />}</>
+        <ActivityTrace activity={row.activity} running={running} sourceLog={sourceLog} open={row.open} revision={row.revision ?? 0} taskId={taskId}
+          openSteps={toggled} onToggle={toggleActivityRow}
+          onStepsChange={(keys, open) => {
+            if (!open) rememberDisclosure(row.key, keys.length === 1 ? keys[0] : undefined);
+            toggleSteps(keys, open);
+          }}
+          render={item => taskId ? <ConversationRecord taskId={taskId} row={item} onImageLoad={followBottom} />
+            : item.type === "message" ? <EventRow item={item.item} live={false} expanded raw toggle={() => {}} onImageLoad={followBottom} /> : null} />
         : row.content && taskId ? <ConversationRecord taskId={taskId} row={{ type: "message", key: row.seq, item: row.item, content: row.content }} onImageLoad={followBottom} /> : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined} data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
           <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
-            expanded={toggled.has(row.item.key) ? mode !== "verbose" : mode === "verbose"} toggle={toggleRow} onImageLoad={followBottom} />
+            expanded={toggled.has(row.item.key)} toggle={toggleRow} onImageLoad={followBottom} />
           {row.delivery && delivery && <MessageDelivery {...delivery} message={row.delivery} />}
         </div>}
     </div>}
@@ -739,7 +744,6 @@ function VirtualTranscript({ taskId, rows, liveKey, mode, toggled, toggle, toggl
 export function EventLog({ log, transcript, live, blocked = false, prompt, taskId, delivery, empty, history }: {
   log: LogItem[]; transcript?: ConversationItem[]; live: boolean; blocked?: boolean; prompt?: string; taskId?: string; delivery?: DeliveryControls; empty?: ReactNode;
 } & HistoryControls) {
-  const { mode } = useOutputMode();
   // Expansion state survives virtual row unmounting. Activity tracks member keys
   // because a late phase marker can change a group's leading key.
   const following = useRef(true);
@@ -751,12 +755,6 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
     activityIdentity.current.historyFloor = log[0].key;
   }
   const historyFloor = activityIdentity.current.historyFloor;
-  const previousMode = useRef(mode);
-  useEffect(() => {
-    if (previousMode.current === mode) return;
-    previousMode.current = mode;
-    setToggled(new Set()); setOpenActivity(new Set()); following.current = true;
-  }, [mode]);
   const toggle = useCallback((key: number) => {
     following.current = false;
     setToggled((prev) => {
@@ -765,11 +763,19 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       return next;
     });
   }, []);
+  const toggleSteps = useCallback((keys: number[], open: boolean) => {
+    following.current = false;
+    setToggled(previous => {
+      const next = new Set(previous);
+      for (const key of keys) { if (open) next.add(key); else next.delete(key); }
+      return next;
+    });
+  }, []);
   const toggleActivity = useCallback((activity: Activity, open: boolean) => {
     following.current = false;
     setOpenActivity((prev) => {
       const next = new Set(prev);
-      const keys = activity.details ? [activity.key] : activity.items.map(item => item.key);
+      const keys = activity.details ? [activity.disclosureKey ?? activity.key] : activity.items.map(item => item.key);
       for (const key of keys) { if (open) next.add(key); else next.delete(key); }
       return next;
     });
@@ -788,7 +794,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       messages: delivery?.waitingForConnection ? delivery.messages.filter(message => message.version !== 0) : delivery?.messages,
       loading: history.initial.status !== "ready" && history.initial.status !== "disabled",
     });
-    const source = transcript ?? presentTranscript(log, mode, live && (activity === "working" || activity === "output"));
+    const source = transcript ?? projectConversation(log, live && (activity === "working" || activity === "output"));
     for (const sourceRow of source) {
       const row = sourceRow.type === "activity" && transcript
         ? { ...sourceRow, live: sourceRow.live && live && (activity === "working" || activity === "output"), preview: live ? sourceRow.preview : undefined } : sourceRow;
@@ -806,7 +812,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
           groupEnd: index === row.items.length - 1,
         });
       } else {
-        const open = row.details ? openActivity.has(row.key) : row.items.some((item) => openActivity.has(item.key));
+        const open = row.details ? openActivity.has(row.disclosureKey ?? row.key) : row.items.some((item) => openActivity.has(item.key));
         rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, open, revision: "revision" in row ? Number(row.revision) : undefined });
       }
     }
@@ -821,67 +827,15 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;
-  }, [log, transcript, mode, live, blocked, prompt, history.activity, openActivity, toggled, delivery?.messages, delivery?.waitingForConnection, historyFloor, history.initial.status, history.earlier.hasMore]);
-  const deferredActivities = useMemo(() => transcriptRows.flatMap((row) => {
-    if (row.type !== "activity" || !row.open || !row.activity.items.some((item) => item.kind !== "assistant_text" && item.detailsDeferred) || !taskId) return [];
-    const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);
-    const from = Math.min(...deferred.map((item) => item.key));
-    const through = Math.max(...deferred.map((item) => item.endSeq ?? item.key));
-    return [{ id: `${from}`, from, through }];
-  }), [transcriptRows, taskId]);
-  const activityQueries = useQueries({ queries: deferredActivities.map(({ from, through }) => ({
-    ...taskActivityDetailsQueryOptions(taskId!, from, through),
-  })) });
-  const activityFetchState = activityQueries.map((query) => `${query.fetchStatus}:${query.data?.through ?? ""}`).join("|");
-  useEffect(() => {
-    if (!taskId || !deferredActivities.length) return;
-    // Live events can extend an open Activity on every animation frame. Batch
-    // catch-up reads until the stream settles so we do not repeatedly cancel
-    // detail requests while their through-cursor is moving.
-    const timer = window.setTimeout(() => {
-      for (const { from, through } of deferredActivities) {
-        const key = taskActivityDetailsKey(taskId, from);
-        const cached = queryClient.getQueryData<{ through: number }>(key);
-        const state = queryClient.getQueryState(key);
-        if (cached && cached.through < through && state?.fetchStatus !== "fetching" && state?.status !== "error") {
-          void queryClient.invalidateQueries({ queryKey: key, exact: true });
-        }
-      }
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [activityFetchState, deferredActivities, taskId]);
-  const activityQueryByRange = useMemo(() => new Map(deferredActivities.map((range, index) => [range.id, activityQueries[index]])), [deferredActivities, activityQueries]);
-  const rows = useMemo<TranscriptRow[]>(() => {
-    const rows: TranscriptRow[] = [];
-    for (const row of transcriptRows) {
-      if (row.type !== "activity" || !row.open) { rows.push(row); continue; }
-      const deferred = row.activity.items.filter((item) => item.kind !== "assistant_text" && item.detailsDeferred);
-      const from = deferred.length ? Math.min(...deferred.map((item) => item.key)) : 0;
-      const query = deferred.length ? activityQueryByRange.get(`${from}`) : undefined;
-      const loadedItems = new Map(query?.data ? historyLogItems(query.data.events).map(item => [item.key, item]) : []);
-      const visibleItems = row.activity.items.map(item => item.kind !== "assistant_text" && item.detailsDeferred
-        ? loadedItems.get(item.key) ?? item : item);
-      const hasDeferred = deferred.length > 0;
-      rows.push({ ...row,
-        detailsLoading: row.open && hasDeferred && !query?.data && !!query?.isPending,
-        detailsError: row.open && hasDeferred && !!query?.isError,
-        retryDetails: query?.refetch,
-      });
-      const displayItems = hasDeferred && !query?.data
-        ? row.activity.items.filter((item) => item.kind === "assistant_text" || !item.detailsDeferred) : visibleItems;
-      const renderedItems = displayItems.filter(visible);
-      for (const [index, item] of renderedItems.entries()) rows.push({ key: `raw-${item.key}`, seq: item.key,
-        type: "message", item, raw: true, groupEnd: index === renderedItems.length - 1 });
-    }
-    return rows;
-  }, [transcriptRows, activityQueryByRange]);
+  }, [log, transcript, live, blocked, prompt, history.activity, openActivity, toggled, delivery?.messages, delivery?.waitingForConnection, historyFloor, history.initial.status, history.earlier.hasMore]);
+  const rows = transcriptRows;
   // Initial loading, connection waits, and errors replace only an empty
   // transcript. Keep optimistic messages; a synthetic Working row is not data.
   const initialPending = history.initial.status !== "ready" && history.initial.status !== "disabled";
   const showInitialState = initialPending && !rows.some(row => row.type !== "working");
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
-    {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows}
-      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} mode={mode} toggled={toggled} toggle={toggle} toggleActivity={toggleActivity} following={following} delivery={delivery} history={history} /> : !showInitialState && empty ?
+    {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows} running={live} sourceLog={log}
+      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} toggled={toggled} toggle={toggle} toggleSteps={toggleSteps} toggleActivity={toggleActivity} following={following} delivery={delivery} history={history} /> : !showInitialState && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={{ history }} />
