@@ -164,6 +164,64 @@ for (const atlas of ["units", "combat", "expansion", "robots", "final-weapons", 
 
 test.describe("touch joystick", () => {
   test.use({ hasTouch: true });
+  test("long right drags belong to the game and its edge stays blocked until exit", async ({ page, context }) => {
+    await enable(page); await page.setViewportSize({ width: 390, height: 844 });
+    const run = freshRun(9); run.enemies = []; run.spawn = 30;
+    await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: SAVE_KEY, value: serialize(run) });
+    await page.goto("/#/task/t-run"); await open(page);
+    await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
+    await game(page).evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    });
+    const edge = page.getByTestId("navigation-swipe-area");
+    await expect(edge).toHaveAttribute("data-disabled", "");
+    const arena = (await game(page).getByTestId("survivor-arena").boundingBox())!;
+    const y = arena.y + arena.height * 0.8;
+    const touch = await context.newCDPSession(page);
+    const drag = async (x: number, y: number, dx: number) => {
+      await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      for (let step = 1; step <= 8; step++) {
+        await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + dx * step / 8, y }] });
+      }
+    };
+    await drag(arena.x + 100, y, 120);
+    await expect.poll(async () => (await saved(page)).player.x).toBeGreaterThan(run.player.x + 20);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(page.locator('[data-side="left"][data-slot="drawer-content"]')).toHaveCount(0);
+    await drag(8, y, 220);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(page.locator('[data-side="left"][data-slot="drawer-content"]')).toHaveCount(0);
+    await game(page).getByRole("button", { name: "Close game" }).click();
+    await expect(game(page)).toHaveCount(0);
+    await expect(edge).not.toHaveAttribute("data-disabled");
+    await drag(8, 400, 220);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(page.getByRole("dialog", { name: "Palmagent", exact: true })).toBeVisible();
+    await touch.detach();
+  });
+
+  test("opening the game interrupts an edge drag without leaving navigation underneath", async ({ page, context }) => {
+    await enable(page); await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/#/task/t-run");
+    const arcade = page.getByRole("button", { name: "Open arcade", exact: true });
+    await expect(arcade).toBeVisible();
+    const touch = await context.newCDPSession(page);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 8, y: 400 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 45, y: 400 }] });
+    await expect(page.locator('[data-side="left"][data-slot="drawer-content"]')).toHaveCount(1);
+    // Simulate another UI action opening the game while the finger is still down.
+    await page.locator('button[aria-label="Open arcade"]').evaluate((button: HTMLButtonElement) => button.click());
+    await expect(game(page)).toBeVisible();
+    await expect(page.getByTestId("navigation-swipe-area")).toHaveAttribute("data-disabled", "");
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 228, y: 400 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(page.locator('[data-side="left"][data-slot="drawer-content"]')).toHaveCount(0);
+    await game(page).getByRole("button", { name: "Close game" }).click();
+    await expect(game(page)).toHaveCount(0);
+    await expect(page.locator('[data-side="left"][data-slot="drawer-content"]')).toHaveCount(0);
+    await touch.detach();
+  });
+
   test("arena dragging moves diagonally, ignores extra fingers, and releases on cancel or pause", async ({ page, context }) => {
     await enable(page); await page.setViewportSize({ width: 390, height: 844 });
     const run = freshRun(9); run.enemies = []; run.spawn = 10;

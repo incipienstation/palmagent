@@ -1,3 +1,4 @@
+import { useBlockNavigationGestures } from "@/NavigationGestureProvider";
 import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
   const { depth, ...back } = useBackDismiss(props);
+  useBlockNavigationGestures(back.open && props.modal !== false);
   return <BackLayerScope depth={depth}><DialogPrimitive.Root data-slot="dialog" {...props} {...back} /></BackLayerScope>;
 }
 

@@ -1,3 +1,4 @@
+import { NavigationGestureProvider } from "./NavigationGestureProvider";
 import { TerminalsView } from "./components/Terminals";
 import { AppNavigation } from "./components/AppNavigation";
 import { taskTitle } from "./lib/task-title";
@@ -73,8 +74,8 @@ export function App() {
   // AuthGate decides login vs app vs enrollment; AppInner (and its live SSE
   // stream) only mounts once authenticated.
   return (
-    <AuthGate>
+    <NavigationGestureProvider><AuthGate>
       <ModelCatalogProvider><AppInner /></ModelCatalogProvider>
-    </AuthGate>
+    </AuthGate></NavigationGestureProvider>
   );
 }

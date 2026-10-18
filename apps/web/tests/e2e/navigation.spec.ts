@@ -40,7 +40,8 @@ test("drawer closes with Escape and scrim, restores focus, and opens Spaces on a
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(menu).toBeFocused();
   await menu.click();
-  await page.locator('[data-slot="drawer-overlay"]').click({ position: { x: width - 5, y: 180 } });
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.mouse.click(width - 5, 180);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(menu).toBeFocused();
   await menu.click();

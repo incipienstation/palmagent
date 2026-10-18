@@ -471,6 +471,50 @@
   .survivor-upgrade-heading h2 { font-size: 19px; }
 }
 
+/* Navigation's opening gesture belongs to this edge surface, below all modals. */
+.navigation-swipe-area {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 20px;
+  z-index: 20;
+}
+.navigation-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 60%);
+  opacity: calc(1 - var(--drawer-swipe-progress, 0));
+  transition: opacity 250ms ease;
+}
+.navigation-drawer-backdrop[data-starting-style],
+.navigation-drawer-backdrop[data-ending-style] { opacity: 0; }
+.navigation-drawer-viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+}
+.navigation-drawer-popup {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: min(88vw, 340px);
+  height: var(--app-height, 100dvh);
+  min-height: 0;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  outline: none;
+  transform: translateX(var(--drawer-swipe-movement-x, 0px));
+  transition: transform 250ms ease;
+}
+.navigation-drawer-popup[data-starting-style],
+.navigation-drawer-popup[data-ending-style] { transform: translateX(-100%); }
+.navigation-drawer-popup[data-swiping],
+.navigation-drawer-backdrop[data-swiping] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .navigation-drawer-popup, .navigation-drawer-backdrop { transition-duration: 0ms; }
+}
+
 /* A bottom drawer becomes a centered dialog without remounting its contents.
    Vaul's translate animation and overscroll filler belong only to mobile sheets. */
 @media (min-width: 640px) {

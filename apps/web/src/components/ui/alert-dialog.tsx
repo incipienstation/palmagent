@@ -1,3 +1,4 @@
+import { useBlockNavigationGestures } from "@/NavigationGestureProvider";
 import { BackLayerScope, useBackDismiss } from "@/hooks/useBackLayer";
 import * as React from "react";
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui";
@@ -7,6 +8,7 @@ import { Button } from "@/components/ui/button";
 
 function AlertDialog(props: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
   const { depth, ...back } = useBackDismiss(props);
+  useBlockNavigationGestures(back.open);
   return <BackLayerScope depth={depth}><AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} {...back} /></BackLayerScope>;
 }
 
