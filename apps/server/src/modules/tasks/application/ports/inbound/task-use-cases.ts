@@ -54,9 +54,9 @@ export interface TaskUseCases {
   createTask(req: CreateTaskRequest): TaskState;
   followup(id: string, prompt: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): TaskState;
   steer(id: string, text: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): SteerResponse;
-  approve(id: string, decision: string, scope?: string): TaskState;
+  approve(id: string, decision: string, scope?: string): TaskState | Promise<TaskState>;
   answer(id: string, req: AnswerRequest): Promise<TaskState>;
-  stop(id: string): TaskState;
-  cancel(id: string): TaskState;
+  stop(id: string): TaskState | Promise<TaskState>;
+  cancel(id: string): TaskState | Promise<TaskState>;
   archive(id: string): TaskState;
 }

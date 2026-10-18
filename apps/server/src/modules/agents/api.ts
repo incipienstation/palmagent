@@ -4,3 +4,4 @@ export type { StartArgs, RawEvent } from "./domain/execution.js";
 export type { TaskVoiceOperations, TaskSkillCatalog, TaskSkillEnvironment, TaskAccountLimitReader } from "./application/ports/inbound/capabilities.js";
 export type { AgentInstallations } from "./application/ports/inbound/agent-installations.js";
 export type { ModelCatalog } from "./application/ports/inbound/model-catalog.js";
+export type { SharedSessionConnector, SharedSessionConnection, SharedSessionSnapshot, SharedSessionEvent } from "./application/ports/inbound/shared-session.js";

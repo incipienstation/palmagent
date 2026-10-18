@@ -20,6 +20,8 @@ import type { TaskSpaces } from "../ports/outbound/spaces.js";
 import type { TaskPushNotifier } from "../ports/outbound/notifications.js";
 import type { TaskRepository } from "../ports/outbound/persistence.js";
 import type { RawEvent, RunHandle, RunnerBackend } from "../../../agents/api.js";
+import type { SharedSessionConnector, SharedSessionConnection, SharedSessionSnapshot } from "../../../agents/api.js";
+import type { AgentEvent } from "@palmagent/shared";
 
 import { ApplicationError } from "../../../../kernel/errors.js";
 const badRequest = (m: string) => new ApplicationError("bad_request", m);
@@ -117,8 +119,17 @@ export class TaskService implements PrStatusSink {
   }
 
   private shuttingDown = false;
+  sharedSessions?: SharedSessionConnector;
+  private sharedConnections = new Map<string, SharedSessionConnection>();
+  private sharedRefreshing = new Set<string>();
+  private sharedSending = new Set<string>();
+  private sharedRetryAt = new Map<string, number>();
+  private sharedTurns = new Map<string, string>();
+  private sharedTerminal = new Map<string, boolean>();
   beginShutdown(): void {
     this.shuttingDown = true;
+    for (const connection of this.sharedConnections.values()) connection.close();
+    this.sharedConnections.clear();
     this.messages.close();
     this.voice?.close();
     this.attachments.close();
@@ -213,10 +224,13 @@ export class TaskService implements PrStatusSink {
         if (this.messages.state(id).compaction?.status === "running") throw conflict("Wait for context compaction to finish.");
         if (isClosedTaskStatus(task.status)) throw conflict("This task is closed.");
       },
+      validateSubmission: (id, req) => {
+        if (this.getTask(id).sessionControl?.owner === "shared" && req.settings && Object.keys(req.settings).length) throw conflict("Change the shared session settings in the local CLI.");
+      },
       canStart: (id) => {
         const task = this.cache.get(id);
         return !this.shuttingDown && !this.updating && !!task
-          && (!task.sessionControl || task.sessionControl.owner === "palmagent")
+          && (!task.sessionControl || task.sessionControl.owner === "palmagent" || this.sharedConnected(task))
           && ["idle", "failed"].includes(task.status) && !this.supervisor.has(id);
       },
       settings: (id) => {
@@ -226,12 +240,25 @@ export class TaskService implements PrStatusSink {
       start: (id, message) => {
         const task = this.getTask(id);
         const images = this.attachments.load(id, message.attachments) ?? message.images;
+        if (task.sessionControl?.owner === "shared") {
+          this.sharedTerminal.delete(id); this.sharedTurns.delete(id);
+          this.messages.beginRun(id, message.id);
+          this.messages.startingRuntime(id);
+          this.transition(task, "running", { interrupted: false });
+          void this.sendShared(task, message.text, images, message.id, message.skills).then(status => {
+            if (this.shuttingDown) return;
+            if (status === "delivered" || this.messages.state(id).messages.find(entry => entry.id === message.id)?.status === "delivered") this.messages.delivered(id, message.id);
+            else { this.messages.deliveryFailed(id, message.id, status); this.messages.finish(id, true, false); this.transition(task, "idle", { interrupted: true }); }
+          });
+          return;
+        }
         this.applySettings(task, message.settings?.model, message.settings?.effort, message.settings?.permission);
         this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
         void this.runTurn(task, message.text, task.sessionId, images, message.id, message.skills);
       },
       steer: async (id, message) => {
         const task = this.getTask(id), handle = this.supervisor.get(id);
+        if (task.sessionControl?.owner === "shared") return this.sendShared(task, message.text, this.attachments.load(id, message.attachments) ?? message.images, message.id, message.skills);
         if (task.status !== "running" || this.stopping.has(id) || !handle?.send) return "rejected";
         this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
         try {
@@ -302,7 +329,12 @@ export class TaskService implements PrStatusSink {
       if (control?.pendingSteer.length) this.pendingSteer.set(t.taskId, control.pendingSteer);
     }
 
-    const inFlight = new Set(this.db.inFlightTaskIds());
+    const shared = [...this.cache.values()].filter(task => task.sessionControl?.owner === "shared");
+    for (const task of shared) {
+      task.sessionControl = { ...task.sessionControl!, connection: "reconnecting" };
+      this.db.setSessionControl(task.taskId, task.sessionControl);
+    }
+    const inFlight = new Set(this.db.inFlightTaskIds().filter(id => this.cache.get(id)?.sessionControl?.owner !== "shared"));
     let live: string[] = [];
     if (inFlight.size || this.backend.independent) {
       try {
@@ -331,7 +363,7 @@ export class TaskService implements PrStatusSink {
       }
     }
 
-    const keep = new Set(reattached);
+    const keep = new Set([...reattached, ...shared.map(task => task.taskId)]);
     const recovered = recoverTasks(this.db, Date.now(), keep);
     for (const id of recovered) {
       const t = this.cache.get(id);
@@ -347,6 +379,7 @@ export class TaskService implements PrStatusSink {
       console.log(`[recovery] reset ${recovered.length} in-flight task(s) to idle(interrupted)`);
     }
     for (const id of this.db.messageTaskIds()) this.messages.recover(id, keep.has(id));
+    for (const task of shared) void this.refreshShared(task);
     this.broadcastTasks();
   }
 
@@ -379,6 +412,10 @@ export class TaskService implements PrStatusSink {
   }
 
   private assertSessionOwnership(task: TaskState): void {
+    if (task.sessionControl?.owner === "shared") {
+      if (!this.sharedConnected(task)) throw conflict("The shared session is reconnecting. Your draft is preserved.");
+      return;
+    }
     if (task.sessionControl && task.sessionControl.owner !== "palmagent") {
       throw conflict("This session is controlled in a local shell. Dispatch it back after closing the local CLI.");
     }
@@ -409,6 +446,7 @@ export class TaskService implements PrStatusSink {
 
   handoff(id: string): SessionHandoffResponse {
     const task = this.getTask(id);
+    if (task.sessionControl?.owner === "shared") return { task, command: this.nativeSession.resumeCommand(task) };
     if (task.sessionControl?.owner === "local") return { task, command: this.nativeSession.resumeCommand(task) };
     this.assertSessionOwnership(task);
     if (this.supervisor.has(id) || !["idle", "failed"].includes(task.status)) throw conflict("Stop the active turn and wait for it to finish before handing off");
@@ -446,17 +484,173 @@ export class TaskService implements PrStatusSink {
       this.cache.set(task.taskId, task);
       this.hub.emitReadChange({ type: "read-change", usage: true });
     }
+    if (task.sessionControl?.owner === "shared") {
+      await this.refreshShared(task);
+      return task;
+    }
     const control = { ...task.sessionControl!, owner: "returning" as const, waitPid: req.waitPid, waitIdentity: identity, error: undefined };
     this.db.setSessionControl(task.taskId, control);
     task.sessionControl = control;
+    if (this.sharedSessions && req.agent === "codex") await this.refreshShared(task);
     this.broadcastTasks();
     return task;
+  }
+
+  private sharedConnected(task: TaskState): boolean {
+    return task.sessionControl?.owner === "shared" && task.sessionControl.connection === "connected" && this.sharedConnections.has(task.taskId);
+  }
+
+  private async approveShared(task: TaskState, decision: string): Promise<TaskState> {
+    const pending = task.pendingApproval;
+    if (!pending || !await this.sharedConnections.get(task.taskId)?.approve(pending.requestId, decision)) throw conflict("Approval delivery could not be confirmed. The request has been kept.");
+    this.db.insertApproval(task.taskId, null, JSON.stringify(pending), decision, Date.now());
+    await this.refreshShared(task);
+    return task;
+  }
+
+  private async stopShared(task: TaskState, cancel: boolean): Promise<TaskState> {
+    this.messages.pause(task.taskId);
+    if (!cancel && ["idle", "failed"].includes(task.status)) return task;
+    if (!["idle", "failed", "cancelled", "archived"].includes(task.status) && !await this.sharedConnections.get(task.taskId)?.interrupt()) throw conflict("The shared turn could not confirm the interrupt. Its process has been left running.");
+    if (cancel) {
+      this.transition(task, "cancelled");
+      this.sharedConnections.get(task.taskId)?.close(); this.sharedConnections.delete(task.taskId);
+    } else { task.interrupted = true; await this.refreshShared(task); }
+    return task;
+  }
+
+  private async sendShared(task: TaskState, text: string, images: InputAttachment[] | undefined, messageId: string, selections?: SkillSelection[]) {
+    const id = task.taskId, connection = this.sharedConnections.get(id);
+    if (!connection || !this.sharedConnected(task)) return "rejected" as const;
+    this.sharedSending.add(id);
+    let submitted = false;
+    try {
+      const skills = await this.resolveSkills({ taskId: id }, selections);
+      submitted = true;
+      return await connection.send(text, images, messageId, skills);
+    } catch { return submitted ? "unknown" as const : "rejected" as const; }
+    finally { this.sharedSending.delete(id); if (!this.shuttingDown) void this.refreshShared(task); }
+  }
+
+  private async refreshShared(task: TaskState): Promise<void> {
+    const id = task.taskId;
+    if (this.shuttingDown || !this.sharedSessions || this.sharedRefreshing.has(id) || isClosedTaskStatus(task.status)
+      || (this.sharedRetryAt.get(id) ?? 0) > Date.now()) return;
+    this.sharedRefreshing.add(id);
+    let connection = this.sharedConnections.get(id);
+    try {
+      const socket = task.sessionControl!.sharedSocket ?? this.nativeSession.sharedSocket(task);
+      if (!socket) { this.sharedRetryAt.set(id, Date.now() + 5000); return; }
+      if (!connection) {
+        connection = await this.sharedSessions.connect({ taskId: id, agent: task.agent, sessionId: task.sessionId!, cwd: task.worktreePath!, home: task.sessionControl!.home, socket },
+          () => { if (!this.shuttingDown) void this.refreshShared(task); });
+        if (!connection) return;
+      }
+      if (this.shuttingDown || isClosedTaskStatus(task.status)) { connection.close(); return; }
+      const snapshot = await connection.snapshot();
+      if (snapshot.turnId && snapshot.turnId !== this.sharedTurns.get(id)) {
+        this.sharedTurns.set(id, snapshot.turnId); this.sharedTerminal.delete(id);
+      }
+      // Existing legacy previews keep their transcript cursor. New shared
+      // imports use stable provider event identities across reconnects.
+      const source = task.sessionControl!.sharedHistory ?? (task.sessionControl!.cursor > 0 ? "transcript" : "provider");
+      const history = await connection.history();
+      if (this.shuttingDown || isClosedTaskStatus(task.status)) { connection.close(); return; }
+      const control = { ...task.sessionControl!, owner: "shared" as const, connection: "connected" as const, sharedHistory: source, sharedSocket: socket, error: undefined };
+      delete control.waitPid; delete control.waitIdentity;
+      const update = { ...task, sessionControl: control };
+      const imported = source === "transcript" ? this.nativeSession.synchronize(update, { preview: true }) : undefined;
+      if (imported) update.sessionControl = { ...imported.control, ...control, cursor: imported.control.cursor, prefixHash: imported.control.prefixHash };
+      const providerEvents = history.flatMap(({ key, event }) => {
+        const output = event.kind === "tool_result" || event.kind === "tool_call" || event.kind === "status"
+          ? extractOutputImages(event.payload) : { payload: event.payload, images: [] };
+        const normalized = { ...event, payload: output.payload, agent: task.agent, ts: Date.now() } as AgentEvent;
+        if (event.kind === "status") {
+          const payload = normalized.payload as { messageId?: string; attachments?: unknown; images?: number };
+          const message = payload.messageId && this.messages.state(id).messages.find(message => message.id === payload.messageId);
+          if (message && message.attachments?.length) { payload.attachments = message.attachments; payload.images = message.attachments.length; }
+        }
+        return [{ key, event: normalized }, ...output.images.map((image, index) => ({ key: `${key}/image/${index}`, event: { ...normalized, kind: "output_image" as const, payload: image } }))];
+      });
+      const events = imported?.events ?? providerEvents.map(({ event }) => event);
+      const nextStatus = snapshot.question ? "awaiting_input" : snapshot.approval ? "awaiting_approval" : snapshot.status;
+      if (!events.length && !history.length && task.sessionControl?.owner === "shared" && task.sessionControl.connection === "connected" && !task.sessionControl.error
+        && task.status === nextStatus && task.model === snapshot.model && task.effort === snapshot.effort && task.permission === "managed"
+        && JSON.stringify(task.pendingInput) === JSON.stringify(snapshot.question) && JSON.stringify(task.pendingApproval) === JSON.stringify(snapshot.approval)) return;
+      const rows = this.db.transaction(() => {
+        const rows = this.db.importSessionEvents(update, events, imported ? undefined : providerEvents.map(event => event.key));
+        if (imported) {
+          const results = providerEvents.filter(({ event }) => event.kind === "result");
+          rows.push(...this.db.importSessionEvents(update, results.map(({ event }) => event), results.map(({ key }) => key)));
+        }
+        return rows;
+      });
+      task.sessionControl = update.sessionControl;
+      this.sharedConnections.set(id, connection);
+      this.sharedRetryAt.delete(id);
+      for (const { event } of history) {
+        if (event.kind === "status") {
+          const payload = event.payload as { messageId?: string };
+          if (payload.messageId) this.messages.delivered(id, payload.messageId);
+        }
+      }
+      for (const row of rows) this.hub.emitEvent(row);
+      if (rows.length) { task.lastActivityAt = Date.now(); this.refreshPrs(task); this.refreshContextUsage(task); }
+      const result = history.filter(({ event }) => event.kind === "result").at(-1)?.event.payload as { turnId?: string; is_error?: boolean } | undefined;
+      if (result && (!result.turnId || !this.sharedTurns.has(id) || result.turnId === this.sharedTurns.get(id))) this.sharedTerminal.set(id, !result.is_error);
+      this.applySharedSnapshot(task, snapshot, this.sharedTerminal.get(id));
+      this.broadcastTasks();
+    } catch (error) {
+      connection?.close(); this.sharedConnections.delete(id);
+      this.sharedRetryAt.set(id, Date.now() + 5000);
+      if (!this.shuttingDown && !isClosedTaskStatus(task.status) && task.sessionControl) {
+        task.sessionControl = { ...task.sessionControl, ...(task.sessionControl.owner === "shared" ? { connection: "reconnecting" as const } : {}),
+          error: error instanceof Error ? error.message : "The shared session connection failed." };
+        this.db.setSessionControl(id, task.sessionControl);
+        this.broadcastTasks();
+      }
+    } finally { this.sharedRefreshing.delete(id); }
+  }
+
+  private applySharedSnapshot(task: TaskState, snapshot: SharedSessionSnapshot, completed: boolean | undefined) {
+    const id = task.taskId, now = Date.now();
+    if (snapshot.status === "idle" && this.sharedSending.has(id)) return;
+    const wasActive = !["idle", "failed"].includes(task.status);
+    // A status read can race the completion notification. Keep the run open
+    // until its terminal result arrives; a following poll consumes it once.
+    if (snapshot.status === "idle" && wasActive && completed === undefined) return;
+    const status = snapshot.question ? "awaiting_input" : snapshot.approval ? "awaiting_approval" : snapshot.status;
+    const interrupted = snapshot.status === "running" || completed ? false : completed === false || task.interrupted;
+    const newQuestion = snapshot.question && snapshot.question.requestId !== task.pendingInput?.requestId;
+    const newApproval = snapshot.approval && snapshot.approval.requestId !== task.pendingApproval?.requestId;
+    this.db.transaction(() => {
+      this.db.setTaskPendingInput(id, snapshot.question, now);
+      this.db.setTaskPendingApproval(id, snapshot.approval, now);
+      this.db.setTaskStatus(id, status, interrupted, now);
+      this.db.setTaskSettings(id, snapshot.model, snapshot.effort, "managed", now);
+    });
+    Object.assign(task, { status, interrupted, updatedAt: now, permission: "managed", pendingInput: snapshot.question, pendingApproval: snapshot.approval, model: snapshot.model, effort: snapshot.effort });
+    if (snapshot.status === "running" && !this.messages.state(id).runId) this.messages.beginRun(id);
+    if (snapshot.status === "idle" && (wasActive || this.messages.state(id).runId)) this.messages.finish(id, !completed, false);
+    if (newQuestion) this.notifyPush(task, "needs your input", firstQuestionText(snapshot.question!));
+    if (newApproval) this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
+    if (snapshot.status === "idle" && completed) this.messages.pump(id);
+    if (wasActive && snapshot.status === "idle" && completed && !this.messages.state(id).runId) this.notifyPush(task, "finished", "Turn finished — task is idle.");
+    if (snapshot.status === "idle") { this.sharedTerminal.delete(id); this.sharedTurns.delete(id); }
   }
 
   reconcileLocalSessions(): void {
     for (const task of this.cache.values()) {
       const control = task.sessionControl;
+      if (control?.owner === "shared") {
+        if (!isClosedTaskStatus(task.status)) void this.refreshShared(task);
+        continue;
+      }
       if (control?.owner !== "returning") continue;
+      // Existing previews upgrade in place as soon as their native server is
+      // reachable. Dispatching an unrelated session never adds it to this cache.
+      if (task.agent === "codex" && this.sharedSessions && !isClosedTaskStatus(task.status)) void this.refreshShared(task);
+      if (this.sharedRefreshing.has(task.taskId)) continue;
       try {
         if (!control.waitPid || !control.waitIdentity) throw new Error("Missing local writer identity");
         const preview = this.nativeSession.processIdentity(control.waitPid) === control.waitIdentity;
@@ -598,6 +792,11 @@ export class TaskService implements PrStatusSink {
     this.assertTaskAdmission();
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (task.sessionControl?.owner === "shared") {
+      this.submitMessage(id, { clientMessageId: this.ids.uuid(), mode: "send", text: prompt, images: sanitizeImages(rawImages), expectedRunId: this.messages.state(id).runId,
+        ...((model || effort || permission) ? { settings: { model, effort, permission } } : {}) });
+      return task;
+    }
     if (!prompt) throw badRequest("prompt is required");
     const images = sanitizeImages(rawImages);
     if (this.supervisor.has(id)) throw conflict("a turn is already active");
@@ -616,6 +815,7 @@ export class TaskService implements PrStatusSink {
     if (!this.supervisor.has(id)) this.assertTaskAdmission();
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (task.sessionControl?.owner === "shared") throw conflict("Use the message composer to send input to a shared session.");
     if (this.messages.state(id).compaction?.status === "running") throw conflict("Wait for context compaction to finish.");
     if (!text) throw badRequest("text is required");
     const images = sanitizeImages(rawImages);
@@ -664,9 +864,10 @@ export class TaskService implements PrStatusSink {
     return { injected: false, queued: false };
   }
 
-  approve(id: string, decision: string, scope?: string): TaskState {
+  approve(id: string, decision: string, scope?: string): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (task.sessionControl?.owner === "shared") return this.approveShared(task, decision);
     const pending = task.pendingApproval;
     const handle = this.supervisor.get(id);
     // New provider permission prompts carry a durable request and must be
@@ -698,6 +899,11 @@ export class TaskService implements PrStatusSink {
     if (!req?.requestId) throw badRequest("requestId is required");
     const handle = this.supervisor.get(id);
     if (task.pendingInput?.requestId !== req.requestId) throw conflict("no matching pending question to answer");
+    if (task.sessionControl?.owner === "shared") {
+      if (!await this.sharedConnections.get(id)?.answer(req)) throw conflict("Answer delivery could not be confirmed. The question has been kept.");
+      await this.refreshShared(task);
+      return task;
+    }
     if (!await handle?.answer(req)) throw conflict("Answer delivery could not be confirmed. The question has been kept; check the conversation before trying again.");
     // The turn may finish, stop, or ask another question while delivery is pending.
     // Independent hosts also replay a durable answer event, including across restarts.
@@ -721,9 +927,10 @@ export class TaskService implements PrStatusSink {
   // Stop = interrupt the current turn but keep the task resumable. Unlike
   // cancel, the worktree and session survive: the task settles
   // idle(interrupted=true) and a follow-up resumes off the CLI transcript.
-  stop(id: string): TaskState {
+  stop(id: string): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (task.sessionControl?.owner === "shared") return this.stopShared(task, false);
     if (isClosedTaskStatus(task.status)) {
       throw conflict(`cannot stop a ${task.status} task`);
     }
@@ -748,9 +955,10 @@ export class TaskService implements PrStatusSink {
     return task; // idle/failed: nothing to stop (idempotent)
   }
 
-  cancel(id: string): TaskState {
+  cancel(id: string): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (task.sessionControl?.owner === "shared") return this.stopShared(task, true);
     if (isClosedTaskStatus(task.status)) return task; // idempotent
     this.messages.pause(id);
     this.pendingSteer.delete(id); this.persistControl(id);
@@ -768,6 +976,10 @@ export class TaskService implements PrStatusSink {
   archive(id: string): TaskState {
     const task = this.getTask(id);
     this.assertSessionOwnership(task);
+    if (task.sessionControl?.owner === "shared") {
+      if (!["idle", "failed"].includes(task.status)) throw conflict("Stop the shared turn before archiving.");
+      this.sharedConnections.get(id)?.close(); this.sharedConnections.delete(id);
+    }
     if (task.status === "archived") return task; // idempotent
     if (this.messages.state(id).compaction?.status === "running") throw conflict("Stop context compaction before archiving.");
     if (this.supervisor.has(id)) throw conflict("cancel the active turn before archiving");

@@ -6,6 +6,13 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Dispatched Codex app-server sessions stay connected across the local client and Palmagent.
+  Local activity stays visible, and Send now reaches the active turn without closing the local app.
+  Existing previews reconnect to their original server when available; standalone sessions retain
+  saved-message preview when no shared transport is exposed.
+
 ## 0.1.0-alpha.197
 
 ### Changed

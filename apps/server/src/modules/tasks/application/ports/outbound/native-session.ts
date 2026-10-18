@@ -13,6 +13,7 @@ export interface NativeSessionOperations {
   home(agent: AgentKind): string;
   realpath(path: string): string;
   processIdentity(pid: number): string | undefined;
+  sharedSocket(task: TaskState): string | undefined;
   checkpoint(task: TaskState): TaskState["sessionControl"];
   resumeCommand(task: TaskState): string;
   resolveDispatch(request: DispatchSessionRequest, expectedHome: string): NativeSessionDispatch;

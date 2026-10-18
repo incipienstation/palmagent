@@ -47,6 +47,13 @@ export function migrateSchema(db: Database.Database) {
         ts INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_events_task_seq ON events(task_id, seq);
+      CREATE TABLE IF NOT EXISTS session_imports (
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        source_id TEXT NOT NULL,
+        text_length INTEGER,
+        text_hash TEXT,
+        PRIMARY KEY(task_id, source_id)
+      );
       CREATE TABLE IF NOT EXISTS approvals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT NOT NULL,

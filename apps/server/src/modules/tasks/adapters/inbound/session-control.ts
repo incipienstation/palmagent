@@ -4,7 +4,7 @@ import { sessionSocket } from "../../../../platform/ipc/session-socket.js";
 export { sessionSocket } from "../../../../platform/ipc/session-socket.js";
 import type { DispatchSessionRequest } from "@palmagent/shared";
 
-export function localSessionRequest(dataDir: string, body: DispatchSessionRequest): Promise<{ task: { taskId: string } }> {
+export function localSessionRequest(dataDir: string, body: DispatchSessionRequest): Promise<{ task: { taskId: string; sessionControl?: { owner: string; connection?: string; error?: string } } }> {
   return new Promise((resolve, reject) => {
     const stat = lstatSync(sessionSocket(dataDir));
     if (!stat.isSocket() || stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0) throw new Error("Session control socket must be private and owned by this account");

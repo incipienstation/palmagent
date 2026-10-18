@@ -1,4 +1,5 @@
 import { createTaskService } from "./task-service.js";
+import { CodexSharedSessions } from "../modules/agents/adapters/outbound/codex-shared-session.js";
 import { webauthn } from "../modules/auth/adapters/outbound/webauthn.js";
 import { terminalFiles } from "../modules/terminals/adapters/outbound/terminal-files.js";
 import { ResourceScope } from "../kernel/resource-scope.js";
@@ -89,6 +90,7 @@ export async function createRuntime() {
         : removeWorktree(),
     }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits);
     resources.onStop(() => service.beginShutdown());
+    service.sharedSessions = new CodexSharedSessions();
     const terminalStore = new TerminalStore(join(config.dataDir, "terminals"));
     let terminalsOwnStore = false;
     resources.defer(() => { if (!terminalsOwnStore) terminalStore.close(); });

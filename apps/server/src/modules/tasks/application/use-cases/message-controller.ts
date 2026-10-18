@@ -9,6 +9,7 @@ const EDIT_MS = 60_000;
 type StoredMessage = MessageState["messages"][number];
 interface Host {
   assertWritable(id: string): void;
+  validateSubmission?(id: string, req: SubmitMessage): void;
   canStart(id: string): boolean;
   settings(id: string): MessageSettings;
   start(id: string, message: PendingMessage): void;
@@ -23,12 +24,13 @@ const conflict = (s: string): never => { throw new MessageConflict(s); };
 // One controller owns ordering for both agents. Synchronous SQLite transitions
 // claim work before any asynchronous adapter call; callbacks always re-read it.
 export class MessageController {
+  private closed = false;
   private timer: ReturnType<typeof setInterval>;
   constructor(private db: MessageStateRepository, private host: Host, private attachments: AttachmentStorage, private readonly ids: IdentifierGenerator) {
     this.timer = setInterval(() => { if (!this.db.isOpen) { this.close(); return; } for (const id of this.db.messageTaskIds()) this.pump(id); }, 1000);
     this.timer.unref();
   }
-  close() { clearInterval(this.timer); }
+  close() { this.closed = true; clearInterval(this.timer); }
   state(id: string): MessageState {
     return this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
   }
@@ -96,6 +98,14 @@ export class MessageController {
     if (!m || !["sending", "unknown"].includes(m.status)) return;
     m.status = "delivered"; m.error = undefined; this.save(id, s);
   }
+  deliveryFailed(id: string, messageId: string, status: "rejected" | "unknown") {
+    if (this.closed) return;
+    const state = this.state(id), entry = state.messages.find(message => message.id === messageId);
+    if (!entry || entry.status === "delivered") return;
+    entry.status = status;
+    entry.error = status === "rejected" ? "The shared session rejected this message." : "Delivery could not be confirmed. Check the conversation before sending again.";
+    state.paused = true; this.save(id, state);
+  }
   submit(id: string, req: SubmitMessage) {
     const s = this.state(id), fingerprint = this.ids.digest(JSON.stringify(req));
     const old = s.messages.find(m => m.id === req.clientMessageId);
@@ -103,6 +113,7 @@ export class MessageController {
     // A lost HTTP receipt is a read of an already accepted submission. Return it
     // even if maintenance or the task's lifecycle now prevents new messages.
     this.host.assertWritable(id);
+    this.host.validateSubmission?.(id, req);
     if (s.messages.filter(m => m.status !== "delivered" && m.status !== "cancelled").length >= 100) conflict("The message queue is full.");
     if (req.mode === "send" && req.expectedRunId !== s.runId) conflict("The active run changed. Review the message and send again.");
     if (req.mode === "send") {
@@ -165,12 +176,14 @@ export class MessageController {
     this.save(id, s);
     if (!s.runId) { this.start(id, m); return; }
     void this.host.steer(id, m).then(status => {
+      if (this.closed) return;
       const current = this.state(id), entry = current.messages.find(x => x.id === messageId)!;
       if (entry.status === "delivered") return;
       entry.status = status;
       if (status !== "delivered") { entry.error = status === "unknown" ? "Delivery could not be confirmed. Check the conversation before sending again." : "The active run could not accept this message."; current.paused = true; }
       this.save(id, current);
     }, () => {
+      if (this.closed) return;
       const current = this.state(id), entry = current.messages.find(x => x.id === messageId)!;
       if (entry.status !== "delivered") { entry.status = "unknown"; entry.error = "Delivery could not be confirmed."; current.paused = true; this.save(id, current); }
     });

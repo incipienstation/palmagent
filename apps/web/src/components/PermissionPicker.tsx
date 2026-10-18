@@ -12,6 +12,7 @@ export function selectablePermission(agent: AgentKind, value: string): string {
 }
 
 export function permissionLabel(agent: AgentKind, value: string): string {
+  if (value === "managed") return "Managed in Codex";
   const nativeValue = permissionAlias(agent, value);
   return PERMISSIONS[agent].find((option) => option.value === nativeValue)?.label ?? value;
 }
@@ -22,6 +23,7 @@ export function PermissionPicker({ agent, value, onChange, disabled }: {
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
+  if (value === "managed") return <Field><FieldLabel>Permission</FieldLabel><FieldDescription>Managed by the connected Codex session.</FieldDescription></Field>;
   const selected = selectablePermission(agent, value);
   return <Field data-disabled={disabled || undefined}>
     <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">

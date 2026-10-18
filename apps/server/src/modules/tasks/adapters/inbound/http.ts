@@ -117,11 +117,11 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       const input = c.req.valid("json");
       return c.json(service.steer(c.req.valid("param").id, input.text, input.images, input.model, input.effort, input.permission), 200);
     })
-    .post("/:id/approve", params(IdParamsSchema), jsonBody(ApproveSchema), (c) => {
+    .post("/:id/approve", params(IdParamsSchema), jsonBody(ApproveSchema), async (c) => {
       const input = c.req.valid("json");
-      return c.json({ task: service.approve(c.req.valid("param").id, input.decision, input.scope) }, 200);
+      return c.json({ task: await service.approve(c.req.valid("param").id, input.decision, input.scope) }, 200);
     })
     .post("/:id/answer", params(IdParamsSchema), jsonBody(AnswerSchema), async (c) => c.json({ task: await service.answer(c.req.valid("param").id, c.req.valid("json")) }, 200))
-    .post("/:id/stop", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json({ task: service.stop(c.req.valid("param").id) }, 200))
-    .post("/:id/cancel", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json({ task: service.cancel(c.req.valid("param").id) }, 200));
+    .post("/:id/stop", params(IdParamsSchema), jsonBody(EmptyBodySchema), async (c) => c.json({ task: await service.stop(c.req.valid("param").id) }, 200))
+    .post("/:id/cancel", params(IdParamsSchema), jsonBody(EmptyBodySchema), async (c) => c.json({ task: await service.cancel(c.req.valid("param").id) }, 200));
 }
