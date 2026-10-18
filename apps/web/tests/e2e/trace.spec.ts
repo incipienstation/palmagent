@@ -95,6 +95,8 @@ test("late completion updates an open operation without changing its disclosure 
   await send(page, taskId, { type: "tasks", tasks: [{ ...history.task, status: "running", updatedAt: Date.now(), lastActivityAt: Date.now() }], historyThrough: history.tasks.eventCursor(taskId) });
   const activity = page.locator("[data-activity]").getByRole("button").first();
   const preview = page.locator("[data-progress-preview]");
+  await expect(preview).toBeVisible();
+  await expect(activity).toBeVisible();
   await expect(preview).toContainText(progress);
   expect((await preview.boundingBox())!.height).toBeGreaterThan(24);
   await expect(page.getByText("Working…", { exact: true })).toHaveCount(0);
