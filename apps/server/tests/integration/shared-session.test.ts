@@ -39,7 +39,7 @@ async function setup(t: test.TestContext, preview = false) {
   let unavailable = false, ack: "delivered" | "unknown" | "rejected" = "delivered", interruptCount = 0, opens = 0;
   const events: SharedSessionEvent[] = [];
   let taskId = "";
-  const event = (key: string, kind: "assistant_text" | "result", payload: any) => events.push({ key, event: { taskId, sessionId, kind, payload } });
+  const event = (key: string, kind: "assistant_text" | "result" | "tool_result", payload: any) => events.push({ key, event: { taskId, sessionId, kind, payload } });
   const services: ReturnType<typeof createTaskService>[] = [];
   const make = async () => {
     const backend = new InProcessBackend();
@@ -72,6 +72,21 @@ async function setup(t: test.TestContext, preview = false) {
   const refresh = async (target = service) => { target.reconcileLocalSessions(); await new Promise(resolve => setTimeout(resolve, 20)); };
   return { service, task, writer, db, snapshot, sent, decisions, event, make, refresh, enableConnection, setUnavailable: (value: boolean) => { unavailable = value; }, setAck: (value: typeof ack) => { ack = value; }, clearEvents: () => { events.length = 0; }, get opens() { return opens; }, get interruptCount() { return interruptCount; } };
 }
+
+test("shared tool input_image output is visible and deduplicated across reconnects", { skip: process.platform !== "linux" }, async t => {
+  const f = await setup(t), id = f.task.taskId;
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
+  f.event("image-tool", "tool_result", { content: [{ type: "input_image", image_url: `data:image/png;base64,${png}` }] });
+  await f.refresh();
+  const rows = () => f.db.eventsAfterSeq(id, 0).filter(row => ["tool_result", "output_image"].includes(row.event.kind));
+  assert.deepEqual(rows().map(row => row.event.kind), ["tool_result", "output_image"]);
+  assert.equal(JSON.stringify(rows()[0].event.payload).includes(png), false);
+  assert.deepEqual(rows()[1].event.payload, { mediaType: "image/png", data: png, width: 1, height: 1 });
+  f.service.beginShutdown();
+  const restarted = await f.make();
+  await f.refresh(restarted);
+  assert.equal(rows().length, 2);
+});
 
 test("dispatch joins the live writer; browser input, questions and stop use that connection", { skip: process.platform !== "linux" }, async t => {
   const f = await setup(t), id = f.task.taskId;

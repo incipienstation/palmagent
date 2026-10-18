@@ -64,6 +64,12 @@ export function rasterImage(mediaType: unknown, data: unknown): ImageAttachment 
   return valid ? { mediaType, data: encodeBase64(bytes), ...imageDimensions(bytes, mediaType as ImageAttachment["mediaType"]) } : undefined;
 }
 
+function dataUrlImage(value: unknown): ImageAttachment | undefined {
+  if (typeof value !== "string" || value.length > MAX_IMAGE_BYTES * 4 / 3 + 64) return;
+  const prefix = /^data:(image\/(?:png|jpeg|gif|webp));base64,/i.exec(value);
+  return prefix ? rasterImage(prefix[1].toLowerCase(), value.slice(prefix[0].length)) : undefined;
+}
+
 // Only recognized structured content blocks. Never read a path from model output.
 // Remove image bodies from verbose text while emitting a bounded gallery.
 export function extractOutputImages(payload: unknown): { payload: unknown; images: ImageAttachment[] } {
@@ -74,9 +80,10 @@ export function extractOutputImages(payload: unknown): { payload: unknown; image
     if (Array.isArray(value)) return value.map((v) => visit(v, depth + 1));
     if (!value || typeof value !== "object") return value;
     const block = value as Record<string, unknown>;
-    if (block.type === "image") {
+    if (block.type === "image" || block.type === "input_image") {
       const source = block.source as Record<string, unknown> | undefined;
-      const img = rasterImage(source?.type === "base64" ? source.media_type : block.mimeType, source?.type === "base64" ? source.data : block.data);
+      const img = block.type === "input_image" ? dataUrlImage(block.image_url)
+        : rasterImage(source?.type === "base64" ? source.media_type : block.mimeType, source?.type === "base64" ? source.data : block.data);
       if (img && images.length < 4) images.push(img);
       return { type: "image", text: img ? "Image output" : "Unsupported image output" };
     }
