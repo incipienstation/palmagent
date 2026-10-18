@@ -15,7 +15,7 @@ import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outboun
 import { Hub } from "../../src/platform/events/hub.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
 import { checkpointSession, emptyTranscriptHash, locateSession, processIdentity, resumeCommand, synchronizeSession } from "../../src/modules/tasks/adapters/outbound/native-session.js";
-import { extractOutputImages } from "../../src/modules/tasks/application/attachments/output-images.js";
+import { extractOutputImages, MAX_IMAGE_BYTES } from "../../src/modules/tasks/application/attachments/output-images.js";
 import { TaskService } from "../../src/modules/tasks/application/use-cases/task-service.js";
 import { NodeIdentifierGenerator } from "../../src/platform/process/id-generator.js";
 import { LocalNativeSessionAdapter } from "../../src/modules/tasks/adapters/outbound/native-session-adapter.js";
@@ -129,6 +129,48 @@ test("structured image extraction bounds raster payloads and strips unsupported 
     assert.equal(JSON.stringify(result.payload).includes(data), false);
   }
   assert.equal(extractOutputImages(Array.from({ length: 10 }, () => ({ type: "image", mimeType: "image/png", data: png }))).images.length, 4);
+});
+
+test("Codex input_image data URLs become bounded image output without retaining image bodies", () => {
+  const block = { type: "input_image", image_url: `data:image/png;base64,${png}`, detail: "high" };
+  const text = { type: "input_text", text: "Script completed" };
+  const out = extractOutputImages({ content: [text, block] });
+  assert.deepEqual(out.images, [{ mediaType: "image/png", data: png, width: 1, height: 1 }]);
+  assert.deepEqual(out.payload, { content: [text, { type: "image", text: "Image output" }] });
+  const capped = extractOutputImages(Array(6).fill(block));
+  assert.equal(capped.images.length, 4);
+  assert.equal(JSON.stringify(capped.payload).includes(png), false);
+  for (const image_url of [undefined, {}, "https://example.invalid/image.png", "file:///tmp/image.png",
+    "data:image/svg+xml;base64,PHN2Zy8+", `data:image/jpeg;base64,${png}`, "data:image/png;base64,YWJj",
+    `data:image/png,${png}`, `data:image/png;base64,${png}!`,
+    `data:image/png;base64,${Buffer.concat([Buffer.from(png, "base64"), Buffer.alloc(MAX_IMAGE_BYTES)]).toString("base64")}`]) {
+    const rejected = extractOutputImages({ ...block, image_url });
+    assert.deepEqual(rejected.images, []);
+    assert.deepEqual(rejected.payload, { type: "image", text: "Unsupported image output" });
+  }
+});
+
+test("Codex custom tool image output is imported once and remains visible after reopening history", (t) => {
+  const f = setup(t);
+  appendFileSync(f.transcript, line({ type: "response_item", payload: { type: "custom_tool_call_output", call_id: "image-call",
+    output: [{ type: "input_text", text: "Script completed" }, { type: "input_image", image_url: `data:image/png;base64,${png}` }] } }));
+  const synced = synchronizeSession(f.task);
+  assert.deepEqual(synced.events.map(event => event.kind), ["tool_result", "output_image"]);
+  assert.equal(JSON.stringify(synced.events[0]).includes(png), false);
+  const path = join(f.dir, "state.db");
+  const db = new Db(path);
+  try {
+    db.insertRepo({ id: "repo-1", name: "fixture", path: f.cwd, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+    db.insertTask(f.task);
+    f.task.sessionControl = synced.control;
+    db.importSessionEvents(f.task, synced.events);
+  } finally { db.close(); }
+  const reopened = new Db(path);
+  try {
+    assert.deepEqual(reopened.eventsAfterSeq(f.task.taskId, 0).map(row => row.event.kind), ["tool_result", "output_image"]);
+    assert.deepEqual(reopened.eventsAfterSeq(f.task.taskId, 0)[1].event.payload, { mediaType: "image/png", data: png, width: 1, height: 1 });
+    assert.equal(synchronizeSession(reopened.getTask(f.task.taskId)!).events.length, 0);
+  } finally { reopened.close(); }
 });
 
 test("handoff persists ownership; socket dispatch previews a live writer and transfers exactly once across restart", { skip: process.platform !== "linux" }, async (t) => {
