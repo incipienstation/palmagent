@@ -823,7 +823,9 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       for (const row of rows) if (row.type === "activity" && row.activity.live) row.activity = { ...row.activity, live: false };
       for (const message of pending) rows.push({ key: `delivery-${message.id}`, seq: seq + 1, type: "delivery", message });
     }
-    if (activity === "working") {
+    const traceIsWorking = rows.some(row => row.type === "activity" && row.activity.live &&
+      (row.activity.summary?.running || row.activity.operations?.some(step => step.state === "running")));
+    if (activity === "working" && !traceIsWorking) {
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
     return rows;

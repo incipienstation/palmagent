@@ -82,11 +82,21 @@ export class ConversationHistory {
   private wire(row: TranscriptRow, revision: number, member?: { key: number; body: string; seq: number }): ConversationItem {
     const full = JSON.stringify(row);
     let item: ConversationItem = { ...row, endSeq: endOf(row), revision };
-    if (row.type === "activity") item = { ...item, ...row, items: [], operations: undefined,
-      summary: { label: activityLabel(row, "compact"), count: row.operations?.length ?? row.items.length,
-        running: row.operations?.find(step => step.state === "running")?.title,
-        failed: row.operations?.filter(step => step.state === "error").length }, details: true,
-      preview: row.preview?.slice(0, 240) } as ConversationItem;
+    if (row.type === "activity") {
+      const activity = { ...row, endSeq: endOf(row), revision, items: [], operations: undefined,
+        summary: { label: activityLabel(row, "compact"), count: row.operations?.length ?? row.items.length,
+          running: row.operations?.find(step => step.state === "running")?.title,
+          failed: row.operations?.filter(step => step.state === "error").length }, details: true };
+      if (Buffer.byteLength(JSON.stringify(activity)) > CONVERSATION_ITEM_BYTES && row.preview) {
+        const progress = row.items.filter(item => item.kind === "assistant_text" && item.text === row.preview).at(-1);
+        if (progress) {
+          const body = JSON.stringify({ type: "message", key: progress.key, item: progress });
+          return { ...activity, preview: `${row.preview.slice(0, 2000)}…`,
+            previewContent: { key: row.key, member: progress.key, version: version(body), label: "Load full progress message" } };
+        }
+      }
+      item = activity;
+    }
     if (Buffer.byteLength(JSON.stringify(item)) <= CONVERSATION_ITEM_BYTES) return item;
     const source = row.type === "message" ? row.item : undefined;
     const preview = source?.kind === "assistant_text" ? source.text.slice(0, 2000)

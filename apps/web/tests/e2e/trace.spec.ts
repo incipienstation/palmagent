@@ -86,20 +86,30 @@ test("expanding loaded steps does not load the next page or unseen output", asyn
 });
 
 test("late completion updates an open operation without changing its disclosure or draft", async ({ page, history }) => {
-  history.add([event("tool_call", { id: "live", name: "bash", command: "check-live", status: "in_progress" })]);
+  const progress = "Checking the current implementation and comparing its behavior with the reference. ".repeat(4) + "The final preview sentence stays readable.";
+  history.add([event("assistant_text", { text: progress, phase: "progress", messageId: "live-progress" }),
+    event("tool_call", { id: "live", name: "bash", command: "check-live", status: "in_progress" })]);
   await routes(page, history);
   await page.goto(`/#/task/${taskId}`);
   await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
   await send(page, taskId, { type: "tasks", tasks: [{ ...history.task, status: "running", updatedAt: Date.now(), lastActivityAt: Date.now() }], historyThrough: history.tasks.eventCursor(taskId) });
   const activity = page.locator("[data-activity]").getByRole("button").first();
+  const preview = page.locator("[data-progress-preview]");
+  await expect(preview).toBeVisible();
+  await expect(activity).toBeVisible();
+  await expect(preview).toContainText(progress);
+  expect((await preview.boundingBox())!.height).toBeGreaterThan(24);
+  await expect(page.getByText("Working…", { exact: true })).toHaveCount(0);
+  await captureForReview(page, "trace-live-progress.png");
   await activity.click();
-  const step = page.locator("[data-trace-step]");
+  const step = page.locator("[data-trace-step]").filter({ hasText: "check-live" });
   await expect(step).toHaveAccessibleName("Running: check-live");
   await step.click();
   const composer = page.locator("textarea").first(); await composer.fill("Keep this draft");
   history.add([event("tool_result", { tool_use_id: "live", output: "Live operation completed", exit_code: 0 }), event("result", {})]);
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
   await expect(step).toHaveAccessibleName("Completed: check-live");
+  await expect(preview).toHaveCount(0);
   await expect(step).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Live operation completed", { exact: false })).toBeVisible();
   await expect(composer).toHaveValue("Keep this draft");
