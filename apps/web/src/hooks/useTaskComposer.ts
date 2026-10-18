@@ -108,7 +108,9 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
       ? { ...m, ...(save ? { text, images, skills: selectedSkills } : {}), editingUntil: undefined } : m) }) });
   }
 
-  const localOwner = !!task?.sessionControl && task.sessionControl.owner !== "palmagent";
+  const localOwner = task?.sessionControl?.owner === "local" || task?.sessionControl?.owner === "returning";
+  const shared = task?.sessionControl?.owner === "shared";
+  const reconnecting = shared && task.sessionControl?.connection !== "connected";
   const status = task?.status;
   const running = status === "running";
   const queueWaits = (status !== "idle" && status !== "failed") || queue?.paused || !!queue?.runId
@@ -118,7 +120,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     : running && !compacting ? "Guide the current task…"
     : "Message Palmagent…";
   const editedSettings = edit ? queue?.messages.find(message => message.id === edit.id)?.settings : undefined;
-  const settingsReadOnly = edit
+  const settingsReadOnly = shared ? "Settings are managed by the connected Codex session." : edit
     ? "Settings are retained from the queued message."
     : running && deliveryMode === "send" ? "Messages sent now use the running turn's settings." : undefined;
   const displayedModel = settingsReadOnly ? (editedSettings?.model ?? task?.model) || DEFAULT_OPTION : model;
@@ -128,7 +130,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const active = status !== undefined && isActiveTaskStatus(status);
   const answering = needsInput && !!task?.pendingInput;
   // `interrupted` is a flag on idle tasks, not a status, so idle covers resume.
-  const composeMode: "steer" | "followup" | null = compacting || !task || localOwner || status === "archived" || status === "cancelled" ? null : running
+  const composeMode: "steer" | "followup" | null = reconnecting || compacting || !task || localOwner || status === "archived" || status === "cancelled" ? null : running
     ? "steer"
     : status === "idle" || status === "failed" || deliveryMode === "queue"
       ? "followup"
@@ -154,7 +156,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
       ...(permission !== curPermission ? { permission } : {}),
     };
     const request = { mode: deliveryMode, text, images, ...(skills.length ? { skills } : {}), expectedRunId: confirmedQueue?.runId ?? null,
-      ...(running && deliveryMode === "send" ? {} : { settings: override }) };
+      ...(shared || running && deliveryMode === "send" ? {} : { settings: override }) };
     const fingerprint = JSON.stringify({ mode: deliveryMode, text, images, skills, model, effort, permission });
     const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
     const submission = submitted?.fingerprint === fingerprint ? submitted.request : request;
@@ -231,5 +233,5 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     ...request, answers: skip ? request.answers.map(a => ({ ...a, selected: [], notes: undefined })) : request.answers,
   }), () => toast({ title: "Answer sent", variant: "success" }));
   const approve = (decision: "approve" | "deny") => act(decision === "approve" ? "approve" : "deny", () => taskOperations.approve({ decision }));
-  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
+  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission: shared ? "managed" : permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
 }

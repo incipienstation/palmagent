@@ -135,3 +135,63 @@ test("a preview synchronization error retains visible history and explains why i
   await expect(details).toContainText(task.sessionControl.error);
   await expect(details.getByRole("button", { name: "Release to shell" })).toBeHidden();
 });
+
+test("shared sessions keep input available with the terminal open and preserve drafts on reconnect", async ({ page }) => {
+  let connection = "connected";
+  const current = () => ({ ...source, agent: "codex", permission: "workspace-write", sessionControl: { owner: "shared", connection, home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } });
+  await installHistory(page, "assistant_text", { text: "Same session in the terminal and browser." });
+  await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: [current()] })}\n\n` }));
+  await page.goto("/#/task/t-idle-rich");
+  const input = page.getByPlaceholder("Message Palmagent…");
+  await expect(input).toBeEnabled();
+  await input.fill("Continue from this device");
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeEnabled();
+  connection = "reconnecting";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("Reconnecting to your Codex session. Your draft is saved.")).toBeVisible();
+  await expect(input).toHaveValue("Continue from this device");
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
+  connection = "connected";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(input).toBeEnabled();
+  await expect(input).toHaveValue("Continue from this device");
+  await assertViewportLocked(page);
+});
+
+test("a working shared session offers a terminal connection without releasing ownership", async ({ page }) => {
+  const task = { ...source, agent: "codex", status: "running", sessionControl: { owner: "shared", connection: "connected", home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } };
+  await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: [task] })}\n\n` }));
+  await page.route("**/api/tasks/t-idle-rich/handoff", route => route.fulfill({ json: { task, command: "codex --remote unix:// resume session-id" } }));
+  await page.goto("/#/task/t-idle-rich");
+  await openSessionDetails(page);
+  await expect(page.getByRole("heading", { name: "Connected Codex session" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Release to shell" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Show terminal command" }).click();
+  await expect(page.getByRole("button", { name: "Copy terminal command" })).toBeEnabled();
+  await expect(page.locator("code").filter({ hasText: "--remote unix://" })).toBeVisible();
+  await assertViewportLocked(page);
+});
+
+
+test("Send now remains available while a dispatched session is running locally", async ({ page }) => {
+  const queue = { revision: 1, paused: false, runId: "local-turn", messages: [] };
+  const task = { ...source, agent: "codex", status: "running", permission: "managed", messageQueue: queue,
+    sessionControl: { owner: "shared", connection: "connected", home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } };
+  await installHistory(page, "assistant_text", { text: "Working in the local client." });
+  await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: [task] })}\n\n` }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/tasks/t-idle-rich/messages", async route => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ...queue, revision: 2, messages: [{ id: submitted!.clientMessageId, version: 1, text: submitted!.text, mode: "send", status: "delivered" }] } });
+  });
+  await page.goto("/#/task/t-idle-rich");
+  const input = page.getByPlaceholder("Guide the current task…");
+  await expect(input).toBeEnabled();
+  await input.fill("Apply this while you are working");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect.poll(() => submitted?.mode).toBe("send");
+  expect(submitted?.expectedRunId).toBe("local-turn");
+  expect(submitted?.text).toBe("Apply this while you are working");
+  await expect(input).toHaveValue("");
+  await expect(page.getByText("Working in the local client.", { exact: true })).toBeVisible();
+});

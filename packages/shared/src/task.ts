@@ -155,7 +155,7 @@ export interface TaskState {
 // boundary, committed atomically with imported events. Returning sessions can be
 // viewed read-only while their local writer runs. Ownership survives restart.
 export interface SessionControl {
-  owner: "palmagent" | "local" | "returning";
+  owner: "palmagent" | "local" | "returning" | "shared";
   home: string;
   transcript: string;
   cursor: number;
@@ -163,6 +163,9 @@ export interface SessionControl {
   waitPid?: number;
   waitIdentity?: string;
   error?: string;
+  connection?: "connected" | "reconnecting";
+  sharedHistory?: "provider" | "transcript";
+  sharedSocket?: string;
 }
 export interface SessionHandoffResponse {
   task: TaskState;

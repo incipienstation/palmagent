@@ -13,9 +13,10 @@ child process, input channel, and normalized event journal until it finishes.
 Application updates do not restart these hosts. Existing invocations keep their
 original release; new invocations use the activated release.
 
-External terminal sessions remain externally owned. Previewing their transcripts,
-reconnecting a browser, or deploying Palmagent never transfers ownership or sends
-a resume command. Existing native-session ownership checks remain in effect.
+External sessions remain in their native process. Dispatch explicitly connects an
+eligible Codex session to that process; browser reconnects and application updates
+restore the connection without starting a replacement process. Sessions without a
+shared transport retain saved-message preview.
 
 ```mermaid
 flowchart LR
@@ -202,3 +203,48 @@ It creates uniquely named temporary units and isolated fixture state, replaces
 the web service with a second retained package tree, and verifies original agent
 PIDs, sessions, artifacts, and pending input. It removes only its own test units
 and data. It does not deploy or restart installed Palmagent services.
+
+## Shared native sessions
+
+Dispatch can attach Palmagent to a Codex session on its native shared app-server.
+The local terminal and browser then send input to one execution through that server. Palmagent uses the local `codex app-server proxy` transport, verifies the
+provider home, thread identity, working directory and direct-input capability, and
+joins that thread. The control socket is discovered from the registered native
+process and its boot/start identity, so another daemon sharing the same provider
+home is not substituted. An unloaded idle thread may rejoin that verified server.
+Palmagent does not start another app-server.
+
+A connected session stays writable with its terminal open. Its session details offer
+an explicit terminal command targeting the same Unix socket; this does not
+release browser control. Model and permission settings remain managed by the native
+session. Input, questions, approval decisions and turn interrupts use the shared
+connection. **Send now** steers an active turn immediately; a queued message waits
+for the current turn to complete. Native events supply both clients' conversation
+content; stable provider identities prevent duplicate
+history when Palmagent reconnects or restarts. The database commits imported event
+identities together with their events and connection state. Cumulative text snapshots
+import only the unseen suffix, including after reconnects with different chunk
+boundaries. Completed history is fetched on connection, not after every turn.
+
+Connection loss retains shared ownership and the browser draft. Palmagent reconnects
+without launching a replacement writer. An unconfirmed message is retained as unknown
+and is never automatically resent. Stopping a turn requests a provider interrupt;
+it does not terminate the daemon or the local terminal. Closing Palmagent disconnects
+its client only.
+
+The shared path requires a Codex CLI and daemon exposing the proxy, loaded-thread
+metadata and shared input APIs. The older standalone execution compatibility range
+does not imply these capabilities. Sessions running outside that daemon, unsupported
+provider versions, and Claude Code sessions retain the existing read-only preview and
+exit-based handoff. Existing dispatched previews automatically attempt to connect;
+they keep their checked transcript cursor to avoid duplicating imported history,
+including when the provider exposes paginated history. Undispatched local sessions
+are never discovered or attached. No process is killed to convert a standalone session.
+
+For a local native protocol smoke with an installed Codex CLI supporting shared
+sessions, run `node --import tsx apps/server/scripts/shared-session-live-smoke.mjs`
+from the repository root. It starts one isolated native server and a local model
+fixture, alternates terminal and browser inputs, checks live text and Send now during
+an active local turn, reconnects an unloaded thread, and verifies that the terminal
+still works after the browser client disconnects. It uses no account
+credentials or live model quota.

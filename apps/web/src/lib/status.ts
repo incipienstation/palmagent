@@ -9,7 +9,8 @@ import type { SessionControl, TaskStatus } from "@palmagent/shared";
 //   idle is the "turn finished, your move" state; idle + interrupted means the
 //   turn was stopped/recovered (resumable), surfaced as the word "Stopped".
 export function statusLabel(status: TaskStatus, interrupted?: boolean, control?: SessionControl): string {
-  if (control && control.owner !== "palmagent") {
+  if (control?.owner === "shared" && control.connection !== "connected") return "Reconnecting";
+  if (control && (control.owner === "local" || control.owner === "returning")) {
     if (control.error) return "Sync issue";
     return control.owner === "returning" ? "Live preview" : "Local shell";
   }

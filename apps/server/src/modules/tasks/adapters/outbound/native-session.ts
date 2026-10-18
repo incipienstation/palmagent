@@ -19,10 +19,11 @@ export function resumeCommand(task: TaskState, socketDirectory?: string): string
   if (!task.sessionId || !task.worktreePath || !task.sessionControl) throw new Error("Session is not available for handoff");
   const env = task.agent === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
   const args = task.agent === "claude" ? ["claude", "--resume", task.sessionId] : ["codex", "resume", task.sessionId, "--cd", task.worktreePath];
-  if (task.model) args.push("--model", task.model);
+  if (task.sessionControl.owner === "shared") args.splice(1, 0, "--remote", `unix://${task.sessionControl.sharedSocket ?? ""}`);
+  if (task.model && task.sessionControl.owner !== "shared") args.push("--model", task.model);
   if (task.agent === "claude") {
     if (task.effort) args.push("--effort", task.effort);
-  } else if (task.effort) args.push("-c", `model_reasoning_effort=${task.effort}`);
+  } else if (task.effort && task.sessionControl.owner !== "shared") args.push("-c", `model_reasoning_effort=${task.effort}`);
   const instance = socketDirectory ? `PALMAGENT_SESSION_SOCKET_DIR=${shellQuote(socketDirectory)} ` : "";
   return `cd ${shellQuote(task.worktreePath)} && ${instance}${env}=${shellQuote(task.sessionControl.home)} ${args.map(shellQuote).join(" ")}`;
 }

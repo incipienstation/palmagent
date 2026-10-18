@@ -49,7 +49,7 @@ const GROUP_ORDER: InboxStatus[] = [
   "archived",
 ];
 function taskPriority(task: TaskState): number {
-  return GROUP_ORDER.indexOf(task.sessionControl && task.sessionControl.owner !== "palmagent" ? "local" : task.status);
+  return GROUP_ORDER.indexOf(task.sessionControl && (task.sessionControl.owner === "local" || task.sessionControl.owner === "returning") ? "local" : task.status);
 }
 // Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
 // a short date past a week so the dense list stays scannable.
@@ -69,7 +69,7 @@ function relTime(ms: number): string {
 function TaskMeta({ task, showTime }: { task: TaskState; showTime?: boolean }) {
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-      {task.sessionControl && task.sessionControl.owner !== "palmagent" && <Badge variant="secondary">{task.sessionControl.owner === "local" ? "Local shell" : "Returning"}</Badge>}
+      {task.sessionControl && (task.sessionControl.owner === "local" || task.sessionControl.owner === "returning") && <Badge variant="secondary">{task.sessionControl.owner === "local" ? "Local shell" : "Returning"}</Badge>}
       {/* Full-auto: the agent opens its own PR(s); one links out, several open a sheet. */}
       <PrChip prs={task.prs} />
       {showTime && <span className="ml-auto shrink-0">{relTime(task.lastActivityAt)}</span>}
@@ -130,7 +130,8 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
 const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
   const pending = useTaskMutations().get(task.taskId)?.pending;
   const canArchive = !pending && !isActiveTaskStatus(task.status) && task.status !== "archived"
-    && (!task.sessionControl || task.sessionControl.owner === "palmagent")
+    && (!task.sessionControl || task.sessionControl.owner === "palmagent"
+      || task.sessionControl.owner === "shared" && task.sessionControl.connection === "connected")
     && task.messageQueue?.compaction?.status !== "running";
   const archive = () => queueTaskArchive(task.taskId);
   const question = task.pendingInput?.questions[0];
@@ -294,12 +295,12 @@ export const InboxView = memo(function InboxView({
   const scoped = repoId ? tasks.filter(task => task.repoId === repoId) : tasks;
   const filtered = scoped.filter(task =>
     (!repoId || directory === "all" || taskDirectoryFor(task, repos) === directory)
-    && (statusFilter === "all" || (statusFilter === "local" ? task.sessionControl && task.sessionControl.owner !== "palmagent" : task.status === statusFilter))
+    && (statusFilter === "all" || (statusFilter === "local" ? task.sessionControl && (task.sessionControl.owner === "local" || task.sessionControl.owner === "returning") : task.status === statusFilter))
     && (!search || `${taskTitle(task)} ${task.prompt} ${repos.get(task.repoId)?.name ?? ""}`.toLocaleLowerCase().includes(search)));
   const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
   const byStatus = new Map<InboxStatus, TaskState[]>();
   for (const t of filtered) {
-    const group = t.sessionControl && t.sessionControl.owner !== "palmagent" ? "local" : t.status;
+    const group = t.sessionControl && (t.sessionControl.owner === "local" || t.sessionControl.owner === "returning") ? "local" : t.status;
     const arr = byStatus.get(group) ?? [];
     arr.push(t);
     byStatus.set(group, arr);

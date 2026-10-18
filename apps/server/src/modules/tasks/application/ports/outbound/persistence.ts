@@ -17,7 +17,7 @@ export interface TaskRepository extends MessageStateRepository, TaskHistoryReade
   setTaskRawSeq(id: string, seq: number): void;
   getTaskRawSeq(id: string): number;
   appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[];
-  importSessionEvents(task: TaskState, events: AgentEvent[]): EventRow[];
+  importSessionEvents(task: TaskState, events: AgentEvent[], sourceIds?: string[]): EventRow[];
   inFlightTaskIds(): string[];
   resetInterruptedTasks(ids: string[], now: number): void;
   insertApproval(taskId: string, eventId: number | null, requestJson: string | null, decision: string, decidedAt: number): void;

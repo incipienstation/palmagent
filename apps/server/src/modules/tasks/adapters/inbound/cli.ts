@@ -32,5 +32,13 @@ export async function sessionCommand(argv: string[], environment: { resolveDataD
   const socketDir = !values["data-dir"] && process.env.PALMAGENT_SESSION_SOCKET_DIR
     ? resolve(process.env.PALMAGENT_SESSION_SOCKET_DIR) : dirname(loadConfig({ dataDir }).dbPath);
   const result = await localSessionRequest(socketDir, { agent, sessionId, cwd: resolve(values.cwd ?? process.cwd()), home: resolve(home), waitPid: values["wait-pid"] ? Number(values["wait-pid"]) : findAgentParent(agent) });
-  console.log(`Session queued as ${result.task.taskId}. Palmagent can now show this session read-only as its transcript is saved. Keep working here, or close this local agent CLI to enable follow-up in Palmagent.`);
+  if (result.task.sessionControl?.owner === "shared" && result.task.sessionControl.connection === "connected") {
+    console.log(`Session connected as ${result.task.taskId}. Continue in Palmagent or this terminal; both use the same Codex session. You can leave the CLI open.`);
+  } else if (result.task.sessionControl?.owner === "shared") {
+    console.log(`Session reconnecting as ${result.task.taskId}. Palmagent is reconnecting to the existing Codex session. Keep this CLI open; browser input will resume after the connection is restored.`);
+    if (result.task.sessionControl.error) console.log(result.task.sessionControl.error);
+  } else {
+    console.log(`Session queued as ${result.task.taskId}. Saved messages are available in Palmagent. This CLI session does not expose a shared connection; follow-up becomes available after the local writer exits and synchronization completes.`);
+    if (result.task.sessionControl?.error) console.log(result.task.sessionControl.error);
+  }
 }

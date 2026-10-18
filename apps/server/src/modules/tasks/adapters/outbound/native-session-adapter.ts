@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, readdirSync, readlinkSync, statSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type { DispatchSessionRequest, TaskState } from "@palmagent/shared";
 import type { NativeSessionOperations } from "../../application/ports/outbound/native-session.js";
@@ -12,6 +12,30 @@ export class LocalNativeSessionAdapter implements NativeSessionOperations {
   home = nativeHome;
   realpath(path: string) { return realpathSync(path); }
   processIdentity = processIdentity;
+  sharedSocket(task: TaskState): string | undefined {
+    const control = task.sessionControl;
+    if (task.agent !== "codex" || !control?.waitPid || !control.waitIdentity || processIdentity(control.waitPid) !== control.waitIdentity) return;
+    const argv = readFileSync(`/proc/${control.waitPid}/cmdline`, "utf8").split("\0");
+    if (!argv.includes("app-server")) return;
+    // Resolve the listener from the registered native process, not another
+    // daemon that happens to use the same provider home.
+    const inodes = new Set<string>();
+    for (const fd of readdirSync(`/proc/${control.waitPid}/fd`)) {
+      try {
+        const match = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${control.waitPid}/fd/${fd}`));
+        if (match) inodes.add(match[1]);
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
+    const sockets = readFileSync("/proc/net/unix", "utf8").split("\n").flatMap(line => {
+      const fields = line.trim().split(/\s+/);
+      return fields[3] === "00010000" && fields[4] === "0001" && inodes.has(fields[6]) && fields[7]?.startsWith("/") ? [fields.slice(7).join(" ")] : [];
+    });
+    if (sockets.length !== 1) return;
+    const socket = realpathSync(sockets[0]), stat = statSync(socket);
+    if (!stat.isSocket() || stat.uid !== process.getuid?.()) throw new Error("The native session socket must belong to this account");
+    if (processIdentity(control.waitPid) !== control.waitIdentity) return;
+    return socket;
+  }
   checkpoint = checkpointSession;
   synchronize = synchronizeSession;
 

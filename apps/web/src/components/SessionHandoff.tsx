@@ -16,9 +16,10 @@ export function SessionHandoff({ task }: { task: TaskState }) {
     if (command) commandRef.current?.scrollIntoView({ block: "nearest" });
   }, [command]);
   const local = task.sessionControl?.owner === "local";
+  const shared = task.sessionControl?.owner === "shared";
   const returning = task.sessionControl?.owner === "returning";
   useEffect(() => {
-    if (task.sessionControl?.owner !== "local") setCommand("");
+    if (task.sessionControl?.owner !== "local" && task.sessionControl?.owner !== "shared") setCommand("");
   }, [task.taskId, task.sessionControl?.owner]);
   async function prepare() {
     const finish = beginTaskAction(task.taskId, "handoff");
@@ -31,6 +32,12 @@ export function SessionHandoff({ task }: { task: TaskState }) {
     try { await navigator.clipboard.writeText(command); toast({ title: "Copied.", variant: "success" }); }
     catch { toast({ title: "Select and copy the command below", variant: "destructive" }); }
   }
+  if (shared) return <section aria-label="Shared session" className="flex flex-col gap-3">
+    <h3 className="text-sm font-semibold">Connected Codex session</h3>
+    <p className="text-sm text-muted-foreground">Continue this conversation here or in your terminal. Both use the same running session.</p>
+    <Button disabled={busy} onClick={prepare}>Show terminal command</Button>
+    {command && <div ref={commandRef} className="flex flex-col gap-3"><pre className="rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-all"><code>{command}</code></pre><Button variant="outline" onClick={copy}><Copy data-icon="inline-start" />Copy terminal command</Button></div>}
+  </section>;
   return <section aria-label="Shell handoff" className="flex flex-col gap-3">
       <h3 className="flex items-center gap-2 text-sm font-semibold"><Terminal aria-hidden className="size-4" />{returning ? "Continue in Palmagent" : "Resume in your shell"}</h3>
       <p className="text-sm text-muted-foreground">{returning ? "Saved messages are visible here while your local CLI keeps control. Close that CLI normally to enable follow-up after synchronization." : "Use a shell on the Palmagent host under the same account. The command opens this native session in its working directory."}</p>

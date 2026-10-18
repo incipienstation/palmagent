@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ConversationHistory } from "./conversation-history.js";
 import { projectContextUsage } from "./context-usage.js";
 import { projectConfirmedPrs } from "../../domain/pr-projection.js";
@@ -322,14 +323,33 @@ appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventR
     })();
   }
 
-importSessionEvents(task: TaskState, events: AgentEvent[]): EventRow[] {
+importSessionEvents(task: TaskState, events: AgentEvent[], sourceIds?: string[]): EventRow[] {
+    if (sourceIds && sourceIds.length !== events.length) throw new Error("Session event identities must match the event batch");
     return this.db.transaction(() => {
-      const rows = events.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
+      const fresh = events.flatMap((event, index): AgentEvent[] => {
+        if (!sourceIds) return [event];
+        const source = sourceIds[index];
+        if (event.kind !== "assistant_text") return this.db.prepare("INSERT OR IGNORE INTO session_imports(task_id, source_id) VALUES (?, ?)").run(task.taskId, source).changes ? [event] : [];
+        // Provider snapshots are cumulative. Persist the imported prefix with
+        // the event so reconnecting at a different chunk boundary cannot repeat text.
+        const previous = this.db.prepare("SELECT text_length, text_hash FROM session_imports WHERE task_id = ? AND source_id = ?")
+          .get(task.taskId, source) as { text_length: number; text_hash: string } | undefined;
+        const text = event.payload.text, length = previous?.text_length ?? 0;
+        const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+        if (previous && text.length < length) return []; // an earlier snapshot in the same batch
+        if (previous && hash(text.slice(0, length)) !== previous.text_hash) throw new Error("Shared session text changed before its imported prefix");
+        if (text.length === length) return [];
+        this.db.prepare(`INSERT INTO session_imports(task_id, source_id, text_length, text_hash) VALUES (?, ?, ?, ?)
+          ON CONFLICT(task_id, source_id) DO UPDATE SET text_length = excluded.text_length, text_hash = excluded.text_hash`)
+          .run(task.taskId, source, text.length, hash(text));
+        return [{ ...event, payload: { ...event.payload, text: text.slice(length) } }];
+      });
+      const rows = fresh.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
       this.conversation.update(task.taskId);
-      this.projectPrEvents(task.taskId, events);
-      this.projectContextEvents(task.taskId, events);
+      this.projectPrEvents(task.taskId, fresh);
+      this.projectContextEvents(task.taskId, fresh);
       this.setSessionControl(task.taskId, task.sessionControl);
-      if (events.length) this.touchTask(task.taskId, Date.now());
+      if (fresh.length) this.touchTask(task.taskId, Date.now());
       return rows;
     })();
   }

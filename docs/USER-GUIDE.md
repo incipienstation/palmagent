@@ -183,22 +183,28 @@ command with the session ID, directory, provider home, instance binding, and sel
 Run it on the same host under the service account. The native CLI controls its own
 interactive permission prompts. Open only one local writer for a session.
 
-To send an active local session to Palmagent, use the **dispatch** plugin skill.
-It registers the exact native session and shows saved messages as a read-only preview
-while the CLI stays open. Keep working locally, or close that CLI to continue in Palmagent.
-The task remains unavailable for follow-up until that CLI exits and the final
-transcript synchronizes. Both directions retain the native session ID and working directory;
-Palmagent stores normalized display events and a checked synchronization cursor.
-It never copies credentials or rewrites the provider's transcript. Returning tasks
-keep their Palmagent permission/model choices; newly imported tasks use Palmagent's
-provider defaults. Select the next turn's settings in the task composer.
+To connect a local session to Palmagent, use the **dispatch** plugin skill. A Codex
+session whose app-server exposes a local control socket connects to the same native
+session. Keep the local app open: its messages and execution state appear in Palmagent,
+and **Send now** reaches the active turn. **Queue** waits for the turn to finish.
+Only dispatched sessions are connected. Existing dispatched previews connect automatically
+when their original server is available.
 
-Transfers currently require Linux, a shared local provider home, and a native JSONL
-transcript of at most 64 MiB. Preview waits for unfinished records to be saved.
-Missing, rewritten, identity-mismatched, or still-incomplete transcripts after CLI exit
-leave the transfer pending with an error. No turn starts automatically
-when a transfer completes. Raw native commands cannot prevent another independently
-started CLI from opening the same session.
+For connected sessions, **Show terminal command** opens another client on that same
+server without releasing Palmagent control. Model and permission settings remain managed
+by Codex. If the connection drops, Palmagent preserves the conversation and draft and
+reconnects. An unconfirmed input is not automatically resent. **Stop** interrupts the
+current turn while leaving the native server and other clients running.
+
+Standalone Codex and Claude Code sessions without a shared connection retain saved-message
+preview. Follow-up becomes available after their local writer exits and the final transcript
+synchronizes. These transfers retain the native session ID and working directory, and require
+Linux, a shared local provider home, and a native JSONL transcript of at most 64 MiB.
+Preview waits for unfinished records to be saved. Missing, rewritten, or identity-mismatched
+transcripts leave the transfer pending with an error. No turn starts automatically when a
+connection or transfer completes. Palmagent never copies credentials or rewrites the provider's
+transcript. Raw resume commands can still open an independent writer; use the connected
+session's terminal command to join its server.
 
 Structured tool image outputs render in both output modes when they contain PNG,
 JPEG, WebP, or GIF data (up to 5 MiB each, four images per event). Unsupported formats
