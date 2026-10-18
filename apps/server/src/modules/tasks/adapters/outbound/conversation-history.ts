@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import {
-  appendHistoryEvent, activityLabel, deferActivityEventDetails, presentTranscript, transcriptActivity,
+  appendHistoryEvent, activityLabel, deferActivityEventDetails, projectConversation, transcriptActivity,
   CONVERSATION_PAGE_ITEMS, CONVERSATION_PAGE_BYTES, CONVERSATION_ITEM_BYTES, CONVERSATION_DETAIL_ITEMS,
   type AgentEvent, type ConversationActivity, type ConversationContent, type ConversationDetails,
   type ConversationItem, type ConversationPatch, type LogItem, type TranscriptRow,
-  type TaskHistoryResponse, type TaskHistoryChangesResponse,
+  type TaskHistoryResponse, type TaskHistoryChangesResponse, type ConversationSteps, type ExecutionRecords,
 } from "@palmagent/shared";
 import { ApplicationError } from "../../../../kernel/errors.js";
 
@@ -26,6 +26,8 @@ export class ConversationHistory {
   constructor(private readonly db: Database.Database) {
     db.transaction(() => {
       const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'conversation_rows'").get();
+      db.exec("CREATE TABLE IF NOT EXISTS conversation_projection_version (version INTEGER NOT NULL)");
+      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== 2;
       db.exec(`
         CREATE TABLE IF NOT EXISTS conversation_rows (
           task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -57,12 +59,13 @@ export class ConversationHistory {
           ON CONFLICT(task_id) DO UPDATE SET from_seq = MIN(from_seq, excluded.from_seq);
         END;
       `);
-      if (!exists) {
+      if (!exists || upgrade) {
         // One transactional upgrade, including native imports from other writers.
         // Ordinary first-page reads never scan the completed conversation.
-        db.exec("INSERT INTO conversation_dirty SELECT task_id, MIN(seq) FROM events GROUP BY task_id");
+        db.exec("INSERT INTO conversation_dirty SELECT task_id, MIN(seq) FROM events GROUP BY task_id ON CONFLICT(task_id) DO UPDATE SET from_seq = MIN(from_seq, excluded.from_seq)");
         for (const { task_id } of db.prepare("SELECT task_id FROM conversation_dirty").all() as { task_id: string }[]) this.refresh(task_id);
       }
+      if (upgrade) db.exec("DELETE FROM conversation_projection_version; INSERT INTO conversation_projection_version VALUES (2)");
     }).immediate();
   }
 
@@ -79,8 +82,10 @@ export class ConversationHistory {
   private wire(row: TranscriptRow, revision: number, member?: { key: number; body: string; seq: number }): ConversationItem {
     const full = JSON.stringify(row);
     let item: ConversationItem = { ...row, endSeq: endOf(row), revision };
-    if (row.type === "activity") item = { ...item, ...row, items: [],
-      summary: { label: activityLabel(row, "compact"), count: row.items.length }, details: true,
+    if (row.type === "activity") item = { ...item, ...row, items: [], operations: undefined,
+      summary: { label: activityLabel(row, "compact"), count: row.operations?.length ?? row.items.length,
+        running: row.operations?.find(step => step.state === "running")?.title,
+        failed: row.operations?.filter(step => step.state === "error").length }, details: true,
       preview: row.preview?.slice(0, 240) } as ConversationItem;
     if (Buffer.byteLength(JSON.stringify(item)) <= CONVERSATION_ITEM_BYTES) return item;
     const source = row.type === "message" ? row.item : undefined;
@@ -102,11 +107,23 @@ export class ConversationHistory {
   private saveBlock(taskId: string, start: number, log: LogItem[], revision: number, previous: boolean): void {
     const prior = new Map((this.db.prepare("SELECT seq, end_seq, revision, body_json, wire_json FROM conversation_rows WHERE task_id = ? AND block_start = ?")
       .all(taskId, start) as StoredRow[]).map(row => [row.seq, row]));
+    const identities = new Map<number, number>();
+    for (const old of prior.values()) {
+      if (!old.body_json) continue;
+      const row = JSON.parse(old.body_json) as TranscriptRow;
+      if (row.type === "activity") for (const member of row.items) identities.set(member.key, row.disclosureKey ?? row.key);
+    }
+    const usedIdentities = new Set<number>();
     const save = this.db.prepare(`INSERT INTO conversation_rows (task_id, seq, block_start, end_seq, revision, body_json, wire_json) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(task_id, seq) DO UPDATE SET block_start=excluded.block_start, end_seq=excluded.end_seq,
         revision=excluded.revision, body_json=excluded.body_json, wire_json=excluded.wire_json`);
-    for (const original of presentTranscript(log, "compact", !previous)) {
+    for (const original of projectConversation(log, !previous)) {
       const row = original.type === "failure" && previous ? { ...original, previous: true } : original;
+      if (row.type === "activity") {
+        row.disclosureKey = row.items.map(member => identities.get(member.key)).find(key => key !== undefined && !usedIdentities.has(key))
+          ?? row.items.find(member => !usedIdentities.has(member.key))?.key ?? row.key;
+        usedIdentities.add(row.disclosureKey);
+      }
       const body = JSON.stringify(row), old = prior.get(row.key);
       prior.delete(row.key);
       if (old?.body_json === body) continue;
@@ -236,6 +253,79 @@ export class ConversationHistory {
     })();
   }
 
+  steps(taskId: string, key: number, after = 0): ConversationSteps {
+    this.refresh(taskId);
+    return this.db.transaction(() => {
+      const record = this.record(taskId, key), row = JSON.parse(record.body_json) as TranscriptRow;
+      const operations = row.type === "activity" ? row.operations ?? [] : [];
+      const remaining = operations.filter(step => step.key > after).sort((a, b) => a.key - b.key);
+      const steps = remaining.slice(0, CONVERSATION_DETAIL_ITEMS).map(({ members: _members, ...step }) => step);
+      return { steps, nextAfter: remaining.length > steps.length ? steps.at(-1)!.key : null, cursor: record.revision };
+    })();
+  }
+
+  private eventDetail(taskId: string, seq: number): TranscriptRow {
+    const event = this.rawEvent(taskId, seq), items: LogItem[] = [];
+    appendHistoryEvent(items, event, seq);
+    return { type: "message", key: seq, item: items[0] };
+  }
+
+  private rawEvent(taskId: string, seq: number): AgentEvent {
+    const row = this.db.prepare(`SELECT e.seq, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+      FROM events e JOIN tasks t ON t.id = e.task_id WHERE e.task_id = ? AND e.seq = ?`).get(taskId, seq) as EventRow | undefined;
+    if (!row) throw new ApplicationError("not_found", "Execution record is no longer available.");
+    return { taskId, agent: row.agent, kind: row.kind, payload: JSON.parse(row.payload_json), ts: row.ts,
+      sessionId: row.session_id ?? undefined } as AgentEvent;
+  }
+
+  stepDetails(taskId: string, key: number, stepKey: number, after = 0): ConversationDetails {
+    this.refresh(taskId);
+    return this.db.transaction(() => {
+      const record = this.record(taskId, key), row = JSON.parse(record.body_json) as TranscriptRow;
+      const step = row.type === "activity" ? row.operations?.find(step => step.key === stepKey) : undefined;
+      if (!step) throw new ApplicationError("not_found", "This operation changed. Reload its activity.");
+      const remaining = step.members.filter(seq => seq > after).sort((a, b) => a - b);
+      const items: ConversationItem[] = [];
+      let bytes = 1024;
+      for (const seq of remaining.slice(0, CONVERSATION_DETAIL_ITEMS)) {
+        const member = row.type === "activity" ? row.items.find(item => item.key === seq) : undefined;
+        const detail = member ? this.detail(taskId, member) : this.eventDetail(taskId, seq);
+        const item = this.wire(detail, record.revision, { key, body: JSON.stringify(detail), seq });
+        const size = Buffer.byteLength(JSON.stringify(item));
+        if (bytes + size > CONVERSATION_PAGE_BYTES) break;
+        items.push(item); bytes += size;
+      }
+      return { items, nextAfter: remaining.length > items.length ? items.at(-1)!.key : null, cursor: record.revision };
+    })();
+  }
+
+  records(taskId: string, before?: number): ExecutionRecords {
+    return this.db.transaction(() => {
+      const cursor = (this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events WHERE task_id = ?").get(taskId) as { seq: number }).seq;
+      const rows = this.db.prepare("SELECT seq FROM events WHERE task_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?")
+        .all(taskId, before ?? cursor + 1, CONVERSATION_DETAIL_ITEMS + 1) as { seq: number }[];
+      const records: ExecutionRecords["records"] = [];
+      let bytes = 1024;
+      for (const { seq } of rows.slice(0, CONVERSATION_DETAIL_ITEMS)) {
+        const event = this.rawEvent(taskId, seq), body = JSON.stringify(event, null, 2);
+        const record = { key: seq, kind: event.kind, agent: event.agent, ts: event.ts, version: version(body),
+          ...(Buffer.byteLength(body) <= CONVERSATION_ITEM_BYTES ? { body } : {}) };
+        const size = Buffer.byteLength(JSON.stringify(record));
+        if (bytes + size > CONVERSATION_PAGE_BYTES) break;
+        records.push(record); bytes += size;
+      }
+      return { records: records.reverse(), before: rows.length > records.length ? records[0]!.key : null, cursor };
+    })();
+  }
+
+  recordContent(taskId: string, key: number, expectedVersion: string, offset: number): ConversationContent {
+    const body = JSON.stringify(this.rawEvent(taskId, key), null, 2);
+    if (version(body) !== expectedVersion) throw new ApplicationError("conflict", "This record changed. Refresh the execution records.");
+    if (offset > body.length) throw new ApplicationError("bad_request", "Invalid content offset.");
+    const next = Math.min(body.length, offset + 16_384);
+    return { chunk: body.slice(offset, next), nextOffset: next < body.length ? next : null, version: expectedVersion };
+  }
+
   content(taskId: string, key: number, expectedVersion: string, offset: number, member?: number): ConversationContent {
     this.refresh(taskId);
     return this.db.transaction(() => {
@@ -244,8 +334,9 @@ export class ConversationHistory {
       if (member !== undefined) {
         const row = JSON.parse(body) as TranscriptRow;
         const item = (row.type === "message" ? [row.item] : row.items).find(item => item.key === member);
-        if (!item) throw new ApplicationError("not_found", "Activity detail is no longer available.");
-        body = JSON.stringify(this.detail(taskId, item));
+        const linked = row.type === "activity" && row.operations?.some(step => step.members.includes(member));
+        if (!item && !linked) throw new ApplicationError("not_found", "Activity detail is no longer available.");
+        body = JSON.stringify(item ? this.detail(taskId, item) : this.eventDetail(taskId, member));
       }
       if (version(body) !== expectedVersion) throw new ApplicationError("conflict", "This message changed. Reload its content.");
       if (offset > body.length) throw new ApplicationError("bad_request", "Invalid content offset.");

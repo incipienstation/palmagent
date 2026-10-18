@@ -142,6 +142,18 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     taskHistoryChanges: (id: string, after: number, through: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false, afterKey?: number) => request(() => tasks.history.changes.$get({
       param: idParam(id), query: { ...(transcript ? { format: "transcript" as const } : {}), ...(afterKey === undefined ? {} : { afterKey: String(afterKey) }), after: String(after), through: String(through), ...(details === "summary" ? { details } : {}) },
     }, { init: { signal } })),
+    conversationSteps: (id: string, key: number, after?: number, signal?: AbortSignal) => request(() => tasks.history.steps.$get({
+      param: idParam(id), query: { key: String(key), ...(after === undefined ? {} : { after: String(after) }) },
+    }, { init: { signal } })),
+    conversationStepDetails: (id: string, key: number, step: number, after?: number, signal?: AbortSignal) => request(() => tasks.history["step-details"].$get({
+      param: idParam(id), query: { key: String(key), step: String(step), ...(after === undefined ? {} : { after: String(after) }) },
+    }, { init: { signal } })),
+    executionRecords: (id: string, before?: number, signal?: AbortSignal) => request(() => tasks.history.records.$get({
+      param: idParam(id), query: { ...(before === undefined ? {} : { before: String(before) }) },
+    }, { init: { signal } })),
+    executionRecordContent: (id: string, key: number, version: string, offset: number, signal?: AbortSignal) => request(() => tasks.history["record-content"].$get({
+      param: idParam(id), query: { key: String(key), version, offset: String(offset) },
+    }, { init: { signal } })),
     conversationDetails: (id: string, key: number, after?: number, signal?: AbortSignal) => request(() => tasks.history.items.$get({
       param: idParam(id), query: { key: String(key), ...(after === undefined ? {} : { after: String(after) }) },
     }, { init: { signal } })),

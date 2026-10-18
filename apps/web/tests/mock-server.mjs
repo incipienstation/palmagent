@@ -217,7 +217,7 @@ const server = createServer(async (req, res) => {
         const requestedBefore = url.searchParams.get("before");
         const cursor = requestedBefore === null ? stream.length : Number(requestedBefore) - 1;
         const compact = url.searchParams.get("details") === "summary";
-        let start = compact ? 0 : Math.max(0, Math.min(stream.length, cursor) - 200);
+        let start = Math.max(0, Math.min(stream.length, cursor) - 200);
         while (start > 0 && stream[start]?.kind === "assistant_text" && stream[start - 1]?.kind === "assistant_text") start--;
         const agent = tasks.find((task) => task.taskId === id)?.agent ?? "codex";
         return json(res, 200, { events: stream.slice(start, cursor).map((event, i) => {

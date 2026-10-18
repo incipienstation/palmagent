@@ -9,15 +9,16 @@ for (const mode of ["compact", "verbose"] as const) {
   test(`${mode}: output density and full record access on mobile`, async ({ page }) => {
     await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
     await page.goto("/#/task/t-idle-nginx");
-    if (mode !== "verbose") {
+    {
       await expect(page.getByText(ONLY_WHEN_EXPANDED)).toHaveCount(0);
       await expect(page.getByText("session started")).toHaveCount(0);
       // Legacy prose has no phase metadata and must remain readable.
       await expect(page.getByText("Adding a per-IP")).toBeVisible();
       await expect(page.getByText("Per-IP rate limit added; SSE stream verified unthrottled.", { exact: true })).toBeVisible();
-      await expect(page).toHaveScreenshot(`output-mode-${mode}.png`);
+      if (mode === "compact") await expect(page).toHaveScreenshot(`output-mode-${mode}.png`);
       await page.getByRole("button", { name: /(?:Activity|Commands) · 1 tool$/ }).click();
     }
+    await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
     await expect(page.getByText(ONLY_WHEN_EXPANDED)).toBeVisible();
     await assertViewportLocked(page);
     expect(await viewport(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
@@ -60,6 +61,7 @@ for (const mode of ["compact"] as const) {
     await group.focus();
     await page.keyboard.press("Enter");
     await expect(group).toHaveAttribute("aria-expanded", "true");
+    await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
     await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
     await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
     await emit("tool_call", { id: "next-tool", name: "bash", command: "echo more" });
@@ -148,6 +150,7 @@ for (const mode of ["compact"] as const) {
     await expect(details).toHaveAttribute("aria-expanded", "false");
     const activity = page.getByRole("button", { name: /12 tools · 12 failed/ });
     await activity.click();
+    await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
     await expect(page.getByText("Diagnostic 0: target unavailable", { exact: false })).toBeVisible();
     await activity.click();
     await expect(page.getByText("Diagnostic 0: target unavailable", { exact: false })).toHaveCount(0);

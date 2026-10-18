@@ -461,6 +461,10 @@ eventsAfterSeq(taskId: string, afterSeq: number, limit = 5000): EventRow[] {
     return rows.map(rowToEvent);
   }
 
+conversationSteps(taskId: string, key: number, after?: number) { return this.conversation.steps(taskId, key, after); }
+conversationStepDetails(taskId: string, key: number, step: number, after?: number) { return this.conversation.stepDetails(taskId, key, step, after); }
+executionRecords(taskId: string, before?: number) { return this.conversation.records(taskId, before); }
+executionRecordContent(taskId: string, key: number, version: string, offset: number) { return this.conversation.recordContent(taskId, key, version, offset); }
 conversationPage(taskId: string, before?: number) { return this.conversation.page(taskId, before); }
 conversationChanges(taskId: string, after: number, through?: number, afterKey?: number) { return this.conversation.changes(taskId, after, through, afterKey); }
 conversationDetails(taskId: string, key: number, after?: number) { return this.conversation.details(taskId, key, after); }

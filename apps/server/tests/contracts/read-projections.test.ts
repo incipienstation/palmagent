@@ -51,6 +51,17 @@ test("compact history and catch-up parse persisted summaries while full reads pr
   assert.ok(detailParses > 0);
 });
 
+test("persisted Trace titles preserve command arrays without including other input fields", t => {
+  const f = fixture(t);
+  const events = [
+    { id: "top-level", name: "shell", command: ["printf", "hello"], input: { unrelated: "private-detail" } },
+    { id: "nested", name: "shell", input: { command: ["pnpm", "test"], unrelated: "private-detail" } },
+  ].map(payload => ({ taskId: "task", agent: "codex", kind: "tool_call", payload, ts: 1 } as AgentEvent));
+  f.tasks.appendAgentEvents("task", events);
+  assert.deepEqual(f.tasks.latestHistoryPage("task", false).events.map(row => row.event.payload),
+    events.map(event => deferActivityEventDetails(event).event.payload));
+});
+
 test("existing history backfills transactionally and projections follow imports, updates and deletion", t => {
   const f = fixture(t);
   f.connection.exec("DROP TRIGGER event_compact_insert; DROP TRIGGER event_compact_update; DROP TABLE event_compact_payloads");
@@ -66,7 +77,7 @@ test("existing history backfills transactionally and projections follow imports,
   assert.equal(f.tasks.eventCursor("task"), first.seq);
   interrupted.mock.restore();
   const tasks = new SqliteTasks(f.connection);
-  assert.deepEqual(tasks.latestHistoryPage("task", false).events[0].event.payload, { id: "legacy", name: "Read" });
+  assert.deepEqual(tasks.latestHistoryPage("task", false).events[0].event.payload, { id: "legacy", name: "Read", traceTitle: "Read" });
   assert.equal(tasks.eventCursor("task"), first.seq);
   tasks.importSessionEvents(f.task, [{ taskId: "task", agent: "codex", kind: "tool_result", payload: { tool_use_id: "legacy", output: "imported detail" }, ts: 2 }]);
   assert.deepEqual(tasks.latestHistoryPage("task", false).events[1].event.payload, { tool_use_id: "legacy" });

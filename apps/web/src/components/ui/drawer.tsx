@@ -57,7 +57,7 @@ function DrawerContent({
   size = "content",
   showClose = true,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left"; size?: "content" | "panel"; showClose?: boolean }) {
+}: React.ComponentProps<typeof DrawerPrimitive.Content> & { side?: "bottom" | "left" | "right"; size?: "content" | "panel"; showClose?: boolean }) {
   return (
     <DrawerPortal>
       <DrawerOverlay />
@@ -67,7 +67,7 @@ function DrawerContent({
         data-close={showClose || undefined}
         className={cn(
           "responsive-drawer fixed z-50 flex min-h-0 flex-col bg-card [&[data-close]_[data-slot=drawer-header]]:pr-14",
-          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : "inset-x-0 bottom-0 mx-auto h-auto max-h-[min(90dvh,calc(var(--app-height,100dvh)-16px))] w-full max-w-[720px] rounded-t-3xl border border-b-0 border-border pb-[var(--safe-bottom,0px)]",
+          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : side === "right" ? "inset-y-0 right-0 h-app w-full border-l border-border pt-[var(--safe-top,0px)] pb-[var(--safe-bottom,0px)] sm:max-w-2xl" : "inset-x-0 bottom-0 mx-auto h-auto max-h-[min(90dvh,calc(var(--app-height,100dvh)-16px))] w-full max-w-[720px] rounded-t-3xl border border-b-0 border-border pb-[var(--safe-bottom,0px)]",
           side === "bottom" && size === "panel" && "h-[680px]",
           className,
         )}

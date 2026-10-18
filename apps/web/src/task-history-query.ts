@@ -12,7 +12,7 @@ const ACTIVITY_DETAILS_KEY = "task-activity-details";
 
 export const taskHistoryKey = (taskId: string, mode: "compact" | "verbose" = "compact") =>
   mode === "compact" ? [HISTORY_KEY, taskId] as const : [HISTORY_KEY, taskId, "full"] as const;
-export const taskHistoryChangesKey = (taskId: string, after: number, through: number, mode: "compact" | "verbose") =>
+export const taskHistoryChangesKey = (taskId: string, after: number, through: number, mode: "compact" | "verbose" = "compact") =>
   ["task-history-changes", taskId, after, through, mode] as const;
 // `from` identifies one Activity; its `through` watermark advances while live
 // and is refreshed into the same cache entry when the Activity grows.

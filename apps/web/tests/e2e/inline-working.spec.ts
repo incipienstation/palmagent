@@ -133,8 +133,8 @@ for (const mode of ["compact", "verbose"] as const) for (const width of [360, 12
     await expect(working).toHaveCount(0);
     await emit("tool_call", { id: "tool-1", name: "bash", command: "echo checked" });
     await expect(working).toHaveCount(1);
-    if (mode === "compact") {
-      const activity = transcript.getByRole("button", { name: "Activity · 1 tool", exact: true });
+    {
+      const activity = transcript.getByRole("button", { name: /^Activity · 1 tool/ });
       await expect(activity).toBeVisible();
       expect((await working.boundingBox())!.y).toBeGreaterThan((await activity.boundingBox())!.y);
       await activity.click();

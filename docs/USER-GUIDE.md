@@ -74,11 +74,18 @@ Use **+ → Videos** to attach an MP4, WebM, or MOV video up to 20 MiB. The brow
 must be able to decode it. The original stays available for playback, and the agent
 receives up to eight timestamped frames for visual analysis. Audio is not sent.
 
-Compact conversations open with the latest messages and Activity summaries. Scroll
-up to read older pages; your reading position stays
-in place as they arrive. Activity counts describe the entire group. Expand a group
-to inspect its details, then use **Load more activity** for additional entries.
+Conversations open with the latest messages and Trace activity summaries. Scroll
+up to read older pages; your reading position stays in place as they arrive.
+Expand an activity to see its steps, then open a step to read its input and output.
+**Load more steps** loads another page; **Expand loaded steps** opens only the steps
+already listed. New events and completion preserve your disclosure choices.
 Very large messages and images offer a separate load button for their full content.
+
+The chat uses one display style. Older Compact/Verbose preferences no longer change
+it. Use **Task actions → Execution records** to inspect recorded events, including
+lifecycle metadata that does not appear in the conversation. Records load in pages,
+with large record bodies loaded in chunks. Closing the panel keeps your draft and
+conversation position.
 
 ## Space base branches
 
@@ -206,7 +213,7 @@ connection or transfer completes. Palmagent never copies credentials or rewrites
 transcript. Raw resume commands can still open an independent writer; use the connected
 session's terminal command to join its server.
 
-Structured tool image outputs render in both output modes when they contain PNG,
+Structured tool image outputs render in the conversation when they contain PNG,
 JPEG, WebP, or GIF data (up to 5 MiB each, four images per event). Unsupported formats
 remain a text notice. Arbitrary filesystem paths in tool output are not served.
 

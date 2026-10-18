@@ -1,3 +1,4 @@
+import { toolSummary } from "./conversation-trace.js";
 import type { AgentEvent } from "./events.js";
 
 export const TOOL_CALL_SUMMARY_FIELDS = ["id", "tool_use_id", "name", "status", "is_error", "exit_code"] as const;
@@ -13,5 +14,6 @@ export function deferActivityEventDetails(event: AgentEvent): { event: AgentEven
   const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
     ? event.payload as Record<string, unknown> : {};
   const summary = Object.fromEntries(fields.flatMap((field) => field in payload ? [[field, payload[field]]] : []));
+  if (event.kind === "tool_call") summary.traceTitle = toolSummary(payload);
   return { event: { ...event, payload: summary }, detailsDeferred: true };
 }
