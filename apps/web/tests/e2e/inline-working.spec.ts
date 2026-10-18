@@ -63,10 +63,10 @@ for (const width of [360, 1280]) for (const echoFirst of [true, false]) {
     await send(page, "t-run", { type: "tasks", tasks: [task] });
     await emit(2, "status", { subtype: "turn_started" });
     await emit(3, "tool_call", { id: "check", name: "bash", command: "echo checked" });
-    await expect(working).toHaveCount(1);
+    await expect(working).toHaveCount(0);
     const activity = transcript.getByRole("button", { name: /1 tool/ });
     await expect(activity).toContainText("Activity · 1 tool");
-    expect((await working.boundingBox())!.y).toBeGreaterThan((await activity.boundingBox())!.y);
+    await expect(activity.locator("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
     await activity.click();
     await expect(activity).toHaveAttribute("aria-expanded", "true");
     await expect(transcript.getByText(/1 tool/, { exact: false })).toBeVisible();
@@ -132,18 +132,19 @@ for (const mode of ["compact", "verbose"] as const) for (const width of [360, 12
     await emit("status", { subtype: "assistant_message", messageId: "m1", phase: "progress" });
     await expect(working).toHaveCount(0);
     await emit("tool_call", { id: "tool-1", name: "bash", command: "echo checked" });
-    await expect(working).toHaveCount(1);
+    await expect(working).toHaveCount(0);
     {
       const activity = transcript.getByRole("button", { name: /^Activity · 1 tool/ });
       await expect(activity).toBeVisible();
-      expect((await working.boundingBox())!.y).toBeGreaterThan((await activity.boundingBox())!.y);
+      await expect(activity.locator("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
       await activity.click();
       await expect(activity).toHaveAttribute("aria-expanded", "true");
-      await expect(working).toHaveCount(1);
+      await expect(working).toHaveCount(0);
       await activity.click();
     }
     await captureForReview(page, `working-${mode}-${width}.png`);
     await emit("tool_result", { tool_use_id: "tool-1", output: "checked" });
+    await expect(working).toHaveCount(1);
     await emit("assistant_text", { text: "The answer is arriving.", messageId: "m2", phase: "final" });
     await expect(transcript.getByText("The answer is arriving.", { exact: true })).toBeVisible();
     await expect(working).toHaveCount(0);

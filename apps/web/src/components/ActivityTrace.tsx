@@ -4,6 +4,8 @@ import { useUpdateState } from "../update-state";
 import { useTraceSteps, useTraceStepDetails, useLegacyTraceDetails } from "../hooks/useTraceDetails";
 import { activityLabel } from "../transcript";
 import { Button } from "./ui/button";
+import { ConversationContent } from "./ConversationDetails";
+import { Markdown } from "./Markdown";
 import { Trace, TraceLine, TraceIcon, TraceTitle, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent } from "./ui/trace";
 import type { ReactNode } from "react";
 
@@ -20,18 +22,23 @@ export function ActivityTrace({ activity, running: executing, sourceLog, revisio
   const steps = activity.details ? query.data?.pages.flatMap(page => page.steps) ?? [] : (activity.operations ?? []).slice(0, localCount);
   const running = executing && (activity.summary?.running ?? steps.find(step => step.state === "running")?.title);
   const label = activityLabel(activity, "compact");
-  const failedCount = activity.summary?.failed ?? steps.filter(step => step.state === "error").length;
-  const hasError = failedCount > 0;
   const allOpen = steps.length > 0 && steps.every(step => openSteps.has(step.key));
   return <Trace data-activity className="mb-3">
     <TraceCollapsible open={open} onOpenChange={next => onToggle(activity, next)}>
       <TraceCollapsibleTrigger aria-label={running ? `${label} · Running: ${running}` : label} title={label}>
-        <TraceLine status={running ? "running" : hasError ? "error" : undefined}>
-          <TraceIcon><Wrench /></TraceIcon><TraceTitle>{running ? `Running: ${running}${hasError ? ` · ${failedCount} failed` : ""}` : label}</TraceTitle>
+        <TraceLine status={running ? "running" : undefined}>
+          <TraceIcon><Wrench /></TraceIcon><TraceTitle>{running ? `Running: ${running}` : label}</TraceTitle>
         </TraceLine>
         {running && <span className="sr-only">{label}</span>}
       </TraceCollapsibleTrigger>
-      {!open && activity.preview && <p data-progress-preview className="line-clamp-1 text-sm text-muted-foreground [overflow-wrap:anywhere]">{activity.preview}</p>}
+      {!open && activity.preview && <div data-progress-preview className="text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+        {activity.previewContent && taskId
+          ? <ConversationContent taskId={taskId} content={activity.previewContent}
+              preview={<Markdown streaming={activity.live}>{activity.preview}</Markdown>}
+              render={row => row.type === "message" && row.item.kind === "assistant_text"
+                ? <Markdown streaming={activity.live}>{row.item.text}</Markdown> : null} />
+          : <Markdown streaming={activity.live}>{activity.preview}</Markdown>}
+      </div>}
       <TraceCollapsibleContent>
         {open && <>
           {activity.details && query.isPending && <p role="status">Loading activity…</p>}

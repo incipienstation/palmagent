@@ -49,7 +49,7 @@ export function userMessage(item: LogItem): boolean {
   return item.kind === "status" && ["dispatch", "followup", "steer", "answer"].includes(String(payload(item).subtype));
 }
 
-export type Activity = { type: "activity"; key: number; items: LogItem[]; live: boolean; preview?: string;
+export type Activity = { type: "activity"; key: number; items: LogItem[]; live: boolean; preview?: string; previewContent?: ConversationContentRef;
   disclosureKey?: number; operations?: TraceOperation[]; summary?: { label: string; count: number; running?: string; failed?: number }; details?: boolean };
 export type RunFailure = { type: "failure"; key: number; items: LogItem[]; previous: boolean; completed?: boolean };
 export type TranscriptRow = Activity | RunFailure | { type: "message"; key: number; item: LogItem };
@@ -176,19 +176,17 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
 }
 
 export function activityLabel(group: Activity, mode: OutputMode): string {
-  if (group.summary) return group.summary.label;
+  // Older persisted summaries include a failure tally. Keep failures on individual steps.
+  if (group.summary) return group.summary.label.replace(/ · \d+ failed$/, "");
   if (group.operations) {
     const tools = group.operations.filter(step => step.kind === "tool").length;
-    const failures = group.operations.filter(step => step.state === "error").length;
     const count = tools ? `${tools} ${tools === 1 ? "tool" : "tools"}` : `${group.operations.length} ${group.operations.length === 1 ? "step" : "steps"}`;
-    return `Activity · ${count}${failures ? ` · ${failures} failed` : ""}`;
+    return `Activity · ${count}`;
   }
   const tools = new Map<string | number, string>();
-  const failures = new Set<string | number>();
   for (const item of group.items) {
     const p = payload(item);
     if (item.kind === "tool_call") tools.set(typeof p.id === "string" ? p.id : item.key, String(p.name ?? "tool"));
-    if (failed(item)) failures.add(typeof p.id === "string" ? p.id : typeof p.tool_use_id === "string" ? p.tool_use_id : item.key);
   }
   const names = [...tools.values()];
   const category = names.length && names.every((name) => /^(bash|Bash|command_execution)$/.test(name)) ? "Commands"
@@ -197,5 +195,5 @@ export function activityLabel(group: Activity, mode: OutputMode): string {
     : "Activity";
   const label = mode === "compact" ? "Activity" : category;
   const count = tools.size ? `${tools.size} ${tools.size === 1 ? "tool" : "tools"}` : `${group.items.length} ${group.items.length === 1 ? "event" : "events"}`;
-  return `${label} · ${count}${failures.size ? ` · ${failures.size} failed` : ""}`;
+  return `${label} · ${count}`;
 }

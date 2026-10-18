@@ -32,14 +32,14 @@ test("questions, approvals, failures, images and repeated answers across turns s
   }
 });
 
-test("call lifecycle updates count as one failed tool inside activity", () => {
+test("call lifecycle updates count as one tool without a failure tally", () => {
   const log = [event(1, "tool_call", { id: "t1", name: "bash", status: "in_progress" }),
     event(2, "tool_call", { id: "t1", name: "bash", status: "failed" }),
     event(3, "tool_result", { tool_use_id: "t1", exit_code: 1 })];
   const rows = presentTranscript(log, "compact", true);
   const group = rows[0] as Activity;
   expect(activityLabel(group, "compact")).toContain("1 tool");
-  expect(activityLabel(group, "compact")).toBe("Activity · 1 tool · 1 failed");
+  expect(activityLabel(group, "compact")).toBe("Activity · 1 tool");
   expect(group.items).toEqual(log);
   expect(rows).toHaveLength(1);
 });

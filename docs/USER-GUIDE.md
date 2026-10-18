@@ -79,6 +79,10 @@ up to read older pages; your reading position stays in place as they arrive.
 Expand an activity to see its steps, then open a step to read its input and output.
 **Load more steps** loads another page; **Expand loaded steps** opens only the steps
 already listed. New events and completion preserve your disclosure choices.
+While work is active, the latest progress message wraps across lines beneath the
+collapsed activity. That temporary preview disappears when the turn finishes; its
+content remains available in the steps. An active Trace replaces the separate
+**Working…** indicator. Individual tool failures stay on their steps.
 Very large messages and images offer a separate load button for their full content.
 
 The chat uses one display style. Older Compact/Verbose preferences no longer change

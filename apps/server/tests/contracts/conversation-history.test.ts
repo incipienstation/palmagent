@@ -63,7 +63,7 @@ test("a large Activity is one summary with exact counts and separately paged det
   const activity = page.transcript!.find(row => row.type === "activity")!;
   assert.equal(activity.type, "activity");
   if (activity.type !== "activity") return;
-  assert.equal(activity.summary!.label, "Activity · 400 tools · 1 failed");
+  assert.equal(activity.summary!.label, "Activity · 400 tools");
   assert.deepEqual(activity.items, []);
   assert.ok(!JSON.stringify(page).includes("Result 399"));
   let after: number | undefined;
@@ -109,6 +109,45 @@ test("byte limits defer oversized Unicode messages and tool details without trun
   // A growing message cannot be concatenated from different revisions.
   f.add([message("append", text)]);
   assert.throws(() => f.tasks.conversationContent("task", reply.key, reply.content!.version, 0), /changed/);
+});
+
+test("live progress stays multiline and oversized previews retain bounded access to the full message", t => {
+  const f = fixture(t);
+  const text = "Inspecting the implementation.\n\n".repeat(20) + "Last progress paragraph.";
+  f.add([event("assistant_text", { text, messageId: "progress", phase: "progress" })]);
+  const activity = f.tasks.conversationPage("task").transcript![0];
+  assert.equal(activity.type, "activity");
+  if (activity.type !== "activity") return;
+  assert.equal(activity.preview, text);
+  assert.equal(activity.previewContent, undefined);
+
+  const extra = "Large progress 😀 한글\n".repeat(20000);
+  f.add([event("assistant_text", { text: extra, messageId: "progress", phase: "progress" })]);
+  const page = f.tasks.conversationPage("task");
+  bounded(page);
+  const large = page.transcript![0];
+  assert.equal(large.type, "activity");
+  if (large.type !== "activity") return;
+  const ref = large.previewContent!;
+  assert.ok(ref);
+  assert.ok(large.preview!.endsWith("…"));
+  assert.deepEqual(large.items, []);
+  let body = "", offset = 0;
+  do {
+    const chunk = f.tasks.conversationContent("task", ref.key, ref.version, offset, ref.member);
+    bounded(chunk);
+    body += chunk.chunk;
+    if (chunk.nextOffset === null) break;
+    offset = chunk.nextOffset;
+  } while (true);
+  assert.equal(JSON.parse(body).item.text, text + extra);
+  f.add([event("result", {})]);
+  const finished = f.tasks.conversationPage("task").transcript![0];
+  assert.equal(finished.type, "activity");
+  if (finished.type === "activity") {
+    assert.equal(finished.preview, undefined);
+    assert.equal(finished.previewContent, undefined);
+  }
 });
 
 test("late phase classification patches and tombstones page through a shared revision", t => {
