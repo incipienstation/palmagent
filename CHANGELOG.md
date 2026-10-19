@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.202
+
 ### Fixed
 
 - Hide Codex environment metadata from dispatched conversations, including existing history, and
