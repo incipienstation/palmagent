@@ -19,6 +19,7 @@ export * from "./skills.js";
 export * from "./attachments.js";
 
 export * from "./voice.js";
+export * from "./side-chat.js";
 
 export * from "./model-catalog.js";
 

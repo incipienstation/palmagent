@@ -64,7 +64,7 @@ for (const width of [360, 1280]) test(`compaction menu and lifecycle preserve dr
   await page.waitForTimeout(200);
   const before = await viewport.evaluate(el => el.scrollTop);
   await menu(page);
-  await expect(page.getByRole("menuitem")).toHaveText(["Pin", "Rename", "Compact context", "Open terminal", "Execution records", "Session details", "Archive", "Cancel…"]);
+  await expect(page.getByRole("menuitem")).toHaveText(["Pin", "Rename", "Side chat", "Compact context", "Open terminal", "Execution records", "Session details", "Archive", "Cancel…"]);
   await expect(page.getByRole("menu").getByRole("separator")).toHaveCount(2);
   await page.getByRole("menuitem", { name: "Compact context", exact: true }).click();
   const intro = page.getByRole("alertdialog", { name: "Compact context?" });

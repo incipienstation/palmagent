@@ -143,6 +143,7 @@ export class TaskService implements PrStatusSink {
   private sharedTerminal = new Map<string, boolean>();
   beginShutdown(): void {
     this.shuttingDown = true;
+    this.sideChats?.close();
     for (const connection of this.sharedConnections.values()) connection.close();
     this.sharedConnections.clear();
     this.messages.close();
@@ -161,6 +162,27 @@ export class TaskService implements PrStatusSink {
   // state but are NOT re-persisted/re-broadcast (exactly-once).
   private turnBaseline = new Map<string, number>();
   readonly messages: MessageController;
+  sideChats?: import("../../../agents/api.js").SideChatOperations;
+  private sideChatOperations(id: string, writable = false) {
+    const task = this.getTask(id);
+    if (task.agent !== "codex") throw badRequest("Side chat is available only for Codex.");
+    if (!this.sideChats) throw new ApplicationError("service_unavailable", "Side chat is unavailable.");
+    if (writable && (this.shuttingDown || this.updating || isClosedTaskStatus(task.status)))
+      throw conflict("Side chat is unavailable while this task is closed or the server is restarting.");
+    return this.sideChats;
+  }
+  getSideChat(id: string) { return this.sideChatOperations(id).get(id); }
+  openSideChat(id: string) {
+    const operations = this.sideChatOperations(id, true), task = this.getTask(id);
+    if (!task.sessionId) throw conflict("Wait for the Codex session to start before opening side chat.");
+    const env = this.skillEnvironment({ taskId: id });
+    return operations.open({ taskId: id, sessionId: task.sessionId, home: env.home, cwd: env.cwd });
+  }
+  sendSideChat(id: string, message: import("@palmagent/shared").SideChatSend) {
+    return this.sideChatOperations(id, true).send(id, message);
+  }
+  stopSideChat(id: string, sessionId: string) { return this.sideChatOperations(id).stop(id, sessionId); }
+  endSideChat(id: string, sessionId: string) { return this.sideChatOperations(id).end(id, sessionId); }
   startVoice(context: SkillContext, sdp: string, signal?: AbortSignal) {
     const env = this.skillEnvironment(context);
     if (env.agent !== "codex") throw badRequest("Voice input is available only for Codex.");
@@ -1333,6 +1355,10 @@ export class TaskService implements PrStatusSink {
     const interrupted = opts?.interrupted ?? task.interrupted;
     this.db.setTaskStatus(task.taskId, status, interrupted, now);
     Object.assign(task, { status, interrupted, updatedAt: now });
+    if (isClosedTaskStatus(status)) {
+      const side = this.sideChats?.get(task.taskId);
+      if (side) this.sideChats?.end(task.taskId, side.id);
+    }
     if (status === "archived") task.pinnedAt = undefined;
     this.broadcastTasks();
   }

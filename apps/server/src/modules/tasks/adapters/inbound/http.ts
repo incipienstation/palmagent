@@ -5,6 +5,7 @@ import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSche
 import { jsonBody, query, params } from "../../../../platform/http/input.js";
 import type { HttpDependencies } from "./http-dependencies.js";
 import { TaskImageQuerySchema } from "@palmagent/shared/requests";
+import { SideChatSendSchema, SideChatSessionSchema } from "@palmagent/shared";
 
 export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
   const app = new Hono();
@@ -16,6 +17,18 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       return c.json({ task: service.createTask({ ...input, skills }) }, 201);
     })
     .get("/:id", params(IdParamsSchema), (c) => c.json({ task: service.getTask(c.req.valid("param").id) }, 200))
+    .get("/:id/side-chat", params(IdParamsSchema), c => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ sideChat: service.getSideChat(c.req.valid("param").id) }, 200);
+    })
+    .post("/:id/side-chat", params(IdParamsSchema), jsonBody(EmptyBodySchema), async c =>
+      c.json({ sideChat: await service.openSideChat(c.req.valid("param").id) }, 200))
+    .post("/:id/side-chat/messages", params(IdParamsSchema), jsonBody(SideChatSendSchema), async c =>
+      c.json({ sideChat: await service.sendSideChat(c.req.valid("param").id, c.req.valid("json")) }, 200))
+    .post("/:id/side-chat/stop", params(IdParamsSchema), jsonBody(SideChatSessionSchema), async c =>
+      c.json({ sideChat: await service.stopSideChat(c.req.valid("param").id, c.req.valid("json").sessionId) }, 200))
+    .delete("/:id/side-chat", params(IdParamsSchema), jsonBody(SideChatSessionSchema), c =>
+      c.json({ sideChat: service.endSideChat(c.req.valid("param").id, c.req.valid("json").sessionId) }, 200))
     .get("/:id/attachments/:attachmentId", params(AttachmentParamsSchema), (c) => {
       c.header("Cache-Control", "no-store");
       c.header("X-Content-Type-Options", "nosniff");
