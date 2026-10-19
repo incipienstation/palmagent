@@ -1,4 +1,5 @@
 export type { RunHandle } from "./domain/run-handle.js";
+export type { SideChatOperations, SideChatTarget } from "./application/ports/inbound/side-chat.js";
 export type { RunnerBackend } from "./application/ports/inbound/execution.js";
 export type { StartArgs, RawEvent } from "./domain/execution.js";
 export type { TaskVoiceOperations, TaskSkillCatalog, TaskSkillEnvironment, TaskAccountLimitReader } from "./application/ports/inbound/capabilities.js";

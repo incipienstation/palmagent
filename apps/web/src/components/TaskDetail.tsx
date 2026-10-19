@@ -1,4 +1,6 @@
 import { useContextCompaction } from "../hooks/useContextCompaction";
+import { sideChatCommand, useSideChat } from "../hooks/useSideChat";
+import { SideChat } from "./SideChat";
 import { useNewChat } from "../hooks/useNewChat";
 import { useTaskComposer } from "../hooks/useTaskComposer";
 import { isSendingAction } from "../task-activity";
@@ -16,7 +18,7 @@ import { useMessageRetry } from "../message-retry";
 import { useEffect, useRef, useState } from "react";
 import { needsTaskAttention, type TaskState } from "@palmagent/shared";
 import { notifyConversation } from "../conversation-notifications";
-import { Archive, Check, Minimize2, Gamepad2, ListTree, Info, SquarePen, Trash2, X, Terminal } from "lucide-react";
+import { Archive, Check, Minimize2, Gamepad2, ListTree, Info, SquarePen, Trash2, X, Terminal, MessageCircle } from "lucide-react";
 import { useAppNavigation } from "./AppNavigation";
 
 import {
@@ -62,6 +64,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const [recordsOpen, setRecordsOpen] = useState(false);
   const statuslineTrigger = useRef<HTMLButtonElement>(null);
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
+  const sideReturnToComposer = useRef(false);
   useBackLayer(terminalOpen, () => setTerminalOpen(false));
   const toastObstacle = useToastObstacle();
   const { log, transcript, conn, history, task: streamTask } = useTaskStream(taskId, !creating);
@@ -70,6 +73,15 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   // when the long-lived inbox stream freezes in the background. Fall back to the
   // inbox task for the first paint before the scoped snapshot arrives.
   const task = streamTask ?? inboxTask;
+  const side = useSideChat(taskId, !creating && task?.agent === "codex");
+  const closeSide = () => {
+    side.hide();
+    requestAnimationFrame(() => {
+      const target = sideReturnToComposer.current ? document.getElementById(`task-compose-${taskId}`) : taskActionsTrigger.current;
+      target?.focus({ preventScroll: true });
+    });
+  };
+  const showSide = () => { sideReturnToComposer.current = false; setTerminalOpen(false); void side.show(); };
   const attention = task && needsTaskAttention(task.status)
     ? `${taskId}:${task.status}:${JSON.stringify(task.pendingInput ?? task.pendingApproval)}` : "";
   const lastAttention = useRef("");
@@ -88,6 +100,14 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const compaction = useContextCompaction(task, confirmedQueue, busy || !!edit, () => setCompose(current => current.trim() === "/compact" ? "" : current));
   const submit = () => {
     if (!edit && compose.trim() === "/compact") { compaction.request("command"); return; }
+    const command = !edit && task?.agent === "codex" && sideChatCommand(compose);
+    if (command) {
+      sideReturnToComposer.current = true;
+      setTerminalOpen(false);
+      void side.show(command[1]?.trim());
+      setCompose(current => current === compose ? "" : current);
+      return;
+    }
     void send();
   };
   const heading = creating ? "New task" : task ? taskTitle(task) : "Conversation";
@@ -99,8 +119,8 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   };
 
   return (
-    <div className={terminalOpen ? "mx-auto flex max-w-[1600px]" : undefined}>
-    <div className={terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
+    <div className={terminalOpen || side.open ? "mx-auto flex max-w-[1600px]" : undefined}>
+    <div className={side.open ? "hidden min-w-0 flex-1 lg:block" : terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <AppBar title={heading} conn={creating ? undefined : conn} conversation>
@@ -109,7 +129,8 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             <SquarePen />
           </Button>
           {task && <>
-            <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} triggerRef={taskActionsTrigger} onTerminal={() => setTerminalOpen(true)}
+            <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} triggerRef={taskActionsTrigger} onTerminal={() => { side.hide(); setTerminalOpen(true); }}
+              onSideChat={showSide} sideChatActive={side.hasSession} sideChatUnread={side.unread} sideChatOpen={side.open}
               onDetails={() => setDetailsOpen(true)} onRecords={() => setRecordsOpen(true)} onCompact={() => compaction.request()} compactReason={compaction.unavailable}
               onCancel={() => void cancel()}
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
@@ -207,7 +228,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             onStop={primaryAction === "stop" ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={submit} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
-            commandActive={!edit && compose.trim() === "/compact"}
+            commandActive={!edit && (compose.trim() === "/compact" || task?.agent === "codex" && !!sideChatCommand(compose))}
             header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
               <Button type="button" variant="ghost" size="icon-lg" className="ml-auto shrink-0" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>
@@ -225,6 +246,11 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     </AppShell>
     </div>
     {terminalOpen && <div className="min-w-0 flex-1 md:border-l"><TerminalsView taskId={taskId} onClose={() => setTerminalOpen(false)} /></div>}
+    {task?.agent === "codex" && <SideChat side={side} task={task} onClose={closeSide} draftDisabled={!!edit} onAddToDraft={text => {
+      setCompose(current => current ? `${current}\n\n${text}` : text);
+      side.hide();
+      requestAnimationFrame(() => document.getElementById(`task-compose-${taskId}`)?.focus({ preventScroll: true }));
+    }} />}
     </div>
   );
 }
@@ -243,6 +269,10 @@ function TaskActionsMenu({
   onTerminal,
   onCompact,
   compactReason,
+  onSideChat,
+  sideChatActive,
+  sideChatUnread,
+  sideChatOpen,
 }: {
   task: TaskState;
   busy: boolean;
@@ -256,13 +286,17 @@ function TaskActionsMenu({
   onTerminal: () => void;
   onCompact: () => void;
   compactReason?: string;
+  onSideChat: () => void;
+  sideChatActive: boolean;
+  sideChatUnread: boolean;
+  sideChatOpen: boolean;
 }) {
   const mutationPending = useTaskMutations().get(task.taskId)?.pending;
   const [confirm, setConfirm] = useState<"cancel" | "archive" | null>(null);
 
   return (
     <>
-      <SessionActionsMenu task={task} renameDisabled={busy} triggerRef={triggerRef} lifecycle={<>
+      <SessionActionsMenu task={task} renameDisabled={busy} triggerRef={triggerRef} restoreFocus={!sideChatOpen} notification={sideChatUnread ? "Side chat has a new reply" : undefined} lifecycle={<>
         <DropdownMenuItem disabled={busy || !canArchive || mutationPending} onSelect={() => setConfirm("archive")}>
           <Archive />Archive
         </DropdownMenuItem>
@@ -270,6 +304,10 @@ function TaskActionsMenu({
           <Trash2 />Cancel…
         </DropdownMenuItem>
       </>}>
+        {task.agent === "codex" && <DropdownMenuItem disabled={!task.sessionId || ["archived", "cancelled"].includes(task.status)} onSelect={onSideChat}>
+          <MessageCircle /><span>{sideChatActive ? "Resume side chat" : "Side chat"}</span>
+          {sideChatUnread && <span className="ml-auto text-xs text-muted-foreground">New reply</span>}
+        </DropdownMenuItem>}
         {task.agent === "codex" && <DropdownMenuItem disabled={!!compactReason} onSelect={onCompact}>
           <Minimize2 />
           <span className="flex min-w-0 flex-col">

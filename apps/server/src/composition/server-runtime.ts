@@ -13,6 +13,7 @@ import { AccountLimitReader } from "../modules/agents/adapters/outbound/account-
 import { LocalAttachmentStorage } from "../modules/tasks/adapters/outbound/file-attachment-storage.js";
 import { SkillDiscovery } from "../modules/agents/adapters/outbound/skills.js";
 import { VoiceSessions } from "../modules/agents/adapters/outbound/voice.js";
+import { CodexSideChats } from "../modules/agents/adapters/outbound/side-chat.js";
 import { readTaskImage } from "../modules/tasks/adapters/outbound/task-images.js";
 import { config, validateConfig } from "./config.js";
 import { Db } from "./database.js";
@@ -91,6 +92,9 @@ export async function createRuntime() {
     }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits);
     resources.onStop(() => service.beginShutdown());
     service.sharedSessions = new CodexSharedSessions();
+    const sideChats = new CodexSideChats();
+    service.sideChats = sideChats;
+    resources.onStop(() => sideChats.close());
     const terminalStore = new TerminalStore(join(config.dataDir, "terminals"));
     let terminalsOwnStore = false;
     resources.defer(() => { if (!terminalsOwnStore) terminalStore.close(); });

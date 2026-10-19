@@ -26,6 +26,11 @@ export interface TaskUseCases {
   taskHistoryChanges(taskId: string, after: number, through?: number, includeActivityDetails?: boolean): TaskHistoryChangesResponse;
   taskActivityDetails(taskId: string, from: number, through: number): TaskActivityDetailsResponse;
   beginShutdown(): void;
+  getSideChat(id: string): import("@palmagent/shared").SideChatSnapshot | null;
+  openSideChat(id: string): Promise<import("@palmagent/shared").SideChatSnapshot>;
+  sendSideChat(id: string, message: import("@palmagent/shared").SideChatSend): Promise<import("@palmagent/shared").SideChatSnapshot>;
+  stopSideChat(id: string, sessionId: string): Promise<import("@palmagent/shared").SideChatSnapshot>;
+  endSideChat(id: string, sessionId: string): import("@palmagent/shared").SideChatSnapshot;
   startVoice(context: SkillContext, sdp: string, signal?: AbortSignal): Promise<VoiceConnection>;
   touchVoice(id: string): void;
   stopVoice(id: string, timings?: VoiceClientTimings): void;

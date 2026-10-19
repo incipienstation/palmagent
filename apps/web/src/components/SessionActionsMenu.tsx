@@ -14,32 +14,38 @@ import { mutateTask, useTaskMutations, getRenameDraft, clearRenameDraft } from "
 
 // Both list and detail use the same editor; optional children are the detail's
 // existing lifecycle actions. Keep the menu and dialog as sibling overlays.
-export function SessionActionsMenu({ task, children, lifecycle, label = "Task actions", renameDisabled = false, triggerRef }: {
+export function SessionActionsMenu({ task, children, lifecycle, label = "Task actions", renameDisabled = false, triggerRef, notification, restoreFocus = true }: {
   task: TaskState;
   children?: ReactNode;
   lifecycle?: ReactNode;
   label?: string;
+  notification?: string;
+  restoreFocus?: boolean;
   /** Keep read-only menu items available while a task action is pending. */
   renameDisabled?: boolean;
   triggerRef?: { current: HTMLButtonElement | null };
 }) {
   const mutations = useTaskMutations();
+  const notificationId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const openingEditor = useRef(false);
+  const shouldRestoreFocus = useRef(restoreFocus);
+  shouldRestoreFocus.current = restoreFocus;
   const [menuOpen, setMenuOpen] = useState(false);
   const [initialTitle, setInitialTitle] = useUpdateState<string | null>(`rename:${task.taskId}:open`, null);
   return (
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button ref={node => { trigger.current = node; if (triggerRef) triggerRef.current = node; }} variant="ghost" size="icon" className="size-11 shrink-0" aria-label={label}>
+          <Button ref={node => { trigger.current = node; if (triggerRef) triggerRef.current = node; }} variant="ghost" size="icon" className="relative size-11 shrink-0" aria-label={label} aria-describedby={notification ? notificationId : undefined}>
             <MoreVertical />
+            {notification && <><span aria-hidden="true" className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" /><span id={notificationId} className="sr-only">{notification}</span></>}
           </Button>
         </DropdownMenuTrigger>
         {/* Remove the closed menu immediately so its exit animation cannot
             restore focus after the editor has already been closed and reopened. */}
         {menuOpen && <DropdownMenuContent align="end" onCloseAutoFocus={(event) => {
-          if (openingEditor.current) {
+          if (openingEditor.current || !shouldRestoreFocus.current) {
             event.preventDefault();
             openingEditor.current = false;
           }

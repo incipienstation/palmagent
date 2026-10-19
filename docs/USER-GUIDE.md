@@ -91,6 +91,26 @@ lifecycle metadata that does not appear in the conversation. Records load in pag
 with large record bodies loaded in chunks. Closing the panel keeps your draft and
 conversation position.
 
+### Side questions in Codex
+
+Choose **Task actions → Side chat**, or send `/btw your question`, to ask a
+question using a separate copy of the current conversation. The main task keeps
+running. Side chat opens beside the conversation on desktop and fills the view
+on mobile. It uses a read-only workspace and does not continue the main task's goal.
+
+**Back to main chat** hides the panel while keeping its conversation and draft.
+Use **Resume side chat** in Task actions to return; a **New reply** indicator
+appears when a response finishes while the panel is hidden. **Stop side response**
+only stops the side response. **Add to draft** appends an answer to your main
+draft for review and manual sending.
+
+Use **Side chat actions → End side chat** to end the temporary conversation.
+Side chats also end when the server restarts, their task closes, or they are left
+unattended for 30 minutes. If a connection is lost, the open view retains its
+received messages and offers a new side chat. Side chats are not saved in the
+main conversation or the task list. They require a Codex version supporting
+ephemeral thread forks.
+
 ## Space base branches
 
 When registering a Git Space, leave **Base branch** blank to detect the remote's

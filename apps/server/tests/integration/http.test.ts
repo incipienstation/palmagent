@@ -63,6 +63,54 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   return { dir, db, hub, service, auth, settings, repoSettings, shutdown, modelCatalog, app, closeListener };
 }
 
+test("side chat routes require auth, validate input, and resolve provider identity from the task", async t => {
+  const f = fixture(t);
+  const task = { taskId: "side-task", repoId: "r", agent: "codex" as const, prompt: "Hello", status: "idle" as const,
+    sessionId: "parent-thread", worktreePath: "/workspace", interrupted: false, permission: "read-only",
+    createdAt: 1, updatedAt: 1, lastActivityAt: 1 };
+  t.mock.method(f.service, "getTask", () => task);
+  const snapshot: import("@palmagent/shared").SideChatSnapshot = {
+    id: "11111111-1111-4111-8111-111111111111", status: "idle", messages: [], revision: 1, completed: 0,
+  };
+  const opens: import("../../src/modules/agents/api.js").SideChatTarget[] = [];
+  let sends = 0, stops = 0, ends = 0;
+  f.service.sideChats = {
+    get: () => snapshot,
+    open: async target => { opens.push(target); return snapshot; },
+    send: async () => { sends++; return snapshot; },
+    stop: async () => { stops++; return snapshot; },
+    end: () => { ends++; return { ...snapshot, status: "ended" }; },
+    close() {},
+  };
+  const path = "/api/tasks/side-task/side-chat";
+  assert.equal((await f.app.request(path)).status, 401);
+  assert.equal((await f.app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 401);
+  assert.equal(opens.length, 0);
+  f.db.createSession("side-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=side-session`, "content-type": "application/json" };
+  const opened = await f.app.request(path, { method: "POST", headers, body: "{}" });
+  assert.equal(opened.status, 200); assert.equal(opens[0].sessionId, task.sessionId);
+  assert.equal(opens[0].cwd, task.worktreePath); assert.equal(opens[0].taskId, task.taskId);
+  const read = await f.app.request(path, { headers });
+  assert.equal(read.headers.get("cache-control"), "no-store");
+  assert.equal((await read.json()).sideChat.id, snapshot.id);
+  const message = { sessionId: snapshot.id, messageId: "22222222-2222-4222-8222-222222222222", text: "Why?" };
+  for (const bad of [{ ...message, text: "" }, { ...message, cwd: "/other" }, { ...message, sessionId: "invalid" }]) {
+    assert.equal((await f.app.request(path + "/messages", { method: "POST", headers, body: JSON.stringify(bad) })).status, 400);
+  }
+  assert.equal(sends, 0);
+  assert.equal((await f.app.request(path + "/messages", { method: "POST", headers, body: JSON.stringify(message) })).status, 200);
+  assert.equal(sends, 1);
+  assert.equal((await f.app.request(path + "/stop", { method: "POST", headers, body: JSON.stringify({ sessionId: snapshot.id }) })).status, 200);
+  assert.equal(stops, 1);
+  assert.equal((await f.app.request(path, { method: "DELETE", headers, body: JSON.stringify({ sessionId: snapshot.id }) })).status, 200);
+  assert.equal(ends, 1);
+  Object.assign(task, { status: "archived" });
+  assert.equal((await f.app.request(path, { method: "POST", headers, body: "{}" })).status, 409);
+  Object.assign(task, { status: "idle", agent: "claude" });
+  assert.equal((await f.app.request(path, { method: "POST", headers, body: "{}" })).status, 400);
+});
+
 test("compatible message submissions cross build versions without opening other writes or bypassing auth", async t => {
   const f = fixture(t, true, { build: { version: "new-build", sourceCommit: "fixture", dirty: false } });
   const task = { taskId: "t", repoId: "r", agent: "codex" as const, prompt: "Hello", status: "idle" as const,

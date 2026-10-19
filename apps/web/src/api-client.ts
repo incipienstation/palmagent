@@ -95,6 +95,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   const requestOptions = (signal?: AbortSignal) => signal ? { init: { signal } } : undefined;
 
   const api = {
+    sideChat: {
+      get: (id: string) => request(() => tasks["side-chat"].$get({ param: idParam(id) })).then(r => r.sideChat),
+      open: (id: string) => write(() => tasks["side-chat"].$post({ param: idParam(id), json: {} })).then(r => r.sideChat),
+      send: (id: string, json: import("@palmagent/shared").SideChatSend) => write(() => tasks["side-chat"].messages.$post({ param: idParam(id), json })).then(r => r.sideChat),
+      stop: (id: string, sessionId: string) => write(() => tasks["side-chat"].stop.$post({ param: idParam(id), json: { sessionId } })).then(r => r.sideChat),
+      end: (id: string, sessionId: string) => write(() => tasks["side-chat"].$delete({ param: idParam(id), json: { sessionId } })).then(r => r.sideChat),
+    },
     voice: {
       start: (json: import("@palmagent/shared").VoiceStart, signal: AbortSignal) => request(() => client.voice.$post({ json }, { init: { signal } })),
       heartbeat: (id: string) => request(() => client.voice[":id"].heartbeat.$post({ param: idParam(id) })),
