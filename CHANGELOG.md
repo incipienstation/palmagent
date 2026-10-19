@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Hide Codex environment metadata from dispatched conversations, including existing history, and
+  display generated images from the dispatched session's own image directory.
+
 ## 0.1.0-alpha.201
 
 ### Changed

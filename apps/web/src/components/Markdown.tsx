@@ -1,16 +1,25 @@
 import { ScrollArea } from "./ui/scroll-area";
-import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { jsx, jsxs } from "react/jsx-runtime";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cachedMarkdown, markdownParser, staticMarkdown } from "../markdown-worker";
-import { markdownUrlTransform } from "../image-source";
-import { ImageLinkContext, ImagePreview } from "./ImagePreview";
+import { isLocalImageLink, markdownUrlTransform, previewSource } from "../image-source";
+import { ImageLinkContext, ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { MermaidBlock } from "./MermaidBlock";
 import { CodeBlock } from "./CodeBlock";
 
 import { cn } from "@/lib/utils";
+
+function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+  const taskId = useContext(ImageTaskContext);
+  const target = href && taskId && isLocalImageLink(href) ? previewSource(href, taskId) : href;
+  return <ImageLinkContext.Provider value={true}>
+    <a href={target} target="_blank" rel="noopener noreferrer"
+      className="text-primary underline underline-offset-2 [overflow-wrap:anywhere]">{children}</a>
+  </ImageLinkContext.Provider>;
+}
 
 // Element → token-styled renderer for assistant prose — the one place we parse
 // markdown (GFM: headings/bold/lists/code/tables). We do NOT enable raw HTML:
@@ -30,18 +39,7 @@ const COMPONENTS = {
   p: ({ children }) => <p className="my-2 leading-[22px]">{children}</p>,
   strong: ({ children }) => <strong className="font-semibold text-strong">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
-  a: ({ href, children }) => (
-    <ImageLinkContext.Provider value={true}>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-primary underline underline-offset-2 [overflow-wrap:anywhere]"
-      >
-        {children}
-      </a>
-    </ImageLinkContext.Provider>
-  ),
+  a: MarkdownLink,
   ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
   li: ({ children }) => <li className="leading-[21px] [&>ul]:mt-1 [&>ol]:mt-1">{children}</li>,

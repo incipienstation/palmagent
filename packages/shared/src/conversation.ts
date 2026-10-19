@@ -6,7 +6,18 @@ export type LogItem =
   | { key: number; endSeq?: number; kind: "assistant_text"; agent: AgentKind; text: string; messageId?: string; phase?: AssistantTextPayload["phase"] }
   | { key: number; endSeq?: number; kind: Exclude<AgentEventKind, "assistant_text">; event: AgentEvent; detailsDeferred?: boolean };
 
+/** Codex records injected environment updates as user-role messages in native history. */
+export function isNativeEnvironmentContext(event: AgentEvent): boolean {
+  if (event.agent !== "codex" || event.kind !== "status") return false;
+  const p = event.payload as { subtype?: unknown; source?: unknown; text?: unknown } | null;
+  if (p?.subtype !== "followup" || p.source !== "local" || typeof p.text !== "string") return false;
+  const text = p.text.trim(), end = "</environment_context>";
+  return text.startsWith("<environment_context>") && text.endsWith(end)
+    && text.indexOf(end) === text.length - end.length;
+}
+
 export function appendHistoryEvent(items: LogItem[], event: AgentEvent, seq: number, detailsDeferred = false): void {
+  if (isNativeEnvironmentContext(event)) return;
   if (event.kind === "assistant_text") {
     const payload = event.payload ?? { text: "" };
     const text = typeof payload.text === "string" ? payload.text : "";

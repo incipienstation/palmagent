@@ -3,20 +3,29 @@ import { open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import { MAX_IMAGE_BYTES, rasterMediaType } from "../../application/attachments/output-images.js";
+import type { TaskImageReader } from "../../application/ports/outbound/attachments.js";
 
 const inside = (root: string, path: string) => {
   const part = relative(root, path);
   return part !== ".." && !part.startsWith(`..${sep}`) && !isAbsolute(part);
 };
 
-// Local previews are bounded raster files in this task's working directory.
+// Local previews are bounded raster files in the task or its dispatched native session.
 // Resolve symlinks before checking containment; never proxy arbitrary URLs.
-export async function readTaskImage(cwd: string | undefined, path: string) {
-  const unavailable = () => new ApplicationError("not_found", "Image unavailable in this task's working directory");
+export async function readTaskImage(cwd: string | undefined, path: string, nativeSession?: Parameters<TaskImageReader["read"]>[2]) {
+  const unavailable = () => new ApplicationError("not_found", "Image unavailable in this task's directories");
   if (!cwd) throw unavailable();
   try {
-    const root = await realpath(cwd);
+    let root = await realpath(cwd);
     const file = await realpath(resolve(root, path));
+    if (!inside(root, file) && nativeSession?.agent === "codex"
+      && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(nativeSession.sessionId)) {
+      const home = await realpath(nativeSession.home);
+      const generated = resolve(home, "generated_images", nativeSession.sessionId);
+      // A redirected session directory must not grant access to another session or home files.
+      if (await realpath(generated) !== generated) throw unavailable();
+      root = generated;
+    }
     if (!inside(root, file)) throw unavailable();
     const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {

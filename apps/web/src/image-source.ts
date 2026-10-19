@@ -26,8 +26,15 @@ export function imageSource(value: string): string {
   return value;
 }
 
+export function isLocalImageLink(value: string): boolean {
+  const safe = imageSource(value);
+  if (!safe || /^(?:https?:\/\/|\/\/|data:)/i.test(safe)) return false;
+  try { return /\.(?:png|jpe?g|gif|webp)$/i.test(decodeURIComponent(/^file:/i.test(safe) ? new URL(safe).pathname : safe)); }
+  catch { return false; }
+}
+
 export function markdownUrlTransform(value: string, key: string): string {
-  return key === "src" ? imageSource(value) : defaultUrlTransform(value);
+  return key === "src" || key === "href" && isLocalImageLink(value) ? imageSource(value) : defaultUrlTransform(value);
 }
 
 export function previewSource(value: string, taskId?: string): string {
