@@ -782,6 +782,48 @@ test("task images require a session and serve only bounded raster files inside t
 });
 
 
+test("dispatched Codex images stay scoped to the registered session and preserve image safety checks", async t => {
+  const f = fixture(t), cwd = join(f.dir, "task"), home = join(f.dir, "provider");
+  const sessionId = "11111111-1111-4111-8111-111111111111", otherId = "22222222-2222-4222-8222-222222222222";
+  const generated = join(home, "generated_images", sessionId), other = join(home, "generated_images", otherId);
+  for (const directory of [cwd, generated, other]) mkdirSync(directory, { recursive: true });
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64");
+  for (const path of [join(generated, "comparison #1.png"), join(other, "other.png"), join(home, "private.png"), join(cwd, "local.png")]) writeFileSync(path, png);
+  writeFileSync(join(generated, "pretend.png"), "<svg onload='alert(1)'></svg>");
+  writeFileSync(join(generated, "large.png"), Buffer.alloc(5 * 1024 * 1024 + 1));
+  symlinkSync(join(other, "other.png"), join(generated, "escape.png"));
+  symlinkSync(home, join(generated, "escape-dir"));
+  f.db.insertRepo({ id: "r", name: "fixture", path: cwd, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const [taskId, agent, registered] of [["imported", "codex", true], ["ordinary", "codex", false], ["claude", "claude", true]] as const) {
+    f.db.insertTask({ taskId, repoId: "r", agent, prompt: "fixture", worktreePath: cwd, sessionId,
+      ...(registered ? { sessionControl: { owner: "local" as const, home, transcript: join(home, "session.jsonl"), cursor: 0, prefixHash: "fixture" } } : {}),
+      permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  }
+  await f.service.init();
+  f.db.createSession("image-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=image-session` };
+  const url = (path: string, id = "imported") => `/api/tasks/${id}/image?${new URLSearchParams({ path })}`;
+  const path = join(generated, "comparison #1.png");
+  assert.equal((await f.app.request(url(path))).status, 401);
+  const image = await f.app.request(url(path), { headers });
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get("content-type"), "image/png");
+  assert.equal(image.headers.get("cache-control"), "no-store");
+  assert.equal(image.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), png);
+  for (const id of ["ordinary", "claude"]) assert.equal((await f.app.request(url(path, id), { headers })).status, 404);
+  for (const path of [join(other, "other.png"), join(home, "private.png"), join(generated, "escape.png"), join(generated, "escape-dir/private.png")]) {
+    assert.equal((await f.app.request(url(path), { headers })).status, 404, path);
+  }
+  assert.equal((await f.app.request(url(join(generated, "pretend.png")), { headers })).status, 415);
+  assert.equal((await f.app.request(url(join(generated, "large.png")), { headers })).status, 413);
+  assert.equal((await f.app.request(url("local.png"), { headers })).status, 200);
+  // Even the expected session directory cannot be redirected to another directory.
+  rmSync(generated, { recursive: true }); symlinkSync(other, generated);
+  assert.equal((await f.app.request(url(join(generated, "other.png")), { headers })).status, 404);
+  assert.equal((await f.app.request(url("local.png"), { headers })).status, 200);
+});
+
 test("browser terminal access fails closed when sign-in is disabled", async (t) => {
   const f = fixture(t, false);
   for (const method of ["GET", "POST"]) {

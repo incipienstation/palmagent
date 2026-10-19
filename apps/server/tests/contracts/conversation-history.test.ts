@@ -26,6 +26,66 @@ const message = (text: string, id = text) => event("assistant_text", { text, mes
 const user = (text: string) => event("status", { subtype: "followup", text });
 const bounded = (value: unknown) => assert.ok(Buffer.byteLength(JSON.stringify(value)) <= CONVERSATION_PAGE_BYTES);
 
+test("native environment updates stay out of live and stored conversations without resetting activity", t => {
+  const f = fixture(t);
+  const text = "<environment_context>\n<current_date>2026-01-01</current_date>\n</environment_context>";
+  const contextPayload = { subtype: "followup", source: "local", text };
+  const context = event("status", contextPayload);
+  const events = [user("Continue"), message("Finished"), event("result", { is_error: false }), context];
+  f.add(events);
+  const log: LogItem[] = [];
+  events.forEach((row, i) => appendHistoryEvent(log, row, i + 1));
+  assert.equal(log.length, 3);
+  const page = f.tasks.conversationPage("task");
+  assert.equal(page.cursor, 4);
+  assert.equal(page.activity, "ended");
+  assert.ok(!JSON.stringify(page.transcript).includes("environment_context"));
+  assert.equal(f.tasks.eventsAfterSeq("task", 0).length, 4, "raw records remain intact");
+  const quoted = [user(text), user(`Explain ${text}`),
+    event("status", { ...contextPayload, text: `\`\`\`xml\n${text}\n\`\`\`` }),
+    event("status", { ...contextPayload, text: `${text}\nActual request` }),
+    { ...context, agent: "claude" as const }];
+  quoted.forEach((row, i) => appendHistoryEvent(log, row, i + 5));
+  assert.equal(log.length, 8, "regular inputs and quoted context stay visible");
+});
+
+test("existing native context bubbles are rebuilt once while history and synchronization state survive", t => {
+  const f = fixture(t);
+  const text = "<environment_context><current_date>2026-01-01</current_date></environment_context>";
+  const control = { owner: "shared" as const, connection: "connected" as const,
+    home: "/provider", transcript: "/provider/session.jsonl", cursor: 1234, prefixHash: "unchanged" };
+  f.tasks.setSessionControl("task", control);
+  f.add([user("Continue"), message("Before"), event("status", { subtype: "followup", source: "local", text }), message("After")]);
+  // Simulate a version-2 projection containing the previously visible metadata row.
+  const bubble = { type: "message", key: 3, endSeq: 3, revision: 4,
+    item: { key: 3, kind: "status", event: event("status", { subtype: "followup", source: "local", text }) } };
+  f.connection.prepare("INSERT OR REPLACE INTO conversation_rows VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run("task", 3, 3, 3, 4, JSON.stringify(bubble), JSON.stringify(bubble));
+  f.connection.exec("UPDATE conversation_projection_version SET version = 2");
+  const raw = f.tasks.eventsAfterSeq("task", 0);
+  const upgraded = new SqliteTasks(f.connection);
+  const page = upgraded.conversationPage("task");
+  assert.ok(!JSON.stringify(page.transcript).includes("environment_context"));
+  assert.equal(page.cursor, 4);
+  assert.deepEqual(upgraded.eventsAfterSeq("task", 0), raw);
+  assert.deepEqual(upgraded.getTask("task")?.sessionControl, control);
+  assert.ok(JSON.stringify(page).includes("Before")); assert.ok(JSON.stringify(page).includes("After"));
+  f.connection.exec("CREATE TRIGGER no_context_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
+  assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
+});
+
+test("historical corrections skip hidden context when finding the preceding turn", t => {
+  const f = fixture(t);
+  f.add([user("Continue"), message("Before"), event("status", { subtype: "followup", source: "local",
+    text: "<environment_context>updated</environment_context>" }), message("After")]);
+  f.connection.prepare("UPDATE events SET payload_json = ? WHERE task_id = 'task' AND seq = 4")
+    .run(JSON.stringify({ text: "Corrected", messageId: "After", phase: "final" }));
+  const page = f.tasks.conversationPage("task");
+  assert.ok(JSON.stringify(page).includes("Before")); assert.ok(JSON.stringify(page).includes("Corrected"));
+  assert.ok(!JSON.stringify(page.transcript).includes("environment_context"));
+  assert.equal(page.transcript!.filter(row => row.type === "message").length, 3);
+});
+
 test("first and preceding pages read display records without replaying completed events", t => {
   const f = fixture(t);
   f.add(Array.from({ length: 120 }, (_, i) => [user(`Question ${i}`), ...Array.from({ length: 100 }, () => message("answer ", `answer-${i}`))]).flat());

@@ -32,8 +32,10 @@ async function setup(t: test.TestContext, preview = false) {
   const native = new LocalNativeSessionAdapter(db.path);
   native.home = () => home;
   native.sharedSocket = () => join(dir, "native.sock");
-  const writer = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { argv0: "codex", stdio: "ignore" });
-  await once(writer, "spawn");
+  const writer = spawn(process.execPath, ["-e", "process.title = 'codex'; setInterval(() => {}, 1000); process.send('ready')"],
+    { argv0: "codex", stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  // spawn fires before Node finishes initializing its /proc command line.
+  await once(writer, "message");
   const snapshot: SharedSessionSnapshot = { historyMode: "legacy", status: "running", turnId: "native-turn", model: "fixture" };
   const sent: string[] = [], decisions: string[] = [];
   let unavailable = false, ack: "delivered" | "unknown" | "rejected" = "delivered", interruptCount = 0, opens = 0;

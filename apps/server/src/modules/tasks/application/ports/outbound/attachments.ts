@@ -1,4 +1,4 @@
-import type { InputAttachment } from "@palmagent/shared";
+import type { AgentKind, InputAttachment } from "@palmagent/shared";
 import type { Attachment } from "@palmagent/shared";
 import type { AttachmentRecord } from "../../../domain/models.js";
 
@@ -30,5 +30,7 @@ export interface TaskAttachmentReader {
 }
 
 export interface TaskImageReader {
-  read(worktreePath: string | undefined, requestedPath: string | string[]): Promise<{ bytes: Uint8Array; mediaType: string }>;
+  read(worktreePath: string | undefined, requestedPath: string | string[], nativeSession?: {
+    agent: AgentKind; home: string; sessionId: string;
+  }): Promise<{ bytes: Uint8Array; mediaType: string }>;
 }

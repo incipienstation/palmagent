@@ -76,7 +76,9 @@ export class TaskService implements PrStatusSink {
   async readTaskImage(taskId: string, requestedPath: string | string[]) {
     const task = this.getTask(taskId);
     if (!this.taskImages) throw new ApplicationError("service_unavailable", "Task image reading is unavailable");
-    return this.taskImages.read(task.worktreePath, requestedPath);
+    const nativeSession = task.sessionControl && task.sessionId
+      ? { agent: task.agent, home: task.sessionControl.home, sessionId: task.sessionId } : undefined;
+    return this.taskImages.read(task.worktreePath, requestedPath, nativeSession);
   }
 
   conversationSteps(taskId: string, key: number, after?: number) {

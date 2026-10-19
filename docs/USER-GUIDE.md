@@ -217,6 +217,11 @@ connection or transfer completes. Palmagent never copies credentials or rewrites
 transcript. Raw resume commands can still open an independent writer; use the connected
 session's terminal command to join its server.
 
+Codex environment updates are retained as execution records and hidden from conversation
+messages. Dispatched Codex sessions can display local raster images from their own generated-image
+directory as well as the task directory. Image previews and original-image links require sign-in;
+other sessions' generated images and unrelated provider files remain inaccessible.
+
 Structured tool image outputs render in the conversation when they contain PNG,
 JPEG, WebP, or GIF data (up to 5 MiB each, four images per event). Unsupported formats
 remain a text notice. Arbitrary filesystem paths in tool output are not served.

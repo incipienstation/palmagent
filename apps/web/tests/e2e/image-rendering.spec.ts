@@ -18,6 +18,29 @@ async function reply(page: Page, text: string, running = false) {
 }
 
 for (const parser of ["static", "streaming", "long"] as const) {
+  test(`${parser} Markdown opens dispatched generated images through the authenticated task endpoint`, async ({ page }) => {
+    const path = "/provider/generated_images/11111111-1111-4111-8111-111111111111/comparison #1.png";
+    await page.route("**/api/tasks/*/image?*", route => new URL(route.request().url()).searchParams.get("path") === path
+      ? route.fulfill({ contentType: "image/png", body: png }) : route.fulfill({ status: 404 }));
+    const encoded = path.replaceAll(" ", "%20").replaceAll("#", "%23");
+    const prefix = parser === "long" ? "<!--" + "x".repeat(4100) + "-->\n\n" : "";
+    const taskId = await reply(page, prefix + [
+      `![Generated comparison](${encoded})`,
+      `[Open original](${encoded})`, `[Sandbox original](sandbox:${encoded})`, `[File original](file://${encoded})`,
+      "[Remote original](https://example.invalid/image.png)", "[Unsafe original](javascript:alert%281%29)",
+      "[Other local file](/workspace/readme.md)",
+    ].join("\n\n"), parser === "streaming");
+    const endpoint = `/api/tasks/${taskId}/image?${new URLSearchParams({ path })}`;
+    await expect.poll(() => page.getByRole("img", { name: "Generated comparison" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
+    for (const name of ["Open original", "Sandbox original", "File original"]) {
+      await expect(page.getByRole("link", { name, exact: true })).toHaveAttribute("href", endpoint);
+    }
+    await expect(page.getByRole("link", { name: "Remote original" })).toHaveAttribute("href", "https://example.invalid/image.png");
+    await expect(page.getByRole("link", { name: "Other local file" })).toHaveAttribute("href", "/workspace/readme.md");
+    await expect(page.getByText("Unsafe original", { exact: true })).toHaveAttribute("href", "");
+    await assertViewportLocked(page);
+  });
+
   test(`${parser} Markdown resolves sandbox images through the task image endpoint`, async ({ page }) => {
     const paths: string[] = [];
     await page.route("**/api/tasks/*/image?*", route => {
@@ -96,6 +119,21 @@ for (const parser of ["static", "streaming", "long"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+test("native environment records do not become user bubbles or disturb a browser draft", async ({ page }) => {
+  const taskId = await reply(page, "Local output remains visible.");
+  const input = page.getByPlaceholder("Message Palmagent…");
+  await input.fill("Unsent draft");
+  const context = "<environment_context>\n<current_date>2026-01-01</current_date>\n</environment_context>";
+  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 2, kind: "status",
+    payload: { subtype: "followup", source: "local", text: context } } }, 2);
+  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 3, kind: "status",
+    payload: { subtype: "followup", source: "local", text: "Actual local input" } } }, 3);
+  await expect(page.getByText("Actual local input", { exact: true })).toBeVisible();
+  await expect(page.getByText(context, { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Local output remains visible.", { exact: true })).toBeVisible();
+  await expect(input).toHaveValue("Unsent draft");
+});
 
 test("remote, file URL, and embedded tool images render, while unsafe sources stay inert", async ({ page }) => {
   await page.route("https://images.example.invalid/**", route => route.fulfill({ contentType: "image/png", body: png }));

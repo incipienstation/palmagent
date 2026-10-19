@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import {
-  appendHistoryEvent, activityLabel, deferActivityEventDetails, projectConversation, transcriptActivity,
+  appendHistoryEvent, activityLabel, deferActivityEventDetails, projectConversation, transcriptActivity, isNativeEnvironmentContext,
   CONVERSATION_PAGE_ITEMS, CONVERSATION_PAGE_BYTES, CONVERSATION_ITEM_BYTES, CONVERSATION_DETAIL_ITEMS,
   type AgentEvent, type ConversationActivity, type ConversationContent, type ConversationDetails,
   type ConversationItem, type ConversationPatch, type LogItem, type TranscriptRow,
@@ -27,7 +27,7 @@ export class ConversationHistory {
     db.transaction(() => {
       const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'conversation_rows'").get();
       db.exec("CREATE TABLE IF NOT EXISTS conversation_projection_version (version INTEGER NOT NULL)");
-      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== 2;
+      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== 3;
       db.exec(`
         CREATE TABLE IF NOT EXISTS conversation_rows (
           task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -65,7 +65,7 @@ export class ConversationHistory {
         db.exec("INSERT INTO conversation_dirty SELECT task_id, MIN(seq) FROM events GROUP BY task_id ON CONFLICT(task_id) DO UPDATE SET from_seq = MIN(from_seq, excluded.from_seq)");
         for (const { task_id } of db.prepare("SELECT task_id FROM conversation_dirty").all() as { task_id: string }[]) this.refresh(task_id);
       }
-      if (upgrade) db.exec("DELETE FROM conversation_projection_version; INSERT INTO conversation_projection_version VALUES (2)");
+      if (upgrade) db.exec("DELETE FROM conversation_projection_version; INSERT INTO conversation_projection_version VALUES (3)");
     }).immediate();
   }
 
@@ -153,9 +153,13 @@ export class ConversationHistory {
       let cursor = state.cursor, start = state.block_start, log = JSON.parse(state.log_json) as LogItem[];
       if (dirty.from_seq <= cursor) {
         // Historical correction/deletion: repair from the preceding semantic boundary.
-        const edge = this.db.prepare(`SELECT seq FROM events WHERE task_id = ? AND seq < ? AND kind = 'status'
+        const boundary = this.db.prepare(`SELECT e.seq, e.payload_json, t.agent FROM events e JOIN tasks t ON t.id = e.task_id
+          WHERE e.task_id = ? AND e.seq < ? AND e.kind = 'status'
           AND json_extract(payload_json, '$.subtype') IN ('dispatch', 'followup', 'turn_started') ORDER BY seq DESC LIMIT 1`)
-          .get(taskId, dirty.from_seq) as { seq: number } | undefined;
+        let edge = boundary.get(taskId, dirty.from_seq) as { seq: number; payload_json: string; agent: AgentEvent["agent"] } | undefined;
+        while (edge && isNativeEnvironmentContext({ kind: "status", agent: edge.agent, payload: JSON.parse(edge.payload_json) } as AgentEvent)) {
+          edge = boundary.get(taskId, edge.seq) as typeof edge;
+        }
         start = edge?.seq ?? 1; cursor = start - 1; log = [];
         const latest = (this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events WHERE task_id = ?").get(taskId) as { seq: number }).seq;
         this.db.prepare("UPDATE conversation_rows SET revision = ?, body_json = NULL, wire_json = NULL WHERE task_id = ? AND block_start >= ?")
@@ -170,6 +174,8 @@ export class ConversationHistory {
         for (const row of rows) {
           const event = { taskId, agent: row.agent, kind: row.kind, payload: JSON.parse(row.payload_json), ts: row.ts,
             sessionId: row.session_id ?? undefined } as AgentEvent;
+          // Retain the raw record and recovery cursor without starting a visible turn.
+          if (isNativeEnvironmentContext(event)) { cursor = row.seq; continue; }
           if (reset(event) && log.length) {
             this.saveBlock(taskId, start, log, row.seq, true);
             log = []; start = row.seq;
