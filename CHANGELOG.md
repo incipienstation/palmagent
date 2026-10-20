@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.204
+
 - Add disclosed, optional performance sharing with installation-wide opt-out, native Rust and Node measurements, release/cohort comparison dashboards, and repeatable local migration benchmarks.
 
 ## 0.1.0-alpha.203
