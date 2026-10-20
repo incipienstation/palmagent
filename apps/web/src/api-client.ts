@@ -118,7 +118,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     },
     telemetry: {
       get: () => request(() => client.settings.telemetry.$get()),
-      change: (enabled: boolean) => write(() => client.settings.telemetry.$patch({ json: { enabled } })),
+      change: (enabled: boolean) => write(() => client.settings.telemetry.$patch({ json: { enabled, retentionDays: 180 } })),
     },
     repoSettings: {
       get: () => request(() => client.settings.repos.$get()),

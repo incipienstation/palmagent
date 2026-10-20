@@ -19,13 +19,14 @@ test("disclosure precedes sharing, off persists, and settings can enable it with
   const dialog = page.getByRole("dialog", { name: "Help improve Palmagent performance" });
   await expect(dialog).toBeVisible();
   expect(changes).toEqual([]);
+  await expect(dialog).toContainText("180 days");
   await dialog.getByText("What is shared?", { exact: true }).click();
   await expect(dialog).toContainText("No conversations, code, file paths");
   await expect(dialog).toContainText("Node or Rust");
   await expect(page).toHaveScreenshot("telemetry-disclosure.png");
   await dialog.getByRole("button", { name: "Turn off sharing", exact: true }).click();
   await expect(dialog).toBeHidden();
-  expect(changes).toEqual([{ enabled: false }]);
+  expect(changes).toEqual([{ enabled: false, retentionDays: 180 }]);
   await page.reload();
   await expect(dialog).toBeHidden();
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
@@ -35,7 +36,7 @@ test("disclosure precedes sharing, off persists, and settings can enable it with
   await expect(control).not.toBeChecked();
   await control.focus(); await page.keyboard.press("Space");
   await expect(control).toBeChecked();
-  expect(changes).toEqual([{ enabled: false }, { enabled: true }]);
+  expect(changes).toEqual([{ enabled: false, retentionDays: 180 }, { enabled: true, retentionDays: 180 }]);
   await assertViewportLocked(page);
 });
 test("dismissal leaves sharing pending and failed saves retain a usable off action", async ({ page }) => {

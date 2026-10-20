@@ -3,12 +3,16 @@ import contract from "./telemetry-contract.json" with { type: "json" };
 
 /** Also consumed by the Rust supervisor. Changing a boundary requires a new metric version. */
 export const TELEMETRY = contract;
-export const TELEMETRY_ENDPOINT = "https://telemetry.palmagent.dev/v1/metrics";
+export const TELEMETRY_ENDPOINT = "https://telemetry.palmagent.dev/v2/metrics";
 export const TelemetryChoiceSchema = z.object({
-  schemaVersion: z.literal(1), enabled: z.boolean(), disclosed: z.literal(true), revision: z.string().uuid(),
+  schemaVersion: z.literal(2), enabled: z.boolean(), disclosed: z.literal(true), revision: z.string().uuid(),
 }).strict();
 export type TelemetryChoice = z.infer<typeof TelemetryChoiceSchema>;
-export const TelemetryChangeSchema = z.object({ enabled: z.boolean() }).strict();
+// Old cached clients may still turn sharing off, but cannot accept a longer policy.
+export const TelemetryChangeSchema = z.discriminatedUnion("enabled", [
+  z.object({ enabled: z.literal(true), retentionDays: z.literal(180) }).strict(),
+  z.object({ enabled: z.literal(false), retentionDays: z.literal(180).optional() }).strict(),
+]);
 export type TelemetryStatus = {
   enabled: boolean; pendingDisclosure: boolean; available: boolean;
 };

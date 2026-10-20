@@ -28,7 +28,17 @@ Only these resource dimensions are sent:
 
 No prompts, conversation contents, code, file paths, repository/task/session IDs, command lines,
 raw errors, hostnames, source commits, or persistent installation identifiers are included in
-metrics. The public collector retains aggregate metrics for seven days.
+metrics. The public collector retains aggregate metrics for up to 180 days. Capacity limits
+can shorten the available history. Version 2 of the preference records acceptance of
+this policy and sends to `/v2/metrics`; enabling through the API requires
+`retentionDays: 180`. A cached client cannot accept it with the old request format.
+
+An existing opt-out remains off. An existing seven-day opt-in requires the new notice
+before this version collects or uploads. Older retained processes can keep using the
+seven-day policy until a new choice is saved; saving either choice makes those older
+producers stop. Native metrics resume when the daemon supports the new preference.
+The legacy `/v1/metrics` endpoint and its separate store retain their seven-day limit;
+previously collected data is never copied to the longer-lived store.
 Received aggregates cannot be attributed to an installation for retrospective deletion.
 
 ### Connection metadata
@@ -41,7 +51,7 @@ arbitrary custom headers are not forwarded.
 
 Cloudflare fronts the public endpoint and also processes connection metadata, including IP
 addresses, under its [privacy policy](https://www.cloudflare.com/privacypolicy/).
-The seven-day aggregate-metric retention is not a retention promise for Cloudflare's logs
+The 180-day aggregate-metric retention is not a retention promise for Cloudflare's logs
 or security processing. This service does not provide complete anonymity.
 
 Operators must verify the relevant Cloudflare account and zone settings before making a
@@ -101,7 +111,11 @@ node scripts/generate-telemetry-dashboard.mjs > /tmp/palmagent-migration.json
 ```
 
 The **Palmagent migration performance** dashboard requires the Prometheus data source UID
-`palmagent-prometheus`. Select one component, operation, outcome, OS, architecture, and load
+`palmagent-prometheus` for the 180-day store. The **Retention store** selector can
+also use the separate legacy seven-day data source (`palmagent-prometheus-legacy`).
+History starts when each store first receives data; enabling longer retention does
+not create earlier observations. Narrow the component/release/time selection if a
+long-range query exceeds the collector's bounded query budget. Select one component, operation, outcome, OS, architecture, and load
 bucket. Then choose baseline/candidate releases and their actual implementations. Panels include
 sample counts, p50/p95/p99, observed operation rate, errors, CPU, memory, and contention.
 Quantile comparison panels require 30/100/1000 observations respectively. Empty panels mean
