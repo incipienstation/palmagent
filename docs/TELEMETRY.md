@@ -27,10 +27,37 @@ Only these resource dimensions are sent:
 - Fixed operation and outcome names; a coarse concurrency bucket.
 
 No prompts, conversation contents, code, file paths, repository/task/session IDs, command lines,
-raw errors, hostnames, source commits, or persistent installation identifiers are sent. The
-receiver and its network provider can see connection metadata such as IP addresses; this is
-not a claim of complete anonymity. The public collector retains aggregate data for seven days.
+raw errors, hostnames, source commits, or persistent installation identifiers are included in
+metrics. The public collector retains aggregate metrics for seven days.
 Received aggregates cannot be attributed to an installation for retrospective deletion.
+
+### Connection metadata
+
+The collection service processes source IP addresses for network access and request limits.
+Its ingress keeps rate-limit state in bounded memory; it does not write client IP addresses
+to its access logs or performance metrics. Only the ingestion protocol's required request
+headers are forwarded to the internal collector. IP, location, cookie, authorization, and
+arbitrary custom headers are not forwarded.
+
+Cloudflare fronts the public endpoint and also processes connection metadata, including IP
+addresses, under its [privacy policy](https://www.cloudflare.com/privacypolicy/).
+The seven-day aggregate-metric retention is not a retention promise for Cloudflare's logs
+or security processing. This service does not provide complete anonymity.
+
+Operators must verify the relevant Cloudflare account and zone settings before making a
+specific provider-retention claim. Review Logpush exports and their destination retention,
+Logpull retention where available, Logs Engine storage, and security-event retention separately.
+An unavailable API or missing permission means unverified, not disabled.
+[Logpull's retention flag](https://developers.cloudflare.com/logs/logpull/enabling-log-retention/)
+only controls Logpull; disabling it does not establish that Cloudflare keeps no other logs.
+Keep account details and verification receipts outside this public repository.
+
+Preserve ingress IP-based abuse limits when changing header handling. Cloudflare's
+[Remove visitor IP headers transform](https://developers.cloudflare.com/rules/transform/managed-transforms/reference/#remove-visitor-ip-headers)
+changes headers sent to the origin; it does not remove IP processing at Cloudflare.
+Changing it can also alter origin rate limiting and affect other hostnames in the zone.
+
+### Metric format
 
 `packages/shared/src/telemetry-contract.json` owns cross-language histogram boundaries, operation
 names, and buckets. TypeScript and Rust consume the same artifact. Histograms use seconds, bytes,

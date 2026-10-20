@@ -12,9 +12,11 @@ function SharingDetails() {
     <p className="mt-2">Aggregated operation timings and outcomes, CPU and memory use, event-loop delay, and database retries.
       Metrics include the component, Node or Rust implementation, release, OS, architecture, and a coarse load bucket.
       They help compare performance as Palmagent changes.</p>
-    <p className="mt-2">Sent to telemetry.palmagent.dev and retained for 7 days. No conversations, code, file paths,
-      raw errors, or persistent installation IDs are sent. The service and its network provider can see connection metadata,
-      including your IP address.</p>
+    <p className="mt-2">Aggregate metrics are sent to telemetry.palmagent.dev and retained for 7 days.
+      No conversations, code, file paths, raw errors, or persistent installation IDs are included.</p>
+    <p className="mt-2">Your IP address is processed for connection security and request limits. It is not stored in
+      performance metrics or the collection service&apos;s access logs. Cloudflare also processes connection metadata
+      under its own policies; the 7-day metric retention does not cover that processing.</p>
     <p className="mt-2">This choice applies to this installation, including retained processes, and survives updates.
       Turning it off stops collection and future uploads and discards queued samples. An upload already received cannot be recalled.</p>
   </details>;
