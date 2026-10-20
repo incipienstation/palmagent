@@ -41,7 +41,7 @@ async function setup(t: test.TestContext, preview = false) {
   let unavailable = false, ack: "delivered" | "unknown" | "rejected" = "delivered", interruptCount = 0, opens = 0;
   const events: SharedSessionEvent[] = [];
   let taskId = "";
-  const event = (key: string, kind: "assistant_text" | "result" | "tool_result", payload: any) => events.push({ key, event: { taskId, sessionId, kind, payload } });
+  const event = (key: string, kind: "assistant_text" | "result" | "tool_result" | "status", payload: any) => events.push({ key, event: { taskId, sessionId, kind, payload } });
   const services: ReturnType<typeof createTaskService>[] = [];
   const make = async () => {
     const backend = new InProcessBackend();
@@ -205,17 +205,23 @@ test("an already dispatched preview connects automatically without ending its lo
   await eventually(() => f.sent.length === 1);
 });
 
-test("live cumulative text imports only new suffixes across reconnect and completion", { skip: process.platform !== "linux" }, async t => {
+for (const phase of ["progress", "final", undefined] as const) test(`live ${phase ?? "unknown"} text keeps its placement and suffixes across reconnect and completion`, { skip: process.platform !== "linux" }, async t => {
   const f = await setup(t), id = f.task.taskId;
-  f.event("stream-item", "assistant_text", { text: "Working", messageId: "stream-item" });
+  f.event("stream-item", "assistant_text", { text: "Working", messageId: "stream-item", phase });
   await f.refresh(); f.clearEvents();
-  f.event("stream-item", "assistant_text", { text: "Working on it", messageId: "stream-item" });
+  f.event("stream-item", "assistant_text", { text: "Working on it", messageId: "stream-item", phase });
   await f.refresh();
   f.service.beginShutdown();
   const restarted = await f.make();
   await eventually(() => restarted.getTask(id).sessionControl?.connection === "connected");
-  f.event("stream-item", "assistant_text", { text: "Working on it now", messageId: "stream-item" });
+  f.event("stream-item", "assistant_text", { text: "Working on it now", messageId: "stream-item", phase: "progress" });
+  f.event("stream-phase", "status", { subtype: "assistant_message", messageId: "stream-item", phase: "progress" });
   await f.refresh(restarted);
   const texts = f.db.eventsAfterSeq(id, 0).filter(row => row.event.kind === "assistant_text");
   assert.deepEqual(texts.map(row => (row.event.payload as { text: string }).text), ["Working", " on it", " now"]);
+  const rows = f.db.conversationPage(id).transcript!;
+  const prose = rows.filter(row => row.type === "message" && row.item.kind === "assistant_text");
+  assert.equal(prose.length, phase === "progress" ? 0 : 1);
+  assert.ok(JSON.stringify(phase === "progress"
+    ? f.db.conversationDetails(id, rows.find(row => row.type === "activity")!.key) : prose).includes("Working on it now"));
 });

@@ -83,6 +83,11 @@ While work is active, the latest progress message wraps across lines beneath the
 collapsed activity. That temporary preview disappears when the turn finishes; its
 content remains available in the steps. An active Trace replaces the separate
 **Working…** indicator. Individual tool failures stay on their steps.
+When the provider identifies progress before the first text arrives, it streams
+directly into Trace. Replies and text without an initial classification stay in
+the conversation, even if later metadata calls them progress. Existing histories
+use the same rule after their display records are rebuilt on upgrade; the original
+execution records remain intact.
 Very large messages and images offer a separate load button for their full content.
 
 The chat uses one display style. Older Compact/Verbose preferences no longer change

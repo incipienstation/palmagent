@@ -2,12 +2,16 @@ import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { Duplex } from "node:stream";
 import WebSocket from "ws";
-import type { AnswerRequest, InputAttachment, PermissionRequest, QuestionRequest, SkillSelection } from "@palmagent/shared";
+import type { AnswerRequest, AssistantPhase, InputAttachment, PermissionRequest, QuestionRequest, SkillSelection } from "@palmagent/shared";
 import type { SharedSessionConnection, SharedSessionConnector, SharedSessionEvent, SharedSessionSnapshot } from "../../application/ports/inbound/shared-session.js";
 import { codexInput } from "./codex-interactive.js";
 
 type Json = Record<string, any>;
 class RpcFailure extends Error {}
+
+function messagePhase(phase: unknown): AssistantPhase | undefined {
+  return phase === "commentary" ? "progress" : phase === "partial_answer" ? "partial" : phase === "final_answer" ? "final" : undefined;
+}
 
 function openTransport(home: string, cwd: string, socket?: string) {
   const proxy = spawn("codex", ["app-server", "proxy", ...(socket ? ["--sock", socket] : [])],
@@ -47,7 +51,7 @@ class CodexConnection implements SharedSessionConnection {
   private responding = new Map<string, { resolve: (value: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
   private initialHistory = true;
   private events: SharedSessionEvent[] = [];
-  private streamingText = new Map<string, string>();
+  private streamingText = new Map<string, { text: string; phase?: AssistantPhase }>();
   private thread: Json = {};
   private turnId?: string;
   constructor(private ws: WebSocket, private dispose: () => void,
@@ -89,13 +93,15 @@ class CodexConnection implements SharedSessionConnection {
         this.streamingText.clear();
       }
       if (row.method === "item/started") {
-        if (p.item?.type === "agentMessage" && !this.initialHistory) this.streamingText.set(p.item.id, p.item.text ?? "");
+        if (p.item?.type === "agentMessage" && !this.initialHistory) this.streamingText.set(p.item.id,
+          { text: p.item.text ?? "", phase: messagePhase(p.item.phase) });
         if (p.item?.type === "commandExecution") this.events.push(this.event(`item/${p.turnId}/${p.item.id}/call`, "tool_call", { id: p.item.id, name: "bash", command: p.item.command }));
       }
       if (row.method === "item/agentMessage/delta" && typeof p.delta === "string" && this.streamingText.has(p.itemId)) {
-        const text = this.streamingText.get(p.itemId)! + p.delta;
-        this.streamingText.set(p.itemId, text);
-        this.events.push(this.event(`item/${p.turnId}/${p.itemId}`, "assistant_text", { text, messageId: p.itemId }));
+        const message = this.streamingText.get(p.itemId)!;
+        message.text += p.delta;
+        this.events.push(this.event(`item/${p.turnId}/${p.itemId}`, "assistant_text",
+          { text: message.text, messageId: p.itemId, ...(message.phase ? { phase: message.phase } : {}) }));
       }
       if (row.method === "item/completed") {
         this.events.push(...this.itemEvents(p.turnId, p.item));
@@ -202,8 +208,12 @@ class CodexConnection implements SharedSessionConnection {
     switch (item.type) {
       case "userMessage": return [this.event(key, "status", { subtype: "followup", source: "local", text: (item.content ?? []).filter((v: Json) => v.type === "text").map((v: Json) => v.text).join("\n"), ...(item.clientId ? { messageId: item.clientId } : {}) })];
       case "agentMessage": {
-        const phase = item.phase === "commentary" ? "progress" : item.phase === "partial_answer" ? "partial" : item.phase === "final_answer" ? "final" : undefined;
-        return [this.event(key, "assistant_text", { text: item.text ?? "", messageId: item.id }),
+        const phase = messagePhase(item.phase);
+        // Keep the initial classification while completing a streamed message.
+        // The authoritative completion marker remains available separately.
+        const initialPhase = this.streamingText.has(item.id) ? this.streamingText.get(item.id)!.phase : phase;
+        return [this.event(key, "assistant_text", { text: item.text ?? "", messageId: item.id,
+          ...(initialPhase ? { phase: initialPhase } : {}) }),
           ...(completed && phase ? [this.event(`${key}/phase/${phase}`, "status", { subtype: "assistant_message", messageId: item.id, phase })] : [])];
       }
       case "commandExecution": return [this.event(key + "/call", "tool_call", { id: item.id, name: "bash", command: item.command }), this.event(key + "/result", "tool_result", { tool_use_id: item.id, output: item.aggregatedOutput, exit_code: item.exitCode })];

@@ -146,7 +146,7 @@ test("execution records preserve lifecycle events without replacing the chat or 
 });
 
 
-test("late classification preserves the open activity and operation across a changed history key", async ({ page, history }) => {
+test("late classification preserves prose beside the open activity and operation", async ({ page, history }) => {
   history.add([event("assistant_text", { text: "Inspecting project", messageId: "progress" }), ...pair(0)]);
   await routes(page, history); await page.goto(`/#/task/${taskId}`);
   await page.getByRole("button", { name: "Activity · 1 tool", exact: true }).click();
@@ -154,9 +154,38 @@ test("late classification preserves the open activity and operation across a cha
   await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
   history.add([event("status", { subtype: "assistant_message", messageId: "progress", phase: "progress" })]);
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
-  await expect(page.locator('[data-trace-step="1"]')).toBeVisible();
+  await expect(page.getByText("Inspecting project", { exact: true })).toBeVisible();
   await expect(step).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
+});
+
+for (const phase of ["progress", "final", undefined] as const) test(`streaming placement stays stable with initial phase ${phase ?? "unknown"}`, async ({ page, history }) => {
+  history.add([event("status", { subtype: "turn_started" }), event("tool_call", { id: "stream-tool", name: "bash", command: "stream-check", status: "in_progress" })]);
+  await routes(page, history);
+  await page.goto(`/#/task/${taskId}`);
+  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
+  await send(page, taskId, { type: "tasks", tasks: [{ ...history.task, status: "running", updatedAt: Date.now() }], historyThrough: history.tasks.eventCursor(taskId) });
+  const composer = page.locator("textarea").first(); await composer.fill("Keep the streaming draft");
+  let text = "";
+  for (const chunk of ["First streamed sentence. ", "Second streamed sentence."]) {
+    text += chunk;
+    history.add([event("assistant_text", { text: chunk, messageId: "stream-message", ...(phase ? { phase } : {}) })]);
+    await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
+    await expect(page.getByText(text.trim(), { exact: true })).toBeVisible();
+    await expect(page.locator("[data-progress-preview]")).toHaveCount(phase === "progress" ? 1 : 0);
+    await expect(composer).toHaveValue("Keep the streaming draft");
+  }
+  await captureForReview(page, `trace-phase-${phase ?? "unknown"}-streaming.png`);
+  history.add([event("status", { subtype: "assistant_message", messageId: "stream-message", phase: phase ?? "progress" }),
+    event("tool_result", { tool_use_id: "stream-tool", output: "Done", exit_code: 0 }), event("result", {})]);
+  await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
+  await expect(page.locator("[data-progress-preview]")).toHaveCount(0);
+  if (phase !== "progress") await expect(page.getByText(text.trim(), { exact: true })).toBeVisible();
+  await expect(composer).toHaveValue("Keep the streaming draft");
+  await captureForReview(page, `trace-phase-${phase ?? "unknown"}-completed.png`);
+  await page.reload();
+  if (phase !== "progress") await expect(page.getByText(text.trim(), { exact: true })).toBeVisible();
+  else await expect(page.getByText(text.trim(), { exact: true })).toHaveCount(0);
 });
 
 

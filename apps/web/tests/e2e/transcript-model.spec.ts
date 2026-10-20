@@ -6,15 +6,15 @@ const event = (key: number, kind: Exclude<LogItem["kind"], "assistant_text">, pa
   ({ key, kind, event: { taskId: "task", agent: "claude", kind, payload, ts: key } });
 const prose = (key: number, text: string, extra = {}): LogItem => ({ key, kind: "assistant_text", agent: "claude", text, ...extra });
 
-test("late phase markers fold only their matching message and keep final text once", () => {
+test("late phase markers keep unclassified prose visible and final text appears once", () => {
   const log = [prose(1, "Earlier explanation"), prose(2, "Reading files", { messageId: "m1" }),
     event(3, "status", { subtype: "assistant_message", messageId: "m1", phase: "progress" }),
     event(4, "tool_call", { name: "Read", id: "t1" }), event(5, "tool_result", { output: "Read output" }),
     prose(6, "Final answer", { messageId: "m2", phase: "final" }), event(7, "result", { result: "Final answer" })];
   const rows = presentTranscript(log, "compact", false);
-  expect(rows.filter((r) => r.type === "message").map((r) => r.key)).toEqual([1, 6]);
+  expect(rows.filter((r) => r.type === "message").map((r) => r.key)).toEqual([1, 2, 6]);
   const group = rows.find((r): r is Activity => r.type === "activity")!;
-  expect(group.items.map((it) => it.key)).toEqual([2, 3, 4, 5, 7]);
+  expect(group.items.map((it) => it.key)).toEqual([4, 5, 7]);
   expect(group.preview).toBeUndefined();
   expect(presentTranscript(log, "verbose", false)).toHaveLength(log.length);
 });

@@ -13,13 +13,15 @@ type State = { cursor: number; block_start: number; log_json: string; activity: 
 type StoredRow = { seq: number; end_seq: number; revision: number; body_json: string | null; wire_json: string | null };
 type EventRow = { seq: number; kind: AgentEvent["kind"]; payload_json: string; ts: number; agent: AgentEvent["agent"]; session_id: string | null };
 const version = (body: string) => createHash("sha256").update(body).digest("hex");
+// Version 5 fixes message placement to the first observed phase, including unknown.
+const PROJECTION_VERSION = 5;
 const reset = (event: AgentEvent) => event.kind === "status" &&
   ["dispatch", "followup", "turn_started"].includes(String((event.payload as { subtype?: unknown } | null)?.subtype));
 const endOf = (row: TranscriptRow) => row.type === "message" ? row.item.endSeq ?? row.key
   : row.items.reduce((end, item) => Math.max(end, item.endSeq ?? item.key), row.key);
 
 /** Durable display records. Event sequence remains the source of ordering and SSE recovery.
- * Only the unfinished run needs reclassification when a late phase marker arrives;
+ * Only the unfinished run is projected again as text and tool events arrive;
  * completed runs are indexed once. Text deltas are merged before storing that tail.
  */
 export class ConversationHistory {
@@ -27,7 +29,7 @@ export class ConversationHistory {
     db.transaction(() => {
       const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'conversation_rows'").get();
       db.exec("CREATE TABLE IF NOT EXISTS conversation_projection_version (version INTEGER NOT NULL)");
-      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== 4;
+      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== PROJECTION_VERSION;
       db.exec(`
         CREATE TABLE IF NOT EXISTS conversation_rows (
           task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -65,7 +67,10 @@ export class ConversationHistory {
         db.exec("INSERT INTO conversation_dirty SELECT task_id, MIN(seq) FROM events GROUP BY task_id ON CONFLICT(task_id) DO UPDATE SET from_seq = MIN(from_seq, excluded.from_seq)");
         for (const { task_id } of db.prepare("SELECT task_id FROM conversation_dirty").all() as { task_id: string }[]) this.refresh(task_id);
       }
-      if (upgrade) db.exec("DELETE FROM conversation_projection_version; INSERT INTO conversation_projection_version VALUES (4)");
+      if (upgrade) {
+        db.exec("DELETE FROM conversation_projection_version");
+        db.prepare("INSERT INTO conversation_projection_version VALUES (?)").run(PROJECTION_VERSION);
+      }
     }).immediate();
   }
 

@@ -146,7 +146,7 @@ test("oversized content is explicitly loaded through bounded chunks", async ({ p
   expect(Math.max(...requests.content)).toBeLessThanOrEqual(CONVERSATION_PAGE_BYTES);
 });
 
-test("late classification retries a partial revision without gaps or duplicate Activities", async ({ page, history }) => {
+test("late classification and tool completion retry a partial revision without hiding prose", async ({ page, history }) => {
   history.add(Array.from({ length: 45 }, (_, i) => [event("tool_call", { id: `tool-${i}`, name: "Read" }),
     event("assistant_text", { text: `Unclassified message ${i}`, messageId: `m-${i}` })]).flat());
   const requests = await routes(page, history);
@@ -156,10 +156,11 @@ test("late classification retries a partial revision without gaps or duplicate A
   });
   await page.goto(`/#/task/${taskId}`);
   await expect(page.getByText("Unclassified message 44", { exact: true })).toBeVisible();
-  history.add(Array.from({ length: 45 }, (_, i) => event("status", { subtype: "assistant_message", messageId: `m-${i}`, phase: "progress" })));
+  history.add(Array.from({ length: 45 }, (_, i) => [event("status", { subtype: "assistant_message", messageId: `m-${i}`, phase: "progress" }),
+    event("tool_result", { tool_use_id: `tool-${i}`, output: "Done", exit_code: 0 })]).flat());
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
-  await expect(page.getByRole("button", { name: "Activity · 45 tools", exact: true })).toHaveCount(1);
-  await expect(page.getByText("Unclassified message 44", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Unclassified message 44", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Activity · 45 tools", exact: true })).toHaveCount(0);
   await expect.poll(() => requests.changes.length).toBeGreaterThanOrEqual(3);
   expect(changeAttempts).toBeGreaterThanOrEqual(4);
   expect(Math.max(...requests.changes)).toBeLessThanOrEqual(CONVERSATION_PAGE_BYTES);
