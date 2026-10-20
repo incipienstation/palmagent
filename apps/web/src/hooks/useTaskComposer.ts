@@ -120,7 +120,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     : running && !compacting ? "Guide the current task…"
     : "Message Palmagent…";
   const editedSettings = edit ? queue?.messages.find(message => message.id === edit.id)?.settings : undefined;
-  const settingsReadOnly = shared ? "Settings are managed by the connected Codex session." : edit
+  const settingsReadOnly = edit
     ? "Settings are retained from the queued message."
     : running && deliveryMode === "send" ? "Messages sent now use the running turn's settings." : undefined;
   const displayedModel = settingsReadOnly ? (editedSettings?.model ?? task?.model) || DEFAULT_OPTION : model;
@@ -153,10 +153,10 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     const override = {
       ...(model !== curModel ? { model: model === DEFAULT_OPTION ? "" : model } : {}),
       ...(effort !== curEffort ? { effort: effort === DEFAULT_OPTION ? "" : effort } : {}),
-      ...(permission !== curPermission ? { permission } : {}),
+      ...(!shared && permission !== curPermission ? { permission } : {}),
     };
     const request = { mode: deliveryMode, text, images, ...(skills.length ? { skills } : {}), expectedRunId: confirmedQueue?.runId ?? null,
-      ...(shared || running && deliveryMode === "send" ? {} : { settings: override }) };
+      ...(running && deliveryMode === "send" ? {} : { settings: override }) };
     const fingerprint = JSON.stringify({ mode: deliveryMode, text, images, skills, model, effort, permission });
     const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
     const submission = submitted?.fingerprint === fingerprint ? submitted.request : request;

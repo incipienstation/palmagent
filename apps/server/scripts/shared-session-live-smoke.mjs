@@ -16,11 +16,14 @@ import { CodexSharedSessions } from '../src/modules/agents/adapters/outbound/cod
 const home = mkdtempSync(join(tmpdir(), 'palmagent-native-smoke-'));
 const socket = join(home, 'native.sock');
 let requests = 0;
+const modelRequests = [];
 let holdNext = false, releaseResponse;
 const model = createServer((request, response) => {
-  request.resume();
+  let body = "";
+  request.on("data", chunk => { body += chunk; });
   request.on('end', async () => {
     requests++;
+    modelRequests.push(JSON.parse(body));
     const id = `response_${requests}`, messageId = `message_${requests}`, text = `Fixture reply ${requests}`;
     const item = { id: messageId, type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer',
       content: [{ type: 'output_text', text, annotations: [] }] };
@@ -46,6 +49,7 @@ await once(model, 'listening');
 const port = model.address().port;
 writeFileSync(join(home, 'config.toml'), `model = "fixture"
 model_provider = "fixture"
+model_reasoning_effort = "medium"
 [model_providers.fixture]
 name = "Local fixture"
 base_url = "http://localhost:${port}/v1"
@@ -103,10 +107,15 @@ try {
   assert.ok(shared);
   assert.equal((await shared.snapshot()).historyMode, 'paginated');
   assert.ok((await shared.history()).some(row => row.event.kind === 'assistant_text' && row.event.payload.text === 'Fixture reply 1'));
-  assert.equal(await shared.send('Second turn from browser', undefined, 'browser-message'), 'delivered');
+  assert.equal(await shared.send('Second turn from browser', undefined, 'browser-message', undefined, { model: 'gpt-5.5', effort: 'high' }), 'delivered');
   await wait(() => completed().length === 2, 'the browser turn');
   assert.ok(completed().every(row => row.params.threadId === thread.id && row.params.turn.status === 'completed'));
   assert.equal(requests, 2);
+  assert.equal(modelRequests[1].model, 'gpt-5.5');
+  assert.equal(modelRequests[1].reasoning?.effort, 'high');
+  const settings = await shared.snapshot();
+  assert.equal(settings.model, 'gpt-5.5');
+  assert.equal(settings.effort, 'high');
   assert.ok((await shared.history()).some(row => row.event.kind === 'assistant_text' && row.event.payload.text === 'Fixture reply 2'));
   // Keep a real native turn active while the second client steers it.
   holdNext = true;
@@ -125,6 +134,16 @@ try {
   await localTurn('Third local turn after browser disconnect');
   await wait(() => completed().length === 4, 'the next local turn');
   assert.ok(requests >= 4);
+  assert.equal(modelRequests.at(-1).model, 'gpt-5.5', 'native client inherits the selected model');
+  assert.equal(modelRequests.at(-1).reasoning?.effort, 'high', 'native client inherits the selected effort');
+  shared = await new CodexSharedSessions(socket).connect({ taskId: 'fixture-task', agent: 'codex', sessionId: thread.id, cwd: home, home }, () => {});
+  assert.equal(await shared.send('Restore native defaults', undefined, 'browser-defaults', undefined, { model: '', effort: '' }), 'delivered');
+  await wait(() => completed().length === 5, 'the default settings turn');
+  const defaults = await shared.snapshot();
+  assert.equal(defaults.model, 'fixture');
+  assert.equal(defaults.effort, 'medium');
+  assert.equal(modelRequests.at(-1).model, 'fixture');
+  shared.close(); shared = undefined;
   const imported = synchronizeSession(preview, { preview: true });
   assert.ok(imported.events.some(event => event.kind === 'status' && event.payload.text === 'Second turn from browser'), 'paginated native history must still extend the existing preview transcript');
   assert.ok(imported.control.cursor > preview.sessionControl.cursor);
@@ -143,7 +162,7 @@ try {
   assert.ok((await shared.history()).some(row => row.event.kind === 'assistant_text' && row.event.payload.text.includes('Fixture reply')));
   assert.equal(native.exitCode, null);
   synchronizeSession(preview, { preview: true }); // restarting the server preserves the checked prefix
-  console.log('PASS: terminal and browser share one native thread; live text and Send now work during a local turn; terminal survives browser detach.');
+  console.log('PASS: terminal and browser share one native thread; model/effort overrides and native defaults work; live Send now and terminal continuation remain intact.');
 } finally {
   releaseResponse?.(); shared?.close(); local?.terminate();
   const stopped = native.exitCode === null && native.signalCode === null ? once(native, 'close') : Promise.resolve();

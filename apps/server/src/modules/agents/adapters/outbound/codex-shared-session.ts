@@ -228,11 +228,37 @@ class CodexConnection implements SharedSessionConnection {
   private resultEvent(turn: Json): SharedSessionEvent {
     return this.event(`turn/${turn.id}/result`, "result", { turnId: turn.id, is_error: turn.status !== "completed", subtype: turn.status, error: turn.error });
   }
-  async send(text: string, images: InputAttachment[] | undefined, messageId: string, skills?: SkillSelection[]) {
+  private async turnSettings(settings: NonNullable<Parameters<SharedSessionConnection["send"]>[4]>, currentModel?: string) {
+    let { model, effort } = settings;
+    if (model === "" || effort === "") {
+      // Null/omitted turn overrides inherit the sticky thread setting. Resolve
+      // explicit Default selections against this native server instead.
+      const { config } = await this.rpc("config/read", { cwd: this.target.cwd, includeLayers: false });
+      if (model === "") model = config.model || "";
+      if (effort === "") effort = config.model_reasoning_effort || "";
+      if (model === "" || effort === "") {
+        const models: Json[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await this.rpc("model/list", { includeHidden: true, ...(cursor ? { cursor } : {}) });
+          models.push(...page.data); cursor = page.nextCursor ?? undefined;
+        } while (cursor);
+        if (model === "") model = models.find(row => row.isDefault)?.model;
+        if (effort === "") effort = models.find(row => row.model === (model ?? currentModel))?.defaultReasoningEffort;
+      }
+      if ((settings.model === "" && !model) || (settings.effort === "" && !effort)) throw new Error("The native session defaults are unavailable.");
+    }
+    return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+  }
+  async send(text: string, images: InputAttachment[] | undefined, messageId: string, skills?: SkillSelection[], settings?: Parameters<SharedSessionConnection["send"]>[4]) {
     let submitted = false;
     try {
       const snapshot = await this.snapshot();
       const active = snapshot.status === "running";
+      // A queued new turn must not silently become guidance for a native turn
+      // that started on another client, losing its selected settings.
+      if (active && settings !== undefined) return "rejected" as const;
+      const overrides = settings ? await this.turnSettings(settings, snapshot.model) : {};
       if (active && !this.turnId) await this.history();
       if (active && !this.turnId) return "rejected" as const;
       // Send now reaches the loaded thread's current turn. A turn changing
@@ -240,7 +266,7 @@ class CodexConnection implements SharedSessionConnection {
       submitted = true;
       const result = await this.rpc(active ? "turn/steer" : "turn/start", {
         threadId: this.target.sessionId, clientUserMessageId: messageId, input: codexInput(text, images, skills),
-        ...(active ? { expectedTurnId: this.turnId } : {}),
+        ...(active ? { expectedTurnId: this.turnId } : overrides),
       });
       this.turnId = result.turnId ?? result.turn?.id; this.changed();
       return "delivered" as const;

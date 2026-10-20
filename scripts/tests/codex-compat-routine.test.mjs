@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { protocolContracts } from '../lib/codex-schema-contract.mjs';
+import { protocolContracts, responseContracts } from '../lib/codex-protocol-contract.mjs';
 
 const entry = fileURLToPath(new URL('../codex-compat-routine.mjs', import.meta.url));
 const schemaFor = mask => {
@@ -26,9 +26,7 @@ function schemas() {
         ...(mask === null ? {} : { params: schemaFor(mask) }) },
     })) };
   }
-  for (const file of ['v2/ThreadStartResponse', 'v2/ThreadResumeResponse']) result[file] = schemaFor({ thread: { id: true } });
-  result['v2/TurnStartResponse'] = schemaFor({ turn: { id: true } });
-  result['v2/ThreadCompactStartResponse'] = schemaFor({});
+  for (const [file, mask] of Object.entries(responseContracts)) result[file] = schemaFor(mask);
   for (const file of ['CommandExecutionRequestApprovalResponse', 'FileChangeRequestApprovalResponse', 'ToolRequestUserInputResponse']) result[file] = schemaFor({ answers: true });
   return result;
 }

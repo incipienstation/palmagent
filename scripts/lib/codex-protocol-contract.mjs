@@ -25,9 +25,11 @@ export const protocolContracts = [
     'thread/start': session,
     'thread/resume': { ...session, threadId: true },
     'thread/compact/start': fields('threadId'),
-    'turn/start': { ...fields('threadId', 'clientUserMessageId', 'effort'), input },
+    'turn/start': { ...fields('threadId', 'clientUserMessageId', 'model', 'effort'), input },
     'turn/steer': { ...fields('threadId', 'clientUserMessageId', 'expectedTurnId'), input },
     'turn/interrupt': fields('threadId', 'turnId'),
+    'config/read': fields('cwd', 'includeLayers'),
+    'model/list': fields('cursor', 'includeHidden'),
   }],
   ['ClientNotification', 'out', { initialized: null }],
   ['ServerNotification', 'in', {
@@ -53,6 +55,8 @@ export const protocolContracts = [
   }],
 ];
 export const responseContracts = {
+  'v2/ConfigReadResponse': { config: fields('model', 'model_reasoning_effort') },
+  'v2/ModelListResponse': { data: { $items: fields('model', 'isDefault', 'defaultReasoningEffort') }, nextCursor: true },
   'v2/ThreadCompactStartResponse': {},
   'v2/ThreadStartResponse': { thread }, 'v2/ThreadResumeResponse': { thread },
   'v2/TurnStartResponse': { turn: { id: true } },

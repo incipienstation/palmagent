@@ -4,7 +4,7 @@ import { isClosedTaskStatus, compactUnavailableReason, type CompactTaskRequest }
 import { sanitizeImages } from "../attachments/image-input.js";
 import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagent/shared";
 import { MessageController } from "./message-controller.js";
-import type { SubmitMessage, MessageAction } from "@palmagent/shared";
+import type { SubmitMessage, MessageAction, MessageSettings } from "@palmagent/shared";
 import type {
   DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
@@ -262,7 +262,7 @@ export class TaskService implements PrStatusSink {
         if (isClosedTaskStatus(task.status)) throw conflict("This task is closed.");
       },
       validateSubmission: (id, req) => {
-        if (this.getTask(id).sessionControl?.owner === "shared" && req.settings && Object.keys(req.settings).length) throw conflict("Change the shared session settings in the local CLI.");
+        if (this.getTask(id).sessionControl?.owner === "shared" && req.settings?.permission !== undefined) throw conflict("Change the shared session permissions in the local CLI.");
       },
       canStart: (id) => {
         const task = this.cache.get(id);
@@ -282,7 +282,7 @@ export class TaskService implements PrStatusSink {
           this.messages.beginRun(id, message.id);
           this.messages.startingRuntime(id);
           this.transition(task, "running", { interrupted: false });
-          void this.sendShared(task, message.text, images, message.id, message.skills).then(status => {
+          void this.sendShared(task, message.text, images, message.id, message.skills, { model: message.settings?.model, effort: message.settings?.effort }).then(status => {
             if (this.shuttingDown) return;
             if (status === "delivered" || this.messages.state(id).messages.find(entry => entry.id === message.id)?.status === "delivered") this.messages.delivered(id, message.id);
             else { this.messages.deliveryFailed(id, message.id, status); this.messages.finish(id, true, false); this.transition(task, "idle", { interrupted: true }); }
@@ -556,7 +556,7 @@ export class TaskService implements PrStatusSink {
     return task;
   }
 
-  private async sendShared(task: TaskState, text: string, images: InputAttachment[] | undefined, messageId: string, selections?: SkillSelection[]) {
+  private async sendShared(task: TaskState, text: string, images: InputAttachment[] | undefined, messageId: string, selections?: SkillSelection[], settings?: Pick<MessageSettings, "model" | "effort">) {
     const id = task.taskId, connection = this.sharedConnections.get(id);
     if (!connection || !this.sharedConnected(task)) return "rejected" as const;
     this.sharedSending.add(id);
@@ -564,7 +564,7 @@ export class TaskService implements PrStatusSink {
     try {
       const skills = await this.resolveSkills({ taskId: id }, selections);
       submitted = true;
-      return await connection.send(text, images, messageId, skills);
+      return await connection.send(text, images, messageId, skills, settings);
     } catch { return submitted ? "unknown" as const : "rejected" as const; }
     finally { this.sharedSending.delete(id); if (!this.shuttingDown) void this.refreshShared(task); }
   }
