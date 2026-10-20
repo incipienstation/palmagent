@@ -116,6 +116,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       terminate: (id: string) => write(() => client.terminals[":id"].terminate.$post({ param: idParam(id) })),
       ticket: (id: string) => write(() => client.terminals[":id"]["attach-ticket"].$post({ param: idParam(id) })),
     },
+    telemetry: {
+      get: () => request(() => client.settings.telemetry.$get()),
+      change: (enabled: boolean) => write(() => client.settings.telemetry.$patch({ json: { enabled } })),
+    },
     repoSettings: {
       get: () => request(() => client.settings.repos.$get()),
       change: (json: RepoSettingsChange) => write(() => client.settings.repos.$patch({ json })),

@@ -1,3 +1,4 @@
+import { createTelemetry } from "../composition/telemetry.js";
 import { createHostReadiness } from "../platform/process/host-readiness.js";
 import { resolve } from "node:path";
 import { TerminalId, TERMINAL_PROTOCOL, TERMINAL_STARTUP_TIMEOUT_MS } from "@palmagent/shared/terminals";
@@ -16,6 +17,10 @@ const record = store.get(id);
 if (!record || record.protocol !== TERMINAL_PROTOCOL) throw new Error("Terminal protocol mismatch");
 const identity = processIdentity(process.pid);
 if (!identity || !store.claim(id, process.pid, identity)) { store.close(); process.exit(1); }
+const telemetry = createTelemetry("palmagent.terminal", () => 1);
+telemetry.producer.start();
+process.once("exit", () => telemetry.producer.close());
+const launchFinished = telemetry.producer.beginOperation("terminal.start", 1);
 let host: TerminalHost | undefined;
 let unlisten: (() => void) | undefined;
 let finishing = false;
@@ -23,6 +28,7 @@ let diagnosticExpiry: ReturnType<typeof setTimeout> | undefined;
 function finish(code: number, lost = false) {
   if (finishing) return;
   finishing = true; clearTimeout(diagnosticExpiry); clearTimeout(startupExpiry);
+  if (lost) launchFinished("error");
   if (lost) store.noteStartError(id, "initialization_failed", "Shell initialization failed. Check the terminal service log.");
   store.update(id, { state: "closing", exitCode: lost ? undefined : code });
   // Allow the exit frame to reach attached clients before closing IPC.
@@ -39,6 +45,9 @@ try {
     host.terminate(); finish(1, true);
   } else {
     clearTimeout(startupExpiry);
+    launchFinished("success");
+    telemetry.producer.flush();
+    void telemetry.producer.send();
     ready();
     if (record.diagnostic) {
       // A killed diagnostic CLI must not leave a background test shell indefinitely.

@@ -122,3 +122,5 @@ To run the web app, start `pnpm web:dev` in another terminal. Run
 ## License
 
 [MIT](LICENSE)
+
+Performance sharing and Rust migration comparisons are described in [Performance measurements](docs/TELEMETRY.md).

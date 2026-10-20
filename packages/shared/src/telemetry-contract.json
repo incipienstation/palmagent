@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "bounds": {
+    "duration": [
+      0.001,
+      0.005,
+      0.01,
+      0.025,
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      1,
+      2.5,
+      5,
+      10,
+      30,
+      60
+    ],
+    "cpu": [
+      0.01,
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "memory": [
+      16777216,
+      33554432,
+      67108864,
+      134217728,
+      268435456,
+      536870912,
+      1073741824,
+      2147483648,
+      4294967296,
+      8589934592
+    ]
+  },
+  "operations": [
+    "http.request",
+    "http.tasks.read",
+    "http.tasks.write",
+    "http.spaces.read",
+    "http.routines.read",
+    "http.terminals.read",
+    "http.health",
+    "storage.write",
+    "storage.queue",
+    "execution.start",
+    "event.deliver",
+    "daemon.request",
+    "daemon.status",
+    "daemon.inspect",
+    "daemon.list",
+    "daemon.launch",
+    "daemon.terminate",
+    "daemon.restart",
+    "recovery",
+    "terminal.start"
+  ],
+  "concurrency": [
+    "0",
+    "1",
+    "2-4",
+    "5-8",
+    "9-16",
+    "17+"
+  ],
+  "outcomes": [
+    "success",
+    "error",
+    "timeout"
+  ]
+}

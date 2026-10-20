@@ -84,7 +84,7 @@ impl Fixture {
             &data.join("daemon/config.json"),
             &json!({
                 "protocol": 1, "daemon": binary, "release": release, "node": data.join("runtimes/sh"),
-                "environment": { "PATH": "/usr/bin:/bin" }, "isolation": "process-group",
+                "environment": { "PATH": "/usr/bin:/bin", "PALMAGENT_HOME": data }, "isolation": "process-group",
                 "limits": { "memoryHigh": 1024, "memoryMax": 2048, "tasks": 64, "webTasks": 64, "cpuPercent": 100, "nofile": 1024 }
             }),
         );
@@ -833,4 +833,48 @@ fn total_log_budget_removes_oldest_completed_logs_and_protects_active_output() {
         fixture.request(json!({"action":"launch","kind":"terminal","id":"f0000"}))["state"],
         "exited"
     );
+}
+
+#[test]
+fn telemetry_requires_disclosure_and_observes_shared_opt_out() {
+    let fixture = Fixture::new();
+    assert!(fixture.request(json!({"action":"status"}))["telemetry"].is_null());
+    let path = fixture.data.join("telemetry.json");
+    write(
+        &path,
+        &json!({"schemaVersion":1,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000001"}),
+    );
+    wait(|| !fixture.request(json!({"action":"status"}))["telemetry"].is_null());
+    fixture.request(json!({"action":"list"}));
+    let snapshot = fixture.request(json!({"action":"status"}));
+    assert!(
+        snapshot["telemetry"]["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|point| point["attributes"]["operation"] == "daemon.list" && point["count"] == 1)
+    );
+    assert!(
+        !snapshot["telemetry"]
+            .to_string()
+            .contains(fixture.data.to_str().unwrap())
+    );
+    write(
+        &path,
+        &json!({"schemaVersion":1,"enabled":false,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000002"}),
+    );
+    assert!(fixture.request(json!({"action":"status"}))["telemetry"].is_null());
+    write(
+        &path,
+        &json!({"schemaVersion":1,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000003"}),
+    );
+    wait(|| !fixture.request(json!({"action":"status"}))["telemetry"].is_null());
+    assert!(
+        fixture.request(json!({"action":"status"}))["telemetry"]["points"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    fs::write(&path, "invalid").unwrap();
+    assert!(fixture.request(json!({"action":"status"}))["telemetry"].is_null());
 }

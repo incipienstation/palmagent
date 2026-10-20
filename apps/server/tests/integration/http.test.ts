@@ -36,7 +36,7 @@ import type { HttpDependencies } from "../../src/composition/http-dependencies.j
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations">> = {}) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
@@ -1279,4 +1279,22 @@ test("Trace HTTP queries separate summaries, selected output and execution recor
     assert.equal((await f.app.request(`/api/tasks/t/history/${path}`)).status, 400);
   }
   assert.equal((await f.app.request("/api/tasks/missing/history/records")).status, 404);
+});
+
+
+test("performance sharing is authenticated, rejects cross-origin writes, and applies the saved choice", async t => {
+  let enabled = true, writes = 0;
+  const telemetry = { status: () => ({ enabled, pendingDisclosure: writes === 0, available: true }),
+    change: (value: boolean) => { enabled = value; writes++; return telemetry.status(); } };
+  const f = fixture(t, true, { telemetry });
+  const path = "/api/settings/telemetry";
+  const change = { method: "PATCH", body: JSON.stringify({ enabled: false }) };
+  assert.equal((await f.app.request(path)).status, 401);
+  assert.equal((await f.app.request(path, change)).status, 401);
+  f.db.createSession("telemetry-session", Date.now(), Date.now() + 60000);
+  const headers = { cookie: `${f.settings.cookieName}=telemetry-session`, "content-type": "application/json" };
+  assert.equal((await f.app.request(path, { ...change, headers: { ...headers, origin: "https://other.example" } })).status, 403);
+  assert.equal(writes, 0);
+  assert.equal((await f.app.request(path, { ...change, headers })).status, 200);
+  assert.deepEqual(await (await f.app.request(path, { headers })).json(), { enabled: false, pendingDisclosure: false, available: true });
 });

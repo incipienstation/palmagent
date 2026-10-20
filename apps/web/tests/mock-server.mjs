@@ -182,6 +182,7 @@ const server = createServer(async (req, res) => {
       if (pathname === "/api/auth/me")
         return json(res, 200, { authenticated: true, required: false, credentialCount: 1 });
       if (pathname === "/api/health") return json(res, 200, { ok: true, runId: process.env.E2E_RUN_ID });
+      if (pathname === "/api/settings/telemetry") return json(res, 200, { available: false, enabled: true, pendingDisclosure: true });
       if (pathname === "/api/settings/updates") return json(res, 200, updateSettings);
       if (pathname === "/api/settings/repos") return json(res, 200, {
         repoRoots: ["/projects"], defaults: ["/projects"], source: "installation", writable: true,

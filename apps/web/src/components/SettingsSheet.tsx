@@ -1,3 +1,4 @@
+import { TelemetrySettings } from "./TelemetrySettings";
 import { useBackLayer } from "../hooks/useBackLayer";
 import { useSignOut } from "../auth/useSignOut";
 import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
@@ -131,6 +132,10 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                     aria-busy={shake.status === "requesting"} />
                 </SettingsField>
               </SettingsCard>
+            </SettingsGroup>
+
+            <SettingsGroup label="Performance">
+              <TelemetrySettings />
             </SettingsGroup>
 
             <SettingsGroup label="Installation">
