@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.205
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/cfe2d60ff7bea331ea54836793e4553dc437e315...56dbd6dadac3d240996aaf3b4d688042634925c3) for details.
+
 ## 0.1.0-alpha.204
 
 - Add disclosed, optional performance sharing with installation-wide opt-out, native Rust and Node measurements, release/cohort comparison dashboards, and repeatable local migration benchmarks.
