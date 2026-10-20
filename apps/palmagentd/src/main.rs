@@ -13,6 +13,8 @@ mod platform;
 #[cfg(target_os = "linux")]
 mod recovery;
 #[cfg(target_os = "linux")]
+mod telemetry;
+#[cfg(target_os = "linux")]
 use platform::storage;
 
 #[cfg(target_os = "linux")]

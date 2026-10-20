@@ -1,3 +1,5 @@
+import { telemetryRoutes } from "../modules/telemetry/adapters/inbound/http.js";
+import { requestMeasurements } from "../platform/http/performance.js";
 import { SpaceDiscoveryService } from "../modules/spaces/application/use-cases/space-discovery.js";
 import { localSpaceDiscovery } from "../modules/spaces/adapters/outbound/local-discovery.js";
 import { HOST_INGRESS_REQUIREMENTS } from "@palmagent/shared";
@@ -34,6 +36,7 @@ export function createApp(deps: HttpDependencies) {
   const app = new Hono();
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
+  app.use("*", requestMeasurements(deps.measurements, deps.requestLoad ?? { active: 0 }));
   app.use("*", versionHeader(deps), authBudget(), authenticate(deps), requireCurrentClient(deps), requestAdmission(deps));
   const limitBody = (maxSize: number) => bodyLimit({ maxSize, onError: (c) => c.json({ error: "request body too large" }, 413) });
   const standardBody = limitBody(MAX_BODY_BYTES);
@@ -64,7 +67,8 @@ export function createApp(deps: HttpDependencies) {
     .route("/api/routines", routineRoutes(deps))
     .route("/api/push", pushRoutes(deps))
     .route("/api/settings/updates", updateSettingsRoutes(deps))
-    .route("/api/settings/repos", settingsRoutes(deps));
+    .route("/api/settings/repos", settingsRoutes(deps))
+    .route("/api/settings/telemetry", telemetryRoutes(deps.telemetry, deps.auth.enabled));
   app.get("*", staticFiles(config.staticDir));
   return api;
 }

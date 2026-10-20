@@ -11,7 +11,8 @@
     "./executions": "./src/executions.ts",
     "./http": "./src/http.ts",
     "./terminals": "./src/terminals.ts",
-    "./daemon": "./src/daemon.ts"
+    "./daemon": "./src/daemon.ts",
+    "./telemetry": "./src/telemetry.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

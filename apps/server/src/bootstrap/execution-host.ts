@@ -1,3 +1,4 @@
+import { createTelemetry } from "../composition/telemetry.js";
 import { createHostReadiness } from "../platform/process/host-readiness.js";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -22,7 +23,10 @@ const descriptor = JSON.parse(readFileSync(join(directory, `${id}.json`), "utf8"
 if (record.protocol !== EXECUTION_PROTOCOL || descriptor.release !== record.release || descriptor.node !== record.node) throw new Error("Execution launch identity mismatch");
 // Short synchronous attempts plus asynchronous retry keep provider pipes responsive.
 store.db.pragma("busy_timeout = 50");
-const persistence = new ExecutionPersistence();
+const telemetry = createTelemetry("palmagent.execution", () => 1);
+telemetry.producer.start();
+process.once("exit", () => telemetry.producer.close());
+const persistence = new ExecutionPersistence(undefined, undefined, telemetry.producer);
 if (!await persistence.run("claim", () => store.claim(id))) { persistence.close(); store.close(); process.exit(0); }
 const backend = new InProcessBackend();
 let handle: RunHandle | undefined;
@@ -95,8 +99,12 @@ async function finish(lost = false) {
 }
 try {
   emit({ taskId: record.taskId, kind: "status", payload: { subtype: "execution_started" } });
+  const launchFinished = telemetry.producer.beginOperation("execution.start", 1);
   handle = getRunner(record.args.agent).start({ ...record.args, skills: record.skills }, emit, backend);
   dispose = watchExecutions(store.directory, () => { void drain().catch(fatal); }, id);
+  launchFinished("success");
+  telemetry.producer.flush();
+  void telemetry.producer.send();
   ready();
   void drain().catch(fatal);
   void handle.done.then(() => finish(), () => finish(true)).catch(fatal);

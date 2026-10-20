@@ -286,6 +286,8 @@ pub fn serve(data: &Path) -> Result<()> {
         .context("Cannot establish daemon identity")?;
     let instance = storage::unique_id()?;
     storage::atomic(&directory.join("identity.json"), &identity)?;
+    let mut telemetry = crate::telemetry::Telemetry::new(&config);
+    let mut measurements = std::collections::BTreeMap::new();
     let mut maintenance = Maintenance::new();
     let mut recovery = Recovery::load(data)?;
     let mut last_recovery = Instant::now() - Duration::from_secs(1);
@@ -294,6 +296,7 @@ pub fn serve(data: &Path) -> Result<()> {
     let mut pending: Option<(u64, Operation)> = None;
     let mut exiting: Option<(u64, Exit)> = None;
     while !stopped.load(Ordering::Relaxed) {
+        telemetry.tick(connections.len());
         // Admission and each frame are bounded. One slow peer cannot hold the control loop.
         for _ in 0..MAX_CONNECTIONS {
             match listener.accept() {
@@ -322,6 +325,7 @@ pub fn serve(data: &Path) -> Result<()> {
                         Err(error) => Err(error),
                         Ok(None) => unreachable!(),
                     };
+                    telemetry.finish(measurements.remove(&id).flatten(), reply.is_ok());
                     if let Some(connection) = connections
                         .iter_mut()
                         .find(|connection| connection.id == id)
@@ -331,6 +335,7 @@ pub fn serve(data: &Path) -> Result<()> {
                 }
             }
         }
+        let concurrency = connections.len();
         for connection in &mut connections {
             let read_only = matches!(
                 connection.request(),
@@ -340,6 +345,8 @@ pub fn serve(data: &Path) -> Result<()> {
                 continue;
             }
             if let Some(request) = connection.take_request() {
+                let is_status = matches!(request, Request::Status);
+                let measurement = telemetry.begin(&request, concurrency);
                 match begin(
                     request,
                     data,
@@ -349,14 +356,24 @@ pub fn serve(data: &Path) -> Result<()> {
                     &maintenance,
                     &recovery,
                 ) {
-                    Ok(Operation::Reply(value, exit)) => {
+                    Ok(Operation::Reply(mut value, exit)) => {
+                        telemetry.finish(measurement, true);
+                        if is_status {
+                            value["telemetry"] = telemetry.snapshot();
+                        }
                         if let Some(exit) = exit {
                             exiting = Some((connection.id, exit));
                         }
                         connection.reply(Ok(value));
                     }
-                    Ok(operation) => pending = Some((connection.id, operation)),
-                    Err(error) => connection.reply(Err(error)),
+                    Ok(operation) => {
+                        measurements.insert(connection.id, measurement);
+                        pending = Some((connection.id, operation));
+                    }
+                    Err(error) => {
+                        telemetry.finish(measurement, false);
+                        connection.reply(Err(error));
+                    }
                 }
             }
         }

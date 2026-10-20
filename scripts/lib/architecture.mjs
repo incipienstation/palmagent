@@ -1,5 +1,5 @@
 const sourceRoot = 'apps/server/src/';
-const features = new Set(['tasks', 'spaces', 'routines', 'terminals', 'auth', 'agents', 'installation']);
+const features = new Set(['tasks', 'spaces', 'routines', 'terminals', 'auth', 'agents', 'installation', 'telemetry']);
 
 export function serverLocation(path) {
   if (!path?.startsWith(sourceRoot)) return undefined;

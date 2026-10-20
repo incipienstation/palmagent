@@ -24,7 +24,7 @@ function controlSocket(dataDir: string): string {
 }
 
 /** Speak directly to the daemon. Never retry a request with unknown delivery. */
-export async function daemonRequest(dataDir: string, request: DaemonRequest): Promise<unknown> {
+export async function daemonRequest(dataDir: string, request: DaemonRequest, timeoutMs = 40_000): Promise<unknown> {
   const input = Buffer.from(JSON.stringify({ protocol: DAEMON_PROTOCOL, request: DaemonRequestSchema.parse(request) }) + "\n");
   if (input.length > MAX_FRAME) throw new Error("Daemon request is too large");
   const path = controlSocket(dataDir);
@@ -38,7 +38,7 @@ export async function daemonRequest(dataDir: string, request: DaemonRequest): Pr
       socket.destroy();
       if (error) reject(error); else resolve(value);
     };
-    const timer = setTimeout(() => finish(new Error("Daemon request timed out; delivery is unconfirmed")), 40_000);
+    const timer = setTimeout(() => finish(new Error("Daemon request timed out; delivery is unconfirmed")), timeoutMs);
     socket.once("connect", () => socket.write(input));
     socket.on("data", chunk => {
       output = Buffer.concat([output, chunk]);

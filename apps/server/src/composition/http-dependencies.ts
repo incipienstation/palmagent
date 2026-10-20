@@ -14,6 +14,9 @@ import type { LiveEventStream } from "../kernel/events.js";
 export type HttpTaskUseCases = TaskUseCases;
 
 export type HttpDependencies = {
+  telemetry?: import("../modules/telemetry/api.js").TelemetrySettings;
+  measurements?: import("../kernel/performance.js").PerformanceMeasurements;
+  requestLoad?: { active: number };
   agentInstallations?: Pick<AgentInstallations, "list" | "update" | "observe">;
   terminals?: Pick<TerminalUseCases, "list" | "capabilities" | "create" | "getPublic" | "rename" | "terminate">;
   terminalTickets?: Pick<TerminalTickets, "issue">;

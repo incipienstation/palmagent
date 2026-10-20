@@ -11,7 +11,7 @@ import type { HttpDependencies } from "./http-dependencies.js";
 const MAX_PENDING_BYTES = 64 * 1024 * 1024;
 const MAX_PENDING_FRAMES = 1024;
 
-export function sessionStream(c: Context, { hub, service, config, shutdown, build }: HttpDependencies, query: z.output<typeof StreamQuerySchema>) {
+export function sessionStream(c: Context, { hub, service, config, shutdown, build, measurements }: HttpDependencies, query: z.output<typeof StreamQuerySchema>) {
   const taskId = query.task || undefined;
   if (taskId) service.getTask(taskId);
   const snapshotsOnly = query.snapshots === "1";
@@ -32,18 +32,18 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
     let lastTaskSnapshot = taskId ? JSON.stringify(initialTasks) : undefined;
     const firstSnapshot = snapshot(initialTasks, taskId ? boundary : undefined);
     let pendingBytes = 0;
-    const queue: string[] = [];
+    const queue: { value: string; finish?: (outcome: "success" | "error") => void }[] = [];
     let wake: (() => void) | undefined;
     let closed = false;
-    const enqueue = (value: string) => {
+    const enqueue = (value: string, measured = false) => {
       if (closed) return;
       pendingBytes += Buffer.byteLength(value);
       if (queue.length >= MAX_PENDING_FRAMES || pendingBytes > MAX_PENDING_BYTES) { stream.abort(); return; }
-      queue.push(value);
+      queue.push({ value, finish: measured ? measurements?.beginOperation("event.deliver", queue.length + 1) : undefined });
       wake?.();
     };
     const offEvent = snapshotsOnly ? () => {} : hub.onEvent((row) => {
-      if ((!taskId || row.event.taskId === taskId) && idOf(row) > boundary) enqueue(frame(row));
+      if ((!taskId || row.event.taskId === taskId) && idOf(row) > boundary) enqueue(frame(row), true);
     });
     const offUpdates = taskId ? () => {} : hub.onUpdates(() => enqueue('data: {"type":"updates"}\n\n'));
     const limitsFrame = `data: ${JSON.stringify({ type: "read-change", taskLimits: taskId })}\n\n`;
@@ -99,9 +99,15 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
       while (!closed) {
         if (!queue.length) { await new Promise<void>((resolve) => { wake = resolve; }); wake = undefined; }
         while (!closed && queue.length) {
-          const value = queue.shift()!;
+          const { value, finish } = queue.shift()!;
           if (value === limitsFrame) limitsPending = false;
-          await stream.write(value);
+          try {
+            await stream.write(value);
+            finish?.("success");
+          } catch (error) {
+            finish?.("error");
+            throw error;
+          }
           pendingBytes -= Buffer.byteLength(value);
         }
       }

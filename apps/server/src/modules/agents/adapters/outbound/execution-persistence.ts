@@ -1,3 +1,4 @@
+import type { PerformanceMeasurements } from "../../../../kernel/performance.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 type Sample = { calls: number; busyRetries: number; maxAttemptMs: number; maxQueueMs: number };
@@ -10,29 +11,35 @@ export class ExecutionPersistence {
   private samples = new Map<string, Sample>();
   private timer: NodeJS.Timeout;
   constructor(private readonly report: (message: string) => void = console.error,
-    private readonly retryWindowMs = 60_000) {
+    private readonly retryWindowMs = 60_000, private readonly measurements?: PerformanceMeasurements) {
     this.timer = setInterval(() => this.flushMetrics(), 60_000);
     this.timer.unref();
   }
   run<T>(operation: string, write: () => T): Promise<T> {
     const queued = performance.now();
+    const queueFinished = this.measurements?.beginOperation("storage.queue", 1);
     const result = this.tail.then(async () => {
       const started = performance.now();
+      queueFinished?.("success");
       let retries = 0;
       for (;;) {
         const sample = this.samples.get(operation) ?? { calls: 0, busyRetries: 0, maxAttemptMs: 0, maxQueueMs: 0 };
         this.samples.set(operation, sample);
         sample.maxQueueMs = Math.max(sample.maxQueueMs, Math.round(started - queued));
         const attempt = performance.now();
+        const attemptFinished = this.measurements?.beginOperation("storage.write", 1);
         try {
           const value = write();
           sample.calls++;
+          attemptFinished?.("success");
           if (retries) this.report(JSON.stringify({ event: "execution_store_recovered", operation, retries, elapsedMs: Math.round(performance.now() - started) }));
           return value;
         } catch (error) {
+          attemptFinished?.("error");
           const code = (error as { code?: string })?.code;
           if (code !== "SQLITE_BUSY" && !code?.startsWith("SQLITE_BUSY_")) throw error;
           sample.busyRetries++;
+          this.measurements?.busyRetries(1, 1);
           if (performance.now() - started >= this.retryWindowMs) throw error;
           if (!retries) this.report(JSON.stringify({ event: "execution_store_busy", operation }));
           retries++;

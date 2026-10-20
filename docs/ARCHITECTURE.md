@@ -15,6 +15,7 @@ apps/server/src/
     terminals/      # Terminal admission, recovery and worktree retention
     auth/           # Authentication, enrollment and login sessions
     agents/         # Provider execution, recovery, models, skills, limits and voice
+    telemetry/      # Optional performance sharing, preferences and bounded metric export
     installation/   # Installation, updates, compatibility and host settings
   platform/         # Reusable external technology support
   kernel/           # Small, technology-neutral contracts shared by features
