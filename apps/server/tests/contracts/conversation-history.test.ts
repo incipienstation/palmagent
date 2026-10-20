@@ -26,6 +26,60 @@ const message = (text: string, id = text) => event("assistant_text", { text, mes
 const user = (text: string) => event("status", { subtype: "followup", text });
 const bounded = (value: unknown) => assert.ok(Buffer.byteLength(JSON.stringify(value)) <= CONVERSATION_PAGE_BYTES);
 
+test("phase migration rebuilds completed and active history once without changing source or import cursors", t => {
+  const f = fixture(t);
+  const control = { owner: "shared" as const, connection: "connected" as const,
+    home: "/provider", transcript: "/provider/session.jsonl", cursor: 1234, prefixHash: "unchanged" };
+  const task = { ...f.task, sessionControl: control };
+  const initial = event("assistant_text", { text: "Previously visible", messageId: "legacy" });
+  f.tasks.importSessionEvents(task, [initial], ["item/turn-1/legacy"]);
+  f.add([event("status", { subtype: "assistant_message", messageId: "legacy", phase: "progress" }),
+    event("result", {}), user("Continue")]);
+  f.tasks.importSessionEvents(task, [event("assistant_text",
+    { text: "Checking", messageId: "active", phase: "progress" })], ["item/turn-2/active"]);
+  const raw = f.tasks.eventsAfterSeq("task", 0);
+  const imports = f.connection.prepare("SELECT * FROM session_imports").all();
+  const cursor = f.tasks.eventCursor("task");
+  const expected = f.tasks.conversationPage("task");
+  // Version 4 moved initially unclassified prose into Trace after a late marker.
+  const old = { type: "activity", key: 1, items: [], live: false, revision: cursor, endSeq: 3 };
+  f.connection.prepare("UPDATE conversation_rows SET body_json = ?, wire_json = ? WHERE task_id = 'task' AND seq = 1")
+    .run(JSON.stringify(old), JSON.stringify(old));
+  f.connection.exec("UPDATE conversation_projection_version SET version = 4");
+  const upgraded = new SqliteTasks(f.connection);
+  const page = upgraded.conversationPage("task");
+  const content = (value: typeof page) => ({ ...value, transcript: value.transcript?.map(({ revision, ...row }) => row) });
+  assert.deepEqual(content(page), content(expected));
+  assert.deepEqual(upgraded.eventsAfterSeq("task", 0), raw);
+  assert.deepEqual(f.connection.prepare("SELECT * FROM session_imports").all(), imports);
+  assert.deepEqual(upgraded.getTask("task")?.sessionControl, control);
+  assert.equal(upgraded.eventCursor("task"), cursor);
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 5 });
+  f.connection.exec("CREATE TRIGGER no_phase_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
+  assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
+  f.connection.exec("DROP TRIGGER no_phase_rebuild");
+  // Reconnect imports the same prefix plus a suffix with late metadata.
+  upgraded.importSessionEvents(task, [event("assistant_text",
+    { text: "Checking suffix", messageId: "active", phase: "final" })], ["item/turn-2/active"]);
+  assert.equal((upgraded.eventsAfterSeq("task", cursor)[0].event.payload as { text: string }).text, " suffix");
+  const active = upgraded.conversationPage("task").transcript!.at(-1)!;
+  assert.equal(active.type, "activity");
+  assert.equal(active.type === "activity" && active.preview, "Checking suffix");
+});
+
+test("a failed phase migration rolls back its display records and version before retry", t => {
+  const f = fixture(t);
+  f.add([message("Retained answer")]);
+  f.connection.exec("UPDATE conversation_projection_version SET version = 4");
+  const rows = f.connection.prepare("SELECT * FROM conversation_rows").all();
+  f.connection.exec("CREATE TRIGGER fail_phase_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'fixture failure'); END");
+  assert.throws(() => new SqliteTasks(f.connection), /fixture failure/);
+  assert.deepEqual(f.connection.prepare("SELECT * FROM conversation_rows").all(), rows);
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 4 });
+  f.connection.exec("DROP TRIGGER fail_phase_rebuild");
+  assert.ok(JSON.stringify(new SqliteTasks(f.connection).conversationPage("task")).includes("Retained answer"));
+});
+
 test("native environment updates stay out of live and stored conversations without resetting activity", t => {
   const f = fixture(t);
   const text = "<environment_context>\n<current_date>2026-01-01</current_date>\n</environment_context>";
@@ -237,7 +291,7 @@ test("live progress stays multiline and oversized previews retain bounded access
   }
 });
 
-test("late phase classification patches and tombstones page through a shared revision", t => {
+test("late phases preserve prose while tool completion patches page through a shared revision", t => {
   const f = fixture(t);
   const initial = Array.from({ length: 45 }, (_, i) => [
     event("tool_call", { id: `tool-${i}`, name: "Read" }), event("assistant_text", { text: `Progress ${i}`, messageId: `m-${i}` }),
@@ -245,7 +299,7 @@ test("late phase classification patches and tombstones page through a shared rev
   f.add(initial);
   const before = f.tasks.eventCursor("task");
   const markers = Array.from({ length: 45 }, (_, i) => event("status", { subtype: "assistant_message", messageId: `m-${i}`, phase: "progress" }));
-  f.add(markers);
+  f.add([...markers, ...Array.from({ length: 45 }, (_, i) => event("tool_result", { tool_use_id: `tool-${i}`, output: "Done", exit_code: 0 }))]);
   let after = before, afterKey: number | undefined;
   const keys: number[] = [];
   let removed = 0, pages = 0;
@@ -258,10 +312,9 @@ test("late phase classification patches and tombstones page through a shared rev
   } while (true);
   assert.ok(pages > 1);
   assert.equal(new Set(keys).size, keys.length);
-  assert.ok(removed >= 45);
+  assert.equal(removed, 0);
   const current = f.tasks.conversationPage("task");
-  assert.equal(current.transcript!.length, 1);
-  assert.equal(current.transcript![0].type, "activity");
+  assert.ok(current.transcript!.some(row => row.type === "message" && row.item.kind === "assistant_text" && row.item.text === "Progress 44"));
 });
 
 test("the projection preserves transcript semantics, recovery, imports and transactional rollback", t => {
@@ -375,7 +428,7 @@ test("Trace operation pagination, oversized output and raw execution records pre
 });
 
 
-test("late classification retains the disclosure identity while its ordering key changes", t => {
+test("late classification preserves both prose placement and the disclosure ordering key", t => {
   const f = fixture(t);
   f.add([event("assistant_text", { text: "Inspecting files", messageId: "progress" }), event("tool_call", { id: "one", name: "Read" })]);
   const before = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
@@ -383,7 +436,7 @@ test("late classification retains the disclosure identity while its ordering key
   const after = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
   assert.equal(before.type, "activity"); assert.equal(after.type, "activity");
   if (before.type !== "activity" || after.type !== "activity") return;
-  assert.notEqual(before.key, after.key);
+  assert.equal(before.key, after.key);
   assert.equal(before.disclosureKey, after.disclosureKey);
   assert.ok(f.tasks.conversationSteps("task", after.key).steps.some(step => step.key === 2));
 });

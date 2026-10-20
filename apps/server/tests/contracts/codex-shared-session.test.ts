@@ -52,6 +52,30 @@ async function fixture(t: test.TestContext, options: { loaded?: boolean; paginat
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 
+for (const [initial, normalized] of [["commentary", "progress"], ["partial_answer", "partial"], ["final_answer", "final"], [null, undefined], ["future_phase", undefined]] as const) {
+  test(`the first text delta retains start phase ${initial ?? "unknown"}`, async t => {
+    const f = await fixture(t);
+    const connection = await f.connector.connect(f.target, () => {});
+    assert.ok(connection); t.after(() => connection.close());
+    await connection.history();
+    f.notify("item/started", { turnId: "turn-1", item: { id: "stream", type: "agentMessage", text: "", phase: initial } });
+    f.notify("item/agentMessage/delta", { turnId: "turn-1", itemId: "stream", delta: "First" });
+    await tick();
+    const [first] = await connection.history();
+    assert.equal(first.event.kind, "assistant_text");
+    assert.deepEqual(first.event.payload, { text: "First", messageId: "stream", ...(normalized ? { phase: normalized } : {}) });
+    f.notify("item/agentMessage/delta", { turnId: "turn-1", itemId: "stream", delta: " second" });
+    f.notify("item/completed", { turnId: "turn-1", item: { id: "stream", type: "agentMessage", text: "First second", phase: "commentary" } });
+    await tick();
+    const completed = await connection.history();
+    assert.deepEqual(completed.filter(row => row.event.kind === "assistant_text").map(row => row.event.payload), [
+      { text: "First second", messageId: "stream", ...(normalized ? { phase: normalized } : {}) },
+      { text: "First second", messageId: "stream", ...(normalized ? { phase: normalized } : {}) },
+    ]);
+    assert.equal((completed.at(-1)!.event.payload as { phase: string }).phase, "progress", "completion metadata is still retained");
+  });
+}
+
 test("a second client rejoins the loaded session and routes input, approvals, questions and interrupts", async t => {
   const f = await fixture(t);
   const connection = await f.connector.connect(f.target, () => {});
@@ -144,8 +168,9 @@ test("reconnecting during prose keeps the eventual text suffix in the same messa
   const connection = await f.connector.connect(f.target, () => {});
   assert.ok(connection); t.after(() => connection.close());
   const initial = await connection.history();
-  assert.ok(initial.some(row => row.event.kind === "assistant_text"));
-  assert.ok(!initial.some(row => row.key.includes("/phase/")), "phase classification must follow the completed text");
+  assert.deepEqual(initial.find(row => row.event.kind === "assistant_text")?.event.payload,
+    { text: "Hello", messageId: "partial", phase: "final" });
+  assert.ok(!initial.some(row => row.key.includes("/phase/")), "the completion marker waits for completed text");
   f.notify("item/completed", { turnId: "turn-1", item: { type: "agentMessage", id: "partial", text: "Hello world", phase: "final_answer" } });
   await tick();
   const completed = await connection.history();

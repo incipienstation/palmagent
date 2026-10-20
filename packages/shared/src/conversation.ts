@@ -24,7 +24,7 @@ export function appendHistoryEvent(items: LogItem[], event: AgentEvent, seq: num
     const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
     const phase = payload.phase === "progress" || payload.phase === "partial" || payload.phase === "final" ? payload.phase : undefined;
     const last = items.at(-1);
-    if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && last.phase === phase) {
+    if (last?.kind === "assistant_text" && last.agent === event.agent && last.messageId === messageId && (messageId !== undefined || last.phase === phase)) {
       items[items.length - 1] = { ...last, endSeq: seq, text: last.text + text };
     } else items.push({ key: seq, endSeq: seq, kind: "assistant_text", agent: event.agent, text, messageId, phase });
   } else items.push({ key: seq, endSeq: seq, kind: event.kind, event, ...(detailsDeferred ? { detailsDeferred: true } : {}) });
@@ -77,8 +77,9 @@ export function runInterrupted(failure: RunFailure): boolean {
 }
 
 // This is a view over the retained stream, never a destructive filter. Explicit
-// provider phase markers can arrive after text deltas. Unknown/legacy prose is
-// always signal; a later tool call alone is not proof that text was progress.
+// provider phase markers can arrive after text deltas. Placement follows the
+// first classification available before text, so late metadata cannot hide prose
+// that the reader has already seen. The original markers remain in raw history.
 export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolean): TranscriptRow[] {
   if (mode === "verbose") return log.filter((item) => item.kind !== "status" || payload(item).subtype !== "context_compacted")
     .map((item) => ({ type: "message", key: item.key, item }));
@@ -88,15 +89,16 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
   const flush = (active: boolean) => {
     if (!turn.length) return;
     const start = rows.length;
-    const phases = new Map<string, AssistantPhase>();
+    const phases = new Map<string, AssistantPhase | undefined>();
     for (const item of turn) {
+      if (item.kind === "assistant_text" && item.messageId && !phases.has(item.messageId)) phases.set(item.messageId, item.phase);
       const p = payload(item);
-      if (p.subtype === "assistant_message" && typeof p.messageId === "string" && (p.phase === "progress" || p.phase === "partial" || p.phase === "final")) {
+      if (p.subtype === "assistant_message" && typeof p.messageId === "string" && !phases.has(p.messageId) && (p.phase === "progress" || p.phase === "partial" || p.phase === "final")) {
         phases.set(p.messageId, p.phase);
       }
     }
     const phaseOf = (item: LogItem) => item.kind === "assistant_text"
-      ? item.phase ?? (item.messageId ? phases.get(item.messageId) : undefined) : undefined;
+      ? item.messageId ? phases.get(item.messageId) : item.phase : undefined;
     const latestProgress = turn.filter((item) => phaseOf(item) === "progress").at(-1);
     let group: Activity | undefined;
     const texts = new Set(turn.flatMap((item) => item.kind === "assistant_text" && phaseOf(item) !== "progress" ? [item.text.trim()] : []));

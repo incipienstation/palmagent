@@ -9,6 +9,34 @@ function log(events: Array<[AgentEvent["kind"], unknown, string?]>, agent: "clau
   return items;
 }
 
+test("initial phase chooses placement, while late phase metadata never hides existing prose", () => {
+  for (const phase of ["progress", "partial", "final", undefined]) {
+    const items = log([["assistant_text", { text: "First", messageId: "stream", phase }]]);
+    const before = projectConversation(items, true);
+    assert.equal(before[0].type, phase === "progress" ? "activity" : "message");
+    appendHistoryEvent(items, { taskId: "task", agent: "codex", kind: "assistant_text",
+      payload: { text: " second", messageId: "stream", phase: "progress" }, ts: 2 }, 2);
+    appendHistoryEvent(items, { taskId: "task", agent: "codex", kind: "status",
+      payload: { subtype: "assistant_message", messageId: "stream", phase: "progress" }, ts: 3 }, 3);
+    const after = projectConversation(items, true);
+    assert.equal(after[0].type, before[0].type);
+    assert.equal(after[0].key, before[0].key);
+    assert.equal(items[0].kind === "assistant_text" && items[0].text, "First second");
+    assert.equal(after.filter(row => row.type === "message").length, phase === "progress" ? 0 : 1);
+  }
+});
+
+test("a phase marker before text controls placement across intervening tool events", () => {
+  const items = log([
+    ["status", { subtype: "assistant_message", messageId: "stream", phase: "progress" }],
+    ["assistant_text", { text: "First", messageId: "stream" }],
+    ["tool_call", { id: "read", name: "Read" }],
+    ["assistant_text", { text: " second", messageId: "stream", phase: "final" }],
+  ]);
+  assert.deepEqual(projectConversation(items, true).map(row => row.type), ["activity"]);
+  assert.equal(items.filter(item => item.kind === "assistant_text").length, 2, "raw text segments remain available");
+});
+
 test("repeated provider updates retain one operation identity and the explicit terminal result", () => {
   const items = log([
     ["tool_call", { id: "a", name: "bash", command: "pnpm test", status: "in_progress" }],
