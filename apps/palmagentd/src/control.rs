@@ -14,7 +14,6 @@ use crate::{
 
 const MAX_FRAME: usize = 65_536;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(35);
 
 pub struct Connection {
     pub id: u64,
@@ -112,9 +111,9 @@ impl Connection {
                             envelope["protocol"] == PROTOCOL,
                             "Incompatible daemon protocol"
                         );
-                        let request = serde_json::from_value(envelope["request"].clone())?;
-                        self.phase =
-                            Phase::Waiting(Some(request), Instant::now() + REQUEST_TIMEOUT);
+                        let request: Request = serde_json::from_value(envelope["request"].clone())?;
+                        let deadline = Instant::now() + request.control_timeout();
+                        self.phase = Phase::Waiting(Some(request), deadline);
                         return Ok(());
                     }
                 }

@@ -92,6 +92,11 @@ the web process through the CLI. Existing execution, terminal, and routine hosts
 retain their processes and artifacts. Older independent systemd installations
 restart only their web service. A web reconnect never resumes an agent.
 
+Current daemons allow up to 60 seconds for web readiness. Restart requests also
+allow bounded shutdown and transport time. An older initiating CLI can have a
+shorter transport deadline; if it reports uncertain delivery, inspect the current
+web identity and activation receipt before another update attempt.
+
 The first migration from a legacy runner and source-update `setup` still require
 an idle maintenance window. Active or unverifiable legacy work defers the update,
 including manual calls and `--force`. Let it finish naturally; never stop sessions

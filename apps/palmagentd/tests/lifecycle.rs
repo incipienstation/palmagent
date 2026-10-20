@@ -633,6 +633,62 @@ fn readiness_requires_the_actual_host_identity_and_survives_daemon_replacement()
 }
 
 #[test]
+fn slow_web_activation_survives_former_launch_and_transport_deadlines() {
+    let mut fixture = Fixture::new();
+    let terminal = fixture.launch("terminal", "abc060");
+    readiness_manifest(&fixture);
+    let previous = fixture.request(json!({"action":"status"}))["web"]["child"].clone();
+    let binary = fixture.binary.clone();
+    let data = fixture.data.clone();
+    // Exercise the native client deadline as well as the daemon's control connection.
+    let activation = thread::spawn(move || {
+        let mut child = Command::new(binary)
+            .args(["request", "--data-dir"])
+            .arg(data)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(br#"{"action":"restart-web"}"#)
+            .unwrap();
+        child.wait_with_output().unwrap()
+    });
+    wait(|| {
+        let web = fixture.request(json!({"action":"status"}))["web"].clone();
+        web["child"]["pid"].is_u64() && web["child"] != previous
+    });
+    let id: String =
+        serde_json::from_slice(&fs::read(fixture.data.join("daemon/web.json")).unwrap()).unwrap();
+    let (path, record) = host_record(&fixture, "web", &id);
+    // Exceed the old launch (15s), recovery (30s), and client (35s/40s) limits.
+    thread::sleep(Duration::from_secs(41));
+    let pending = fixture.request(json!({"action":"status"}))["web"].clone();
+    assert_eq!(pending["child"], record["child"]);
+    assert_eq!(pending["lifecycle"]["phase"], "starting");
+    let mut ready = record["child"].clone();
+    ready["readyAt"] = json!(now_ms());
+    write(&path.with_extension("ready"), &ready);
+    let output = activation.join().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["child"], record["child"]);
+    assert_eq!(result["lifecycle"]["phase"], "ready");
+    assert_eq!(
+        fixture.request(json!({"action":"inspect","kind":"terminal","id":"abc060"}))["child"],
+        terminal["child"]
+    );
+}
+
+#[test]
 fn web_startup_deadline_records_the_reason_and_preserves_other_hosts() {
     let mut fixture = Fixture::new();
     let terminal = fixture.launch("terminal", "abc005");
@@ -646,7 +702,7 @@ fn web_startup_deadline_records_the_reason_and_preserves_other_hosts() {
         serde_json::from_slice(&fs::read(fixture.data.join("daemon/web.json")).unwrap()).unwrap();
     wait(|| fixture.request(json!({"action":"status"}))["web"]["child"]["pid"].is_u64());
     let (path, mut record) = host_record(&fixture, "web", &id);
-    record["lifecycle"]["createdAt"] = json!(now_ms() - 31_000);
+    record["lifecycle"]["createdAt"] = json!(now_ms() - 61_000);
     write(&path, &record);
     // The supervisor stops only the unready web host; the guardian commits the cause.
     wait(|| {

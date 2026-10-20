@@ -86,6 +86,12 @@ and does not turn a healthy local activation into an automatic rollback. Use
 restoration; it creates and cleans up a disposable diagnostic shell. Terminal and
 browser interaction acceptance remain explicit tests, not background update tasks.
 
+The native daemon allows 60 seconds for web startup readiness, including cold starts
+during an update. Restart requests allow 90 seconds for shutdown, startup, and control
+overhead; current clients wait 95 seconds for the response. A process that is alive but
+has not reported readiness is still starting. Expired startup waits retain normal
+recovery and update rollback behavior without replaying agent work.
+
 Record the version and source actually tested for a release review. Preview can advance
 while validation is in progress; do not attribute old evidence to a newer version.
 Exact Stable candidate verification remains part of the release workflow, including
