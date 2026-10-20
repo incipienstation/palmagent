@@ -1,6 +1,6 @@
 // Importable dashboard definition; stdout is a Grafana provisioning artifact.
 import { pathToFileURL } from 'node:url';
-const datasource = { type: 'prometheus', uid: 'palmagent-prometheus' };
+const datasource = { type: 'prometheus', uid: '$metricsStore' };
 const custom = (name, values, selected) => ({ name, label: name, type: 'custom', query: values.join(','), current: { text: selected, value: selected } });
 const release = name => ({ name, label: name, type: 'query', datasource,
   query: 'label_values(palmagent_operation_duration_seconds_count{telemetry_source="$source",service_name="$service"}, service_version)',
@@ -51,6 +51,8 @@ export const dashboard = {
   uid: 'palmagent-migration', title: 'Palmagent migration performance', schemaVersion: 40, version: 1, editable: false,
   tags: ['palmagent', 'performance'], timezone: 'browser', refresh: '30s', time: { from: 'now-24h', to: 'now' },
   templating: { list: [
+    { name: 'metricsStore', label: 'Retention store', type: 'datasource', query: 'prometheus',
+      regex: '/^Palmagent telemetry/', current: { text: 'Palmagent telemetry', value: 'palmagent-prometheus' }, refresh: 1 },
     custom('source', ['production', 'synthetic'], 'production'),
     custom('service', ['palmagent.web', 'palmagent.daemon', 'palmagent.execution', 'palmagent.terminal'], 'palmagent.web'),
     custom('operation', ['http.tasks.read', 'http.tasks.write', 'http.spaces.read', 'http.routines.read', 'http.terminals.read', 'http.health', 'http.request',

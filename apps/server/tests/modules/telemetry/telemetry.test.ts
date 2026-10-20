@@ -139,7 +139,28 @@ test("settings require enabled auth, validate inputs, persist choice, and retain
   assert.equal((await unauthenticated.request("/", request({ enabled: true }))).status, 403);
   const app = telemetryRoutes(f.settings, true); app.onError(handleError);
   assert.equal((await app.request("/", request({ enabled: true, extra: "private" }))).status, 400);
+  assert.equal((await app.request("/", request({ enabled: true }))).status, 400);
+  assert.equal((await app.request("/", request({ enabled: true, retentionDays: 7 }))).status, 400);
+  assert.equal((await app.request("/", request({ enabled: true, retentionDays: 180 }))).status, 200);
   assert.equal((await app.request("/", request({ enabled: false }))).status, 200);
   assert.equal(JSON.parse(readFileSync(f.path, "utf8")).enabled, false);
   assert.deepEqual(await (await app.request("/")).json(), { enabled: false, pendingDisclosure: false, available: true });
+});
+
+test("legacy opt-out survives; legacy opt-in waits for the longer policy and new uploads use v2", async t => {
+  const urls: string[] = [];
+  const f = fixture(t, (async url => { urls.push(String(url)); return new Response(null); }) as typeof fetch);
+  const legacy = { schemaVersion: 1, enabled: false, disclosed: true, revision: "00000000-0000-4000-8000-000000000001" };
+  writeFileSync(f.path, JSON.stringify(legacy));
+  assert.deepEqual(f.settings.status(), { available: true, enabled: false, pendingDisclosure: false });
+  f.producer.refresh(); assert.equal(f.producer.active, false);
+  writeFileSync(f.path, JSON.stringify({ ...legacy, enabled: true }));
+  assert.equal(f.settings.status().pendingDisclosure, true);
+  f.producer.refresh(); assert.equal(f.producer.active, false);
+  f.producer.operation("storage.write", .1, "success", 1); f.producer.flush(); await f.producer.send();
+  assert.deepEqual(urls, []);
+  f.settings.change(true);
+  assert.equal(JSON.parse(readFileSync(f.path, "utf8")).schemaVersion, 2);
+  f.producer.operation("storage.write", .1, "success", 1); f.producer.flush(); await f.producer.send();
+  assert.deepEqual(urls, ["https://telemetry.palmagent.dev/v2/metrics"]);
 });

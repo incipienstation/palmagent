@@ -900,6 +900,15 @@ fn telemetry_requires_disclosure_and_observes_shared_opt_out() {
         &path,
         &json!({"schemaVersion":1,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000001"}),
     );
+    thread::sleep(Duration::from_millis(1100));
+    assert!(
+        fixture.request(json!({"action":"status"}))["telemetry"].is_null(),
+        "old policy must not enable longer retention"
+    );
+    write(
+        &path,
+        &json!({"schemaVersion":2,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000001"}),
+    );
     wait(|| !fixture.request(json!({"action":"status"}))["telemetry"].is_null());
     fixture.request(json!({"action":"list"}));
     let snapshot = fixture.request(json!({"action":"status"}));
@@ -917,12 +926,12 @@ fn telemetry_requires_disclosure_and_observes_shared_opt_out() {
     );
     write(
         &path,
-        &json!({"schemaVersion":1,"enabled":false,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000002"}),
+        &json!({"schemaVersion":2,"enabled":false,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000002"}),
     );
     assert!(fixture.request(json!({"action":"status"}))["telemetry"].is_null());
     write(
         &path,
-        &json!({"schemaVersion":1,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000003"}),
+        &json!({"schemaVersion":2,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000003"}),
     );
     wait(|| !fixture.request(json!({"action":"status"}))["telemetry"].is_null());
     assert!(

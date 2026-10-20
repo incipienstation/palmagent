@@ -71,7 +71,7 @@ impl Telemetry {
             return None;
         }
         let value: Value = serde_json::from_slice(&fs::read(&self.preference).ok()?).ok()?;
-        if value["schemaVersion"] != 1 || value["enabled"] != true || value["disclosed"] != true {
+        if value["schemaVersion"] != 2 || value["enabled"] != true || value["disclosed"] != true {
             return None;
         }
         if value.as_object()?.len() != 4 {
