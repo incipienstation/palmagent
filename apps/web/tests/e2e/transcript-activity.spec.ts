@@ -40,7 +40,8 @@ test("only new work resumes waiting after output, even with older text in view",
     expect(transcriptActivity(log, active)).toBe("working");
     expect(transcriptActivity([...log, prose("Next response")], active)).toBe("output");
   }
-  expect(transcriptActivity([event("output_image"), status("usage")], active)).toBe("output");
+  expect(transcriptActivity([event("output_image"), status("usage")], active)).toBe("working");
+  expect(transcriptActivity([event("output_image", { source: "message" }), status("usage")], active)).toBe("output");
 });
 
 test("input waits survive metadata and background tools until explicitly resolved", () => {

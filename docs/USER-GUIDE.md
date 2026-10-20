@@ -230,7 +230,8 @@ current turn while leaving the native server and other clients running.
 Standalone Codex and Claude Code sessions without a shared connection retain saved-message
 preview. Follow-up becomes available after their local writer exits and the final transcript
 synchronizes. These transfers retain the native session ID and working directory, and require
-Linux, a shared local provider home, and a native JSONL transcript of at most 64 MiB.
+Linux, a shared local provider home, and a native JSONL transcript. Transcript size
+does not limit session synchronization; records are read incrementally.
 Preview waits for unfinished records to be saved. Missing, rewritten, or identity-mismatched
 transcripts leave the transfer pending with an error. No turn starts automatically when a
 connection or transfer completes. Palmagent never copies credentials or rewrites the provider's
@@ -242,9 +243,9 @@ messages. Dispatched Codex sessions can display local raster images from their o
 directory as well as the task directory. Image previews and original-image links require sign-in;
 other sessions' generated images and unrelated provider files remain inaccessible.
 
-Structured tool image outputs render in the conversation when they contain PNG,
-JPEG, WebP, or GIF data (up to 5 MiB each, four images per event). Unsupported formats
-remain a text notice. Arbitrary filesystem paths in tool output are not served.
+Structured tool image outputs stay inside Trace. Expand a step to inspect its images.
+PNG, JPEG, WebP, and GIF data are supported (up to 5 MiB each, four images per event).
+Unsupported formats remain a text notice. Arbitrary filesystem paths in tool output are not served.
 
 Run `palmagent compatibility` to see supported agent CLI ranges. `palmagent doctor`
 reports installed versions outside those ranges.

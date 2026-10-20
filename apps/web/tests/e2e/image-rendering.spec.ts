@@ -143,8 +143,16 @@ test("remote, file URL, and embedded tool images render, while unsafe sources st
     await expect.poll(() => page.getByRole("img", { name: label, exact: true }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
   }
   await expect(page.getByText("Image unavailable: Unsafe", { exact: true })).toBeVisible();
-  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 2, kind: "output_image",
-    payload: { mediaType: "image/png", data: png.toString("base64") } } }, 2);
+  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 2, kind: "tool_call",
+    payload: { id: "preview", name: "view_image" } } }, 2);
+  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 3, kind: "tool_result",
+    payload: { tool_use_id: "preview", content: "Image output" } } }, 3);
+  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 4, kind: "output_image",
+    payload: { mediaType: "image/png", data: png.toString("base64"), tool_use_id: "preview" } } }, 4);
+  await expect(page.getByRole("img", { name: "Session output" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  await expect(page.getByRole("img", { name: "Session output" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Completed: view_image", exact: true }).click();
   const output = page.getByRole("button", { name: "Enlarge image: Session output" });
   await output.scrollIntoViewIfNeeded();
   await output.click();

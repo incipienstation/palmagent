@@ -49,6 +49,33 @@ test("native environment updates stay out of live and stored conversations witho
   assert.equal(log.length, 8, "regular inputs and quoted context stay visible");
 });
 
+test("image traces are lazy and existing standalone image projections migrate without touching raw history", t => {
+  const f = fixture(t);
+  const image = { mediaType: "image/png", data: "x".repeat(100_000), tool_use_id: "preview" };
+  f.add([event("tool_call", { id: "preview", name: "view_image" }),
+    event("tool_result", { tool_use_id: "preview", content: "Image output" }), event("output_image", image), message("Done")]);
+  const raw = f.tasks.eventsAfterSeq("task", 0);
+  // Version 3 displayed extracted tool images as standalone conversation rows.
+  const bubble = { type: "message", key: 3, endSeq: 3, revision: 4,
+    item: { key: 3, kind: "output_image", event: event("output_image", image) } };
+  f.connection.prepare("INSERT OR REPLACE INTO conversation_rows VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run("task", 3, 1, 3, 4, JSON.stringify(bubble), JSON.stringify(bubble));
+  f.connection.exec("UPDATE conversation_projection_version SET version = 3");
+  const upgraded = new SqliteTasks(f.connection);
+  const page = upgraded.conversationPage("task");
+  assert.deepEqual(page.transcript!.map(row => row.type), ["activity", "message"]);
+  assert.ok(!JSON.stringify(page).includes(image.data));
+  const activity = page.transcript![0];
+  const steps = upgraded.conversationSteps("task", activity.key);
+  assert.equal(steps.steps.length, 1);
+  const details = upgraded.conversationStepDetails("task", activity.key, steps.steps[0].key);
+  const deferred = details.items.find(item => item.key === 3)!;
+  assert.equal(deferred.content?.label, "Load image");
+  assert.deepEqual(upgraded.eventsAfterSeq("task", 0), raw);
+  f.connection.exec("CREATE TRIGGER no_image_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
+  assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
+});
+
 test("existing native context bubbles are rebuilt once while history and synchronization state survive", t => {
   const f = fixture(t);
   const text = "<environment_context><current_date>2026-01-01</current_date></environment_context>";

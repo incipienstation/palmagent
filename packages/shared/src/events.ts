@@ -72,7 +72,7 @@ export interface AgentEventPayloads {
   assistant_text: AssistantTextPayload;
   question: QuestionRequest;
   approval_request: PermissionRequest;
-  output_image: ImageAttachment;
+  output_image: ImageAttachment & { tool_use_id?: string; source?: "message" };
   status: unknown;
   tool_call: unknown;
   tool_result: unknown;

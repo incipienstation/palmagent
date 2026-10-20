@@ -1,6 +1,6 @@
 import type { PendingMessage } from "./messages.js";
 import type { LogItem } from "./conversation.js";
-import { payload, userMessage } from "./conversation.js";
+import { payload, userMessage, traceImage } from "./conversation.js";
 
 export type TranscriptActivity = "idle" | "working" | "output" | "blocked" | "ended";
 
@@ -24,8 +24,8 @@ export function transcriptActivity(log: LogItem[], { running, loading = false, b
       else if (["answer", "approval", "input_resolved"].includes(String(subtype))) {
         if (state === "blocked") state = "working";
       } else if (state !== "blocked") {
-        if ((item.kind === "assistant_text" && item.text.trim()) || item.kind === "output_image") state = "output";
-        else if (item.kind === "tool_call" || item.kind === "tool_result" || subtype === "reasoning" || subtype === "steer") state = "working";
+        if ((item.kind === "assistant_text" && item.text.trim()) || item.kind === "output_image" && !traceImage(item)) state = "output";
+        else if (item.kind === "tool_call" || item.kind === "tool_result" || traceImage(item) || subtype === "reasoning" || subtype === "steer") state = "working";
       }
     }
   }

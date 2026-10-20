@@ -28,7 +28,7 @@ test("questions, approvals, failures, images and repeated answers across turns s
     event(10, "status", { subtype: "process_exit", code: 1 })];
   for (const mode of ["compact"] as const) {
     const rows = presentTranscript(log, mode, false);
-    expect(rows.filter((r) => r.type === "message").map((r) => r.key)).toEqual([3, 4, 5, 6, 7, 8]);
+    expect(rows.filter((r) => r.type === "message").map((r) => r.key)).toEqual([3, 4, 6, 7, 8]);
   }
 });
 
