@@ -1,10 +1,12 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL: u32 = 1;
 pub const VERSION: &str = env!("PALMAGENT_PRODUCT_VERSION");
 pub const SOURCE_COMMIT: &str = env!("PALMAGENT_SOURCE_COMMIT");
+/// Shared by explicit web activation and autonomous startup recovery.
+pub const WEB_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +49,13 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub fn launch_timeout(self) -> Duration {
+        match self {
+            Self::Web => WEB_STARTUP_TIMEOUT,
+            _ => Duration::from_secs(15),
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Execution => "execution",
@@ -80,6 +89,16 @@ pub enum Request {
     Replace,
     StartUpdate,
     Stop,
+}
+
+impl Request {
+    pub fn control_timeout(&self) -> Duration {
+        match self {
+            // Allow shutdown (15s), startup (60s), and scheduling/response overhead.
+            Self::RestartWeb => WEB_STARTUP_TIMEOUT + Duration::from_secs(30),
+            _ => Duration::from_secs(35),
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]

@@ -24,7 +24,7 @@ pub fn request(data: &Path, request: &Request) -> Result<Value> {
     let socket = storage::socket_path(data)?;
     storage::private_path(&socket, false)?;
     let mut stream = Stream::connect(socket).context("Palmagent daemon is unavailable")?;
-    stream.set_read_timeout(Some(Duration::from_secs(35)))?;
+    stream.set_read_timeout(Some(request.control_timeout() + Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     serde_json::to_writer(
         &mut stream,
@@ -85,7 +85,7 @@ fn launch(
         Ok(Operation::Launch(
             kind,
             id,
-            Instant::now() + Duration::from_secs(15),
+            Instant::now() + kind.launch_timeout(),
         ))
     } else {
         Ok(Operation::Reply(hosts::inspect(data, kind, &id)?, None))

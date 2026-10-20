@@ -23,8 +23,14 @@ function controlSocket(dataDir: string): string {
   return socket;
 }
 
-/** Speak directly to the daemon. Never retry a request with unknown delivery. */
-export async function daemonRequest(dataDir: string, request: DaemonRequest, timeoutMs = 40_000): Promise<unknown> {
+/**
+ * Speak directly to the daemon. Never retry a request with unknown delivery.
+ * Rust Request::control_timeout allows 90s for web restart; leave reply margin.
+ */
+export async function daemonRequest(
+  dataDir: string, request: DaemonRequest,
+  timeoutMs = request.action === "restart-web" ? 95_000 : 40_000,
+): Promise<unknown> {
   const input = Buffer.from(JSON.stringify({ protocol: DAEMON_PROTOCOL, request: DaemonRequestSchema.parse(request) }) + "\n");
   if (input.length > MAX_FRAME) throw new Error("Daemon request is too large");
   const path = controlSocket(dataDir);

@@ -96,6 +96,11 @@ then propose the concrete fix. Common patterns to recognize:
   means a rebuild is needed
   (`npm rebuild better-sqlite3`); an `EADDRINUSE` means the port is taken; a
   missing-file error often means the PWA dist or data dir moved.
+- **Slow web activation** → compare the host's creation/readiness timestamps with
+  the installed daemon's startup deadline. Current daemons allow 60 seconds;
+  older releases may fail activation after 15 seconds. Inspect the same host
+  identity and activation receipt before retrying; an alive process alone does
+  not establish readiness.
 - **Configured runner unavailable** → check the legacy runner unit's status,
   journal, and configured socket. Web startup fails rather than falling back to
   an in-process backend. Independent package installations do not require this runner.

@@ -1,12 +1,12 @@
 //! Web restart policy survives control-daemon replacement. Application work is never replayed.
-use crate::storage;
+use crate::{contract::WEB_STARTUP_TIMEOUT, storage};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::Path;
 
 const STABLE_MS: u64 = 30_000;
-const STARTUP_MS: u64 = 30_000;
+const STARTUP_MS: u64 = WEB_STARTUP_TIMEOUT.as_millis() as u64;
 #[derive(Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Recovery {
@@ -138,14 +138,17 @@ mod tests {
     fn only_confirmed_web_startup_can_time_out() {
         let mut recovery = Recovery::default();
         let pending = json!({"alive":true,"lifecycle":{"phase":"starting","readiness":"pending","createdAt":1000}});
-        assert_eq!(recovery.advance(30_999, Some("aa"), &pending), Action::None);
+        // Slow cold starts remain eligible after both former 15s/30s deadlines.
+        assert_eq!(recovery.advance(22_000, Some("aa"), &pending), Action::None);
+        assert_eq!(recovery.advance(42_000, Some("aa"), &pending), Action::None);
+        assert_eq!(recovery.advance(60_999, Some("aa"), &pending), Action::None);
         assert_eq!(
-            recovery.advance(31_000, Some("aa"), &pending),
+            recovery.advance(61_000, Some("aa"), &pending),
             Action::StopUnready
         );
         assert_eq!(
             recovery.advance(
-                31_000,
+                61_000,
                 Some("bb"),
                 &json!({"alive":true,"lifecycle":{"phase":"unknown"}})
             ),
@@ -153,7 +156,7 @@ mod tests {
         );
         assert_eq!(
             recovery.advance(
-                31_000,
+                61_000,
                 Some("cc"),
                 &json!({"alive":true,"lifecycle":{"phase":"running","readiness":"unsupported"}})
             ),

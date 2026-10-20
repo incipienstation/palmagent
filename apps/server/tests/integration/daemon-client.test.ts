@@ -78,3 +78,36 @@ test("host inventory sends an explicit read-only pagination cursor", async t => 
   assert.deepEqual(await daemonRequest(f.data, { action: "list", after: "terminal-ab" }), { hosts: [], next: null });
   assert.equal(f.requests(), 1);
 });
+
+test("web activation can reply after the former transport deadline without a second launch", async t => {
+  let respond!: () => void;
+  let received!: () => void;
+  const onReceived = new Promise<void>(resolve => { received = resolve; });
+  const f = await fixture(t, (socket, envelope) => {
+    assert.deepEqual(envelope, { protocol: 1, request: { action: "restart-web" } });
+    respond = () => socket.end('{"protocol":1,"ok":true,"result":{"alive":true,"state":"running"}}\n');
+    received();
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const activation = daemonRequest(f.data, { action: "restart-web" });
+  await onReceived;
+  t.mock.timers.tick(41_000);
+  respond();
+  assert.deepEqual(await activation, { alive: true, state: "running" });
+  assert.equal(f.requests(), 1);
+});
+
+for (const [action, deadline] of [["status", 40_000], ["restart-web", 95_000]] as const) {
+  test(`${action} retains a bounded deadline and never retries uncertain delivery`, async t => {
+    let received!: () => void;
+    const onReceived = new Promise<void>(resolve => { received = resolve; });
+    const f = await fixture(t, () => received());
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const request = daemonRequest(f.data, { action });
+    const rejection = assert.rejects(request, /timed out; delivery is unconfirmed/);
+    await onReceived;
+    t.mock.timers.tick(deadline);
+    await rejection;
+    assert.equal(f.requests(), 1);
+  });
+}
