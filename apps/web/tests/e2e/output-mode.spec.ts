@@ -97,7 +97,8 @@ test("late classification preserves open activity and separate assistant message
   await page.locator("[data-activity]").getByRole("button").first().click();
   await emit("status", { subtype: "assistant_message", messageId: "m1", phase: "progress" });
   await expect(page.locator("[data-activity]").getByRole("button").first()).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator("[data-activity]").getByText("Inspecting files", { exact: true })).toBeVisible();
+  await expect(page.getByText("Inspecting files", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-activity]").getByText("Inspecting files", { exact: true })).toHaveCount(0);
   await page.locator("[data-activity]").getByRole("button").first().click();
   await emit("assistant_text", { text: "Final ", messageId: "m2" });
   await emit("assistant_text", { text: "answer", messageId: "m2" });
