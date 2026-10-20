@@ -216,9 +216,10 @@ Palmagent does not start another app-server.
 
 A connected session stays writable with its terminal open. Its session details offer
 an explicit terminal command targeting the same Unix socket; this does not
-release browser control. Model and permission settings remain managed by the native
-session. Input, questions, approval decisions and turn interrupts use the shared
-connection. **Send now** steers an active turn immediately; a queued message waits
+release browser control. Model and effort can be selected in the browser for the next
+turn or a queued message. Default resolves against the connected Codex configuration
+and model catalog. Permissions remain managed by the native session. Input, questions,
+approval decisions and turn interrupts use the shared connection. **Send now** steers an active turn immediately; a queued message waits
 for the current turn to complete. Native events supply both clients' conversation
 content; stable provider identities prevent duplicate
 history when Palmagent reconnects or restarts. The database commits imported event

@@ -12,6 +12,7 @@ async function fixture(t: test.TestContext, options: { loaded?: boolean; paginat
   const server = new WebSocketServer({ port: 0, host: "localhost" });
   await once(server, "listening");
   const port = (server.address() as { port: number }).port;
+  const config: Record<string, unknown> = { model: "configured-model", model_reasoning_effort: "medium" };
   const requests: Array<{ id: number; method: string; params: any }> = [];
   const thread: any = { id: "session-1", cwd: home, historyMode: options.paginated ? "paginated" : "legacy", canAcceptDirectInput: options.loaded !== false, status: { type: options.loaded === false ? "notLoaded" : "active" }, model: "fixture", reasoningEffort: "medium",
     turns: [{ id: "turn-1", status: "inProgress", items: [{ type: "userMessage", id: "user-1", content: [{ type: "text", text: "Original prompt" }] }] }] };
@@ -27,6 +28,8 @@ async function fixture(t: test.TestContext, options: { loaded?: boolean; paginat
       requests.push(row);
       let result: any;
       switch (row.method) {
+        case "config/read": result = { config }; break;
+        case "model/list": result = { data: [{ model: "catalog-model", isDefault: true, defaultReasoningEffort: "high" }, { model: "selected-model", defaultReasoningEffort: "low" }], nextCursor: null }; break;
         case "initialize": result = { codexHome: home }; break;
         case "thread/read": result = { thread }; break;
         case "thread/resume":
@@ -48,7 +51,7 @@ async function fixture(t: test.TestContext, options: { loaded?: boolean; paginat
   });
   const target = { taskId: "task-1", sessionId: thread.id, agent: "codex" as const, cwd: home, home };
   t.after(async () => { for (const ws of server.clients) ws.terminate(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(home, { recursive: true, force: true }); });
-  return { connector, target, requests, thread, notify, loseSend: () => { loseSend = true; } };
+  return { connector, target, requests, thread, config, notify, loseSend: () => { loseSend = true; } };
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 
@@ -176,4 +179,51 @@ test("reconnecting during prose keeps the eventual text suffix in the same messa
   const completed = await connection.history();
   assert.equal(completed[0].key, "item/turn-1/partial");
   assert.equal(completed[1].key, "item/turn-1/partial/phase/final");
+});
+
+
+test("shared next turns pass model and effort without changing native permissions", async t => {
+  const f = await fixture(t);
+  f.thread.status = { type: "idle" };
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  assert.equal(await connection.send("Next turn", undefined, "settings", undefined, { model: "selected-model", effort: "high" }), "delivered");
+  assert.deepEqual(f.requests.find(row => row.method === "turn/start")?.params, {
+    threadId: "session-1", clientUserMessageId: "settings", input: [{ type: "text", text: "Next turn", text_elements: [] }], model: "selected-model", effort: "high",
+  });
+});
+
+for (const configured of [true, false]) test(`shared Default selections resolve native ${configured ? "configuration" : "catalog"} values`, async t => {
+  const f = await fixture(t);
+  f.thread.status = { type: "idle" };
+  if (!configured) { delete f.config.model; delete f.config.model_reasoning_effort; }
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  assert.equal(await connection.send("Defaults", undefined, "defaults", undefined, { model: "", effort: "" }), "delivered");
+  const params = f.requests.find(row => row.method === "turn/start")!.params;
+  assert.equal(params.model, configured ? "configured-model" : "catalog-model");
+  assert.equal(params.effort, configured ? "medium" : "high");
+  assert.deepEqual(f.requests.find(row => row.method === "config/read")?.params, { cwd: f.target.cwd, includeLayers: false });
+});
+
+test("default effort uses the selected model and unavailable defaults reject before delivery", async t => {
+  const f = await fixture(t);
+  f.thread.status = { type: "idle" }; delete f.config.model_reasoning_effort;
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  assert.equal(await connection.send("Default effort", undefined, "effort", undefined, { model: "selected-model", effort: "" }), "delivered");
+  assert.equal(f.requests.find(row => row.method === "turn/start")!.params.effort, "low");
+  assert.equal(await connection.send("Unknown default", undefined, "unknown-default", undefined, { model: "unknown-model", effort: "" }), "rejected");
+  assert.equal(f.requests.filter(row => row.method === "turn/start").length, 1);
+});
+
+test("a native turn that wins the race cannot silently discard queued settings", async t => {
+  const f = await fixture(t);
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  assert.equal(await connection.send("Queued turn", undefined, "race", undefined, { model: "selected-model", effort: "high" }), "rejected");
+  assert.ok(!f.requests.some(row => row.method === "turn/start" || row.method === "turn/steer"));
+  assert.equal(await connection.send("Guidance", undefined, "steer"), "delivered");
+  const params = f.requests.find(row => row.method === "turn/steer")!.params;
+  assert.equal(params.model, undefined); assert.equal(params.effort, undefined);
 });

@@ -1,4 +1,4 @@
-import type { AgentKind, AnswerRequest, InputAttachment, PermissionRequest, QuestionRequest, SkillSelection } from "@palmagent/shared";
+import type { AgentKind, AnswerRequest, InputAttachment, MessageSettings, PermissionRequest, QuestionRequest, SkillSelection } from "@palmagent/shared";
 import type { RawEvent } from "../../../domain/execution.js";
 
 export interface SharedSessionSnapshot {
@@ -18,7 +18,7 @@ export interface SharedSessionEvent {
 export interface SharedSessionConnection {
   snapshot(): Promise<SharedSessionSnapshot>;
   history(): Promise<SharedSessionEvent[]>;
-  send(text: string, images: InputAttachment[] | undefined, messageId: string, skills?: SkillSelection[]): Promise<"delivered" | "rejected" | "unknown">;
+  send(text: string, images: InputAttachment[] | undefined, messageId: string, skills?: SkillSelection[], settings?: Pick<MessageSettings, "model" | "effort">): Promise<"delivered" | "rejected" | "unknown">;
   interrupt(): Promise<boolean>;
   approve(requestId: string, decision: string): Promise<boolean>;
   answer(request: AnswerRequest): Promise<boolean>;

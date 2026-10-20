@@ -38,6 +38,7 @@ async function setup(t: test.TestContext, preview = false) {
   await once(writer, "message");
   const snapshot: SharedSessionSnapshot = { historyMode: "legacy", status: "running", turnId: "native-turn", model: "fixture" };
   const sent: string[] = [], decisions: string[] = [];
+  const sentSettings: Array<Parameters<SharedSessionConnection["send"]>[4]> = [];
   let unavailable = false, ack: "delivered" | "unknown" | "rejected" = "delivered", interruptCount = 0, opens = 0;
   const events: SharedSessionEvent[] = [];
   let taskId = "";
@@ -52,7 +53,11 @@ async function setup(t: test.TestContext, preview = false) {
       const connection: SharedSessionConnection = {
         snapshot: async () => { if (unavailable) throw new Error("connection lost"); return { ...snapshot }; },
         history: async () => [...events],
-        send: async text => { sent.push(text); snapshot.status = "running"; return ack; },
+        send: async (text, _images, _id, _skills, settings) => {
+          sent.push(text); sentSettings.push(settings); snapshot.status = "running";
+          if (ack === "delivered" && settings) { snapshot.model = settings.model; snapshot.effort = settings.effort; }
+          return ack;
+        },
         interrupt: async () => { interruptCount++; snapshot.status = "idle"; event("stopped", "result", { is_error: true, subtype: "interrupted" }); return true; },
         approve: async (_id, decision) => { decisions.push(decision); delete snapshot.approval; return true; },
         answer: async () => { delete snapshot.question; return true; },
@@ -72,7 +77,7 @@ async function setup(t: test.TestContext, preview = false) {
   const task = await service.dispatchSession({ agent: "codex", sessionId, cwd, home, waitPid: writer.pid! });
   const enableConnection = () => { service.sharedSessions = connector; };
   const refresh = async (target = service) => { target.reconcileLocalSessions(); await new Promise(resolve => setTimeout(resolve, 20)); };
-  return { service, task, writer, db, snapshot, sent, decisions, event, make, refresh, enableConnection, setUnavailable: (value: boolean) => { unavailable = value; }, setAck: (value: typeof ack) => { ack = value; }, clearEvents: () => { events.length = 0; }, get opens() { return opens; }, get interruptCount() { return interruptCount; } };
+  return { service, task, writer, db, snapshot, sent, sentSettings, decisions, event, make, refresh, enableConnection, setUnavailable: (value: boolean) => { unavailable = value; }, setAck: (value: typeof ack) => { ack = value; }, clearEvents: () => { events.length = 0; }, get opens() { return opens; }, get interruptCount() { return interruptCount; } };
 }
 
 test("shared tool input_image output is visible and deduplicated across reconnects", { skip: process.platform !== "linux" }, async t => {
@@ -224,4 +229,39 @@ for (const phase of ["progress", "final", undefined] as const) test(`live ${phas
   assert.equal(prose.length, phase === "progress" ? 0 : 1);
   assert.ok(JSON.stringify(phase === "progress"
     ? f.db.conversationDetails(id, rows.find(row => row.type === "activity")!.key) : prose).includes("Working on it now"));
+});
+
+
+test("shared model and effort survive queue persistence and reach only the next turn", { skip: process.platform !== "linux" }, async t => {
+  const f = await setup(t), id = f.task.taskId;
+  const settings = { model: "selected-model", effort: "high" };
+  f.service.submitMessage(id, { clientMessageId: "configured-next", text: "Next with settings", mode: "queue", expectedRunId: f.service.messages.state(id).runId, settings });
+  assert.equal(f.sent.length, 0);
+  assert.equal(f.task.model, "fixture");
+  f.service.beginShutdown();
+  const restarted = await f.make();
+  await eventually(() => restarted.getTask(id).sessionControl?.connection === "connected");
+  assert.deepEqual(restarted.messages.state(id).messages[0].settings, { ...settings, permission: "managed" });
+  f.snapshot.status = "idle"; f.event("configured-completed", "result", { is_error: false, subtype: "completed" });
+  await f.refresh(restarted); await eventually(() => f.sent.length === 1);
+  assert.deepEqual(f.sentSettings, [settings]);
+  await eventually(() => restarted.getTask(id).model === "selected-model");
+  assert.equal(restarted.getTask(id).effort, "high");
+  assert.equal(restarted.getTask(id).permission, "managed");
+});
+
+test("idle shared settings are sent while active overrides and permission changes are rejected", { skip: process.platform !== "linux" }, async t => {
+  const f = await setup(t), id = f.task.taskId;
+  const active = f.service.messages.state(id).runId;
+  assert.throws(() => f.service.submitMessage(id, { clientMessageId: "active-override", text: "No", mode: "send", expectedRunId: active, settings: { effort: "high" } }), /queued messages or the next run/);
+  assert.throws(() => f.service.submitMessage(id, { clientMessageId: "permissions", text: "No", mode: "queue", expectedRunId: active, settings: { permission: "danger-full-access" } }), /permissions in the local CLI/);
+  f.service.submitMessage(id, { clientMessageId: "guidance", text: "Guide", mode: "send", expectedRunId: active });
+  await eventually(() => f.sent.length === 1);
+  assert.equal(f.sentSettings[0], undefined);
+  await eventually(() => f.service.messages.state(id).messages[0].status === "delivered");
+  f.snapshot.status = "idle"; f.event("idle-settings", "result", { is_error: false, subtype: "completed" });
+  await f.refresh();
+  f.service.submitMessage(id, { clientMessageId: "idle-defaults", text: "Defaults", mode: "send", expectedRunId: null, settings: { model: "", effort: "" } });
+  await eventually(() => f.sent.length === 2);
+  assert.deepEqual(f.sentSettings[1], { model: "", effort: "" });
 });
