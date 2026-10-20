@@ -1,5 +1,5 @@
 import { decodeBase64, encodeBase64, ascii, startsWith, readNumber } from "./binary.js";
-import type { ImageAttachment } from "@palmagent/shared";
+import type { AgentEvent, ImageAttachment } from "@palmagent/shared";
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export function rasterMediaType(bytes: Uint8Array): ImageAttachment["mediaType"] | undefined {
@@ -90,4 +90,12 @@ export function extractOutputImages(payload: unknown): { payload: unknown; image
     return Object.fromEntries(Object.entries(block).map(([key, value]) => [key, visit(value, depth + 1)]));
   }
   return { payload: visit(payload, 0), images };
+}
+
+/** Preserve explicit tool correlation when extracted images become separate events. */
+export function toolImagePayload(image: ImageAttachment, event: Pick<AgentEvent, "kind" | "payload">): ImageAttachment & { tool_use_id?: string } {
+  if (event.kind !== "tool_call" && event.kind !== "tool_result") return image;
+  const value = event.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {};
+  const id = value.tool_use_id ?? value.id;
+  return { ...image, ...(typeof id === "string" ? { tool_use_id: id } : {}) };
 }

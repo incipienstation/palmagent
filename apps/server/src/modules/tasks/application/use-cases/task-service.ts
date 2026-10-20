@@ -9,7 +9,7 @@ import type {
   DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
-import { extractOutputImages } from "../attachments/output-images.js";
+import { extractOutputImages, toolImagePayload } from "../attachments/output-images.js";
 import type { AttachmentStorage, TaskImageReader } from "../ports/outbound/attachments.js";
 import type { PrStatusSink, TaskDefaults, TaskSupervisor, TaskWorktreeManager, TerminalTaskLifecycle } from "../ports/outbound/task-runtime.js";
 import type { TaskAccountLimitReader, TaskSkillCatalog, TaskSkillEnvironment, TaskVoiceOperations } from "../../../agents/api.js";
@@ -607,7 +607,7 @@ export class TaskService implements PrStatusSink {
           const message = payload.messageId && this.messages.state(id).messages.find(message => message.id === payload.messageId);
           if (message && message.attachments?.length) { payload.attachments = message.attachments; payload.images = message.attachments.length; }
         }
-        return [{ key, event: normalized }, ...output.images.map((image, index) => ({ key: `${key}/image/${index}`, event: { ...normalized, kind: "output_image" as const, payload: image } }))];
+        return [{ key, event: normalized }, ...output.images.map((image, index) => ({ key: `${key}/image/${index}`, event: { ...normalized, kind: "output_image" as const, payload: toolImagePayload(image, event) } }))];
       });
       const events = imported?.events ?? providerEvents.map(({ event }) => event);
       const nextStatus = snapshot.question ? "awaiting_input" : snapshot.approval ? "awaiting_approval" : snapshot.status;
@@ -1216,7 +1216,7 @@ export class TaskService implements PrStatusSink {
 
     // Commit all images from this source line with the event and replay cursor.
     // A restart cannot preserve the cursor while dropping an image from that line.
-    const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: image }))];
+    const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: toolImagePayload(image, event) }))];
     const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq);
     if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
     if (event.kind === "tool_result") this.refreshPrs(task);

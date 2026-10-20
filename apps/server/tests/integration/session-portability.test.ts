@@ -1,8 +1,9 @@
 import { createTaskService } from "../../src/composition/task-service.js";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, openSync, writeSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -168,9 +169,42 @@ test("Codex custom tool image output is imported once and remains visible after 
   const reopened = new Db(path);
   try {
     assert.deepEqual(reopened.eventsAfterSeq(f.task.taskId, 0).map(row => row.event.kind), ["tool_result", "output_image"]);
-    assert.deepEqual(reopened.eventsAfterSeq(f.task.taskId, 0)[1].event.payload, { mediaType: "image/png", data: png, width: 1, height: 1 });
+    assert.deepEqual(reopened.eventsAfterSeq(f.task.taskId, 0)[1].event.payload, { mediaType: "image/png", data: png, width: 1, height: 1, tool_use_id: "image-call" });
     assert.equal(synchronizeSession(reopened.getTask(f.task.taskId)!).events.length, 0);
   } finally { reopened.close(); }
+});
+
+test("large native histories synchronize beyond 64 MiB and retain append, preview and rewrite checks", t => {
+  const f = setup(t);
+  const expected = createHash("sha256").update(readFileSync(f.transcript));
+  const record = line({ type: "event_msg", payload: { type: "fixture", text: "x".repeat(1024 * 1024) } });
+  for (let i = 0; i < 65; i++) {
+    appendFileSync(f.transcript, record);
+    expected.update(record);
+  }
+  const checkpoint = checkpointSession(f.task);
+  assert.ok(checkpoint.cursor > 64 * 1024 * 1024);
+  assert.equal(checkpoint.prefixHash, expected.digest("hex"));
+  // Initial import also scans a large history without a whole-file buffer.
+  const initial = synchronizeSession(f.task);
+  assert.equal(initial.events.length, 0);
+  assert.equal(initial.control.prefixHash, checkpoint.prefixHash);
+  f.task.sessionControl = initial.control;
+  const text = "한글🙂".repeat(20_000);
+  const appended = Buffer.from(line(message("codex", "assistant", text)));
+  appendFileSync(f.transcript, appended.subarray(0, appended.length - 2));
+  assert.equal(synchronizeSession(f.task, { preview: true }).control.cursor, checkpoint.cursor);
+  assert.throws(() => synchronizeSession(f.task), /unfinished/);
+  appendFileSync(f.transcript, appended.subarray(appended.length - 2));
+  const synced = synchronizeSession(f.task, { preview: true });
+  assert.deepEqual(synced.events.map(event => event.payload), [{ text }]);
+  f.task.sessionControl = synced.control;
+  assert.equal(synchronizeSession(f.task).events.length, 0);
+  // A same-sized prefix edit must still fail even after the limit is removed.
+  const fd = openSync(f.transcript, "r+");
+  try { writeSync(fd, Buffer.from("y"), 0, 1, checkpoint.cursor - 10); }
+  finally { closeSync(fd); }
+  assert.throws(() => synchronizeSession(f.task), /before the synchronization cursor/);
 });
 
 test("handoff persists ownership; socket dispatch previews a live writer and transfers exactly once across restart", { skip: process.platform !== "linux" }, async (t) => {

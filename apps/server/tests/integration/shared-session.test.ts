@@ -78,12 +78,12 @@ async function setup(t: test.TestContext, preview = false) {
 test("shared tool input_image output is visible and deduplicated across reconnects", { skip: process.platform !== "linux" }, async t => {
   const f = await setup(t), id = f.task.taskId;
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
-  f.event("image-tool", "tool_result", { content: [{ type: "input_image", image_url: `data:image/png;base64,${png}` }] });
+  f.event("image-tool", "tool_result", { tool_use_id: "preview", content: [{ type: "input_image", image_url: `data:image/png;base64,${png}` }] });
   await f.refresh();
   const rows = () => f.db.eventsAfterSeq(id, 0).filter(row => ["tool_result", "output_image"].includes(row.event.kind));
   assert.deepEqual(rows().map(row => row.event.kind), ["tool_result", "output_image"]);
   assert.equal(JSON.stringify(rows()[0].event.payload).includes(png), false);
-  assert.deepEqual(rows()[1].event.payload, { mediaType: "image/png", data: png, width: 1, height: 1 });
+  assert.deepEqual(rows()[1].event.payload, { mediaType: "image/png", data: png, width: 1, height: 1, tool_use_id: "preview" });
   f.service.beginShutdown();
   const restarted = await f.make();
   await f.refresh(restarted);

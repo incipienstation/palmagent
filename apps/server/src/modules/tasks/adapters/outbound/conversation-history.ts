@@ -27,7 +27,7 @@ export class ConversationHistory {
     db.transaction(() => {
       const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'conversation_rows'").get();
       db.exec("CREATE TABLE IF NOT EXISTS conversation_projection_version (version INTEGER NOT NULL)");
-      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== 3;
+      const upgrade = (db.prepare("SELECT version FROM conversation_projection_version").get() as { version: number } | undefined)?.version !== 4;
       db.exec(`
         CREATE TABLE IF NOT EXISTS conversation_rows (
           task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -65,7 +65,7 @@ export class ConversationHistory {
         db.exec("INSERT INTO conversation_dirty SELECT task_id, MIN(seq) FROM events GROUP BY task_id ON CONFLICT(task_id) DO UPDATE SET from_seq = MIN(from_seq, excluded.from_seq)");
         for (const { task_id } of db.prepare("SELECT task_id FROM conversation_dirty").all() as { task_id: string }[]) this.refresh(task_id);
       }
-      if (upgrade) db.exec("DELETE FROM conversation_projection_version; INSERT INTO conversation_projection_version VALUES (3)");
+      if (upgrade) db.exec("DELETE FROM conversation_projection_version; INSERT INTO conversation_projection_version VALUES (4)");
     }).immediate();
   }
 

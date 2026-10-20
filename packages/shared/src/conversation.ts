@@ -48,6 +48,11 @@ export function payload(item: LogItem): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+/** Unattributed legacy image events are work details; explicit message images remain visible. */
+export function traceImage(item: LogItem): boolean {
+  return item.kind === "output_image" && payload(item).source !== "message";
+}
+
 export function failed(item: LogItem): boolean {
   const p = payload(item);
   return item.kind === "error" || p.is_error === true || p.status === "failed" ||
@@ -116,7 +121,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
         previous?.items.push(item);
         continue;
       }
-      const machinery = item.kind === "status" || item.kind === "tool_call" || item.kind === "tool_result" || item.kind === "result";
+      const machinery = item.kind === "status" || item.kind === "tool_call" || item.kind === "tool_result" || traceImage(item) || item.kind === "result";
       const background = machinery || phaseOf(item) === "progress";
       if (background) {
         if (!group) {
@@ -126,7 +131,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
         group.items.push(item);
         if (item === latestProgress && active && item.kind === "assistant_text") group.preview = item.text;
       }
-      // Visible answers and images separate consecutive work groups. Never move
+      // Visible answers and explicit message images separate consecutive work groups. Never move
       // later tools above content the user has already started reading.
       if (!background) {
         group = undefined;
@@ -142,7 +147,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
     // the nearest work disclosure, or in Verbose when a turn contains no work.
     const groups = rows.slice(start).filter((row): row is Activity => row.type === "activity");
     const work = groups.filter((group) => group.items.some((item) =>
-      item.kind === "tool_call" || item.kind === "tool_result" || phaseOf(item) === "progress"));
+      item.kind === "tool_call" || item.kind === "tool_result" || traceImage(item) || phaseOf(item) === "progress"));
     const keep = new Set(work);
     for (const group of groups) {
       if (keep.has(group)) continue;

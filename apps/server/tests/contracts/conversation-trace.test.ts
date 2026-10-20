@@ -55,3 +55,31 @@ test("a late result updates its original operation without moving replies or dup
   assert.equal(activity.type, "activity");
   if (activity.type === "activity") assert.deepEqual(activity.operations?.[0].members, [1, 3]);
 });
+
+test("intermediate images stay inside their tool trace while explicit message images stay visible", () => {
+  const items = log([
+    ["tool_call", { id: "image", name: "view_image" }, "one"],
+    ["tool_result", { tool_use_id: "image", content: "Image output" }, "one"],
+    ["output_image", { tool_use_id: "image", data: "fixture" }, "one"],
+    ["assistant_text", { text: "Final answer", phase: "final" }, "one"],
+    ["output_image", { source: "message", data: "final" }, "one"],
+  ]);
+  const rows = projectConversation(items, false);
+  assert.deepEqual(rows.map(row => row.type), ["activity", "message", "message"]);
+  const activity = rows[0];
+  assert.equal(activity.type, "activity");
+  if (activity.type === "activity") assert.deepEqual(activity.operations, [
+    { key: 1, kind: "tool", title: "view_image", state: "completed", members: [1, 2, 3] },
+  ]);
+});
+
+test("legacy and unmatched images remain accessible in Trace without inventing tool ownership", () => {
+  const items = log([
+    ["tool_call", { id: "image", name: "view_image" }, "one"],
+    ["output_image", { tool_use_id: "image", data: "different session" }, "two"],
+    ["output_image", { data: "legacy" }, "one"],
+  ]);
+  const rows = projectConversation(items, false);
+  assert.deepEqual(rows.map(row => row.type), ["activity"]);
+  assert.deepEqual(traceOperations(items, false).map(step => step.members), [[1], [2], [3]]);
+});

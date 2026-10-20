@@ -1,5 +1,5 @@
 import type { AgentKind } from "./events.js";
-import { failed, payload, presentTranscript, type Activity, type LogItem, type TranscriptRow } from "./conversation.js";
+import { failed, payload, presentTranscript, traceImage, type Activity, type LogItem, type TranscriptRow } from "./conversation.js";
 
 export type TraceState = "running" | "completed" | "error" | "interrupted" | "unknown";
 export type TraceKind = "tool" | "reasoning" | "progress" | "event";
@@ -65,6 +65,12 @@ export function traceOperations(log: LogItem[], live: boolean): TraceOperation[]
       else if (["completed", "success", "succeeded"].includes(state) ||
         item.kind === "tool_result" && !["in_progress", "running", "pending"].includes(state)) operation.state = "completed";
       else if (operation.state !== "error" && operation.state !== "completed") operation.state = "running";
+    } else if (traceImage(item) && item.kind === "output_image") {
+      const id = text(p.tool_use_id);
+      const key = id ? JSON.stringify([item.event.taskId, item.event.agent, item.event.sessionId ?? "", id]) : undefined;
+      const operation = key ? calls.get(key) : undefined;
+      if (operation) operation.members.push(item.key);
+      else operations.push({ key: item.key, kind: "event", title: "Image output", state: "completed", members: [item.key] });
     } else if (item.kind === "assistant_text") {
       // The transcript, including late phase markers, decides which prose belongs in Activity.
       operations.push({ key: item.key, kind: "progress", title: short(item.text) || "Progress update",

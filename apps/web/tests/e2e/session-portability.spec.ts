@@ -50,13 +50,17 @@ test("handoff only releases on explicit action and offers a selectable native co
   await expect(page).toHaveScreenshot("session-handoff.png");
 });
 
-for (const owner of ["local", "returning"] as const) test(`${owner} ownership disables follow-up and archive while structured image outputs render`, async ({ page }) => {
+for (const owner of ["local", "returning"] as const) test(`${owner} ownership disables follow-up and archive while intermediate images stay in Trace`, async ({ page }) => {
   await installHistory(page, "output_image", { mediaType: "image/png", data: png });
   await page.route("**/api/stream*", (route) => route.fulfill({ contentType: "text/event-stream", body:
     `data: ${JSON.stringify({ type: "tasks", tasks: [{ ...source, sessionControl: { owner, home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } }] })}\n\n`,
   }));
   await page.goto("/#/task/t-idle-rich");
   await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(page.getByRole("img", { name: "Session output" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  await expect(page.getByRole("img", { name: "Session output" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Image output", exact: true }).click();
   await expect(page.getByRole("img", { name: "Session output" })).toBeVisible();
   await expect.poll(() => page.getByRole("img", { name: "Session output" }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
   await openSessionDetails(page);
