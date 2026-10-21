@@ -1,58 +1,10 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync, statSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
 import test from "node:test";
-import WebSocket, { WebSocketServer } from "ws";
-import { CodexSharedSessions } from "../../src/modules/agents/adapters/outbound/codex-shared-session.js";
+import { sharedCodexServer as fixture } from "../support/codex-shared-server.js";
+import { createInputFiles } from "../../src/modules/agents/adapters/outbound/input-files.js";
 
-async function fixture(t: test.TestContext, options: { loaded?: boolean; paginated?: boolean } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "palmagent-shared-contract-"));
-  const server = new WebSocketServer({ port: 0, host: "localhost" });
-  await once(server, "listening");
-  const port = (server.address() as { port: number }).port;
-  const config: Record<string, unknown> = { model: "configured-model", model_reasoning_effort: "medium" };
-  const requests: Array<{ id: number; method: string; params: any }> = [];
-  const thread: any = { id: "session-1", cwd: home, historyMode: options.paginated ? "paginated" : "legacy", canAcceptDirectInput: options.loaded !== false, status: { type: options.loaded === false ? "notLoaded" : "active" }, model: "fixture", reasoningEffort: "medium",
-    turns: [{ id: "turn-1", status: "inProgress", items: [{ type: "userMessage", id: "user-1", content: [{ type: "text", text: "Original prompt" }] }] }] };
-  let socket: WebSocket;
-  let loseSend = false;
-  const notify = (method: string, params: any, id?: string | number) => socket.send(JSON.stringify({ method, params: { threadId: thread.id, ...params }, ...(id === undefined ? {} : { id }) }));
-  server.on("connection", ws => {
-    socket = ws;
-    ws.on("message", bytes => {
-      const row = JSON.parse(String(bytes));
-      if ("result" in row) { notify("serverRequest/resolved", { requestId: row.id }); return; }
-      if (!row.method || row.id === undefined) return;
-      requests.push(row);
-      let result: any;
-      switch (row.method) {
-        case "config/read": result = { config }; break;
-        case "model/list": result = { data: [{ model: "catalog-model", isDefault: true, defaultReasoningEffort: "high" }, { model: "selected-model", defaultReasoningEffort: "low" }], nextCursor: null }; break;
-        case "initialize": result = { codexHome: home }; break;
-        case "thread/read": result = { thread }; break;
-        case "thread/resume":
-          if (thread.status.type === "notLoaded") { thread.status = { type: "idle" }; thread.canAcceptDirectInput = true; }
-          result = { thread }; break;
-        case "thread/turns/list": result = { data: thread.turns, nextCursor: null }; break;
-        case "turn/start": case "turn/steer":
-          if (loseSend) { ws.close(); return; }
-          result = { turn: { id: "turn-1" } }; break;
-        case "turn/interrupt": result = {}; break;
-        default: assert.fail(`Unexpected method: ${row.method}`);
-      }
-      ws.send(JSON.stringify({ id: row.id, result }));
-    });
-  });
-  const connector = new CodexSharedSessions(undefined, () => {
-    const ws = new WebSocket(`ws://localhost:${port}`);
-    return { ws, close: () => ws.terminate() };
-  });
-  const target = { taskId: "task-1", sessionId: thread.id, agent: "codex" as const, cwd: home, home };
-  t.after(async () => { for (const ws of server.clients) ws.terminate(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(home, { recursive: true, force: true }); });
-  return { connector, target, requests, thread, config, notify, loseSend: () => { loseSend = true; } };
-}
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 
 for (const [initial, normalized] of [["commentary", "progress"], ["partial_answer", "partial"], ["final_answer", "final"], [null, undefined], ["future_phase", undefined]] as const) {
@@ -226,4 +178,65 @@ test("a native turn that wins the race cannot silently discard queued settings",
   assert.equal(await connection.send("Guidance", undefined, "steer"), "delivered");
   const params = f.requests.find(row => row.method === "turn/steer")!.params;
   assert.equal(params.model, undefined); assert.equal(params.effort, undefined);
+});
+
+const fileAttachment = { mediaType: "application/octet-stream", data: "eA==", file: { name: "fixture.txt" } };
+const filePath = (params: any): string => {
+  const text = params.input.find((item: any) => item.type === "text").text as string;
+  return JSON.parse(text.split("\n\n").find(line => line.startsWith("File attachment "))!.replace(/^.* bytes\): /, ""));
+};
+
+for (const status of ["idle", "active"]) test(`shared ${status} input stages files before the provider reads them`, async t => {
+  let path = "";
+  const f = await fixture(t, { onInput(params) {
+    path = filePath(params);
+    assert.equal(readFileSync(path, "utf8"), "x");
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.equal(statSync(dirname(path)).mode & 0o777, 0o700);
+    assert.equal(params.input.filter((item: any) => item.type === "image").length, 1);
+    assert.equal(params.input.find((item: any) => item.type === "image").url, "data:image/png;base64,aW1hZ2U=");
+    assert.equal(params.clientUserMessageId, "shared-file");
+  } });
+  f.thread.status = { type: status };
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  assert.equal(await connection.send("Read both", [fileAttachment, { mediaType: "image/png", data: "aW1hZ2U=" }], "shared-file"), "delivered");
+  assert.equal(f.requests.filter(row => row.method === (status === "idle" ? "turn/start" : "turn/steer")).length, 1);
+  // Managed-run exit and web disconnection do not own the native session's files.
+  createInputFiles(f.target.cwd, f.target.taskId).cleanup();
+  connection.close();
+  assert.equal(readFileSync(path, "utf8"), "x");
+});
+
+test("local file validation and staging errors reject without submitting a provider turn", async t => {
+  const f = await fixture(t);
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  for (const file of [
+    { ...fileAttachment, file: { name: "../escape" } },
+    { ...fileAttachment, mediaType: "image/png" },
+    { ...fileAttachment, data: "invalid base64!" },
+  ]) assert.equal(await connection.send("Invalid", [file], "invalid-file"), "rejected");
+  // A filesystem failure is also known not to have crossed the send boundary.
+  const staged = createInputFiles(f.target.cwd, `shared\0${f.target.home}\0${f.target.sessionId}`);
+  const path = JSON.parse(staged.prepare("", [fileAttachment]).text.split("\n\n").at(-1)!.replace(/^.* bytes\): /, ""));
+  const folder = dirname(path), outside = join(f.target.home, "outside");
+  mkdirSync(outside); rmSync(folder, { recursive: true }); symlinkSync(outside, folder);
+  assert.equal(await connection.send("Unsafe path", [fileAttachment], "unsafe-file"), "rejected");
+  assert.equal(f.requests.filter(row => ["turn/start", "turn/steer"].includes(row.method)).length, 0);
+});
+
+test("lost shared-file acknowledgements retain bytes across reconnect without replay", async t => {
+  let path = "";
+  const f = await fixture(t, { onInput(params) { path = filePath(params); } });
+  f.thread.status = { type: "idle" }; f.loseSend();
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  assert.equal(await connection.send("Read once", [fileAttachment], "uncertain-file"), "unknown");
+  connection.close();
+  const reopened = await f.connector.connect(f.target, () => {});
+  assert.ok(reopened); t.after(() => reopened.close());
+  await reopened.snapshot(); await reopened.history();
+  assert.equal(readFileSync(path, "utf8"), "x");
+  assert.equal(f.requests.filter(row => ["turn/start", "turn/steer"].includes(row.method)).length, 1);
 });

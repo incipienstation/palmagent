@@ -5,6 +5,7 @@ import WebSocket from "ws";
 import type { AnswerRequest, AssistantPhase, InputAttachment, PermissionRequest, QuestionRequest, SkillSelection } from "@palmagent/shared";
 import type { SharedSessionConnection, SharedSessionConnector, SharedSessionEvent, SharedSessionSnapshot } from "../../application/ports/inbound/shared-session.js";
 import { codexInput } from "./codex-interactive.js";
+import { createInputFiles } from "./input-files.js";
 
 type Json = Record<string, any>;
 class RpcFailure extends Error {}
@@ -54,8 +55,13 @@ class CodexConnection implements SharedSessionConnection {
   private streamingText = new Map<string, { text: string; phase?: AssistantPhase }>();
   private thread: Json = {};
   private turnId?: string;
+  private readonly inputFiles: ReturnType<typeof createInputFiles>;
   constructor(private ws: WebSocket, private dispose: () => void,
     private target: Parameters<SharedSessionConnector["connect"]>[0], private changed: () => void) {
+    // Native sessions outlive this web connection and may refer to earlier file
+    // paths in later turns. Keep their private, content-addressed copies across
+    // disconnects and web restarts; never borrow a managed run's cleanup scope.
+    this.inputFiles = createInputFiles(target.cwd, `shared\0${target.home}\0${target.sessionId}`);
     this.ready = new Promise((resolve, reject) => {
       ws.once("open", resolve);
       ws.once("error", () => reject(new Error("The Codex shared server is unavailable.")));
@@ -120,14 +126,16 @@ class CodexConnection implements SharedSessionConnection {
     this.responding.clear();
   }
   close() { this.ws.terminate(); this.fail(); }
-  private rpc(method: string, params: Json): Promise<Json> {
+  private rpc(method: string, params: Json, onSend?: () => void): Promise<Json> {
     if (this.closed || this.ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error("The shared connection is unavailable."));
     const id = ++this.nextId;
+    const message = JSON.stringify({ id, method, params });
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error("Codex did not confirm the request.")); }, 5000);
       timer.unref();
       this.pending.set(id, { resolve, reject, timer });
-      this.ws.send(JSON.stringify({ id, method, params }), error => {
+      onSend?.();
+      this.ws.send(message, error => {
         if (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
       });
     });
@@ -263,11 +271,14 @@ class CodexConnection implements SharedSessionConnection {
       if (active && !this.turnId) return "rejected" as const;
       // Send now reaches the loaded thread's current turn. A turn changing
       // between the read and steer is an explicit rejection, never a second writer.
-      submitted = true;
+      const prepared = this.inputFiles.prepare(text, images);
+      const input = codexInput(prepared.text, prepared.images, skills);
+      // File preparation, serialization and a closed socket are known failures
+      // before dispatch. Only the actual transport send can be unconfirmed.
       const result = await this.rpc(active ? "turn/steer" : "turn/start", {
-        threadId: this.target.sessionId, clientUserMessageId: messageId, input: codexInput(text, images, skills),
+        threadId: this.target.sessionId, clientUserMessageId: messageId, input,
         ...(active ? { expectedTurnId: this.turnId } : overrides),
-      });
+      }, () => { submitted = true; });
       this.turnId = result.turnId ?? result.turn?.id; this.changed();
       return "delivered" as const;
     } catch (error) { return !submitted || error instanceof RpcFailure ? "rejected" as const : "unknown" as const; }

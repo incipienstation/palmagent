@@ -1,3 +1,16 @@
+/** Validate canonical padded Base64 without decoding and re-encoding the file.
+ * General files need a size bound, not a second copy of every byte in JS strings.
+ */
+export function base64ByteLength(value: string): number | undefined {
+  if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return undefined;
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  if (padding) {
+    const last = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(value[value.length - padding - 1]);
+    if (last < 0 || (last & ((1 << (padding * 2)) - 1)) !== 0) return undefined;
+  }
+  return value.length / 4 * 3 - padding;
+}
+
 /** Portable byte operations for bounded attachment validation. */
 export function decodeBase64(value: string): Uint8Array {
   try {

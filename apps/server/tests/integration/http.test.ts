@@ -1,6 +1,8 @@
 import { createTaskService } from "../../src/composition/task-service.js";
 import { webauthn } from "../../src/modules/auth/adapters/outbound/webauthn.js";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { sharedCodexServer } from "../support/codex-shared-server.js";
 import { createServer, request } from "node:http";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1333,4 +1335,57 @@ test("binary uploads retain task-scoped storage and idempotent queued delivery",
     assert.deepEqual(new Uint8Array(await downloaded.arrayBuffer()), bytes);
   }
   assert.equal(f.db.attachmentIds().size, 1);
+});
+
+test("104 MiB HTTP upload reaches the shared Codex provider as readable bytes exactly once", async t => {
+  const f = fixture(t), bytes = Buffer.alloc(104 * 1024 * 1024, 0x93);
+  const digest = (input: Uint8Array) => createHash("sha256").update(input).digest("hex");
+  const expectedDigest = digest(bytes);
+  let providerPath = "";
+  const native = await sharedCodexServer(t, { onInput(params) {
+    assert.equal(params.input.length, 1, "general files must not become provider images");
+    assert.ok(JSON.stringify(params).length < 2048, "provider RPC carries paths, not file bytes");
+    providerPath = JSON.parse(params.input[0].text.split("\n\n").find((line: string) => line.startsWith("File attachment ")).replace(/^.* bytes\): /, ""));
+    assert.equal(digest(readFileSync(providerPath)), expectedDigest, "the provider can read the exact uploaded bytes before acknowledging");
+  } });
+  native.thread.status = { type: "idle" }; native.thread.turns = [];
+  f.service.sharedSessions = native.connector;
+  f.db.insertRepo({ id: "r", name: "fixture", path: native.target.cwd, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "shared-file", repoId: "r", agent: "codex", prompt: "fixture", worktreePath: native.target.cwd,
+    sessionId: native.target.sessionId, permission: "managed", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1,
+    sessionControl: { owner: "shared", home: native.target.home, transcript: "", cursor: 0, prefixHash: "", sharedSocket: join(native.target.home, "fixture.sock") } });
+  const settle = async (check: () => boolean) => {
+    for (let n = 0; n < 200 && !check(); n++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(check(), "shared-session state did not settle");
+  };
+  try {
+    await f.service.init();
+    await settle(() => f.service.getTask("shared-file").sessionControl?.connection === "connected");
+    const server = createServer(getRequestListener(f.app.fetch));
+    await new Promise<void>(resolve => server.listen(0, "localhost", resolve)); f.closeListener(server);
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const base = `http://localhost:${address.port}`;
+    f.db.createSession("shared-file-auth", Date.now(), Date.now() + 60_000);
+    const headers = { cookie: `${f.settings.cookieName}=shared-file-auth` };
+    const blob = new Blob([bytes]);
+    const upload = () => {
+      const body = new FormData();
+      body.set("request", JSON.stringify({ mode: "send", text: "Inspect the file", expectedRunId: null,
+        clientMessageId: "11111111-1111-4111-8111-111111111111",
+        images: [{ mediaType: "application/octet-stream", data: "", binary: true, file: { name: "fixture.bin" } }] }));
+      body.set("attachment-0", blob, "fixture.bin"); return body;
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await fetch(base + "/api/tasks/shared-file/messages", { method: "POST", headers, body: upload() });
+      assert.equal(response.status, 202);
+      const queue = await response.json();
+      assert.ok(queue.messages.length <= 1, "delivered messages may already have left the pending queue");
+      await settle(() => f.service.messages.state("shared-file").messages[0]?.status === "delivered");
+      assert.equal(f.service.messages.state("shared-file").messages[0].attachments?.[0].size, bytes.length);
+    }
+    assert.equal(native.requests.filter(row => ["turn/start", "turn/steer"].includes(row.method)).length, 1);
+    assert.equal(f.db.attachmentIds().size, 1);
+    f.service.beginShutdown();
+    assert.equal(digest(readFileSync(providerPath)), expectedDigest, "web shutdown must not delete a native session's files");
+  } finally { f.service.beginShutdown(); }
 });
