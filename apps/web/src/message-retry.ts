@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
+import type { InputAttachment } from "@palmagent/shared";
 import { onCacheSessionReset } from "./query-lifecycle";
 
-type Waiting = { label: string; stop: () => void };
+type Waiting = { label: string; stopLabel: string; stop: () => void };
 const waiting = new Map<string, Waiting>();
 const active = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
@@ -10,7 +11,7 @@ const subscribe = (listener: () => void) => { listeners.add(listener); return ()
 export const useMessageRetry = (scope: string) => useSyncExternalStore(subscribe, () => waiting.get(scope));
 
 export class MessageRetryStopped extends Error {
-  constructor() { super("Automatic retry stopped. Check delivery before sending again."); this.name = "MessageRetryStopped"; }
+  constructor() { super("Sending stopped. Check delivery before sending again."); this.name = "MessageRetryStopped"; }
 }
 
 onCacheSessionReset(() => {
@@ -32,24 +33,37 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
  * for its receipt. This never replays provider delivery or changes the target run.
  */
 export async function retryMessage<T>(scope: string, send: (signal: AbortSignal) => Promise<T>,
-  retryLabel: (error: unknown) => string | undefined): Promise<T> {
+  retryLabel: (error: unknown) => string | undefined, images: readonly InputAttachment[] = []): Promise<T> {
   if (active.has(scope)) throw new Error("A message is already being sent.");
   const controller = new AbortController();
   active.set(scope, controller);
-  const deadline = setTimeout(() => controller.abort(new Error("Connection did not recover. Your message is preserved; check delivery before retrying.")), 120_000);
+  // Base64 is sent as ASCII JSON. Count the encoded data (including sampled
+  // video frames) without serializing another potentially large request body.
+  // Allow 128 KiB/s, at least two minutes for uploads, and at most 30 minutes
+  // per attempt. Text-only messages keep their short recovery timeout.
+  const encodedBytes = images.reduce((sum, image) => sum + image.data.length
+    + (image.video?.frames.reduce((bytes, frame) => bytes + frame.image.data.length, 0) ?? 0), 0);
+  const attemptMs = images.length ? Math.min(30 * 60_000, Math.max(120_000, 15_000 + Math.ceil(encodedBytes / (128 * 1024) * 1000))) : 15_000;
+  const totalMs = images.length ? attemptMs + 120_000 : 120_000;
+  const stop = () => controller.abort(new MessageRetryStopped());
+  const deadline = setTimeout(() => controller.abort(new Error("Connection did not recover. Your message is preserved; check delivery before retrying.")), totalMs);
   let attempt = 0;
   try {
     for (;;) {
       controller.signal.throwIfAborted();
+      if (images.length) {
+        waiting.set(scope, { label: "Sending attachments…", stopLabel: "Stop sending", stop });
+        emit();
+      }
       const timeout = new AbortController();
-      const timer = setTimeout(() => timeout.abort(new DOMException("Message request timed out", "TimeoutError")), 15_000);
+      const timer = setTimeout(() => timeout.abort(new DOMException("Message request timed out", "TimeoutError")), attemptMs);
       const signal = AbortSignal.any([controller.signal, timeout.signal]);
       try { return await abortable(send(signal), signal); }
       catch (error) {
         controller.signal.throwIfAborted();
         const label = retryLabel(error);
         if (!label) throw error;
-        waiting.set(scope, { label, stop: () => controller.abort(new MessageRetryStopped()) });
+        waiting.set(scope, { label, stopLabel: "Stop retrying", stop });
         emit();
       } finally { clearTimeout(timer); }
       let pauseTimer: ReturnType<typeof setTimeout> | undefined;

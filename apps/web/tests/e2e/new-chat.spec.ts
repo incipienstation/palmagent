@@ -29,7 +29,9 @@ for (const width of [360, 1280]) test(`first send keeps the conversation and com
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page.getByRole("group", { name: "Your message" })).toContainText("First message");
   await expect(page.getByAltText("Attached image 1", { exact: true })).toBeVisible();
-  await expect(page.getByText("Working…", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sending attachments…", { exact: true })).toBeVisible();
+  await expect(page.getByText("Working…", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Stop sending", exact: true })).toBeEnabled();
   await expect(page.getByText("Creating task…", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
   await expect(composer(page).getByRole("textbox")).toHaveValue("");

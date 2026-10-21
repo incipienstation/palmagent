@@ -234,3 +234,52 @@ test("a hung submission has a bounded wait and always releases the PWA hold", as
     assert.equal(active, 0);
   } finally { mock.timers.reset(); }
 });
+
+for (const operation of ["message", "creation"] as const) {
+  test(`a slow attachment ${operation} survives both old timeouts without restarting the upload`, async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    let active = 0, calls = 0;
+    let signal: AbortSignal | null | undefined;
+    const called = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<Response>();
+    const api = createApi({ version: () => "fixture", observeServerVersion: () => {},
+      beginBrowserWork: () => { active++; return () => { active--; }; }, onUnauthorized: () => {} }, async (_url, init) => {
+      calls++; signal = init?.signal; called.resolve(); return response.promise;
+    });
+    try {
+      const images = [{ mediaType: "application/octet-stream", data: "A".repeat(20 * 1024 * 1024), file: { name: "archive.zip" } }];
+      const id = "11111111-1111-4111-8111-111111111111";
+      const pending = operation === "message"
+        ? api.submitMessage("slow-upload", { clientMessageId: id, text: "Archive", mode: "queue", expectedRunId: null, images })
+        : api.createTask({ clientRequestId: id, repoId: "r", agent: "codex", prompt: "Archive", images });
+      await called.promise;
+      mock.timers.tick(130_000);
+      assert.equal(signal?.aborted, false, "an in-flight upload must survive the former 15-second and 2-minute limits");
+      assert.equal(active, 1, "keep the PWA from replacing a pending upload");
+      response.resolve(Response.json({ task: { taskId: "uploaded" }, revision: 1, messages: [] }));
+      await pending;
+      assert.equal(calls, 1);
+      assert.equal(active, 0);
+    } finally { resetClientSession(); mock.timers.reset(); }
+  });
+}
+
+test("an unresponsive attachment upload still has a bounded deadline and releases browser work", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  let active = 0;
+  const called = Promise.withResolvers<void>();
+  const api = createApi({ version: () => "fixture", observeServerVersion: () => {},
+    beginBrowserWork: () => { active++; return () => { active--; }; }, onUnauthorized: () => {} }, async () => {
+    called.resolve(); return new Promise<Response>(() => {});
+  });
+  try {
+    const rejected = assert.rejects(api.submitMessage("hung-upload", {
+      clientMessageId: "11111111-1111-4111-8111-111111111111", text: "Archive", mode: "queue", expectedRunId: null,
+      images: [{ mediaType: "application/octet-stream", data: "AAAA", file: { name: "archive.zip" } }],
+    }), /Connection did not recover/);
+    await called.promise;
+    mock.timers.tick(60 * 60_000);
+    await rejected;
+    assert.equal(active, 0);
+  } finally { mock.timers.reset(); }
+});
