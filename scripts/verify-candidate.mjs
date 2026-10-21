@@ -41,9 +41,10 @@ export function candidateLane(name) {
   const lanes = {
     tooling: ['typecheck', 'pkg:check'].map(step),
     server: ['server:contracts', 'server:smoke'].map(step),
-    'web-1': [node('web-shard-1', 'apps/web/scripts/run-e2e.mjs', '--shard=1/3')],
-    'web-2': [node('web-shard-2', 'apps/web/scripts/run-e2e.mjs', '--shard=2/3')],
-    'web-3': [node('web-shard-3', 'apps/web/scripts/run-e2e.mjs', '--shard=3/3')],
+    'web-1': [node('web-shard-1', 'apps/web/scripts/run-e2e.mjs', '--shard=1/4')],
+    'web-2': [node('web-shard-2', 'apps/web/scripts/run-e2e.mjs', '--shard=2/4')],
+    'web-3': [node('web-shard-3', 'apps/web/scripts/run-e2e.mjs', '--shard=3/4')],
+    'web-4': [node('web-shard-4', 'apps/web/scripts/run-e2e.mjs', '--shard=4/4')],
     sw: [node('service-worker', 'apps/web/scripts/test-sw-update.mjs')],
   };
   if (!Object.hasOwn(lanes, name)) throw new Error('Unknown candidate verification lane.');
