@@ -94,3 +94,25 @@ test("a first message and its attachment survive an update wait without creating
   expect(JSON.parse(bodies[0]).images).toHaveLength(1);
   await expect(page.getByTestId("toast")).toHaveCount(0);
 });
+
+test("a slow attachment send can be stopped before any retry and restores its draft", async ({ page }) => {
+  await installScopedStream(page);
+  let calls = 0;
+  await page.route("**/api/tasks/t-idle-rich/messages", () => { calls++; });
+  await open(page, "t-idle-rich");
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  await input.fill("Keep this archive");
+  await page.getByLabel("Attach files", { exact: true }).setInputFiles({
+    name: "archive.zip", mimeType: "application/zip", buffer: Buffer.from("fixture"),
+  });
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect(page.getByText("Sending attachments…", { exact: true })).toBeVisible();
+  await expect.poll(() => calls).toBe(1);
+  await page.getByRole("button", { name: "Stop sending", exact: true }).click();
+  await expect(input).toHaveValue("Keep this archive");
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Remove file archive.zip", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop sending", exact: true })).toHaveCount(0);
+  await page.waitForTimeout(1200);
+  expect(calls).toBe(1);
+});

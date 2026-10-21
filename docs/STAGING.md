@@ -31,9 +31,11 @@ Channel and auto-update preferences are shared by installations using the same
 Palmagent configuration home; use separate owner accounts or explicitly isolated
 `PALMAGENT_HOME` values when installations must have different preferences.
 
-Message submissions wait through a brief maintenance window or connection interruption for up
-to two minutes. The browser retains the submitted text, attachments and request ID, shows the
-wait, and lets the user stop automatic retries. A pending submission delays automatic screen
+Text-only message submissions wait through a brief maintenance window or connection interruption
+for up to two minutes. Attachment submissions allow two to 30 minutes per request based on encoded
+payload size, plus two minutes of total recovery time. The browser retains the submitted text,
+attachments and request ID, shows the wait, and lets the user stop an upload or automatic retries.
+A pending submission delays automatic screen
 replacement until it settles. If the wait expires, the input remains available for recovery;
 closing the browser is not a background delivery mechanism.
 

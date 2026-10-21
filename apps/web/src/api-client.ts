@@ -7,7 +7,7 @@ import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/sh
 import { retryMessage } from "./message-retry";
 import type {
   AgentKind, AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
-  CreateTaskRequest, FollowupRequest, MessageAction, PushSubscribeRequest,
+  CreateTaskRequest, FollowupRequest, InputAttachment, MessageAction, PushSubscribeRequest,
   RenameTaskRequest, RepoSettingsChange, SteerRequest, SubmitMessage, TaskStatus,
   UpdateAction, UpdateRepoRequest, UpdateRoutineRequest, UpdateSettingsChange,
 } from "@palmagent/shared";
@@ -42,7 +42,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   // auth/update lifecycle around the typed call, including response consumption.
   async function request<T>(send: (signal?: AbortSignal) => Promise<JsonResponse<T>>, opts?: {
     write?: boolean; authProbe?: boolean; sessionChange?: boolean; invalidates?: readonly ClientReadScope[];
-    messageScope?: string;
+    messageScope?: string; images?: readonly InputAttachment[];
   }): Promise<T> {
     const finish = opts?.write ? beginBrowserWork() : undefined;
     // Invalidate on both sides: reads racing a write cannot refill the cache,
@@ -81,7 +81,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         }
         if (error instanceof TypeError || error instanceof DOMException && error.name === "TimeoutError") return "Reconnecting to send…";
         return undefined;
-      }) : await load();
+      }, opts.images) : await load();
       if (opts?.sessionChange) await invalidateClientReads(true);
       return value;
     } finally {
@@ -128,7 +128,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       const json = structuredClone(input);
       return request(signal => tasks.messages.$post({ param: idParam(id), json }, {
         headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
-      }), { write: true, messageScope: id });
+      }), { write: true, messageScope: id, images: json.images });
     },
     messageAction: (id: string, messageId: string, json: MessageAction) => write(() => tasks.messages[":messageId"].$post({ param: { ...idParam(id), messageId: encodeURIComponent(messageId) }, json })),
     resumeQueue: (id: string) => write(() => tasks.queue.resume.$post({ param: idParam(id), json: {} })),
@@ -190,7 +190,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         return client.tasks.$post({ json }, {
           headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
         });
-      }, { write: true, messageScope: "dispatch" }) : write(() => client.tasks.$post({ json }))).then(r => r.task);
+      }, { write: true, messageScope: "dispatch", images: json.images }) : write(() => client.tasks.$post({ json }))).then(r => r.task);
     },
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
