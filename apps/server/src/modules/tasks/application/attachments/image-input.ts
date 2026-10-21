@@ -3,7 +3,7 @@ import type { InputAttachment } from "@palmagent/shared";
 import { rasterImage } from "./output-images.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 
-import { decodeBase64, encodeBase64 } from "./binary.js";
+import { base64ByteLength } from "./binary.js";
 import { videoAttachment } from "./video-input.js";
 
 const MAX_BYTES = INPUT_IMAGE_POLICY.maxBytes;
@@ -20,9 +20,9 @@ export function sanitizeImages(raw: unknown): InputAttachment[] | undefined {
     const data = String(value?.data ?? "").replace(/^data:[^,]*,/, "").replace(/\s+/g, "");
     if (value?.file !== undefined || mediaType === FILE_MEDIA_TYPE) {
       const file = FileMetadataSchema.safeParse(value?.file);
-      const bytes = data.length <= Math.ceil(INPUT_FILE_POLICY.maxBytes / 3) * 4 ? decodeBase64(data) : undefined;
+      const size = data.length <= Math.ceil(INPUT_FILE_POLICY.maxBytes / 3) * 4 ? base64ByteLength(data) : undefined;
       if (!file.success || mediaType !== FILE_MEDIA_TYPE || value.video || value.width !== undefined || value.height !== undefined
-        || !bytes || bytes.length > INPUT_FILE_POLICY.maxBytes || encodeBase64(bytes) !== data) {
+        || size === undefined || size > INPUT_FILE_POLICY.maxBytes) {
         throw new ApplicationError("bad_request", `Invalid file name, content, type, or size at index ${index}`);
       }
       return { mediaType, data, file: file.data };

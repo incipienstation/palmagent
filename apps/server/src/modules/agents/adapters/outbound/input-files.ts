@@ -10,13 +10,12 @@ import type { RunHandle } from "../../domain/run-handle.js";
 
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 
-/** Stage on the execution host, where provider tools can read the original bytes.
- * Stable task directories survive daemon reattachment; nothing is sent again.
- * Copies live until the provider exits, while durable originals stay in Tasks.
+/** Prepare local file paths for provider input. The owner decides when the
+ * provider has finished with them; losing a connection is not that evidence.
  */
-export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
+export function createInputFiles(cwd: string, ownerId: string) {
   const root = join(tmpdir(), `palmagent-input-${process.getuid?.() ?? "user"}`);
-  const directory = join(root, hash(`${args.cwd}\0${args.taskId}`));
+  const directory = join(root, hash(`${cwd}\0${ownerId}`));
   const privateDirectory = (path: string) => {
     try { mkdirSync(path, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     const stat = lstatSync(path);
@@ -43,9 +42,7 @@ export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: 
     }
     return { text: [text, ...(notes.length ? ["Attached files are available at these local paths for this turn. Read them with your tools as needed.", ...notes] : [])].filter(Boolean).join("\n\n"), images };
   };
-  let finished = false;
   const cleanup = () => {
-    finished = true;
     try {
       for (const path of [root, directory]) {
         const stat = lstatSync(path);
@@ -54,6 +51,16 @@ export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: 
       rmSync(directory, { recursive: true, force: true });
     } catch { /* Cleanup must not change a confirmed provider result. */ }
   };
+  return { prepare, cleanup };
+}
+
+/** Stage on the execution host, where provider tools can read the original bytes.
+ * Stable task directories survive daemon reattachment; nothing is sent again.
+ * Copies live until the provider exits, while durable originals stay in Tasks.
+ */
+export function startWithInputFiles(runner: AgentRunner, args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
+  const { prepare, cleanup } = createInputFiles(args.cwd, args.taskId);
+  let finished = false;
   let attached = !args.reattach;
   const transport: ProcessBackend = {
     start: spec => backend.start(spec),

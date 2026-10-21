@@ -415,3 +415,15 @@ test("a 256 MiB file and a 64 MiB file fit one request and survive durable stora
     assert.throws(() => f.storage.read("two", ref.id), { code: "not_found" });
   }
 });
+
+
+test("general files reject noncanonical Base64 while preserving empty and padded binary content", () => {
+  const file = (data: string) => [{ mediaType: "application/octet-stream", data, file: { name: "fixture.bin" } }];
+  for (const data of ["", "AA==", "AAA=", "AAAA", "/w==", "//8=", "////"]) {
+    assert.equal(sanitizeImages(file(data))?.[0].data, data);
+  }
+  for (const data of ["A", "AA", "AAA", "A===", "====", "AA=A", "AB==", "AAB=", "_w==", "-AAA", "AA==AA=="]) {
+    assert.throws(() => sanitizeImages(file(data)), /Invalid file/);
+  }
+  assert.equal(sanitizeImages(file(" Y Q = = "))?.[0].data, "YQ==", "existing whitespace normalization remains supported");
+});
