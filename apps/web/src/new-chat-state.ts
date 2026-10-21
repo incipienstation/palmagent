@@ -3,7 +3,7 @@ import { CreateTaskSchema, type CreateTaskRequest } from "@palmagent/shared/requ
 import { useActionState } from "./action-state";
 import { attachmentBlob, type DraftAttachment } from "./images";
 import { readBrowserDraft, writeBrowserDraft } from "./update-state";
-import { onCacheSessionReset } from "./query-lifecycle";
+import { cacheSession, onCacheSessionReset } from "./query-lifecycle";
 
 export type NewChatSubmission = {
   request: CreateTaskRequest & { clientRequestId: string };
@@ -39,16 +39,20 @@ export async function restoreNewChatSubmission(): Promise<void> {
 }
 function persist(value: NewChatSubmission | null): void {
   const id = checkpoint ??= crypto.randomUUID();
+  const generation = cacheSession();
+  if (!value) { try { sessionStorage.removeItem(key); } catch { /* unavailable */ } }
   pending = pending.catch(() => {}).then(async () => {
     if (!value) {
-      try { sessionStorage.removeItem(key); } catch { /* unavailable */ }
       await writeBrowserDraft(id, null);
       return;
     }
+    if (generation !== cacheSession()) return;
     try {
       await writeBrowserDraft(id, value);
+      if (generation !== cacheSession()) return;
       sessionStorage.setItem(key, JSON.stringify({ checkpoint: id }));
     } catch {
+      if (generation !== cacheSession()) return;
       if (value.request.images?.some(attachmentBlob)) throw new SubmissionCheckpointError("Could not preserve the attached file. Free browser storage or remove the file and retry.");
       try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* In-memory checkpoint remains usable. */ }
     }

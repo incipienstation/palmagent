@@ -95,3 +95,41 @@ test("new-chat storage failure keeps the file editable and never starts an uploa
   await expect(page.getByRole("button", { name: "Remove file notes.txt", exact: true })).toBeVisible();
   expect(uploads).toBe(0);
 });
+
+
+test("a session reset during draft persistence cannot restore or send the old file", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as unknown as { savedDraft?: boolean; deletedDraft?: boolean; releaseDraft?: () => void };
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (...args: Parameters<typeof transaction>) {
+      const tx = transaction.apply(this, args);
+      let complete: IDBTransaction["oncomplete"] = null;
+      Object.defineProperty(tx, "oncomplete", { get: () => complete, set: value => { complete = value; } });
+      tx.addEventListener("complete", event => {
+        if (!state.savedDraft) {
+          state.savedDraft = true;
+          state.releaseDraft = () => complete?.call(tx, event);
+        } else { complete?.call(tx, event); state.deletedDraft = true; }
+      });
+      return tx;
+    };
+  });
+  let uploads = 0;
+  await page.route("**/api/tasks", route => {
+    if (route.request().method() === "POST") uploads++;
+    return route.continue();
+  });
+  await page.goto("/#/new/space/repo-app");
+  await page.getByLabel("Attach files", { exact: true }).setInputFiles(file);
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await page.waitForFunction(() => (window as any).savedDraft);
+  await page.evaluate(() => {
+    const channel = new BroadcastChannel("palmagent-cache"); channel.postMessage("session"); channel.close();
+  });
+  // The reset clears the submission before the delayed write's completion.
+  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).releaseDraft());
+  await page.waitForFunction(() => (window as any).deletedDraft);
+  expect(await page.evaluate(() => sessionStorage.getItem("dispatch:submission"))).toBeNull();
+  expect(uploads).toBe(0);
+});
