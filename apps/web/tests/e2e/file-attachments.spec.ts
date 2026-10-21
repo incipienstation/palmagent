@@ -126,8 +126,8 @@ test("a session reset during draft persistence cannot restore or send the old fi
   await page.evaluate(() => {
     const channel = new BroadcastChannel("palmagent-cache"); channel.postMessage("session"); channel.close();
   });
-  // The reset clears the submission before the delayed write's completion.
-  await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeVisible();
+  // The reset signs out before the delayed write's completion.
+  await expect(page.getByRole("button", { name: "Sign in with passkey", exact: true })).toBeVisible();
   await page.evaluate(() => (window as any).releaseDraft());
   await page.waitForFunction(() => (window as any).deletedDraft);
   expect(await page.evaluate(() => sessionStorage.getItem("dispatch:submission"))).toBeNull();
