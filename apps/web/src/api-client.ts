@@ -63,7 +63,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         const json: unknown = await res.json().catch(() => null);
         const message = json && typeof json === "object" && "error" in json && typeof json.error === "string" ? json.error : undefined;
         if (res.status === 413 && message === undefined) {
-          throw new ApiError(413, "Request too large for the proxy — shrink/remove images (or raise nginx client_max_body_size).");
+          throw new ApiError(413, "Request too large for the proxy — shrink/remove attachments (or raise nginx client_max_body_size).");
         }
         const code = json && typeof json === "object" && "code" in json && typeof json.code === "string" ? json.code : undefined;
         throw new ApiError(res.status, message ?? res.statusText, code);

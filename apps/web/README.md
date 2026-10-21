@@ -184,7 +184,7 @@ available after reload, on other signed-in devices, after a server restart, and 
 migrated. Each message accepts up to eight attachments. PNG, JPEG, GIF, and WebP
 images are prepared to fit 4.5 MiB each. MP4, WebM, and MOV videos must be playable
 in your browser and no larger than 20 MiB each; all attachments must fit the shared
-request limit. General files accept any format up to 20 MiB each and are downloaded
+request limit. General files accept any format up to 256 MiB each and are downloaded
 as binary data, never rendered as active page content. Trim or compress attachments
 if they exceed these limits.
 

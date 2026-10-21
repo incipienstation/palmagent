@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
+import ingressPolicy from '../../packages/shared/src/ingress-policy.json' with { type: 'json' };
 import { renderNginx } from '../../skills/.shared/render-nginx.mjs';
 
 const config = {
@@ -30,8 +31,7 @@ test('plugin renderer keeps challenges reachable and application traffic HTTPS-o
   assert(result.vhost.text.includes('proxy_set_header Upgrade $http_upgrade;'));
   assert(result.vhost.text.includes('proxy_read_timeout 3600s;'));
   assert(result.vhost.text.includes('Strict-Transport-Security'));
-  assert(result.vhost.text.includes('client_max_body_size 48000000;'));
-  assert(!result.vhost.text.includes('client_max_body_size 48m;'));
+  assert(result.vhost.text.includes(`client_max_body_size ${ingressPolicy.maxBodyBytes};`));
   assert(!result.vhost.text.includes('$proxy_add_x_forwarded_for'));
 });
 

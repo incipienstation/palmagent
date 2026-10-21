@@ -239,8 +239,9 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
     assert.equal(await sendChunked(path, oversized, method), 413, path);
   }
   for (const path of ["/api/tasks", "/api/tasks/t/messages", "/api/tasks/t/messages/m", "/api/tasks/t/followup", "/api/tasks/t/steer"]) {
-    // Larger image envelopes reach validation; an invalid body cannot mutate state.
+    // Larger attachment envelopes reach validation; an invalid body cannot mutate state.
     assert.equal(await sendChunked(path, "{}".padEnd(MAX_BODY_BYTES + 1)), 400, path);
+    assert.equal((await f.app.request(path, { method: "POST", headers: { ...headers, "content-length": String(MAX_IMAGE_BODY_BYTES) }, body: "{}" })).status, 400, path);
     assert.equal((await f.app.request(path, { method: "POST", headers: { ...headers, "content-length": String(MAX_IMAGE_BODY_BYTES + 1) }, body: "{}" })).status, 413, path);
   }
   assert.equal(await sendChunked("/api/auth/login/options", "{}".padEnd(MAX_BODY_BYTES)), 200);

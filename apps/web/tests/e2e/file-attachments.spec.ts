@@ -1,3 +1,4 @@
+import { INPUT_FILE_POLICY } from "@palmagent/shared";
 import { test, expect } from "@playwright/test";
 import { installScopedStream, open, send } from "./_scoped-stream";
 import { assertViewportLocked } from "./_helpers";
@@ -26,12 +27,39 @@ for (const route of ["new/space/repo-app", "task/t-idle-rich"]) test(`file-only 
   await assertViewportLocked(page);
 });
 
+test("files above the old file and request limits can be sent", async ({ page }) => {
+  await page.goto("/#/task/t-idle-rich");
+  const size = 40 * 1024 * 1024;
+  await page.getByLabel("Attach files", { exact: true }).evaluate((element, size) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(size)], "large.bin", { type: "application/octet-stream" }));
+    (element as HTMLInputElement).files = transfer.files;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, size);
+  await expect(page.getByRole("button", { name: "Remove file large.bin", exact: true })).toBeVisible();
+  await page.route("**/api/tasks/t-idle-rich/messages", route => route.fulfill({ status: 400, json: { error: "Keep this draft" } }));
+  const request = page.waitForRequest(request => request.method() === "POST" && new URL(request.url()).pathname === "/api/tasks/t-idle-rich/messages");
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  const payload = (await request).postDataJSON();
+  expect(payload.images[0].data.length).toBe(Math.ceil(size / 3) * 4);
+  expect(payload.images[0].file.name).toBe("large.bin");
+  await expect(page.getByRole("button", { name: "Remove file large.bin", exact: true })).toBeVisible();
+});
+
 test("oversized files and too many files preserve the existing draft", async ({ page }) => {
   await page.goto("/#/task/t-idle-rich");
   const picker = page.getByLabel("Attach files", { exact: true });
   await picker.setInputFiles(file);
-  await picker.setInputFiles({ name: "large.zip", mimeType: "application/zip", buffer: Buffer.alloc(20 * 1024 * 1024 + 1) });
-  await expect(page.getByText("Files must be 20 MiB or smaller.")).toBeVisible();
+  // Exercise size rejection without copying a 256 MiB fixture through Playwright.
+  await picker.evaluate((element, size) => {
+    const file = new File(["oversized"], "large.zip", { type: "application/zip" });
+    Object.defineProperty(file, "size", { value: size });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    (element as HTMLInputElement).files = transfer.files;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, INPUT_FILE_POLICY.maxBytes + 1);
+  await expect(page.getByText("Files must be 256 MiB or smaller.")).toBeVisible();
   await picker.setInputFiles(Array.from({ length: 8 }, (_, i) => ({ ...file, name: `file-${i}.txt` })));
   await expect(page.getByText("Up to 8 attachments per message.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove file notes.txt", exact: true })).toBeVisible();

@@ -1,6 +1,11 @@
 /** Portable byte operations for bounded attachment validation. */
 export function decodeBase64(value: string): Uint8Array {
-  try { return Uint8Array.from(atob(value), char => char.charCodeAt(0)); }
+  try {
+    const decoded = atob(value);
+    const bytes = new Uint8Array(decoded.length);
+    for (let index = 0; index < decoded.length; index++) bytes[index] = decoded.charCodeAt(index);
+    return bytes;
+  }
   catch { return new Uint8Array(); }
 }
 export function encodeBase64(bytes: Uint8Array): string {

@@ -2,7 +2,7 @@
   "preserveHost": true,
   "publicHttpsRequired": true,
   "cacheApi": false,
-  "maxBodyBytes": 48000000,
+  "maxBodyBytes": 402653184,
   "sse": {
     "path": "/api/stream",
     "buffering": false,

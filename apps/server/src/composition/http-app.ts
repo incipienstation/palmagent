@@ -28,7 +28,7 @@ import type { HttpDependencies } from "./http-dependencies.js";
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 // Only task creation, messages (including queue edits), follow-up and steering
-// accept base64 images. Decoded image/count limits remain in the service.
+// accept base64 attachments. Decoded media/count limits remain in the service.
 export const MAX_IMAGE_BODY_BYTES = HOST_INGRESS_REQUIREMENTS.maxBodyBytes;
 const IMAGE_BODY_PATH = /^\/api\/tasks(?:\/[^/]+\/(?:messages(?:\/[^/]+)?|followup|steer))?$/;
 export function createApp(deps: HttpDependencies) {
