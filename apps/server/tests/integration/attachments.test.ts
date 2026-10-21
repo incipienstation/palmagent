@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
-import { INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
+import { INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
 import { sanitizeImages } from "../../src/modules/tasks/application/attachments/image-input.js";
 import { buildClaudeUserMessage } from "../../src/modules/agents/adapters/outbound/claude.js";
 import { codexInput } from "../../src/modules/agents/adapters/outbound/codex-interactive.js";
@@ -389,10 +389,25 @@ test("file validation rejects unsafe names, malformed bytes, mixed metadata and 
     ...["../escape", "a/b", "a\\b", ".", "..", "", "bad\nname", "x".repeat(256), "한".repeat(100)].map(name => ({ ...file, file: { name } })),
     { ...file, data: "%%%" }, { ...file, data: "aGVsbG8" }, { ...file, file: undefined },
     { ...file, mediaType: "text/html" }, { ...file, width: 1, height: 1 }, { ...file, video: video.video },
-    { ...file, data: Buffer.alloc(20 * 1024 * 1024 + 1).toString("base64") },
+    { ...file, data: Buffer.alloc(INPUT_FILE_POLICY.maxBytes + 1).toString("base64") },
   ]) assert.throws(() => f.storage.save("one", [image, invalid]), /Invalid file/);
   assert.equal(f.db.attachmentIds().size, 0);
   assert.throws(() => f.storage.save("one", Array(9).fill(file)), /Too many/);
   assert.throws(() => buildClaudeUserMessage("Read", [file]), /must be staged/);
   assert.throws(() => codexInput("Read", [file]), /must be staged/);
+});
+
+
+test("a 256 MiB file fits the request budget and survives durable storage", t => {
+  const f = fixture(t);
+  const bytes = Buffer.alloc(INPUT_FILE_POLICY.maxBytes, 0x61);
+  const file = { mediaType: "application/octet-stream", data: bytes.toString("base64"), file: { name: "large.bin" } };
+  assert.equal(bytes.length, 256 * 1024 * 1024);
+  assert(file.data.length + 100_000 < INPUT_IMAGE_POLICY.maxWireBytes);
+  const [ref] = f.storage.save("one", [file])!;
+  assert.equal(ref.size, bytes.length);
+  assert.equal(ref.file?.name, "large.bin");
+  f.restart();
+  assert.deepEqual(f.storage.read("one", ref.id).bytes, bytes);
+  assert.throws(() => f.storage.read("two", ref.id), { code: "not_found" });
 });

@@ -27,7 +27,7 @@ export async function fileToAttachment(file: File | Blob): Promise<InputAttachme
   if (isVideoMediaType(file.type) || inferred) return (await import("./videos")).videoToAttachment(inferred ? file.slice(0, file.size, inferred) : file);
   const type = file.type || "application/octet-stream";
   if (!type.startsWith("image/") || type === "image/svg+xml") {
-    if (file.size > INPUT_FILE_POLICY.maxBytes) throw new Error("Files must be 20 MiB or smaller.");
+    if (file.size > INPUT_FILE_POLICY.maxBytes) throw new Error(`Files must be ${INPUT_FILE_POLICY.maxBytes / 1024 / 1024} MiB or smaller.`);
     const metadata = FileMetadataSchema.safeParse({ name: file instanceof File ? file.name : "attachment" });
     if (!metadata.success) throw new Error("Use a shorter filename without slashes or control characters.");
     return { mediaType: FILE_MEDIA_TYPE, data: await blobToBase64(file), file: metadata.data };

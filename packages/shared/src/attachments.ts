@@ -4,7 +4,7 @@ import { HOST_INGRESS_REQUIREMENTS } from "./ingress.js";
 export const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 export const VIDEO_MEDIA_TYPES = ["video/mp4", "video/webm", "video/quicktime"] as const;
 export const FILE_MEDIA_TYPE = "application/octet-stream" as const;
-export const INPUT_FILE_POLICY = { maxBytes: 20 * 1024 * 1024 } as const;
+export const INPUT_FILE_POLICY = { maxBytes: 256 * 1024 * 1024 } as const;
 export const FileMetadataSchema = z.object({ name: z.string().min(1).max(255)
   .regex(/^[^/\\\x00-\x1f\x7f]+$/).refine(name => name !== "." && name !== "..")
   .refine(name => {
