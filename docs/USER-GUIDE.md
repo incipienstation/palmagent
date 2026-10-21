@@ -70,10 +70,11 @@ Filenames appear in your draft and conversation; sent files can be downloaded la
 Claude and Codex receive the original files at local paths during the turn and use
 their available tools to read them. File format support depends on those tools.
 
-The total encoded attachment request must fit within 384 MiB. Base64 encoding
-adds roughly one third to the original file size, so multiple large files may
-need separate messages. Existing reverse proxies must allow request bodies of
-at least 402653184 bytes; a lower proxy limit can still reject an upload.
+The total encoded attachment request must fit within 500 MiB. Base64 encoding
+adds roughly one third to the original file size, leaving room for slightly less
+than 375 MiB of original attachments per message. Larger batches need separate
+messages. Existing reverse proxies must allow request bodies of
+at least 524288000 bytes; a lower proxy limit can still reject an upload.
 
 Use **+ → Videos** to attach an MP4, WebM, or MOV video up to 20 MiB. The browser
 must be able to decode it. The original stays available for playback, and the agent

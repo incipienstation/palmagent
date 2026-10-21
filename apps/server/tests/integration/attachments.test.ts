@@ -398,16 +398,20 @@ test("file validation rejects unsafe names, malformed bytes, mixed metadata and 
 });
 
 
-test("a 256 MiB file fits the request budget and survives durable storage", t => {
+test("a 256 MiB file and a 64 MiB file fit one request and survive durable storage", t => {
   const f = fixture(t);
-  const bytes = Buffer.alloc(INPUT_FILE_POLICY.maxBytes, 0x61);
-  const file = { mediaType: "application/octet-stream", data: bytes.toString("base64"), file: { name: "large.bin" } };
-  assert.equal(bytes.length, 256 * 1024 * 1024);
-  assert(file.data.length + 100_000 < INPUT_IMAGE_POLICY.maxWireBytes);
-  const [ref] = f.storage.save("one", [file])!;
-  assert.equal(ref.size, bytes.length);
-  assert.equal(ref.file?.name, "large.bin");
+  const bytes = [Buffer.alloc(INPUT_FILE_POLICY.maxBytes, 0x61), Buffer.alloc(64 * 1024 * 1024, 0x62)];
+  const files = bytes.map((data, index) => ({ mediaType: "application/octet-stream", data: data.toString("base64"), file: { name: `large-${index}.bin` } }));
+  assert.equal(bytes[0].length, 256 * 1024 * 1024);
+  const wireBytes = files.reduce((sum, file) => sum + file.data.length, 0);
+  assert(wireBytes > 384 * 1024 * 1024);
+  assert(wireBytes + 100_000 < INPUT_IMAGE_POLICY.maxWireBytes);
+  const refs = f.storage.save("one", files)!;
+  assert.deepEqual(refs.map(ref => ref.size), bytes.map(data => data.length));
+  assert.deepEqual(refs.map(ref => ref.file?.name), files.map(file => file.file.name));
   f.restart();
-  assert.deepEqual(f.storage.read("one", ref.id).bytes, bytes);
-  assert.throws(() => f.storage.read("two", ref.id), { code: "not_found" });
+  for (const [index, ref] of refs.entries()) {
+    assert.deepEqual(f.storage.read("one", ref.id).bytes, bytes[index]);
+    assert.throws(() => f.storage.read("two", ref.id), { code: "not_found" });
+  }
 });
