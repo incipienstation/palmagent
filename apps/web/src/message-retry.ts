@@ -1,3 +1,4 @@
+import { attachmentBlob } from "./images";
 import { useSyncExternalStore } from "react";
 import type { InputAttachment } from "@palmagent/shared";
 import { onCacheSessionReset } from "./query-lifecycle";
@@ -37,11 +38,11 @@ export async function retryMessage<T>(scope: string, send: (signal: AbortSignal)
   if (active.has(scope)) throw new Error("A message is already being sent.");
   const controller = new AbortController();
   active.set(scope, controller);
-  // Base64 is sent as ASCII JSON. Count the encoded data (including sampled
-  // video frames) without serializing another potentially large request body.
+  // Count native files and encoded media (including sampled video frames)
+  // without serializing another potentially large request body.
   // Allow 128 KiB/s, at least two minutes for uploads, and at most 30 minutes
   // per attempt. Text-only messages keep their short recovery timeout.
-  const encodedBytes = images.reduce((sum, image) => sum + image.data.length
+  const encodedBytes = images.reduce((sum, image) => sum + (attachmentBlob(image)?.size ?? image.data.length)
     + (image.video?.frames.reduce((bytes, frame) => bytes + frame.image.data.length, 0) ?? 0), 0);
   const attemptMs = images.length ? Math.min(30 * 60_000, Math.max(120_000, 15_000 + Math.ceil(encodedBytes / (128 * 1024) * 1000))) : 15_000;
   const totalMs = images.length ? attemptMs + 120_000 : 120_000;

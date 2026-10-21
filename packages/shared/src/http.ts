@@ -5,5 +5,9 @@ export type ApiErrorResponse = { error: string; code?: string };
 // semantics and response shapes. Bump on an incompatible change to either
 // endpoint. A matching contract lets an older screen finish its pending send
 // before the PWA replaces it; other writes still require the current build.
-export const MESSAGE_PROTOCOL_VERSION = "1";
+export const MESSAGE_PROTOCOL_VERSION = "2";
 export const MESSAGE_PROTOCOL_HEADER = "x-palmagent-message-protocol";
+
+// Multipart file uploads carry the same request metadata and indexed binary parts.
+export const ATTACHMENT_METADATA_FIELD = "request";
+export const attachmentPartName = (index: number): string => `attachment-${index}`;

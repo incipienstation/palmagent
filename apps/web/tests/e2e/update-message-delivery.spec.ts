@@ -12,7 +12,7 @@ test("a send waits through maintenance and reconnects with the same message, the
   const requests: typeof message[] = [];
   await page.route("**/api/tasks/t-run/messages", route => {
     requests.push(route.request().postDataJSON());
-    expect(route.request().headers()["x-palmagent-message-protocol"]).toBe("1");
+    expect(route.request().headers()["x-palmagent-message-protocol"]).toBe("2");
     return available ? route.fulfill({ json: { revision: 2, paused: false, runId: "run-1", messages: [] } })
       : route.fulfill({ status: 503, json: { error: "Updating", code: "update_in_progress" } });
   });
