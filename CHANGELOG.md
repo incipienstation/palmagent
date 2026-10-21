@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.210
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/2098e6e090ced094dcc062967b1f934e814a648e...10c10e1dd532ecef924c73af31f1f8dd7989dddd) for details.
+
 ## 0.1.0-alpha.209
 
 ### Changed
