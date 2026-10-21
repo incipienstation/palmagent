@@ -11,15 +11,19 @@ for (const route of ["new/space/repo-app", "task/t-idle-rich"]) test(`104 MiB bi
   const directory = await mkdtemp(join(tmpdir(), "palmagent-upload-"));
   const path = join(directory, "large.bin"), size = 104 * 1024 * 1024;
   const file = await open(path, "w"); await file.truncate(size); await file.close();
-  const uploads: { bytes: number; type: string }[] = [];
+  const uploads: { bytes: number; type: string; id: string }[] = [];
   const sink = createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
     if (req.method === "OPTIONS") { res.end(); return; }
-    let bytes = 0;
-    req.on("data", chunk => { bytes += chunk.length; });
+    let bytes = 0, prefix = "";
+    req.on("data", chunk => {
+      bytes += chunk.length;
+      if (prefix.length < 16_384) prefix += chunk.subarray(0, 16_384 - prefix.length).toString("utf8");
+    });
     req.on("end", () => {
-      uploads.push({ bytes, type: String(req.headers["content-type"]) });
+      const metadata = JSON.parse(prefix.split("\r\n\r\n")[1].split("\r\n")[0]);
+      uploads.push({ bytes, type: String(req.headers["content-type"]), id: metadata.clientRequestId ?? metadata.clientMessageId });
       // First request waits for explicit cancellation, the retry gets a receipt.
       if (uploads.length > 1) { res.writeHead(400, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "Keep this draft" })); }
     });
@@ -55,6 +59,8 @@ for (const route of ["new/space/repo-app", "task/t-idle-rich"]) test(`104 MiB bi
     }
     await expect.poll(() => uploads.length).toBe(2);
     expect(uploads[1].bytes).toBe(uploads[0].bytes);
+    expect(uploads[0].id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(uploads[1].id).toBe(uploads[0].id);
     await expect(page.getByText("Keep this draft", { exact: true })).toBeVisible();
   } finally {
     sink.closeAllConnections(); await new Promise<void>(resolve => sink.close(() => resolve()));
