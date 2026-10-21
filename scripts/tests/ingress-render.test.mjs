@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { constants as bufferConstants } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -13,6 +14,12 @@ const config = {
   certificate: '/var/lib/palmagent-ingress/tls/fullchain.pem',
   privateKey: '/var/lib/palmagent-ingress/tls/privkey.pem', acmeRoot: '/var/lib/palmagent-ingress/acme',
 };
+
+test('the JSON request cap stays below the runtime string limit', () => {
+  // Browser JSON.stringify and server request.text both require one string.
+  // Larger limits need a different attachment transport, not just a new cap.
+  assert(ingressPolicy.maxBodyBytes < bufferConstants.MAX_STRING_LENGTH);
+});
 
 test('plugin renderer keeps challenges reachable and application traffic HTTPS-only', () => {
   const result = renderNginx(config);
