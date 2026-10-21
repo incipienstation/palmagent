@@ -25,11 +25,11 @@ release candidate still runs the full source and packed-install verification.
 
 After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
 The required `validate` job aggregates their results and rejects any failure or cancellation.
-Static and version-only changes skip the runtime jobs. PWA tests use three shards on separate
-runners, preserving the sequential stateful test group. Service-worker checks run on a fourth
+Static and version-only changes skip the runtime jobs. PWA tests use four shards on separate
+runners, preserving the sequential stateful test group. Service-worker checks run on a fifth
 runner concurrently with all shards. Each runner builds once; the first browser shard also
 runs selected package checks against its own build. Packaging-only scope uses one runner
-without browser or service-worker tests. All selected lanes, including all three browser shards
+without browser or service-worker tests. All selected lanes, including all four browser shards
 and the service-worker runner, must succeed; an unexpectedly skipped lane fails validation.
 Parallel jobs repeat setup and use more runner time to shorten the critical path. Release
 candidates retain every source check using the compatible distributed gate below.
@@ -57,7 +57,7 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 2. Verify the version, release notes, and `develop` ancestry for Preview or `main` for Stable.
 3. Install frozen dependencies and run the full source gate, including generic leak checks.
    For known source gates, metadata checks and one PWA build precede separate
-   type/tooling, server, three browser-shard runners, and an independent service-worker runner.
+   type/tooling, server, four browser-shard runners, and an independent service-worker runner.
    Browser runners, service-worker checks, and packaging download the same build artifact from
    this run; its name is retained in preparation outputs so rerunning failed jobs reuses the
    verified build. Every selected lane must succeed before packaging; missing, skipped, failed,
