@@ -86,6 +86,11 @@ async function transaction<T>(operation: (store: IDBObjectStore) => IDBRequest<T
   } finally { db.close(); }
 }
 
+// Durable per-tab submissions share the Blob-capable store with screen checkpoints.
+export const readBrowserDraft = (id: string) => transaction(store => store.get(`draft:${id}`));
+export const writeBrowserDraft = (id: string, value: unknown) => value === null
+  ? transaction(store => store.delete(`draft:${id}`)) : transaction(store => store.put(value, `draft:${id}`));
+
 export async function restoreUpdateState(): Promise<void> {
   const generation = cacheSession();
   let id: string | null;

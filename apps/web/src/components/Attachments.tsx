@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
   attachmentPreviewUrl,
+  attachmentSize,
   attachmentsWireSize,
   fileToAttachment,
   imageFilesFromClipboard,
@@ -131,7 +132,7 @@ export function AttachmentTray({ images, disabled, onRemove }: {
   return <div className="min-w-0 w-full">
     <ScrollArea orientation="horizontal" contentClassName="flex w-max min-w-full gap-2 py-1" viewportProps={{ "aria-label": "Attachments" }}>
       {images.map((img, i) => <span className="relative inline-flex shrink-0 pr-2 pt-2" key={i}>
-        {img.file ? <FileAttachment name={img.file.name} size={Math.floor(img.data.length * 3 / 4) - (img.data.endsWith("==") ? 2 : img.data.endsWith("=") ? 1 : 0)} /> : img.video ? <VideoPreview src={attachmentPreviewUrl(img)} poster={attachmentPreviewUrl(img.video.frames[0].image)} label={`attachment ${i + 1}`} compact />
+        {img.file ? <FileAttachment name={img.file.name} size={attachmentSize(img)} /> : img.video ? <VideoPreview src={attachmentPreviewUrl(img)} poster={attachmentPreviewUrl(img.video.frames[0].image)} label={`attachment ${i + 1}`} compact />
           : <img className="size-16 rounded-xl border border-input object-cover" src={attachmentPreviewUrl(img)} alt={`attachment ${i + 1}`} />}
         <Button type="button" variant="secondary" size="icon-sm" className="absolute top-0 right-0"
           aria-label={img.file ? `Remove file ${img.file.name}` : `Remove ${img.video ? "video" : "image"} ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}><X /></Button>

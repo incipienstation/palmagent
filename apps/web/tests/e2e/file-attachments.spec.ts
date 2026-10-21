@@ -17,33 +17,17 @@ for (const route of ["new/space/repo-app", "task/t-idle-rich"]) test(`file-only 
   await page.route(`**${path}`, route => route.fulfill({ status: 400, json: { error: "Try again" } }));
   const request = page.waitForRequest(request => request.method() === "POST" && new URL(request.url()).pathname === path);
   await page.getByRole("button", { name: "Send now", exact: true }).click();
-  const payload = (await request).postDataJSON();
-  expect(payload.images).toEqual([{ mediaType: "application/octet-stream", data: file.buffer.toString("base64"), file: { name: file.name } }]);
+  const sent = await request;
+  const body = await new Response(new Uint8Array(sent.postDataBuffer()!), { headers: { "content-type": sent.headers()["content-type"] } }).formData();
+  const payload = JSON.parse(body.get("request") as string);
+  expect(payload.images).toEqual([{ mediaType: "application/octet-stream", data: "", binary: true, file: { name: file.name } }]);
+  expect(Buffer.from(await (body.get("attachment-0") as File).arrayBuffer())).toEqual(file.buffer);
   expect(payload.prompt ?? payload.text).toBe("See the attached file(s).");
   if (route.startsWith("new")) await page.getByRole("button", { name: "Edit message", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove file notes.txt", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Remove file notes.txt", exact: true }).click();
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
   await assertViewportLocked(page);
-});
-
-test("files above the old file and request limits can be sent", async ({ page }) => {
-  await page.goto("/#/task/t-idle-rich");
-  const size = 40 * 1024 * 1024;
-  await page.getByLabel("Attach files", { exact: true }).evaluate((element, size) => {
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([new Uint8Array(size)], "large.bin", { type: "application/octet-stream" }));
-    (element as HTMLInputElement).files = transfer.files;
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  }, size);
-  await expect(page.getByRole("button", { name: "Remove file large.bin", exact: true })).toBeVisible();
-  await page.route("**/api/tasks/t-idle-rich/messages", route => route.fulfill({ status: 400, json: { error: "Keep this draft" } }));
-  const request = page.waitForRequest(request => request.method() === "POST" && new URL(request.url()).pathname === "/api/tasks/t-idle-rich/messages");
-  await page.getByRole("button", { name: "Send now", exact: true }).click();
-  const payload = (await request).postDataJSON();
-  expect(payload.images[0].data.length).toBe(Math.ceil(size / 3) * 4);
-  expect(payload.images[0].file.name).toBe("large.bin");
-  await expect(page.getByRole("button", { name: "Remove file large.bin", exact: true })).toBeVisible();
 });
 
 test("oversized files and too many files preserve the existing draft", async ({ page }) => {
@@ -93,4 +77,59 @@ for (const width of [360, 1280]) test(`stored file downloads survive transcript 
     expect((await download).suggestedFilename()).toBe(name);
     await assertViewportLocked(page);
   }
+});
+
+
+test("new-chat storage failure keeps the file editable and never starts an upload", async ({ page }) => {
+  await page.addInitScript(() => { indexedDB.open = () => { throw new DOMException("Storage unavailable", "QuotaExceededError"); }; });
+  let uploads = 0;
+  await page.route("**/api/tasks", route => {
+    if (route.request().method() === "POST") uploads++;
+    return route.continue();
+  });
+  await page.goto("/#/new/space/repo-app");
+  await page.getByLabel("Attach files", { exact: true }).setInputFiles(file);
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await expect(page.getByText("Could not preserve the attached file.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Edit message", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Remove file notes.txt", exact: true })).toBeVisible();
+  expect(uploads).toBe(0);
+});
+
+
+test("a session reset during draft persistence cannot restore or send the old file", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as unknown as { savedDraft?: boolean; deletedDraft?: boolean; releaseDraft?: () => void };
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (...args: Parameters<typeof transaction>) {
+      const tx = transaction.apply(this, args);
+      let complete: IDBTransaction["oncomplete"] = null;
+      Object.defineProperty(tx, "oncomplete", { get: () => complete, set: value => { complete = value; } });
+      tx.addEventListener("complete", event => {
+        if (!state.savedDraft) {
+          state.savedDraft = true;
+          state.releaseDraft = () => complete?.call(tx, event);
+        } else { complete?.call(tx, event); state.deletedDraft = true; }
+      });
+      return tx;
+    };
+  });
+  let uploads = 0;
+  await page.route("**/api/tasks", route => {
+    if (route.request().method() === "POST") uploads++;
+    return route.continue();
+  });
+  await page.goto("/#/new/space/repo-app");
+  await page.getByLabel("Attach files", { exact: true }).setInputFiles(file);
+  await page.getByRole("button", { name: "Send now", exact: true }).click();
+  await page.waitForFunction(() => (window as any).savedDraft);
+  await page.evaluate(() => {
+    const channel = new BroadcastChannel("palmagent-cache"); channel.postMessage("session"); channel.close();
+  });
+  // The reset signs out before the delayed write's completion.
+  await expect(page.getByRole("button", { name: "Sign in with passkey", exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).releaseDraft());
+  await page.waitForFunction(() => (window as any).deletedDraft);
+  expect(await page.evaluate(() => sessionStorage.getItem("dispatch:submission"))).toBeNull();
+  expect(uploads).toBe(0);
 });

@@ -1,3 +1,4 @@
+import { restoreNewChatSubmission } from "./new-chat-state";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -27,6 +28,7 @@ initViewportHeight();
 async function boot() {
   await setupNavigation();
   await restoreUpdateState();
+  await restoreNewChatSubmission();
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

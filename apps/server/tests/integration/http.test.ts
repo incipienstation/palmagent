@@ -1299,3 +1299,38 @@ test("performance sharing is authenticated, rejects cross-origin writes, and app
   assert.equal((await f.app.request(path, { ...change, headers })).status, 200);
   assert.deepEqual(await (await f.app.request(path, { headers })).json(), { enabled: false, pendingDisclosure: false, available: true });
 });
+
+
+test("binary uploads retain task-scoped storage and idempotent queued delivery", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  f.db.insertTask({ taskId: "binary", repoId: "r", agent: "codex", prompt: "fixture", worktreePath: f.dir,
+    permission: "read-only", status: "running", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  await f.service.init();
+  // Keep the queue pending without starting a provider process.
+  f.service.getTask("binary").status = "running";
+  f.db.createSession("binary-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=binary-session` };
+  const bytes = new Uint8Array([0, 255, 128, 1]);
+  const upload = () => {
+    const body = new FormData();
+    body.set("request", JSON.stringify({ mode: "queue", text: "Inspect", expectedRunId: null,
+      clientMessageId: "11111111-1111-4111-8111-111111111111",
+      images: [{ mediaType: "application/octet-stream", data: "", binary: true, file: { name: "notes.bin" } }] }));
+    body.set("attachment-0", new Blob([bytes]), "notes.bin");
+    return body;
+  };
+  const path = "/api/tasks/binary/messages";
+  assert.equal((await f.app.request(path, { method: "POST", body: upload() })).status, 401);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await f.app.request(path, { method: "POST", headers, body: upload() });
+    assert.equal(response.status, 202);
+    const queue = await response.json();
+    assert.equal(queue.messages.length, 1);
+    assert.equal(queue.messages[0].images, undefined);
+    const ref = queue.messages[0].attachments[0];
+    const downloaded = await f.app.request(`/api/tasks/binary/attachments/${ref.id}`, { headers });
+    assert.deepEqual(new Uint8Array(await downloaded.arrayBuffer()), bytes);
+  }
+  assert.equal(f.db.attachmentIds().size, 1);
+});

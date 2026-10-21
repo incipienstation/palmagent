@@ -1,3 +1,4 @@
+import { sameAttachments } from "../images";
 import { gameDelivery } from "../games/play-events";
 import { isActiveTaskStatus } from "@palmagent/shared";
 import { useEffect, useRef } from "react";
@@ -157,9 +158,10 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     };
     const request = { mode: deliveryMode, text, images, ...(skills.length ? { skills } : {}), expectedRunId: confirmedQueue?.runId ?? null,
       ...(running && deliveryMode === "send" ? {} : { settings: override }) };
-    const fingerprint = JSON.stringify({ mode: deliveryMode, text, images, skills, model, effort, permission });
-    const id = submitted?.fingerprint === fingerprint ? submitted.id : crypto.randomUUID();
-    const submission = submitted?.fingerprint === fingerprint ? submitted.request : request;
+    const fingerprint = JSON.stringify({ mode: deliveryMode, text, skills, model, effort, permission });
+    const repeat = submitted?.fingerprint === fingerprint && sameAttachments(images, submitted.request.images);
+    const id = repeat ? submitted.id : crypto.randomUUID();
+    const submission = repeat ? submitted.request : request;
     const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, images, skills, status: deliveryMode === "queue" ? "queued" : "sending" };
     const originalDraft = compose;
     await act(deliveryMode === "queue" ? "enqueue" : "send", async () => {

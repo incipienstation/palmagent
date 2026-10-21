@@ -1,3 +1,4 @@
+import { attachmentFetch, snapshotRequest } from "./attachment-request";
 import type { CreateTerminalRequest } from "@palmagent/shared/terminals";
 import { cacheSession, invalidateClientReads, type ClientReadScope } from "./query-lifecycle";
 import { hc } from "hono/client";
@@ -92,6 +93,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
   }
   const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false, sessionChange = false, invalidates: readonly ClientReadScope[] = []) =>
     request(send, { write: true, authProbe, sessionChange, invalidates });
+  const attachmentOptions = (input: object) => {
+    const upload = attachmentFetch(input, fetcher);
+    return upload ? { fetch: upload } : {};
+  };
   const requestOptions = (signal?: AbortSignal) => signal ? { init: { signal } } : undefined;
 
   const api = {
@@ -125,12 +130,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       change: (json: RepoSettingsChange) => write(() => client.settings.repos.$patch({ json })),
     },
     submitMessage: (id: string, input: SubmitMessage) => {
-      const json = structuredClone(input);
+      const json = snapshotRequest(input);
       return request(signal => tasks.messages.$post({ param: idParam(id), json }, {
         headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
+        ...attachmentOptions(json),
       }), { write: true, messageScope: id, images: json.images });
     },
-    messageAction: (id: string, messageId: string, json: MessageAction) => write(() => tasks.messages[":messageId"].$post({ param: { ...idParam(id), messageId: encodeURIComponent(messageId) }, json })),
+    messageAction: (id: string, messageId: string, json: MessageAction) => write(() => tasks.messages[":messageId"].$post({ param: { ...idParam(id), messageId: encodeURIComponent(messageId) }, json }, attachmentOptions(json))),
     resumeQueue: (id: string) => write(() => tasks.queue.resume.$post({ param: idParam(id), json: {} })),
     compact: (id: string, json: import("@palmagent/shared").CompactTaskRequest) => write(() => tasks.compact.$post({ param: idParam(id), json })).then(r => r.task),
     updateSettings: {
@@ -177,7 +183,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     getTask: (id: string) => request(() => tasks.$get({ param: idParam(id) })).then((r) => r.task),
     getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
     createTask: (input: CreateTaskRequest) => {
-      const json = structuredClone(input);
+      const json = snapshotRequest(input);
       // Legacy callers without an idempotency key must never be replayed.
       let attempted = false;
       return (json.clientRequestId ? request(async signal => {
@@ -189,8 +195,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         attempted = true;
         return client.tasks.$post({ json }, {
           headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
+          ...attachmentOptions(json),
         });
-      }, { write: true, messageScope: "dispatch", images: json.images }) : write(() => client.tasks.$post({ json }))).then(r => r.task);
+      }, { write: true, messageScope: "dispatch", images: json.images }) : write(() => client.tasks.$post({ json }, attachmentOptions(json)))).then(r => r.task);
     },
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
@@ -198,8 +205,8 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     agentLimits: (agent: AgentKind, signal?: AbortSignal) => request(() => client.agents[":agent"].limits.$get({ param: { agent } }, requestOptions(signal))),
     updateAgent: (agent: AgentKind, expectedVersion: string) => write(() => client.agents[":agent"].update.$post({ param: { agent }, json: { expectedVersion } }), false, false, ["agents", "modelCatalog"]),
     getUsage: (signal?: AbortSignal) => request(() => client.usage.$get({}, requestOptions(signal))).then((r) => r.usage),
-    followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json })).then((r) => r.task),
-    steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json })),
+    followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json }, attachmentOptions(json))).then((r) => r.task),
+    steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json }, attachmentOptions(json))),
     approve: (id: string, json: ApproveRequest) => write(() => tasks.approve.$post({ param: idParam(id), json })).then((r) => r.task),
     answer: (id: string, json: AnswerRequest) => write(() => tasks.answer.$post({ param: idParam(id), json })).then((r) => r.task),
     handoff: (id: string) => write(() => tasks.handoff.$post({ param: idParam(id) })),

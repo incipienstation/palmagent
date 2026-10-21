@@ -1,3 +1,4 @@
+import { attachmentBody } from "./attachment-body.js";
 import { ConversationStepDetailsQuerySchema, ExecutionRecordsQuerySchema, ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
 import { FILE_MEDIA_TYPE, AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
@@ -11,7 +12,7 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
   const app = new Hono();
   return app
     .get("/", query(TaskQuerySchema), (c) => c.json({ tasks: service.listTasks(c.req.valid("query").status) }, 200))
-    .post("/", jsonBody(CreateTaskSchema), async (c) => {
+    .post("/", attachmentBody(CreateTaskSchema), async (c) => {
       const input = c.req.valid("json");
       const skills = await service.resolveSkills({ repoId: input.repoId, agent: input.agent }, input.skills);
       return c.json({ task: service.createTask({ ...input, skills }) }, 201);
@@ -129,12 +130,12 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
     })
     .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))
-    .post("/:id/messages", params(IdParamsSchema), jsonBody(SubmitMessageSchema), async (c) => {
+    .post("/:id/messages", params(IdParamsSchema), attachmentBody(SubmitMessageSchema), async (c) => {
       const id = c.req.valid("param").id, input = c.req.valid("json");
       const skills = await service.resolveMessageSkills(id, input);
       return c.json(service.submitMessage(id, { ...input, skills }), 202);
     })
-    .post("/:id/messages/:messageId", params(MessageParamsSchema), jsonBody(MessageActionSchema), async (c) => {
+    .post("/:id/messages/:messageId", params(MessageParamsSchema), attachmentBody(MessageActionSchema), async (c) => {
       const { id, messageId } = c.req.valid("param"), input = c.req.valid("json");
       const action = input.action === "save" ? { ...input, skills: await service.resolveSkills({ taskId: id }, input.skills) } : input;
       return c.json(service.messageAction(id, messageId, action), 200);
@@ -142,11 +143,11 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
     .post("/:id/queue/resume", params(IdParamsSchema), jsonBody(EmptyBodySchema), (c) => c.json(service.resumeQueue(c.req.valid("param").id), 200))
     .post("/:id/compact", params(IdParamsSchema), jsonBody(CompactTaskSchema), (c) =>
       c.json({ task: service.compact(c.req.valid("param").id, c.req.valid("json")) }, 202))
-    .post("/:id/followup", params(IdParamsSchema), jsonBody(FollowupSchema), (c) => {
+    .post("/:id/followup", params(IdParamsSchema), attachmentBody(FollowupSchema), (c) => {
       const input = c.req.valid("json");
       return c.json({ task: service.followup(c.req.valid("param").id, input.prompt, input.images, input.model, input.effort, input.permission) }, 202);
     })
-    .post("/:id/steer", params(IdParamsSchema), jsonBody(SteerSchema), (c) => {
+    .post("/:id/steer", params(IdParamsSchema), attachmentBody(SteerSchema), (c) => {
       const input = c.req.valid("json");
       return c.json(service.steer(c.req.valid("param").id, input.text, input.images, input.model, input.effort, input.permission), 200);
     })

@@ -283,3 +283,42 @@ test("an unresponsive attachment upload still has a bounded deadline and release
     assert.equal(active, 0);
   } finally { mock.timers.reset(); }
 });
+
+test("binary file requests preserve headers, bytes and immutable retry metadata across all attachment routes", async () => {
+  const calls: Array<{ url: string; metadata: any }> = [];
+  const api = createApi({ version: () => "binary-client", observeServerVersion() {}, beginBrowserWork: () => () => {}, onUnauthorized() {} }, async (url, init) => {
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("x-palmagent-version"), "binary-client");
+    assert.equal(headers.has("content-type"), false);
+    assert.equal(init?.cache, "no-store");
+    assert(init?.body instanceof FormData);
+    const metadata = JSON.parse(String(init.body.get("request")));
+    assert.equal(metadata.images[0].data, "");
+    assert.equal(metadata.images[0].binary, true);
+    assert.equal(metadata.images[0].blob, undefined);
+    assert.equal(metadata.images[0].file.name, "original.bin");
+    const blob = init.body.get("attachment-0");
+    assert(blob instanceof Blob);
+    assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), new Uint8Array([0, 255, 128]));
+    calls.push({ url: String(url), metadata });
+    return Response.json({ task: { taskId: "fixture" }, messages: [] });
+  });
+  const image = () => ({ mediaType: "application/octet-stream", data: "", blob: new Blob([new Uint8Array([0, 255, 128])]), file: { name: "original.bin" } });
+  const id = "11111111-1111-4111-8111-111111111111";
+  const first = { repoId: "r", agent: "codex" as const, prompt: "read", images: [image()], clientRequestId: id };
+  const creating = api.createTask(first);
+  first.images[0].file.name = "changed.bin";
+  first.images[0].blob = new Blob(["changed"]);
+  await creating;
+  const message = { mode: "send" as const, text: "read", images: [image()], expectedRunId: null, clientMessageId: id };
+  const sending = api.submitMessage("fixture", message);
+  message.images.length = 0;
+  await sending;
+  await api.createTask({ repoId: "r", agent: "codex", prompt: "legacy", images: [image()] });
+  await api.messageAction("fixture", "message", { action: "save", token: id, version: 1, text: "read", images: [image()] });
+  await api.followup("fixture", { prompt: "read", images: [image()] });
+  await api.steer("fixture", { text: "read", images: [image()] });
+  assert.equal(calls.length, 6);
+  assert.equal(calls[0].metadata.clientRequestId, id);
+  assert.equal(calls[1].metadata.clientMessageId, id);
+});
