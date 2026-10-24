@@ -40,9 +40,14 @@ export async function sqliteToolchain(root) {
       renameSync(join(temporary, 'unpacked'), cache);
     } finally { rmSync(temporary, { recursive: true, force: true }); }
   }
-  const directory = mkdtempSync(join(tmpdir(), 'palmagent-native-cc-'));
+  // cc-rs fingerprints the compiler path. A random wrapper directory would rebuild
+  // bundled SQLite on every otherwise-cached native build.
+  const directory = join(cache, 'wrappers');
+  mkdirSync(directory, { recursive: true });
   for (const target of ['x86_64', 'aarch64']) {
-    writeFileSync(join(directory, target), `#!/bin/sh\nexec ${quote(executable)} cc -target ${target}-linux-musl "$@"\n`, { mode: 0o700 });
+    const wrapper = join(directory, target);
+    const content = `#!/bin/sh\nexec ${quote(executable)} cc -target ${target}-linux-musl "$@"\n`;
+    if (!existsSync(wrapper) || readFileSync(wrapper, "utf8") !== content) writeFileSync(wrapper, content, { mode: 0o700 });
   }
   return {
     environment(target) {
@@ -51,6 +56,6 @@ export async function sqliteToolchain(root) {
         // The wrapper selects Zig's target spelling; cc-rs must not add Rust's triple.
         [`CFLAGS_${key}`]: `-O3 -fPIC -ffunction-sections -fdata-sections -ffile-prefix-map=${root}=. -ffile-prefix-map=${homedir()}=.` };
     },
-    close() { rmSync(directory, { recursive: true, force: true }); },
+    close() { /* Verified compiler and stable wrappers are reusable build cache. */ },
   };
 }
