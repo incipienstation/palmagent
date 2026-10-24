@@ -7,7 +7,7 @@ import type { TaskEventPublisher } from "../../../../kernel/events.js";
 /** Agent routines stay local during this migration stage; scripts have one native writer. */
 export class IndependentRoutines implements RoutineUseCases {
   private timer?: ReturnType<typeof setInterval>;
-  private busy = false;
+  private refreshing?: Promise<void>;
   private closed = false;
   private observed?: string;
   private scripts = 0;
@@ -28,19 +28,29 @@ export class IndependentRoutines implements RoutineUseCases {
     this.timer = undefined;
     await this.local.stop();
   }
-  private async refresh() {
-    if (this.busy || this.closed) return;
-    this.busy = true;
-    try {
-      const status = await this.native.status();
-      if (this.closed) return;
-      this.scripts = status.activeScripts;
-      const key = `${status.instance}:${status.revision}`;
-      if (key !== this.observed) {
-        this.observed = key;
-        this.events.emitReadChange({ type: "read-change", routines: true });
-      }
-    } finally { this.busy = false; }
+  private refresh(): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    this.refreshing ??= this.readStatus().finally(() => { this.refreshing = undefined; });
+    return this.refreshing;
+  }
+  private async readStatus() {
+    const status = await this.native.status();
+    if (this.closed) return;
+    this.scripts = status.activeScripts;
+    const key = `${status.instance}:${status.revision}`;
+    if (key !== this.observed) {
+      this.observed = key;
+      this.events.emitReadChange({ type: "read-change", routines: true });
+    }
+  }
+  private async changed<T>(operation: Promise<T>): Promise<T> {
+    const result = await operation;
+    // A poll started before this mutation may still contain the previous count.
+    // Settle it first, then refresh so health and read invalidations reflect admission.
+    await this.refreshing?.catch(() => {});
+    await this.refresh().catch(() => {});
+    // A failed observation must not turn a confirmed mutation into a retryable failure.
+    return result;
   }
   private script(id: string) { return this.local.get(id).kind === "script"; }
   context() { return this.local.context(); }
@@ -49,10 +59,10 @@ export class IndependentRoutines implements RoutineUseCases {
     return [...this.local.list().filter(r => r.kind !== "script"), ...scripts].sort((a, b) => a.createdAt - b.createdAt);
   }
   get(id: string) { return this.script(id) ? this.native.get(id) : this.local.get(id); }
-  create(input: CreateRoutineRequest) { return input.kind === "script" ? this.native.create(input) : this.local.create(input); }
-  update(id: string, input: UpdateRoutineRequest) { return this.script(id) ? this.native.update(id, input) : this.local.update(id, input); }
-  remove(id: string) { return this.script(id) ? this.native.remove(id) : this.local.remove(id); }
-  runNow(id: string) { return this.script(id) ? this.native.run(id) : this.local.runNow(id); }
-  stopRun(id: string) { return this.script(id) ? this.native.stop(id) : this.local.stopRun(id); }
+  create(input: CreateRoutineRequest) { return input.kind === "script" ? this.changed(this.native.create(input)) : this.local.create(input); }
+  update(id: string, input: UpdateRoutineRequest) { return this.script(id) ? this.changed(this.native.update(id, input)) : this.local.update(id, input); }
+  remove(id: string) { return this.script(id) ? this.changed(this.native.remove(id)) : this.local.remove(id); }
+  runNow(id: string) { return this.script(id) ? this.changed(this.native.run(id)) : this.local.runNow(id); }
+  stopRun(id: string) { return this.script(id) ? this.changed(this.native.stop(id)) : this.local.stopRun(id); }
   runs(id: string, limit?: number) { return this.script(id) ? this.native.runs(id) : this.local.runs(id, limit); }
 }
