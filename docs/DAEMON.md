@@ -195,7 +195,9 @@ application. Source and legacy installations keep their existing local scheduler
 
 The web initializes product migrations, then asks the daemon to start the application
 service for the selected release. A private Unix HTTP socket connects the web's routine
-adapter to the single native owner. Script and agent rows keep the existing SQLite schema;
+write adapter to the single native owner. Web reads reuse the existing SQLite projection,
+avoiding a socket round trip and duplicate reads when combining script and agent rows.
+Script and agent rows keep the existing SQLite schema;
 the native repository only writes script rows. Admission and cadence changes commit in
 one transaction before launching work. Unconfirmed launch requests are inspected, never
 replayed. Completed results retain their admission slot until persistence and acknowledgement

@@ -182,6 +182,7 @@ Compare the same routine workload across releases, and measure the total partici
 processes when assessing resource savings. Do not infer a Rust speedup from daemon graphs.
 
 The loopback benchmark also accepts `--scenario routines` and checks the routine count
-throughout each run. A routine list includes the native socket round trip and the Node
-response projection. This is a useful migration regression measure, but it does not measure
+throughout each run. Routine lists retain their SQLite read projection in the web; native ownership applies
+to writes, scheduling and completion persistence. This is a useful regression measure
+for the retained read path, but it does not measure
 provider execution or prove that script commands themselves became faster.

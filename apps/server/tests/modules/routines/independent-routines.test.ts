@@ -48,3 +48,16 @@ test("a failed status observation does not reject or replay an accepted mutation
   assert.equal(f.starts, 1);
   await f.service.stop();
 });
+
+
+test("script reads reuse the persisted projection without a native round trip", () => {
+  const runs = [{ id: 1, status: "succeeded" }];
+  let limit: number | undefined;
+  const local = { get() { return routine; }, list() { return [routine]; }, runs(_id: string, value?: number) { limit = value; return runs; } } as unknown as RoutineService;
+  const native = new Proxy({}, { get() { throw Error("Reads must not depend on native availability"); } }) as ScriptRuntime;
+  const service = new IndependentRoutines(local, native, { emitReadChange() {} });
+  assert.deepEqual(service.list(), [routine]);
+  assert.equal(service.get(routine.id), routine);
+  assert.equal(service.runs(routine.id, 7), runs);
+  assert.equal(limit, 7);
+});

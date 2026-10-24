@@ -54,15 +54,14 @@ export class IndependentRoutines implements RoutineUseCases {
   }
   private script(id: string) { return this.local.get(id).kind === "script"; }
   context() { return this.local.context(); }
-  async list() {
-    const scripts = await this.native.list();
-    return [...this.local.list().filter(r => r.kind !== "script"), ...scripts].sort((a, b) => a.createdAt - b.createdAt);
-  }
-  get(id: string) { return this.script(id) ? this.native.get(id) : this.local.get(id); }
+  // Both owners commit to the same schema. Reuse the existing read projection;
+  // fetching scripts over IPC and rereading them locally duplicates the hot path.
+  list() { return this.local.list(); }
+  get(id: string) { return this.local.get(id); }
   create(input: CreateRoutineRequest) { return input.kind === "script" ? this.changed(this.native.create(input)) : this.local.create(input); }
   update(id: string, input: UpdateRoutineRequest) { return this.script(id) ? this.changed(this.native.update(id, input)) : this.local.update(id, input); }
   remove(id: string) { return this.script(id) ? this.changed(this.native.remove(id)) : this.local.remove(id); }
   runNow(id: string) { return this.script(id) ? this.changed(this.native.run(id)) : this.local.runNow(id); }
   stopRun(id: string) { return this.script(id) ? this.changed(this.native.stop(id)) : this.local.stopRun(id); }
-  runs(id: string, limit?: number) { return this.script(id) ? this.native.runs(id) : this.local.runs(id, limit); }
+  runs(id: string, limit?: number) { return this.local.runs(id, limit); }
 }
