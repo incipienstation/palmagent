@@ -1,5 +1,5 @@
 import * as React from "react";
-import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
+import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 

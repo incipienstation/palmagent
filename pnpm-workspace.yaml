@@ -13,3 +13,7 @@ allowBuilds:
 
 patchedDependencies:
   react-virtuoso@4.18.13: patches/react-virtuoso@4.18.13.patch
+
+# Vaul drawers and Radix overlays must share the toast dismissal context.
+overrides:
+  "vaul>@radix-ui/react-dialog": "^1.3.1"
