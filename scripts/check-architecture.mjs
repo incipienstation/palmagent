@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,3 +76,5 @@ if (failures.length) {
   console.error(`Architecture boundary check failed (${failures.length}):\n${failures.map(f => `- ${f}`).join("\n")}`);
   process.exitCode = 1;
 } else console.log(`Declared architecture boundaries passed (${inspected} source files inspected).`);
+
+if (!process.exitCode) execFileSync("cargo", ["test", "-p", "palmagent-runtime", "--test", "architecture", "--locked"], { cwd: root, stdio: "inherit" });

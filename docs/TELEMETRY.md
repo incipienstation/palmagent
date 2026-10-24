@@ -171,3 +171,18 @@ expires after ten minutes. There is no disk spool and shutdown does not wait to 
 The daemon retains at most 32 native streams and resets its epoch every ten minutes.
 Receiver outages and process restarts can lose measurements. Monitor collector rejection and
 capacity panels before interpreting a change in observed sample volume as a product change.
+
+### Script-runtime migration boundary
+
+The first native application slice moves script routines while retaining the public Node
+HTTP adapter and Node invocation hosts. Existing HTTP metrics remain end-to-end web
+measurements and retain their Node label. The new application service does not yet export
+its own telemetry series; daemon metrics do not include its CPU, memory or use-case time.
+Compare the same routine workload across releases, and measure the total participating
+processes when assessing resource savings. Do not infer a Rust speedup from daemon graphs.
+
+The loopback benchmark also accepts `--scenario routines` and checks the routine count
+throughout each run. Routine lists retain their SQLite read projection in the web; native ownership applies
+to writes, scheduling and completion persistence. This is a useful regression measure
+for the retained read path, but it does not measure
+provider execution or prove that script commands themselves became faster.

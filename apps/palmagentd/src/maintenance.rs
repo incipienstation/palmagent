@@ -27,6 +27,7 @@ struct Log {
 struct Sweep {
     directory: ReadDir,
     reading_logs: bool,
+    reading_services: bool,
     seen: BTreeSet<String>,
     logs: Vec<Log>,
     bytes: u64,
@@ -113,9 +114,11 @@ impl Maintenance {
                 return Ok(());
             }
             storage::private_directory(&storage::state_directory(data).join("logs"))?;
+            storage::private_directory(&storage::state_directory(data).join("services"))?;
             self.sweep = Some(Sweep {
                 directory: fs::read_dir(storage::state_directory(data).join("hosts"))?,
                 reading_logs: false,
+                reading_services: false,
                 seen: BTreeSet::new(),
                 logs: vec![],
                 bytes: 0,
@@ -125,6 +128,12 @@ impl Maintenance {
         let sweep = self.sweep.as_mut().expect("sweep was initialized");
         for _ in 0..BATCH {
             let Some(entry) = sweep.directory.next() else {
+                if !sweep.reading_services && !sweep.reading_logs {
+                    sweep.directory =
+                        fs::read_dir(storage::state_directory(data).join("services"))?;
+                    sweep.reading_services = true;
+                    continue;
+                }
                 if !sweep.reading_logs {
                     sweep.directory = fs::read_dir(storage::state_directory(data).join("logs"))?;
                     sweep.reading_logs = true;
@@ -163,6 +172,19 @@ impl Maintenance {
                 continue;
             }
             if path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
+            // Internal service records stay separate from the protocol-1 invocation inventory.
+            // Older daemons/clients can still inspect retained invocations after rollback.
+            if sweep.reading_services {
+                match maintain_host(data, root, &path) {
+                    Ok(record) => {
+                        if collect_logs(data, &path, &record, sweep).is_err() {
+                            sweep.errors += 1;
+                        }
+                    }
+                    Err(_) => sweep.errors += 1,
+                }
                 continue;
             }
             let key = path

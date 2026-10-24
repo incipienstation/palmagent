@@ -138,6 +138,13 @@ export async function doctor(cfg: InstallConfig, verifyActiveExecutionCompatibil
       const healthy = status.web?.alive && (!lifecycle || lifecycle.supervision === "guarded" && ["ready", "running"].includes(lifecycle.phase));
       checks.push({ name: "palmagentd", level: status.isolation === "cgroup" && healthy ? "ok" : "fail",
         detail: `version ${status.version}; ${status.isolation} isolation; web ${lifecycle?.phase ?? "readiness unknown"}` });
+      if (status.applicationRequired) {
+        const application = status.application;
+        const ready = application?.alive && application.lifecycle?.supervision === "guarded" && application.lifecycle.readiness === "ready";
+        checks.push({ name: "application runtime", level: ready ? "ok" : "fail",
+          detail: `script scheduler ${application?.lifecycle?.phase ?? "not started"}`,
+          fix: "inspect palmagent daemon status and private application host logs" });
+      }
       if (status.inventory) {
         const inventory = status.inventory;
         checks.push({ name: "daemon hosts", level: inventory.checkedAt === null || inventory.orphaned || inventory.unconfirmed || inventory.inspectionErrors ? "warn" : "ok",

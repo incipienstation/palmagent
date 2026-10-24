@@ -7,13 +7,13 @@ export interface RoutineUseCases {
   readonly updateBlockingScriptCount?: number;
   start(): void;
   stop(): Promise<void>;
-  create(req: CreateRoutineRequest): Routine;
+  create(req: CreateRoutineRequest): Routine | Promise<Routine>;
   context(): { repos: Repo[]; timezone: string; };
-  list(): Routine[];
-  get(id: string): Routine;
-  update(id: string, req: UpdateRoutineRequest): Routine;
-  remove(id: string): Routine;
-  runNow(id: string): Routine;
+  list(): Routine[] | Promise<Routine[]>;
+  get(id: string): Routine | Promise<Routine>;
+  update(id: string, req: UpdateRoutineRequest): Routine | Promise<Routine>;
+  remove(id: string): Routine | Promise<Routine>;
+  runNow(id: string): Routine | Promise<Routine>;
   stopRun(id: string): Promise<Routine>;
-  runs(id: string, limit?: number): RoutineRun[];
+  runs(id: string, limit?: number): RoutineRun[] | Promise<RoutineRun[]>;
 }

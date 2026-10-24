@@ -36,16 +36,20 @@ export class RoutineService implements RoutineUseCases {
     private readonly ids: IdentifierGenerator,
     private readonly scriptRunner: RoutineScriptRunner,
     private readonly events: Pick<TaskEventPublisher, "emitReadChange">,
+    private readonly independentScripts = false,
   ) {}
 
   start(): void {
     if (this.timer) return;
     this.stopping = false;
-    if (this.scriptRunner.recover) {
+    if (this.independentScripts) {
+      // The native owner reconciles retained script hosts, even while this web process is down.
+    } else if (this.scriptRunner.recover) {
       for (const run of this.db.runningRoutineRuns()) this.track(run.id, run.routineId, this.scriptRunner.recover(run), run.worktreePath);
     } else this.db.interruptRoutineRuns();
     const now = Date.now();
     for (const r of this.db.listRoutines()) {
+      if (this.independentScripts && r.kind === "script") continue;
       if (!r.enabled || r.preset === "manual" || !r.schedule) continue;
       if (!r.nextRunAt || r.nextRunAt <= now) {
         const skipped = !!r.nextRunAt && r.nextRunAt <= now;
@@ -86,6 +90,7 @@ export class RoutineService implements RoutineUseCases {
     if (this.tasks.updating) return;
     const now = Date.now();
     for (const r of this.db.listRoutines()) {
+      if (this.independentScripts && r.kind === "script") continue;
       if (!r.enabled || !r.nextRunAt || r.nextRunAt > now) continue;
       this.fire(r, now);
     }

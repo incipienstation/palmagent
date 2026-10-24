@@ -11,7 +11,7 @@ import { sessionSocket } from "../modules/tasks/adapters/inbound/session-control
 
 // This Unix socket is a host-owner capability, separate from browser passkeys.
 // Exposes local-session dispatch and terminal management to the installation owner.
-export async function startSessionControl(dataDir: string, service: TaskService, terminals?: import("../modules/terminals/application/use-cases/terminal-service.js").TerminalService, routines?: import("../modules/routines/application/use-cases/routine-service.js").RoutineService) {
+export async function startSessionControl(dataDir: string, service: TaskService, terminals?: import("../modules/terminals/application/use-cases/terminal-service.js").TerminalService, routines?: import("../modules/routines/api.js").RoutineUseCases) {
   ensurePrivateParent(dataDir);
   const socket = sessionSocket(dataDir);
   try {

@@ -139,7 +139,11 @@ pub fn host_path(data: &Path, kind: Kind, id: &str) -> Result<PathBuf> {
         "Invalid host identity"
     );
     Ok(state_directory(data)
-        .join("hosts")
+        .join(if kind == Kind::Application {
+            "services"
+        } else {
+            "hosts"
+        })
         .join(format!("{}-{id}.json", kind.name())))
 }
 

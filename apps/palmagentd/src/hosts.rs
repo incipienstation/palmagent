@@ -158,7 +158,7 @@ pub fn launch(
     } else {
         (config.release.clone(), config.node.clone())
     };
-    let readiness_required = readiness_required(&release)?;
+    let readiness_required = kind == Kind::Application || readiness_required(&release)?;
     let mut record = HostRecord {
         protocol: PROTOCOL,
         kind,
@@ -301,15 +301,42 @@ pub fn run(data: &Path, kind: Kind, id: &str) -> Result<()> {
 fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> Result<()> {
     storage::retained(&record.release, &data.join("releases"))?;
     storage::retained(&record.node, &data.join("runtimes"))?;
-    let mut command = Command::new(&record.node);
+    let mut command = if record.kind == Kind::Application {
+        let platform = if cfg!(target_arch = "aarch64") {
+            "linux-arm64"
+        } else {
+            "linux-x64"
+        };
+        Command::new(
+            record
+                .release
+                .join("daemon")
+                .join(platform)
+                .join("palmagent-runtime"),
+        )
+    } else {
+        Command::new(&record.node)
+    };
     let entry = match record.kind {
         Kind::Execution => "execution-host.js",
         Kind::Terminal => "terminal-host.js",
         Kind::Routine => "routine-host.js",
         Kind::Web => "server.js",
         Kind::Update => "cli.js",
+        Kind::Application => "",
     };
-    command.arg(record.release.join(entry));
+    if record.kind == Kind::Application {
+        command
+            .arg("serve")
+            .arg("--data-dir")
+            .arg(data)
+            .arg("--release")
+            .arg(&record.release)
+            .arg("--node")
+            .arg(&record.node);
+    } else {
+        command.arg(record.release.join(entry));
+    }
     if matches!(
         record.kind,
         Kind::Execution | Kind::Terminal | Kind::Routine
@@ -407,5 +434,8 @@ fn stop_reason(data: &Path, kind: Kind, id: &str, graceful: bool, reason: &str) 
 
 /// A readiness deadline applies only to the replaceable web service, never to user work.
 pub fn stop_unready(data: &Path, id: &str) -> Result<()> {
-    stop_reason(data, Kind::Web, id, true, "readiness_timeout")
+    stop_unready_kind(data, Kind::Web, id)
+}
+pub fn stop_unready_kind(data: &Path, kind: Kind, id: &str) -> Result<()> {
+    stop_reason(data, kind, id, true, "readiness_timeout")
 }
