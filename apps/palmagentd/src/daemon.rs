@@ -61,6 +61,97 @@ fn current_web(data: &Path) -> Result<Option<String>> {
     Ok(Some(id))
 }
 
+fn current_application(data: &Path) -> Result<Option<String>> {
+    let path = storage::state_directory(data).join("application.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let id: String = storage::read(&path)?;
+    storage::host_path(data, Kind::Application, &id)?;
+    Ok(Some(id))
+}
+fn application_supported(config: &Configuration) -> Result<bool> {
+    let path = config.release.join("daemon/manifest.json");
+    if !path.exists() {
+        return Ok(false);
+    }
+    ensure!(
+        fs::metadata(&path)?.len() <= 65_536,
+        "Daemon manifest is too large"
+    );
+    let manifest: Value = serde_json::from_slice(&fs::read(path)?)?;
+    Ok(manifest["applicationRuntime"] == 1)
+}
+fn application_enabled(data: &Path, config: &Configuration) -> Result<bool> {
+    let path = storage::state_directory(data).join("application-enabled.json");
+    if !path.exists() || !application_supported(config)? {
+        return Ok(false);
+    }
+    let release: Option<std::path::PathBuf> = storage::read(&path)?;
+    Ok(release.as_ref() == Some(&config.release))
+}
+fn disable_application(data: &Path) -> Result<()> {
+    storage::atomic(
+        &storage::state_directory(data).join("application-enabled.json"),
+        &Value::Null,
+    )
+}
+fn start_application(
+    data: &Path,
+    config: &Configuration,
+    root: Option<&Path>,
+) -> Result<Operation> {
+    if let Some(id) = current_application(data)? {
+        let state = hosts::inspect(data, Kind::Application, &id)?;
+        if state["alive"] == true {
+            if state["lifecycle"]["phase"] == "starting" {
+                return Ok(Operation::Launch(
+                    Kind::Application,
+                    id,
+                    Instant::now() + Kind::Application.launch_timeout(),
+                ));
+            }
+            return Ok(Operation::Reply(state, None));
+        }
+    }
+    let id = storage::unique_id()?;
+    storage::atomic(
+        &storage::state_directory(data).join("application.json"),
+        &id,
+    )?;
+    launch(data, config, root, Kind::Application, id)
+}
+fn stop_application(data: &Path, after: AfterStop) -> Result<Option<Operation>> {
+    let Some(id) = current_application(data)? else {
+        return Ok(None);
+    };
+    if hosts::inspect(data, Kind::Application, &id)?["alive"] == false {
+        return Ok(None);
+    }
+    hosts::stop(data, Kind::Application, &id, true)?;
+    Ok(Some(Operation::Stop(
+        Kind::Application,
+        id,
+        Instant::now() + Duration::from_secs(15),
+        after,
+    )))
+}
+fn activate(
+    data: &Path,
+    config: &mut Configuration,
+    root: Option<&Path>,
+    candidate: Configuration,
+) -> Result<Operation> {
+    if candidate.release != config.release || !application_supported(&candidate)? {
+        disable_application(data)?;
+        if let Some(operation) = stop_application(data, AfterStop::Activate(candidate.clone()))? {
+            return Ok(operation);
+        }
+    }
+    *config = candidate;
+    start_web(data, config, root)
+}
+
 fn start_web(data: &Path, config: &Configuration, root: Option<&Path>) -> Result<Operation> {
     if let Some(id) = current_web(data)? {
         let state = hosts::inspect(data, Kind::Web, &id)?;
@@ -102,6 +193,8 @@ enum AfterStop {
     Inspect,
     Restart(Configuration),
     Shutdown,
+    Activate(Configuration),
+    Replace(String),
 }
 
 enum Operation {
@@ -114,7 +207,8 @@ impl Operation {
     fn owns_web(&self) -> bool {
         matches!(
             self,
-            Self::Launch(Kind::Web, ..) | Self::Stop(Kind::Web, ..)
+            Self::Launch(Kind::Web | Kind::Application, ..)
+                | Self::Stop(Kind::Web | Kind::Application, ..)
         )
     }
 
@@ -141,11 +235,29 @@ impl Operation {
                     match after {
                         AfterStop::Inspect => return Ok(Some((state, None))),
                         AfterStop::Shutdown => {
+                            if *kind != Kind::Application {
+                                disable_application(data)?;
+                                if let Some(operation) =
+                                    stop_application(data, AfterStop::Shutdown)?
+                                {
+                                    *self = operation;
+                                    return Ok(None);
+                                }
+                            }
                             return Ok(Some((json!({ "stopped": true }), Some(Exit::Stop))));
                         }
                         AfterStop::Restart(candidate) => {
+                            *self = activate(data, config, root, candidate.clone())?;
+                        }
+                        AfterStop::Activate(candidate) => {
                             *config = candidate.clone();
                             *self = start_web(data, config, root)?;
+                        }
+                        AfterStop::Replace(instance) => {
+                            return Ok(Some((
+                                json!({"replacing":true,"instance":instance}),
+                                Some(Exit::Replace),
+                            )));
                         }
                     }
                 } else {
@@ -170,6 +282,10 @@ fn stop_web(data: &Path, after: AfterStop) -> Result<Operation> {
             after,
         ))
     } else {
+        disable_application(data)?;
+        if let Some(operation) = stop_application(data, AfterStop::Shutdown)? {
+            return Ok(operation);
+        }
         Ok(Operation::Reply(
             json!({ "stopped": true }),
             Some(Exit::Stop),
@@ -189,7 +305,8 @@ fn begin(
     match request {
         Request::Status => Ok(Operation::Reply(
             json!({ "version": VERSION, "sourceCommit": SOURCE_COMMIT, "pid": std::process::id(), "instance": instance,
-                "protocol": PROTOCOL, "isolation": config.isolation, "inventory": maintenance.status(), "recovery": recovery.status(), "web": current_web(data)?.map(|id| hosts::inspect(data, Kind::Web, &id)).transpose()? }),
+                "protocol": PROTOCOL, "isolation": config.isolation, "inventory": maintenance.status(), "recovery": recovery.status(), "web": current_web(data)?.map(|id| hosts::inspect(data, Kind::Web, &id)).transpose()?,
+                "applicationRuntime": 1, "applicationRequired": application_supported(config)?, "application":current_application(data)?.map(|id| hosts::inspect(data, Kind::Application, &id)).transpose()? }),
             None,
         )),
         Request::List { after } => Ok(Operation::Reply(maintenance.list(after.as_deref())?, None)),
@@ -223,8 +340,7 @@ fn begin(
                 "Changing isolation requires an idle setup"
             );
             if current_web(data)?.is_none() {
-                *config = candidate;
-                start_web(data, config, root)
+                activate(data, config, root, candidate)
             } else {
                 stop_web(data, AfterStop::Restart(candidate))
             }
@@ -235,12 +351,40 @@ fn begin(
                 candidate.isolation == config.isolation,
                 "Changing isolation requires an idle setup"
             );
+            // Stop the old product scheduler before changing release ownership, including
+            // rollback to daemons that predate this service. Invocation hosts stay alive.
+            if candidate.release != config.release || !application_supported(&candidate)? {
+                disable_application(data)?;
+                if let Some(operation) =
+                    stop_application(data, AfterStop::Replace(instance.to_owned()))?
+                {
+                    return Ok(operation);
+                }
+            }
             Ok(Operation::Reply(
                 json!({ "replacing": true, "instance": instance }),
                 Some(Exit::Replace),
             ))
         }
         Request::StartUpdate => launch(data, config, root, Kind::Update, storage::unique_id()?),
+        Request::StartApplication { release } => {
+            ensure!(
+                release == config.release && application_supported(config)?,
+                "Incompatible application runtime"
+            );
+            storage::atomic(
+                &storage::state_directory(data).join("application-enabled.json"),
+                &config.release,
+            )?;
+            // Web bootstrap requests this while its own readiness operation is pending.
+            // Admit once and let the caller observe readiness without nesting lifecycle waits.
+            start_application(data, config, root)?;
+            let id = current_application(data)?.context("Missing application reservation")?;
+            Ok(Operation::Reply(
+                hosts::inspect(data, Kind::Application, &id)?,
+                None,
+            ))
+        }
         Request::Stop => {
             for entry in fs::read_dir(storage::state_directory(data).join("hosts"))? {
                 let path = entry?.path();
@@ -269,6 +413,7 @@ pub fn serve(data: &Path) -> Result<()> {
     let directory = storage::state_directory(data);
     storage::private_directory(&directory)?;
     storage::private_directory(&directory.join("hosts"))?;
+    storage::private_directory(&directory.join("services"))?;
     let _lock = storage::lock(&directory.join("lifecycle.lock"))?;
     NativePlatform::subreaper()?;
     let mut config = storage::configuration(data)?;
@@ -290,6 +435,7 @@ pub fn serve(data: &Path) -> Result<()> {
     let mut measurements = std::collections::BTreeMap::new();
     let mut maintenance = Maintenance::new();
     let mut recovery = Recovery::load(data)?;
+    let mut application_recovery = Recovery::load_service(data, "application")?;
     let mut last_recovery = Instant::now() - Duration::from_secs(1);
     let mut connections: Vec<Connection> = Vec::new();
     let mut next_id = 0;
@@ -341,7 +487,10 @@ pub fn serve(data: &Path) -> Result<()> {
                 connection.request(),
                 Some(Request::Status | Request::Inspect { .. } | Request::List { .. })
             );
-            if !read_only && (pending.is_some() || exiting.is_some()) {
+            let web_bootstrap =
+                matches!(connection.request(), Some(Request::StartApplication { .. }))
+                    && matches!(&pending, Some((_, Operation::Launch(Kind::Web, ..))));
+            if !read_only && ((!web_bootstrap && pending.is_some()) || exiting.is_some()) {
                 continue;
             }
             if let Some(request) = connection.take_request() {
@@ -389,6 +538,38 @@ pub fn serve(data: &Path) -> Result<()> {
                 .is_some_and(|(_, operation)| operation.owns_web())
             && last_recovery.elapsed() >= Duration::from_millis(250)
         {
+            let recover = (|| -> Result<()> {
+                if application_enabled(data, &config)? {
+                    let id = current_application(data)?;
+                    let state = id
+                        .as_ref()
+                        .map(|id| hosts::inspect(data, Kind::Application, id))
+                        .transpose()?
+                        .unwrap_or(Value::Null);
+                    match application_recovery.tick_service(
+                        data,
+                        "application",
+                        id.as_deref(),
+                        &state,
+                    )? {
+                        Action::Start => {
+                            start_application(data, &config, root.as_deref())?;
+                        }
+                        Action::StopUnready => {
+                            if let Some(id) = id {
+                                hosts::stop_unready_kind(data, Kind::Application, &id)?;
+                            }
+                        }
+                        Action::None => {}
+                    }
+                }
+                Ok(())
+            })();
+            if let Err(error) = recover
+                && let Ok(mut log) = storage::log_file(data, "supervisor")
+            {
+                let _ = writeln!(log, "Application recovery deferred: {error}");
+            }
             let recover = (|| -> Result<()> {
                 let id = current_web(data)?;
                 let state = id

@@ -5,6 +5,7 @@ import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sqliteToolchain } from './lib/native-toolchain.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const run = (program, args) => execFileSync(program, args, { cwd: root, encoding: 'utf8' }).trim();
@@ -17,9 +18,12 @@ const linker = join(sysroot, 'lib', 'rustlib', host, 'bin', process.platform ===
 const targets = { 'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl' };
 const output = join(root, 'build', 'daemon');
 const artifacts = {};
+const applicationArtifacts = {};
+const toolchain = await sqliteToolchain(root);
+try {
 for (const [platform, target] of Object.entries(targets)) {
-  execFileSync('cargo', ['build', '--release', '--locked', '--package', 'palmagentd', '--target', target], {
-    cwd: root, stdio: 'inherit', env: { ...process.env,
+  execFileSync('cargo', ['build', '--release', '--locked', '--package', 'palmagentd', '--package', 'palmagent-runtime', '--target', target], {
+    cwd: root, stdio: 'inherit', env: { ...process.env, ...toolchain.environment(target),
       PALMAGENT_PRODUCT_VERSION: version, PALMAGENT_SOURCE_COMMIT: sourceCommit,
       CARGO_TARGET_DIR: join(root, 'target'),
       [`CARGO_TARGET_${target.replaceAll('-', '_').toUpperCase()}_LINKER`]: linker,
@@ -33,5 +37,10 @@ for (const [platform, target] of Object.entries(targets)) {
   copyFileSync(join(root, 'target', target, 'release', 'palmagentd'), binary);
   chmodSync(binary, 0o755);
   artifacts[platform] = createHash('sha256').update(readFileSync(binary)).digest('hex');
+  const application = join(directory, 'palmagent-runtime');
+  copyFileSync(join(root, 'target', target, 'release', 'palmagent-runtime'), application);
+  chmodSync(application, 0o755);
+  applicationArtifacts[platform] = createHash('sha256').update(readFileSync(application)).digest('hex');
 }
-writeFileSync(join(output, 'manifest.json'), JSON.stringify({ protocol: 1, hostReadiness: 1, version, sourceCommit, artifacts }, null, 2) + '\n');
+} finally { toolchain.close(); }
+writeFileSync(join(output, 'manifest.json'), JSON.stringify({ protocol: 1, hostReadiness: 1, applicationRuntime: 1, version, sourceCommit, artifacts, applicationArtifacts }, null, 2) + '\n');

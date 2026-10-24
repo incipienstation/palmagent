@@ -304,3 +304,22 @@ test("removal refuses an unmanaged user service before stopping the daemon", asy
   assert(!existsSync(f.calls));
   assert(!existsSync(f.privileged));
 });
+
+
+test("application artifacts are verified before selecting a native configuration", t => {
+  const f = fixture(t);
+  const name = `${process.platform}-${process.arch}`;
+  const manifestPath = join(f.release, "daemon/manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const application = join(f.release, `daemon/${name}/palmagent-runtime`);
+  writeFileSync(application, "fixture application");
+  manifest.applicationRuntime = 1;
+  manifest.applicationArtifacts = { [name]: createHash("sha256").update(readFileSync(application)).digest("hex") };
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.equal(daemonBinary(f.release), f.binary);
+  writeFileSync(application, "corrupt application");
+  assert.throws(() => daemonBinary(f.release), /Application runtime artifact integrity mismatch/);
+  manifest.applicationRuntime = 2;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.throws(() => daemonBinary(f.release), /application runtime/i);
+});

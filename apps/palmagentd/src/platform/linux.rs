@@ -164,6 +164,7 @@ impl ProcessIsolation for Linux {
             Kind::Routine,
             Kind::Web,
             Kind::Update,
+            Kind::Application,
         ] {
             let group = root.join(kind.directory());
             fs::create_dir_all(&group)?;
@@ -188,7 +189,7 @@ impl ProcessIsolation for Linux {
                             .context("Invalid CPU quota")?
                     ),
                 )?;
-            } else if kind == Kind::Web {
+            } else if matches!(kind, Kind::Web | Kind::Application) {
                 fs::write(group.join("pids.max"), config.limits.web_tasks.to_string())?;
             }
             fs::write(group.join("cgroup.subtree_control"), "+memory +cpu +pids")?;

@@ -57,6 +57,9 @@ For a CLI that advertises `daemon hosts` in `daemon --help`, inspect
 `<cli> daemon status --data-dir <data-dir>` and
 `<cli> daemon hosts --data-dir <data-dir>`; follow a non-null `next` cursor with
 `--after <cursor>`. Older daemons may require an update before inventory is available.
+When status reports `applicationRequired: true`, also inspect the `application` readiness
+and private application host logs. This service owns script scheduling and result
+persistence independently of the web; it is intentionally outside the legacy host list.
 Treat inventory as incremental: an initial scan or inspection error is not proof of
 idle state. Distinguish `lifecycle.phase` readiness from `alive`, and inspect
 `lifecycle.supervision`, failure reason, recovery retry deadline and log-budget warnings.

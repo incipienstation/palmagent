@@ -26,7 +26,10 @@ pub enum Action {
 }
 impl Recovery {
     pub fn load(data: &Path) -> Result<Self> {
-        let path = storage::state_directory(data).join("web-recovery.json");
+        Self::load_service(data, "web")
+    }
+    pub fn load_service(data: &Path, service: &str) -> Result<Self> {
+        let path = storage::state_directory(data).join(format!("{service}-recovery.json"));
         if path.exists() {
             storage::read(&path)
         } else {
@@ -38,11 +41,20 @@ impl Recovery {
             "stableSince": self.stable_since, "lastFailureAt": self.last_failure_at, "reason": self.reason })
     }
     pub fn tick(&mut self, data: &Path, id: Option<&str>, state: &Value) -> Result<Action> {
+        self.tick_service(data, "web", id, state)
+    }
+    pub fn tick_service(
+        &mut self,
+        data: &Path,
+        service: &str,
+        id: Option<&str>,
+        state: &Value,
+    ) -> Result<Action> {
         let before = serde_json::to_value(&*self)?;
         let action = self.advance(storage::now(), id, state);
         if serde_json::to_value(&*self)? != before {
             storage::atomic(
-                &storage::state_directory(data).join("web-recovery.json"),
+                &storage::state_directory(data).join(format!("{service}-recovery.json")),
                 self,
             )?;
         }
@@ -86,7 +98,7 @@ impl Recovery {
             self.reason = Some(
                 state["lifecycle"]["reason"]
                     .as_str()
-                    .unwrap_or("web_exited")
+                    .unwrap_or("host_exited")
                     .to_owned(),
             );
         }

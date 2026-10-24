@@ -46,6 +46,7 @@ pub enum Kind {
     Routine,
     Web,
     Update,
+    Application,
 }
 
 impl Kind {
@@ -63,6 +64,7 @@ impl Kind {
             Self::Routine => "routine",
             Self::Web => "web",
             Self::Update => "update",
+            Self::Application => "application",
         }
     }
 
@@ -73,6 +75,7 @@ impl Kind {
             Self::Routine => "routines",
             Self::Web => "web",
             Self::Update => "updates",
+            Self::Application => "application",
         }
     }
 }
@@ -88,6 +91,7 @@ pub enum Request {
     RestartWeb,
     Replace,
     StartUpdate,
+    StartApplication { release: PathBuf },
     Stop,
 }
 

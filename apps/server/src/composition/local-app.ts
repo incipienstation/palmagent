@@ -3,7 +3,7 @@ import { z } from "zod";
 import { params } from "../platform/http/input.js";
 import { ApplicationError } from "../kernel/errors.js";
 import type { TerminalService } from "../modules/terminals/application/use-cases/terminal-service.js";
-import type { RoutineService } from "../modules/routines/application/use-cases/routine-service.js";
+import type { RoutineUseCases } from "../modules/routines/api.js";
 import { routineRoutes } from "../modules/routines/adapters/inbound/http.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -13,7 +13,7 @@ import { handleError } from "../platform/http/errors.js";
 import type { TaskService } from "../modules/tasks/application/use-cases/task-service.js";
 
 // A separate app: never mount this capability on the browser's TCP listener.
-export function createSessionApp(service: Pick<TaskService, "dispatchSession">, terminals?: TerminalService, routines?: RoutineService) {
+export function createSessionApp(service: Pick<TaskService, "dispatchSession">, terminals?: TerminalService, routines?: RoutineUseCases) {
   const app = new Hono();
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));

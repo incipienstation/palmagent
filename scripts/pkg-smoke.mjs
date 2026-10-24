@@ -49,13 +49,19 @@ try {
   const installed = join(scratch, "node_modules", pkg.name);
   const daemonManifest = JSON.parse(readFileSync(join(installed, "daemon/manifest.json"), "utf8"));
   assert.equal(daemonManifest.protocol, 1);
+  assert.equal(daemonManifest.applicationRuntime, 1);
   assert.equal(daemonManifest.sourceCommit, buildInfo.sourceCommit);
   for (const platform of ["linux-x64", "linux-arm64"]) {
     const bytes = readFileSync(join(installed, "daemon", platform, "palmagentd"));
     assert.equal(createHash("sha256").update(bytes).digest("hex"), daemonManifest.artifacts[platform]);
+    const application = readFileSync(join(installed, "daemon", platform, "palmagent-runtime"));
+    assert.equal(createHash("sha256").update(application).digest("hex"), daemonManifest.applicationArtifacts[platform]);
   }
   const daemon = join(installed, "daemon", `${process.platform}-${process.arch}`, "palmagentd");
   assert.deepEqual(JSON.parse(execFileSync(daemon, ["version"], { env, encoding: "utf8" })),
+    { version: pkg.version, sourceCommit: buildInfo.sourceCommit, protocol: 1 });
+  const application = join(installed, "daemon", `${process.platform}-${process.arch}`, "palmagent-runtime");
+  assert.deepEqual(JSON.parse(execFileSync(application, ["version"], { env, encoding: "utf8" })),
     { version: pkg.version, sourceCommit: buildInfo.sourceCommit, protocol: 1 });
   const bin = join(scratch, "node_modules/.bin", binName);
   assert.equal(execFileSync(bin, ["--version"], { env, encoding: "utf8" }).trim(), pkg.version);

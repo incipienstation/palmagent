@@ -6,6 +6,14 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.215
+
+### Changed
+
+- Native installations keep script-routine scheduling and result history active through web
+  restarts using an independent Rust application service. Agent routines retain their current
+  web-owned scheduler. Runtime recovery preserves retained scripts without replaying them.
+
 ## 0.1.0-alpha.214
 
 ### Changed

@@ -23,6 +23,8 @@ import { GithubService } from "../modules/tasks/adapters/outbound/github.js";
 import { Hub } from "../platform/events/hub.js";
 import { InProcessBackend } from "../modules/agents/adapters/outbound/inproc-backend.js";
 import { PushService } from "../modules/tasks/adapters/outbound/web-push.js";
+import { IndependentRoutines } from "../modules/routines/application/use-cases/independent-routines.js";
+import { NativeScriptRuntime } from "../modules/routines/adapters/outbound/native-script-runtime.js";
 import { RoutineService } from "../modules/routines/application/use-cases/routine-service.js";
 import { TaskService } from "../modules/tasks/application/use-cases/task-service.js";
 import { ProcessSupervisor } from "../modules/agents/adapters/outbound/supervisor.js";
@@ -108,7 +110,12 @@ export async function createRuntime() {
     const scriptRunner = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
       ? new DaemonRoutineScriptRunner(config.dataDir, config.executionRelease, config.executionNode, worktrees)
       : new LocalRoutineScriptRunner(worktrees);
-    const routines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub);
+    const nativeScripts = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
+      ? new NativeScriptRuntime(config.dataDir) : undefined;
+    if (nativeScripts) await nativeScripts.connect(config.executionRelease!);
+    const localRoutines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub, Boolean(nativeScripts));
+    const routines = nativeScripts ? new IndependentRoutines(localRoutines, nativeScripts, hub) : localRoutines;
+    if (routines instanceof IndependentRoutines) await routines.initialize();
     resources.defer(() => routines.stop());
     github = new GithubService(service, config.githubToken);
     resources.onStop(() => github?.stop());

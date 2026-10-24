@@ -13,6 +13,7 @@ export const DaemonRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("restart-web") }).strict(),
   z.object({ action: z.literal("replace") }).strict(),
   z.object({ action: z.literal("start-update") }).strict(),
+  z.object({ action: z.literal("start-application"), release: z.string().min(1) }).strict(),
   z.object({ action: z.literal("stop") }).strict(),
 ]);
 export type DaemonRequest = z.infer<typeof DaemonRequestSchema>;
@@ -32,6 +33,9 @@ export const DaemonStatusSchema = z.object({
   instance: z.string().min(1),
   pid: z.number().int().positive(), isolation: z.enum(["cgroup", "process-group"]),
   web: DaemonHostStateSchema.nullable(),
+  applicationRuntime: z.literal(1).optional(),
+  applicationRequired: z.boolean().optional(),
+  application: DaemonHostStateSchema.nullable().optional(),
   inventory: z.object({ checkedAt: z.number().nullable(), scanning: z.boolean(), hosts: z.number(), inspectionErrors: z.number(),
     orphaned: z.number(), unconfirmed: z.number(), logBytes: z.number(), logBudgetBytes: z.number(), overBudget: z.boolean(), retentionDays: z.number() }).optional(),
   recovery: z.object({ consecutiveFailures: z.number(), nextAttemptAt: z.number(), stableSince: z.number().nullable(),

@@ -115,3 +115,17 @@ evidence that a boundary is respected.
 - [AWS project structure guidance](https://docs.aws.amazon.com/prescriptive-guidance/latest/hexagonal-architectures/best-practices.html)
 - [Domain-Driven Hexagon: folder structure](https://github.com/Sairyss/domain-driven-hexagon#folder-and-file-structure)
 - [Composition Root, Mark Seemann](https://blog.ploeh.dk/2011/07/28/CompositionRoot/)
+
+## Native application modules
+
+`apps/palmagent-runtime` follows the same dependency direction. Its initial routines module
+uses `domain.rs` for pure policy and `application.rs` for use cases and outbound traits;
+Axum HTTP, SQLite, local calendar conversion and retained-host adapters live under
+`adapters/inbound` and `adapters/outbound`. `composition.rs` serializes admissions and
+coordinates bounded adapter workers; `main.rs` owns startup and shutdown. Shared private
+filesystem and process transport live in `platform.rs`.
+
+`pnpm architecture:check` also runs the Rust syntax-tree boundary check, including imports,
+qualified paths, unknown source placement and cycles. Rust has an explicit wire projection
+of the TypeScript contracts; calendar vectors and real-process server contracts check parity
+at that boundary. Product database migrations remain owned by the web bootstrap in this stage.
