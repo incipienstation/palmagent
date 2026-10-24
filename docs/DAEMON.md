@@ -1,6 +1,7 @@
 # Native runtime supervisor
 
-New Linux package installations use the bundled Rust `palmagentd`. The web server,
+New Linux package installations use the bundled Rust `palmagentd` and
+`palmagent-runtime` application service. The web server,
 provider adapters, execution journals, terminal hosts and update policy remain in
 TypeScript. Nx runs the Rust build and checks alongside the existing projects.
 
@@ -109,9 +110,9 @@ verifies daemon protocol and artifact hashes, writes private configuration and a
 selects the native executable through `daemon/current`,
 replaces the daemon with `exec` (preserving its bootstrap PID), verifies the new
 build identity, and replaces the web process. Existing hosts keep their original
-release. Daemon-managed routine scripts also keep their original release and process. Scheduling,
-admission and run history remain in TypeScript; the script host persists its result
-independently and the replacement web process recovers it without rerunning the command.
+release. Daemon-managed routine scripts also keep their original release and process. Script scheduling,
+admission and run history belong to the independent application service; the script host persists its result
+independently and the application service records it without rerunning the command.
 Timeouts and explicit cancellation still clean up the script and its descendants.
 Source and legacy installations keep web-owned scripts, so activation still waits
 for those scripts to finish and retains the pending update request.
@@ -167,7 +168,9 @@ the control plane; use the CLI uninstall flow for verified idle shutdown.
 Maintainers need rustup and the pinned `rust-toolchain.toml` toolchain. End users
 receive Linux x64 and arm64 static native binaries in the existing npm package.
 `pnpm daemon:check` runs formatting, Clippy and real-process lifecycle tests.
-`pnpm daemon:build` builds both artifacts and their integrity manifest.
+`pnpm daemon:build` builds both executables for Linux x64 and arm64 and their integrity
+manifest. Bundled SQLite is cross-compiled with SHA-256-verified Zig 0.15.2, cached
+under the builder's `.cache/palmagent-build`. Consumers need neither Rust nor Zig.
 
 After building the package, run the delegated Linux acceptance on a test host:
 
@@ -181,3 +184,31 @@ exercise the legacy system bootstrap instead (requires non-interactive sudo). It
 original provider PIDs and pending input, terminal screen continuity, routine PID/result continuity, daemon crash
 recovery, web activation and detached descendant cleanup while blocking runtime
 sudo/systemctl calls. It removes only its own service and confirmed-empty fixture.
+
+## Independent application service
+
+The first application migration moves script-routine definitions, scheduling, admission,
+worktree preparation and completion persistence into `palmagent-runtime` (Tokio and Axum).
+The retained Node script host still runs each command and writes its durable result.
+Agent routines, Task/message orchestration and provider integrations remain in the Node
+application. Source and legacy installations keep their existing local scheduler.
+
+The web initializes product migrations, then asks the daemon to start the application
+service for the selected release. A private Unix HTTP socket connects the web's routine
+adapter to the single native owner. Script and agent rows keep the existing SQLite schema;
+the native repository only writes script rows. Admission and cadence changes commit in
+one transaction before launching work. Unconfirmed launch requests are inspected, never
+replayed. Completed results retain their admission slot until persistence and acknowledgement
+succeed. The four-script limit and maintenance admission gate remain in force.
+
+Web shutdown leaves script scheduling and result persistence running. A service crash
+recovers retained invocations; missed schedules during application-service downtime are
+skipped with the existing history reason. Ordinary web restarts preserve the application
+service. Changing release stops the old service before the new web initializes its writer,
+including rollback to releases without `applicationRuntime: 1`. Invocation hosts keep their
+original release. Shutdown holds the ownership lock until in-flight adapter work settles.
+
+`palmagent daemon status` exposes the optional `application` lifecycle and
+`applicationRequired` selection state. Doctor checks readiness when the selected release
+requires the service. Its private records live in `daemon/services`, outside the legacy
+host inventory, so older clients can still inspect retained invocation records.

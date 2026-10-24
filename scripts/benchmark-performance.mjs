@@ -35,7 +35,7 @@ async function main() {
   const base = new URL(values.url);
   if (base.hostname !== 'localhost' || base.username || base.password || base.search ||
       !['http:', 'https:'].includes(base.protocol)) throw new Error('Benchmark only an isolated loopback validation server.');
-  if (!['tasks', 'health'].includes(values.scenario) || !/^[a-zA-Z0-9._-]{1,64}$/.test(values.fixture)) throw new Error('Invalid scenario or fixture revision.');
+  if (!['tasks', 'routines', 'health'].includes(values.scenario) || !/^[a-zA-Z0-9._-]{1,64}$/.test(values.fixture)) throw new Error('Invalid scenario or fixture revision.');
   const number = (name, max) => {
     const value = Number(values[name]);
     if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error(`Invalid ${name}.`);
@@ -51,10 +51,12 @@ async function main() {
   }
   const health = (await get('/api/health')).json;
   if (!health.build?.version || !health.build?.sourceCommit || health.build.dirty) throw new Error('Use a clean, identified build for a reproducible comparison.');
-  const path = values.scenario === 'tasks' ? '/api/tasks' : '/api/health';
+  const path = values.scenario === 'health' ? '/api/health' : `/api/${values.scenario}`;
   const initial = await get(path);
   const taskCount = values.scenario === 'tasks' ? initial.json.tasks?.length : null;
   if (values.scenario === 'tasks' && !Number.isSafeInteger(taskCount)) throw new Error('Unexpected task-list response.');
+  const routineCount = values.scenario === 'routines' ? initial.json.routines?.length : null;
+  if (values.scenario === 'routines' && !Number.isSafeInteger(routineCount)) throw new Error('Unexpected routine-list response.');
   for (let i = 0; i < 20; i++) await get(path);
   const results = [];
   for (let round = 0; round < rounds; round++) {
@@ -66,6 +68,7 @@ async function main() {
         const start = performance.now();
         const response = await get(path);
         if (taskCount !== null && response.json.tasks?.length !== taskCount) throw new Error('Fixture changed during measurement.');
+        if (routineCount !== null && response.json.routines?.length !== routineCount) throw new Error('Fixture changed during measurement.');
         samples.push(performance.now() - start); bytes += response.bytes;
       }
     }));
@@ -74,7 +77,7 @@ async function main() {
   const final = (await get('/api/health')).json;
   if (final.build?.sourceCommit !== health.build.sourceCommit || final.build?.version !== health.build.version) throw new Error('Server changed version during measurement.');
   const report = { schemaVersion: 1, build: health.build,
-    context: { workload: 'palmagent-http-v1', scenario: values.scenario, fixture: values.fixture, taskCount, requests, concurrency, rounds,
+    context: { workload: 'palmagent-http-v1', scenario: values.scenario, fixture: values.fixture, taskCount, ...(routineCount === null ? {} : { routineCount }), requests, concurrency, rounds,
       os: process.platform, arch: process.arch, cpuModel: cpus()[0]?.model, cpuCount: cpus().length, memoryBytes: totalmem(), clientNode: process.version },
     rounds: results };
   writeFileSync(values.out, JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });

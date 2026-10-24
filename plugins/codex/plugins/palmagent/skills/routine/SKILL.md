@@ -77,7 +77,9 @@ record running/succeeded/failed/interrupted, exit code, bounded combined output,
 retained worktree path. A run request being accepted is not completion. Scripts have
 no overlapping runs per routine and share four execution slots. Missed or capacity-limited
 scheduled runs are skipped, not queued for catch-up. On native daemon installations,
-running scripts survive web restarts and updates; the web process reconnects to their
-retained hosts and results without rerunning them. Legacy local script runners stop
+running scripts survive web restarts and updates. Releases with the independent application
+runtime also keep script scheduling and result persistence active while the web is down.
+Agent scheduling still belongs to the web in this migration stage. Retained invocations
+are recovered without rerunning them. Legacy local script runners stop
 with the server and do not retry after restart. Disabling only prevents future
 scheduled runs; `stop` interrupts the current script.
