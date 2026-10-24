@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot";
+import { Slot } from "radix-ui";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 // Sizes run taller than stock shadcn: this is a phone-first app, so the
 // default hit target is 44px.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-40 aria-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-40 aria-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 outline-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 focus-visible:ring-2 focus-visible:ring-ring/50",
   {
     variants: {
       variant: {
@@ -24,10 +24,12 @@ const buttonVariants = cva(
         default: "h-11 px-4",
         title: "h-11 min-w-0 justify-start px-0 text-[17px]",
         navigation: "h-12 w-full justify-start gap-3 rounded-xl border-transparent px-3 text-base font-medium [&_svg[data-icon='inline-start']]:size-5",
+        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-9 px-3 text-[13px]",
         lg: "h-12 px-6",
         icon: "size-10",
         "icon-lg": "size-11 rounded-full p-0 [&_svg:not([class*='size-'])]:size-5",
+        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-8 rounded-full text-[13px]",
       },
     },
@@ -38,20 +40,14 @@ const buttonVariants = cva(
   },
 );
 
-// MUST forward refs. We're on React 18, where a plain function component
-// silently DROPS any ref passed to it. When a Radix Popper trigger wraps this
-// Button with `asChild` (e.g. `<DropdownMenuTrigger asChild><Button/>`), Radix
-// sets a ref on the Button to register it as the floating-ui ANCHOR. A dropped
-// ref means the menu has no anchor, so floating-ui never positions it and the
-// content renders offscreen at `translate(0,-200%)` — i.e. the trigger appears
-// to "do nothing" on tap. forwardRef makes the ref reach the real <button>.
+// Forward the ref to preserve the anchor used by asChild menu and popover triggers.
 const Button = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean }
->(({ className, variant, size, asChild = false, ...props }, ref) => {
-  const Comp = asChild ? Slot : "button";
+>(({ className, variant = "default", size = "default", asChild = false, ...props }, ref) => {
+  const Comp = asChild ? Slot.Root : "button";
   return (
-    <Comp ref={ref} data-slot="button" className={cn(buttonVariants({ variant, size, className }))} {...props} />
+    <Comp ref={ref} data-slot="button" data-variant={variant} data-size={size} className={cn(buttonVariants({ variant, size, className }))} {...props} />
   );
 });
 Button.displayName = "Button";
