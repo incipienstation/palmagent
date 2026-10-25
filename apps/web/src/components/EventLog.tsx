@@ -620,6 +620,9 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     data={rows}
     firstItemIndex={firstItemIndex}
     itemSize={rowSize}
+    // A very tall first message is an outlier among short Trace summaries. Do
+    // not use it as the estimate for every unmeasured row during initial layout.
+    defaultItemHeight={80}
     skipAnimationFrameInResizeObserver
     {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}
