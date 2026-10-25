@@ -200,13 +200,13 @@ for (const phase of ["progress", "final", undefined] as const) test(`streaming p
 });
 
 
-test("collapsing nested output preserves its trigger position and keyboard focus", async ({ page, history }) => {
-  history.add([...Array.from({ length: 12 }, (_, i) => pair(i)).flat(),
+for (const precedingSteps of [12, 40]) test(`collapsing nested output after ${precedingSteps} steps preserves its trigger position and keyboard focus`, async ({ page, history }) => {
+  history.add([...Array.from({ length: precedingSteps }, (_, i) => pair(i)).flat(),
     event("tool_call", { id: "large", name: "bash", command: "long-output" }),
     event("tool_result", { tool_use_id: "large", output: "A line of output\n".repeat(100), exit_code: 0 }),
     event("assistant_text", { text: "Following answer paragraph.\n\n".repeat(30), phase: "final" })]);
   await routes(page, history); await page.goto(`/#/task/${taskId}`);
-  const activity = page.getByRole("button", { name: "Activity · 13 tools", exact: true });
+  const activity = page.getByRole("button", { name: `Activity · ${precedingSteps + 1} tools`, exact: true });
   await activity.click();
   const step = page.getByRole("button", { name: "Completed: long-output", exact: true });
   await step.click(); await expect(page.getByText("A line of output", { exact: false })).toBeVisible();
