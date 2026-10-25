@@ -1,18 +1,13 @@
 import { ScrollArea } from "./ui/scroll-area";
-import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { memo, useContext, type ReactNode } from "react";
+import { Streamdown, type Components, type ExtraProps } from "streamdown";
 import remarkGfm from "remark-gfm";
-import { jsx, jsxs } from "react/jsx-runtime";
-import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import { cachedMarkdown, markdownParser, staticMarkdown } from "../markdown-worker";
 import { isLocalImageLink, markdownUrlTransform, previewSource } from "../image-source";
 import { ImageLinkContext, ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { MermaidBlock } from "./MermaidBlock";
 import { CodeBlock } from "./CodeBlock";
 
-import { cn } from "@/lib/utils";
-
-function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+function MarkdownLink({ href, children }: { href?: string; children?: ReactNode } & ExtraProps) {
   const taskId = useContext(ImageTaskContext);
   const target = href && taskId && isLocalImageLink(href) ? previewSource(href, taskId) : href;
   return <ImageLinkContext.Provider value={true}>
@@ -23,7 +18,7 @@ function MarkdownLink({ href, children }: { href?: string; children?: ReactNode 
 
 // Element → token-styled renderer for assistant prose — the one place we parse
 // markdown (GFM: headings/bold/lists/code/tables). We do NOT enable raw HTML:
-// react-markdown escapes it by default, so `<Chart>`/`List<T>` show literally
+// Disable Streamdown’s default raw-HTML plugins so `<Chart>`/`List<T>` show literally
 // and a stray `<script>` can never run — XSS-safe with no sanitizer. Every color
 // is a design token (text-strong/-primary, bg-muted, border-border) so light + dark
 // both Just Work, matching the surrounding event log. Defined at module scope so
@@ -83,42 +78,24 @@ const COMPONENTS = {
   td: ({ children }) => <td className="border border-border px-2 py-1 align-top">{children}</td>,
 } satisfies Components;
 
-// Completed messages render their final layout even on a cold cache. Streaming
-// messages retain parsed blocks while the worker processes newer text.
-const ParsedBlock = memo(function ParsedBlock({ source }: { source: string }) {
-  return toJsxRuntime(JSON.parse(source), {
-    Fragment, jsx, jsxs, components: COMPONENTS, ignoreInvalidStyle: true, passKeys: true, passNode: true,
-  });
-});
-function StaticMarkdown({ text }: { text: string }) {
-  const blocks = useMemo(() => staticMarkdown(text), [text]);
-  return blocks ? <>{blocks.map((source, index) => <ParsedBlock key={index} source={source} />)}</>
-    : <span className="whitespace-pre-wrap">{text}</span>;
-}
-function LongMarkdown({ text }: { text: string }) {
-  const [blocks, setBlocks] = useState<string[] | null | undefined>(() => cachedMarkdown(text));
-  const parser = useRef<ReturnType<typeof markdownParser>>(undefined);
-  useEffect(() => {
-    parser.current = markdownParser(setBlocks);
-    return () => { parser.current?.dispose(); parser.current = undefined; };
-  }, []);
-  useEffect(() => { parser.current?.parse(text); }, [text]);
-  if (blocks === null) return <span className="whitespace-pre-wrap">{text}</span>;
-  // Keep the message visible while the worker parses its first long version.
-  // Replacing the transcript row with a placeholder caused a visible flash.
-  if (!blocks) return <span className="whitespace-pre-wrap">{text}</span>;
-  return <>{blocks.map((source, index) => <ParsedBlock key={index} source={source} />)}</>;
-}
+// Stable plugin lists keep completed streaming blocks memoized. Raw HTML remains
+// literal text and all URLs still pass through Palmagent's protocol policy.
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS: [] = [];
 
-export const Markdown = memo(function Markdown({ children, trailing, streaming = false }: {
-  children: string; trailing?: ReactNode; streaming?: boolean;
+export const Markdown = memo(function Markdown({ children, streaming = false, caret = false }: {
+  children: string; streaming?: boolean; caret?: boolean;
 }) {
-  return <div className={cn(
-    "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-    trailing && "[&>p:nth-last-child(2)]:mb-0 [&>p:nth-last-child(2)]:inline",
-  )}>
-    {children.length > 4000 ? streaming ? <LongMarkdown text={children} /> : <StaticMarkdown text={children} /> :
-      <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={COMPONENTS}>{children}</ReactMarkdown>}
-    {trailing}
-  </div>;
+  return <Streamdown
+    mode={streaming ? "streaming" : "static"}
+    isAnimating={streaming}
+    parseIncompleteMarkdown={streaming}
+    caret={caret && streaming ? "block" : undefined}
+    remarkPlugins={REMARK_PLUGINS}
+    rehypePlugins={REHYPE_PLUGINS}
+    urlTransform={markdownUrlTransform}
+    components={COMPONENTS}
+    controls={false}
+    className="min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+  >{children}</Streamdown>;
 });

@@ -1,7 +1,7 @@
 import { defaultUrlTransform } from "react-markdown";
 
-// Both Markdown parsers preserve the same image sources. Other links keep the
-// default protocol restrictions, and raw HTML stays escaped.
+// Keep react-markdown’s restrictive URL policy: Streamdown’s default allows
+// every URL. Local images use the task-scoped resolver; raw HTML stays escaped.
 export function imageSource(value: string): string {
   if (!value || /[\u0000-\u001f\u007f]/.test(value)) return "";
   // Sandbox links may name local artifacts. Keep absolute paths only; the task

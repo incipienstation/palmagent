@@ -61,3 +61,15 @@ test("syntax chunk failure leaves copyable plain code", async ({ page }) => {
   await expect(page.locator("[data-code-block] pre")).toHaveText(source);
   await expect(page.getByRole("button", { name: "Copy code", exact: true })).toBeEnabled();
 });
+
+for (const running of [false, true]) test(`Markdown keeps HTML literal and blocks executable links while ${running ? "streaming" : "complete"}`, async ({ page }) => {
+  const html = '<img src=x onerror="window.markdownExecuted=true"><script>window.markdownExecuted=true</script>';
+  await reply(page, `Literal List<T> and <Chart> remain visible.\n\n${html}\n\n[unsafe](javascript:alert%281%29)\n\n[safe](https://example.com)`, running);
+  const transcript = page.getByRole("region", { name: "Session transcript", exact: true });
+  await expect(transcript).toContainText("Literal List<T> and <Chart> remain visible.");
+  await expect(transcript).toContainText(html);
+  await expect(transcript.locator("script, img[onerror]")).toHaveCount(0);
+  await expect(transcript.getByRole("link", { name: "safe", exact: true })).toHaveAttribute("href", "https://example.com");
+  await expect(transcript.locator("a").filter({ hasText: /^unsafe$/ })).not.toHaveAttribute("href", /^javascript:/i);
+  expect(await page.evaluate(() => (window as Window & { markdownExecuted?: boolean }).markdownExecuted)).toBeUndefined();
+});

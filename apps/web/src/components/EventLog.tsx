@@ -8,7 +8,6 @@ import { forwardRef, memo, useCallback, useContext, useEffect, useLayoutEffect, 
 import type { AgentEventKind, AskQuestion, QuestionAnswer } from "@palmagent/shared";
 import {
   AlertTriangle,
-  ArrowDown,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -23,6 +22,9 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
+import { Message, MessageContent, MessageHeader } from "./ui/message";
+import { Bubble, BubbleContent } from "./ui/bubble";
+import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerButton, useMessageScroller } from "./ui/message-scroller";
 import { ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { describeEvent } from "../format";
@@ -40,7 +42,6 @@ import { projectConversation } from "@palmagent/shared";
 import { ApprovalRequest } from "./ApprovalCard";
 import { payload } from "../transcript";
 import type { TaskHistoryControls } from "../task-history-state";
-import { prewarmMarkdown } from "../markdown-worker";
 import { useHistoryPrefetch } from "../hooks/useHistoryPrefetch";
 
 // Kind → foreground token (dual-theme; no inline hex). assistant prose floats in
@@ -86,30 +87,34 @@ export function UserBubble({ text, meta, skills, attachments, images, onImageLoa
   const taskId = useContext(ImageTaskContext);
   // Right-aligned soft chat bubble — the human side of the transcript.
   return (
-    <div role="group" aria-label="Your message" className="mb-3 flex flex-col items-end">
-      {meta && (
-        <div className="mb-1 flex items-center font-sans text-[11px] font-semibold text-faint">
-          <span className="rounded bg-muted px-1.5 py-px font-sans text-[10px] tracking-normal normal-case text-faint">
-            {meta}
-          </span>
-        </div>
-      )}
-      <div className="max-w-[88%] rounded-3xl bg-secondary px-4 py-3 font-sans text-[15px] leading-relaxed break-words whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere]">
-        <SkillChips skills={skills} />
-        {text}
-        {!attachments?.length && !!images?.length && <div className="flex flex-wrap gap-2">
-          {images.map((image, index) => image.file ? <FileAttachment key={index} name={image.file.name} /> : image.video ? <VideoPreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
-            poster={`data:${image.video.frames[0].image.mediaType};base64,${image.video.frames[0].image.data}`} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
-            alt={`Attached image ${index + 1}`} width={image.width} height={image.height} onLoad={onImageLoad} />)}
-        </div>}
-        {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
-          {attachments.map((attachment, index) => attachment.file ? <FileAttachment key={`${attachment.id}-${index}`} name={attachment.file.name} size={attachment.size} href={attachmentUrl(taskId, attachment.id)} /> : attachment.video ? <VideoPreview key={`${attachment.id}-${index}`}
-            src={attachmentUrl(taskId, attachment.id)} poster={attachmentUrl(taskId, attachment.video.frames[0].id)} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={`${attachment.id}-${index}`}
-            src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`}
-            width={attachment.width} height={attachment.height} onLoad={onImageLoad} />)}
-        </div>}
-      </div>
-    </div>
+    <Message align="end" role="group" aria-label="Your message" className="mb-3">
+      <MessageContent>
+        {meta && (
+          <MessageHeader>
+            <span className="rounded bg-muted px-1.5 py-px font-sans text-[10px] tracking-normal normal-case text-faint">
+              {meta}
+            </span>
+          </MessageHeader>
+        )}
+        <Bubble align="end" variant="secondary" className="max-w-[88%]">
+          <BubbleContent className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <SkillChips skills={skills} />
+            {text}
+            {!attachments?.length && !!images?.length && <div className="flex flex-wrap gap-2">
+              {images.map((image, index) => image.file ? <FileAttachment key={index} name={image.file.name} /> : image.video ? <VideoPreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
+                poster={`data:${image.video.frames[0].image.mediaType};base64,${image.video.frames[0].image.data}`} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={index} src={`data:${image.mediaType};base64,${image.data}`}
+                alt={`Attached image ${index + 1}`} width={image.width} height={image.height} onLoad={onImageLoad} />)}
+            </div>}
+            {taskId && !!attachments?.length && <div className="flex flex-wrap gap-2">
+              {attachments.map((attachment, index) => attachment.file ? <FileAttachment key={`${attachment.id}-${index}`} name={attachment.file.name} size={attachment.size} href={attachmentUrl(taskId, attachment.id)} /> : attachment.video ? <VideoPreview key={`${attachment.id}-${index}`}
+                src={attachmentUrl(taskId, attachment.id)} poster={attachmentUrl(taskId, attachment.video.frames[0].id)} label={`Attached video ${index + 1}`} onLoad={onImageLoad} /> : <ImagePreview key={`${attachment.id}-${index}`}
+                src={attachmentUrl(taskId, attachment.id)} alt={`Attached image ${index + 1}`}
+                width={attachment.width} height={attachment.height} onLoad={onImageLoad} />)}
+            </div>}
+          </BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </Message>
   );
 }
 
@@ -270,27 +275,11 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
       width={img.width} height={img.height} onLoad={onImageLoad} /><figcaption className="mt-1 text-xs text-muted-foreground">Session output</figcaption></figure>;
   }
   if (item.kind === "assistant_text") {
-    return (
-      <div
-        className={cn(
-          "mb-4 font-sans text-base leading-6 break-words [overflow-wrap:anywhere]",
-          KIND_CLASS.assistant_text,
-        )}
-      >
-        <Markdown
-          streaming={live}
-          trailing={
-            live ? (
-              <span className="ml-0.5 inline-block w-[7px] animate-blink bg-live align-text-bottom">
-                &nbsp;
-              </span>
-            ) : undefined
-          }
-        >
-          {item.text}
-        </Markdown>
-      </div>
-    );
+    return <Message className="mb-4">
+      <MessageContent>
+        <Markdown streaming={live} caret>{item.text}</Markdown>
+      </MessageContent>
+    </Message>;
   }
 
   return (
@@ -346,22 +335,32 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
     </div> : null}
   </div>;
 }
-// Let Virtuoso own scroll coordinates while Radix supplies the viewport and
-// scrollbar. Padding belongs in measured header/footer slots, not the scroller.
+// One viewport serves all three components: Radix supplies the scrollbar,
+// Virtuoso measures and anchors rows, and MessageScroller supplies scroll commands.
 const TranscriptScroller = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { context: HistoryControls }>(
-  function TranscriptScroller({ context, onScroll, ...props }, ref) {
-    return <ScrollAreaPrimitive.Viewport {...props} ref={ref} aria-label="Session transcript"
-      className="h-full w-full font-mono text-[13px] [overflow-anchor:none]"
-      onScroll={(event) => {
-        const el = event.currentTarget;
-        context.onScrollPosition?.(el);
-        onScroll?.(event);
-      }} />;
+  function TranscriptScroller({ context, onScroll, children, ...props }, ref) {
+    return <ScrollAreaPrimitive.Viewport asChild>
+      <MessageScrollerViewport {...props} ref={ref} aria-label="Session transcript"
+        preserveScrollOnPrepend={false}
+        className="h-full w-full font-mono text-[13px] [overflow-anchor:none]"
+        onScroll={(event) => {
+          context.onScrollPosition?.(event.currentTarget);
+          onScroll?.(event);
+        }}>
+        {children}
+      </MessageScrollerViewport>
+    </ScrollAreaPrimitive.Viewport>;
   },
 );
 const TranscriptList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { context: HistoryControls }>(
   function TranscriptList({ context: _context, ...props }, ref) {
-    return <div {...props} ref={ref} data-transcript-items />;
+    // Measure the virtual list, including its padding for unmounted rows. An
+    // absolutely positioned viewport cannot size an outer content wrapper.
+    // Virtuoso reads row-gap even for block layout; rows own their spacing.
+    // Do not mark the list aria-live: modal isolation deliberately leaves live
+    // regions exposed, which would keep background transcript controls readable.
+    return <MessageScrollerContent {...props} ref={ref} data-transcript-items
+      className="block min-h-0 gap-0" />;
   },
 );
 const VIRTUAL_COMPONENTS = { Scroller: TranscriptScroller, List: TranscriptList, Header: HistoryHeader, Footer: () => <div className="h-2" /> };
@@ -381,13 +380,22 @@ function activityRowKey(activity: Activity, historyFloor?: number): string {
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
-function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled, toggle, toggleSteps, toggleActivity, following, delivery, ...context }: {
+function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled, toggle, toggleSteps, toggleActivity, following, onFollowingChange, delivery, ...context }: {
   rows: TranscriptRow[]; running: boolean; sourceLog: LogItem[]; liveKey?: number; delivery?: DeliveryControls;
   toggled: Set<number>; toggle: (key: number) => void;
   toggleSteps: (keys: number[], open: boolean) => void;
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
+  onFollowingChange: (following: boolean) => void;
 } & HistoryControls) {
+  const { scrollToEnd } = useMessageScroller();
   const virtuoso = useRef<VirtuosoHandle>(null);
+  // Keep the measured first row for Trace-led histories and their prepend
+  // anchors. A long first answer, after any introductory prompt, is an outlier
+  // and must not become the estimate for every unmeasured row.
+  const [initialItemHeight] = useState(() => {
+    const first = rows.find(row => row.type !== "prompt");
+    return first?.type === "message" && first.item.kind === "assistant_text" && first.item.text.length > 4000 ? 80 : undefined;
+  });
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
   const initialized = useRef(!!saved.current);
   const [positioned, setPositioned] = useState(false);
@@ -408,14 +416,11 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     virtuoso.current?.getState((value) => { state = value; });
     return state ? { state, following: following.current, first: indexing.current.first } : undefined;
   });
-  useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, []);
+  useLayoutEffect(() => { if (saved.current) following.current = saved.current.following; }, [following]);
 
-  const anchor = useRef<{ key: string }>(undefined);
   const restoring = useRef(false);
   const viewport = useRef<HTMLElement | null>(null);
-  const scrollFrame = useRef(0);
-  const captureFrame = useRef(0);
-  const jumpFrame = useRef(0);
+  const followFrame = useRef(0);
   const jumping = useRef(false);
   const updateJump = useCallback(() => {
     const el = viewport.current;
@@ -426,103 +431,42 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     setShowJump(shown => jumping.current || (!following.current && gap > (shown ? 80 : 120)));
   }, []);
   const lastScrollTop = useRef<number | undefined>(undefined);
-  const captureAnchor = useCallback(() => {
-    const el = viewport.current;
-    if (!el || restoring.current) return;
-    const bounds = el.getBoundingClientRect();
-    const row = Array.from(el.querySelectorAll<HTMLElement>("[data-row-key]"))
-      .find((item) => {
-        const rect = item.getBoundingClientRect();
-        return rect.bottom > bounds.top && rect.top < bounds.bottom;
-      });
-    if (row) {
-      anchor.current = { key: row.dataset.rowKey! };
-    }
-  }, []);
-  const captureAfterRender = useCallback(() => {
-    cancelAnimationFrame(captureFrame.current);
-    captureFrame.current = requestAnimationFrame(captureAnchor);
-  }, [captureAnchor]);
   useLayoutEffect(() => { lastScrollTop.current = viewport.current?.scrollTop ?? 0; }, []);
   const onScrollPosition = useCallback((el: HTMLElement) => {
-    // Extend manual scrolling through momentum without hiding for live output
-    // or Virtuoso's measurement corrections while the reader is idle.
     if (scrollIdleTimer.current !== undefined) markScrollActivity();
     const previousTop = lastScrollTop.current;
     lastScrollTop.current = el.scrollTop;
+    if (initialized.current && !restoring.current && previousTop !== undefined && el.scrollTop > previousTop
+      && el.scrollHeight - el.clientHeight - el.scrollTop < 8) {
+      jumping.current = false;
+      onFollowingChange(true);
+    }
     updateJump();
-    if (restoring.current) return;
-    if (!initialized.current) return;
-    const list = el.querySelector<HTMLElement>("[data-transcript-items]");
-    if (list && getComputedStyle(list).visibility === "hidden") return;
-    // A queued bottom/resize notification can arrive between upward input and
-    // its native scroll. Resume following only when moving back down to bottom.
-    if (!jumping.current && previousTop !== undefined && el.scrollTop > previousTop
-      && el.scrollHeight - el.clientHeight - el.scrollTop < 80) following.current = true;
-    // A scroll event can come from Virtuoso's measurement correction. Only
-    // explicit upward input or scrollbar interaction detaches bottom following.
-    captureAnchor();
-    if (previousTop === undefined || el.scrollTop >= previousTop) return;
-    const key = anchor.current?.key;
-    const index = rows.findIndex((row) => row.key === key);
-    if (index < 0) return;
-    const nearby = rows.slice(Math.max(0, index - 48), index).reverse();
-    const texts = nearby.flatMap((row) => {
-      if (row.type !== "message" || row.item.kind !== "assistant_text") return [];
-      const text = row.item.text;
-      return typeof text === "string" && text.length > 4000 ? [text] : [];
-    }).slice(0, 16);
-    prewarmMarkdown(texts);
-  }, [captureAnchor, rows, updateJump, markScrollActivity]);
-  // Check the reading position when the frame runs, not when a resize was
-  // scheduled: a delayed size update must not pull a reader back to the bottom.
+  }, [onFollowingChange, updateJump, markScrollActivity]);
   const followBottom = useCallback(() => {
-    if (jumping.current) return;
-    cancelAnimationFrame(scrollFrame.current);
-    let previousHeight = -1, stable = 0, attempts = 0;
-    const follow = () => {
-      const el = viewport.current;
+    cancelAnimationFrame(followFrame.current);
+    followFrame.current = requestAnimationFrame(() => {
+      // Virtuoso can finish a measurement after the user starts reading. Check
+      // intent here, then use the controller against the committed layout.
+      if (initialized.current && following.current && !jumping.current) scrollToEnd({ behavior: "instant" });
       updateJump();
-      if (!el || !initialized.current || !following.current) return;
-      const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
-      stable = previousHeight === el.scrollHeight && gap <= 1 ? stable + 1 : 0;
-      previousHeight = el.scrollHeight;
-      el.scrollTop = el.scrollHeight;
-      // DOM height can settle after Virtuoso's height callback. Follow through
-      // that final measurement; actual reading input cancels this frame chain.
-      if (++attempts < 8 && stable < 2) scrollFrame.current = requestAnimationFrame(follow);
-    };
-    scrollFrame.current = requestAnimationFrame(follow);
-  }, [updateJump]);
+    });
+  }, [scrollToEnd, following, updateJump]);
   const jumpToBottom = useCallback(() => {
     const el = viewport.current;
     if (!el) return;
     if (document.activeElement === jumpButton.current) el.focus({ preventScroll: true });
     restoring.current = false;
     initialized.current = true;
-    following.current = false;
-    jumping.current = true;
-    cancelAnimationFrame(scrollFrame.current);
-    cancelAnimationFrame(jumpFrame.current);
-    const start = el.scrollTop;
-    const gap = el.scrollHeight - el.clientHeight - start;
-    const duration = matchMedia("(prefers-reduced-motion: reduce)").matches || gap > el.clientHeight ? 0 : 180;
-    const started = performance.now();
-    const advance = (now: number) => {
-      const progress = duration ? Math.min(1, (now - started) / duration) : 1;
-      const bottom = el.scrollHeight - el.clientHeight;
-      el.scrollTop = start + (bottom - start) * (1 - (1 - progress) ** 3);
-      if (progress < 1) jumpFrame.current = requestAnimationFrame(advance);
-      else {
-        jumping.current = false;
-        following.current = true;
-        followBottom();
-      }
-    };
-    jumpFrame.current = requestAnimationFrame(advance);
-  }, [followBottom]);
-  // Let Virtuoso finish its initial positioning before our bottom follower can
-  // write. Its early atBottom notification includes the empty, hidden list.
+    const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
+    const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches && gap <= el.clientHeight;
+    jumping.current = smooth;
+    scrollToEnd({ behavior: smooth ? "smooth" : "instant" });
+    if (!smooth) onFollowingChange(true);
+    updateJump();
+  }, [scrollToEnd, onFollowingChange, updateJump]);
+  // Let Virtuoso restore its measurements and position before following output.
+  // The initial list is still hidden.
   useLayoutEffect(() => {
     let frame = 0, stable = 0;
     let previous: string | undefined;
@@ -534,13 +478,14 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
         // answer keeps changing height. Bottom-follow settling is independent.
         setPositioned(true);
         updateJump();
-        if (initialized.current) return;
+        if (initialized.current) { onFollowingChange(following.current); return; }
         const position = `${el.scrollTop}:${el.scrollHeight}:${el.clientHeight}`;
         stable = previous === position ? stable + 1 : 0;
         previous = position;
         if (stable >= 2) {
           initialized.current = true;
           lastScrollTop.current = el.scrollTop;
+          onFollowingChange(following.current);
           followBottom();
           return;
         }
@@ -549,11 +494,9 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     };
     frame = requestAnimationFrame(initialize);
     return () => cancelAnimationFrame(frame);
-  }, [followBottom, updateJump]);
+  }, [followBottom, updateJump, onFollowingChange, following]);
   useEffect(() => () => {
-    cancelAnimationFrame(scrollFrame.current);
-    cancelAnimationFrame(captureFrame.current);
-    cancelAnimationFrame(jumpFrame.current);
+    cancelAnimationFrame(followFrame.current);
     clearTimeout(scrollIdleTimer.current);
   }, []);
   useEffect(() => {
@@ -568,10 +511,9 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
       // notification queued, which must not look like new downward movement.
       lastScrollTop.current = el.scrollTop;
       initialized.current = true;
-      following.current = false;
+      onFollowingChange(false);
       jumping.current = false;
-      cancelAnimationFrame(jumpFrame.current);
-      cancelAnimationFrame(scrollFrame.current);
+      el.scrollTo({ top: el.scrollTop, behavior: "instant" });
       updateJump();
     };
     const wheel = (event: WheelEvent) => {
@@ -617,12 +559,10 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
       root?.removeEventListener("pointerdown", scrollbar, true);
       root?.removeEventListener("pointermove", scrollbar, true);
     };
-  }, [updateJump, markScrollActivity]);
+  }, [updateJump, markScrollActivity, onFollowingChange]);
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
-    // Composer, keyboard, and account-limit updates can resize the viewport
-    // without changing any transcript rows.
     const observer = new ResizeObserver(followBottom);
     observer.observe(el);
     return () => observer.disconnect();
@@ -687,11 +627,11 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     data={rows}
     firstItemIndex={firstItemIndex}
     itemSize={rowSize}
+    defaultItemHeight={initialItemHeight}
     skipAnimationFrameInResizeObserver
     {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}
     totalListHeightChanged={followBottom}
-    itemsRendered={captureAfterRender}
     atBottomThreshold={80}
     // A short tool row can precede a very tall answer. Reserve rows as well as
     // pixels so that answer is measured before the reader crosses into it.
@@ -725,13 +665,11 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
   />
     {positioned && <Tooltip>
       <TooltipTrigger asChild>
-        <Button ref={jumpButton} type="button" variant="floating" size="icon"
+        <MessageScrollerButton ref={jumpButton} type="button" variant="floating" size="icon"
           aria-label="Scroll to bottom" hidden={!showJump}
           className={cn("absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full after:absolute after:-inset-1 after:rounded-full [&[hidden]]:hidden transition-opacity duration-150 motion-reduce:transition-none",
             scrolling && "pointer-events-none opacity-0 duration-0 focus:pointer-events-auto focus:opacity-100")}
-          onMouseDown={event => event.preventDefault()} onClick={jumpToBottom}>
-          <ArrowDown aria-hidden />
-        </Button>
+          onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); jumpToBottom(); }} />
       </TooltipTrigger>
       <TooltipContent>Scroll to bottom</TooltipContent>
     </Tooltip>}
@@ -747,6 +685,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
   // Expansion state survives virtual row unmounting. Activity tracks member keys
   // because a late phase marker can change a group's leading key.
   const following = useRef(true);
+  const onFollowingChange = useCallback((value: boolean) => { following.current = value; }, []);
   const [toggled, setToggled] = useUpdateState<Set<number>>(`transcript:${location.hash}:toggled`, () => new Set());
   const [openActivity, setOpenActivity] = useUpdateState<Set<number>>(`transcript:${location.hash}:open`, () => new Set());
   const activityIdentity = useRef<{ taskId?: string; historyFloor?: number }>({ taskId });
@@ -756,7 +695,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
   }
   const historyFloor = activityIdentity.current.historyFloor;
   const toggle = useCallback((key: number) => {
-    following.current = false;
+    onFollowingChange(false);
     setToggled((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
@@ -764,7 +703,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
     });
   }, []);
   const toggleSteps = useCallback((keys: number[], open: boolean) => {
-    following.current = false;
+    onFollowingChange(false);
     setToggled(previous => {
       const next = new Set(previous);
       for (const key of keys) { if (open) next.add(key); else next.delete(key); }
@@ -772,7 +711,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
     });
   }, []);
   const toggleActivity = useCallback((activity: Activity, open: boolean) => {
-    following.current = false;
+    onFollowingChange(false);
     setOpenActivity((prev) => {
       const next = new Set(prev);
       const keys = activity.details ? [activity.disclosureKey ?? activity.key] : activity.items.map(item => item.key);
@@ -836,8 +775,12 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
   const initialPending = history.initial.status !== "ready" && history.initial.status !== "disabled";
   const showInitialState = initialPending && !rows.some(row => row.type !== "working");
   return <ImageTaskContext.Provider value={taskId}><ScrollAreaPrimitive.Root data-transcript-root className="relative min-h-0 flex-1 overflow-hidden">
+    {/* Following is driven after Virtuoso's measurements, and pauses for Trace
+        disclosures. Keep the controller's independent automatic follower off. */}
+    <MessageScrollerProvider autoScroll={false} defaultScrollPosition="start" scrollEdgeThreshold={80}>
+      <MessageScroller>
     {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows} running={live} sourceLog={log}
-      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} toggled={toggled} toggle={toggle} toggleSteps={toggleSteps} toggleActivity={toggleActivity} following={following} delivery={delivery} history={history} /> : !showInitialState && empty ?
+      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} toggled={toggled} toggle={toggle} toggleSteps={toggleSteps} toggleActivity={toggleActivity} following={following} onFollowingChange={onFollowingChange} delivery={delivery} history={history} /> : !showInitialState && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={{ history }} />
@@ -845,6 +788,8 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
           {log.length ? "No messages in this view." : "waiting for events…"}
         </div>}
       </ScrollAreaPrimitive.Viewport>}
+      </MessageScroller>
+    </MessageScrollerProvider>
     <ScrollBar />
   </ScrollAreaPrimitive.Root></ImageTaskContext.Provider>;
 }

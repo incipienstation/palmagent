@@ -53,14 +53,14 @@ test("large Markdown preserves cross-block references, tables, literal HTML and 
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("A draft while streaming");
 });
 
-test("unavailable Markdown workers retain readable content and later deltas", async ({ page }) => {
+test("long streaming replies stay formatted without Worker support", async ({ page }) => {
   await page.addInitScript(() => { window.Worker = class { constructor() { throw new Error("Worker unavailable"); } } as unknown as typeof Worker; });
   await installScopedStream(page);
   await open(page, "t-run");
   await send(page, "t-run", { type: "tasks", tasks, historyThrough: 0 });
-  await event(page, "t-run", 1, "Readable fallback ".repeat(300));
+  await event(page, "t-run", 1, "Readable **formatted** text.\n\n".repeat(300));
   await expect(page.getByText("Rendering message…", { exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Readable fallback/)).toBeVisible();
+  await expect(page.locator("strong").filter({ hasText: "formatted" })).toHaveCount(300);
   await event(page, "t-run", 2, " Last delta");
   await expect(page.getByText(/Last delta/)).toBeVisible();
 });
