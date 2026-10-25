@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { tasks, repos } from "../fixtures.mjs";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, captureForReview } from "./_helpers";
 import { installInbox, send } from "./_inbox-stream";
 
 test.describe("inbox", () => {
@@ -93,6 +93,74 @@ test.describe("inbox", () => {
     expect(loads).toBe(0);
   });
 
+});
+
+test("Done accordion retains folding through search and navigation, and fits live rows", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await installInbox(page);
+  await page.goto("/#/spaces/repo-app");
+  const visibleTasks = tasks.filter(task => task.repoId === "repo-app" && ["running", "idle"].includes(task.status));
+  await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+  await send(page, { type: "tasks", tasks: visibleTasks });
+  const trigger = page.getByRole("button", { name: "Done", exact: true });
+  const completed = page.getByText("Wire the web QA harness", { exact: true });
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const newTask = { ...visibleTasks.find(task => task.taskId === "t-idle-rich")!, taskId: "t-new-done", title: "Recently completed task", prs: [], lastActivityAt: 1 };
+  await send(page, { type: "tasks", tasks: [...visibleTasks, newTask] });
+  const region = page.getByRole("region", { name: "Done", exact: true });
+  const lastRow = region.locator("[data-swipe-surface]").filter({ hasText: newTask.title });
+  await expect(lastRow).toBeVisible();
+  await expect.poll(async () => {
+    const content = (await region.boundingBox())!;
+    const row = (await lastRow.boundingBox())!;
+    return row.y + row.height - content.y - content.height;
+  }, { message: "newly completed rows must remain inside the expanded content" }).toBeLessThanOrEqual(1);
+
+  await page.keyboard.press("Tab");
+  await trigger.focus();
+  await trigger.press("Enter");
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(completed).toBeHidden();
+
+  await page.getByRole("searchbox", { name: "Search tasks" }).fill("QA");
+  await expect(completed).toBeVisible();
+  await expect(trigger).toHaveCount(0);
+  await completed.click();
+  await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
+  await page.goBack();
+  await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("QA");
+  await page.getByRole("button", { name: "Clear task search" }).click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(completed).toBeHidden();
+  await trigger.focus();
+  await trigger.press("Space");
+  await expect(trigger).toBeFocused();
+  await expect(completed).toBeVisible();
+
+
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 780 });
+    await trigger.scrollIntoViewIfNeeded();
+    await page.keyboard.press("Tab");
+    await trigger.focus();
+    const header = (await trigger.boundingBox())!;
+    expect(header.height).toBeGreaterThanOrEqual(44);
+    const insets = await trigger.evaluate(el => {
+      const bounds = el.getBoundingClientRect();
+      const label = document.createRange();
+      label.selectNodeContents(el.querySelector("span")!);
+      const icon = [...el.querySelectorAll("svg")].find(svg => svg.getBoundingClientRect().width > 0)!;
+      return { left: label.getBoundingClientRect().left - bounds.left, right: bounds.right - icon.getBoundingClientRect().right,
+        focusVisible: el.matches(":focus-visible"), borderColor: getComputedStyle(el).borderColor };
+    });
+    expect(insets.left).toBeGreaterThanOrEqual(12);
+    expect(insets.right).toBeGreaterThanOrEqual(12);
+    expect(insets.focusVisible).toBe(true);
+    expect(insets.borderColor).not.toBe("rgba(0, 0, 0, 0)");
+    await assertViewportLocked(page);
+    await captureForReview(page, `done-accordion-focused-${width}.png`);
+  }
 });
 
 for (const width of [320, 360, 1280]) test(`task search shares the inline-clear dock without overlapping New task at ${width}px`, async ({ page }) => {

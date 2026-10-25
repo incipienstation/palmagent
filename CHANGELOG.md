@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Completed-task sections use a padded accordion header with a visible keyboard focus state, keeping the label and expand control clear of the rounded edges.
+
 ## 0.1.0-alpha.226
 
 ### Changed
