@@ -45,7 +45,6 @@ test("real HTTPS passkeys protect enrollment, login, removal, and session revoca
       await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", brand.light.chrome);
     } finally {
       releaseModule();
-      await page.unroute(mainModule);
     }
     const registration = page.waitForResponse((response) => response.url().endsWith("/api/auth/register/verify"));
     await page.getByRole("button", { name: "Register this device", exact: true }).click();
