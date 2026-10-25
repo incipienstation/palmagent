@@ -75,10 +75,10 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("installed assets decode and the manifest follows the configured theme", async ({ page, request }) => {
+test("installed assets decode and the manifest uses a dark shell fallback", async ({ page, request }) => {
   const manifest = await (await request.get("/manifest.webmanifest")).json();
-  expect(manifest.theme_color).toBe(brand.light.chrome);
-  expect(manifest.background_color).toBe(brand.light.chrome);
+  expect(manifest.theme_color).toBe(brand.dark.chrome);
+  expect(manifest.background_color).toBe(brand.dark.chrome);
   await page.goto("/");
   await page.evaluate(async () => {
     for (const asset of ["favicon.svg", "logo.svg", "icon-192.png", "icon-512.png", "icon-512-maskable.png", "apple-touch-icon.png"]) {

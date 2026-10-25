@@ -75,8 +75,11 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        background_color: brand.light.chrome,
-        theme_color: brand.light.chrome,
+        // Android can retain the manifest color for its navigation bar instead of
+        // following the page's live theme-color. Use a dark installed-shell
+        // fallback so dark mode never requests a white bar or launch background.
+        background_color: brand.dark.chrome,
+        theme_color: brand.dark.chrome,
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
