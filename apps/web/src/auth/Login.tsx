@@ -1,7 +1,7 @@
 import { useUpdateBlocker } from "../update-state";
 import { useRef, useState } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { Bot, Fingerprint } from "lucide-react";
+import { Fingerprint } from "lucide-react";
 
 import { BRANDING } from "@palmagent/shared";
 
@@ -37,7 +37,7 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   return (
     <AuthScreen
-      icon={<Bot className="size-7" />}
+      icon={<span aria-hidden="true" className="size-9 bg-primary" style={{ mask: "url('/logo.svg') center / contain no-repeat" }} />}
       title={BRANDING.displayName}
       subtitle="Sign in with your passkey to continue."
     >
