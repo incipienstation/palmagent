@@ -25,28 +25,11 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- No-flash theme bootstrap: runs BEFORE the module script / first paint so
          the correct palette is applied without a flash-of-wrong-theme. Mirror of
-         ThemeProvider's resolve logic — keep them in sync.
+         ThemeProvider's resolve logic — keep them in sync. The blocking external
+         script also works with a CSP that disallows inline scripts.
          Resolution order: ?__theme= query override (Playwright/test hook) →
          localStorage('theme') → 'system' (prefers-color-scheme). -->
-    <script>
-      (function () {
-        try {
-          var DARK_CHROME = "__BRAND_DARK_CHROME__",
-            LIGHT_CHROME = "__BRAND_LIGHT_CHROME__";
-          var q = new URLSearchParams(location.search).get("__theme");
-          var stored = q || localStorage.getItem("theme") || "system";
-          var theme = stored === "light" || stored === "dark" ? stored : "system";
-          var isDark =
-            theme === "dark" ||
-            (theme === "system" &&
-              window.matchMedia &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
-          document.documentElement.classList.toggle("dark", isDark);
-          var meta = document.getElementById("theme-color-meta");
-          if (meta) meta.setAttribute("content", isDark ? DARK_CHROME : LIGHT_CHROME);
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/theme-bootstrap.js"></script>
     <title>__APP_NAME__</title>
   </head>
   <body>

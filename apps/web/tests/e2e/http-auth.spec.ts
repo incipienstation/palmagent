@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import brand from "../../src/brand.json" with { type: "json" };
 
 test.use({ ignoreHTTPSErrors: true, serviceWorkers: "block" });
 
@@ -33,7 +34,19 @@ test("real HTTPS passkeys protect enrollment, login, removal, and session revoca
       protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true,
       isUserVerified: true, automaticPresenceSimulation: true,
     } });
-    await page.goto(`${ready.origin}/#/enroll/${ready.token}`);
+    // The saved theme must apply under the real CSP before the app module runs.
+    await page.addInitScript(() => localStorage.setItem("theme", "light"));
+    let releaseModule!: () => void;
+    const moduleGate = new Promise<void>(resolve => { releaseModule = resolve; });
+    const mainModule = "**/assets/index-*.js";
+    await page.route(mainModule, async route => { await moduleGate; await route.continue(); });
+    try {
+      await page.goto(`${ready.origin}/#/enroll/${ready.token}`, { waitUntil: "commit" });
+      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", brand.light.chrome);
+    } finally {
+      releaseModule();
+      await page.unroute(mainModule);
+    }
     const registration = page.waitForResponse((response) => response.url().endsWith("/api/auth/register/verify"));
     await page.getByRole("button", { name: "Register this device", exact: true }).click();
     const registered = await registration;

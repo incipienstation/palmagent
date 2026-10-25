@@ -3,10 +3,9 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import brand from "./brand.json";
 
 // Light / dark theme system. The actual `.dark`-on-<html> + theme-color-meta is
-// FIRST applied by the no-flash inline bootstrap in index.html (before first
+// FIRST applied by the blocking theme-bootstrap.js script (before first
 // paint); this provider keeps that DOM state in sync with React state + reacts to
-// OS changes when `system`. Keep the resolve logic here in sync with the inline
-// bootstrap in index.html.
+// OS changes when `system`. Keep the resolve logic here in sync with that script.
 
 export type Theme = "light" | "dark" | "system";
 
@@ -21,7 +20,7 @@ function resolveIsDark(theme: Theme): boolean {
 }
 
 // Initial theme: ?__theme= query override (test determinism hook) → localStorage
-// → 'system'. Mirrors the inline bootstrap so React's first render agrees with
+// → 'system'. Mirrors the blocking bootstrap so React's first render agrees with
 // the pre-paint DOM.
 function readInitialTheme(): Theme {
   if (typeof window === "undefined") return "system";
