@@ -4,6 +4,7 @@ import { MoreHorizontal, SlidersHorizontal, Terminal, X } from "lucide-react";
 import { navigate } from "../router";
 import { taskDirectoryFor } from "../space-context";
 import { statusLabel } from "../lib/status";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeaderRow, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer";
 import { Field, FieldGroup, FieldLabel } from "./ui/field";
@@ -18,6 +19,10 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
 }) {
   const [open, setOpen] = useState(false);
   const close = useRef<HTMLButtonElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const activeCount = Number(status !== "all") + Number(!!repo && directory !== "all");
+  const clearFilters = () => { onStatusChange("all"); onDirectoryChange("all"); };
+  const clearChip = (clear: () => void) => { clear(); trigger.current?.focus(); };
   const directories = new Map<string, string>();
   if (repo) for (const task of tasks) {
     if (task.repoId !== repo.id) continue;
@@ -26,18 +31,8 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
   }
   if (directory !== "all" && !directories.has(directory)) directories.set(directory, directory.split("/").at(-1) || directory);
   return <div className="flex min-w-0 flex-wrap items-center gap-2">
-    <div className="min-w-0 flex-1">
-      <Select value={status} onValueChange={value => onStatusChange(value as TaskFilter)}>
-        <SelectTrigger aria-label="Task status" className="w-auto max-w-full"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectGroup>
-          <SelectItem value="all">All tasks</SelectItem>
-          {statuses.map(value => <SelectItem key={value} value={value}>{statusLabel(value)}</SelectItem>)}
-          <SelectItem value="local">Local sessions</SelectItem>
-        </SelectGroup></SelectContent>
-      </Select>
-    </div>
     <Drawer open={open} onOpenChange={setOpen}>
-      <DrawerTrigger asChild><Button variant="outline" className="rounded-full"><SlidersHorizontal data-icon="inline-start" />Filters</Button></DrawerTrigger>
+      <DrawerTrigger asChild><Button ref={trigger} variant={activeCount ? "secondary" : "outline"} className="rounded-full" aria-label={activeCount ? `Filters, ${activeCount} active` : "Filters"}><SlidersHorizontal data-icon="inline-start" />Filters{activeCount > 0 && <Badge variant="outline" aria-hidden="true">{activeCount}</Badge>}</Button></DrawerTrigger>
       <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
         <DrawerHeader><DrawerHeaderRow><DrawerTitle>Task filters</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close filters" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
           <DrawerDescription>{repo ? `Tasks in ${repo.name}. Worktree filters only change this list.` : "Tasks across all your Spaces."}</DrawerDescription>
@@ -61,12 +56,19 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
             </Select>
           </Field>}
         </FieldGroup></DrawerBody>
-        <DrawerFooter><Button onClick={() => setOpen(false)}>Done</Button></DrawerFooter>
+        <DrawerFooter>
+          {activeCount > 0 && <Button variant="ghost" onClick={() => { clearFilters(); close.current?.focus(); }}>Clear all filters</Button>}
+          <Button onClick={() => setOpen(false)}>Done</Button>
+        </DrawerFooter>
       </DrawerContent>
     </Drawer>
-    {directory !== "all" && <Button variant="secondary" className="min-w-0 max-w-full rounded-full" onClick={() => onDirectoryChange("all")} aria-label="Clear Worktree filter">
+    {status !== "all" && <Button variant="secondary" className="min-w-0 max-w-full rounded-full" onClick={() => clearChip(() => onStatusChange("all"))} aria-label="Clear status filter">
+      <span className="truncate">{status === "local" ? "Local sessions" : statusLabel(status)}</span><X data-icon="inline-end" />
+    </Button>}
+    {repo && directory !== "all" && <Button variant="secondary" className="min-w-0 max-w-full rounded-full" onClick={() => clearChip(() => onDirectoryChange("all"))} aria-label="Clear Worktree filter">
       <span className="truncate">Worktree: {directories.get(directory)}</span><X data-icon="inline-end" />
     </Button>}
+    {activeCount > 1 && <Button variant="ghost" className="rounded-full" onClick={() => clearChip(clearFilters)}>Clear all filters</Button>}
   </div>;
 }
 

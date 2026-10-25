@@ -6,7 +6,6 @@ import { createContext, memo, useContext, useEffect, useRef, useState, type Reac
 
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
@@ -300,8 +299,6 @@ export const InboxView = memo(function InboxView({
   }, [tasks, repoId, loading, spaceOrder, setSpaceOrder]);
   const spaceGroups = [...bySpace].sort(([a], [b]) => spaceOrder.indexOf(a) - spaceOrder.indexOf(b));
 
-  const answers = scoped.filter(task => task.status === "awaiting_input").length;
-  const approvals = scoped.filter(task => task.status === "awaiting_approval").length;
   const isEmpty = !loading && filtered.length === 0;
   const selectedName = space?.name ?? "Space";
   const missingSpace = !!repoId && reposLoaded && !space;
@@ -328,13 +325,7 @@ export const InboxView = memo(function InboxView({
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
               <TaskFilters repo={space} repos={repos} tasks={scoped} directory={directory} onDirectoryChange={setDirectory} status={statusFilter} onStatusChange={setStatusFilter} />
-              {!repoId && (answers > 0 || approvals > 0 || statusFilter === "awaiting_input" || statusFilter === "awaiting_approval") &&
-                <ToggleGroup type="single" variant="pills" aria-label="Quick task filters" value={statusFilter}
-                  onValueChange={value => setStatusFilter((value || "all") as TaskFilter)}>
-                  {(answers > 0 || statusFilter === "awaiting_input") && <ToggleGroupItem variant="pill" value="awaiting_input" aria-label="Needs answer">Answer · {answers}</ToggleGroupItem>}
-                  {(approvals > 0 || statusFilter === "awaiting_approval") && <ToggleGroupItem variant="pill" value="awaiting_approval" aria-label="Needs approval">Approval · {approvals}</ToggleGroupItem>}
-                </ToggleGroup>}
-              {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
+              {(search || statusFilter !== "all" || (repoId && directory !== "all")) && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
             </div>}
             {loading ? (
               <LoadingRows />

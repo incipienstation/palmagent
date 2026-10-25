@@ -1,7 +1,15 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { tasks, repos } from "../fixtures.mjs";
 import { assertViewportLocked, captureForReview } from "./_helpers";
 import { installInbox, send } from "./_inbox-stream";
+
+async function filterStatus(page: Page, label: string) {
+  await page.getByRole("button", { name: /^Filters(?:,|$)/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Task filters" });
+  await sheet.getByRole("combobox", { name: "Status", exact: true }).click();
+  await page.getByRole("option", { name: label, exact: true }).click();
+  await sheet.getByRole("button", { name: "Done", exact: true }).click();
+}
 
 test.describe("inbox", () => {
   test.beforeEach(async ({ page }) => {
@@ -28,21 +36,20 @@ test.describe("inbox", () => {
     }
   });
 
-  test("attention shortcuts filter across Spaces, reveal folded matches, and restore on Back", async ({ page }) => {
+  test("status filters work across Spaces, reveal folded matches, and restore on Back", async ({ page }) => {
     const group = page.getByRole("region", { name: "sample-app tasks", exact: true });
     const fold = group.getByRole("button", { name: "sample-app tasks", exact: true });
     await fold.click();
     await expect(fold).toHaveAttribute("aria-expanded", "false");
-    await page.getByRole("radio", { name: "Needs answer", exact: true }).click();
+    await filterStatus(page, "Needs answer");
     await expect(group.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_input").length);
     await group.getByRole("button", { name: /Scaffold a new settings screen/ }).first().click();
     await page.goBack();
-    await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveAttribute("aria-checked", "true");
-    await page.getByRole("radio", { name: "Needs approval", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Clear status filter" })).toContainText("Needs answer");
+    await filterStatus(page, "Needs approval");
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_approval").length);
-    await page.getByRole("combobox", { name: "Task status", exact: true }).click();
-    await page.getByRole("option", { name: "All tasks", exact: true }).click();
+    await page.getByRole("button", { name: "Clear status filter" }).click();
     await expect(fold).toHaveAttribute("aria-expanded", "false");
   });
 
@@ -126,13 +133,10 @@ test("every status folds independently and filters temporarily reveal its tasks"
   await expect(done).toHaveAttribute("aria-expanded", "false");
 
   const working = page.getByRole("button", { name: "Working now", exact: true });
-  const filter = page.getByRole("combobox", { name: "Task status", exact: true });
-  await filter.click();
-  await page.getByRole("option", { name: "Working", exact: true }).click();
+  await filterStatus(page, "Working");
   await expect(working).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Refactor the SSE hub fan-out", { exact: true })).toBeVisible();
-  await filter.click();
-  await page.getByRole("option", { name: "All tasks", exact: true }).click();
+  await page.getByRole("button", { name: "Clear status filter" }).click();
   await expect(working).toHaveAttribute("aria-expanded", "false");
   await working.focus();
   await working.press("Space");
@@ -312,23 +316,33 @@ for (const width of [320, 360, 1280]) test(`task search shares the inline-clear 
 });
 
 
-test("zero-count shortcuts stay quiet but all statuses remain keyboard reachable", async ({ page }) => {
+test("one filter entry keeps zero-result statuses keyboard reachable", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
-  await expect(page.getByRole("combobox", { name: "Task status" })).toBeVisible();
+  const trigger = page.getByRole("button", { name: /^Filters(?:,|$)/ });
+  await expect(trigger).toBeVisible();
+  await expect(page.getByRole("combobox")).toHaveCount(0);
+  await expect(page.getByRole("radiogroup", { name: "Quick task filters" })).toHaveCount(0);
   await send(page, { type: "tasks", tasks: tasks.filter(task => task.status === "idle") });
-  await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("radio", { name: "Needs approval", exact: true })).toHaveCount(0);
-  const select = page.getByRole("combobox", { name: "Task status" });
+  await trigger.focus();
+  await trigger.press("Enter");
+  const sheet = page.getByRole("dialog", { name: "Task filters" });
+  const select = sheet.getByRole("combobox", { name: "Status", exact: true });
   await select.focus();
   await select.press("ArrowDown");
   await expect(page.getByRole("option", { name: "Needs approval", exact: true })).toBeVisible();
   await page.getByRole("option", { name: "Needs answer", exact: true }).click();
+  await sheet.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByText("No tasks match these filters", { exact: true })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveAttribute("aria-checked", "true");
-  await select.click();
-  await page.getByRole("option", { name: "All tasks", exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveCount(0);
+  await expect(page.getByText("0 tasks found", { exact: true })).toBeVisible();
+  await expect(trigger).toHaveAccessibleName("Filters, 1 active");
+  const chip = page.getByRole("button", { name: "Clear status filter" });
+  await chip.focus();
+  await chip.press("Enter");
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAccessibleName("Filters");
+  await expect(chip).toHaveCount(0);
+  await expect(page.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
 });
 
 test("compact rows retain prompt search and PR actions without opening the task", async ({ page }) => {
