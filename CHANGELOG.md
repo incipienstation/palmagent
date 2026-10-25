@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.231
+
 ### Changed
 
 - Refined the Palmagent logo with four separate fingers, balanced spacing, and an L-shaped thumb and palm across app icons and notification badges.
