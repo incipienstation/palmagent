@@ -23,7 +23,7 @@ export default defineConfig({
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       // The browser export uses document.createElement. Use the equivalent
-      // entity-table decoder in both dev and build, including Markdown workers.
+      // entity-table decoder consistently in both dev and build.
       "decode-named-character-reference": createRequire(import.meta.url).resolve("decode-named-character-reference"),
     },
   },

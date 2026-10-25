@@ -290,12 +290,15 @@ guess which text is safe to fold.
   assistant messages so Markdown is never split at a page boundary. Compact pages
   and live SSE frames retain Activity summaries while deferring tool inputs and
   outputs; expanding a summary loads its details from REST. Reconnect gaps use
-  bounded `GET /api/tasks/:id/history/changes` pages. React Virtuoso
-  renders nearby rows in the Radix scroll area; row expansion survives scrolling
-  out of view, and live deltas publish once per animation frame. Long Markdown
-  messages parse in a worker and reuse unchanged rendered blocks; worker failures
-  retain readable plain text. Task snapshots reuse unchanged rows, and the inbox
-  retains its search and reading position across navigation.
+  bounded `GET /api/tasks/:id/history/changes` pages. shadcn Message and Bubble
+  compose the chat, and MessageScroller shares the Radix viewport with React
+  Virtuoso. Virtuoso owns row measurement, prepend anchors, and scroll checkpoints;
+  the adapter follows output after measurement and pauses for reading or Trace
+  disclosure. Trace expansion survives scrolling out of view. Streamdown renders
+  Markdown and memoizes completed streaming blocks, preserving the app's code,
+  diagram, image, and link handling. Live deltas publish once per animation frame.
+  Task snapshots reuse unchanged rows, and the inbox retains its search and
+  reading position across navigation.
 - **Client caching:** repositories and routines reuse successful reads in memory for
   30 seconds; usage and routine runs for 10 seconds. Concurrent reads share a
   request. Mutations invalidate before and after the request, including failed
@@ -331,7 +334,7 @@ guess which text is safe to fold.
 
 | Surface | Policy |
 | --- | --- |
-| Hashed JS, CSS, Markdown worker, icons | Workbox precache; hashed HTTP assets immutable |
+| Hashed JS, CSS, icons | Workbox precache; hashed HTTP assets immutable |
 | HTML, service worker, manifest | HTTP revalidation; worker update bypasses HTTP cache |
 | Auth, push enrollment, task controls, settings | Network; API HTTP responses use no-store |
 | Task list and task state | SSE snapshots; no service-worker interception |
@@ -343,7 +346,7 @@ guess which text is safe to fold.
 | Routine run history | TanStack Query cache; revalidated on open, routine events, and inbox reconnect |
 | Discovery, path validation, filesystem browse | Network so external settings and filesystem changes remain authoritative |
 | Account limits | In-memory snapshots invalidated by SSE; provider-scoped server cache owns freshness |
-| Markdown rendering | Existing bounded content-keyed worker cache |
+| Markdown rendering | React and Streamdown memoization for mounted messages |
 | Theme, output mode, form drafts, selected space | Local preferences, not server response caches |
 | Update checkpoints | Existing per-tab IndexedDB handoff, consumed after reload |
 | Reading position | Existing bounded page-local navigation state |

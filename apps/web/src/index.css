@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@source "../node_modules/streamdown/dist/*.js";
 
 /* Make the `dark:` utility variant key off the `.dark` class on <html> (toggled by
    ThemeProvider + the no-flash bootstrap), NOT `@media (prefers-color-scheme: dark)`.

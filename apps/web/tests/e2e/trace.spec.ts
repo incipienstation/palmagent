@@ -207,3 +207,61 @@ test("collapsing nested output preserves its trigger position and keyboard focus
   await expect(step).toBeFocused();
   await expect.poll(async () => Math.abs((await step.boundingBox())!.y - before)).toBeLessThanOrEqual(2);
 });
+
+test("opening tall Trace output keeps the reading position and enables return to latest", async ({ page, history }) => {
+  history.add([event("tool_call", { id: "large", name: "bash", command: "large-result" }),
+    event("tool_result", { tool_use_id: "large", output: "Result line\n".repeat(100), exit_code: 0 }),
+    event("assistant_text", { text: "The result is ready.", phase: "final" })]);
+  await routes(page, history); await page.goto(`/#/task/${taskId}`);
+  await page.getByRole("button", { name: "Activity · 1 tool", exact: true }).click();
+  const step = page.getByRole("button", { name: "Completed: large-result", exact: true });
+  const pane = page.getByRole("region", { name: "Session transcript", exact: true });
+  const top = await pane.evaluate(el => el.scrollTop);
+  await step.click();
+  await expect(page.getByText("Result line", { exact: false })).toBeVisible();
+  await expect.poll(() => pane.evaluate(el => el.scrollTop)).toBe(top);
+  const latest = page.getByRole("button", { name: "Scroll to bottom", exact: true });
+  await expect(latest).toBeVisible();
+  await latest.click();
+  await expect.poll(() => pane.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(2);
+  await expect(step).toHaveAttribute("aria-expanded", "true");
+});
+
+test("streamed Markdown leaves an open Trace and the reader's draft in place", async ({ page, history }) => {
+  history.add([event("assistant_text", { text: "Earlier context.\n\n".repeat(40), phase: "final" }),
+    ...pair(0), event("assistant_text", { text: "## Findings\n\n**Checking", messageId: "answer", phase: "final" })]);
+  await routes(page, history);
+  await page.goto(`/#/task/${taskId}`);
+  await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
+  await send(page, taskId, { type: "tasks", tasks: [{ ...history.task, status: "running", updatedAt: Date.now() }], historyThrough: history.tasks.eventCursor(taskId) });
+  await page.getByRole("button", { name: "Activity · 1 tool", exact: true }).click();
+  const step = page.getByRole("button", { name: "Completed: check-0", exact: true });
+  await step.click();
+  await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("계속 작성 중인 초안");
+  const pane = page.getByRole("region", { name: "Session transcript", exact: true });
+  // Explicitly read above the live edge; growing Markdown must not reclaim it.
+  await pane.evaluate(el => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -150, bubbles: true }));
+    el.scrollTop -= 150;
+  });
+  const top = await pane.evaluate(el => el.scrollTop);
+  history.add([event("assistant_text", { text: " complete**\n\n```ts\nconst checked = true;\n```\n\n" + "More findings.\n\n".repeat(15), messageId: "answer", phase: "final" })]);
+  await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
+  await expect(page.locator("strong").filter({ hasText: "Checking complete" })).toHaveCount(1);
+  await expect(page.locator("[data-code-block] pre")).toHaveText("const checked = true;\n");
+  await expect(step).toHaveAttribute("aria-expanded", "true");
+  await expect.poll(() => pane.evaluate(el => el.scrollTop)).toBe(top);
+  await expect(composer).toHaveValue("계속 작성 중인 초안");
+  await expect(composer).toBeFocused();
+  await assertViewportLocked(page);
+  await captureForReview(page, "chat-streamdown-trace-mobile.png");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(step).toHaveAttribute("aria-expanded", "true");
+  await expect(composer).toHaveValue("계속 작성 중인 초안");
+  await expect(composer).toBeFocused();
+  await assertViewportLocked(page);
+  await step.scrollIntoViewIfNeeded();
+  await captureForReview(page, "chat-streamdown-trace-desktop.png");
+});
