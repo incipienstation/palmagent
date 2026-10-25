@@ -353,12 +353,23 @@ guess which text is safe to fold.
 `src/brand.json` owns the Palm Teal palette for light and dark mode. Change its
 semantic color pairs to replace the brand: `primary` / `primary-foreground` for
 filled actions, `primary-active` for pressed actions, `accent` / `accent-foreground`
-for selection and hover. `chrome` controls browser and installed-app chrome;
-keep it aligned with each theme's `--background` in `src/index.css` so the
-system bars blend into the conversation background.
+for selection and hover. `chrome` supplies browser and installed-app colors;
+keep it aligned with each theme's `--background` in `src/index.css`.
 Vite injects these as `--brand-*` variables before first paint; `src/index.css`
-maps them to the UI's semantic tokens. Theme changes and the PWA manifest read
-that same palette. Keep neutral surfaces and status colors independent.
+maps them to the UI's semantic tokens. The page's `theme-color` follows the
+selected theme. The PWA manifest uses `dark.chrome` for both `theme_color` and
+`background_color`: Android can retain these installed-shell colors for the
+navigation bar and launch screen instead of following runtime theme changes.
+This avoids a white fallback in dark mode; the installed system bar and launch
+screen can remain dark in light mode. Keep neutral surfaces and status colors
+independent.
+
+Existing Android installations need a WebAPK manifest update before the new
+fallback takes effect; reloading the page or updating its service worker alone
+does not guarantee that update. See [Chrome's manifest update guidance](https://web.dev/articles/manifest-updates).
+Browser tests cover the generated manifest and live page metadata. System-bar
+rendering still needs a physical-device check because browser, Android, and
+edge-to-edge behavior can override the requested color.
 
 After editing the palette or `src/assets/palm.svg`, run
 `pnpm --filter @palmagent/web icons:generate` to refresh the favicon, adaptive
