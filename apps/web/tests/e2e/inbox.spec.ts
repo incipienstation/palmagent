@@ -95,6 +95,84 @@ test.describe("inbox", () => {
 
 });
 
+test("every status folds independently and filters temporarily reveal its tasks", async ({ page }) => {
+  await installInbox(page);
+  await page.goto("/#/spaces/repo-app");
+  await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+  await send(page, { type: "tasks", tasks: [
+    ...tasks.map(task => ({ ...task, repoId: "repo-app" })),
+    { ...tasks[0], taskId: "local-session", repoId: "repo-app", title: "Local session task", status: "idle", sessionControl: {
+      owner: "local", home: "/sessions", transcript: "/sessions/local.jsonl", cursor: 0, prefixHash: "fixture",
+    } },
+  ] });
+  const labels = ["Needs your answer", "Needs your approval", "Working now", "Up next", "Local sessions", "Done", "Failed", "Cancelled", "Archived"];
+  for (const label of labels) {
+    const group = page.getByRole("region", { name: label, exact: true });
+    const trigger = group.getByRole("button", { name: label, exact: true });
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await trigger.focus();
+    await trigger.press("Enter");
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(group.locator("[data-swipe-surface]")).toHaveCount(0);
+  }
+
+  const done = page.getByRole("button", { name: "Done", exact: true });
+  await page.getByRole("searchbox", { name: "Search tasks" }).fill("QA harness");
+  await expect(page.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
+  await expect(done).toHaveAttribute("aria-expanded", "true");
+  await expect(done).toHaveAttribute("aria-disabled", "true");
+  await page.getByRole("button", { name: "Clear task search" }).click();
+  await expect(done).toHaveAttribute("aria-expanded", "false");
+
+  const working = page.getByRole("button", { name: "Working now", exact: true });
+  const filter = page.getByRole("combobox", { name: "Task status", exact: true });
+  await filter.click();
+  await page.getByRole("option", { name: "Working", exact: true }).click();
+  await expect(working).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("Refactor the SSE hub fan-out", { exact: true })).toBeVisible();
+  await filter.click();
+  await page.getByRole("option", { name: "All tasks", exact: true }).click();
+  await expect(working).toHaveAttribute("aria-expanded", "false");
+  await working.focus();
+  await working.press("Space");
+  await expect(working).toHaveAttribute("aria-expanded", "true");
+  for (const label of labels.filter(label => label !== "Working now")) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-expanded", "false");
+  }
+});
+
+test("Space accordions preserve folding and keep long headings separate from their actions", async ({ page }) => {
+  const name = "A very long Space name that must leave room for its actions";
+  await page.route("**/api/repos", route => route.fulfill({ json: { repos: [{ ...repos[0], name }, ...repos.slice(1)] } }));
+  await page.goto("/");
+  const group = page.getByRole("region", { name: `${name} tasks`, exact: true });
+  const trigger = group.getByRole("button", { name: `${name} tasks`, exact: true });
+  const open = group.getByRole("button", { name: `Open Space ${name}`, exact: true });
+  const create = group.getByRole("button", { name: `New task in ${name}`, exact: true });
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 780 });
+    await expect(trigger).toBeVisible();
+    const boxes = await Promise.all([trigger, open, create].map(control => control.boundingBox()));
+    for (const box of boxes) expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(boxes[0]!.x + boxes[0]!.width).toBeLessThanOrEqual(boxes[1]!.x);
+    expect(boxes[1]!.x + boxes[1]!.width).toBeLessThanOrEqual(boxes[2]!.x);
+    await assertViewportLocked(page);
+  }
+  await trigger.focus();
+  await trigger.press("Space");
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "notes tasks", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect(open).toBeEnabled();
+  await expect(create).toBeEnabled();
+  await page.getByRole("searchbox", { name: "Search tasks" }).fill("QA harness");
+  await expect(group.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Clear task search" }).click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+});
+
 test("Done accordion retains folding through search and navigation, and fits live rows", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await installInbox(page);
@@ -125,7 +203,8 @@ test("Done accordion retains folding through search and navigation, and fits liv
 
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("QA");
   await expect(completed).toBeVisible();
-  await expect(trigger).toHaveCount(0);
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(trigger).toHaveAttribute("aria-disabled", "true");
   await completed.click();
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
   await page.goBack();
