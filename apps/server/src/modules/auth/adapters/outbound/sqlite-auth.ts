@@ -84,15 +84,17 @@ pruneExpiredSessions(now: number) {
     this.db.prepare(`DELETE FROM auth_sessions WHERE expires_at <= ?`).run(now);
   }
 
-createEnrollToken(token: string, expiresAt: number) {
-    this.db.prepare(`INSERT INTO enroll_tokens (token, expires_at, used_at) VALUES (?, ?, NULL)`).run(token, expiresAt);
+createEnrollToken(token: string, expiresAt: number, sessionToken?: string) {
+    this.db.prepare(`INSERT INTO enroll_tokens (token, expires_at, used_at, session_token) VALUES (?, ?, NULL, ?)`).run(token, expiresAt, sessionToken ?? null);
   }
 
-isEnrollTokenValid(token: string, now: number): boolean {
-    const row = this.db
-      .prepare(`SELECT 1 FROM enroll_tokens WHERE token = ? AND used_at IS NULL AND expires_at > ?`)
-      .get(token, now);
-    return !!row;
+getEnrollToken(token: string, now: number): { sessionToken?: string } | undefined {
+    const row = this.db.prepare(`SELECT session_token FROM enroll_tokens WHERE token = ? AND used_at IS NULL AND expires_at > ?`).get(token, now) as { session_token: string | null } | undefined;
+    return row ? { sessionToken: row.session_token ?? undefined } : undefined;
+  }
+
+revokeSessions(): void {
+    this.db.transaction(() => { this.db.exec("DELETE FROM auth_sessions; DELETE FROM enroll_tokens;"); }).immediate();
   }
 
 consumeEnrollToken(token: string, now: number): boolean {

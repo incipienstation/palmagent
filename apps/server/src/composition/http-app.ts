@@ -10,7 +10,7 @@ import { authBudget } from "../platform/http/auth-budget.js";
 import { bodyLimit } from "hono/body-limit";
 import { StreamQuerySchema } from "@palmagent/shared/requests";
 import { query } from "../platform/http/input.js";
-import { versionHeader, authenticate, requireCurrentClient, requestAdmission } from "../platform/http/middleware.js";
+import { securityHeaders, versionHeader, authenticate, requireCurrentClient, requestAdmission } from "../platform/http/middleware.js";
 import { SkillContextSchema } from "@palmagent/shared";
 import { AGENT_CLI_COMPATIBILITY } from "@palmagent/shared";
 import { handleError } from "../platform/http/errors.js";
@@ -37,7 +37,7 @@ export function createApp(deps: HttpDependencies) {
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
   app.use("*", requestMeasurements(deps.measurements, deps.requestLoad ?? { active: 0 }));
-  app.use("*", versionHeader(deps), authBudget(), authenticate(deps), requireCurrentClient(deps), requestAdmission(deps));
+  app.use("*", securityHeaders(deps.auth.origin), versionHeader(deps), authBudget(), authenticate(deps), requireCurrentClient(deps), requestAdmission(deps));
   const limitBody = (maxSize: number) => bodyLimit({ maxSize, onError: (c) => c.json({ error: "request body too large" }, 413) });
   const standardBody = limitBody(MAX_BODY_BYTES);
   const imageBody = limitBody(MAX_IMAGE_BODY_BYTES);

@@ -227,7 +227,12 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       registerOptions: (token?: string) => write(() => client.auth.register.options.$post({ json: { token } }), true),
       registerVerify: (response: RegistrationResponseJSON, label?: string) => write(() => client.auth.register.verify.$post({ json: { response: { ...response, clientExtensionResults: { ...response.clientExtensionResults } }, label } }), true, true),
       logout: () => write(() => client.auth.logout.$post(), true, true),
-      enrollToken: () => write(() => client.auth["enroll-token"].$post()),
+      reauthenticateOptions: (action: import("@palmagent/shared").AuthAction) => write(() => client.auth.reauthenticate.options.$post({ json: { action } })),
+      reauthenticateVerify: (json: AuthenticationResponseJSON) => write(() => client.auth.reauthenticate.verify.$post({ json: { ...json, clientExtensionResults: { ...json.clientExtensionResults } } })),
+      enrollToken: (authorization: string) => write(() => client.auth["enroll-token"].$post({ json: { authorization } })),
+      passkeys: () => request(() => client.auth.passkeys.$get()).then(result => result.passkeys),
+      removePasskey: (authorization: string, credentialId: string) => write(() => client.auth.passkeys.remove.$post({ json: { authorization, credentialId } }), false, true),
+      logoutAll: (authorization: string) => write(() => client.auth["logout-all"].$post({ json: { authorization } }), false, true),
     },
     push: {
       key: () => request(() => client.push.key.$get()),

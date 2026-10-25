@@ -25,6 +25,7 @@ export type HttpDependencies = {
   service: HttpTaskUseCases & import("../modules/spaces/api.js").SpaceUseCases;
   auth: Pick<AuthUseCases,
     | "enabled" | "origin" | "verifySession" | "sessionValid" | "status" | "beginAuthentication"
+    | "beginReauthentication" | "finishReauthentication" | "authorizeEnrollment" | "logoutAll" | "listPasskeys" | "removePasskey"
     | "finishAuthentication" | "beginRegistration" | "finishRegistration" | "logout" | "mintEnrollToken"
   >;
   push: Pick<PushUseCases, "getPublicKey" | "subscribe" | "unsubscribe">;

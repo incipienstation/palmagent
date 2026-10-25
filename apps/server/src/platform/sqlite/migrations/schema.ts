@@ -118,6 +118,12 @@ export function migrateSchema(db: Database.Database) {
         used_at INTEGER
       );
     `);
+    const enrollCols = (db.pragma("table_info(enroll_tokens)") as { name: string }[]).map(c => c.name);
+    if (!enrollCols.includes("session_token")) db.transaction(() => {
+      db.exec("ALTER TABLE enroll_tokens ADD COLUMN session_token TEXT");
+      // Legacy grants did not record their issuer; they cannot be safely rebound.
+      db.exec("DELETE FROM enroll_tokens");
+    }).immediate();
     // Additive migrations preserve existing native sessions and task events.
     const taskCols = (db.pragma("table_info(tasks)") as { name: string }[]).map((c) => c.name);
     if (!taskCols.includes("pinned_at")) db.exec("ALTER TABLE tasks ADD COLUMN pinned_at INTEGER");

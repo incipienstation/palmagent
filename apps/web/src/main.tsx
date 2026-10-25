@@ -22,7 +22,7 @@ import "./index.css";
 initViewportHeight();
 
 // ThemeProvider keeps the .dark class + theme-color-meta in sync (the no-flash
-// inline bootstrap in index.html applies the initial theme before first paint).
+// blocking theme-bootstrap.js applies the initial theme before first paint).
 // Toaster + TooltipProvider are mounted app-wide (above AuthGate) so transient
 // feedback and tooltips work on every route, including the login/enroll gate.
 async function boot() {

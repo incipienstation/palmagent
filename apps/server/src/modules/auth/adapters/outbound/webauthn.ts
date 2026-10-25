@@ -12,14 +12,14 @@ export const webauthn: Passkeys = {
     return generateRegistrationOptions({ rpName: settings.rpName, rpID: settings.rpId,
       userName: BRANDING.displayName, userID: USER_ID, attestationType: "none",
       excludeCredentials: existing.map(c => ({ id: c.credentialId, transports: c.transports as AuthenticatorTransportFuture[] | undefined })),
-      authenticatorSelection: { residentKey: "required", userVerification: "preferred" } });
+      authenticatorSelection: { residentKey: "required", userVerification: "required" } });
   },
   authenticationOptions(settings) {
-    return generateAuthenticationOptions({ rpID: settings.rpId, userVerification: "preferred", allowCredentials: [] });
+    return generateAuthenticationOptions({ rpID: settings.rpId, userVerification: "required", allowCredentials: [] });
   },
   async verifyRegistration(settings, response, challenge) {
     const result = await verifyRegistrationResponse({ response: response as RegistrationResponseJSON,
-      expectedChallenge: challenge, expectedOrigin: settings.authOrigin, expectedRPID: settings.rpId, requireUserVerification: false });
+      expectedChallenge: challenge, expectedOrigin: settings.authOrigin, expectedRPID: settings.rpId, requireUserVerification: true });
     if (!result.verified || !result.registrationInfo) return;
     const credential = result.registrationInfo.credential;
     return { credentialId: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"),
@@ -27,7 +27,7 @@ export const webauthn: Passkeys = {
   },
   async verifyAuthentication(settings, response, challenge, credential) {
     const result = await verifyAuthenticationResponse({ response,
-      expectedChallenge: challenge, expectedOrigin: settings.authOrigin, expectedRPID: settings.rpId, requireUserVerification: false,
+      expectedChallenge: challenge, expectedOrigin: settings.authOrigin, expectedRPID: settings.rpId, requireUserVerification: true,
       credential: { id: credential.credentialId, publicKey: new Uint8Array(Buffer.from(credential.publicKey, "base64url")),
         counter: credential.counter, transports: credential.transports as AuthenticatorTransportFuture[] | undefined } });
     return result.verified ? result.authenticationInfo.newCounter : undefined;

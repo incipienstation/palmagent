@@ -16,7 +16,7 @@ function parse<T extends z.ZodTypeAny>(schema: T, value: unknown): z.output<T> {
 // Keep the established empty-body and Content-Type-independent JSON contract.
 // Hono's JSON validator deliberately has different parsing semantics, so this
 // adapter publishes the validated value through the same typed req.valid API.
-export function jsonBody<T extends z.ZodTypeAny>(schema: T): MiddlewareHandler<{}, string, {
+export function jsonBody<T extends z.ZodType<object>>(schema: T): MiddlewareHandler<{}, string, {
   in: { json: z.input<T> }; out: { json: z.output<T> };
 }> {
   return async (c, next) => {

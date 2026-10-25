@@ -45,13 +45,21 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const service = createTaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), new LocalAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
     undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }));
-  const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: "https://localhost", repoRoots: [dir], staticDir: join(dir, "web") };
+  const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
   const repoSettings = createSpaceSettings(join(dir, "state"), settings.repoRoots);
   const modelCatalog = extra.modelCatalog ?? { get: async () => defaultCodexModelCatalog() };
   const app = createApp({ hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
     push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), hub), ...extra, modelCatalog });
+  // Ordinary fixture writes represent browser requests from the configured origin.
+  // An explicit empty origin exercises clients which omit the header.
+  const request = app.request.bind(app);
+  app.request = (input, init, env) => {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    if (!headers.has("origin")) headers.set("origin", settings.authOrigin);
+    return request(input, { ...init, headers }, env);
+  };
   const cleanup: Array<() => Promise<void>> = [];
   t.after(async () => {
     shutdown.abort();
@@ -204,14 +212,14 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   const now = Date.now();
   f.db.createSession("fixture-session", now, now + 60_000);
   f.db.createSession("expired-session", now - 1000, now - 1);
-  const headers = { cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
+  const headers = { origin: f.settings.authOrigin, cookie: `${f.settings.cookieName}=fixture-session`, "content-type": "application/json" };
   assert.equal((await fetch(base + "/api/health")).status, 200);
   for (const path of ["/api/tasks", "/api/tasks/t/history?before=2", "/api/tasks/t/history?format=transcript", "/api/tasks/t/history/items?key=1", "/api/tasks/t/history/content?key=1", "/api/tasks/fixture/account-limits", "/api/compatibility", "/api/terminals", "/api/stream", "/api/agents/stream", "/api/unknown"]) {
     const denied = await fetch(base + path);
     assert.equal(denied.status, 401);
     assert.equal(denied.headers.get("cache-control"), "no-store");
   }
-  assert.equal((await fetch(base + "/api/auth/enroll-token", { method: "POST" })).status, 401);
+  assert.equal((await fetch(base + "/api/auth/enroll-token", { method: "POST" })).status, 403);
   for (const cookie of [`${f.settings.cookieName}=expired-session`, `${f.settings.cookieName}=%ZZ`]) {
     assert.equal((await fetch(base + "/api/tasks", { headers: { cookie } })).status, 401);
   }
@@ -250,7 +258,7 @@ test("HTTP auth gates and input failures preserve cookies, status codes and muta
   assert.equal(await sendChunked("/api/auth/login/options", "{}".padEnd(MAX_BODY_BYTES + 1)), 413);
   assert.equal(await sendChunked("/api/tasks/t/stop", oversized), 413);
   assert.equal(f.service.listTasks().length, 0);
-  const options = await fetch(base + "/api/auth/login/options", { method: "POST" });
+  const options = await fetch(base + "/api/auth/login/options", { method: "POST", headers: { origin: f.settings.authOrigin } });
   assert.equal(options.status, 200);
   assert.equal(options.headers.get("cache-control"), "no-store");
   assert.match(options.headers.get("set-cookie")!, /wa_chal=.*HttpOnly.*Secure.*SameSite=Lax/i);
@@ -1366,7 +1374,7 @@ test("104 MiB HTTP upload reaches the shared Codex provider as readable bytes ex
     const address = server.address(); assert.ok(address && typeof address === "object");
     const base = `http://localhost:${address.port}`;
     f.db.createSession("shared-file-auth", Date.now(), Date.now() + 60_000);
-    const headers = { cookie: `${f.settings.cookieName}=shared-file-auth` };
+    const headers = { origin: f.settings.authOrigin, cookie: `${f.settings.cookieName}=shared-file-auth` };
     const blob = new Blob([bytes]);
     const upload = () => {
       const body = new FormData();
@@ -1388,4 +1396,61 @@ test("104 MiB HTTP upload reaches the shared Codex provider as readable bytes ex
     f.service.beginShutdown();
     assert.equal(digest(readFileSync(providerPath)), expectedDigest, "web shutdown must not delete a native session's files");
   } finally { f.service.beginShutdown(); }
+});
+
+test("authentication writes require the configured origin, including missing and sibling origins", async t => {
+  const f = fixture(t), now = Date.now();
+  f.db.createSession("owner", now, now + 60000);
+  for (const origin of ["", "null", "http://localhost", "https://sibling.example", "https://localhost.attacker.example"]) {
+    for (const path of ["/api/auth/login/options", "/api/auth/register/options", "/api/auth/enroll-token", "/api/auth/logout", "/api/auth/logout-all", "/api/tasks"]) {
+      const response = await f.app.request(path, { method: "POST", headers: { origin, host: new URL(origin.startsWith("http") ? origin : "https://localhost").host, cookie: `${f.settings.cookieName}=owner`, "content-type": "text/plain" }, body: "{}" });
+      assert.equal(response.status, 403, `${origin} ${path}`);
+    }
+  }
+  assert.equal(f.auth.sessionValid("owner"), true);
+  assert.equal((await f.app.request("/api/auth/login/options", { method: "POST" })).status, 200);
+  assert.equal((await f.app.request("/api/auth/enroll-token", { method: "POST", headers: { cookie: `${f.settings.cookieName}=owner` }, body: '{"authorization":"invalid"}' })).status, 400);
+});
+
+test("logout closes existing SSE connections and prevents delivery of later task events", async t => {
+  const f = fixture(t), now = Date.now();
+  f.db.createSession("owner", now, now + 60000);
+  const headers = { cookie: `${f.settings.cookieName}=owner` };
+  const response = await f.app.request("/api/stream", { headers });
+  const reader = response.body!.getReader();
+  await reader.read();
+  const next = reader.read();
+  await f.app.request("/api/auth/logout", { method: "POST", headers });
+  f.hub.emitEvent({ id: 1, seq: 1, event: { taskId: "fixture", agent: "codex", kind: "assistant_text", payload: { text: "AFTER_REVOCATION" }, ts: Date.now() } });
+  assert.equal((await next).done, true);
+  assert.equal((await f.app.request("/api/tasks", { headers })).status, 401);
+});
+
+test("idle task and resource SSE connections close on session expiry", { timeout: 10000 }, async t => {
+  const f = fixture(t), now = Date.now();
+  f.db.createSession("owner", now, now + 60000);
+  for (const path of ["/api/stream", "/api/agents/stream"]) {
+    const response = await f.app.request(path, { headers: { cookie: `${f.settings.cookieName}=owner` } });
+    const reader = response.body!.getReader(); await reader.read();
+    const pending = reader.read();
+    await new Promise(resolve => setImmediate(resolve));
+    f.db.refreshSession("owner", Date.now() - 1);
+    const result = await pending;
+    assert.equal(result.done, true);
+    f.db.refreshSession("owner", Date.now() + 60000);
+  }
+});
+
+test("the served shell prevents framing and restricts scripts to this origin", async t => {
+  for (const enabled of [true, false]) {
+    const f = fixture(t, enabled);
+    mkdirSync(f.settings.staticDir, { recursive: true });
+    writeFileSync(join(f.settings.staticDir, "index.html"), "<!doctype html><title>Fixture</title>");
+    // Headers also protect unavailable shells and authentication-disabled development.
+    const response = await f.app.request("/");
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.match(response.headers.get("content-security-policy")!, /script-src 'self';/);
+    assert.match(response.headers.get("content-security-policy")!, /frame-ancestors 'none'/);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  }
 });

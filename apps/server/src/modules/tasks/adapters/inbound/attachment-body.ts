@@ -5,7 +5,7 @@ import { ApplicationError } from "../../../../kernel/errors.js";
 import { jsonBody } from "../../../../platform/http/input.js";
 
 /** Decode binary file parts at the HTTP boundary; services retain their input contract. */
-export function attachmentBody<T extends z.ZodTypeAny>(schema: T): ReturnType<typeof jsonBody<T>> {
+export function attachmentBody<T extends z.ZodType<object>>(schema: T): ReturnType<typeof jsonBody<T>> {
   const json = jsonBody(schema);
   return async (c, next) => {
     if (!c.req.header("content-type")?.toLowerCase().startsWith("multipart/form-data")) return json(c, next);
