@@ -70,19 +70,30 @@ for (const oldPreference of ["compact", "verbose"]) test(`one chat view ignores 
   await captureForReview(page, `trace-${oldPreference}.png`);
 });
 
-test("expanding loaded steps does not load the next page or unseen output", async ({ page, history }) => {
+test("individual Trace rows load only selected output across step pages", async ({ page, history }) => {
   history.add(Array.from({ length: 55 }, (_, i) => pair(i)).flat());
   const requests = await routes(page, history);
   await page.goto(`/#/task/${taskId}`);
   await page.getByRole("button", { name: "Activity · 55 tools", exact: true }).click();
-  await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
-  await expect.poll(() => requests.filter(name => name === "/step-details").length).toBe(50);
+  await expect(page.getByRole("button", { name: /(?:Expand|Collapse) loaded steps/ })).toHaveCount(0);
+  const first = page.getByRole("button", { name: "Completed: check-0", exact: true });
+  await first.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
+  expect(requests.filter(name => name === "/step-details")).toHaveLength(1);
   expect(requests.filter(name => name === "/steps")).toHaveLength(1);
   await expect(page.getByText("Output for step 54", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "Collapse loaded steps", exact: true }).click();
+  await page.keyboard.press("Enter");
+  await expect(first).toBeFocused();
+  await expect(first).toHaveAttribute("aria-expanded", "false");
   await page.getByRole("button", { name: "Load more steps", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Completed: check-54", exact: true })).toBeVisible();
-  expect(requests.filter(name => name === "/step-details")).toHaveLength(50);
+  const last = page.getByRole("button", { name: "Completed: check-54", exact: true });
+  await expect(last).toBeVisible();
+  expect(requests.filter(name => name === "/steps")).toHaveLength(2);
+  expect(requests.filter(name => name === "/step-details")).toHaveLength(1);
+  await last.click();
+  await expect(page.getByText("Output for step 54", { exact: false })).toBeVisible();
+  expect(requests.filter(name => name === "/step-details")).toHaveLength(2);
 });
 
 test("late completion updates an open operation without changing its disclosure or draft", async ({ page, history }) => {

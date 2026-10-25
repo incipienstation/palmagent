@@ -18,7 +18,7 @@ for (const mode of ["compact", "verbose"] as const) {
       if (mode === "compact") await expect(page).toHaveScreenshot(`output-mode-${mode}.png`);
       await page.getByRole("button", { name: /(?:Activity|Commands) · 1 tool$/ }).click();
     }
-    await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
+    await page.getByRole("button", { name: "Tool result", exact: true }).click();
     await expect(page.getByText(ONLY_WHEN_EXPANDED)).toBeVisible();
     await assertViewportLocked(page);
     expect(await viewport(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
@@ -61,7 +61,7 @@ for (const mode of ["compact"] as const) {
     await group.focus();
     await page.keyboard.press("Enter");
     await expect(group).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
+    await page.getByRole("button", { name: "Completed: echo checked", exact: true }).first().click();
     await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
     await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
     await emit("tool_call", { id: "next-tool", name: "bash", command: "echo more" });
@@ -152,7 +152,7 @@ for (const mode of ["compact"] as const) {
     await expect(details).toHaveAttribute("aria-expanded", "false");
     const activity = page.getByRole("button", { name: "Activity · 12 tools", exact: true });
     await activity.click();
-    await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
+    await page.getByRole("button", { name: "Failed: check-target-0", exact: true }).click();
     await expect(page.getByText("Diagnostic 0: target unavailable", { exact: false })).toBeVisible();
     await activity.click();
     await expect(page.getByText("Diagnostic 0: target unavailable", { exact: false })).toHaveCount(0);

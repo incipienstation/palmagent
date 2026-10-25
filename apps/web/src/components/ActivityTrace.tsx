@@ -12,17 +12,16 @@ import type { ReactNode } from "react";
 type Props = {
   activity: Activity; running: boolean; sourceLog: LogItem[]; revision: number; taskId?: string; open: boolean; openSteps: Set<number>;
   onToggle: (activity: Activity, open: boolean) => void;
-  onStepsChange: (keys: number[], open: boolean) => void;
+  onStepOpenChange: (key: number, open: boolean) => void;
   render: (row: ConversationItem) => ReactNode;
 };
 
-export function ActivityTrace({ activity, running: executing, sourceLog, revision, taskId, open, openSteps, onToggle, onStepsChange, render }: Props) {
+export function ActivityTrace({ activity, running: executing, sourceLog, revision, taskId, open, openSteps, onToggle, onStepOpenChange, render }: Props) {
   const query = useTraceSteps(taskId, activity.key, revision, open && !!activity.details, activity.disclosureKey);
   const [localCount, setLocalCount] = useUpdateState(`trace:${taskId}:${activity.disclosureKey ?? activity.key}:count`, 50);
   const steps = activity.details ? query.data?.pages.flatMap(page => page.steps) ?? [] : (activity.operations ?? []).slice(0, localCount);
   const running = executing && (activity.summary?.running ?? steps.find(step => step.state === "running")?.title);
   const label = activityLabel(activity, "compact");
-  const allOpen = steps.length > 0 && steps.every(step => openSteps.has(step.key));
   return <Trace data-activity className="mb-3">
     <TraceCollapsible open={open} onOpenChange={next => onToggle(activity, next)}>
       <TraceCollapsibleTrigger aria-label={running ? `${label} · Running: ${running}` : label} title={label}>
@@ -43,16 +42,13 @@ export function ActivityTrace({ activity, running: executing, sourceLog, revisio
         {open && <>
           {activity.details && query.isPending && <p role="status">Loading activity…</p>}
           {activity.details && query.isError && <LoadError onRetry={() => void (query.isFetchNextPageError ? query.fetchNextPage({ cancelRefetch: false }) : query.refetch())} />}
-          {!!steps.length && <Button variant="ghost" size="sm" onClick={() => onStepsChange(steps.map(step => step.key), !allOpen)}>
-            {allOpen ? "Collapse loaded steps" : "Expand loaded steps"}
-          </Button>}
           <Trace>
             {steps.map(source => {
               const step = !executing && source.state === "running" ? { ...source, state: "unknown" as const } : source;
               const expanded = openSteps.has(step.key);
               const Icon = step.kind === "tool" ? Wrench : step.kind === "reasoning" ? Brain : FileText;
               const title = traceStepTitle(step);
-              return <TraceCollapsible key={step.key} open={expanded} onOpenChange={next => onStepsChange([step.key], next)}>
+              return <TraceCollapsible key={step.key} open={expanded} onOpenChange={next => onStepOpenChange(step.key, next)}>
                 <TraceCollapsibleTrigger data-trace-step={step.key} title={title} aria-label={title}>
                   <TraceLine status={step.state === "running" ? "running" : step.state === "error" ? "error" : undefined}>
                     <TraceIcon><Icon /></TraceIcon><TraceTitle>{title}</TraceTitle>

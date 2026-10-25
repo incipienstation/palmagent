@@ -380,10 +380,10 @@ function activityRowKey(activity: Activity, historyFloor?: number): string {
 
 // Keep the existing Radix viewport/scrollbar, with Virtuoso measuring dynamic
 // rows inside it. Whole-message page boundaries keep existing row keys stable.
-function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled, toggle, toggleSteps, toggleActivity, following, onFollowingChange, delivery, ...context }: {
+function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled, toggle, toggleStep, toggleActivity, following, onFollowingChange, delivery, ...context }: {
   rows: TranscriptRow[]; running: boolean; sourceLog: LogItem[]; liveKey?: number; delivery?: DeliveryControls;
   toggled: Set<number>; toggle: (key: number) => void;
-  toggleSteps: (keys: number[], open: boolean) => void;
+  toggleStep: (key: number, open: boolean) => void;
   toggleActivity: (activity: Activity, open: boolean) => void; following: RefObject<boolean>;
   onFollowingChange: (following: boolean) => void;
 } & HistoryControls) {
@@ -650,9 +650,9 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
         <ActivityTrace activity={row.activity} running={running} sourceLog={sourceLog} open={row.open} revision={row.revision ?? 0} taskId={taskId}
           openSteps={toggled} onToggle={toggleActivityRow}
-          onStepsChange={(keys, open) => {
-            if (!open) rememberDisclosure(row.key, keys.length === 1 ? keys[0] : undefined);
-            toggleSteps(keys, open);
+          onStepOpenChange={(key, open) => {
+            if (!open) rememberDisclosure(row.key, key);
+            toggleStep(key, open);
           }}
           render={item => taskId ? <ConversationRecord taskId={taskId} row={item} onImageLoad={followBottom} />
             : item.type === "message" ? <EventRow item={item.item} live={false} expanded raw toggle={() => {}} onImageLoad={followBottom} /> : null} />
@@ -702,11 +702,11 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       return next;
     });
   }, []);
-  const toggleSteps = useCallback((keys: number[], open: boolean) => {
+  const toggleStep = useCallback((key: number, open: boolean) => {
     onFollowingChange(false);
     setToggled(previous => {
       const next = new Set(previous);
-      for (const key of keys) { if (open) next.add(key); else next.delete(key); }
+      if (open) next.add(key); else next.delete(key);
       return next;
     });
   }, []);
@@ -780,7 +780,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
     <MessageScrollerProvider autoScroll={false} defaultScrollPosition="start" scrollEdgeThreshold={80}>
       <MessageScroller>
     {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows} running={live} sourceLog={log}
-      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} toggled={toggled} toggle={toggle} toggleSteps={toggleSteps} toggleActivity={toggleActivity} following={following} onFollowingChange={onFollowingChange} delivery={delivery} history={history} /> : !showInitialState && empty ?
+      taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} toggled={toggled} toggle={toggle} toggleStep={toggleStep} toggleActivity={toggleActivity} following={following} onFollowingChange={onFollowingChange} delivery={delivery} history={history} /> : !showInitialState && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={{ history }} />
