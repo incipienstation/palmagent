@@ -71,6 +71,7 @@ async fn serve(args: &[String]) -> Result<()> {
             .join("telemetry.json"),
     );
     measurements.tick(0);
+    let sampler = measurements.clone();
     let client = Client::new(sender.clone(), measurements.clone());
     let (ready_send, ready_receive) = tokio::sync::oneshot::channel();
     let handle = tokio::runtime::Handle::current();
@@ -128,6 +129,8 @@ async fn serve(args: &[String]) -> Result<()> {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
+            // Consent and self-resource sampling continue during a busy owner pass.
+            sampler.refresh();
             if ticks.try_send(Message::Tick).is_err() && ticks.is_closed() {
                 break;
             }

@@ -25,8 +25,11 @@ impl Measurements {
     }
     pub fn tick(&self, active: usize) {
         self.active.store(active, Ordering::Relaxed);
+        self.refresh();
+    }
+    pub fn refresh(&self) {
         if let Ok(mut aggregate) = self.aggregate.try_lock() {
-            aggregate.tick(active);
+            aggregate.tick(self.active.load(Ordering::Relaxed));
         }
     }
     pub fn begin(&self, operation: &'static str) -> Option<Measurement> {
