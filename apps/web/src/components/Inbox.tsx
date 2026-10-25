@@ -5,6 +5,7 @@ import { Archive, Check, ChevronDown, Inbox as InboxIcon, Search, Folder, Pin, P
 import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
@@ -134,28 +135,29 @@ const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
 function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks: TaskState[]; searching: boolean }) {
   const label = statusSection(status);
   const [expanded, setExpanded] = useState(() => !collapsedGroups.has(status));
-  const rowsId = useId();
   if (tasks.length === 0) return null;
   const collapsible = status === "idle" && !searching;
+  const rows = tasks.map(task => <TaskRow key={task.taskId} task={task} />);
   return (
     <section className="px-4 pt-5 first:pt-3">
-      {collapsible ? <h2>
-        <Button variant="ghost" className="w-full justify-start px-0 text-xs font-medium text-muted-foreground" aria-expanded={expanded} aria-controls={rowsId}
-          onClick={() => {
-            if (expanded) collapsedGroups.add(status); else collapsedGroups.delete(status);
-            setExpanded(!expanded);
+      {collapsible ? <Accordion type="single" collapsible value={expanded ? status : ""}
+          onValueChange={value => {
+            const open = value === status;
+            if (open) collapsedGroups.delete(status); else collapsedGroups.add(status);
+            setExpanded(open);
           }}>
-          {label}<span aria-hidden="true" className="text-muted-foreground">· {tasks.length}</span>
-          <ChevronDown aria-hidden="true" className={cn("ml-auto", expanded && "rotate-180")} />
-        </Button>
-      </h2> : <div className="flex items-center gap-1.5 pb-2 text-xs font-medium text-muted-foreground">
-        <h2>{label}</h2><span aria-hidden="true">· {tasks.length}</span>
-      </div>}
-      <div id={rowsId} hidden={collapsible && !expanded}>
-        <div className="-mx-4">
-          {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
+        <AccordionItem value={status}>
+          <AccordionTrigger headingLevel={2}>
+            <span className="flex items-center gap-1.5">{label}<span aria-hidden="true" className="text-muted-foreground">· {tasks.length}</span></span>
+          </AccordionTrigger>
+          <AccordionContent className="-mx-4 pb-0">{rows}</AccordionContent>
+        </AccordionItem>
+      </Accordion> : <>
+        <div className="flex items-center gap-1.5 pb-2 text-xs font-medium text-muted-foreground">
+          <h2>{label}</h2><span aria-hidden="true">· {tasks.length}</span>
         </div>
-      </div>
+        <div className="-mx-4">{rows}</div>
+      </>}
     </section>
   );
 }
