@@ -3,11 +3,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
-// Plane-1 object surface. `shadow-sm` is a hairline lift in LIGHT only; DARK
-// conveys elevation via --card being lighter than --background (luminance), so
-// the shadow utility is intentionally near-invisible there.
+// Rhea surface with Palmagent's status variants and content-owned padding.
 const cardVariants = cva(
-  "rounded-xl border border-border bg-card text-card-foreground shadow-sm dark:shadow-none",
+  "rounded-[min(var(--radius-4xl),24px)] border-border bg-card text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5 dark:ring-foreground/10",
   {
     variants: {
       variant: {
@@ -36,14 +34,14 @@ function Card({
 }
 
 function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="card-header" className={cn("flex flex-col gap-1 p-4", className)} {...props} />;
+  return <div data-slot="card-header" className={cn("flex flex-col gap-1.5 p-4", className)} {...props} />;
 }
 
 function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("text-[15px] leading-5 font-semibold text-card-foreground", className)}
+      className={cn("font-heading text-base leading-5 font-medium text-card-foreground", className)}
       {...props}
     />
   );
@@ -53,7 +51,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-[12.5px] leading-4 text-faint", className)}
+      className={cn("text-sm leading-5 text-muted-foreground", className)}
       {...props}
     />
   );

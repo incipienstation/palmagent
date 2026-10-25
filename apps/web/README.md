@@ -5,7 +5,7 @@ controls, and SSE for task state and live updates**. React + Vite + TypeScript, 
 `vite-plugin-pwa` (Workbox). The event log renders normalized `AgentEvent` records. Account-limit views
 follow each provider's quota structure.
 
-## UI stack (shadcn-style)
+## UI stack (shadcn Rhea)
 
 Tailwind CSS v4 (`@tailwindcss/vite`, tokens in `src/index.css`) with
 **vendored shadcn/ui components** in `src/components/ui/` (Radix primitives +
@@ -16,6 +16,18 @@ are sized mobile-first (44px tap targets); add new ones with `pnpm dlx shadcn@la
 the same style. Gotcha to keep: Radix `Select` inside a `<form>` echoes a stale
 `""` through `onValueChange` when value + items land in the same render — keep
 the `v && set…(v)` guards.
+
+The CLI uses `radix-rhea`. Components adapt Rhea's rounded surfaces, filled inputs,
+spacing and focus rings while retaining Palmagent's theme colors, system font and
+mobile control sizes. The radius scale lives in `src/index.css`; the Tailwind spacing
+scale is unchanged. When refreshing components, merge the visual changes and retain
+Back handling, non-modal menus, drawer scrolling, composer refs and draft continuity.
+
+Local Markdown images are served through the authenticated task image endpoint. Files must
+be inside the conversation's registered working directory, or the registered Codex session's
+generated-image directory. Put review captures in the task workspace before linking them;
+paths in an unrelated temporary directory are unavailable. Supported previews are PNG, JPEG,
+GIF and WebP up to 5 MiB, with real-path and symlink containment checks.
 
 ## Run
 

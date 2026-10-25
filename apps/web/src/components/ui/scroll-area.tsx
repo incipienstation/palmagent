@@ -27,7 +27,7 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         {...viewportProps}
         data-slot="scroll-area-viewport"
-        className={cn("min-h-0 w-full flex-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1", orientation === "horizontal" ? "overscroll-x-contain" : "overscroll-contain", viewportProps?.className)}
+        className={cn("min-h-0 w-full flex-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-1", orientation === "horizontal" ? "overscroll-x-contain" : "overscroll-contain", viewportProps?.className)}
       >
         <div className={contentClassName}>{children}</div>
       </ScrollAreaPrimitive.Viewport>

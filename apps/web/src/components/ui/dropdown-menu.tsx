@@ -44,7 +44,7 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         align={align}
         className={cn(
-          "z-50 flex max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[10rem] flex-col overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "z-50 flex max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[10rem] flex-col overflow-hidden rounded-2xl bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/5 dark:ring-foreground/10 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
@@ -73,7 +73,7 @@ function DropdownMenuItem({
       data-variant={variant}
       className={cn(
         // ≥40px rows — thumb-sized.
-        "relative flex min-h-10 cursor-default items-center gap-2.5 rounded-md px-3 text-[15px] outline-none select-none data-[highlighted]:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex min-h-10 cursor-default items-center gap-2 rounded-xl px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         size === "lg" && "min-h-14 gap-3 rounded-2xl [&_svg:not([class*='size-'])]:size-5",
         inset && "pl-8",
         variant === "destructive" && "text-destructive [&_svg]:text-destructive",
@@ -123,7 +123,7 @@ function DropdownMenuCheckboxItem({
       data-slot="dropdown-menu-checkbox-item"
       checked={checked}
       className={cn(
-        "relative flex min-h-10 cursor-default items-center gap-2.5 rounded-md pr-3 pl-8 text-[15px] outline-none select-none data-[highlighted]:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40",
+        "relative flex min-h-10 cursor-default items-center gap-2 rounded-xl py-1.5 pr-3 pl-8 text-sm outline-none select-none data-[highlighted]:bg-accent data-disabled:pointer-events-none data-disabled:opacity-40",
         className,
       )}
       {...props}

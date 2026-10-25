@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 // Extra "info"/"warning" variants carry the steer-notice colors the app used
 // before the shadcn migration (injected = blue, queued = amber).
-const alertVariants = cva("w-full rounded-lg border px-3 py-2 text-[13px]", {
+const alertVariants = cva("w-full rounded-2xl border px-4 py-3 text-sm", {
   variants: {
     variant: {
       default: "bg-muted border-border text-foreground",

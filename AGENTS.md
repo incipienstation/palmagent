@@ -11,6 +11,9 @@ Guidance for coding agents maintaining the Palmagent repository.
   through follow-ups in the same scope; ask only about unresolved ambiguity or new actions.
 - Read linked references when they affect a decision. Keep searches and output focused; store full
   test logs outside the repository and inspect relevant excerpts.
+- Deliver screenshot links from the conversation's registered working directory or its supported
+  attachment storage. Copy temporary captures there before linking them, and verify image access;
+  a successful local image preview does not prove the conversation can serve that path.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
 - For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) and verify
   module and layer boundaries with `pnpm architecture:check`.
