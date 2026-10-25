@@ -7,7 +7,7 @@ test("short filter sheets align content and actions above the safe area", async 
   await page.setViewportSize({ width: 360, height: 780 });
   await page.goto("/");
   await page.evaluate(() => document.documentElement.style.setProperty("--safe-bottom", "34px"));
-  const trigger = page.getByRole("button", { name: "Filters", exact: true });
+  const trigger = page.getByRole("button", { name: /^Filters(?:,|$)/ });
   await trigger.click();
   const sheet = page.getByRole("dialog", { name: "Task filters" });
   const title = sheet.getByRole("heading", { name: "Task filters" });
@@ -30,7 +30,7 @@ test("short filter sheets align content and actions above the safe area", async 
   await done.click();
   await expect(sheet).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(page.getByRole("combobox", { name: "Task status", exact: true })).toContainText("Working");
+  await expect(page.getByRole("button", { name: "Clear status filter", exact: true })).toContainText("Working");
   await assertViewportLocked(page);
 });
 
@@ -89,7 +89,7 @@ test("Configure keeps its action reachable while content scrolls in a reduced vi
 test("bottom sheets stay centered on desktop and dismiss with a touch drag on mobile", async ({ page, context }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/?__theme=light");
-  const trigger = page.getByRole("button", { name: "Filters", exact: true });
+  const trigger = page.getByRole("button", { name: /^Filters(?:,|$)/ });
   await trigger.click();
   const sheet = page.getByRole("dialog", { name: "Task filters" });
   await expect(sheet.getByRole("heading", { name: "Task filters" })).toBeInViewport({ ratio: 1 });
