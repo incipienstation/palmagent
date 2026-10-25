@@ -24,8 +24,11 @@ impl Measurements {
         }
     }
     pub fn tick(&self, active: usize) {
-        self.active.store(active, Ordering::Relaxed);
+        self.set_active(active);
         self.refresh();
+    }
+    pub fn set_active(&self, active: usize) {
+        self.active.store(active, Ordering::Relaxed);
     }
     pub fn refresh(&self) {
         if let Ok(mut aggregate) = self.aggregate.try_lock() {

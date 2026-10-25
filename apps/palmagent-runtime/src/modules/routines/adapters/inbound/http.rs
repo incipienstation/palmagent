@@ -14,6 +14,7 @@ use tokio::sync::{mpsc, oneshot};
 
 pub enum Action {
     Status,
+    Telemetry,
     List,
     Get(String),
     Create(Value),
@@ -27,7 +28,7 @@ pub enum Action {
 impl Action {
     pub fn operation(&self) -> Option<&'static str> {
         match self {
-            Self::Status | Self::Pending(_) => None,
+            Self::Status | Self::Telemetry | Self::Pending(_) => None,
             Self::List | Self::Get(_) | Self::Runs(_) => Some("routine.read"),
             Self::Create(_) => Some("routine.create"),
             Self::Update(_, _) => Some("routine.update"),
@@ -95,6 +96,7 @@ fn body(value: Result<Json<Value>, JsonRejection>) -> Result<Value, Error> {
 pub fn router(client: Client) -> Router {
     Router::new()
         .route("/health", get(|State(client): State<Client>| async move { client.request(Action::Status).await.map(Json) }))
+        .route("/telemetry", get(|State(client): State<Client>| async move { client.request(Action::Telemetry).await.map(Json) }))
         .route("/v1/routines", get(|State(client): State<Client>| async move { client.request(Action::List).await.map(Json) })
             .post(|State(client): State<Client>, input: Result<Json<Value>, JsonRejection>| async move {
                 client.request(Action::Create(body(input)?)).await.map(|value| (StatusCode::CREATED, Json(value)))

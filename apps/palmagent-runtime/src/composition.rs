@@ -28,7 +28,7 @@ pub fn run_owner(
     } = observations;
     let mut workers = 0usize;
     while let Some(message) = receiver.blocking_recv() {
-        measurements.tick(service.active());
+        measurements.set_active(service.active());
         let mut jobs = Vec::new();
         match message {
             Message::Shutdown => service.stopping = true,
@@ -58,7 +58,10 @@ pub fn run_owner(
                 }
                 let result = match action {
                     Action::Status => Ok(
-                        json!({"protocol":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping,"telemetry":measurements.snapshot()}),
+                        json!({"protocol":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping}),
+                    ),
+                    Action::Telemetry => Ok(
+                        json!({"version":env!("PALMAGENT_PRODUCT_VERSION"),"instance":instance,"telemetry":measurements.snapshot()}),
                     ),
                     Action::List => service.list(),
                     Action::Get(id) => service.get(&id).map(|routine| json!({"routine":routine})),
@@ -82,6 +85,7 @@ pub fn run_owner(
                 let _ = response.send(result);
             }
         }
+        measurements.set_active(service.active());
         // Hold the owner lock until every launched worker settles. Otherwise an
         // old launch could race the next owner's retained-admission inspection.
         if service.stopping && workers == 0 {

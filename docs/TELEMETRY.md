@@ -186,6 +186,9 @@ HTTP adapter and Node invocation hosts. Existing HTTP metrics remain end-to-end 
 measurements and retain their Node label. The application service exports its own CPU, resident memory, command, queue, polling and
 SQLite write observations as `service.name=palmagent.application`, `runtime.implementation=rust`.
 The web transports these bounded snapshots using the existing consent and upload controls.
+It polls a dedicated private `/telemetry` endpoint every 15 seconds; ordinary application
+health checks do not serialize histograms. Consent and resource sampling run independently
+of the serialized routine owner.
 Local collection continues while the web is down; network export requires the web exporter.
 Daemon metrics remain limited to the daemon process.
 Compare the same routine workload across releases, and measure the total participating

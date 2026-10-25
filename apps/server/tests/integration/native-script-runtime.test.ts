@@ -45,7 +45,7 @@ test("native scripts schedule and persist without web, recover without replay, a
   const preference = join(root, "telemetry.json");
   const consent = { schemaVersion: 2, enabled: true, disclosed: true, revision: "00000000-0000-4000-8000-000000000001" };
   writeFileSync(preference, JSON.stringify(consent));
-  const snapshot = async () => (await applicationRequest(root, "/health")).value as { telemetry: null | { points: { name: string; count: number; attributes: { operation?: string; outcome?: string } }[] } };
+  const snapshot = async () => (await applicationRequest(root, "/telemetry")).value as { telemetry: null | { points: { name: string; count: number; attributes: { operation?: string; outcome?: string } }[] } };
   const config = { protocol: 1, daemon: binary, release, node,
     environment: { PATH: process.env.PATH, PALMAGENT_HOME: root }, isolation: "process-group",
     limits: { memoryHigh: 1024, memoryMax: 2048, tasks: 64, webTasks: 64, cpuPercent: 100, nofile: 1024 } };
@@ -79,6 +79,7 @@ test("native scripts schedule and persist without web, recover without replay, a
   await until(async () => (await native.runs(scheduled.id)).length, "scheduled admission without web");
   assert.equal((await finished(scheduled.id)).output, "scheduled");
   const measurements = (await snapshot()).telemetry!.points;
+  assert(!Object.hasOwn((await applicationRequest(root, "/health")).value as object, "telemetry"));
   for (const operation of ["routine.create", "routine.queue", "routine.poll", "routine.storage.write"]) {
     assert(measurements.some(p => p.attributes.operation === operation && p.count > 0), operation);
   }

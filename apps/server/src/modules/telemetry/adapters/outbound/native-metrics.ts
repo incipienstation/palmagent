@@ -97,7 +97,7 @@ export function collectNativeMetrics(dataDir: string, preferencePath: string, pr
   const owners = [
     new NativeMetricCollector("palmagent.daemon", () => daemonRequest(dataDir, { action: "status" }, 5000), preferencePath, producer),
     new NativeMetricCollector("palmagent.application", async () => {
-      const response = await applicationRequest(dataDir, "/health");
+      const response = await applicationRequest(dataDir, "/telemetry");
       if (response.status !== 200) throw new Error("Native metrics unavailable");
       return response.value;
     }, preferencePath, producer),
