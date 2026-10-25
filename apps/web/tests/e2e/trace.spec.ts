@@ -207,14 +207,22 @@ for (const precedingSteps of [12, 40]) test(`collapsing nested output after ${pr
     event("assistant_text", { text: "Following answer paragraph.\n\n".repeat(30), phase: "final" })]);
   await routes(page, history); await page.goto(`/#/task/${taskId}`);
   const activity = page.getByRole("button", { name: `Activity · ${precedingSteps + 1} tools`, exact: true });
+  const settleTrace = () => activity.locator("..").evaluate(async element => {
+    await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   await activity.click();
+  // Avoid scrolling a nested trigger inside a panel that is still animating
+  // open. Measure only the transcript's settled reading position.
+  await settleTrace();
   const step = page.getByRole("button", { name: "Completed: long-output", exact: true });
   await step.click(); await expect(page.getByText("A line of output", { exact: false })).toBeVisible();
+  await settleTrace();
   await step.scrollIntoViewIfNeeded();
   await step.focus();
   const before = (await step.boundingBox())!.y;
   await page.keyboard.press("Enter");
   await expect(step).toHaveAttribute("aria-expanded", "false");
+  await settleTrace();
   await expect(step).toBeFocused();
   await expect.poll(async () => Math.abs((await step.boundingBox())!.y - before)).toBeLessThanOrEqual(2);
 });

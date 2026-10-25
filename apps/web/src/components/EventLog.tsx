@@ -583,15 +583,13 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
   // A disclosure changes measured height without prepending data. Keep the
   // interacted row in view while Virtuoso refines its estimates, including when
   // the expanded row was taller than the entire viewport.
-  const disclosure = useRef<{ key: string; offset: number; withinRow: number; step?: number }>(undefined);
+  const disclosure = useRef<{ key: string; offset: number; step?: number }>(undefined);
   const rememberDisclosure = useCallback((key: string, step?: number) => {
     const el = viewport.current;
     const row = el?.querySelector<HTMLElement>(`[data-row-key="${key}"]`);
     if (!el || !row) return;
     const anchor = step === undefined ? row : row.querySelector<HTMLElement>(`[data-trace-step="${step}"]`) ?? row;
-    const anchorTop = anchor.getBoundingClientRect().top;
-    disclosure.current = { key, step, offset: Math.max(0, anchorTop - el.getBoundingClientRect().top),
-      withinRow: anchorTop - row.getBoundingClientRect().top };
+    disclosure.current = { key, step, offset: Math.max(0, anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) };
     restoring.current = true;
   }, []);
   const toggleActivityRow = useCallback((activity: Activity, open: boolean) => {
@@ -612,9 +610,7 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     const frame = requestAnimationFrame(() => {
       const row = viewport.current?.querySelector<HTMLElement>(`[data-row-key="${saved.key}"]`);
       const anchor = saved.step === undefined ? undefined : row?.querySelector<HTMLElement>(`[data-trace-step="${saved.step}"]`);
-      // Collapsing a tall step can briefly unmount its virtual row. Retain the
-      // nested trigger's offset so restoration does not jump to the group header.
-      const withinRow = row && anchor ? anchor.getBoundingClientRect().top - row.getBoundingClientRect().top : saved.withinRow;
+      const withinRow = row && anchor ? anchor.getBoundingClientRect().top - row.getBoundingClientRect().top : 0;
       virtuoso.current?.scrollIntoView({ index, align: "start",
         calculateViewLocation: ({ locationParams }) => ({ ...locationParams, offset: withinRow - saved.offset }),
         done: () => { disclosure.current = undefined; restoring.current = false; },
