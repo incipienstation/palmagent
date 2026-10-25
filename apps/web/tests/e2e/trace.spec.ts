@@ -70,19 +70,30 @@ for (const oldPreference of ["compact", "verbose"]) test(`one chat view ignores 
   await captureForReview(page, `trace-${oldPreference}.png`);
 });
 
-test("expanding loaded steps does not load the next page or unseen output", async ({ page, history }) => {
+test("individual Trace rows load only selected output across step pages", async ({ page, history }) => {
   history.add(Array.from({ length: 55 }, (_, i) => pair(i)).flat());
   const requests = await routes(page, history);
   await page.goto(`/#/task/${taskId}`);
   await page.getByRole("button", { name: "Activity · 55 tools", exact: true }).click();
-  await page.getByRole("button", { name: "Expand loaded steps", exact: true }).click();
-  await expect.poll(() => requests.filter(name => name === "/step-details").length).toBe(50);
+  await expect(page.getByRole("button", { name: /(?:Expand|Collapse) loaded steps/ })).toHaveCount(0);
+  const first = page.getByRole("button", { name: "Completed: check-0", exact: true });
+  await first.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
+  expect(requests.filter(name => name === "/step-details")).toHaveLength(1);
   expect(requests.filter(name => name === "/steps")).toHaveLength(1);
   await expect(page.getByText("Output for step 54", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "Collapse loaded steps", exact: true }).click();
+  await page.keyboard.press("Enter");
+  await expect(first).toBeFocused();
+  await expect(first).toHaveAttribute("aria-expanded", "false");
   await page.getByRole("button", { name: "Load more steps", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Completed: check-54", exact: true })).toBeVisible();
-  expect(requests.filter(name => name === "/step-details")).toHaveLength(50);
+  const last = page.getByRole("button", { name: "Completed: check-54", exact: true });
+  await expect(last).toBeVisible();
+  expect(requests.filter(name => name === "/steps")).toHaveLength(2);
+  expect(requests.filter(name => name === "/step-details")).toHaveLength(1);
+  await last.click();
+  await expect(page.getByText("Output for step 54", { exact: false })).toBeVisible();
+  expect(requests.filter(name => name === "/step-details")).toHaveLength(2);
 });
 
 test("late completion updates an open operation without changing its disclosure or draft", async ({ page, history }) => {
@@ -189,21 +200,29 @@ for (const phase of ["progress", "final", undefined] as const) test(`streaming p
 });
 
 
-test("collapsing nested output preserves its trigger position and keyboard focus", async ({ page, history }) => {
-  history.add([...Array.from({ length: 12 }, (_, i) => pair(i)).flat(),
+for (const precedingSteps of [12, 40]) test(`collapsing nested output after ${precedingSteps} steps preserves its trigger position and keyboard focus`, async ({ page, history }) => {
+  history.add([...Array.from({ length: precedingSteps }, (_, i) => pair(i)).flat(),
     event("tool_call", { id: "large", name: "bash", command: "long-output" }),
     event("tool_result", { tool_use_id: "large", output: "A line of output\n".repeat(100), exit_code: 0 }),
     event("assistant_text", { text: "Following answer paragraph.\n\n".repeat(30), phase: "final" })]);
   await routes(page, history); await page.goto(`/#/task/${taskId}`);
-  const activity = page.getByRole("button", { name: "Activity · 13 tools", exact: true });
+  const activity = page.getByRole("button", { name: `Activity · ${precedingSteps + 1} tools`, exact: true });
+  const settleTrace = () => activity.locator("..").evaluate(async element => {
+    await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   await activity.click();
+  // Avoid scrolling a nested trigger inside a panel that is still animating
+  // open. Measure only the transcript's settled reading position.
+  await settleTrace();
   const step = page.getByRole("button", { name: "Completed: long-output", exact: true });
   await step.click(); await expect(page.getByText("A line of output", { exact: false })).toBeVisible();
+  await settleTrace();
   await step.scrollIntoViewIfNeeded();
   await step.focus();
   const before = (await step.boundingBox())!.y;
   await page.keyboard.press("Enter");
   await expect(step).toHaveAttribute("aria-expanded", "false");
+  await settleTrace();
   await expect(step).toBeFocused();
   await expect.poll(async () => Math.abs((await step.boundingBox())!.y - before)).toBeLessThanOrEqual(2);
 });
