@@ -5,8 +5,14 @@ use crate::modules::routines::{
     },
     application::{Error, Service},
 };
+use crate::platform::telemetry::Measurements;
 use serde_json::json;
 use tokio::sync::mpsc;
+
+pub struct ObservationContext {
+    pub instance: String,
+    pub measurements: Measurements,
+}
 
 pub fn run_owner(
     mut service: Service,
@@ -14,10 +20,15 @@ pub fn run_owner(
     sender: mpsc::Sender<Message>,
     hosts: Hosts,
     runtime: tokio::runtime::Handle,
-    instance: String,
+    observations: ObservationContext,
 ) {
+    let ObservationContext {
+        instance,
+        measurements,
+    } = observations;
     let mut workers = 0usize;
     while let Some(message) = receiver.blocking_recv() {
+        measurements.set_active(service.active());
         let mut jobs = Vec::new();
         match message {
             Message::Shutdown => service.stopping = true,
@@ -25,22 +36,32 @@ pub fn run_owner(
                 workers -= 1;
                 service.complete(completion);
                 if !service.stopping {
+                    let timing = measurements.begin("routine.poll");
                     jobs.extend(service.poll(false));
+                    measurements.finish(timing, true);
                 }
             }
             Message::Tick => {
                 if !service.stopping {
+                    let timing = measurements.begin("routine.poll");
                     jobs.extend(service.poll(true));
+                    measurements.finish(timing, true);
                 }
             }
-            Message::Request(action, response) => {
+            Message::Request(action, response, queue) => {
+                measurements.finish(queue, !service.stopping);
+                let timing = action.operation().and_then(|name| measurements.begin(name));
                 if service.stopping {
+                    measurements.finish(timing, false);
                     let _ = response.send(Err(Error::busy()));
                     continue;
                 }
                 let result = match action {
                     Action::Status => Ok(
                         json!({"protocol":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping}),
+                    ),
+                    Action::Telemetry => Ok(
+                        json!({"version":env!("PALMAGENT_PRODUCT_VERSION"),"instance":instance,"telemetry":measurements.snapshot()}),
                     ),
                     Action::List => service.list(),
                     Action::Get(id) => service.get(&id).map(|routine| json!({"routine":routine})),
@@ -60,9 +81,11 @@ pub fn run_owner(
                         |routine| json!({"routine":routine,"pending":service.has_pending(&id)}),
                     ),
                 };
+                measurements.finish(timing, result.is_ok());
                 let _ = response.send(result);
             }
         }
+        measurements.set_active(service.active());
         // Hold the owner lock until every launched worker settles. Otherwise an
         // old launch could race the next owner's retained-admission inspection.
         if service.stopping && workers == 0 {

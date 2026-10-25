@@ -6,6 +6,7 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
+palmagent-telemetry = { path = "../../packages/native-telemetry" }
 anyhow = "1"
 axum = "0.8"
 libc = "0.2"

@@ -1,5 +1,6 @@
 // Importable dashboard definition; stdout is a Grafana provisioning artifact.
 import { pathToFileURL } from 'node:url';
+import contract from '../packages/shared/src/telemetry-contract.json' with { type: 'json' };
 const datasource = { type: 'prometheus', uid: '$metricsStore' };
 const custom = (name, values, selected) => ({ name, label: name, type: 'custom', query: values.join(','), current: { text: selected, value: selected } });
 const release = name => ({ name, label: name, type: 'query', datasource,
@@ -54,9 +55,8 @@ export const dashboard = {
     { name: 'metricsStore', label: 'Retention store', type: 'datasource', query: 'prometheus',
       regex: '/^Palmagent telemetry/', current: { text: 'Palmagent telemetry', value: 'palmagent-prometheus' }, refresh: 1 },
     custom('source', ['production', 'synthetic'], 'production'),
-    custom('service', ['palmagent.web', 'palmagent.daemon', 'palmagent.execution', 'palmagent.terminal'], 'palmagent.web'),
-    custom('operation', ['http.tasks.read', 'http.tasks.write', 'http.spaces.read', 'http.routines.read', 'http.terminals.read', 'http.health', 'http.request',
-      'event.deliver', 'storage.write', 'storage.queue', 'execution.start', 'terminal.start', 'daemon.list', 'daemon.inspect', 'daemon.launch', 'daemon.terminate', 'daemon.restart', 'daemon.request'], 'http.tasks.read'),
+    custom('service', contract.services, 'palmagent.web'),
+    custom('operation', contract.operations, 'http.tasks.read'),
     custom('outcome', ['success', 'error', 'timeout'], 'success'),
     custom('os', ['linux', 'darwin', 'windows'], 'linux'), custom('arch', ['amd64', 'arm64'], 'amd64'),
     custom('concurrency', ['0', '1', '2-4', '5-8', '9-16', '17+'], '1'),

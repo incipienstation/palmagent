@@ -19,6 +19,8 @@
           "runtime": "git rev-parse HEAD"
         },
         "{workspaceRoot}/apps/palmagent-runtime/**/*",
+        "{workspaceRoot}/packages/native-telemetry/**/*",
+        "{workspaceRoot}/packages/shared/src/telemetry-contract.json",
         "{workspaceRoot}/scripts/lib/native-toolchain.mjs"
       ],
       "outputs": [

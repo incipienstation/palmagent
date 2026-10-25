@@ -86,20 +86,25 @@ retry deduplication and is never exported into metrics.
 | `execution.start` | Synchronous provider runner start call | Host dispatch cost, not model time or provider readiness |
 | `terminal.start` | Terminal host initialization through shell readiness | Excludes time before this host begins initialization |
 | `daemon.*` | Native request dispatch through completion, including lifecycle waits | Native daemon work; status/telemetry polling excluded |
+| `routine.create/update/remove/run/stop/read` | Native serialized command handling after dequeue through result creation | Excludes queue wait, HTTP transport and retained invocation duration; stop is a request attempt, including reconciliation retries |
+| `routine.queue` | Native command submission through owner dequeue (or immediate admission rejection) | Excludes health and pending-state probes; accepted work remains measured after caller disconnect |
+| `routine.poll` | One native scheduling/reconciliation pass, including persistence attempts | A successful pass means it returned; individual persistence failures remain in `routine.storage.write` |
+| `routine.storage.write` | Each native routine repository write or complete transaction attempt | Includes SQLite busy timeout, admission and result persistence; excludes retained script execution |
 | Process CPU | CPU seconds / elapsed wall seconds, sampled every 15 seconds | Self process only; excludes model CLI and shell children |
 | Process memory | Current resident set, sampled every 15 seconds | Self process only; not maximum RSS or whole installation memory |
 | Node event-loop delay | Lateness of a 100 ms timer | Distribution of timer delays; not a Rust metric or a request latency |
 | SQLite busy retries | Busy attempts in execution persistence | Scope does not include every SQLite operation in the web process |
 
-For HTTP and web resources, concurrency is in-flight non-streaming HTTP requests. For Rust it is
-open daemon control connections. Execution and terminal hosts each represent one invocation.
+For HTTP and web resources, concurrency is in-flight non-streaming HTTP requests. For the Rust daemon it is
+open control connections; for the application runtime it is active admitted script routines
+(sampled before a command/pass, with at most four slots). Execution and terminal hosts each represent one invocation.
 These load definitions differ by component: compare like components. Provider response time is
 not labeled as Rust execution time. If an operation moves into Rust while the web caller remains
 Node, its end-to-end web metric remains Node; add a native observation at the moved boundary.
 
-The Rust daemon retains bounded cumulative snapshots locally. The web exporter establishes a
-baseline on attachment and converts subsequent snapshots to deltas using the daemon's own
-release. A web restart never replays retained counters. Missing telemetry on an older daemon
+Both Rust processes retain bounded cumulative snapshots locally. The web exporter establishes a
+baseline on attachment and converts subsequent snapshots to deltas using each native owner's own
+release. A web restart never replays retained counters. Missing telemetry on an older native owner
 means unavailable native measurements, not zero use or inferred Node measurements.
 
 ## Compare migration stages
@@ -168,7 +173,9 @@ Hosts also attempt a non-blocking upload after startup so short invocations need
 Regular uploads run about once per minute with jitter; requests time out after five seconds,
 do not follow redirects, and retry at most three times with the same UUID/body. Queued data
 expires after ten minutes. There is no disk spool and shutdown does not wait to upload.
-The daemon retains at most 32 native streams and resets its epoch every ten minutes.
+The daemon retains at most 32 native streams and the application runtime at most 128; both
+reset their epochs every ten minutes. Web attachment establishes separate baselines for each
+owner, so a web outage or restart can lose samples and never replays retained history.
 Receiver outages and process restarts can lose measurements. Monitor collector rejection and
 capacity panels before interpreting a change in observed sample volume as a product change.
 
@@ -176,8 +183,14 @@ capacity panels before interpreting a change in observed sample volume as a prod
 
 The first native application slice moves script routines while retaining the public Node
 HTTP adapter and Node invocation hosts. Existing HTTP metrics remain end-to-end web
-measurements and retain their Node label. The new application service does not yet export
-its own telemetry series; daemon metrics do not include its CPU, memory or use-case time.
+measurements and retain their Node label. The application service exports its own CPU, resident memory, command, queue, polling and
+SQLite write observations as `service.name=palmagent.application`, `runtime.implementation=rust`.
+The web transports these bounded snapshots using the existing consent and upload controls.
+It polls a dedicated private `/telemetry` endpoint every 15 seconds; ordinary application
+health checks do not serialize histograms. Consent and resource sampling run independently
+of the serialized routine owner.
+Local collection continues while the web is down; network export requires the web exporter.
+Daemon metrics remain limited to the daemon process.
 Compare the same routine workload across releases, and measure the total participating
 processes when assessing resource savings. Do not infer a Rust speedup from daemon graphs.
 
@@ -186,3 +199,12 @@ throughout each run. Routine lists retain their SQLite read projection in the we
 to writes, scheduling and completion persistence. This is a useful regression measure
 for the retained read path, but it does not measure
 provider execution or prove that script commands themselves became faster.
+
+### Receiver compatibility
+
+Deploy the additive `palmagent.application` service and `routine.*` operation allowlist from
+`packages/shared/src/telemetry-contract.json` to the receiver before rolling out an instrumented
+application. Histogram boundaries, units, consent and retention are unchanged. Keep existing
+service/operation entries so retained releases remain accepted. Update the generated dashboard's
+component selector as well. Verify a synthetic native batch separately from production observations;
+receiver acceptance does not prove the new application version is installed or actively exporting.
