@@ -357,8 +357,10 @@ const TranscriptList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
     // Measure the virtual list, including its padding for unmounted rows. An
     // absolutely positioned viewport cannot size an outer content wrapper.
     // Virtuoso reads row-gap even for block layout; rows own their spacing.
+    // Do not mark the list aria-live: modal isolation deliberately leaves live
+    // regions exposed, which would keep background transcript controls readable.
     return <MessageScrollerContent {...props} ref={ref} data-transcript-items
-      className="block min-h-0 gap-0" aria-live="polite" />;
+      className="block min-h-0 gap-0" />;
   },
 );
 const VIRTUAL_COMPONENTS = { Scroller: TranscriptScroller, List: TranscriptList, Header: HistoryHeader, Footer: () => <div className="h-2" /> };
