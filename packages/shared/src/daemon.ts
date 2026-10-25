@@ -43,7 +43,7 @@ export const DaemonStatusSchema = z.object({
 });
 export const DaemonConfigurationSchema = z.object({
   protocol: z.literal(DAEMON_PROTOCOL), daemon: z.string().min(1), release: z.string().min(1), node: z.string().min(1),
-  environment: z.record(z.string()), isolation: z.enum(["cgroup", "process-group"]),
+  environment: z.record(z.string(), z.string()), isolation: z.enum(["cgroup", "process-group"]),
   limits: z.object({ memoryHigh: z.number().int().nonnegative(), memoryMax: z.number().int().positive(),
     tasks: z.number().int().positive(), webTasks: z.number().int().positive(), cpuPercent: z.number().int().positive(), nofile: z.number().int().positive() }),
 });

@@ -92,6 +92,7 @@ desktop to register access, then choose a Space and start a task.
 | Guide | Covers |
 | --- | --- |
 | [User guide](docs/USER-GUIDE.md) | Spaces, routines, sessions, release channels, and updates |
+| [Authentication and security](docs/SECURITY.md) | Passkeys, session expiry, access revocation, and HTTP protections |
 | [Message delivery](docs/MESSAGES.md) | Queues, delivery behavior, and recovery |
 | [Native supervisor](docs/DAEMON.md) | Rust runtime, OS adapters, updates and migration |
 | [Session lifecycle](docs/SESSION-LIFECYCLE.md) | Session ownership and application updates |

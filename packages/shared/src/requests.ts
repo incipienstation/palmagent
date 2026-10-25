@@ -64,7 +64,7 @@ export const CreateRoutineSchema = z.object({ repoId: required, agent: agent.opt
   }
 });
 export const UpdateRoutineSchema = z.object({ script: RoutineScriptSchema.optional(), prompt: required.optional(), ...cadence, ...settings, title: text.optional(), enabled: z.boolean().optional() });
-export const PushSubscriptionSchema = z.object({ endpoint: required, expirationTime: z.number().nullable().optional(), keys: z.record(text).optional() });
+export const PushSubscriptionSchema = z.object({ endpoint: required, expirationTime: z.number().nullable().optional(), keys: z.record(z.string(), text).optional() });
 export const PushSubscribeSchema = z.object({ subscription: PushSubscriptionSchema });
 export const PushUnsubscribeSchema = z.object({ endpoint: required });
 export const DispatchSessionSchema = z.object({ agent, sessionId: required, cwd: required, home: required, waitPid: z.number().int().positive() });
@@ -102,7 +102,12 @@ export const DiscoverQuerySchema = z.object({ refresh: z.enum(["0", "1"]).option
 export const IdParamsSchema = z.object({ id: required });
 export const MessageParamsSchema = IdParamsSchema.extend({ messageId: required });
 export const EmptyBodySchema = z.object({});
-export const RegisterOptionsSchema = z.object({ token: text.optional() });
+export const AuthActionSchema = z.enum(["enroll", "revoke-sessions", "remove-passkey"]);
+export type AuthAction = z.infer<typeof AuthActionSchema>;
+export const ReauthenticationOptionsSchema = z.object({ action: AuthActionSchema });
+export const AuthorizationSchema = z.object({ authorization: required });
+export const RemovePasskeySchema = AuthorizationSchema.extend({ credentialId: required });
+export const RegisterOptionsSchema = z.object({ token: text.optional(), authorization: text.optional() });
 
 // WebAuthn owns cryptographic/semantic verification. These schemas only ensure
 // the library receives structurally valid JSON, preserving extension fields.

@@ -33,10 +33,11 @@ export class Db {
   readonly createSession: SqliteAuth["createSession"];
   readonly getSession: SqliteAuth["getSession"];
   readonly refreshSession: SqliteAuth["refreshSession"];
+  readonly revokeSessions: SqliteAuth["revokeSessions"];
   readonly deleteSession: SqliteAuth["deleteSession"];
   readonly pruneExpiredSessions: SqliteAuth["pruneExpiredSessions"];
   readonly createEnrollToken: SqliteAuth["createEnrollToken"];
-  readonly isEnrollTokenValid: SqliteAuth["isEnrollTokenValid"];
+  readonly getEnrollToken: SqliteAuth["getEnrollToken"];
   readonly consumeEnrollToken: SqliteAuth["consumeEnrollToken"];
   readonly readMessageState: SqliteTasks["readMessageState"];
   readonly messageTaskIds: SqliteTasks["messageTaskIds"];
@@ -123,10 +124,11 @@ export class Db {
     this.createSession = auth.createSession.bind(auth);
     this.getSession = auth.getSession.bind(auth);
     this.refreshSession = auth.refreshSession.bind(auth);
+    this.revokeSessions = auth.revokeSessions.bind(auth);
     this.deleteSession = auth.deleteSession.bind(auth);
     this.pruneExpiredSessions = auth.pruneExpiredSessions.bind(auth);
     this.createEnrollToken = auth.createEnrollToken.bind(auth);
-    this.isEnrollTokenValid = auth.isEnrollTokenValid.bind(auth);
+    this.getEnrollToken = auth.getEnrollToken.bind(auth);
     this.consumeEnrollToken = auth.consumeEnrollToken.bind(auth);
     const tasks = new SqliteTasks(this.connection);
     this.readMessageState = tasks.readMessageState.bind(tasks);

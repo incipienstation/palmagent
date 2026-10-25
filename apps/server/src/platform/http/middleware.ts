@@ -1,3 +1,4 @@
+import { guardSessionStream } from "./session-stream.js";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 import type { MiddlewareHandler } from "hono";
@@ -17,17 +18,29 @@ export function authenticate({ auth, config }: HttpRuntime & { auth: SessionAcce
   return async (c, next) => {
     const path = c.req.path;
     const publicRoute = (path === "/api/health" && c.req.method === "GET") || path.startsWith("/api/auth/");
-    if (auth.enabled && path.startsWith("/api/") && !publicRoute) {
-      if (!["GET", "HEAD"].includes(c.req.method)) {
-        const origin = c.req.header("origin");
-        if (origin) {
-          let allowed = false;
-          try { allowed = new URL(origin).host === c.req.header("host"); } catch { /* refuse malformed origins */ }
-          if (!allowed) return c.json({ error: "cross-origin request refused" }, 403);
-        }
+    const token = getCookie(c, config.cookieName);
+    if (auth.enabled && path.startsWith("/api/")) {
+      if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) && c.req.header("origin") !== auth.origin) {
+        return c.json({ error: "Same-origin request required" }, 403);
       }
-      if (!auth.verifySession(getCookie(c, config.cookieName))) return c.json({ error: "unauthorized" }, 401);
+      if (!publicRoute && !auth.verifySession(token)) return c.json({ error: "unauthorized" }, 401);
     }
+    await next();
+    if (auth.enabled && c.res.body && c.res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      c.res = guardSessionStream(c.res, () => auth.sessionValid(token));
+    }
+  };
+}
+
+export function securityHeaders(origin: string): MiddlewareHandler {
+  // Some browsers do not match HTTPS 'self' against a secure WebSocket URL.
+  const websocketOrigin = origin ? new URL(origin) : undefined;
+  if (websocketOrigin) websocketOrigin.protocol = "wss:";
+  return async (c, next) => {
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("X-Frame-Options", "DENY");
+    c.header("Referrer-Policy", "no-referrer");
+    c.header("Content-Security-Policy", `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${websocketOrigin?.origin ?? ""} https://api.openai.com; media-src 'self' data: blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
     await next();
   };
 }

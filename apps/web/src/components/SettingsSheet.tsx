@@ -1,8 +1,9 @@
+import { SecuritySettings } from "./SecuritySettings";
 import { TelemetrySettings } from "./TelemetrySettings";
 import { useBackLayer } from "../hooks/useBackLayer";
 import { useSignOut } from "../auth/useSignOut";
 import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
-import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, GitBranch, Monitor, Moon, Sun, X } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, GitBranch, Monitor, Moon, Shield, Sun, X } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -42,6 +43,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const title = useRef<HTMLHeadingElement>(null);
   const searchPathsLink = useRef<HTMLButtonElement>(null);
   const spaceSettingsLink = useRef<HTMLButtonElement>(null);
+  const securityLink = useRef<HTMLButtonElement>(null);
   const updatesLink = useRef<HTMLButtonElement>(null);
   const previousSection = useRef(section);
   const appearanceId = useId();
@@ -58,7 +60,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
     previousSection.current = section;
     if (!open || previous === section) return;
     if (section === "general") {
-      (previous === "spaces" ? searchPathsLink : previous === "base-branches" ? spaceSettingsLink : updatesLink).current?.focus({ preventScroll: true });
+      (previous === "security" ? securityLink : previous === "spaces" ? searchPathsLink : previous === "base-branches" ? spaceSettingsLink : updatesLink).current?.focus({ preventScroll: true });
     } else {
       title.current?.focus({ preventScroll: true });
     }
@@ -73,12 +75,12 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               <ArrowLeft />
             </Button>}
             <SheetTitle asChild className="outline-none">
-              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "spaces" ? "Repository search paths" : section === "base-branches" ? "Space settings" : "Updates"}</h2>
+              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "security" ? "Security" : section === "spaces" ? "Repository search paths" : section === "base-branches" ? "Space settings" : "Updates"}</h2>
             </SheetTitle>
             <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
           </SheetHeaderRow>
           <SheetDescription className="sr-only">
-            {home ? "Preferences and installation" : section === "spaces" ? "Manage folders searched for repositories on this installation." : section === "base-branches" ? "Manage base branches for new tasks and routines." : "Manage Palmagent updates on this installation."}
+            {home ? "Preferences and installation" : section === "security" ? "Manage passkeys and signed-in devices." : section === "spaces" ? "Manage folders searched for repositories on this installation." : section === "base-branches" ? "Manage base branches for new tasks and routines." : "Manage Palmagent updates on this installation."}
           </SheetDescription>
         </SheetHeader>
 
@@ -163,6 +165,12 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               </div>
             </SettingsGroup>
 
+            <Button ref={securityLink} variant="ghost" onClick={() => setSection("security")} className="justify-start px-1">
+              <Shield data-icon="inline-start" />
+              <span className="flex-1 text-left">Security</span>
+              <ChevronRight data-icon="inline-end" />
+            </Button>
+
             <div className="flex items-center justify-between gap-3">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -191,6 +199,9 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
         </SheetBody>
         <SheetBody hidden={section !== "updates"} data-slot="settings-scroll" className={cn(section !== "updates" && "hidden")}>
           {open && <UpdateSettings />}
+        </SheetBody>
+        <SheetBody hidden={section !== "security"} data-slot="settings-scroll" className={cn(section !== "security" && "hidden")}>
+          {open && section === "security" && <SecuritySettings />}
         </SheetBody>
       </SheetContent>
     </Sheet>

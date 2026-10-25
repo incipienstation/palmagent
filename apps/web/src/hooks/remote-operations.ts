@@ -54,3 +54,15 @@ export function useAuthOperations() {
     registerVerify: (response: Parameters<typeof api.auth.registerVerify>[0], label?: string) => api.auth.registerVerify(response, label),
   }), []);
 }
+
+export function useSecurityOperations() {
+  return useMemo(() => ({
+    me: api.auth.me,
+    passkeys: api.auth.passkeys,
+    reauthenticateOptions: api.auth.reauthenticateOptions,
+    reauthenticateVerify: api.auth.reauthenticateVerify,
+    enrollToken: api.auth.enrollToken,
+    removePasskey: api.auth.removePasskey,
+    logoutAll: api.auth.logoutAll,
+  }), []);
+}

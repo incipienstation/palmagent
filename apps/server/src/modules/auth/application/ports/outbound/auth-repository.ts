@@ -5,13 +5,14 @@ export interface AuthRepository {
   countCredentials(): number;
   getSession(token: string): { token: string; createdAt: number; expiresAt: number } | undefined;
   deleteSession(token: string): void;
-  refreshSession(token: string, expiresAt: number): void;
+  revokeSessions(): void;
+  deleteCredential(credentialId: string): boolean;
   createSession(token: string, createdAt: number, expiresAt: number, label?: string): void;
-  isEnrollTokenValid(token: string, now: number): boolean;
+  getEnrollToken(token: string, now: number): { sessionToken?: string } | undefined;
   listCredentials(): StoredCredential[];
   consumeEnrollToken(token: string, now: number): boolean;
   insertCredential(credential: StoredCredential): void;
   getCredential(id: string): StoredCredential | undefined;
   bumpCredentialCounter(id: string, counter: number, lastUsedAt: number): void;
-  createEnrollToken(token: string, expiresAt: number): void;
+  createEnrollToken(token: string, expiresAt: number, sessionToken?: string): void;
 }
