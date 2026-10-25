@@ -166,7 +166,9 @@ for (const width of [320, 1280]) test(`long draft scrolling stays inside the rou
   // surface. A rectangular hit target here also lets its scrollbar paint out.
   const corners = () => composer.evaluate(el => {
     const r = el.getBoundingClientRect();
-    return [r.left + 6, r.right - 6].map(x => el.contains(document.elementFromPoint(x, r.top + 6)));
+    // Stay outside the rendered arc as theme radii change, away from its rasterized edge.
+    const inset = Math.max(1, Math.floor(parseFloat(getComputedStyle(el).borderTopLeftRadius) / 4));
+    return [r.left + inset, r.right - inset].map(x => el.contains(document.elementFromPoint(x, r.top + inset)));
   });
   await expect.poll(corners).toEqual([false, false]);
   await input.evaluate(el => { el.scrollTop = 0; });
