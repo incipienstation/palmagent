@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 // controls visual order without remounting the textarea when focus changes.
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="input-group" role="group" className={cn(
-    "flex min-w-0 flex-wrap items-center border border-border bg-secondary focus-within:border-ring",
+    "flex min-w-0 flex-wrap items-center rounded-2xl border border-transparent bg-input/50 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
     className,
   )} {...props} />;
 }

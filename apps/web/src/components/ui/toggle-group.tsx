@@ -14,7 +14,7 @@ function ToggleGroup({
   return (
     <ToggleGroupPrimitive.Root
       data-slot="toggle-group"
-      className={cn("flex w-full items-stretch", variant === "pills" ? "flex-wrap gap-2" : "overflow-hidden rounded-lg border border-input", className)}
+      className={cn("flex w-full items-stretch", variant === "pills" ? "flex-wrap gap-2" : "overflow-hidden rounded-2xl border border-input", className)}
       {...props}
     >
       {children}
@@ -32,7 +32,7 @@ function ToggleGroupItem({
     <ToggleGroupPrimitive.Item
       data-slot="toggle-group-item"
       className={cn(
-        "flex h-11 flex-1 items-center justify-center border-l border-input bg-background px-1.5 text-[13px] text-muted-foreground outline-none transition-colors first:border-l-0 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40 data-[state=on]:bg-accent data-[state=on]:font-semibold data-[state=on]:text-accent-foreground",
+        "flex h-11 flex-1 items-center justify-center border-l border-input bg-background px-1.5 text-[13px] text-muted-foreground outline-none transition-colors first:border-l-0 focus-visible:ring-3 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-40 data-[state=on]:bg-accent data-[state=on]:font-semibold data-[state=on]:text-accent-foreground",
         variant === "pill" && "flex-none rounded-full border px-3 first:border-l",
         variant === "list" && "h-auto min-h-12 flex-none justify-between gap-3 border-t border-l-0 px-4 py-3 text-left text-base first:border-t-0",
         className,

@@ -38,7 +38,7 @@
   --border: #e8e8e8;
   --input: #d5d5d5;
   --ring: var(--brand-primary);
-  --radius: 0.875rem;
+  --radius: 0.625rem;
 
   /* app-accent palette */
   --color-strong: #171717;
@@ -224,6 +224,11 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* Rhea surfaces use the extended radius scale; Tailwind spacing stays unchanged. */
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-heading: var(--font-sans);
 
   --font-sans:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -526,7 +531,7 @@
     margin: 0;
     padding-bottom: 0;
     border-bottom-width: 1px;
-    border-radius: var(--radius);
+    border-radius: min(var(--radius-4xl), 24px);
     translate: -50% -50%;
     transform: none !important;
     animation: none !important;

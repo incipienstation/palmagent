@@ -44,7 +44,7 @@ function DrawerOverlay({
   return (
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
-      className={cn("fixed inset-0 z-50 bg-black/60", className)}
+      className={cn("fixed inset-0 z-50 bg-black/30 supports-backdrop-filter:backdrop-blur-sm", className)}
       {...props}
     />
   );
@@ -66,8 +66,8 @@ function DrawerContent({
         data-side={side}
         data-close={showClose || undefined}
         className={cn(
-          "responsive-drawer fixed z-50 flex min-h-0 flex-col bg-card [&[data-close]_[data-slot=drawer-header]]:pr-14",
-          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : side === "right" ? "inset-y-0 right-0 h-app w-full border-l border-border pt-[var(--safe-top,0px)] pb-[var(--safe-bottom,0px)] sm:max-w-2xl" : "inset-x-0 bottom-0 mx-auto h-auto max-h-[min(90dvh,calc(var(--app-height,100dvh)-16px))] w-full max-w-[720px] rounded-t-3xl border border-b-0 border-border pb-[var(--safe-bottom,0px)]",
+          "responsive-drawer fixed z-50 flex min-h-0 flex-col bg-popover text-sm text-popover-foreground shadow-xl [&[data-close]_[data-slot=drawer-header]]:pr-14",
+          side === "left" ? "inset-y-0 left-0 h-app w-[min(88vw,340px)] border-r border-border" : side === "right" ? "inset-y-0 right-0 h-app w-full border-l border-border pt-[var(--safe-top,0px)] pb-[var(--safe-bottom,0px)] sm:max-w-2xl" : "inset-x-0 bottom-0 mx-auto h-auto max-h-[min(90dvh,calc(var(--app-height,100dvh)-16px))] w-full max-w-[720px] rounded-t-[min(var(--radius-4xl),24px)] border border-b-0 border-border pb-[var(--safe-bottom,0px)]",
           side === "bottom" && size === "panel" && "h-[680px]",
           className,
         )}
@@ -122,7 +122,7 @@ function DrawerTitle({ className, ...props }: React.ComponentProps<typeof Drawer
   return (
     <DrawerPrimitive.Title
       data-slot="drawer-title"
-      className={cn("min-w-0 flex-1 text-base font-semibold text-strong [overflow-wrap:anywhere]", className)}
+      className={cn("min-w-0 flex-1 font-heading text-base font-medium text-foreground [overflow-wrap:anywhere]", className)}
       {...props}
     />
   );
