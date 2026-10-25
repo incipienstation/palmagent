@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Fixed
+
+- Every task status section and Space group now uses the same accordion layout and keyboard controls. Search and filters reveal matching tasks while preserving saved folding choices.
+
 ## 0.1.0-alpha.228
 
 ### Changed

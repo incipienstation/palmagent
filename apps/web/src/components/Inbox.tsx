@@ -1,8 +1,8 @@
 import { queueTaskArchive, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { isActiveTaskStatus, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { Archive, Check, ChevronDown, Inbox as InboxIcon, Search, Folder, Pin, Plus } from "lucide-react";
-import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
+import { Archive, Check, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
+import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -12,7 +12,6 @@ import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
 import { statusLabel, statusSection } from "@/lib/status";
-import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
 
@@ -130,36 +129,54 @@ const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
   );
 });
 
-// Completed tasks can be folded while live work remains visible. Search always
-// reveals matching rows, including completed tasks.
-function StatusGroup({ status, tasks, searching }: { status: InboxStatus; tasks: TaskState[]; searching: boolean }) {
-  const label = statusSection(status);
-  const [expanded, setExpanded] = useState(() => !collapsedGroups.has(status));
+// Every task-list section uses the same disclosure. Search and filters reveal
+// matches temporarily without replacing the user's saved folding choices.
+function TaskGroup({ label, accessibleName = label, description, tasks, collapsed, onCollapsedChange, reveal, actions }: {
+  label: string;
+  accessibleName?: string;
+  description?: string;
+  tasks: TaskState[];
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  reveal: boolean;
+  actions?: ReactNode;
+}) {
   if (tasks.length === 0) return null;
-  const collapsible = status === "idle" && !searching;
-  const rows = tasks.map(task => <TaskRow key={task.taskId} task={task} />);
   return (
-    <section className="px-4 pt-5 first:pt-3">
-      {collapsible ? <Accordion type="single" collapsible value={expanded ? status : ""}
-          onValueChange={value => {
-            const open = value === status;
-            if (open) collapsedGroups.delete(status); else collapsedGroups.add(status);
-            setExpanded(open);
-          }}>
-        <AccordionItem value={status}>
-          <AccordionTrigger headingLevel={2}>
-            <span className="flex items-center gap-1.5">{label}<span aria-hidden="true" className="text-muted-foreground">· {tasks.length}</span></span>
-          </AccordionTrigger>
-          <AccordionContent className="-mx-4 pb-0">{rows}</AccordionContent>
+    <section aria-label={accessibleName} className="px-4 pt-3">
+      <Accordion type="single" collapsible={!reveal} value={reveal || !collapsed ? "tasks" : ""}
+        onValueChange={value => { if (!reveal) onCollapsedChange(!value); }}>
+        <AccordionItem value="tasks">
+          <div className="flex min-w-0 items-center">
+            <div className="min-w-0 flex-1">
+              <AccordionTrigger headingLevel={2} aria-label={accessibleName} className="min-w-0">
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate">{label}</span>
+                    <span aria-hidden="true" className="shrink-0 text-muted-foreground">· {tasks.length}</span>
+                  </span>
+                  {description && <span className="block truncate text-xs text-muted-foreground">{description}</span>}
+                </span>
+              </AccordionTrigger>
+            </div>
+            {actions && <div className="flex shrink-0 items-center gap-1 pr-2">{actions}</div>}
+          </div>
+          <AccordionContent role="group" className="-mx-4 pb-0">
+            {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
+          </AccordionContent>
         </AccordionItem>
-      </Accordion> : <>
-        <div className="flex items-center gap-1.5 pb-2 text-xs font-medium text-muted-foreground">
-          <h2>{label}</h2><span aria-hidden="true">· {tasks.length}</span>
-        </div>
-        <div className="-mx-4">{rows}</div>
-      </>}
+      </Accordion>
     </section>
   );
+}
+
+function StatusGroup({ status, tasks, reveal }: { status: InboxStatus; tasks: TaskState[]; reveal: boolean }) {
+  const [collapsed, setCollapsed] = useState(() => collapsedGroups.has(status));
+  return <TaskGroup label={statusSection(status)} tasks={tasks} collapsed={collapsed} reveal={reveal}
+    onCollapsedChange={next => {
+      if (next) collapsedGroups.add(status); else collapsedGroups.delete(status);
+      setCollapsed(next);
+    }} />;
 }
 
 // Global task groups retain their folded state when visiting a session. A search
@@ -171,28 +188,13 @@ function SpaceTaskGroup({ repoId, tasks, reveal }: { repoId: string; tasks: Task
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const label = qualifier ? `${name} · ${qualifier}` : name;
   const [collapsed, setCollapsed] = useActionState(`inbox:space-group:${repoId}:collapsed`, false);
-  const expanded = reveal || !collapsed;
-  const rowsId = useId();
-  return <section aria-label={`${label} tasks`} className="pt-3">
-    <div className="flex min-w-0 items-center gap-1 px-4">
-      {!reveal && <Button variant="ghost" size="icon-lg" aria-label={`${label} tasks`}
-        aria-expanded={expanded} aria-controls={rowsId} onClick={() => setCollapsed(!collapsed)}>
-        <ChevronDown className={cn(!expanded && "-rotate-90")} />
-      </Button>}
-      <h2 className="min-w-0 flex-1">
-        <Button variant="ghost" className="h-auto min-h-11 max-w-full justify-start px-0" disabled={!repo}
-          aria-label={`Open Space ${label}`} onClick={() => navigate(spacePath(repoId))}>
-          <span className="min-w-0 text-left"><span className="block break-words whitespace-normal">{name}</span>
-            {qualifier && <span className="block truncate text-xs text-muted-foreground">{qualifier}</span>}</span>
-        </Button>
-      </h2>
-      <span className="shrink-0 text-xs text-muted-foreground">{tasks.length}</span>
-      {repo && <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} onClick={() => navigate(newTaskPath(repoId))}><Plus /></Button>}
-    </div>
-    <div id={rowsId} hidden={!expanded}>
-      {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
-    </div>
-  </section>;
+  return <TaskGroup label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks}
+    collapsed={collapsed} onCollapsedChange={setCollapsed} reveal={reveal} actions={repo && <>
+      <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
+        onClick={() => navigate(spacePath(repoId))}><FolderOpen /></Button>
+      <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} title={`New task in ${label}`}
+        onClick={() => navigate(newTaskPath(repoId))}><Plus /></Button>
+    </>} />;
 }
 
 // Skeleton rows shown while the first SSE snapshot is in flight (the mock
@@ -347,7 +349,7 @@ export const InboxView = memo(function InboxView({
               spaceGroups.map(([id, group]) => <SpaceTaskGroup key={id} repoId={id} tasks={group} reveal={!!search || statusFilter !== "all"} />)
             ) : (
               GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
-                <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} searching={!!search} />
+                <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} reveal={!!search || statusFilter !== "all"} />
               ))
             )}
           </div>
