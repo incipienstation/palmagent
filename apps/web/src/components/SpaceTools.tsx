@@ -26,6 +26,16 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
   }
   if (directory !== "all" && !directories.has(directory)) directories.set(directory, directory.split("/").at(-1) || directory);
   return <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="min-w-0 flex-1">
+      <Select value={status} onValueChange={value => onStatusChange(value as TaskFilter)}>
+        <SelectTrigger aria-label="Task status" className="w-auto max-w-full"><SelectValue /></SelectTrigger>
+        <SelectContent><SelectGroup>
+          <SelectItem value="all">All tasks</SelectItem>
+          {statuses.map(value => <SelectItem key={value} value={value}>{statusLabel(value)}</SelectItem>)}
+          <SelectItem value="local">Local sessions</SelectItem>
+        </SelectGroup></SelectContent>
+      </Select>
+    </div>
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild><Button variant="outline" className="rounded-full"><SlidersHorizontal data-icon="inline-start" />Filters</Button></DrawerTrigger>
       <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
@@ -57,7 +67,6 @@ export function TaskFilters({ repo, repos, tasks, directory, onDirectoryChange, 
     {directory !== "all" && <Button variant="secondary" className="min-w-0 max-w-full rounded-full" onClick={() => onDirectoryChange("all")} aria-label="Clear Worktree filter">
       <span className="truncate">Worktree: {directories.get(directory)}</span><X data-icon="inline-end" />
     </Button>}
-    {status !== "all" && <Button variant="secondary" className="rounded-full" onClick={() => onStatusChange("all")} aria-label="Clear status filter">{status === "local" ? "Local sessions" : statusLabel(status)}<X data-icon="inline-end" /></Button>}
   </div>;
 }
 
