@@ -5,6 +5,8 @@ import type { Terminal } from "@xterm/xterm";
 import type { TerminalFrame, TerminalInput } from "@palmagent/shared/terminals";
 import { terminalInputChunks } from "@palmagent/shared/terminals";
 import { useTerminalOperations } from "../hooks/remote-operations";
+import { ButtonGroup } from "./ui/button-group";
+import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Minus, Plus } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
@@ -197,14 +199,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     };
   }, [id]);
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div className="flex h-11 min-w-0 shrink-0 items-center justify-between gap-2 px-3">
-      <p role="status" className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={"Started in " + initialCwd}>{readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
-      <div role="group" aria-label="Terminal zoom" className="flex shrink-0 items-center gap-0.5">
-        <Button variant="ghost" size="icon-lg" aria-label="Zoom out" disabled={fontSize <= MIN_FONT_SIZE} onClick={() => changeFontSize(fontSize - 1)}><Minus /></Button>
-        <Button variant="ghost" size="icon-lg" aria-label="Reset terminal zoom" title="Reset terminal zoom" onClick={() => changeFontSize(DEFAULT_FONT_SIZE)}><span className="text-xs tabular-nums">{fontSize}px</span></Button>
-        <Button variant="ghost" size="icon-lg" aria-label="Zoom in" disabled={fontSize >= MAX_FONT_SIZE} onClick={() => changeFontSize(fontSize + 1)}><Plus /></Button>
-      </div>
-    </div>
+    <p role="status" className={cn("px-3 py-1 text-xs text-muted-foreground", connected && "sr-only")} title={"Started in " + initialCwd}>{readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
     {connected && !writable && <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-1">
       <p role="status" className="text-xs text-muted-foreground">{claiming ? "Enabling input…" : readOnly ? "Viewing terminal output" : notice}</p>
       <Button variant="outline" size="sm" disabled={claiming} onClick={() => { termRef.current?.focus(); if (readOnly) onEnableInput(); else claim.current(); }}>{claiming ? "Connecting…" : "Type here"}</Button>
@@ -218,9 +213,28 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
       onTouchEndCapture={handleTouchEnd}
       onTouchCancelCapture={handleTouchCancel}
     />
-    <ScrollArea orientation="horizontal" className="shrink-0" contentClassName="flex w-max min-w-full gap-1 px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" viewportProps={{ "aria-label": "Terminal keys" }}>
-      {[["Ctrl+C", "\x03"], ["Tab", "\t"], ["Esc", "\x1b"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"]].map(([label, data]) =>
-        <Button key={label} variant="secondary" className="shrink-0" disabled={!writable} onPointerDown={e => e.preventDefault()} onClick={() => { input.current(data); termRef.current?.focus(); }}>{label}</Button>)}
+    <ScrollArea orientation="horizontal" className="shrink-0" contentClassName="flex w-max min-w-full flex-col gap-1.5 px-2 pt-1 pb-[calc(8px+var(--safe-bottom))]" viewportProps={{ "aria-label": "Terminal keys", tabIndex: 0 }}>
+      {[
+        [
+          { name: "Common keys", keys: [["Ctrl+C", "\x03"], ["Esc", "\x1b"], ["Tab", "\t"], ["Enter", "\r"]] },
+          { name: "Arrow keys", keys: [["↑", "\x1b[A", "Arrow up"], ["↓", "\x1b[B", "Arrow down"], ["←", "\x1b[D", "Arrow left"], ["→", "\x1b[C", "Arrow right"]] },
+        ],
+        [
+          { name: "Navigation keys", keys: [["⇧ Tab", "\x1b[Z", "Shift+Tab"], ["Home", "\x1b[H"], ["End", "\x1b[F"], ["PgUp", "\x1b[5~", "Page up"], ["PgDn", "\x1b[6~", "Page down"]] },
+          { name: "Control keys", keys: [["Ctrl+A", "\x01"], ["Ctrl+E", "\x05"], ["Ctrl+U", "\x15"], ["Ctrl+K", "\x0b"], ["Ctrl+L", "\x0c"], ["Ctrl+R", "\x12"], ["Ctrl+W", "\x17"], ["Ctrl+Z", "\x1a"]] },
+        ],
+      ].map((groups, row) => <div key={row} className="flex gap-2">
+        {groups.map(group => <ButtonGroup key={group.name} aria-label={group.name} className="shrink-0">
+          {group.keys.map(([label, data, name]) => <Button key={label} variant="outline" className="min-w-10 shrink-0" aria-label={name ?? label} disabled={!writable} onPointerDown={event => event.preventDefault()} onClick={() => { input.current(data); termRef.current?.focus(); }}>{label}</Button>)}
+        </ButtonGroup>)}
+        {row === 0 && (
+      <ButtonGroup aria-label="Terminal zoom" className="shrink-0">
+        <Button variant="outline" size="icon" aria-label="Zoom out" disabled={fontSize <= MIN_FONT_SIZE} onClick={() => changeFontSize(fontSize - 1)}><Minus /></Button>
+        <Button variant="outline" size="icon" aria-label="Reset terminal zoom" title="Reset terminal zoom" onClick={() => changeFontSize(DEFAULT_FONT_SIZE)}><span className="text-xs tabular-nums">{fontSize}px</span></Button>
+        <Button variant="outline" size="icon" aria-label="Zoom in" disabled={fontSize >= MAX_FONT_SIZE} onClick={() => changeFontSize(fontSize + 1)}><Plus /></Button>
+      </ButtonGroup>
+        )}
+      </div>)}
     </ScrollArea>
   </div>;
 }

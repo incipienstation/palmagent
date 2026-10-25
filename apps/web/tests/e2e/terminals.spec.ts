@@ -63,7 +63,10 @@ test("global terminals ignore a stale browsing scope; Space terminals use an exp
   await page.goto("/#/terminals");
   await expect.poll(() => requests.includes("all")).toBe(true);
   await page.goto("/#/terminals/repo/repo-app");
+  await page.getByRole("button", { name: "Terminal actions" }).click();
+  await page.getByRole("menuitem", { name: "Terminal details" }).click();
   await expect(page.getByRole("combobox", { name: "Terminal Space" })).toHaveText("sample-app");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(() => requests.includes("repo-app")).toBe(true);
   await assertViewportLocked(page);
 });
@@ -204,4 +207,25 @@ test("older persistent hosts support explicit input without unsupported automati
   await page.getByRole("button", { name: "Type here" }).click();
   await expect(page.getByRole("button", { name: "Ctrl+C", exact: true })).toBeEnabled();
   expect(f.claims).toEqual([{ type: "claim-control" }]);
+});
+
+
+test("terminal uses one header and grouped presets preserve input and fitted zoom", async ({ page }) => {
+  const f = await terminalFixture(page);
+  await openTerminal(page);
+  const region = page.getByRole("region", { name: "Terminals", exact: true });
+  await expect(region.locator("header")).toHaveCount(1);
+  const screen = page.getByTestId("terminal-screen");
+  await expect.poll(async () => (await screen.boundingBox())!.y).toBeLessThan(80);
+  await expect(page.getByRole("group", { name: "Common keys", exact: true })).toBeVisible();
+  for (const [name, data] of [["Enter", "\r"], ["Shift+Tab", "\x1b[Z"], ["Home", "\x1b[H"], ["End", "\x1b[F"], ["Page up", "\x1b[5~"], ["Page down", "\x1b[6~"], ["Ctrl+R", "\x12"], ["Arrow left", "\x1b[D"]]) {
+    await page.getByRole("button", { name, exact: true }).click();
+    await expect.poll(() => f.inputs.at(-1)).toBe(data);
+    await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  }
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Reset terminal zoom" })).toHaveText("15px");
+  await page.getByRole("button", { name: "Reset terminal zoom" }).click();
+  await expect(page.getByRole("button", { name: "Reset terminal zoom" })).toHaveText("14px");
+  await assertViewportLocked(page);
 });
