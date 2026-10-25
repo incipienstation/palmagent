@@ -1,11 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PalmAgent">
   <rect width="64" height="64" rx="14" fill="#0f766e"/>
   <g fill="#ffffff">
-    <rect x="9" y="24" width="6" height="20" rx="3"/>
-    <rect x="19" y="16" width="6" height="28" rx="3"/>
-    <rect x="29" y="10" width="6" height="34" rx="3"/>
-    <rect x="39" y="14" width="6" height="30" rx="3"/>
-    <rect x="49" y="22" width="6" height="22" rx="3"/>
-    <rect x="9" y="48" width="46" height="6" rx="3"/>
+    <rect x="10.5" y="22.5" width="7" height="24.5" rx="3.5"/>
+    <rect x="19.5" y="15.5" width="7" height="31.5" rx="3.5"/>
+    <rect x="28.5" y="9" width="7" height="38" rx="3.5"/>
+    <rect x="37.5" y="15.25" width="7" height="31.75" rx="3.5"/>
+    <path d="M13.5 49H44.5Q46.5 49 46.5 47V35.5a3.5 3.5 0 0 1 7 0V49a6 6 0 0 1-6 6h-34a3 3 0 0 1 0-6Z"/>
   </g>
 </svg>
