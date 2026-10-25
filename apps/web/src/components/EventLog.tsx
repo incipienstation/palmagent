@@ -389,9 +389,13 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
 } & HistoryControls) {
   const { scrollToEnd } = useMessageScroller();
   const virtuoso = useRef<VirtuosoHandle>(null);
-  // Keep the normal first-row probe for Trace-led histories. A very long first
-  // answer must not become the estimate for every still-unmeasured row.
-  const initialItemHeight = useRef(rows[0].type === "message" && rows[0].item.text.length > 4000 ? 80 : undefined);
+  // Keep the measured first row for Trace-led histories and their prepend
+  // anchors. A long first answer, after any introductory prompt, is an outlier
+  // and must not become the estimate for every unmeasured row.
+  const [initialItemHeight] = useState(() => {
+    const first = rows.find(row => row.type !== "prompt");
+    return first?.type === "message" && first.item.text.length > 4000 ? 80 : undefined;
+  });
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
   const initialized = useRef(!!saved.current);
   const [positioned, setPositioned] = useState(false);
@@ -623,7 +627,7 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     data={rows}
     firstItemIndex={firstItemIndex}
     itemSize={rowSize}
-    defaultItemHeight={initialItemHeight.current}
+    defaultItemHeight={initialItemHeight}
     skipAnimationFrameInResizeObserver
     {...(saved.current ? { restoreStateFrom: saved.current.state } : { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } })}
     followOutput={false}
