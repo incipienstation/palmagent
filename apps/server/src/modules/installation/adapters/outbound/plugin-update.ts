@@ -46,11 +46,14 @@ export function discoverPlugins(cfg: Pick<InstallConfig, "claudeConfigDir">, exe
   // at most 25s, leaving room for npm's 30s lookup inside the 60s CLI bridge.
   let retried = false;
   function readInventory(context: Context): string {
-    try { return command(context, ["list", "--json"], execute); }
+    // Unfiltered Codex inventories also query unrelated remote marketplaces.
+    // Only this dedicated marketplace participates in Palmagent updates.
+    const args = ["list", "--json", ...(context.manager === "codex" ? ["--marketplace", "palmagent"] : [])];
+    try { return command(context, args, execute); }
     catch (error) {
       if (retried || !(error instanceof UpdateDiscoveryError) || error.failure.code !== "timeout") throw error;
       retried = true;
-      return command(context, ["list", "--json"], execute, 10_000);
+      return command(context, args, execute, 10_000);
     }
   }
   const codexHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));

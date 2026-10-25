@@ -100,13 +100,48 @@ test("native inventories discover both installed plugins and verify their actual
   assert.throws(() => discoverPlugins(f.cfg, f.execute), /does not match its inventory/);
 });
 
+test("Codex discovery avoids unrelated remote marketplaces, including on timeout retry", (t) => {
+  const f = fixture(t);
+  let attempts = 0;
+  const inventory = discoverPlugins(f.cfg, (cmd, args, opts) => {
+    if (cmd === "codex") {
+      assert.deepEqual(args, ["plugin", "list", "--json", "--marketplace", "palmagent"]);
+      if (++attempts === 1) return { ok: false, code: null, errorCode: "ETIMEDOUT", stdout: "", stderr: "" };
+    } else {
+      assert.deepEqual(args, ["plugin", "list", "--json"]);
+    }
+    return f.execute(cmd, args, opts);
+  });
+  assert.equal(attempts, 2);
+  assert.deepEqual(inventory.map((p) => p.version), [old, old]);
+});
+
+test("an absent Codex Palmagent marketplace still discovers participating Claude plugins", (t) => {
+  const f = fixture(t);
+  const inventory = discoverPlugins(f.cfg, (cmd, args, opts) => cmd === "codex"
+    ? { ok: true, code: 0, stdout: JSON.stringify({ installed: [], available: [] }), stderr: "" }
+    : f.execute(cmd, args, opts));
+  assert.deepEqual(inventory.map((p) => p.manager), ["claude"]);
+});
+
+test("scoped Codex discovery still rejects unrelated plugins in the Palmagent marketplace", (t) => {
+  const f = fixture(t);
+  assert.throws(() => discoverPlugins(f.cfg, (cmd, args, opts) => cmd === "codex"
+    ? { ok: true, code: 0, stdout: JSON.stringify({ installed: [{ pluginId: "unrelated@palmagent",
+      version: old, enabled: true, installPolicy: "AVAILABLE" }] }), stderr: "" }
+    : f.execute(cmd, args, opts)), (error: unknown) => {
+    assert.deepEqual((error as { failure: unknown }).failure, { source: "codex-plugins", code: "invalid-plugin" });
+    return true;
+  });
+});
+
 for (const manager of ["codex", "claude"] as const) {
   test(`${manager} inventory recovers from one timeout with a longer read-only retry`, (t) => {
     const f = fixture(t);
     const timeouts: Array<number | undefined> = [];
     const inventory = discoverPlugins(f.cfg, (cmd, args, opts) => {
       if (cmd === manager) {
-        assert.deepEqual(args, ["plugin", "list", "--json"]);
+        assert.deepEqual(args, ["plugin", "list", "--json", ...(manager === "codex" ? ["--marketplace", "palmagent"] : [])]);
         timeouts.push(opts?.timeout);
         if (timeouts.length === 1) return { ok: false, code: null, errorCode: "ETIMEDOUT", stdout: "", stderr: "" };
       }
