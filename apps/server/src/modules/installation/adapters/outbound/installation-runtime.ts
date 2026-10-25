@@ -3,6 +3,7 @@ import { join, sep } from "node:path";
 import type { InstallConfig } from "../../domain/installation.js";
 import type { InstallationRuntime, RetainedReleaseOperations } from "../../application/ports/outbound/installation.js";
 import { installedHostArtifactPaths } from "../../../../platform/process/host-artifacts.js";
+import { prepareNativeSetup } from "./setup-plan.js";
 import { activateDaemon, configureDaemon, daemonConfiguration, writeDaemonConfiguration } from "./daemon-runtime.js";
 import { assertDaemonBootstrapSupported, installDaemonBootstrap, removeDaemonBootstrap, removeDaemonRegistration, restoreDaemonBootstrap, startDaemonBootstrap, stopDaemonBootstrap } from "./daemon-bootstrap.js";
 import { assertInstallationOwner, daemonServiceName, prepareUserService, verifyUserIsolation } from "./user-service.js";
@@ -170,7 +171,7 @@ export function createInstallationRuntime(releases: RetainedReleaseOperations): 
   return {
     assertIdentity: assertSafeInstallerIdentity, assertOwner: assertInstallationOwner,
     assertBootstrapSupported: assertDaemonBootstrapSupported, canManageServices: canSudoNonInteractive,
-    preflight, prepareUserService, verifyUserIsolation, retainRelease: retainInstalledRelease,
+    preflight, prepareUserService, verifyUserIsolation, retainRelease: retainInstalledRelease, prepareSetup: prepareNativeSetup,
     configure: applyUnits, artifactChanged: runnerArtifactChanged, installBootstrap: installDaemonBootstrap,
     start: startServices, restartRunner, restartWeb, healthy: runtimeIsHealthy, waitHealthy: healthcheck,
     async activity(config) {

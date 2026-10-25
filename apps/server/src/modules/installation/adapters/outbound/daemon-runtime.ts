@@ -33,6 +33,19 @@ function memoryBytes(value: string): number {
   return bytes;
 }
 
+/** An installed runtime's environment is authoritative, including absent keys.
+ * Reconfiguration from another shell must not import its credentials, proxy or CA settings. */
+function retainedEnvironment(dataDir: string): Record<string, string | undefined> {
+  let text: string;
+  try { text = readFileSync(join(dataDir, "daemon", "config.json"), "utf8"); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return process.env;
+    throw new Error("Cannot read the installed daemon environment; configuration was not changed");
+  }
+  try { return DaemonConfigurationSchema.parse(JSON.parse(text)).environment; }
+  catch { throw new Error("Invalid installed daemon configuration; inspect it before reconfiguring"); }
+}
+
 export function daemonConfiguration(cfg: InstallConfig) {
   if (!cfg.pkgDir || !cfg.executionNode || cfg.supervisor !== "palmagentd") throw new Error("A retained daemon installation is required");
   const user = userInfo();
@@ -45,8 +58,9 @@ export function daemonConfiguration(cfg: InstallConfig) {
     EXECUTION_RELEASE: cfg.pkgDir, EXECUTION_NODE: cfg.executionNode, STATIC_DIR: join(cfg.pkgDir, "web"),
     AUTH_RP_ID: cfg.rpId, AUTH_RP_NAME: cfg.rpName, AUTH_ORIGIN: cfg.authOrigin,
   };
+  const retained = retainedEnvironment(cfg.dataDir);
   for (const key of ["LANG", "LC_ALL", "CODEX_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]) {
-    if (process.env[key]) environment[key] = process.env[key]!;
+    if (retained[key] !== undefined) environment[key] = retained[key]!;
   }
   if (cfg.claudeConfigDir) environment.CLAUDE_CONFIG_DIR = cfg.claudeConfigDir;
   if (cfg.repoRoots) environment.REPO_ROOTS = cfg.repoRoots;

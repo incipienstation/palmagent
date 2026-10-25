@@ -41,10 +41,24 @@ it also checks health, version, source commit, and PWA shell/entry-script hashes
 the installed package at both the loopback and public HTTPS origins. It does not inspect
 nginx configuration or local certificate paths.
 
-Streaming and terminal WebSocket checks remain separate operator tests;
-`palmagent terminal diagnose` provides an explicit end-to-end terminal check.
+`palmagent connection diagnose --data-dir <installation-data-dir>` checks public HTTPS
+health, the installed package version when available, the app shell, authenticated
+`/api/auth/me`, and a complete SSE data frame.
+Run it as the installation owner. It serializes with updates, creates a temporary login
+session, and revokes it on completion, failure, or interruption. The session expires within
+two minutes if the process is killed. Output contains check names and the host vantage,
+without session credentials or application payloads. Check `connection --help` for availability
+on older releases; the bare `connection` command remains a read-only JSON contract.
+
+`palmagent terminal diagnose` provides a separate end-to-end terminal WebSocket check.
 Local requests to a public hostname are not proof of off-host reachability.
 A first enrollment link is minted with `palmagent passkey` after HTTPS works.
+
+For an existing native user installation, `setup --dry-run` lists the prepared files and
+fingerprints, changed installation/runtime fields, public origin, bootstrap selection and activation effects.
+Application uses those same candidates and refuses inputs changed after planning. Setup
+retains saved provider, proxy, CA and locale environment settings rather than replacing them
+with the invoking shell's environment. Environment values are omitted from the preview.
 
 Preserve Host, uncached APIs, unbuffered SSE and WebSocket upgrades. Follow the connection
 contract's body and per-client rate/connection limits. An application-wide authentication

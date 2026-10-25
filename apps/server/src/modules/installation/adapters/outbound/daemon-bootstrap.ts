@@ -26,7 +26,7 @@ export function assertDaemonBootstrapSupported(): void {
   }
 }
 
-export function installDaemonBootstrap(cfg: InstallConfig, enable = true): void {
+export function renderDaemonBootstrap(cfg: InstallConfig): { path: string; unit: string; text: string } {
   assertInstallationOwner(cfg);
   assertDaemonBootstrapSupported();
   const binary = daemonBinary(cfg.pkgDir!);
@@ -34,11 +34,22 @@ export function installDaemonBootstrap(cfg: InstallConfig, enable = true): void 
   const rendered = run(binary, ["bootstrap-unit", "--data-dir", cfg.dataDir, "--executable", executable, "--user", cfg.user, "--group", cfg.group, "--scope", cfg.daemonScope ?? "system"]);
   if (!rendered.ok) throw new Error("Could not render the daemon bootstrap");
   const path = daemonUnitPath(cfg), unit = daemonServiceName(cfg);
+  const marker = `# Palmagent managed user service: ${unit}\n`;
+  if (cfg.daemonScope === "user" && existsSync(path) && !readFileSync(path, "utf8").startsWith(marker)) {
+    throw new Error("Refusing to overwrite an unmanaged user service");
+  }
+  return { path, unit, text: (cfg.daemonScope === "user" ? marker : "") + rendered.stdout };
+}
+
+export function installDaemonBootstrap(cfg: InstallConfig, enable = true, candidate = renderDaemonBootstrap(cfg)): void {
+  assertInstallationOwner(cfg);
+  const { path, unit, text } = candidate;
+  const changed = !existsSync(path) || readFileSync(path, "utf8") !== text;
   if (cfg.daemonScope === "user") {
     const marker = `# Palmagent managed user service: ${unit}\n`;
     if (existsSync(path) && !readFileSync(path, "utf8").startsWith(marker)) throw new Error("Refusing to overwrite an unmanaged user service");
-    writePrivateFileAtomic(path, marker + rendered.stdout);
-  } else if (!sudoWriteFile(path, rendered.stdout)) throw new Error("Could not write the system daemon bootstrap");
+    if (changed) writePrivateFileAtomic(path, text);
+  } else if (changed && !sudoWriteFile(path, text)) throw new Error("Could not write the system daemon bootstrap");
   if (!control(cfg, ["daemon-reload"], true).ok) throw new Error("Could not reload the daemon bootstrap");
   if (cfg.daemonScope === "user") {
     const loaded = control(cfg, ["show", unit, "--property=FragmentPath", "--value"]);

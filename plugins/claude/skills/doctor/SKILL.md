@@ -41,8 +41,10 @@ Show the operator the report.
 
 Current package diagnostics verify build identity and PWA hashes through both local and
 public origins. Older CLIs may cover local health only; inspect their actual output and
-verify public HTTPS using the shared reference when absent. Use `<cli> terminal diagnose` explicitly when supported
-to verify WebSocket shell transport. Report each result separately. No system changes
+verify public HTTPS using the shared reference when absent. Follow its capability check for
+`connection diagnose` to verify authenticated HTTP/SSE with a temporary session managed by
+the CLI. Use `<cli> terminal diagnose` explicitly when supported to verify WebSocket shell
+transport. Report each result separately. No system changes
 are authorized by diagnosis alone. Investigate any remaining user symptom.
 
 ## 4. If the CLI reports a fault — correlate, then propose the fix

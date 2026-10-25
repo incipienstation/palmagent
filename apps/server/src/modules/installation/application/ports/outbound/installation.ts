@@ -28,6 +28,11 @@ export interface InstallationState {
   clearMigration(config: InstallConfig): void;
   writeActivation(config: InstallConfig, receipt: ActivationReceipt): void;
 }
+/** Prepared host artifacts stay private to the adapter; only redacted changes are printable. */
+export interface PreparedSetup {
+  summary: readonly string[];
+  apply(): void;
+}
 /** Host facts and operations. Admission, retry and rollback decisions belong to the use cases. */
 export interface InstallationRuntime {
   assertIdentity(): void;
@@ -38,6 +43,7 @@ export interface InstallationRuntime {
   prepareUserService(config: InstallConfig, dryRun?: boolean): void;
   verifyUserIsolation(config: InstallConfig): void;
   retainRelease(config: InstallConfig): void;
+  prepareSetup(config: InstallConfig): PreparedSetup;
   configure(config: InstallConfig, dryRun: boolean): { runnerChanged: boolean };
   artifactChanged(config: InstallConfig): boolean;
   installBootstrap(config: InstallConfig, activate?: boolean): void;

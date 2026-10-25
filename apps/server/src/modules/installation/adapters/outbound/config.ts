@@ -283,8 +283,7 @@ export function loadConfig(
   };
 }
 
-export function saveConfig(cfg: InstallConfig): string {
-  ensurePrivateDirectory(cfg.dataDir);
+export function renderInstallConfig(cfg: InstallConfig): string {
   const lines = [
     `# ${BRANDING.productName} install config — written by \`${BRANDING.cliName} install/setup\`.`,
     `# Edit then re-run \`${BRANDING.cliName} setup\` to re-render the application units.`,
@@ -318,8 +317,13 @@ export function saveConfig(cfg: InstallConfig): string {
     `CAP_TASKS_MAX_WEB=${cfg.caps.tasksMaxWeb}`,
     "",
   ].filter((l) => l !== "");
+  return lines.join("\n") + "\n";
+}
+
+export function saveConfig(cfg: InstallConfig): string {
+  ensurePrivateDirectory(cfg.dataDir);
   const file = installEnvPath(cfg.dataDir);
-  writePrivateFileAtomic(file, lines.join("\n") + "\n");
+  writePrivateFileAtomic(file, renderInstallConfig(cfg));
   ensurePrivateFile(file);
   return file;
 }

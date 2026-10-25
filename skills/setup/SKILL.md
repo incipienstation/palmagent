@@ -24,6 +24,13 @@ Preview application changes:
 <cli> setup --dry-run --non-interactive <changed-config-flags>
 ```
 
+Review the planned files, configuration differences, bootstrap changes and activation
+effects before applying. Native setup preserves saved provider, proxy, CA and locale
+environment settings even when the invoking shell differs. Older CLIs may show only a
+generic preview and rebuild these values from their caller: privately reproduce the saved
+allowlisted environment, including absent values, and compare effective configuration after
+setup. Do not print credentials or infer preservation from an unchanged `install.env` alone.
+
 For authorized work, initialize preferences with `<cli> config init` using the same data
 directory, then apply:
 

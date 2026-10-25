@@ -4,13 +4,14 @@ import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, lstatSync, realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, lstatSync, realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readlinkSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { DaemonConfigurationSchema } from "@palmagent/shared/daemon";
 import { assertDaemonBootstrapSupported, installDaemonBootstrap, removeDaemonBootstrap } from "../../src/modules/installation/adapters/outbound/daemon-bootstrap.js";
-import { activateDaemon, configureDaemon, daemonBinary, daemonStatus } from "../../src/modules/installation/adapters/outbound/daemon-runtime.js";
+import { activateDaemon, configureDaemon, daemonBinary, daemonStatus, daemonConfiguration } from "../../src/modules/installation/adapters/outbound/daemon-runtime.js";
+import { prepareNativeSetup } from "../../src/modules/installation/adapters/outbound/setup-plan.js";
 import { configureAutoUpdate, prepareUpdateService, startRequestedUpdate } from "../../src/modules/installation/adapters/outbound/auto-update.js";
 import { DEFAULT_CAPS, saveConfig, loadConfig, type InstallConfig } from "../../src/modules/installation/adapters/outbound/config.js";
 import { daemonServiceName, prepareUserService, verifyUserIsolation } from "../../src/modules/installation/adapters/outbound/user-service.js";
@@ -65,6 +66,35 @@ test("daemon configuration pins native and Node artifacts and preserves the supe
   assert.equal(config.limits.memoryMax, 16 * 1024 ** 3);
   assert.equal(loadConfig({ dataDir: f.root }).supervisor, "palmagentd");
   assert(!existsSync(f.privileged));
+});
+
+test("domain reconfiguration preserves saved environment even when the caller changes or unsets it", t => {
+  const f = fixture(t);
+  process.env.CODEX_HOME = join(f.root, "provider-home");
+  process.env.HTTPS_PROXY = "http://fixture-user:fixture-password@proxy.example.com";
+  process.env.NODE_EXTRA_CA_CERTS = join(f.root, "ca.pem");
+  delete process.env.SSL_CERT_DIR;
+  configureDaemon(f.cfg);
+  const before = daemonConfiguration(f.cfg);
+  delete process.env.CODEX_HOME;
+  process.env.HTTPS_PROXY = "http://other.example.com";
+  delete process.env.NODE_EXTRA_CA_CERTS;
+  process.env.SSL_CERT_DIR = join(f.root, "unrequested-ca");
+  const domain = "new.example.com";
+  configureDaemon({ ...f.cfg, domain, rpId: domain, authOrigin: `https://${domain}` });
+  const after = JSON.parse(readFileSync(join(f.root, "daemon/config.json"), "utf8"));
+  assert.deepEqual(after.environment, { ...before.environment, AUTH_RP_ID: domain, AUTH_ORIGIN: `https://${domain}` });
+  assert.equal(after.environment.SSL_CERT_DIR, undefined);
+});
+
+test("invalid saved daemon configuration is retained instead of importing the caller environment", t => {
+  const f = fixture(t);
+  const path = join(f.root, "daemon/config.json");
+  for (const invalid of ["{", JSON.stringify({ environment: { CODEX_HOME: 123 } })]) {
+    writeFileSync(path, invalid);
+    assert.throws(() => configureDaemon(f.cfg), /Invalid installed daemon configuration/);
+    assert.equal(readFileSync(path, "utf8"), invalid);
+  }
 });
 
 test("release selection adopts a frozen launcher as an alias and restores both paths on rollback", t => {
@@ -171,6 +201,51 @@ else if (args.includes('--property=FragmentPath')) console.log(${JSON.stringify(
   }
   return { ...f, serviceCalls, linger };
 }
+
+test("native setup preview is private and applies its prepared files including bootstrap changes", t => {
+  const f = userFixture(t);
+  process.env.HTTPS_PROXY = "http://fixture-user:fixture-password@proxy.example.com";
+  configureDaemon(f.cfg); saveConfig(f.cfg); installDaemonBootstrap(f.cfg);
+  const unit = join(f.cfg.daemonUnitDir!, daemonServiceName(f.cfg));
+  writeFileSync(unit, readFileSync(unit, "utf8").replace("/example/launcher", "/example/previous"));
+  const paths = [join(f.root, "install.env"), join(f.root, "daemon/config.json"), unit];
+  const before = paths.map(path => readFileSync(path, "utf8"));
+  const domain = "new.example.com";
+  const candidate = { ...f.cfg, domain, rpId: domain, authOrigin: `https://${domain}`, port: 4200 };
+  const plan = prepareNativeSetup(candidate);
+  const summary = plan.summary.join("\n");
+  assert.match(summary, /DOMAIN, PORT/);
+  assert.match(summary, /environment.PORT/);
+  for (const path of paths) assert(summary.includes(`update ${path}`));
+  assert.match(summary, /restart the web application/);
+  assert.match(summary, /Reload the user service manager/);
+  assert(!summary.includes("fixture-password"));
+  assert(!summary.includes("fixture-user"));
+  assert.deepEqual(paths.map(path => readFileSync(path, "utf8")), before);
+  const expected = daemonConfiguration(candidate);
+  process.env.HTTPS_PROXY = "http://unrelated.example.com";
+  plan.apply();
+  assert.deepEqual(JSON.parse(readFileSync(paths[1], "utf8")), expected);
+  assert.equal(loadConfig({ dataDir: f.root }).domain, domain);
+  assert.equal(loadConfig({ dataDir: f.root }).port, 4200);
+  assert(!readFileSync(unit, "utf8").includes("/example/previous"));
+  for (const path of paths) assert(summary.includes(createHash("sha256").update(readFileSync(path)).digest("hex")), "applied bytes must match the previewed candidate fingerprint");
+  assert.equal(readlinkSync(join(f.root, "daemon/launcher")), "current");
+  assert(!existsSync(f.privileged));
+});
+
+test("a stale setup plan fails before overwriting any configuration", t => {
+  const f = userFixture(t);
+  configureDaemon(f.cfg); saveConfig(f.cfg); installDaemonBootstrap(f.cfg);
+  const install = join(f.root, "install.env"), daemon = join(f.root, "daemon/config.json");
+  const before = readFileSync(daemon, "utf8");
+  const plan = prepareNativeSetup({ ...f.cfg, port: 4200 });
+  const changed = readFileSync(install, "utf8") + "# concurrent edit\n";
+  writeFileSync(install, changed);
+  assert.throws(() => plan.apply(), /changed after planning/);
+  assert.equal(readFileSync(install, "utf8"), changed);
+  assert.equal(readFileSync(daemon, "utf8"), before);
+});
 
 test("user prerequisites enable lingering once without sudo and ignore a login session's private bus", t => {
   const f = userFixture(t);
