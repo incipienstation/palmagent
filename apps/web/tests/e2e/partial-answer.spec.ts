@@ -25,6 +25,10 @@ for (const width of [360, 1280]) test(`partial answers retain reading order, dra
   await expect(first).toHaveAttribute("aria-expanded", "true");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("Keep this unsent draft");
+  // Measure after the user-initiated disclosure animation, before new output.
+  await groups.first().evaluate(async element => {
+    await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   const before = await answer.boundingBox();
   await emit("assistant_text", { messageId: "work", text: "Verifying the token refresh.", phase: "progress" });
   await emit("tool_call", { id: "verify", name: "bash", command: "Run session tests" });
