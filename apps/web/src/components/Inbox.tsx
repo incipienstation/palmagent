@@ -68,7 +68,7 @@ function relTime(ms: number): string {
 function TaskMeta({ task }: { task: TaskState }) {
   const done = statusLabel(task.status, task.interrupted, task.sessionControl) === "Done";
   return (
-    <div className={cn("mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground", task.pinnedAt !== undefined && "pl-6")}>
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
       {done ? <span className="inline-flex shrink-0 items-center gap-1.5"><Check aria-hidden="true" className="size-3.5" />Done</span>
         : <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
       {!!task.prs?.length && <><span aria-hidden="true">·</span><PrChip prs={task.prs} subtle /></>}
