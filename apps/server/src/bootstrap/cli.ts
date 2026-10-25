@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
-import { connectionInfo } from "../modules/installation/adapters/outbound/connection.js";
+import { connectionCommand } from "../composition/cli-commands.js";
 import { terminalCommand } from "../composition/cli-commands.js";
 import { sessionCommand } from "../composition/cli-commands.js";
 import { routineCommand } from "../composition/cli-commands.js";
@@ -125,7 +125,7 @@ Commands:
   install      Install the application runtime (proxy/TLS managed by the plugin)
   setup        Reconfigure the application runtime and public domain
   doctor       Diagnose the local application runtime
-  connection   Print the installed public origin and upstream contract as JSON
+  connection   Print the connection contract; diagnose checks public HTTPS/auth/SSE
   update       Apply config, or fetch the selected release channel with --pull
   auto-update  Access-triggered updates: enable, disable, status (off by default)
   update-settings  Internal web update bridge (JSON; installation runs separately)
@@ -182,6 +182,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "terminal") return terminalCommand(rest);
+  if (cmd === "connection") return connectionCommand(rest);
   if (cmd === "daemon") {
     const [action, ...options] = rest;
     if (action === "--help" || action === "-h") {
@@ -283,10 +284,6 @@ async function main(): Promise<void> {
       process.exit(await withHostLock(flags, () => install(flags)));
     case "setup":
       process.exit(await setup(flags));
-    case "connection":
-      parseArgs({ args: rest, strict: true, allowPositionals: false, options: { "data-dir": { type: "string" } } });
-      console.log(JSON.stringify(connectionInfo(loadInstalledConfig(flags))));
-      return;
     case "doctor":
       process.exit(await runDoctor(flags));
     case "update":

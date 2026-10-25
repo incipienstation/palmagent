@@ -1,13 +1,10 @@
-import Database from "better-sqlite3";
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, statSync, unlinkSync } from "node:fs";
-import { userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { TerminalFrame } from "@palmagent/shared/terminals";
 import type { InstallConfig } from "./config.js";
-import { acquireUpdateLock } from "./update-state.js";
-import { userConfigPath } from "./user-config.js";
+import { withDiagnosticSession } from "./diagnostic-session.js";
 import type { TerminalPlatform } from "../../../terminals/api.js";
 import type { DiagnosticRegistry, TerminalDiagnosticsHost } from "../../application/ports/outbound/terminal-diagnostics.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "../../../../platform/filesystem/private-files.js";
@@ -66,67 +63,55 @@ async function diagnoseTerminal(cfg: InstallConfig, options: {
   probe?: typeof probeTerminalConnection;
 } = {}): Promise<{ status: "passed"; checks: string[] }> {
   if (cfg.mode !== "package" || !cfg.executionNode || !cfg.pkgDir) throw new Error("Terminal diagnostics require a package installation with retained runtimes");
-  if (userInfo().username !== cfg.user || statSync(cfg.dbPath).uid !== process.getuid?.()) throw new Error("Run terminal diagnostics as the installation owner");
-  if (cfg.authOrigin !== `https://${cfg.domain}`) throw new Error("Terminal diagnostics require the installation's exact HTTPS origin");
   const platform = options.platform ?? host.platform(cfg.supervisor === "palmagentd" ? cfg.dataDir : undefined);
   if (!platform.supervisor.capabilities.available) throw new Error(platform.supervisor.capabilities.reason ?? "Terminal services unavailable");
   if (!platform.shell.diagnosticCommand) throw new Error("Terminal diagnostics are not supported by this shell adapter");
-  const unlock = acquireUpdateLock(dirname(userConfigPath()));
-  const controller = new AbortController();
-  const interrupted = () => controller.abort();
-  process.once("SIGINT", interrupted); process.once("SIGTERM", interrupted);
-  let store: DiagnosticRegistry | undefined, db: Database.Database | undefined, id: string | undefined, scratch: string | undefined;
-  const token = randomBytes(32).toString("base64url");
-  let stopped = false;
-  try {
-    verifyActiveExecutionCompatibility(cfg);
-    await platform.supervisor.inspect?.();
-    ensurePrivateDirectory(cfg.dataDir);
-    scratch = mkdtempSync(join(cfg.dataDir, "terminal-diagnostic-"));
-    store = host.registry(join(cfg.dataDir, "terminals"));
-    const record = store.reserve({ diagnostic: true, requestId: randomUUID(), repoId: "diagnostic", title: "Terminal diagnostic",
-      initialCwd: scratch, release: cfg.pkgDir, node: cfg.executionNode, directory: store.directory, cols: 120, rows: 24 }).record;
-    id = record.id;
-    writePrivateFileAtomic(join(store.directory, id + ".json"), JSON.stringify({ id, protocol: record.protocol, directory: record.directory, release: record.release, node: record.node }));
-    await platform.supervisor.launch(record);
-    const deadline = Date.now() + 30_000;
-    while (store.get(id)?.state !== "running") {
-      if (controller.signal.aborted) throw new Error("Terminal diagnostic was interrupted");
-      const current = store.get(id);
-      if (!current || current.state !== "starting") throw new Error(current?.startError ?? "Diagnostic shell failed to start");
-      if (Date.now() >= deadline) throw new Error("Diagnostic shell readiness timed out");
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    db = new Database(cfg.dbPath, { fileMustExist: true }); db.pragma("busy_timeout = 5000");
-    const now = Date.now();
-    db.prepare("INSERT INTO auth_sessions(token, created_at, expires_at, label) VALUES (?, ?, ?, ?)").run(token, now, now + 120_000, "Temporary terminal diagnostic");
-    const env = readFileSync(join(cfg.dataDir, "install.env"), "utf8");
-    const cookieName = /^AUTH_COOKIE_NAME=(.+)$/m.exec(env)?.[1].trim() ?? "palmagent_session";
-    if (!/^[\w-]+$/.test(cookieName)) throw new Error("Invalid installation session cookie name");
-    const version = String(JSON.parse(readFileSync(join(cfg.pkgDir, "package.json"), "utf8")).version);
-    await (options.probe ?? probeTerminalConnection)(cfg.authOrigin, `${cookieName}=${token}`, id, version, platform.shell.diagnosticCommand, controller.signal);
-    return { status: "passed", checks: ["service permissions", "PTY readiness", "public WebSocket input/output", "screen restoration", "diagnostic cleanup"] };
-  } finally {
+  const { pkgDir, executionNode } = cfg;
+  const command = platform.shell.diagnosticCommand;
+  return withDiagnosticSession(cfg, host.sessions, async (cookie, signal) => {
+    let store: DiagnosticRegistry | undefined, id: string | undefined, scratch: string | undefined;
+    let stopped = false;
     try {
-      if (id && store) {
-        try {
-          await platform.supervisor.terminate(store.get(id)!);
-          stopped = true; store.update(id, { state: "exited" }); store.removeDiagnostic(id);
-          try { unlinkSync(join(store.directory, id + ".json")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-        } catch {
-          if (store.get(id)) store.update(id, { diagnosticCleanupFailed: true });
-          throw new Error(`Diagnostic shell cleanup could not be confirmed. Inspect terminal ${id} with palmagent terminal list.`); }
+      verifyActiveExecutionCompatibility(cfg);
+      await platform.supervisor.inspect?.();
+      ensurePrivateDirectory(cfg.dataDir);
+      scratch = mkdtempSync(join(cfg.dataDir, "terminal-diagnostic-"));
+      store = host.registry(join(cfg.dataDir, "terminals"));
+      const record = store.reserve({ diagnostic: true, requestId: randomUUID(), repoId: "diagnostic", title: "Terminal diagnostic",
+        initialCwd: scratch, release: pkgDir, node: executionNode, directory: store.directory, cols: 120, rows: 24 }).record;
+      id = record.id;
+      writePrivateFileAtomic(join(store.directory, id + ".json"), JSON.stringify({ id, protocol: record.protocol, directory: record.directory, release: record.release, node: record.node }));
+      await platform.supervisor.launch(record);
+      const deadline = Date.now() + 30_000;
+      while (store.get(id)?.state !== "running") {
+        if (signal.aborted) throw new Error("Terminal diagnostic was interrupted");
+        const current = store.get(id);
+        if (!current || current.state !== "starting") throw new Error(current?.startError ?? "Diagnostic shell failed to start");
+        if (Date.now() >= deadline) throw new Error("Diagnostic shell readiness timed out");
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
+      const version = String(JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version);
+      await (options.probe ?? probeTerminalConnection)(cfg.authOrigin, cookie, id, version, command, signal);
+      return { status: "passed", checks: ["service permissions", "PTY readiness", "public WebSocket input/output", "screen restoration", "diagnostic cleanup"] };
     } finally {
-      try { db?.prepare("DELETE FROM auth_sessions WHERE token = ?").run(token); }
-      finally {
-        try {
-          try { db?.close(); } finally { store?.close(); }
+      try {
+        if (id && store) {
+          try {
+            await platform.supervisor.terminate(store.get(id)!);
+            stopped = true; store.update(id, { state: "exited" }); store.removeDiagnostic(id);
+            try { unlinkSync(join(store.directory, id + ".json")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+          } catch {
+            if (store.get(id)) store.update(id, { diagnosticCleanupFailed: true });
+            throw new Error(`Diagnostic shell cleanup could not be confirmed. Inspect terminal ${id} with palmagent terminal list.`); }
+        }
+      } finally {
+        try { store?.close(); }
+        finally {
           if (scratch && (!id || stopped)) rmSync(scratch, { recursive: true, force: true });
-        } finally { process.off("SIGINT", interrupted); process.off("SIGTERM", interrupted); unlock(); }
+        }
       }
     }
-  }
+  });
 }
 
 return diagnoseTerminal;

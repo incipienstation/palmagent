@@ -34,15 +34,15 @@ claim domain-only completion while those prerequisites remain unresolved.
 After installing the runtime, read `<cli> connection --data-dir <installed-data-dir>`.
 It returns JSON: `schemaVersion`, `ingressOwner`, `publicOrigin`, `rpId`, `upstream`,
 `healthPath`, and `proxy` requirements. Check command availability in help when adopting
-older releases; never guess that an old CLI supports it. Retain the existing `--domain`
-input and derived HTTPS origin; this migration does not change passkey RP identity.
+older releases; never guess that an old CLI supports it. Adopting ingress for an unchanged
+domain preserves the HTTPS origin and passkey RP identity. An explicit domain change
+updates both through setup and requires device re-enrollment.
 
 Forward to the reported loopback upstream, preserve the public Host, and serve the app
-only through public HTTPS. Keep API responses uncached. Support unbuffered SSE at
-`/api/stream` with a 3600-second read timeout, authenticated WebSocket upgrades at
-`/api/terminals/:id/stream` with at least a 60-second idle timeout, and 48,000,000-byte
-image bodies. Preserve the per-client limits from the contract (auth 5 requests/s,
-burst 10; API 20 requests/s, burst 40; API/SSE 30 connections; terminal 16 connections).
+only through public HTTPS. Keep API responses uncached. Use the returned `proxy` contract
+for body size, SSE/WebSocket paths and timeouts, buffering, upgrades, and per-client
+request/connection limits. Do not substitute historical limits from prose or templates
+for the installed application's contract.
 Choose supported proxy facilities or an existing edge limiter; stock Caddy does not
 by itself reproduce nginx's limit_req policy. Do not silently discard these protections.
 The application's global auth backstop is additional protection, not per-client isolation.
@@ -90,15 +90,25 @@ ACME challenge directory and returns 404 for app requests. For new certificates 
 an isolated Certbot webroot/config/work/log directory and a dedicated renewal timer;
 avoid `--nginx` edits across shared config. Keep the challenge route in the final HTTP
 site, redirect other requests to HTTPS, and verify renewal plus its validated reload hook.
+For a manual Certbot renewal test, use `renew --dry-run --run-deploy-hooks` with the
+same isolated directories and deploy hook as the renewal service. If supported by the
+installed Certbot, add `--no-random-sleep-on-renew` to this manual test; keep the scheduled
+renewal timer's jitter. Report validation, hook execution, and timer activation separately.
 For Caddy, keep its certificate storage persistent and its admin endpoint private to
 its dedicated service. Renewal must run without an active plugin session.
 
 ## Verify and finish
 
 Check the internal health response and expected runtime version, then the public HTTPS
-certificate/hostname, health/version, app shell, and authentication route. Use the CLI's
-explicit `terminal diagnose` when supported to verify a disposable shell over public
-HTTPS/WebSocket, and check SSE delivery. Do not weaken TLS verification to pass a check.
+certificate/hostname, health/version, app shell, and authentication route (`/api/auth/me`).
+Inspect `connection --help` for `connection diagnose` before using this additive command.
+When available, run `<cli> connection diagnose --data-dir <installed-data-dir>` to verify
+public HTTPS, authenticated HTTP and complete SSE delivery. It owns a bounded temporary
+session and its cleanup; never insert authentication rows or expose session cookies in
+operator scripts. On older CLIs, verify the available HTTP routes and report authenticated
+SSE as unverified unless an existing browser session confirms it. Use `terminal diagnose`
+when supported for a separate disposable-shell HTTPS/WebSocket check. Do not weaken TLS
+verification to pass a check.
 Host-local requests to the public hostname do not prove off-host reachability; distinguish
 that result from an external probe or the user's successful browser connection.
 Only after HTTPS succeeds, run `<cli> passkey` to mint the short-lived enrollment link.

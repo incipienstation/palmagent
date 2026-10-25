@@ -64,6 +64,7 @@ function fixture() {
       assertBootstrapSupported: () => {}, canManageServices: () => true, preflight: () => [],
       prepareUserService: (_config, dryRun) => remember(dryRun ? "user:preview" : "user:prepare"),
       verifyUserIsolation: () => remember("user:isolation"), retainRelease: () => remember("release:retain"),
+      prepareSetup: () => { remember("setup:plan"); return { summary: ["prepared setup"], apply: () => remember("setup:apply") }; },
       configure: (_config, dryRun) => { remember(dryRun ? "runtime:preview" : "runtime:configure"); return { runnerChanged: false }; },
       artifactChanged: () => false, installBootstrap: () => remember("bootstrap:install"),
       start: async () => remember("runtime:start"), restartRunner: () => remember("runner:restart"),
@@ -123,7 +124,7 @@ for (const command of ["install", "setup", "update", "uninstall"] as const) {
   test(`${command} preview avoids durable changes and activation`, async () => {
     const f = fixture();
     assert.equal(await f.service[command]({ ...options, dryRun: true, purge: true }), true);
-    assert(f.calls.every(call => ["user:preview", "runtime:preview", "owner", "purge:validate"].includes(call)), f.calls.join(", "));
+    assert(f.calls.every(call => ["user:preview", "runtime:preview", "setup:plan", "owner", "purge:validate"].includes(call)), f.calls.join(", "));
     assert.equal(f.receipts.length, 0);
     assert.equal(f.activations.length, 0);
   });
@@ -135,6 +136,23 @@ test("fresh installation saves retained configuration before starting and enabli
   before(f.calls, "release:retain", `save:${f.current.pkgDir}`);
   before(f.calls, `save:${f.current.pkgDir}`, "runtime:start");
   before(f.calls, `health:${f.current.pkgDir}`, "auto:configure");
+});
+
+test("native setup previews and applies one prepared plan before activating", async () => {
+  const f = fixture();
+  const output: string[] = [];
+  f.deps.feedback.info = line => output.push(line);
+  assert.equal(await f.service.setup({ ...options, dryRun: true }), true);
+  assert.deepEqual(output, ["[dry-run] prepared setup"]);
+  assert(!f.calls.includes("setup:apply"));
+  f.calls.length = 0; output.length = 0;
+  assert.equal(await f.service.setup(options), true);
+  assert.equal(f.calls.filter(call => call === "setup:plan").length, 1);
+  before(f.calls, "setup:plan", "user:isolation");
+  before(f.calls, "user:isolation", "setup:apply");
+  before(f.calls, "setup:apply", `web:restart:${f.current.pkgDir}`);
+  assert(!f.calls.includes("runtime:configure"));
+  assert(!f.calls.includes("bootstrap:install"));
 });
 
 test("install on an existing installation follows setup admission, even with force", async () => {

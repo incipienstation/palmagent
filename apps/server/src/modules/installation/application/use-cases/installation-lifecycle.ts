@@ -147,6 +147,21 @@ export function createInstallationLifecycle(dependencies: InstallationDependenci
   }
 
   async function applySetup(cfg: InstallConfig, options: InstallationOptions): Promise<boolean> {
+    if (cfg.supervisor === "palmagentd" && cfg.daemonScope === "user") {
+      runtime.prepareUserService(cfg, options.dryRun);
+      if (!options.dryRun) runtime.retainRelease(cfg);
+      const plan = runtime.prepareSetup(cfg);
+      for (const line of plan.summary) feedback.info(`${options.dryRun ? "[dry-run] " : ""}${line}`);
+      if (options.dryRun) return true;
+      runtime.verifyUserIsolation(cfg);
+      configuration.persistChannel(cfg, options.channel !== undefined);
+      plan.apply();
+      await runtime.restartWeb(cfg);
+      const ok = await runtime.waitHealthy(cfg);
+      feedback[ok ? "ok" : "err"](ok ? "healthy" : "not healthy after restart");
+      if (ok && configuration.preferences(cfg.dataDir).autoUpdate) await runtime.configureAutoUpdate(cfg);
+      return ok;
+    }
     if (cfg.daemonScope === "user") {
       runtime.prepareUserService(cfg, options.dryRun);
       if (!options.dryRun) { runtime.retainRelease(cfg); runtime.verifyUserIsolation(cfg); runtime.installBootstrap(cfg); }
