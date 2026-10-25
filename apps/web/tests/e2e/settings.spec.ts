@@ -115,7 +115,10 @@ test("keyboard navigation returns focus and keeps narrow settings within the vie
   await page.keyboard.press("Space");
   await expect(enter).toBeChecked();
   await page.keyboard.press("ArrowRight");
-  await expect(shortcut.getByRole("radio", { name: "Cmd/Ctrl + Enter", exact: true })).toBeChecked();
+  const modifiedEnter = shortcut.getByRole("radio", { name: "Cmd/Ctrl + Enter", exact: true });
+  await expect(modifiedEnter).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(modifiedEnter).toBeChecked();
   const spaces = page.getByRole("button", { name: "Repository search paths", exact: true });
   await spaces.focus();
   await page.keyboard.press("Enter");
