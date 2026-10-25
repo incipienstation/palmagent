@@ -51,3 +51,16 @@ For a verification-only request, report the result and stop. Continue to [ship](
 only when completing an already authorized implementation task, honoring draft, PR-only, or
 merge-hold instructions. Failed checks block delivery; fix within scope and rerun affected checks,
 or report the failure when remediation was not requested.
+
+## Waiting for checks
+
+Keep the running check's process/session ID and do independent work while it runs. When only
+waiting remains, use completion notifications or request a 60-second blocking wait on that process
+(the tool's maximum if shorter); completion may return sooner. Consume the returned status in
+that call; avoid separate `sleep` then status-query turns. If a tool wrapper yields, resume its existing execution before
+polling the child process. Keep outer wait budgets long enough to cover nested waits where supported.
+
+Report meaningful state changes and keep required progress updates concise. Read additional log
+excerpts when a failure, stall, or next decision needs them; do not repeatedly tail healthy logs.
+Confirm the terminal result before reporting success. Restart only after establishing that the
+previous check ended or was cancelled, and rerun checks only under the evidence-reuse rules above.
