@@ -83,7 +83,7 @@ function CardHeadline({ task }: { task: TaskState }) {
   return (
     <div className="flex items-start gap-2 pr-10">
       {task.pinnedAt !== undefined && <Pin className="mt-1 size-4 shrink-0 text-muted-foreground" role="img" aria-label="Pinned" />}
-      <span className="min-w-0 flex-1 line-clamp-2 text-base leading-6 font-medium text-strong [overflow-wrap:anywhere]">
+      <span className="min-w-0 flex-1 truncate text-base leading-6 font-medium text-strong">
         {taskTitle(task)}
       </span>
     </div>
