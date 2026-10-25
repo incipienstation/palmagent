@@ -62,7 +62,16 @@
     "daemon.terminate",
     "daemon.restart",
     "recovery",
-    "terminal.start"
+    "terminal.start",
+    "routine.read",
+    "routine.create",
+    "routine.update",
+    "routine.remove",
+    "routine.run",
+    "routine.stop",
+    "routine.queue",
+    "routine.poll",
+    "routine.storage.write"
   ],
   "concurrency": [
     "0",
@@ -76,5 +85,12 @@
     "success",
     "error",
     "timeout"
+  ],
+  "services": [
+    "palmagent.web",
+    "palmagent.daemon",
+    "palmagent.application",
+    "palmagent.execution",
+    "palmagent.terminal"
   ]
 }

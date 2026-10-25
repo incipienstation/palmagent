@@ -28,7 +28,7 @@ export const TELEMETRY_METRICS = {
   "palmagent.storage.busy_retries": { unit: "1", bounds: [], max: 100000 },
 } as const;
 export type TelemetryMetric = keyof typeof TELEMETRY_METRICS;
-export type TelemetryService = "palmagent.web" | "palmagent.daemon" | "palmagent.execution" | "palmagent.terminal";
+export type TelemetryService = "palmagent.web" | "palmagent.daemon" | "palmagent.application" | "palmagent.execution" | "palmagent.terminal";
 export type TelemetryResource = {
   service: TelemetryService; version: string; implementation: "node" | "rust";
   os: "linux" | "darwin" | "windows"; arch: "amd64" | "arm64"; source: "production" | "synthetic";

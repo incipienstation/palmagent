@@ -166,7 +166,8 @@ fn architecture_boundaries() {
         );
         for path in dependencies.paths {
             if ["domain", "application"].contains(&from) {
-                let host = ["tokio", "axum", "rusqlite", "libc"].contains(&path[0].as_str())
+                let host = ["tokio", "axum", "rusqlite", "libc", "palmagent_telemetry"]
+                    .contains(&path[0].as_str())
                     || path[0] == "std"
                         && path.get(1).is_some_and(|p| {
                             ["fs", "io", "net", "process", "thread", "env", "time"]

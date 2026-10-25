@@ -8,7 +8,7 @@ import { TELEMETRY, type TelemetryResource } from "@palmagent/shared/telemetry";
 import { MetricAggregate } from "../../../src/modules/telemetry/domain/aggregate.js";
 import { TelemetryProducer } from "../../../src/modules/telemetry/adapters/outbound/producer.js";
 import { readTelemetryChoice, telemetrySettings } from "../../../src/modules/telemetry/adapters/outbound/preference.js";
-import { DaemonMetricReader } from "../../../src/modules/telemetry/adapters/outbound/daemon-metrics.js";
+import { NativeMetricReader, NativeMetricCollector } from "../../../src/modules/telemetry/adapters/outbound/native-metrics.js";
 import { metricPayload } from "../../../src/modules/telemetry/adapters/outbound/wire.js";
 import { telemetryRoutes } from "../../../src/modules/telemetry/adapters/inbound/http.js";
 import { requestMeasurements, requestOperation } from "../../../src/platform/http/performance.js";
@@ -93,7 +93,7 @@ test("opt-out aborts an in-flight upload; unavailable builds never collect", asy
   assert.equal(disabled.active, false); disabled.close();
 });
 test("daemon deltas handle restart, reset, duplicate snapshots, and reject arbitrary attributes", () => {
-  const reader = new DaemonMetricReader(), now = Date.now();
+  const reader = new NativeMetricReader(), now = Date.now();
   const revision = "00000000-0000-4000-8000-000000000001";
   const aggregate = new MetricAggregate();
   aggregate.observe("palmagent.operation.duration", .002, { concurrency: "1", operation: "daemon.list", outcome: "success" });
@@ -163,4 +163,37 @@ test("legacy opt-out survives; legacy opt-in waits for the longer policy and new
   assert.equal(JSON.parse(readFileSync(f.path, "utf8")).schemaVersion, 2);
   f.producer.operation("storage.write", .1, "success", 1); f.producer.flush(); await f.producer.send();
   assert.deepEqual(urls, ["https://telemetry.palmagent.dev/v2/metrics"]);
+});
+
+test("application exports carry native identity and never replay on attachment, failure or opt-out", async t => {
+  const sent: string[] = [];
+  const f = fixture(t, (async (_url, init) => { sent.push(String(init!.body)); return new Response(null); }) as typeof fetch);
+  f.settings.change(true);
+  const revision = readTelemetryChoice(f.path)!.revision;
+  const now = Date.now(), aggregate = new MetricAggregate();
+  aggregate.observe("palmagent.operation.duration", .002, { concurrency: "1", operation: "routine.storage.write", outcome: "error" });
+  const [point] = aggregate.drain();
+  let count = 1, instance = "owner-one", fail = false;
+  const collector = new NativeMetricCollector("palmagent.application", async () => {
+    if (fail) throw new Error("unavailable");
+    return { version: "0.1.0-alpha.2", instance, telemetry: { schemaVersion: 1, revision, epoch: 1,
+      startedAt: now - 10000, sampledAt: now - 1000 + count,
+      points: [{ ...point, count, sum: point.sum * count, buckets: point.buckets.map(n => n * count) }] } };
+  }, f.path, f.producer);
+  t.after(() => collector.close());
+  await collector.poll(); await f.producer.send(); assert.equal(sent.length, 0);
+  count = 3; await collector.poll(); await f.producer.send();
+  assert.equal(sent.length, 1);
+  const body = JSON.parse(sent[0]).resourceMetrics[0];
+  const attrs = Object.fromEntries(body.resource.attributes.map((a: { key: string; value: { stringValue: string } }) => [a.key, a.value.stringValue]));
+  assert.equal(attrs["service.name"], "palmagent.application");
+  assert.equal(attrs["runtime.implementation"], "rust");
+  assert.equal(attrs["service.version"], "0.1.0-alpha.2");
+  assert.equal(body.scopeMetrics[0].metrics[0].histogram.dataPoints[0].count, 2);
+  assert(!sent[0].includes(instance));
+  count = 2; await collector.poll(); count = 4; await collector.poll(); await f.producer.send();
+  assert.equal(JSON.parse(sent[1]).resourceMetrics[0].scopeMetrics[0].metrics[0].histogram.dataPoints[0].count, 1);
+  fail = true; await collector.poll(); fail = false; count = 6; await collector.poll();
+  instance = "owner-two"; count = 7; await collector.poll(); await f.producer.send(); assert.equal(sent.length, 2);
+  f.settings.change(false); count = 8; await collector.poll(); await f.producer.send(); assert.equal(sent.length, 2);
 });

@@ -64,14 +64,21 @@ async fn serve(args: &[String]) -> Result<()> {
         node,
     };
     let (sender, receiver) = tokio::sync::mpsc::channel(128);
-    let client = Client::new(sender.clone());
+    let measurements = platform::telemetry::Measurements::new(
+        std::env::var_os("PALMAGENT_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/nonexistent"))
+            .join("telemetry.json"),
+    );
+    measurements.tick(0);
+    let client = Client::new(sender.clone(), measurements.clone());
     let (ready_send, ready_receive) = tokio::sync::oneshot::channel();
     let handle = tokio::runtime::Handle::current();
     let owner_sender = sender.clone();
     let owner = std::thread::spawn(move || {
         let service = (|| -> Result<Service> {
             Service::new(
-                Box::new(SqliteRepository::open(&db)?),
+                Box::new(SqliteRepository::open(&db)?.measured(measurements.clone())),
                 Box::new(RuntimeEnvironment { db }),
             )
         })();
@@ -85,7 +92,17 @@ async fn serve(args: &[String]) -> Result<()> {
                     }
                 };
                 let _ = ready_send.send(Ok(()));
-                composition::run_owner(service, receiver, owner_sender, hosts, handle, instance);
+                composition::run_owner(
+                    service,
+                    receiver,
+                    owner_sender,
+                    hosts,
+                    handle,
+                    composition::ObservationContext {
+                        instance,
+                        measurements,
+                    },
+                );
             }
             Err(error) => {
                 let _ = ready_send.send(Err(error));

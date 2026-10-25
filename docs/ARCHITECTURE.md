@@ -123,7 +123,9 @@ uses `domain.rs` for pure policy and `application.rs` for use cases and outbound
 Axum HTTP, SQLite, local calendar conversion and retained-host adapters live under
 `adapters/inbound` and `adapters/outbound`. `composition.rs` serializes admissions and
 coordinates bounded adapter workers; `main.rs` owns startup and shutdown. Shared private
-filesystem and process transport live in `platform.rs`.
+filesystem and process transport live in `platform.rs`. Native aggregate telemetry is shared
+by the daemon and application through `packages/native-telemetry`; application adapters use
+`platform/telemetry.rs`. Core routine policy does not import the collector or host timing APIs.
 
 `pnpm architecture:check` also runs the Rust syntax-tree boundary check, including imports,
 qualified paths, unknown source placement and cycles. Rust has an explicit wire projection

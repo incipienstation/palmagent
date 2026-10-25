@@ -259,3 +259,36 @@ fn runtime_restart_reconciles_retained_runs_and_skips_only_script_backlog() {
     assert_eq!(agent_next, 1_860_000);
     assert_eq!(fixture.repository().list().unwrap().len(), 1);
 }
+
+#[test]
+fn telemetry_records_success_and_failed_transaction_without_changing_rollback() {
+    let fixture = Fixture::new();
+    let preference = fixture.directory.join("telemetry.json");
+    std::fs::write(&preference, json!({"schemaVersion":2,"enabled":true,"disclosed":true,"revision":"00000000-0000-4000-8000-000000000001"}).to_string()).unwrap();
+    let measurements = palmagent_runtime::platform::telemetry::Measurements::new(preference);
+    measurements.tick(0);
+    let mut service = Service::new(
+        Box::new(fixture.repository().measured(measurements.clone())),
+        Box::new(fixture.environment()),
+    )
+    .unwrap();
+    let id = create(&mut service, "manual");
+    fixture.connection().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON routine_runs BEGIN SELECT RAISE(ABORT,'private failure'); END;").unwrap();
+    assert_eq!(service.run(&id).unwrap_err().status, 503);
+    assert!(
+        service.runs(&id).unwrap()["runs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let snapshot = measurements.snapshot();
+    for outcome in ["success", "error"] {
+        assert!(snapshot["points"].as_array().unwrap().iter().any(
+            |p| p["attributes"]["operation"] == "routine.storage.write"
+                && p["attributes"]["outcome"] == outcome
+                && p["count"].as_u64().unwrap() > 0
+        ));
+    }
+    assert!(!snapshot.to_string().contains("private failure"));
+    assert!(!snapshot.to_string().contains(&id));
+}

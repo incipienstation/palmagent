@@ -377,6 +377,7 @@ dependencies = [
  "anyhow",
  "axum",
  "libc",
+ "palmagent-telemetry",
  "rusqlite",
  "serde",
  "serde_json",
@@ -386,11 +387,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "palmagent-telemetry"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "palmagentd"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "libc",
+ "palmagent-telemetry",
  "serde",
  "serde_json",
  "sha2",
