@@ -1,11 +1,12 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { CircleX, Search } from "lucide-react";
 import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
 import { Button } from "./ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
 
 // Keep one input mounted as its layout moves between mobile and desktop.
-export function ListSearch({ inputRef, label, clearLabel, placeholder, value, onChange }: {
+export function ListSearch({ inputRef, label, clearLabel, placeholder, value, onChange, action }: {
+  action?: ReactNode;
   inputRef: RefObject<HTMLInputElement | null>;
   label: string;
   clearLabel: string;
@@ -14,9 +15,9 @@ export function ListSearch({ inputRef, label, clearLabel, placeholder, value, on
   onChange: (value: string) => void;
 }) {
   useKeyboardDismiss(inputRef);
-  return <form role="search" aria-label={label} className="order-last shrink-0 px-4 pt-3 pb-[max(12px,var(--safe-bottom))] md:order-first md:px-6 md:py-2"
+  return <form role="search" aria-label={label} className="order-last flex shrink-0 items-center gap-2 px-4 pt-3 pb-[max(12px,var(--safe-bottom))] md:order-first md:px-6 md:py-2"
     onSubmit={event => { event.preventDefault(); inputRef.current?.blur(); }}>
-    <InputGroup className="h-12 flex-nowrap gap-2 rounded-full pr-1 pl-4" onClick={() => inputRef.current?.focus()}>
+    <InputGroup className="h-12 min-w-0 flex-1 flex-nowrap gap-2 rounded-full pr-1 pl-4" onClick={() => inputRef.current?.focus()}>
       <InputGroupInput ref={inputRef} type="search" aria-label={label} placeholder={placeholder} value={value}
         onChange={event => onChange(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} enterKeyHint="search"
         onKeyDown={event => {
@@ -32,5 +33,6 @@ export function ListSearch({ inputRef, label, clearLabel, placeholder, value, on
         </Button>
       </InputGroupAddon>}
     </InputGroup>
+    {action}
   </form>;
 }

@@ -43,17 +43,18 @@ const topTone = (prs: PrRef[]): PrTone => prs.map(prTone).reduce((a, b) => (b.ur
 // click). Its portaled events still bubble through the React tree to the row, but
 // the row ignores clicks whose target isn't inside it (Inbox's navIfInRow), so
 // dismissing the sheet never navigates the row.
-export function PrChip({ prs }: { prs?: PrRef[] }) {
+export function PrChip({ prs, subtle = false }: { prs?: PrRef[]; subtle?: boolean }) {
   const [open, setOpen] = useState(false);
   if (!prs?.length) return null;
   const tone = topTone(prs);
+  const chipClass = cn("inline-flex shrink-0 items-center gap-1 hover:underline", subtle ? "font-normal text-muted-foreground" : "font-semibold text-primary");
   const dot = <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", tone.dot)} />;
 
   if (prs.length === 1) {
     const pr = prs[0];
     return (
       <a
-        className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
+        className={chipClass}
         href={pr.url}
         target="_blank"
         rel="noreferrer"
@@ -71,7 +72,7 @@ export function PrChip({ prs }: { prs?: PrRef[] }) {
         role="button"
         tabIndex={0}
         aria-label={`${prs.length} pull requests`}
-        className="inline-flex cursor-pointer items-center gap-1 font-semibold text-primary hover:underline"
+        className={cn(chipClass, "cursor-pointer")}
         // Open the sheet without letting the tap reach an enclosing tappable row.
         onClick={(e) => {
           e.stopPropagation();

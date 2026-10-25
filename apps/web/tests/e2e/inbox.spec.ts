@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { tasks, repos } from "../fixtures.mjs";
 import { assertViewportLocked } from "./_helpers";
+import { installInbox, send } from "./_inbox-stream";
 
 test.describe("inbox", () => {
   test.beforeEach(async ({ page }) => {
@@ -40,7 +41,8 @@ test.describe("inbox", () => {
     await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveAttribute("aria-checked", "true");
     await page.getByRole("radio", { name: "Needs approval", exact: true }).click();
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_approval").length);
-    await page.getByRole("radio", { name: "All tasks", exact: true }).click();
+    await page.getByRole("combobox", { name: "Task status", exact: true }).click();
+    await page.getByRole("option", { name: "All tasks", exact: true }).click();
     await expect(fold).toHaveAttribute("aria-expanded", "false");
   });
 
@@ -103,20 +105,22 @@ for (const width of [320, 360, 1280]) test(`task search shares the inline-clear 
   await expect(search).not.toBeFocused();
   const input = await search.elementHandle();
   const scrollArea = page.locator('.overscroll-contain:has([data-testid="inbox-content"])');
-  const besideActionReachesList = async () => {
+  const assertDock = async () => {
     const action = (await create.boundingBox())!;
-    return scrollArea.evaluate((el, point) => el.contains(document.elementFromPoint(point.x, point.y)),
-      { x: action.x - 12, y: action.y + action.height / 2 });
+    const inputBox = (await search.boundingBox())!;
+    const dock = (await form.boundingBox())!;
+    const list = (await scrollArea.boundingBox())!;
+    expect(action.y).toBeGreaterThanOrEqual(dock.y);
+    expect(action.y + action.height).toBeLessThanOrEqual(dock.y + dock.height);
+    expect(inputBox.x + inputBox.width).toBeLessThan(action.x);
+    expect(Math.abs(action.y + action.height / 2 - inputBox.y - inputBox.height / 2)).toBeLessThan(2);
+    expect(list.y + list.height <= dock.y || list.y >= dock.y + dock.height).toBe(true);
   };
   const initial = (await form.boundingBox())!;
   if (width < 768) {
     expect(initial.y).toBeGreaterThan(690);
-    const action = (await create.boundingBox())!;
-    expect(action.y + action.height).toBeLessThan(initial.y);
-    const list = (await scrollArea.boundingBox())!;
-    expect(list.y + list.height).toBeGreaterThan(action.y + action.height);
-    await expect.poll(besideActionReachesList).toBe(true);
   } else expect(initial.y).toBeLessThan(120);
+  await assertDock();
   await search.fill("QA");
   const clear = page.getByRole("button", { name: "Clear task search" });
   expect(await clear.evaluate(el => el.closest('[data-slot="input-group"]') !== null)).toBe(true);
@@ -134,9 +138,7 @@ for (const width of [320, 360, 1280]) test(`task search shares the inline-clear 
         window.visualViewport!.dispatchEvent(new Event("resize"));
       }, height);
       await expect.poll(async () => { const box = (await form.boundingBox())!; return box.y + box.height; }).toBeLessThanOrEqual(height);
-      const action = (await create.boundingBox())!;
-      expect(action.y + action.height).toBeLessThan((await form.boundingBox())!.y);
-      await expect.poll(besideActionReachesList).toBe(true);
+      await assertDock();
     }
     await expect(search).not.toBeFocused();
   } else {
@@ -152,12 +154,60 @@ for (const width of [320, 360, 1280]) test(`task search shares the inline-clear 
   await clear.click();
   await search.press("Escape");
   await scrollArea.evaluate(el => { el.scrollTop = el.scrollHeight; });
-  const lastRow = page.getByTestId("inbox-content").locator("section").last().locator("button").first();
+  const lastRow = page.getByTestId("inbox-content").locator("[data-swipe-surface]").last();
   await expect(lastRow).toBeInViewport({ ratio: 1 });
   await expect.poll(async () => {
     const row = (await lastRow.boundingBox())!;
     return row.y + row.height - (await create.boundingBox())!.y;
   }).toBeLessThanOrEqual(0);
-  await expect.poll(besideActionReachesList).toBe(true);
+  await assertDock();
+  await assertViewportLocked(page);
+});
+
+
+test("zero-count shortcuts stay quiet but all statuses remain keyboard reachable", async ({ page }) => {
+  await installInbox(page);
+  await page.goto("/");
+  await expect(page.getByRole("combobox", { name: "Task status" })).toBeVisible();
+  await send(page, { type: "tasks", tasks: tasks.filter(task => task.status === "idle") });
+  await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "Needs approval", exact: true })).toHaveCount(0);
+  const select = page.getByRole("combobox", { name: "Task status" });
+  await select.focus();
+  await select.press("ArrowDown");
+  await expect(page.getByRole("option", { name: "Needs approval", exact: true })).toBeVisible();
+  await page.getByRole("option", { name: "Needs answer", exact: true }).click();
+  await expect(page.getByText("No tasks match these filters", { exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveAttribute("aria-checked", "true");
+  await select.click();
+  await page.getByRole("option", { name: "All tasks", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Needs answer", exact: true })).toHaveCount(0);
+});
+
+test("compact rows retain prompt search and PR actions without opening the task", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto("/#/");
+  const task = tasks.find(task => task.prs && task.prs.length > 1)!;
+  const search = page.getByRole("searchbox", { name: "Search tasks" });
+  await search.fill(task.prompt);
+  const row = page.locator('[data-swipe-surface]').filter({ hasText: task.title! });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByText(task.prompt, { exact: true })).toHaveCount(0);
+  await expect(row.getByText(task.agent, { exact: true })).toHaveCount(0);
+  const prs = row.getByRole("button", { name: `${task.prs!.length} pull requests` });
+  const time = row.locator("time");
+  const prBox = (await prs.boundingBox())!;
+  const timeBox = (await time.boundingBox())!;
+  expect(Math.abs(prBox.y - timeBox.y)).toBeLessThan(3);
+  const listUrl = page.url();
+  await prs.focus();
+  await prs.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Pull requests" })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("link")).toHaveCount(task.prs!.length);
+  await expect(page).toHaveURL(listUrl);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Pull requests" })).toHaveCount(0);
+  await expect(search).toHaveValue(task.prompt);
+  await expect(page).toHaveURL(listUrl);
   await assertViewportLocked(page);
 });

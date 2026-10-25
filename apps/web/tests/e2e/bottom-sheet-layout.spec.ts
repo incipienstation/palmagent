@@ -30,7 +30,7 @@ test("short filter sheets align content and actions above the safe area", async 
   await done.click();
   await expect(sheet).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(page.getByRole("button", { name: "Clear status filter" })).toContainText("Working");
+  await expect(page.getByRole("combobox", { name: "Task status", exact: true })).toContainText("Working");
   await assertViewportLocked(page);
 });
 
