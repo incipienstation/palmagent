@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
 import { Db } from "../../src/composition/database.js";
 import { NativeScriptRuntime } from "../../src/modules/routines/adapters/outbound/native-script-runtime.js";
+import { applicationRequest } from "../../src/platform/ipc/application-runtime.js";
 import { daemonRequest } from "../../src/platform/process/daemon-client.js";
 import { DaemonStatusSchema } from "@palmagent/shared/daemon";
 
@@ -41,8 +42,12 @@ test("native scripts schedule and persist without web, recover without replay, a
     ready(); setInterval(() => {}, 1000);
   `, resolveDir: repository, loader: "ts" }, outfile: join(release, "server.js"), bundle: true, platform: "node", format: "esm", target: "node24" });
   buildSync({ entryPoints: [join(repository, "apps/server/src/bootstrap/routine-host.ts")], outfile: join(release, "routine-host.js"), bundle: true, platform: "node", format: "esm", target: "node24" });
+  const preference = join(root, "telemetry.json");
+  const consent = { schemaVersion: 2, enabled: true, disclosed: true, revision: "00000000-0000-4000-8000-000000000001" };
+  writeFileSync(preference, JSON.stringify(consent));
+  const snapshot = async () => (await applicationRequest(root, "/telemetry")).value as { telemetry: null | { points: { name: string; count: number; attributes: { operation?: string; outcome?: string } }[] } };
   const config = { protocol: 1, daemon: binary, release, node,
-    environment: { PATH: process.env.PATH }, isolation: "process-group",
+    environment: { PATH: process.env.PATH, PALMAGENT_HOME: root }, isolation: "process-group",
     limits: { memoryHigh: 1024, memoryMax: 2048, tasks: 64, webTasks: 64, cpuPercent: 100, nofile: 1024 } };
   writeFileSync(join(root, "daemon/config.json"), JSON.stringify(config), { mode: 0o600 });
   const db = new Db(join(root, "palmagent.db"));
@@ -73,6 +78,13 @@ test("native scripts schedule and persist without web, recover without replay, a
   db.updateRoutine({ ...scheduled, nextRunAt: Date.now() - 1 });
   await until(async () => (await native.runs(scheduled.id)).length, "scheduled admission without web");
   assert.equal((await finished(scheduled.id)).output, "scheduled");
+  const measurements = (await snapshot()).telemetry!.points;
+  assert(!Object.hasOwn((await applicationRequest(root, "/health")).value as object, "telemetry"));
+  for (const operation of ["routine.create", "routine.queue", "routine.poll", "routine.storage.write"]) {
+    assert(measurements.some(p => p.attributes.operation === operation && p.count > 0), operation);
+  }
+  await until(async () => (await snapshot()).telemetry!.points.some(p => p.name === "palmagent.process.memory.usage"), "native self resources");
+  assert((await snapshot()).telemetry!.points.some(p => p.name === "palmagent.process.cpu.utilization"));
   process.kill(z.object({ pid: z.number().int().positive() }).parse(web.child).pid, "SIGCONT");
 
   const held = await create("echo once >> invocations; touch started; while [ ! -f finish ]; do sleep 0.1; done; printf retained");
@@ -80,6 +92,9 @@ test("native scripts schedule and persist without web, recover without replay, a
   await until(() => existsSync(join(root, "repo/started")), "script started");
   await assert.rejects(native.run(held.id), /already running/);
   await assert.rejects(native.remove(held.id), /running/);
+  assert((await snapshot()).telemetry!.points.some(p => p.attributes.operation === "routine.run" && p.attributes.outcome === "error"));
+  writeFileSync(preference, JSON.stringify({ ...consent, enabled: false, revision: "00000000-0000-4000-8000-000000000002" }));
+  assert.equal((await snapshot()).telemetry, null);
   const before = await native.status();
   const application = (await status()).application!;
   process.kill(z.object({ pid: z.number().int().positive() }).parse(application.child).pid, "SIGKILL");

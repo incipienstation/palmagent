@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/palmagentd", "apps/palmagent-runtime"]
+members = ["apps/palmagentd", "apps/palmagent-runtime", "packages/native-telemetry"]
 resolver = "2"
 
 [workspace.package]

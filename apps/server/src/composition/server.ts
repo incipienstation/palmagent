@@ -1,4 +1,4 @@
-import { collectDaemonMetrics } from "../modules/telemetry/adapters/outbound/daemon-metrics.js";
+import { collectNativeMetrics } from "../modules/telemetry/adapters/outbound/native-metrics.js";
 import { createTelemetry } from "./telemetry.js";
 import { ResourceScope } from "../kernel/resource-scope.js";
 import { installTerminalGateway } from "../modules/terminals/adapters/inbound/gateway.js";
@@ -60,7 +60,7 @@ try {
   const telemetry = createTelemetry("palmagent.web", () => requestLoad.active, build, runtime.config.authEnabled && runtime.config.nodeEnv === "production");
   telemetry.producer.start();
   resources.defer(() => telemetry.producer.close());
-  if (process.env.PALMAGENT_DAEMON_DATA) resources.defer(collectDaemonMetrics(runtime.config.dataDir, telemetry.preferencePath, telemetry.producer));
+  if (process.env.PALMAGENT_DAEMON_DATA) resources.defer(collectNativeMetrics(runtime.config.dataDir, telemetry.preferencePath, telemetry.producer));
   const app = createApp({ ...runtime, settings, build, updates, agentInstallations, shutdown: shutdown.signal,
     telemetry: telemetry.settings, measurements: telemetry.producer, requestLoad });
   const server = createServer(getRequestListener(app.fetch));

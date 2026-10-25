@@ -1,5 +1,6 @@
 //! Axum is an inbound adapter. Requests enqueue use cases; disconnecting does not revoke admission.
 use crate::modules::routines::application::{Completion, Error};
+use crate::platform::telemetry::Measurements;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, State, rejection::JsonRejection},
@@ -7,11 +8,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use palmagent_telemetry::Measurement;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
 pub enum Action {
     Status,
+    Telemetry,
     List,
     Get(String),
     Create(Value),
@@ -22,8 +25,25 @@ pub enum Action {
     Runs(String),
     Pending(String),
 }
+impl Action {
+    pub fn operation(&self) -> Option<&'static str> {
+        match self {
+            Self::Status | Self::Telemetry | Self::Pending(_) => None,
+            Self::List | Self::Get(_) | Self::Runs(_) => Some("routine.read"),
+            Self::Create(_) => Some("routine.create"),
+            Self::Update(_, _) => Some("routine.update"),
+            Self::Remove(_) => Some("routine.remove"),
+            Self::Run(_) => Some("routine.run"),
+            Self::Stop(_) => Some("routine.stop"),
+        }
+    }
+}
 pub enum Message {
-    Request(Action, oneshot::Sender<Result<Value, Error>>),
+    Request(
+        Action,
+        oneshot::Sender<Result<Value, Error>>,
+        Option<Measurement>,
+    ),
     Completed(Completion),
     Tick,
     Shutdown,
@@ -32,16 +52,26 @@ pub enum Message {
 #[derive(Clone)]
 pub struct Client {
     sender: mpsc::Sender<Message>,
+    measurements: Measurements,
 }
 impl Client {
-    pub fn new(sender: mpsc::Sender<Message>) -> Self {
-        Self { sender }
+    pub fn new(sender: mpsc::Sender<Message>, measurements: Measurements) -> Self {
+        Self {
+            sender,
+            measurements,
+        }
     }
     pub async fn request(&self, action: Action) -> Result<Value, Error> {
         let (send, receive) = oneshot::channel();
-        self.sender
-            .try_send(Message::Request(action, send))
-            .map_err(|_| Error::busy())?;
+        let queue = action
+            .operation()
+            .and_then(|_| self.measurements.begin("routine.queue"));
+        if let Err(error) = self.sender.try_send(Message::Request(action, send, queue)) {
+            if let Message::Request(_, _, queue) = error.into_inner() {
+                self.measurements.finish(queue, false);
+            }
+            return Err(Error::busy());
+        }
         tokio::time::timeout(std::time::Duration::from_secs(10), receive)
             .await
             .map_err(|_| Error::busy())?
@@ -66,6 +96,7 @@ fn body(value: Result<Json<Value>, JsonRejection>) -> Result<Value, Error> {
 pub fn router(client: Client) -> Router {
     Router::new()
         .route("/health", get(|State(client): State<Client>| async move { client.request(Action::Status).await.map(Json) }))
+        .route("/telemetry", get(|State(client): State<Client>| async move { client.request(Action::Telemetry).await.map(Json) }))
         .route("/v1/routines", get(|State(client): State<Client>| async move { client.request(Action::List).await.map(Json) })
             .post(|State(client): State<Client>, input: Result<Json<Value>, JsonRejection>| async move {
                 client.request(Action::Create(body(input)?)).await.map(|value| (StatusCode::CREATED, Json(value)))

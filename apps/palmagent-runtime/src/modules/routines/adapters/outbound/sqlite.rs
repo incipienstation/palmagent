@@ -1,4 +1,5 @@
 //! SQLite implementation of the routine repository. The schema remains owned by product migrations.
+use crate::platform::telemetry::Measurements;
 use crate::{
     modules::routines::application::{Repo, Repository},
     modules::routines::domain::{Routine, Run},
@@ -13,8 +14,13 @@ use std::{path::Path, time::Duration};
 
 pub struct SqliteRepository {
     connection: Connection,
+    measurements: Option<Measurements>,
 }
 impl SqliteRepository {
+    pub fn measured(mut self, measurements: Measurements) -> Self {
+        self.measurements = Some(measurements);
+        self
+    }
     pub fn open(path: &Path) -> Result<Self> {
         let connection = Connection::open_with_flags(
             path,
@@ -25,7 +31,10 @@ impl SqliteRepository {
         // A new installation initializes its schema in the web composition before requesting this service.
         connection.prepare("SELECT kind, script_json FROM routines LIMIT 0")?;
         connection.prepare("SELECT result_json FROM routine_runs LIMIT 0")?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            measurements: None,
+        })
     }
 }
 fn decode_error(error: serde_json::Error) -> rusqlite::Error {
@@ -130,37 +139,58 @@ impl Repository for SqliteRepository {
             .optional()?)
     }
     fn insert(&mut self, routine: &Routine) -> Result<()> {
-        ensure!(routine.kind == "script", "Invalid routine ownership");
-        self.connection.execute("INSERT INTO routines (id,repo_id,kind,script_json,agent,title,prompt,permission,model,effort,preset,schedule,enabled,last_run_at,next_run_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)", params_from_iter(values(routine)?))?;
-        Ok(())
+        let measurements = self.measurements.clone();
+        let action = || {
+            ensure!(routine.kind == "script", "Invalid routine ownership");
+            self.connection.execute("INSERT INTO routines (id,repo_id,kind,script_json,agent,title,prompt,permission,model,effort,preset,schedule,enabled,last_run_at,next_run_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)", params_from_iter(values(routine)?))?;
+            Ok(())
+        };
+        match measurements {
+            Some(measurements) => measurements.write(action),
+            None => action(),
+        }
     }
     fn update(&mut self, routine: &Routine) -> Result<()> {
-        ensure!(routine.kind == "script", "Invalid routine ownership");
-        ensure!(
-            self.connection
-                .execute(UPDATE, params_from_iter(values(routine)?))?
-                == 1,
-            "Routine no longer exists"
-        );
-        Ok(())
+        let measurements = self.measurements.clone();
+        let action = || {
+            ensure!(routine.kind == "script", "Invalid routine ownership");
+            ensure!(
+                self.connection
+                    .execute(UPDATE, params_from_iter(values(routine)?))?
+                    == 1,
+                "Routine no longer exists"
+            );
+            Ok(())
+        };
+        match measurements {
+            Some(measurements) => measurements.write(action),
+            None => action(),
+        }
     }
     fn remove(&mut self, id: &str) -> Result<()> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let running: i64 = tx.query_row(
-            "SELECT count(*) FROM routine_runs WHERE routine_id=? AND status='running'",
-            [id],
-            |r| r.get(0),
-        )?;
-        ensure!(running == 0, "Routine still has an active admission");
-        ensure!(
-            tx.execute("DELETE FROM routines WHERE id=? AND kind='script'", [id])? == 1,
-            "Routine no longer exists"
-        );
-        tx.execute("DELETE FROM routine_runs WHERE routine_id=?", [id])?;
-        tx.commit()?;
-        Ok(())
+        let measurements = self.measurements.clone();
+        let mut action = || {
+            let tx = self
+                .connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let running: i64 = tx.query_row(
+                "SELECT count(*) FROM routine_runs WHERE routine_id=? AND status='running'",
+                [id],
+                |r| r.get(0),
+            )?;
+            ensure!(running == 0, "Routine still has an active admission");
+            ensure!(
+                tx.execute("DELETE FROM routines WHERE id=? AND kind='script'", [id])? == 1,
+                "Routine no longer exists"
+            );
+            tx.execute("DELETE FROM routine_runs WHERE routine_id=?", [id])?;
+            tx.commit()?;
+            Ok(())
+        };
+        match measurements {
+            Some(measurements) => measurements.write(action),
+            None => action(),
+        }
     }
     fn runs(&self, id: &str, limit: usize) -> Result<Vec<Run>> {
         Ok(self.connection.prepare("SELECT * FROM routine_runs WHERE routine_id=? ORDER BY fired_at DESC,id DESC LIMIT ?")?.query_map(params![id, limit.min(100)], run)?.collect::<rusqlite::Result<_>>()?)
@@ -175,24 +205,38 @@ impl Repository for SqliteRepository {
         note: &str,
         reason: Option<&str>,
     ) -> Result<i64> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        ensure!(
-            tx.execute(UPDATE, params_from_iter(values(routine)?))? == 1,
-            "Routine no longer exists"
-        );
-        tx.execute("INSERT INTO routine_runs (routine_id,fired_at,status,task_id,note,result_json) VALUES (?,?,?,NULL,?,?)",
+        let measurements = self.measurements.clone();
+        let mut action = || {
+            let tx = self
+                .connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            ensure!(
+                tx.execute(UPDATE, params_from_iter(values(routine)?))? == 1,
+                "Routine no longer exists"
+            );
+            tx.execute("INSERT INTO routine_runs (routine_id,fired_at,status,task_id,note,result_json) VALUES (?,?,?,NULL,?,?)",
             params![routine.id, routine.updated_at, status, note, reason.map(|r| json!({"reason":r}).to_string())])?;
-        let id = tx.last_insert_rowid();
-        tx.commit()?;
-        Ok(id)
+            let id = tx.last_insert_rowid();
+            tx.commit()?;
+            Ok(id)
+        };
+        match measurements {
+            Some(measurements) => measurements.write(action),
+            None => action(),
+        }
     }
     fn finish(&mut self, id: i64, result: &Value) -> Result<()> {
-        ensure!(self.connection.execute("UPDATE routine_runs SET status=?,note=?,result_json=? WHERE id=? AND routine_id IN (SELECT id FROM routines WHERE kind='script')",
+        let measurements = self.measurements.clone();
+        let action = || {
+            ensure!(self.connection.execute("UPDATE routine_runs SET status=?,note=?,result_json=? WHERE id=? AND routine_id IN (SELECT id FROM routines WHERE kind='script')",
             params![result["status"].as_str().context("Missing result status")?, result["note"].as_str(), result.to_string(), id])? == 1,
             "Run no longer exists");
-        Ok(())
+            Ok(())
+        };
+        match measurements {
+            Some(measurements) => measurements.write(action),
+            None => action(),
+        }
     }
 }
 use anyhow::Context;

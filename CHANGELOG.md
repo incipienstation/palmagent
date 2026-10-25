@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Added
+
+- Performance sharing now includes the native script runtime’s CPU, memory, command, queue, scheduling and persistence measurements, separately from the web and management daemon. It follows the existing sharing preference.
+
 ## 0.1.0-alpha.217
 
 ### Changed
