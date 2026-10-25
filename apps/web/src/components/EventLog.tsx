@@ -394,7 +394,7 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
   // and must not become the estimate for every unmeasured row.
   const [initialItemHeight] = useState(() => {
     const first = rows.find(row => row.type !== "prompt");
-    return first?.type === "message" && first.item.text.length > 4000 ? 80 : undefined;
+    return first?.type === "message" && first.item.kind === "assistant_text" && first.item.text.length > 4000 ? 80 : undefined;
   });
   const saved = useRef(readUpdateSnapshot<{ state: StateSnapshot; following: boolean; first: number }>(`scroll:${location.hash}`));
   const initialized = useRef(!!saved.current);
