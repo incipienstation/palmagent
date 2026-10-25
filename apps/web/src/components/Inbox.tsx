@@ -1,7 +1,7 @@
 import { queueTaskArchive, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { isActiveTaskStatus, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { Archive, ChevronDown, Inbox as InboxIcon, SquarePen, Search, Folder, Pin, Plus } from "lucide-react";
+import { Archive, Check, ChevronDown, Inbox as InboxIcon, Search, Folder, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -10,18 +10,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
-import { statusSection } from "@/lib/status";
+import { statusLabel, statusSection } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
 
 import { goBackTo, navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
-import { AgentTag, StatusBadge } from "./chips";
+import { StatusBadge } from "./chips";
 import { SpaceDetails, TaskFilters, type TaskFilter } from "./SpaceTools";
 import { useActionState } from "../action-state";
 import { Alert } from "./ui/alert";
-import { Badge } from "./ui/badge";
 import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
@@ -65,46 +64,21 @@ function relTime(ms: number): string {
   return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-// Show results and recency here; model, effort, and permissions live in Session details.
-function TaskMeta({ task, showTime }: { task: TaskState; showTime?: boolean }) {
+// A single quiet metadata line; provider and prompt remain in task details.
+function TaskMeta({ task }: { task: TaskState }) {
+  const done = statusLabel(task.status, task.interrupted, task.sessionControl) === "Done";
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-      {task.sessionControl && (task.sessionControl.owner === "local" || task.sessionControl.owner === "returning") && <Badge variant="secondary">{task.sessionControl.owner === "local" ? "Local shell" : "Returning"}</Badge>}
-      {/* Full-auto: the agent opens its own PR(s); one links out, several open a sheet. */}
-      <PrChip prs={task.prs} />
-      {showTime && <span className="ml-auto shrink-0">{relTime(task.lastActivityAt)}</span>}
+    <div className={cn("mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground", task.pinnedAt !== undefined && "pl-6")}>
+      {done ? <span className="inline-flex shrink-0 items-center gap-1.5"><Check aria-hidden="true" className="size-3.5" />Done</span>
+        : <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />}
+      {!!task.prs?.length && <><span aria-hidden="true">·</span><PrChip prs={task.prs} subtle /></>}
+      <span aria-hidden="true">·</span>
+      <time className="shrink-0" dateTime={new Date(task.lastActivityAt).toISOString()}>{relTime(task.lastActivityAt)}</time>
     </div>
   );
 }
 
-// The 1–2 line body under the headline. Returns null when the prompt would only
-// repeat the title (the common no-explicit-title case, where taskTitle() already
-// IS the prompt's first line) so the card never shows the same text twice; when
-// there's a multi-line prompt it shows the remainder, and an explicit title
-// shows the full prompt as added context.
-function previewOf(t: TaskState): string | null {
-  const prompt = t.prompt.trim();
-  if (!prompt) return null;
-  if (t.title && t.title.trim()) return prompt === t.title.trim() ? null : prompt;
-  const lines = prompt.split("\n");
-  const firstIdx = lines.findIndex((l) => l.trim());
-  const rest = lines.slice(firstIdx + 1).join("\n").trim();
-  return rest || null;
-}
-
-// State and agent stay below the title; the group heading supplies the Space.
-function CardContextLine({ task }: { task: TaskState }) {
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 pr-8">
-      <span className="flex shrink-0 items-center gap-2">
-        <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />
-        <AgentTag agent={task.agent} />
-      </span>
-    </div>
-  );
-}
-
-// Titles lead each row; state remains available in the context line.
+// Titles lead each row; state remains available in the metadata line.
 function CardHeadline({ task }: { task: TaskState }) {
   return (
     <div className="flex items-start gap-2 pr-10">
@@ -126,7 +100,7 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
   navigate(`/task/${encodeURIComponent(taskId)}`);
 }
 
-// One calm row treatment for every state, with an inline question preview.
+// One compact row treatment for every state; attention stays explicit in metadata.
 const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
   const pending = useTaskMutations().get(task.taskId)?.pending;
   const canArchive = !pending && !isActiveTaskStatus(task.status) && task.status !== "archived"
@@ -134,24 +108,16 @@ const TaskRow = memo(function TaskRow({ task }: { task: TaskState }) {
       || task.sessionControl.owner === "shared" && task.sessionControl.connection === "connected")
     && task.messageQueue?.compaction?.status !== "running";
   const archive = () => queueTaskArchive(task.taskId);
-  const question = task.pendingInput?.questions[0];
-  const preview = task.status === "awaiting_input" && question ? question.question : previewOf(task);
   return (
     <SwipeToArchive disabled={!canArchive} onArchive={archive}>
       <div className="relative">
         <button
           data-swipe-surface=""
-          className="block w-full px-4 py-3.5 text-left transition-colors active:bg-accent"
+          className="block w-full px-4 py-3 text-left transition-colors active:bg-accent"
           onClick={(e) => navIfInRow(e, task.taskId)}
         >
           <CardHeadline task={task} />
-          <CardContextLine task={task} />
-          {preview && (
-            <div className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-              {preview}
-            </div>
-          )}
-          <TaskMeta task={task} showTime />
+          <TaskMeta task={task} />
         </button>
         <div className="absolute top-2 right-1">
           <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} lifecycle={
@@ -205,25 +171,21 @@ function SpaceTaskGroup({ repoId, tasks, reveal }: { repoId: string; tasks: Task
   const [collapsed, setCollapsed] = useActionState(`inbox:space-group:${repoId}:collapsed`, false);
   const expanded = reveal || !collapsed;
   const rowsId = useId();
-  const heading = <>
-    <span className="min-w-0 text-left"><span className="block break-words whitespace-normal">{name}</span>
-      {qualifier && <span className="block truncate text-xs text-muted-foreground">{qualifier}</span>}</span>
-    <Badge variant="secondary" className="ml-1 shrink-0">{tasks.length}</Badge>
-  </>;
-  return <section aria-label={`${label} tasks`} className="pt-4">
+  return <section aria-label={`${label} tasks`} className="pt-3">
     <div className="flex min-w-0 items-center gap-1 px-4">
+      {!reveal && <Button variant="ghost" size="icon-lg" aria-label={`${label} tasks`}
+        aria-expanded={expanded} aria-controls={rowsId} onClick={() => setCollapsed(!collapsed)}>
+        <ChevronDown className={cn(!expanded && "-rotate-90")} />
+      </Button>}
       <h2 className="min-w-0 flex-1">
-        {reveal ? <div className="flex min-h-11 items-center gap-2">{heading}</div> :
-          <Button variant="ghost" className="h-auto min-h-11 w-full justify-start px-0" aria-label={`${label} tasks`}
-            aria-expanded={expanded} aria-controls={rowsId} onClick={() => setCollapsed(!collapsed)}>
-            <ChevronDown data-icon="inline-start" className={cn("shrink-0", !expanded && "-rotate-90")} />
-            {heading}
-          </Button>}
+        <Button variant="ghost" className="h-auto min-h-11 max-w-full justify-start px-0" disabled={!repo}
+          aria-label={`Open Space ${label}`} onClick={() => navigate(spacePath(repoId))}>
+          <span className="min-w-0 text-left"><span className="block break-words whitespace-normal">{name}</span>
+            {qualifier && <span className="block truncate text-xs text-muted-foreground">{qualifier}</span>}</span>
+        </Button>
       </h2>
-      {repo && <>
-        <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} onClick={() => navigate(spacePath(repoId))}><Folder /></Button>
-        <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} onClick={() => navigate(newTaskPath(repoId))}><Plus /></Button>
-      </>}
+      <span className="shrink-0 text-xs text-muted-foreground">{tasks.length}</span>
+      {repo && <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} onClick={() => navigate(newTaskPath(repoId))}><Plus /></Button>}
     </div>
     <div id={rowsId} hidden={!expanded}>
       {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
@@ -271,6 +233,13 @@ export const InboxView = memo(function InboxView({
   const mutations = useTaskMutations();
   const archiving = [...mutations.values()].some(change => change.hidden && change.pending);
   const toastObstacle = useToastObstacle();
+  const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const update = () => setDesktop(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   // Project (repo) lookup for the cards. The task snapshot carries only repoId;
   // we join the human-friendly name client-side. If a task references a repo we
   // don't have yet (registered since the last fetch), refetch once — `tried`
@@ -327,6 +296,8 @@ export const InboxView = memo(function InboxView({
   }, [tasks, repoId, loading, spaceOrder, setSpaceOrder]);
   const spaceGroups = [...bySpace].sort(([a], [b]) => spaceOrder.indexOf(a) - spaceOrder.indexOf(b));
 
+  const answers = scoped.filter(task => task.status === "awaiting_input").length;
+  const approvals = scoped.filter(task => task.status === "awaiting_approval").length;
   const isEmpty = !loading && filtered.length === 0;
   const selectedName = space?.name ?? "Space";
   const missingSpace = !!repoId && reposLoaded && !space;
@@ -341,21 +312,24 @@ export const InboxView = memo(function InboxView({
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
-          placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} />
+          placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} action={
+            <Button type="button" size="icon-lg" className="size-12 shrink-0 rounded-full"
+              ref={desktop ? undefined : toastObstacle} aria-label="Dispatch new task" title="New task" onClick={newTask}
+              disabled={!!repoId && (!space || reposLoading)}><Plus /></Button>
+          } />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
-          {/* Let the final row scroll fully above the floating action. */}
-          <div data-testid="inbox-content" className="pb-22">
+          <div data-testid="inbox-content" className="pb-4">
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
-              {!repoId && <ToggleGroup type="single" aria-label="Quick task filters" value={statusFilter}
-                onValueChange={value => setStatusFilter((value || "all") as TaskFilter)}>
-                <ToggleGroupItem value="all">All tasks</ToggleGroupItem>
-                <ToggleGroupItem value="awaiting_input" aria-label="Needs answer">Answer · {scoped.filter(task => task.status === "awaiting_input").length}</ToggleGroupItem>
-                <ToggleGroupItem value="awaiting_approval" aria-label="Needs approval">Approval · {scoped.filter(task => task.status === "awaiting_approval").length}</ToggleGroupItem>
-              </ToggleGroup>}
               <TaskFilters repo={space} repos={repos} tasks={scoped} directory={directory} onDirectoryChange={setDirectory} status={statusFilter} onStatusChange={setStatusFilter} />
+              {!repoId && (answers > 0 || approvals > 0 || statusFilter === "awaiting_input" || statusFilter === "awaiting_approval") &&
+                <ToggleGroup type="single" variant="pills" aria-label="Quick task filters" value={statusFilter}
+                  onValueChange={value => setStatusFilter((value || "all") as TaskFilter)}>
+                  {(answers > 0 || statusFilter === "awaiting_input") && <ToggleGroupItem variant="pill" value="awaiting_input" aria-label="Needs answer">Answer · {answers}</ToggleGroupItem>}
+                  {(approvals > 0 || statusFilter === "awaiting_approval") && <ToggleGroupItem variant="pill" value="awaiting_approval" aria-label="Needs approval">Approval · {approvals}</ToggleGroupItem>}
+                </ToggleGroup>}
               {search && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
             </div>}
             {loading ? (
@@ -376,16 +350,6 @@ export const InboxView = memo(function InboxView({
             )}
           </div>
         </PullToRefresh>
-        <Button
-          className="absolute right-4 bottom-5 z-20 h-12 rounded-full px-5 shadow-lg transition-[bottom,transform] duration-200 active:translate-y-0.5"
-          ref={toastObstacle}
-          aria-label="Dispatch new task"
-          onClick={newTask}
-          disabled={!!repoId && (!space || reposLoading)}
-        >
-          <SquarePen className="size-5" />
-          New task
-        </Button>
         </div>
         </div>
       </AppShell>
