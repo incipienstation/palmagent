@@ -115,7 +115,7 @@ export function UpdateSettings() {
           <Separator />
           <SettingsField data-disabled={disabled} className="flex-wrap">
             <FieldLabel variant="setting" id={channelId}>Channel</FieldLabel>
-            <ToggleGroup type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled} aria-busy={saving}
+            <ToggleGroup variant="outline" type="single" className="w-auto" aria-labelledby={channelId} value={settings.channel} disabled={disabled} aria-busy={saving}
               onValueChange={(channel) => { if (channel === "stable" || channel === "preview") void change({ channel }); }}>
               <ToggleGroupItem value="stable" className="px-3">Stable</ToggleGroupItem>
               <ToggleGroupItem value="preview" className="px-3">Preview</ToggleGroupItem>

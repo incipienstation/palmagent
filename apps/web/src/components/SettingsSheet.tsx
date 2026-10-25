@@ -9,7 +9,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { FieldContent, FieldLabel } from "@/components/ui/field";
+import { FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetClose, SheetBody, SheetContent, SheetHeaderRow, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -90,20 +90,20 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               <SettingsCard>
                 <SettingsField>
                   <FieldLabel variant="setting" id={appearanceId}>Appearance</FieldLabel>
-                  <ToggleGroup type="single" value={theme} aria-labelledby={appearanceId} className="w-auto shrink-0"
+                  <ToggleGroup variant="outline" type="single" value={theme} aria-labelledby={appearanceId} className="w-auto shrink-0"
                     onValueChange={(value) => value && setTheme(value as Theme)}>
-                    <ToggleGroupItem value="system" aria-label="System theme" title="System theme" className="w-11"><Monitor className="size-4" /></ToggleGroupItem>
-                    <ToggleGroupItem value="light" aria-label="Light theme" title="Light theme" className="w-11"><Sun className="size-4" /></ToggleGroupItem>
-                    <ToggleGroupItem value="dark" aria-label="Dark theme" title="Dark theme" className="w-11"><Moon className="size-4" /></ToggleGroupItem>
+                    <ToggleGroupItem value="system" aria-label="System theme" title="System theme" className="w-11"><Monitor /></ToggleGroupItem>
+                    <ToggleGroupItem value="light" aria-label="Light theme" title="Light theme" className="w-11"><Sun /></ToggleGroupItem>
+                    <ToggleGroupItem value="dark" aria-label="Dark theme" title="Dark theme" className="w-11"><Moon /></ToggleGroupItem>
                   </ToggleGroup>
                 </SettingsField>
                 <Separator />
-                <SettingsField>
-                  <FieldLabel variant="setting" id={shortcutId}>Send <span className="sr-only">message </span>with</FieldLabel>
-                  <ToggleGroup type="single" value={shortcut} aria-labelledby={shortcutId} className="w-auto shrink-0 whitespace-nowrap"
+                <SettingsField orientation="responsive">
+                  <FieldLabel variant="setting" id={shortcutId}><span>Send <span className="sr-only">message </span>with</span></FieldLabel>
+                  <ToggleGroup variant="outline" type="single" value={shortcut} aria-labelledby={shortcutId} className="shrink-0"
                     onValueChange={(value) => { if (value === "enter" || value === "modifier-enter") setShortcut(value); }}>
-                    <ToggleGroupItem value="enter" className="px-2">Enter</ToggleGroupItem>
-                    <ToggleGroupItem value="modifier-enter" className="px-2">Cmd/Ctrl + Enter</ToggleGroupItem>
+                    <ToggleGroupItem value="enter" className="flex-auto">Enter</ToggleGroupItem>
+                    <ToggleGroupItem value="modifier-enter" className="flex-auto">Cmd/Ctrl + Enter</ToggleGroupItem>
                   </ToggleGroup>
                 </SettingsField>
                 <PushToggle />
@@ -115,7 +115,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                 <SettingsField>
                   <FieldContent>
                     <FieldLabel variant="setting" htmlFor={arcadeId}>Arcade mode</FieldLabel>
-                    <p id={`${arcadeId}-description`} className="text-xs text-muted-foreground">Auto-open games</p>
+                    <FieldDescription id={`${arcadeId}-description`}>Auto-open games</FieldDescription>
                   </FieldContent>
                   <Switch id={arcadeId} checked={arcadeMode} onCheckedChange={setArcadeMode} aria-describedby={`${arcadeId}-description`} />
                 </SettingsField>
@@ -123,9 +123,9 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                 <SettingsField>
                   <FieldContent>
                     <FieldLabel variant="setting" htmlFor={shakeId}>Shake to dictate</FieldLabel>
-                    <p id={shakeDescriptionId} className="text-xs text-muted-foreground">
+                    <FieldDescription id={shakeDescriptionId}>
                       Motion and mic permission required. In a conversation, shake to toggle; audio is used only while dictating.
-                    </p>
+                    </FieldDescription>
                     {shake.error && <p id={shakeErrorId} role="status" className="text-xs text-destructive">{shake.error}</p>}
                   </FieldContent>
                   <Switch id={shakeId} checked={shake.enabled} disabled={shake.status === "requesting"}

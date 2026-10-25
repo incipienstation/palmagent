@@ -13,7 +13,7 @@ export function SettingsCard({ className, ...props }: ComponentProps<typeof Fiel
 
 export function SettingsField({ className, orientation = "horizontal", ...props }: ComponentProps<typeof Field>) {
   return <Field orientation={orientation} className={cn(
-    orientation === "horizontal" ? "min-h-14 justify-between py-1 has-[>[data-slot=field-content]]:items-center" : "gap-2 py-3",
+    orientation === "horizontal" ? "min-h-14 justify-between py-3 has-[>[data-slot=field-content]]:items-center" : "gap-2 py-3",
     className,
   )} {...props} />;
 }

@@ -54,6 +54,9 @@ test("settings sections fit the desktop viewport", async ({ page }) => {
   await expect(experimental.getByRole("switch", { name: "Shake to dictate" })).toBeVisible();
   await expect(experimental.getByText("Auto-open games", { exact: true })).toBeVisible();
   await expect(settings.getByRole("region", { name: "Installation" })).toBeVisible();
+  for (const radio of await settings.getByRole("radio").all()) {
+    expect(await radio.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  }
   await assertViewportLocked(page);
   expect(await settings.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
 });
@@ -96,7 +99,26 @@ test("mobile settings scroll, preserve preferences, and keep sign-out cancellabl
 test("keyboard navigation returns focus and keeps narrow settings within the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/");
-  await openSettings(page);
+  const settings = await openSettings(page);
+  const shortcut = settings.getByRole("radiogroup", { name: "Send message with", exact: true });
+  const label = settings.locator('[data-slot="field-label"]').filter({ hasText: "Send message with" });
+  await expect(shortcut).toBeVisible();
+  await settings.evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
+  const labelBounds = (await label.boundingBox())!;
+  const shortcutBounds = (await shortcut.boundingBox())!;
+  expect(shortcutBounds.y).toBeGreaterThanOrEqual(labelBounds.y + labelBounds.height);
+  expect(shortcutBounds.x + shortcutBounds.width).toBeLessThanOrEqual(320);
+  const enter = shortcut.getByRole("radio", { name: "Enter", exact: true });
+  await enter.focus();
+  await page.keyboard.press("Space");
+  await expect(enter).toBeChecked();
+  await page.keyboard.press("ArrowRight");
+  const modifiedEnter = shortcut.getByRole("radio", { name: "Cmd/Ctrl + Enter", exact: true });
+  await expect(modifiedEnter).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(modifiedEnter).toBeChecked();
   const spaces = page.getByRole("button", { name: "Repository search paths", exact: true });
   await spaces.focus();
   await page.keyboard.press("Enter");

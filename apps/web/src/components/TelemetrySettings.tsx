@@ -2,13 +2,12 @@ import { useId, useState } from "react";
 import { useTelemetrySettings } from "../hooks/useTelemetrySettings";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
-import { FieldContent, FieldLabel } from "./ui/field";
+import { FieldContent, FieldDescription, FieldLabel } from "./ui/field";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { SettingsCard, SettingsField } from "./SettingsLayout";
+import { SettingsCard, SettingsField, SettingsHelp } from "./SettingsLayout";
 
 function SharingDetails() {
-  return <details className="text-xs text-muted-foreground">
-    <summary className="cursor-pointer">What is shared?</summary>
+  return <SettingsHelp title="What is shared?">
     <p className="mt-2">Aggregated operation timings and outcomes, CPU and memory use, event-loop delay, and database retries.
       Metrics include the component, Node or Rust implementation, release, OS, architecture, and a coarse load bucket.
       They help compare performance as Palmagent changes.</p>
@@ -19,7 +18,7 @@ function SharingDetails() {
       under its own policies; the 180-day metric retention does not cover that processing.</p>
     <p className="mt-2">This choice applies to this installation, including retained processes, and survives updates.
       Turning it off stops collection and future uploads and discards queued samples. An upload already received cannot be recalled.</p>
-  </details>;
+  </SettingsHelp>;
 }
 
 export function TelemetryDisclosure() {
@@ -49,14 +48,14 @@ export function TelemetrySettings() {
     <SettingsField>
       <FieldContent>
         <FieldLabel variant="setting" htmlFor={id}>Share performance metrics</FieldLabel>
-        <p id={`${id}-description`} className="text-xs text-muted-foreground">
+        <FieldDescription id={`${id}-description`}>
           {status?.pendingDisclosure ? "Accept 180-day retention to start sharing." : "Aggregate metrics are kept for up to 180 days. Applies to this installation."}
-        </p>
+        </FieldDescription>
       </FieldContent>
       <Switch id={id} checked={status?.enabled ?? true} disabled={busy || !status?.available}
         aria-describedby={`${id}-description`} onCheckedChange={enabled => void request(enabled)} />
     </SettingsField>
-    <div className="flex flex-col gap-2 p-3">
+    <div className="flex flex-col gap-2 pb-1">
       <SharingDetails />
       {status?.pendingDisclosure && status.available &&
         <Button variant="outline" disabled={busy} onClick={() => void request(true)}>Continue with sharing</Button>}
