@@ -14,8 +14,11 @@ visibility changes, read [release](../release/SKILL.md) before acting.
    identities; inspect `%ae` and `%ce` across the new commit range.
 2. Push the `feature/*` branch and open a PR into `develop` (never directly into `main`).
 3. Watch required checks in one CLI session with
-   `gh pr checks <number> --required --watch --fail-fast --interval 30`; wait on the same process at
-   60-second intervals or longer and report status changes. Inspect job logs when checks fail.
+   `gh pr checks <number> --required --watch --fail-fast --interval 30`, following
+   [Waiting for checks](../verify/SKILL.md#waiting-for-checks). Keep the watcher session until it
+   finishes; do not launch parallel watchers or query the same CI status separately while it runs.
+   A missing required-check entry or interrupted watcher is not a pass; inspect the current CI
+   state before resuming or replacing the watcher. Inspect job logs when checks fail.
    Reuse evidence only while inputs are unchanged; if the head or base changes, update and reverify.
    Resolve task-owned conflicts. After checks and review requirements pass, squash-merge unless the
    user requested draft, PR-only, or merge hold. Confirm base and head immediately before merging;
