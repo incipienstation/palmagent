@@ -57,3 +57,42 @@ Forwarded headers and request Host values do not select the trusted origin.
 The application restricts scripts through Content Security Policy and prevents
 framing. HTTPS termination and HSTS belong to the host ingress. Keep the runtime
 bound to loopback and never expose a server configured with authentication disabled.
+
+## Dependency vulnerability checks
+
+The `security-audit` GitHub Actions workflow checks the default branch daily at
+04:23 UTC, checks pull requests that change dependency manifests, lockfiles or
+audit configuration, and supports **Run workflow** for an immediate check.
+GitHub may delay scheduled runs during busy periods.
+
+JavaScript checks cover production, development and optional dependencies directly
+from the lockfile without installing or running dependency build scripts. The
+production check fails on low or higher severity; the all-dependencies check fails
+on moderate or higher severity. Its JSON report retains low-severity findings.
+The Rust job runs the pinned `cargo-audit` version against `Cargo.lock` and the
+current RustSec advisory database, failing on known vulnerabilities and reporting
+informational warnings. Registry or database failures also fail the checks.
+Reports are available in the workflow logs and retained as artifacts for 14 days,
+including failed scans.
+
+To repeat the checks locally, use the Node and Rust versions declared in `.nvmrc`
+and `rust-toolchain.toml`:
+
+```bash
+node scripts/audit-javascript.mjs production low
+node scripts/audit-javascript.mjs all moderate
+cargo install cargo-audit --locked --version 0.22.2
+cargo audit
+```
+
+Update affected direct dependencies and regenerate the lockfile first. If an
+upstream package still pins a vulnerable dependency, use a narrowly scoped,
+documented override and verify its consumers. Do not suppress an advisory or
+treat a failed database lookup as a successful scan.
+
+As of 2026-11-06, the development-only `deepmerge@4.3.1` dependency has one
+low-severity [prototype-poisoning advisory](https://github.com/advisories/GHSA-gcqx-w48m-w2h4).
+The registry audit suggests `4.3.2`, but no such release is published and the
+advisory lists no patched version. It remains visible in the full report, without
+an ignore entry. It is used by shadcn and Workbox's Rollup tooling; replace it with
+a patched release when available and reverify those consumers.

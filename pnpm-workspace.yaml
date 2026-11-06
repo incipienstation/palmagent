@@ -17,3 +17,12 @@ patchedDependencies:
 # Vaul drawers and Radix overlays must share the toast dismissal context.
 overrides:
   "vaul>@radix-ui/react-dialog": "^1.3.1"
+  # Nx 22 still pins these vulnerable versions; keep fixes scoped to its graph.
+  "nx@22>axios": "^1.20.0"
+  "nx@22>smol-toml": "^1.8.1"
+  "brace-expansion@>=5.0.0 <5.0.12": "^5.0.12"
+  "follow-redirects@>=1.16.0 <1.16.2": "^1.16.2"
+  # GHSA-g3hv-75wg-m249 and GHSA-3g3m-2fjr-6pw4 have no fixes on older majors.
+  # Consumers are Nx, shadcn/ts-morph and Workbox's build-time file discovery.
+  "minimatch@>=7.0.0 <11.0.1": "^11.0.1"
+  "glob@>=9.0.0 <14.0.2": "^14.0.2"

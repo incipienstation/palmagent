@@ -32,9 +32,9 @@
     "release:prepare": "node scripts/release-version.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
-    "nx": "^20.3.0",
-    "typescript": "^6.0.3",
-    "tsx": "^4.19.0"
+    "esbuild": "^0.25.12",
+    "nx": "^22.7.12",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3"
   }
 }
