@@ -17,6 +17,19 @@ An entry does not mean a version has been published.
   both distributions. Missing signing or hosting configuration stops publication before
   creating a tag; old npm prereleases remain available as historical artifacts.
 
+## 0.1.0-alpha.240
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/0a2dbcb95f79bb16d0dd334e9103fe2e302d87a9...7bbdea64b3c2b9c678bc0f2639cd9879b28eed50) for details.
+
+## 0.1.0-alpha.239
+
+### Changed
+
+- Script routines use native execution hosts and watchdogs, preserving cancellation, bounded output,
+  retained results, and execution across application restarts. Older retained releases remain compatible.
+
 ## 0.1.0-alpha.238
 
 ### Changed

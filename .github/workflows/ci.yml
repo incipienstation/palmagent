@@ -84,7 +84,9 @@ jobs:
   web:
     needs: scope
     if: needs.scope.outputs.web == 'true' || (needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
+    # Shard 1 exercises retained cgroups across systemd restarts. The Ubuntu 26.04
+    # image fails before exec with EBUSY; see docs/DAEMON.md and systemd/systemd#41278.
+    runs-on: ${{ matrix.shard == 1 && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false

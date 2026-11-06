@@ -1,4 +1,5 @@
 //! Routine use cases and outbound contracts. One owner serializes all script admissions.
+pub mod retained;
 use crate::modules::routines::domain::{Routine, Run, SCRIPT_CAPACITY, Script, cadence};
 use serde::Deserialize;
 use serde_json::{Value, json};

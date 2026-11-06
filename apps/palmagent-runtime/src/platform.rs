@@ -1,4 +1,5 @@
 //! Linux adapters for private state, daemon control and the installation's local calendar.
+pub mod script_process;
 pub mod telemetry;
 use anyhow::{Context, Result, ensure};
 use serde::{Serialize, de::DeserializeOwned};

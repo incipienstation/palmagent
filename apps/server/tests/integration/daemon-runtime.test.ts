@@ -392,6 +392,14 @@ test("application artifacts are verified before selecting a native configuration
   manifest.applicationArtifacts = { [name]: createHash("sha256").update(readFileSync(application)).digest("hex") };
   writeFileSync(manifestPath, JSON.stringify(manifest));
   assert.equal(daemonBinary(f.release), f.binary);
+  manifest.routineHost = 1;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.equal(daemonBinary(f.release), f.binary);
+  manifest.routineHost = 2;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.throws(() => daemonBinary(f.release), /compatible native routine host/);
+  delete manifest.routineHost;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
   writeFileSync(application, "corrupt application");
   assert.throws(() => daemonBinary(f.release), /Application runtime artifact integrity mismatch/);
   manifest.applicationRuntime = 2;
