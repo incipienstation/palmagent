@@ -17,7 +17,7 @@
     "start": "tsx src/bootstrap/server.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.1",
+    "@hono/node-server": "^2.1.6",
     "@palmagent/shared": "workspace:*",
     "@simplewebauthn/server": "^13.3.1",
     "@xterm/addon-serialize": "^0.14.0",

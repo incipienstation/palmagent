@@ -1,0 +1,90 @@
+name: security-audit
+
+on:
+  schedule:
+    # Run off the hour on the default branch, including when no code changes.
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '**/package.json'
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .npmrc
+      - .nvmrc
+      - '**/Cargo.toml'
+      - Cargo.lock
+      - rust-toolchain.toml
+      - '.cargo/**'
+      - .github/workflows/security-audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: production
+            level: low
+          - scope: all
+            level: moderate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Audit dependencies from the lockfile
+        shell: bash
+        # JSON retains low-severity findings even when they do not fail the all-dependencies gate.
+        run: pnpm audit --json --audit-level '${{ matrix.level }}' ${{ matrix.scope == 'production' && '--prod' || '' }} | tee "$RUNNER_TEMP/javascript-audit.json"
+      - name: Preserve audit report even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: javascript-audit-${{ matrix.scope }}
+          path: ${{ runner.temp }}/javascript-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_AUDIT_VERSION: '0.22.2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Restore the pinned audit tool
+        id: audit-tool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}-${{ runner.arch }}-${{ env.CARGO_AUDIT_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Install the pinned audit tool
+        if: steps.audit-tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+      - name: Audit Cargo.lock against the current RustSec database
+        shell: bash
+        run: cargo audit --color never 2>&1 | tee "$RUNNER_TEMP/rust-audit.txt"
+      - name: Preserve audit report even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-audit
+          path: ${{ runner.temp }}/rust-audit.txt
+          if-no-files-found: ignore
+          retention-days: 14
