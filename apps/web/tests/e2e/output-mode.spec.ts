@@ -63,6 +63,20 @@ for (const mode of ["compact"] as const) {
     await expect(group).toHaveAttribute("aria-expanded", "true");
     await page.getByRole("button", { name: "Completed: echo checked", exact: true }).first().click();
     await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
+    // The reader scrolls after expansion has finished changing row heights.
+    await page.locator("[data-activity]").evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true })
+        .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map(animation => animation.finished.catch(() => {})));
+    });
+    await expect.poll(() => viewport(page).evaluate(async el => {
+      const height = el.scrollHeight;
+      for (let frame = 0; frame < 4; frame++) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        if (el.scrollHeight !== height) return false;
+      }
+      return true;
+    })).toBe(true);
     await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
     // Establish a painted reading position after the expansion's measurements,
     // then verify the next event preserves it.
