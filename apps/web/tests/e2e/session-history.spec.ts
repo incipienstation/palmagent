@@ -349,7 +349,7 @@ test("fast upward scrolling formats long Markdown before it reaches the viewport
   const target = page.locator('[data-message-key="1801"]');
   await expect(target).toHaveCount(0);
   const samples = await page.evaluate(() => new Promise<Array<{ formatted: boolean; height: number }>>((resolve) => {
-    const viewport = document.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")!;
+    const viewport = document.querySelector<HTMLElement>('[data-radix-scroll-area-viewport][aria-label="Session transcript"]')!;
     const samples: Array<{ formatted: boolean; height: number }> = [];
     const capture = () => {
       const row = viewport.querySelector<HTMLElement>('[data-message-key="1801"]');
@@ -394,7 +394,7 @@ for (const scenario of [
     await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2000 });
     await expectBottom(page);
     await page.evaluate(() => {
-      const pane = document.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")!;
+      const pane = document.querySelector<HTMLElement>('[data-radix-scroll-area-viewport][aria-label="Session transcript"]')!;
       const samples: Array<{ blank: boolean; raw: boolean; jump: number; scrollTop: number; keys: string[] }> = [];
       let last = new Map<string, number>();
       let active = true;

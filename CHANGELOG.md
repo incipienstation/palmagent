@@ -17,6 +17,18 @@ An entry does not mean a version has been published.
   both distributions. Missing signing or hosting configuration stops publication before
   creating a tag; old npm prereleases remain available as historical artifacts.
 
+## 0.1.0-alpha.238
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/a1a9e702ffe5b5b43ee9a07b9b2aa3a23d84d8e7...e1cefb7c9d395ec4de791dfe141b62337fe7a2b8) for details.
+
+## 0.1.0-alpha.237
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/1b1b4371171d89e4662652fd1d2e192144162462...af4b582f1fe91d8566d682fec71a85eef177e0ff) for details.
+
 ## 0.1.0-alpha.236
 
 ### Changed

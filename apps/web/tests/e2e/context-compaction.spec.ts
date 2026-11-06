@@ -58,7 +58,7 @@ for (const width of [360, 1280]) test(`compaction menu and lifecycle preserve dr
   const f = await setup(page);
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   await draft.fill("Keep my next question");
-  const viewport = page.locator("[data-radix-scroll-area-viewport]").first();
+  const viewport = page.locator('[data-radix-scroll-area-viewport][aria-label="Session transcript"]').first();
   await viewport.hover(); await page.mouse.wheel(0, -600);
   await expect.poll(() => viewport.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeGreaterThan(100);
   await page.waitForTimeout(200);

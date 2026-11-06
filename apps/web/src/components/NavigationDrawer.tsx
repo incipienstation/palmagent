@@ -2,15 +2,13 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { Drawer } from "@base-ui/react/drawer";
 import { BackLayerScope, useBackDismiss } from "../hooks/useBackLayer";
 import { useNavigationGesturesBlocked } from "../NavigationGestureProvider";
-import { cn } from "../lib/utils";
 
 // The edge surface owns opening gestures; modal surfaces suspend it through the
 // input policy without depending on this drawer implementation.
-export function NavigationDrawer({ open, onOpenChange, onAfterClose, desktopSidebar, children }: {
+export function NavigationDrawer({ open, onOpenChange, onAfterClose, children }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAfterClose: () => void;
-  desktopSidebar: boolean;
   children: ReactNode;
 }) {
   const { depth, ...back } = useBackDismiss({ open, onOpenChange });
@@ -29,11 +27,11 @@ export function NavigationDrawer({ open, onOpenChange, onAfterClose, desktopSide
       back.onOpenChange(next);
     }} onOpenChangeComplete={next => { if (!next && !blocked) onAfterClose(); }}>
       <Drawer.SwipeArea data-testid="navigation-swipe-area" disabled={blocked}
-        className={cn("navigation-swipe-area", desktopSidebar && "md:hidden")} />
+        className="navigation-swipe-area" />
       <Drawer.Portal>
         <Drawer.Backdrop className="navigation-drawer-backdrop" />
         <Drawer.Viewport className="navigation-drawer-viewport">
-          <Drawer.Popup data-slot="drawer-content" data-side="left" initialFocus finalFocus={false}
+          <Drawer.Popup data-app-navigation data-slot="drawer-content" data-side="left" initialFocus finalFocus={false}
             className="navigation-drawer-popup">
             {children}
           </Drawer.Popup>
