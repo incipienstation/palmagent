@@ -28,6 +28,15 @@ and an accessible systemd user manager. The control subgroup lets systemd restar
 the daemon while other groups remain populated. Account lingering keeps the user
 manager running after logout and starts it at boot, without a login session.
 
+The Ubuntu 26.04 hosted CI image currently fails to restart a delegated service with
+retained processes: systemd reports `Failed to spawn executor: Device or resource busy`
+before launching the daemon. This matches the cgroup reuse limitation described in
+[systemd issue 41278](https://github.com/systemd/systemd/issues/41278); the linked fix
+does not resolve reuse while child groups still contain live processes. Packed user
+and system service acceptance therefore runs on Ubuntu 24.04. Those passing checks
+do not establish crash-recovery support on affected newer systemd builds. Moving the
+acceptance runner requires both service scopes to pass with retained work still alive.
+
 Installation enables linger with `loginctl --no-ask-password enable-linger` when
 needed, verifies the manager's version and unit search path, then exercises the
 native isolation operations inside a disposable delegated user service. A denied
