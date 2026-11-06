@@ -227,6 +227,18 @@ try {
   if (installed) { await removeDaemonBootstrap(installed); installed = undefined; }
   assert(!existsSync(join(root, "forbidden-service-call")), "User installation and removal must not invoke sudo");
   console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results, readiness and orphan cgroup cleanup without privileged runtime calls");
+} catch (error) {
+  // Capture only this fixture's service state before cleanup removes the evidence.
+  const scopeArgs = systemScope ? [] : ["--user"];
+  const env = systemScope ? process.env : userServiceEnvironment();
+  for (const [command, args] of [
+    ["/usr/bin/systemctl", [...scopeArgs, "show", unit, "--property=ActiveState,SubState,Result,MainPID,NRestarts,ExecMainCode,ExecMainStatus"]],
+    ["/usr/bin/journalctl", [...scopeArgs, "--unit", unit, "--lines", "40", "--no-pager"]],
+  ] as const) {
+    const report = spawnSync(command, args, { encoding: "utf8", env, timeout: 5000 });
+    console.error(`[acceptance] ${command}:\n${report.stdout ?? ""}${report.stderr ?? ""}`);
+  }
+  throw error;
 } finally {
   terminalChannel?.close(); executions?.close(); terminals?.close();
   // The only privileged cleanup target is this run's uniquely named cgroup/unit.
