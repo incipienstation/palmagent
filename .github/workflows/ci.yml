@@ -105,7 +105,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # This matrix shares a pnpm store across Ubuntu images with different
+        # system libraries. Rebuild native addons instead of restoring build output.
+        run: |
+          pnpm install --frozen-lockfile --side-effects-cache=false
+          pnpm --filter @palmagent/server exec node -e "require('node-pty'); new (require('better-sqlite3'))(':memory:').close()"
       - name: Fingerprint PWA build inputs
         id: pwa-key
         run: node scripts/ci-web-cache.mjs key
@@ -149,10 +153,6 @@ jobs:
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
         run: |
-          # The pnpm store cache is shared across Linux images. Its native side
-          # effects can require a newer glibc than this systemd acceptance runner.
-          npm_config_build_from_source=true pnpm --dir apps/server rebuild better-sqlite3 node-pty
-          pnpm --dir apps/server exec node -e "require('node-pty'); const Database = require('better-sqlite3'); new Database(':memory:').close()"
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/candidate
