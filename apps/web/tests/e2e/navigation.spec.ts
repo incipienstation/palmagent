@@ -163,6 +163,8 @@ test.describe("desktop navigation", () => {
     await expect(message).toHaveValue("Still editable after resize!");
     await page.setViewportSize({ width: 360, height: 780 });
     await expect(message).toBeFocused();
+    // The viewport bridge updates its height on the next animation frame.
+    await expect(page.locator("html")).toHaveCSS("--app-height", "780px");
     await assertViewportLocked(page);
     await menu.click();
     await page.getByRole("dialog", { name: "Palmagent", exact: true }).getByRole("button", { name: "Settings", exact: true }).click();

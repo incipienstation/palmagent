@@ -49,6 +49,7 @@ export function AppNavigation({ tasks, conn, children }: {
   const [sidebar, setSidebar] = useStoredPreference(sidebarPreference, readSidebarPreference);
   const desktopSidebar = desktop && sidebar === "open";
   const collapseButton = useRef<HTMLButtonElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const focusNavigation = useRef(false);
   useLayoutEffect(() => {
     const query = window.matchMedia(desktopQuery);
@@ -120,7 +121,8 @@ export function AppNavigation({ tasks, conn, children }: {
   }, []);
   const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: arcadeMode ? openGame : undefined }), [openNavigation, desktopSidebar, arcadeMode, openGame]);
   const restoreFocus = () => {
-    const target = trigger.current?.getClientRects().length ? trigger.current : desktopSidebar ? collapseButton.current : visibleNavigationTrigger();
+    const desktopTarget = trigger.current?.getAttribute("aria-label") === "Settings" ? settingsButton.current : collapseButton.current;
+    const target = trigger.current?.getClientRects().length ? trigger.current : desktopSidebar ? desktopTarget : visibleNavigationTrigger();
     target?.focus();
   };
   const go = (path: string) => { setOpen(false); navigate(path); };
@@ -189,7 +191,7 @@ export function AppNavigation({ tasks, conn, children }: {
           {recentSpaces.map(repo => <Button key={repo.id} variant={route.name === "space" && route.repoId === repo.id ? "selected" : "ghost"} className="w-full justify-start px-3" aria-current={route.name === "space" && route.repoId === repo.id ? "page" : undefined} onClick={() => go(spacePath(repo.id))}><span className="truncate">{repo.name}</span></Button>)}
           </div>
         </ScrollArea>
-        <div className="flex items-center gap-2 p-4 pb-[calc(16px+var(--safe-bottom))]"><Button onClick={newTask}><SquarePen data-icon="inline-start" />New task</Button><Button variant="ghost" size="icon-lg" aria-label="Settings" onClick={event => { trigger.current = event.currentTarget; setSettingsOpen(true); }}><Settings /></Button></div>
+        <div className="flex items-center gap-2 p-4 pb-[calc(16px+var(--safe-bottom))]"><Button onClick={newTask}><SquarePen data-icon="inline-start" />New task</Button><Button ref={settingsButton} variant="ghost" size="icon-lg" aria-label="Settings" onClick={event => { trigger.current = event.currentTarget; setSettingsOpen(true); }}><Settings /></Button></div>
       </aside>}
       <div className="min-w-0 flex-1">{children}</div>
     </div>
