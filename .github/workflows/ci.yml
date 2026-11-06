@@ -174,8 +174,39 @@ jobs:
           BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
         run: node scripts/ci-web-cache.mjs summary
 
+  standalone:
+    needs: scope
+    if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build and smoke-test the native standalone archive
+        env:
+          PALMAGENT_NATIVE_PLATFORM: linux-${{ matrix.arch }}
+        run: |
+          pnpm pkg:build
+          node scripts/build-standalone.mjs linux-${{ matrix.arch }}-glibc
+          node scripts/standalone-smoke.mjs build/standalone
+
   validate:
-    needs: [scope, tooling, server, web]
+    needs: [scope, tooling, server, web, standalone]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

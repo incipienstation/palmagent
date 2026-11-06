@@ -46,6 +46,12 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-actions: write
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: tooling/package.json
+      - name: Install release tool dependencies
+        working-directory: tooling
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Prepare, verify, and publish eligible product changes
         run: node tooling/scripts/preview-release.mjs source
         env:

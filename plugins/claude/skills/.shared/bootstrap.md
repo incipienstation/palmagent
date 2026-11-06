@@ -27,12 +27,29 @@ its saved `channel` or the existing installation's legacy channel. Only a fresh 
 with no choice defaults to Stable. Reject malformed JSON, unsupported `schemaVersion`,
 or invalid channels rather than guessing or resetting preferences.
 
-Use the installed CLI when available. If bootstrap is needed, resolve the chosen npm tag
-(`latest` for Stable, `next` for Preview) to one exact published version. Use
-`palmagent@<resolved-version>` for every bootstrap command. Moving tags are for discovery,
-not the installation target. Never silently switch channels or substitute a moving `npx`
-version after failure. Preview requires an explicit choice, is available to everyone, and
-is not a fallback when Stable is unavailable.
+Use the installed compatible CLI when available. New installations default to standalone;
+Preview is standalone-only. Stable npm installations may continue using npm. A channel
+lookup failure never selects another channel or distribution.
+
+For standalone bootstrap, download `https://palmagent.dev/install.sh` to a private temporary
+file over HTTPS, inspect its help, and run it with the chosen `--channel`. The script checks
+Linux x64/arm64, glibc, OpenSSL 3, signed release metadata, and the archive checksum before
+running the bundled Node. It needs curl, GNU tar/coreutils, jq and OpenSSL 3; installation
+needs no system Node, npm, or compiler. Resolve these prerequisites within the authorized
+installation. Do not pipe an error response into a shell.
+
+Pass `--to <exact-version>` when the user selected a release. Use `--prefix <private-absolute-dir>
+--print-path` for a temporary diagnostic or migration CLI: this returns the retained command
+without replacing the user's CLI link or application service. Retain a custom `--data-dir`
+so legacy channel preferences can be read. No settings file is written by bootstrap.
+For the first migration from the 0.1.x contract, bootstrap the exact released 0.2.x CLI and
+invoke that candidate with `PALMAGENT_CLI_FORWARDED=1`; otherwise an installed older CLI may
+receive the command. Confirm its version and help before sending new flags.
+
+For an explicitly selected Stable npm bootstrap, resolve `latest` to one exact stable
+version and use `palmagent@<resolved-version>` throughout. Never install a new Preview from
+npm or substitute a moving `npx` version after a failure. Old npm prereleases remain
+historical artifacts, not a current Preview discovery source.
 
 Keep the selected installation's custom `--data-dir` throughout. Substitute the resolved
 internal command for `<cli>` in the invoking skill. Temporary diagnostic or planning
@@ -49,8 +66,8 @@ Read the invoking installed plugin's manifest at `../../.claude-plugin/plugin.js
 
 The CLI and plugin must share the same `x.x.x`, including prereleases. Require exit 0
 before the skill's CLI operation. If the command is absent, the manifest is unreadable,
-or the check fails, explain the compatible released pair needed and retain installed
-state. This check does not update either component; native plugin managers own plugin
+or the check fails, prepare the exact compatible candidate and plugin pair through the
+update skill for an authorized migration; otherwise report the mismatch and retain installed state. This check does not update either component; native plugin managers own plugin
 installation. Follow the invoking skill's explicit read-only diagnostic exception when
 it applies, without treating that exception as permission for host changes.
 

@@ -1,18 +1,16 @@
 # Channels and updates
 
-## npm channels
+## Release channels and distributions
 
-Prereleases publish only to the `next` dist-tag. Stable releases publish to
-`latest`.
+Preview publishes only signed standalone archives. Stable publishes standalone and npm
+(`latest`). New installations default to standalone; existing Stable npm installations
+stay on npm until migration is requested. Historical npm prereleases and `next` remain
+untouched but receive no new publication. Preview discovery never queries npm.
 
-| Version | npm tag | Install command |
-| --- | --- | --- |
-| `0.1.0-alpha.1`, `beta`, or `rc` | `next` | `npm install -g palmagent@next` |
-| `0.1.0` and later stable versions | `latest` | `npm install -g palmagent` |
-
-Users see **Stable** (`latest`, default) and **Preview** (`next`, explicit opt-in).
-Preview is available to everyone; developer status is not an access rule. Staging
-is an environment role, not a public release channel or permission to access a host.
+Users see **Stable** (default) and **Preview** (explicit opt-in). Preview is available to
+everyone. Staging is an environment role, not a release channel or host access permission.
+See [standalone installation](../../../../docs/STANDALONE.md) and
+[release hosting](../../../../docs/RELEASE-HOSTING.md) for the distribution and trust contract.
 
 The plugin is the user interface and owns CLI bootstrap and invocation. Users ask it
 to install, update, or change settings; they do not need to run these commands themselves.
@@ -62,9 +60,9 @@ repeated argument for readability.
   chosen channel policy without changing the saved channel. It does not create a
   permanent version pin. Stable rejects prereleases; all downgrades are refused.
 - `--dry-run` shows the intended channel/spec without writing config or contacting
-  npm. A real pull resolves and validates one exact version before installing it.
+  a release catalog. A real pull resolves and validates one exact version before installing it.
 
-Registry errors and missing tags fail without switching channels. An update's explicit
+Catalog errors and missing releases fail without switching channels. An update's explicit
 channel override is saved only after health succeeds. Independent application
 activation attempts to restore its previous retained release after failure; legacy
 package replacement has no automatic rollback. No database rollback occurs.
@@ -124,17 +122,18 @@ Claude/Codex adapters and do not substitute for this Palmagent CLI/plugin compat
 The package is one update unit containing the CLI, server, PWA, and runner. The
 `update` plugin coordinates it with participating Claude Code and Codex plugins:
 
-1. `update --plan --plugin-manifest <path>` resolves a single exact npm target and
+1. `update --plan --plugin-manifest <path>` resolves one exact target through signed metadata or the Stable npm registry and
    returns JSON with the package action and each plugin's keep/update decision.
    Repeat the manifest argument for each participating installation and scope.
-   Planning is read-only; unlike `--dry-run`, it contacts npm.
+   Planning is read-only; unlike `--dry-run`, it contacts the selected release catalog.
+   Schema v2 records distribution and migration plus the pinned standalone manifest and archive.
 2. The CLI discovers installed native plugins and refreshes older compatible
    versions using the exact published Git tag, retaining previous source/scope
    details in a private recovery receipt. The skill handles older CLIs. It verifies
    actual installed manifests before proceeding. A catalog refresh is insufficient.
 3. `update --pull --to <planned-version> --plugin-manifest <verified-path>` checks
-   target compatibility before activation. Independent installations stage a new
-   npm prefix and retain existing artifacts. Legacy replacement verifies ownership
+   target compatibility before activation. Independent installations stage a verified standalone bundle or a Stable npm prefix and retain existing artifacts.
+   Standalone apply uses `--plan-file <private-plan.json>` to keep the artifact identity. Legacy replacement verifies ownership
    of the global prefix. Activation checks the exact `/api/health` version.
 
 Legacy plugins can still call `update --pull` without manifest arguments within
@@ -148,7 +147,7 @@ still need a plugin repair. A compatible package already at the target is checke
 for runtime health and retained.
 
 This coordinates a single user request; it is not an atomic transaction across
-independent plugin managers, npm, systemd, and SQLite. A plugin may need a native
+independent plugin managers, artifact storage, systemd, and SQLite. A plugin may need a native
 reload or a new agent session before its new skills become active.
 
 The settings skill exposes `auto-update enable|disable|status`. Enabling stores
@@ -165,7 +164,7 @@ availability and cancels a request in the former channel. Active-task completion
 resumes a pending request. The one-shot systemd executor reads that durable request
 and rechecks authorization, channel, compatibility, and execution isolation under
 the host lock (legacy installations also require idle). It survives a web-server restart and never chooses a different release
-because the npm tag moved. Native file events notify connected Settings screens
+because the channel pointer moved. Native file events notify connected Settings screens
 of request/result changes without status polling.
 
 After deployment, each visible browser tab waits for a fully installed service
@@ -219,8 +218,8 @@ removal removes legacy timers while preserving user preferences. These source
 capabilities do not deploy an update on a host merely because their PR is merged.
 
 Published versions are immutable. Never overwrite or reuse a version. If a
-release is bad, move the dist-tag back to the last good version, deprecate the
-bad version with a useful message, and publish a new patch or prerelease.
+release is bad, publish a higher corrected version. Standalone channel revisions only advance;
+existing hosts never automatically downgrade. Stable npm deprecation is a separate release action.
 
 Validation environments use Preview and enabled automatic updates as described in
 [validation environments](../../../../docs/STAGING.md). There is no staging-specific

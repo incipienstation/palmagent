@@ -88,7 +88,7 @@ export async function runUpdateSettingsCommand(args: string[], checkAvailability
         // Changing channel only checks availability; installation needs a later
         // visit or an explicit Update action in the newly selected channel.
         if (!(change && "channel" in change) && state.discovery?.eligible &&
-            (state.discovery.targetVersion !== state.discovery.currentVersion || Boolean(state.discovery.pluginsPending)) &&
+            (state.discovery.targetVersion !== state.discovery.currentVersion || Boolean(state.discovery.pluginsPending) || state.discovery.packagePending) &&
             getUserConfig({ dataDir: cfg.dataDir }).autoUpdate && !updatePaused(cfg)) {
           requestUpdateAccess(cfg, true);
         }

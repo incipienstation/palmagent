@@ -8,7 +8,9 @@ import { compareVersions, RELEASE_VERSION, versionPolicy } from './lib/release-v
 import { productChanges, nextPreviewVersion, preparationFiles, assertPreparation } from './lib/preview-plan.mjs';
 import { prepareVersion } from './release-version.mjs';
 import { inspectSource, candidateArtifact } from './release-candidate.mjs';
-import { ensureReleaseTag } from './release-finalize.mjs';
+import { readChannel } from './lib/standalone-release.mjs';
+import { StandaloneManifestSchema, RELEASE_PUBLIC_KEYS } from '../packages/shared/src/standalone.ts';
+import { verifySignedPayload } from '../apps/server/src/platform/filesystem/release-artifact.ts';
 import { releaseBot } from './lib/release-bot.mjs';
 import { github, githubPages, registryMetadata, registryTarball, delay } from './lib/release-github.mjs';
 
@@ -45,6 +47,36 @@ export async function successfulPreview(cwd, releases, registry, { manifest, tar
     return receipt;
   }
   return null;
+}
+
+export async function successfulStandalonePreview(cwd, releases, { channel = readChannel, asset } = {}) {
+  const selected = await channel('preview');
+  if (selected) {
+    const release = releases.find(value => !value.draft && value.prerelease && value.tag_name === `v${selected.value.version}`);
+    assert(release, 'Channel release is not public');
+    const files = release.assets.filter(value => value.name === 'standalone.json');
+    assert(files.length === 1, 'Channel release has no unique manifest');
+    const bytes = await asset(files[0]);
+    assert(createHash('sha256').update(bytes).digest('hex') === selected.value.releaseManifestSha256, 'Channel manifest checksum differs');
+    const manifest = StandaloneManifestSchema.parse(verifySignedPayload(bytes, RELEASE_PUBLIC_KEYS));
+    assert(manifest.version === selected.value.version && git(cwd, 'cat-file', '-t', manifest.pluginTag) === 'tag' &&
+      git(cwd, 'rev-parse', `${manifest.pluginTag}^{commit}`) === manifest.sourceCommit, 'Channel source identity differs');
+    return { version: manifest.version, commit: manifest.sourceCommit, tag: manifest.pluginTag };
+  }
+  // One-time cutover baseline: verify the already-public legacy GitHub bytes.
+  // No npm discovery or registry visibility is part of the new Preview path.
+  const legacy = releases.filter(value => !value.draft && value.prerelease && preview(value.tag_name.slice(1)) &&
+    !value.assets.some(file => file.name === 'standalone.json')).sort((a, b) => compareVersions(b.tag_name.slice(1), a.tag_name.slice(1)));
+  if (!legacy.length) return null;
+  const release = legacy[0], receipts = release.assets.filter(value => value.name === 'release.json');
+  assert(receipts.length === 1, 'Legacy Preview has no unique publication receipt');
+  const receipt = JSON.parse((await asset(receipts[0])).toString());
+  assert(receipt.version === release.tag_name.slice(1) && receipt.tag === release.tag_name && receipt.channel === 'next' &&
+    git(cwd, 'cat-file', '-t', receipt.tag) === 'tag' && git(cwd, 'rev-parse', receipt.tag) === receipt.tagObject &&
+    git(cwd, 'rev-parse', `${receipt.tag}^{commit}`) === receipt.commit, 'Legacy Preview source differs');
+  const packages = release.assets.filter(value => value.name === receipt.filename);
+  assert(packages.length === 1 && createHash('sha256').update(await asset(packages[0])).digest('hex') === receipt.sha256, 'Legacy Preview archive differs');
+  return receipt;
 }
 
 export function planPreview(cwd, source, baseline, registry, tags) {
@@ -248,14 +280,10 @@ export async function runPreview(cwd, env) {
   const bot = releaseBot(env);
   git(cwd, 'fetch', 'origin', 'develop', '--tags');
   const source = git(cwd, 'rev-parse', 'origin/develop');
-  const registry = await registryMetadata();
   const releases = githubPages(repository, 'releases');
-  const baseline = await successfulPreview(cwd, releases, registry, {
-    manifest: (release) => {
-      const assets = release.assets.filter((asset) => asset.name === 'release.json');
-      assert(assets.length === 1, 'Published Preview has no unique release receipt');
-      return JSON.parse(github(repository, `releases/assets/${assets[0].id}`, { binary: true }).toString());
-    },
+  const registry = { versions: Object.fromEntries(releases.filter(release => !release.draft).map(release => [release.tag_name.slice(1), {}])) };
+  const baseline = await successfulStandalonePreview(cwd, releases, {
+    asset: file => github(repository, `releases/assets/${file.id}`, { binary: true }),
   });
   const tags = git(cwd, 'tag', '--list', 'v*').split('\n').filter(Boolean);
   // Resume a merged preparation or tag before allocating a new version. A queued push may
@@ -267,14 +295,14 @@ export async function runPreview(cwd, env) {
     const marker = preparationMarker(pr);
     if (marker && (!baseline || compareVersions(marker.version, baseline.version) > 0)) pending.push({ version: marker.version, commit: pr.merge_commit_sha });
   }
-  const resume = pending.filter((item) => ancestor(cwd, item.commit, source)).sort((a, b) => compareVersions(a.version, b.version))[0];
+  const currentBase = JSON.parse(git(cwd, 'show', `${source}:package.json`)).version.split('-')[0];
+  const resume = pending.filter((item) => item.version.split('-')[0] === currentBase && ancestor(cwd, item.commit, source)).sort((a, b) => compareVersions(a.version, b.version))[0];
   let plan = resume ? { action: 'publish', ...resume } : await prepare(cwd, repository, baseline, registry, tags, bot);
   if (plan.action === 'skip') return plan;
   git(cwd, 'fetch', 'origin', 'develop');
   git(cwd, 'checkout', '--detach', plan.commit);
   const identity = inspectSource(cwd, plan.commit);
   assert(identity.channel === 'next' && identity.version === plan.version, 'Preview source version or channel differs');
-  ensureReleaseTag(cwd, identity, (path, options) => github(repository, path, options));
   const run = await waitForPublication(repository, plan.commit);
   const result = { ...plan, runUrl: run.html_url };
   // A resumed release can predate already-merged changes. Explicitly queue another comparison;

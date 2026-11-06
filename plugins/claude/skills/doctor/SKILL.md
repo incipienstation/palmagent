@@ -99,7 +99,7 @@ then propose the concrete fix. Common patterns to recognize:
 - **Web process dead / restart-looping** → read daemon host logs or, for legacy
   services, the unit journal. A `better-sqlite3` / native-module error usually
   means a rebuild is needed
-  (`npm rebuild better-sqlite3`); an `EADDRINUSE` means the port is taken; a
+  (for an npm installation, `npm rebuild better-sqlite3`; for standalone, repair from the verified release archive); an `EADDRINUSE` means the port is taken; a
   missing-file error often means the PWA dist or data dir moved.
 - **Slow web activation** → compare the host's creation/readiness timestamps with
   the installed daemon's startup deadline. Current daemons allow 60 seconds;

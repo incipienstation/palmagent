@@ -26,7 +26,7 @@ const applicationFixtureScript = `
   fs.writeFileSync(path.join(pkg, 'web', 'assets', 'app.js'), 'fixture application');
   fs.writeFileSync(path.join(pkg, 'build-info.json'), JSON.stringify({ version: JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8')).version, sourceCommit: 'a'.repeat(40), dirty: false }));
 `;
-function applicationResponse(input: string | URL | Request, version = "0.1.0-alpha.3") {
+function applicationResponse(input: string | URL | Request, version = "0.1.0") {
   const pathname = new URL(typeof input === "string" || input instanceof URL ? input : input.url).pathname;
   if (pathname === "/") return new Response('<script src="/assets/app.js"></script>');
   if (pathname === "/assets/app.js") return new Response("fixture application");
@@ -54,9 +54,9 @@ function fixture(t: TestContext) {
     pushSubject: "", repoRoots: "", claudeConfigDir: "",
   };
   saveConfig(cfg);
-  setUserChannel("preview");
+  setUserChannel("stable");
   const manifest = join(root, "plugin.json");
-  writeFileSync(manifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.3" }));
+  writeFileSync(manifest, JSON.stringify({ name: "palmagent", version: "0.1.0" }));
   const calls = join(root, "calls.jsonl");
   writeFileSync(join(root, "bin", "sudo"), `#!${process.execPath}
 require('node:fs').appendFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'host.jsonl'), JSON.stringify(process.argv.slice(2)) + '\\n');
@@ -71,11 +71,11 @@ process.exit(args.join(' ') === 'is-active --quiet palmagent-runner.service' ? 0
 const fs = require('node:fs');
 const path = require('node:path');
 fs.appendFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'calls.jsonl'), JSON.stringify(process.argv.slice(2)) + '\\n');
-if (process.argv[2] === 'view') console.log(JSON.stringify((process.argv[3] === 'palmagent@next' && process.env.TEST_UPDATE_TAG_TARGET) || process.env.TEST_UPDATE_TARGET || '0.1.0-alpha.3'));
+if (process.argv[2] === 'view') console.log(JSON.stringify((process.argv[3] === 'palmagent@latest' && process.env.TEST_UPDATE_TAG_TARGET) || process.env.TEST_UPDATE_TARGET || '0.1.0'));
 else if (process.argv[2] === 'root') console.log(process.env.TEST_UPDATE_ROOT);
 else if (process.argv[2] === 'install' && process.env.TEST_UPDATE_INSTALL === 'success') {
   const pkg = path.join(process.env.TEST_UPDATE_ROOT, 'palmagent');
-  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: process.env.TEST_UPDATE_TARGET || '0.1.0-alpha.3' }));
+  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: process.env.TEST_UPDATE_TARGET || '0.1.0' }));
   ${applicationFixtureScript}
   fs.writeFileSync(path.join(pkg, 'cli.js'), "const fs = require('node:fs'); const path = require('node:path'); if (process.argv[2] === '--version') console.log(require('./package.json').version); else fs.writeFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'activation.json'), JSON.stringify({ args: process.argv.slice(2), sentinel: process.env.PALMAGENT_UPDATE_POST_UPGRADE }));");
 }
@@ -95,7 +95,7 @@ async function idleFixture(t: TestContext, f: ReturnType<typeof fixture>, turns:
   t.after(() => db.close());
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     assert.equal(isUpdateMaintenance(f.cfg.dbPath), true, "admission is closed before checking activity");
-    return applicationResponse(input, process.env.TEST_UPDATE_TARGET || "0.1.0-alpha.3");
+    return applicationResponse(input, process.env.TEST_UPDATE_TARGET || "0.1.0");
   });
   const messages: unknown[] = [];
   const runner = createServer((socket) => socket.on("data", (data) => {
@@ -123,6 +123,8 @@ test("one planner refreshes compatible plugins and identifies a required version
 });
 
 function nativeCodexFixture(f: ReturnType<typeof fixture>) {
+  writeFileSync(join(f.cfg.pkgDir!, "package.json"), JSON.stringify({ version: "0.1.0" }));
+  process.env.TEST_UPDATE_HEALTH = "0.1.0";
   const home = process.env.CODEX_HOME!;
   const source = join(f.root, "marketplace");
   const writeJson = (path: string, value: unknown) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(value)); };
@@ -140,7 +142,7 @@ else if (a[1] === 'marketplace' && a[2] === 'remove') state.registered = false;
 else if (a[1] === 'marketplace' && a[2] === 'add') state.root = a[3];
 else if (a[1] === 'add') {
   if (process.env.TEST_PLUGIN_FAIL) process.exit(1);
-  state.version = '0.1.0-alpha.2'; state.registered = true;
+  state.version = '0.1.0'; state.registered = true;
   const manifest = path.join(process.env.CODEX_HOME, 'plugins/cache/palmagent/palmagent', state.version, '.codex-plugin/plugin.json');
   fs.mkdirSync(path.dirname(manifest), { recursive: true });
   fs.writeFileSync(manifest, JSON.stringify({ name: 'palmagent', version: state.version }));
@@ -150,16 +152,16 @@ fs.writeFileSync(file, JSON.stringify(state));
   writeFileSync(join(f.root, "bin/git"), `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path'), a = process.argv.slice(2);
 if (a[0] === 'clone') {
- const root = a.at(-1), v = '0.1.0-alpha.2';
+ const root = a.at(-1), v = '0.1.0';
  for (const [p, value] of [
    ['plugins/codex/.agents/plugins/marketplace.json', { name: 'palmagent', plugins: [{ name: 'palmagent' }] }],
    ['.claude-plugin/marketplace.json', { name: 'palmagent', plugins: [{ name: 'palmagent' }] }],
    ['plugins/codex/plugins/palmagent/.codex-plugin/plugin.json', { name: 'palmagent', version: v }],
    ['plugins/claude/.claude-plugin/plugin.json', { name: 'palmagent', version: v }],
  ]) { const file = path.join(root, p); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); }
-} else console.log('v0.1.0-alpha.2');
+} else console.log('v0.1.0');
 `, { mode: 0o700 });
-  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.2";
+  process.env.TEST_UPDATE_TARGET = "0.1.0";
   return { ...f.flags, get: (key: string) => key === "data-dir" ? f.cfg.dataDir : undefined };
 }
 
@@ -209,17 +211,17 @@ test("native plugin failure pauses automatic retries before application replacem
 test("planning resolves a single exact target without creating an update receipt or changing preferences", async (t) => {
   const f = fixture(t);
   const before = readFileSync(userConfigPath(), "utf8");
-  const plan = resolveUpdatePlan("0.1.0-alpha.2", "preview", readPluginVersions([f.manifest, f.manifest]));
-  assert.equal(plan.targetVersion, "0.1.0-alpha.3");
+  const plan = resolveUpdatePlan("0.1.0-alpha.2", "stable", readPluginVersions([f.manifest, f.manifest]));
+  assert.equal(plan.targetVersion, "0.1.0");
   assert.equal(plan.plugins.length, 1);
-  assert.deepEqual(f.readCalls(), [["view", "palmagent@next", "version", "--json"]]);
+  assert.deepEqual(f.readCalls(), [["view", "palmagent@latest", "version", "--json"]]);
   assert.equal(readUpdateReceipt(f.cfg.dataDir), undefined);
   assert.equal(readFileSync(userConfigPath(), "utf8"), before);
 });
 
 test("manual update refuses incompatible or missing plugin evidence before changing the package", async (t) => {
   const f = fixture(t);
-  process.env.TEST_UPDATE_TARGET = "0.2.0-alpha.1";
+  process.env.TEST_UPDATE_TARGET = "0.2.0";
   await assert.rejects(update(f.flags), /target needs a matching plugin/);
   assert.deepEqual(f.readCalls().map((args) => args[0]), ["view"]);
   assert.equal(readUpdateReceipt(f.cfg.dataDir), undefined);
@@ -232,7 +234,7 @@ test("automatic updates are opt-in and defer across compatibility lines", async 
   assert.equal(await update({ ...f.flags, automatic: true }), 0);
   assert.deepEqual(f.readCalls(), []);
   setUserAutoUpdate(true);
-  process.env.TEST_UPDATE_TARGET = "0.2.0-alpha.1";
+  process.env.TEST_UPDATE_TARGET = "0.2.0";
   assert.equal(await update({ ...f.flags, automatic: true }), 0);
   assert.deepEqual(f.readCalls().map((args) => args[0]), ["view"]);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.reason, "plugin-update-required");
@@ -241,10 +243,12 @@ test("automatic updates are opt-in and defer across compatibility lines", async 
 test("legacy plugin pull calls remain supported within the current compatibility line", async (t) => {
   const f = fixture(t);
   await idleFixture(t, f);
+  writeFileSync(join(f.cfg.pkgDir!, "package.json"), JSON.stringify({ version: "0.1.0-rc.1" }));
+  writeFileSync(join(f.cfg.dataDir, "install.env"), readFileSync(join(f.cfg.dataDir, "install.env"), "utf8") + "\nRELEASE_CHANNEL=stable\n");
   rmSync(userConfigPath());
   assert.equal(await update({ ...f.flags, get: (key) => key === "data-dir" ? f.cfg.dataDir : undefined }), 1);
   assert.deepEqual(f.readCalls().map((args) => args[0]), ["view", "root", "install"], "the fixture reaches installation rather than rejecting an old plugin's supported call");
-  assert.equal(JSON.parse(readFileSync(userConfigPath(), "utf8")).channel, "preview", "legacy preference is saved before a failed package install can lose its metadata");
+  assert.equal(JSON.parse(readFileSync(userConfigPath(), "utf8")).channel, "stable", "legacy preference is saved before a failed package install can lose its metadata");
 });
 
 test("an installation failure preserves preferences and blocks later automatic attempts", async (t) => {
@@ -254,23 +258,25 @@ test("an installation failure preserves preferences and blocks later automatic a
   const before = readFileSync(userConfigPath(), "utf8");
   assert.equal(await update(f.flags), 1);
   assert.deepEqual(f.readCalls().map((args) => args[0]), ["view", "root", "install"]);
-  assert.deepEqual(f.readCalls()[2], ["install", "-g", "palmagent@0.1.0-alpha.3"]);
+  assert.deepEqual(f.readCalls()[2], ["install", "-g", "palmagent@0.1.0"]);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, "failed");
   assert.equal(statSync(join(f.cfg.dataDir, "update-result.json")).mode & 0o777, 0o600);
   assert.equal(readFileSync(userConfigPath(), "utf8"), before);
   assert.equal(await update({ ...f.flags, automatic: true }), 0);
   assert.equal(f.readCalls().length, 3);
-  writeUpdateReceipt(f.cfg.dataDir, { status: "applying", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0-alpha.3", reason: "interrupted" });
+  writeUpdateReceipt(f.cfg.dataDir, { status: "applying", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0", reason: "interrupted" });
   assert.equal(await update({ ...f.flags, automatic: true }), 0);
   assert.equal(f.readCalls().length, 3);
 });
 
 test("a healthy unchanged target is a no-op and a wrong npm prefix never installs", async (t) => {
   const f = fixture(t);
-  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.2";
+  process.env.TEST_UPDATE_TARGET = "0.1.0";
+  process.env.TEST_UPDATE_HEALTH = "0.1.0";
+  writeFileSync(join(f.cfg.pkgDir!, "package.json"), JSON.stringify({ version: "0.1.0" }));
   assert.equal(await update(f.flags), 0);
   assert.deepEqual(f.readCalls().map((args) => args[0]), ["view"]);
-  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.3";
+  process.env.TEST_UPDATE_TARGET = "0.1.0";
   // Deliberately point metadata at another installation while leaving npm's root unchanged.
   const other = join(f.root, "other"); mkdirSync(other);
   writeFileSync(join(other, "package.json"), JSON.stringify({ version: "0.1.0-alpha.2" }));
@@ -288,9 +294,9 @@ test("activation uses the installed CLI and verifies runtime identity independen
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, "failed");
   const activation = JSON.parse(readFileSync(join(f.root, "activation.json"), "utf8"));
   assert.equal(activation.sentinel, "1");
-  assert.deepEqual(activation.args, ["update", "--data-dir", f.cfg.dataDir, "-y", "--expected-version", "0.1.0-alpha.3"]);
+  assert.deepEqual(activation.args, ["update", "--data-dir", f.cfg.dataDir, "-y", "--expected-version", "0.1.0"]);
   // A manual same-version repair remains possible after a failed activation.
-  process.env.TEST_UPDATE_HEALTH = "0.1.0-alpha.3";
+  process.env.TEST_UPDATE_HEALTH = "0.1.0";
   assert.equal(await update(f.flags), 0);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, "succeeded");
   assert.equal(f.readCalls().filter((args) => args[0] === "install").length, 2);
@@ -346,7 +352,7 @@ test("access checks reuse a short cache, refresh on demand/channel change, and k
   const f = fixture(t);
   const now = Date.now();
   const first = checkUpdateAccess(f.cfg, false, now);
-  assert.equal(first.discovery?.targetVersion, "0.1.0-alpha.3");
+  assert.equal(first.discovery?.targetVersion, "0.1.0");
   assert.equal(first.pending, null, "checking alone never authorizes installation");
   assert.deepEqual(checkUpdateAccess(f.cfg, false, now + 1000), first);
   assert.equal(f.readCalls().length, 1);
@@ -354,8 +360,8 @@ test("access checks reuse a short cache, refresh on demand/channel change, and k
   assert.equal(f.readCalls().length, 2);
   checkUpdateAccess(f.cfg, false, now + 16 * 60_000);
   assert.equal(f.readCalls().length, 3);
-  setUserChannel("stable");
-  const failed = checkUpdateAccess(f.cfg, false, now + 16 * 60_000 + 1);
+  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.3";
+  const failed = checkUpdateAccess(f.cfg, true, now + 16 * 60_000 + 1);
   assert.equal(failed.discovery?.error, true, "a prerelease in Stable is not reported as current");
   assert.equal(failed.discovery?.targetVersion, null);
   assert.deepEqual(failed.discovery?.failure, { source: "release-policy", code: "incompatible-release" });
@@ -383,7 +389,7 @@ console.error('npm error code ECONNRESET\\nprivate-output-marker'); process.exit
   const recovered = checkUpdateAccess(f.cfg, false, now + 60_000);
   assert.equal(recovered.discovery?.error, false);
   assert.equal(recovered.discovery?.failure, undefined);
-  assert.equal(recovered.discovery?.targetVersion, "0.1.0-alpha.3");
+  assert.equal(recovered.discovery?.targetVersion, "0.1.0");
   assert.equal(recovered.pending, null, "a check never queues installation by itself");
   assert.equal(f.readCalls().length, 2);
   checkUpdateAccess(f.cfg, false, now + 61_000);
@@ -420,32 +426,32 @@ test("an install request pins the displayed target and cannot cross channel, ver
   checkUpdateAccess(f.cfg, true);
   assert.throws(() => requestUpdateAccess(f.cfg, true));
   assert.throws(() => requestUpdateAccess(f.cfg, false, "0.1.0-alpha.9"));
-  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  requestUpdateAccess(f.cfg, false, "0.1.0");
   const manual = readUpdateAccess(f.cfg.dataDir).pending!;
   assert.equal(manual.automatic, false);
   assert(validUpdateRequest(f.cfg, manual));
   setUserAutoUpdate(true);
-  process.env.TEST_UPDATE_TARGET = "0.1.0-alpha.4";
+  process.env.TEST_UPDATE_TAG_TARGET = "0.1.0";
   checkUpdateAccess(f.cfg, true);
   requestUpdateAccess(f.cfg, true);
   assert.deepEqual(readUpdateAccess(f.cfg.dataDir).pending, manual, "later checks cannot replace an approved exact target");
-  setUserChannel("stable");
+  setUserChannel("preview");
   assert.equal(validUpdateRequest(f.cfg, manual), false);
   clearUpdateRequest(f.cfg, manual.id);
   assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
-  setUserChannel("preview");
+  setUserChannel("stable");
   requestUpdateAccess(f.cfg, true);
   const automatic = readUpdateAccess(f.cfg.dataDir).pending!;
   setUserAutoUpdate(false);
   assert.equal(validUpdateRequest(f.cfg, automatic), false);
-  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0-alpha.4", reason: "manual-recovery-required" });
-  assert.throws(() => requestUpdateAccess(f.cfg, false, "0.1.0-alpha.4"), /recovery/);
+  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.1", reason: "manual-recovery-required" });
+  assert.throws(() => requestUpdateAccess(f.cfg, false, "0.1.1"), /recovery/);
 });
 
 test("a cancelled durable request never reaches registry resolution or installation", async (t) => {
   const f = fixture(t);
   checkUpdateAccess(f.cfg, true);
-  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  requestUpdateAccess(f.cfg, false, "0.1.0");
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
   clearUpdateRequest(f.cfg);
   assert.equal(await update({ ...f.flags, request }), 0);
@@ -460,7 +466,7 @@ test("a manual app update preserves busy work and resumes the pinned release wit
   writeFileSync(join(f.root, "bin", "sudo"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => applicationResponse(input));
   checkUpdateAccess(f.cfg, true);
-  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  requestUpdateAccess(f.cfg, false, "0.1.0");
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
   const flags = { ...f.flags, request };
   assert.equal(await update(flags), 0);
@@ -472,12 +478,12 @@ test("a manual app update preserves busy work and resumes the pinned release wit
   await new Promise<void>((resolve) => runner.listen(f.cfg.runnerSocket, resolve));
   t.after(() => new Promise<void>((resolve) => runner.close(() => resolve())));
   process.env.TEST_UPDATE_INSTALL = "success";
-  process.env.TEST_UPDATE_HEALTH = "0.1.0-alpha.3";
+  process.env.TEST_UPDATE_HEALTH = "0.1.0";
   assert.equal(await update(flags), 0);
   assert.equal(readUpdateReceipt(f.cfg.dataDir)?.status, "succeeded");
   assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
   assert.equal(getUserConfig().autoUpdate, undefined);
-  assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0-alpha.3"]);
+  assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0"]);
 });
 
 test("automatic request CLI defers active sessions and then installs its queued exact version", async (t) => {
@@ -488,7 +494,7 @@ test("automatic request CLI defers active sessions and then installs its queued 
   requestUpdateAccess(f.cfg, true);
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
   assert.equal(request.automatic, true);
-  process.env.TEST_UPDATE_TAG_TARGET = "0.1.0-alpha.4";
+  process.env.TEST_UPDATE_TAG_TARGET = "0.1.1";
   const execute = async () => {
     const script = `
       const fixtureResponse = ${applicationResponse.toString()};
@@ -530,14 +536,14 @@ test("automatic request CLI defers active sessions and then installs its queued 
   assert.equal(readUpdateAccess(f.cfg.dataDir).pending, null);
   assert.equal(getUserConfig().autoUpdate, true);
   assert.deepEqual(f.readCalls().filter((args) => args[0] === "view").map((args) => args[1]),
-    ["palmagent@next", ...Array(3).fill("palmagent@0.1.0-alpha.3")]);
-  assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0-alpha.3"]);
+    ["palmagent@latest", ...Array(3).fill("palmagent@0.1.0")]);
+  assert.deepEqual(f.readCalls().find((args) => args[0] === "install"), ["install", "-g", "palmagent@0.1.0"]);
 });
 
 test("public automatic updates still reject explicit version and channel overrides", async (t) => {
   const f = fixture(t);
   setUserAutoUpdate(true);
-  for (const [key, value] of [["to", "0.1.0-alpha.3"], ["channel", "preview"]]) {
+  for (const [key, value] of [["to", "0.1.0"], ["channel", "stable"]]) {
     await assert.rejects(update({ ...f.flags, automatic: true,
       get: (flag) => flag === key ? value : f.flags.get(flag) }), /follows only the saved channel/);
   }
@@ -567,7 +573,7 @@ require('node:fs').appendFileSync(${JSON.stringify(f.calls)}, JSON.stringify(pro
 test("a corrupt failure record is never replaced by a recoverable request result", async (t) => {
   const f = fixture(t);
   checkUpdateAccess(f.cfg, true);
-  requestUpdateAccess(f.cfg, false, "0.1.0-alpha.3");
+  requestUpdateAccess(f.cfg, false, "0.1.0");
   const request = readUpdateAccess(f.cfg.dataDir).pending!;
   const result = join(f.cfg.dataDir, "update-result.json");
   writeFileSync(result, "{invalid");
@@ -613,7 +619,7 @@ test("a deferred recovery retains the failed receipt and automatic retry hold", 
   const f = fixture(t);
   const idle = await idleFixture(t, f);
   idle.db.exec("INSERT INTO tasks VALUES ('running')");
-  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0-alpha.3", reason: "manual-recovery-required" });
+  writeUpdateReceipt(f.cfg.dataDir, { status: "failed", previousVersion: "0.1.0-alpha.2", targetVersion: "0.1.0", reason: "manual-recovery-required" });
   const before = readUpdateReceipt(f.cfg.dataDir);
   assert.equal(await update(f.flags), 1);
   assert.deepEqual(readUpdateReceipt(f.cfg.dataDir), before);
@@ -775,17 +781,17 @@ for (const outcome of ["success", "contract", "rollback", "provision", "assets",
 const fs = require('node:fs'), path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'calls.jsonl'), JSON.stringify(args) + '\\n');
-if (args[0] === 'view') console.log(JSON.stringify('0.1.0-alpha.3'));
+if (args[0] === 'view') console.log(JSON.stringify('0.1.0'));
 else if (args[0] === 'install' && args.includes('--prefix')) {
   const receipt = JSON.parse(fs.readFileSync(path.join(process.env.TEST_UPDATE_ROOT, 'state', 'update-result.json'), 'utf8'));
   if (receipt.status !== 'applying' || receipt.reason !== 'candidate-preparation') process.exit(98);
   const pkg = path.join(args[args.indexOf('--prefix') + 1], 'node_modules', 'palmagent');
   fs.mkdirSync(pkg, { recursive: true });
-  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0-alpha.3' }));
+  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: '0.1.0' }));
   fs.writeFileSync(path.join(pkg, 'runtime-contract.json'), JSON.stringify({ executionProtocol: process.env.TEST_INDEPENDENT_OUTCOME === 'contract' ? 2 : 1, productStorage: 1, applicationApi: 1, hostSetup: 1, ingressOwner: 'plugin', ...(process.env.TEST_NATIVE_SUPERVISOR ? { daemonProtocol: 1 } : {}) }));
   ${applicationFixtureScript}
   if (process.env.TEST_NATIVE_SUPERVISOR) { ${daemonArtifactScript} }
-  fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv[2] === 'runtime-setup' && process.env.TEST_INDEPENDENT_OUTCOME === 'provision') process.exit(1); if (process.argv[2] === 'runtime-setup') require('node:fs').writeFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'candidate-setup'), 'provisioned'); else console.log('0.1.0-alpha.3');");
+  fs.writeFileSync(path.join(pkg, 'cli.js'), "if (process.argv[2] === 'runtime-setup' && process.env.TEST_INDEPENDENT_OUTCOME === 'provision') process.exit(1); if (process.argv[2] === 'runtime-setup') require('node:fs').writeFileSync(require('node:path').join(process.env.TEST_UPDATE_ROOT, 'candidate-setup'), 'provisioned'); else console.log('0.1.0');");
   for (const name of ['server.js', 'execution-host.js', 'execution-launcher.js']) fs.writeFileSync(path.join(pkg, name), '// Candidate fixture artifact');
 } else process.exit(1);
 `, { mode: 0o700 });

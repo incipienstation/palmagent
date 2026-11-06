@@ -125,3 +125,17 @@ To run the web app, start `pnpm web:dev` in another terminal. Run
 [MIT](LICENSE)
 
 Performance sharing and Rust migration comparisons are described in [Performance measurements](docs/TELEMETRY.md).
+
+## Standalone distribution
+
+New installations use a Linux x64 or arm64 bundle containing Node and native dependencies.
+Preview releases are standalone-only; Stable releases also provide the npm package.
+The operator plugin handles bootstrap, service setup, and updates. Installation needs no
+system Node, npm, or native compiler. Runtime services still require systemd 254+, a user
+manager, lingering, and delegated cgroup v2.
+
+The official bootstrap entry point is `https://palmagent.dev/install.sh`. See
+[standalone installation and migration](docs/STANDALONE.md) for platform prerequisites,
+verification, and the 0.1.x to 0.2.x compatibility transition. See
+[release hosting setup](docs/RELEASE-HOSTING.md) for deployment prerequisites; source support
+does not mean the public channel has been configured or published.

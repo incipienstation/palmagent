@@ -1,10 +1,14 @@
 import type { UpdateChannel } from "@palmagent/shared";
+import type { Distribution } from "@palmagent/shared/standalone";
 
 /** How the services are launched. */
 export type RunMode = "package" | "source";
 
 export interface InstallConfig {
   mode: RunMode;
+  /** Package provenance is independent of the user's saved channel. */
+  distribution?: Distribution;
+  artifactId?: string;
   /** Effective channel for this operation; persisted only in the user config. */
   releaseChannel?: UpdateChannel;
   user: string;

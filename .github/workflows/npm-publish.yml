@@ -1,4 +1,4 @@
-name: npm publication
+name: release publication
 run-name: Publish ${{ inputs.commit || inputs.tag }}
 
 on:
@@ -43,7 +43,7 @@ jobs:
             const {SOURCE_COMMIT: commit, LEGACY_TAG: tag, CANDIDATE_RUN: run} = process.env;
             assert(Boolean(commit) !== Boolean(tag), "Supply exactly one commit or legacy tag");
             assert(!commit || /^[a-f0-9]{40}$/.test(commit), "Commit must be a full SHA");
-            assert(!tag || /^v[0-9A-Za-z.-]+$/.test(tag), "Invalid legacy tag");
+            assert(!tag || /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag), "Legacy retries support Stable only; Preview requires standalone");
             assert(!run || (commit && /^[1-9][0-9]*$/.test(run)), "Invalid candidate run");
           '
 
@@ -60,7 +60,7 @@ jobs:
     if: inputs.commit != ''
     runs-on: ubuntu-latest
     # This is the single Stable approval, before tag creation, npm publication, or public Release.
-    environment: npm-${{ needs.candidate.outputs.channel }}
+    environment: ${{ needs.candidate.outputs.channel == 'next' && 'standalone-preview' || 'npm-latest' }}
     concurrency:
       group: npm-channel-${{ needs.candidate.outputs.channel }}
       cancel-in-progress: false
@@ -93,7 +93,14 @@ jobs:
           github-token: ${{ github.token }}
           path: source/build/release
       - name: Install the OIDC-capable npm CLI
+        if: needs.candidate.outputs.channel == 'latest'
         run: npm install --global npm@11.11.1 --ignore-scripts
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: tooling/package.json
+      - name: Install release tool dependencies
+        working-directory: tooling
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Finalize the reviewed candidate without rebuilding
         run: node tooling/scripts/release-finalize.mjs source source/build/release
         env:
@@ -101,7 +108,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.candidate.outputs.commit }}
           CANDIDATE_RUN_ID: ${{ needs.candidate.outputs.producer }}
           EXPECTED_ARTIFACT_SHA256: ${{ needs.candidate.outputs.sha256 }}
-          RELEASE_ENVIRONMENT: npm-${{ needs.candidate.outputs.channel }}
+          RELEASE_ENVIRONMENT: ${{ needs.candidate.outputs.channel == 'next' && 'standalone-preview' || 'npm-latest' }}
+          STANDALONE_PUBLISH_ENABLED: ${{ vars.STANDALONE_PUBLISH_ENABLED }}
+          RELEASE_SIGNING_KEY_ID: ${{ vars.RELEASE_SIGNING_KEY_ID }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           NPM_PUBLISH_ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}
 
   legacy-inspect:

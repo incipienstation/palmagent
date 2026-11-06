@@ -39,6 +39,7 @@ export function validatePublicationEnvironment(identity, protection) {
 
 export async function publishPackage(identity, { run, registryVersion, env, sleep = delay,
   measure = releaseTiming({ summaryFile: env.GITHUB_STEP_SUMMARY }) }) {
+  assert(!identity.version.includes('-') && identity.channel === 'latest', 'npm publication accepts only Stable releases; Preview is standalone-only');
   assert(env.GITHUB_ACTIONS === 'true' && env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
     'Publication requires GitHub Actions OIDC');
   assert(env.NPM_PUBLISH_ENABLED === 'true', 'Publication is not enabled for this repository');

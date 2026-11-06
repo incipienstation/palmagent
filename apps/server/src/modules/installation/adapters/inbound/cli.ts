@@ -1,4 +1,7 @@
 import type { UpdateRequest } from "@palmagent/shared/updates";
+import { readFileSync } from "node:fs";
+import { z } from "zod";
+import { DistributionSchema, ReleaseVersionSchema, StandaloneSelectionSchema } from "@palmagent/shared/standalone";
 import type { InstallConfig } from "../../domain/installation.js";
 import type { InstallationOptions, InstallationUseCases } from "../../application/ports/inbound/installation-use-cases.js";
 
@@ -9,10 +12,16 @@ export interface Flags {
   getAll?(key: string): string[];
 }
 export function installationOptions(flags: Flags): InstallationOptions {
+  const planFile = flags.get("plan-file");
+  const plannedTarget = planFile ? z.object({ schemaVersion: z.literal(2), currentVersion: ReleaseVersionSchema,
+    targetVersion: ReleaseVersionSchema, channel: z.enum(["stable", "preview"]), selection: StandaloneSelectionSchema,
+  }).parse(JSON.parse(readFileSync(planFile, "utf8"))) : undefined;
   return { dryRun: flags.dryRun, interactive: !flags.nonInteractive, force: flags.force,
     purge: flags.purge, pull: flags.pull, plan: flags.plan, automatic: flags.automatic, request: flags.request,
     dataDir: flags.get("data-dir"), channel: flags.get("channel"), targetVersion: flags.get("to"),
     expectedVersion: flags.get("expected-version"),
+    distribution: flags.get("distribution") ? DistributionSchema.parse(flags.get("distribution")) : undefined,
+    plannedTarget,
     pluginManifests: flags.getAll?.("plugin-manifest") ?? (flags.get("plugin-manifest") ? [flags.get("plugin-manifest")!] : []),
     domain: flags.get("domain"), host: flags.get("host"), port: flags.get("port"), concurrency: flags.get("concurrency"),
     repoRoots: flags.get("repo-roots"), claudeConfigDir: flags.get("claude-config-dir"), pushSubject: flags.get("push-subject"),

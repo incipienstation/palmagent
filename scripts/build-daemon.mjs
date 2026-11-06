@@ -16,12 +16,15 @@ const host = run('rustc', ['-vV']).match(/^host: (.+)$/m)?.[1];
 if (!host) throw new Error('Cannot identify the Rust host toolchain');
 const linker = join(sysroot, 'lib', 'rustlib', host, 'bin', process.platform === 'win32' ? 'rust-lld.exe' : 'rust-lld');
 const targets = { 'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl' };
+const selectedPlatform = process.env.PALMAGENT_NATIVE_PLATFORM;
+if (selectedPlatform && !Object.hasOwn(targets, selectedPlatform)) throw new Error('Unsupported native build platform');
 const output = join(root, 'build', 'daemon');
 const artifacts = {};
 const applicationArtifacts = {};
 const toolchain = await sqliteToolchain(root);
 try {
 for (const [platform, target] of Object.entries(targets)) {
+  if (selectedPlatform && selectedPlatform !== platform) continue;
   execFileSync('cargo', ['build', '--release', '--locked', '--package', 'palmagentd', '--package', 'palmagent-runtime', '--target', target], {
     cwd: root, stdio: 'inherit', env: { ...process.env, ...toolchain.environment(target),
       PALMAGENT_PRODUCT_VERSION: version, PALMAGENT_SOURCE_COMMIT: sourceCommit,

@@ -4,6 +4,8 @@ import { BRANDING } from "@palmagent/shared";
 import { compatiblePlugin, channelTag, productVersion, validateUpdateTarget, type ReleaseChannel } from "../../domain/release-policy.js";
 import { run } from "./sh.js";
 import { discoveryCommandFailure, discoveryStep, UpdateDiscoveryError } from "./update-discovery-error.js";
+import { installedDistribution, selectStandaloneRelease, verifyStandaloneSelection } from "./standalone-release.js";
+import type { ReleaseResolution } from "../../application/ports/outbound/installation.js";
 
 import { planUpdate } from "../../domain/update-plan.js";
 import type { PluginVersion, UpdatePlan } from "../../domain/update-plan.js";
@@ -25,8 +27,24 @@ export function readPluginVersions(paths: string[]): PluginVersion[] {
 }
 
 /** Resolve once. Applying the returned target never reuses a moving dist-tag. */
-export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plugins: PluginVersion[], requested?: string): UpdatePlan {
+export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plugins: PluginVersion[], requested?: string, options: ReleaseResolution = {}): UpdatePlan {
   if (requested !== undefined) validateUpdateTarget(current, requested, channel);
+  const currentDistribution = installedDistribution(options.installation);
+  const distribution = options.distribution ?? (channel === "preview" || currentDistribution === "standalone" ? "standalone" : "npm");
+  if (distribution === "npm" && channel === "preview") throw new Error("Preview is available only through standalone; use --distribution standalone");
+  if (currentDistribution === "standalone" && distribution === "npm") throw new Error("Converting standalone to npm is not an update operation");
+  if (distribution === "standalone") {
+    try {
+      const selection = options.selection ?? selectStandaloneRelease(channel, requested);
+      if (options.selection) verifyStandaloneSelection(selection);
+      if (requested && selection.version !== requested) throw new Error("Pinned artifact differs from requested version");
+      return planUpdate(current, selection.version, channel, plugins, currentDistribution, "standalone", selection);
+    } catch (error) {
+      throw new UpdateDiscoveryError({ source: "standalone", code: "release-unavailable" },
+        error instanceof Error ? error.message : "Could not resolve the standalone release");
+    }
+  }
+  if (options.selection) throw new Error("A standalone plan cannot select npm");
   const spec = requested ?? channelTag(channel);
   const result = run("npm", ["view", `${BRANDING.packageName}@${spec}`, "version", "--json"], { timeout: 30_000 });
   if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure("registry", result), `could not resolve ${BRANDING.packageName}@${spec}; the selected channel may not be published yet (no fallback)`);
@@ -36,7 +54,7 @@ export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plug
     productVersion(value);
     return value;
   });
-  try { return planUpdate(current, target, channel, plugins); }
+  try { return planUpdate(current, target, channel, plugins, currentDistribution, "npm"); }
   catch (error) {
     // Keep the CLI's existing channel/downgrade explanation; only the category
     // crosses into persisted discovery diagnostics.

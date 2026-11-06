@@ -1,3 +1,14 @@
+# Standalone publication transition
+
+New Preview publication uses the signed standalone path exclusively. The retained workflow
+filename `npm-publish.yml` now publishes both distributions. Use `standalone-preview` for
+Preview and the existing protected `npm-latest` for Stable. Before first publication, complete
+[release hosting setup](../../../../docs/RELEASE-HOSTING.md). Missing configuration fails before
+tag creation. Historical npm procedures below apply only to Stable/legacy recovery, never to
+new Preview. The controller discovers success from the signed channel and GitHub assets;
+version allocation no longer depends on registry visibility. A public release whose channel
+activation failed resumes from its retained candidate run.
+
 # Release automation and verification
 
 ## Candidate automation
@@ -65,9 +76,12 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
    complete existing candidate verifier on one runner. Unrecognized source `verify` commands
    or lifecycle hooks retain that source's sequential `pnpm verify`, preserving older and future
    source gates without silently dropping checks.
-4. Assemble once from the PWA built and verified in that run, validate the publishable package, pack it,
-   install that exact tarball in a scratch project, and boot it.
-5. Record `candidate.json`, `SHA256SUMS`, and `RELEASE_NOTES.md` alongside the tarball in
+4. For standalone-capable source, assemble common JS/PWA once and build native x64/arm64
+   archives on Ubuntu 22.04 in parallel with source checks. Run each archive without network
+   or system Node/npm. Stable additionally assembles the npm package from that common build
+   and the verified native binaries, then runs its packed-install check. Preview has no npm
+   archive. Older Stable source retains the legacy package verifier.
+5. Record `candidate.json`, `SHA256SUMS`, and `RELEASE_NOTES.md` alongside the platform archives and unsigned manifest in
    `palmagent-candidate-<commit>`, retained for 90 days. The manifest binds version, commit,
    channel, filename, SHA-256, repository, and producer run.
 6. Present version, commit, channel, checksum, notes, and the validation run in the job summary.
@@ -88,8 +102,8 @@ are distinct: the current `develop` workflow can also verify a Stable source alr
 A candidate build alone does not imply staging acceptance or publication.
 
 Publication records structured phase timings in the Actions log and a table in the job summary.
-Candidate validation, registry preflight, tag/assets, npm upload, registry visibility, published
-integrity, and public Release creation are measured separately. Failed phases retain their
+Candidate validation, standalone preflight, tag/assets, published integrity, public Release
+creation and channel activation (plus Stable-only npm phases) are measured separately. Failed phases retain their
 elapsed time; timings contain no command arguments or error payloads. Timing output failures
 cannot change the publication outcome or trigger another upload. Registry polling limits,
 immutable-byte verification, and the Stable approval boundary are unchanged.

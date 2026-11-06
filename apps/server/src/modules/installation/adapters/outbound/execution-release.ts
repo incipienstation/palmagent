@@ -10,6 +10,8 @@ import { run } from "./sh.js";
 import { EXECUTION_PROTOCOL } from "@palmagent/shared/executions";
 import { DAEMON_PROTOCOL } from "@palmagent/shared/daemon";
 import { daemonBinary } from "./daemon-runtime.js";
+import { BundleIdentitySchema, type StandaloneSelection } from "@palmagent/shared/standalone";
+import { installedDistribution, stageStandaloneRelease } from "./standalone-release.js";
 
 export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number; routineProtocol?: number }
 export function releaseContract(directory: string): ReleaseContract {
@@ -48,13 +50,31 @@ export function retainInstalledRelease(cfg: InstallConfig): void {
   releaseContract(cfg.pkgDir);
   const directory = join(cfg.dataDir, "releases", randomUUID());
   ensurePrivateDirectory(directory);
+  if (installedDistribution(cfg) === "standalone") {
+    const root = dirname(cfg.pkgDir);
+    BundleIdentitySchema.parse(JSON.parse(readFileSync(join(root, "bundle.json"), "utf8")));
+    cpSync(root, join(directory, "palmagent"), { recursive: true, dereference: true });
+    cfg.pkgDir = join(directory, "palmagent/app");
+    cfg.workingDir = cfg.pkgDir;
+    cfg.executionNode = join(directory, "palmagent/runtime/bin/node");
+    cfg.distribution = "standalone";
+    return;
+  }
   cpSync(cfg.pkgDir, join(directory, "palmagent"), { recursive: true, dereference: true });
   cfg.pkgDir = join(directory, "palmagent");
   cfg.workingDir = cfg.pkgDir;
   cfg.executionNode = pinNode(cfg.dataDir);
 }
 export function createReleaseOperations(inventory: import("../../application/ports/outbound/runtime-inventory.js").RuntimeInventory): RetainedReleaseOperations {
-function stageRelease(cfg: InstallConfig, version: string): InstallConfig {
+function stageRelease(cfg: InstallConfig, version: string, selection?: StandaloneSelection): InstallConfig {
+  if (selection) {
+    if (selection.version !== version) throw new Error("Standalone selection version differs from the requested release");
+    const candidate = stageStandaloneRelease(cfg, selection);
+    releaseContract(candidate.pkgDir!);
+    verifyActiveExecutionCompatibility(candidate);
+    return candidate;
+  }
+  if (cfg.distribution === "standalone" || cfg.releaseChannel === "preview") throw new Error("Standalone updates require a pinned artifact selection");
   const directory = join(cfg.dataDir, "releases", randomUUID());
   ensurePrivateDirectory(directory);
   // npm verifies the registry tarball integrity and assembles native dependencies

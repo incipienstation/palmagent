@@ -78,7 +78,7 @@ Repository merge methods are limited to squash and merge commit; rebase merge is
 disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
 Both branches require a pull request and the GitHub Actions `validate` check, and
 block deletion and force pushes. These rules define branch and approval ownership;
-npm publication uses channel environments: eligible Preview changes publish after their required
+distribution publication uses channel environments: eligible Preview changes publish after their required
 PR CI passes, while Stable waits for one reviewer approval before tag creation and publication.
 Staging follows Preview through enabled automatic updates, with no separate deployment gate.
 
@@ -103,7 +103,7 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 | Channel-source merge | Squash into `develop` | Dedicated `develop` to `main` PR, merge commit after required checks |
 | Exact candidate build and verification | Automatic | Automatic, before final approval |
 | Annotated tag | Automatic, after preparation merge | After final approval |
-| npm publication and public GitHub Release | Automatic through `npm-next` | Same final `npm-latest` approval |
+| Distribution publication and public GitHub Release | Standalone through `standalone-preview`; no npm | Same final `npm-latest` approval |
 | Installation updates | Saved automatic-update preferences or operator request | Saved automatic-update preferences or operator request |
 | Repository visibility | Separate request | Separate request |
 
