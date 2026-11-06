@@ -1,9 +1,10 @@
 import { onConversationNotification } from "../conversation-notifications";
 import { needsTaskAttention } from "@palmagent/shared";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { BarChart3, Check, Clock3, Folder, Gamepad2, ListTodo, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
+import { useStoredPreference } from "../hooks/useStoredPreference";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
 import { compareTasks } from "../lib/task-order";
@@ -17,6 +18,18 @@ import { SettingsSheet } from "./SettingsSheet";
 import { useArcadeMode } from "../ArcadeModeProvider";
 import { SurvivorSheet } from "../games/SurvivorSheet";
 import { onGameDelivery, warmSurvivor, type GameDelivery } from "../games/play-events";
+
+const desktopQuery = "(min-width: 768px)";
+const sidebarPreference = "pref:desktop-navigation";
+function readSidebarPreference(): "open" | "closed" {
+  try { return localStorage.getItem(sidebarPreference) === "closed" ? "closed" : "open"; }
+  catch { return "open"; }
+}
+
+function visibleNavigationTrigger() {
+  return [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="Open navigation"]')]
+    .find(button => button.getClientRects().length > 0) ?? null;
+}
 
 const NavigationContext = createContext<{
   openNavigation: (trigger: HTMLButtonElement) => void;
@@ -32,6 +45,28 @@ export function AppNavigation({ tasks, conn, children }: {
   tasks: TaskState[]; conn: ConnState; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [desktop, setDesktop] = useState(() => window.matchMedia(desktopQuery).matches);
+  const [sidebar, setSidebar] = useStoredPreference(sidebarPreference, readSidebarPreference);
+  const desktopSidebar = desktop && sidebar === "open";
+  const collapseButton = useRef<HTMLButtonElement>(null);
+  const focusNavigation = useRef(false);
+  useLayoutEffect(() => {
+    const query = window.matchMedia(desktopQuery);
+    const change = () => {
+      const active = document.activeElement;
+      focusNavigation.current = active instanceof HTMLElement && !!active.closest('[data-app-navigation], button[aria-label="Open navigation"]');
+      setOpen(false);
+      setDesktop(query.matches);
+    };
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  useLayoutEffect(() => {
+    if (!focusNavigation.current) return;
+    focusNavigation.current = false;
+    const target = desktopSidebar ? collapseButton.current : visibleNavigationTrigger();
+    target?.focus({ preventScroll: true });
+  }, [desktop, desktopSidebar]);
   const { enabled: arcadeMode } = useArcadeMode();
   const [gameOpen, setGameOpen] = useState(false);
   const [delivery, setDelivery] = useState<GameDelivery>();
@@ -52,6 +87,13 @@ export function AppNavigation({ tasks, conn, children }: {
   const [settingsOpen, setSettingsOpen] = useUpdateState("settings:open", false);
   const trigger = useRef<HTMLElement | null>(null);
   const afterClose = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!desktop) return;
+    // Resizing can remove the drawer before its closing animation completes.
+    const action = afterClose.current;
+    afterClose.current = null;
+    action?.();
+  }, [desktop]);
   const route = useRoute();
   const gameTaskId = route.name === "task" ? route.id : delivery?.taskId;
   const automaticGameClose = useRef(false);
@@ -66,17 +108,19 @@ export function AppNavigation({ tasks, conn, children }: {
   const attention = tasks.some(task => needsTaskAttention(task.status));
   const openNavigation = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
-    setOpen(true);
-  }, []);
+    if (desktop) {
+      focusNavigation.current = true;
+      setSidebar("open");
+    } else setOpen(true);
+  }, [desktop, setSidebar]);
   const openGame = useCallback((element: HTMLButtonElement) => {
     trigger.current = element;
     newGameConversation.current = false;
     setDelivery(undefined); setGameOpen(true);
   }, []);
-  const desktopSidebar = ["inbox", "space", "spaces"].includes(route.name);
   const context = useMemo(() => ({ openNavigation, desktopSidebar, openGame: arcadeMode ? openGame : undefined }), [openNavigation, desktopSidebar, arcadeMode, openGame]);
   const restoreFocus = () => {
-    const target = trigger.current?.isConnected ? trigger.current : document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
+    const target = trigger.current?.getClientRects().length ? trigger.current : desktopSidebar ? collapseButton.current : visibleNavigationTrigger();
     target?.focus();
   };
   const go = (path: string) => { setOpen(false); navigate(path); };
@@ -113,17 +157,33 @@ export function AppNavigation({ tasks, conn, children }: {
           </Button>)}
         </section>
   );
+  const recentNavigation = (
+        <div className="px-3 py-4">
+          <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
+          {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
+          {recent.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
+            className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
+            aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
+            onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
+            <span className="truncate">{taskTitle(task)}</span>
+          </Button>)}
+        </div>
+  );
   const activities = useMemo(() => spaceActivities(tasks), [tasks]);
   const recentSpaces = useMemo(() => [...repos.values()].sort((a, b) =>
     (activities.get(b.id)?.latest ?? 0) - (activities.get(a.id)?.latest ?? 0) || a.name.localeCompare(b.name)).slice(0, 6), [repos, activities]);
   const newTask = () => go(newTaskPath(route.name === "space" ? route.repoId : undefined));
   return <NavigationContext.Provider value={context}>
-    <div className={desktopSidebar ? "mx-auto flex max-w-[1360px]" : undefined}>
-      {desktopSidebar && <aside aria-label="Space navigation" className="hidden h-app w-60 shrink-0 flex-col border-r md:flex">
-        <p className="px-6 pb-5 pt-[calc(24px+var(--safe-top))] text-lg font-semibold">Palmagent</p>
-        {navigationLinks}
-        <ScrollArea className="flex-1">
+    <div className="flex">
+      {desktopSidebar && <aside data-app-navigation aria-label="Space navigation" className="flex h-app w-60 shrink-0 flex-col border-r">
+        <div className="flex shrink-0 items-center gap-2 px-4 pb-4 pt-[calc(12px+var(--safe-top))]">
+          <p className="min-w-0 flex-1 text-lg font-semibold">Palmagent</p>
+          <Button ref={collapseButton} variant="ghost" size="icon-lg" aria-label="Collapse navigation" onClick={() => { focusNavigation.current = true; setSidebar("closed"); }}><PanelLeftClose /></Button>
+        </div>
+        <ScrollArea className="min-h-0 flex-1">
+          {navigationLinks}
           {pinnedNavigation}
+          {recentNavigation}
           <div className="px-3">
           <h2 className="px-3 py-3 text-xs text-muted-foreground">Recent Spaces</h2>
           {recentSpaces.map(repo => <Button key={repo.id} variant={route.name === "space" && route.repoId === repo.id ? "selected" : "ghost"} className="w-full justify-start px-3" aria-current={route.name === "space" && route.repoId === repo.id ? "page" : undefined} onClick={() => go(spacePath(repo.id))}><span className="truncate">{repo.name}</span></Button>)}
@@ -133,8 +193,8 @@ export function AppNavigation({ tasks, conn, children }: {
       </aside>}
       <div className="min-w-0 flex-1">{children}</div>
     </div>
-    <NavigationDrawer open={open} desktopSidebar={desktopSidebar} onOpenChange={next => {
-      if (next) trigger.current = document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]');
+    {!desktop && <NavigationDrawer open={open} onOpenChange={next => {
+      if (next) trigger.current = visibleNavigationTrigger();
       setOpen(next);
     }} onAfterClose={() => {
         const action = afterClose.current;
@@ -152,22 +212,13 @@ export function AppNavigation({ tasks, conn, children }: {
 
         <div className="mx-5 border-t border-border" />
         {pinnedNavigation}
-        <div className="px-3 py-4">
-          <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
-          {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
-          {recent.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
-            className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
-            aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
-            onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
-            <span className="truncate">{taskTitle(task)}</span>
-          </Button>)}
-        </div>
+        {recentNavigation}
         </ScrollArea>
         <div className="flex shrink-0 items-center gap-3 px-5 pt-3 pb-[calc(16px+var(--safe-bottom))]">
           <Button className="rounded-full px-5" onClick={newTask}><SquarePen />New task</Button>
           <Button variant="ghost" size="icon-lg" className="ml-auto rounded-full" aria-label="Settings" onClick={() => showAfterClose(() => setSettingsOpen(true))}><Settings /></Button>
         </div>
-    </NavigationDrawer>
+    </NavigationDrawer>}
     <SettingsSheet conn={conn} open={settingsOpen} onOpenChange={setSettingsOpen}
       onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }} />
     {arcadeMode && <SurvivorSheet open={gameOpen} onOpenChange={setGameOpen}

@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 export { installScopedStream, send, event, open, type Harness } from "./_scoped-stream";
 
-export const viewport = (page: Page) => page.locator("[data-radix-scroll-area-viewport]").first();
+export const viewport = (page: Page) => page.locator('[data-radix-scroll-area-viewport][aria-label="Session transcript"]').first();
 export async function expectBottom(page: Page) {
   // Virtuoso hides the list while its initial scroll target is still settling.
   // A zero bottom gap during that phase does not mean a reader can interact yet.
