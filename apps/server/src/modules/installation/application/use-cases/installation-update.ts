@@ -16,7 +16,7 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
     cfg.releaseChannel = options.channel !== undefined
       ? releaseChannel(options.channel!)
       : configuration.preferences(cfg.dataDir).channel;
-    const currentVersion = cfg.mode === "package" ? releases.installedVersion(cfg.pkgDir) : "";
+    const currentVersion = cfg.mode === "package" && !options.dryRun ? releases.installedVersion(cfg.pkgDir) : "";
     if (options.plannedTarget && (options.plannedTarget.currentVersion !== currentVersion || options.plannedTarget.channel !== cfg.releaseChannel ||
         options.plannedTarget.targetVersion !== options.plannedTarget.selection.version ||
         (options.targetVersion && options.targetVersion !== options.plannedTarget.targetVersion) || options.distribution === "npm" || !options.pull))
@@ -53,7 +53,10 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
       return true;
     }
     if (options.dryRun) {
-      feedback.info(`[dry-run] would resolve ${BRANDING.packageName}@${requestedVersion ?? channelTag(cfg.releaseChannel)}, verify plugin compatibility, install the exact target, and verify runtime health`);
+      const standalone = options.distribution === "standalone" || cfg.distribution === "standalone" || cfg.releaseChannel === "preview";
+      const target = standalone ? `${BRANDING.packageName} standalone ${requestedVersion ?? cfg.releaseChannel}`
+        : `${BRANDING.packageName}@${requestedVersion ?? channelTag(cfg.releaseChannel)}`;
+      feedback.info(`[dry-run] would resolve ${target}, verify plugin compatibility, install the exact target, and verify runtime health`);
       return true;
     }
 

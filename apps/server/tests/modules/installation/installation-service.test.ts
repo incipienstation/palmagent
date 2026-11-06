@@ -294,3 +294,29 @@ test("uninstall preserves data when the separate purge confirmation is declined"
   assert(!f.calls.includes("data:purge"));
   assert.equal(confirmations, 2);
 });
+
+for (const legacyBusy of [false, true]) test(`standalone migration stages pinned bytes and preserves legacy work (busy=${legacyBusy})`, async () => {
+  const f = fixture();
+  f.current.executionNode = undefined; f.current.supervisor = undefined; f.current.daemonScope = undefined;
+  f.current.distribution = "npm";
+  const selection = { distribution: "standalone" as const, version: "0.1.0-alpha.1", manifestUrl: "https://example.invalid/standalone.json", manifestSha256: "a".repeat(64),
+    artifact: { target: "linux-arm64-glibc" as const, filename: "palmagent-0.1.0-alpha.1-linux-arm64-glibc.tar.gz", url: "https://example.invalid/release.tar.gz", sha256:"b".repeat(64), size:1, unpackedSize:1, minGlibc:"2.35", requiredLibraries:[] } };
+  f.deps.releases.resolvePlan = (current, channel, plugins) => planUpdate(current, current, channel, plugins, "npm", "standalone", selection);
+  f.deps.releases.stage = (_cfg, version, pinned) => {
+    assert.equal(version, selection.version); assert.deepEqual(pinned, selection); f.calls.push("release:stage");
+    return { ...f.candidate, distribution:"standalone", executionNode:"/releases/candidate/runtime/bin/node" };
+  };
+  f.deps.runtime.legacyIdle = async () => { f.calls.push("legacy:idle"); return !legacyBusy; };
+  assert.equal(await f.service.update(options), true);
+  before(f.calls, "release:stage", "maintenance:begin"); before(f.calls, "maintenance:begin", "legacy:idle");
+  assert(!f.calls.includes("package:replace"));
+  if (legacyBusy) { assert.equal(f.receipts.at(-1)?.reason, "tasks-active"); assert.equal(f.activations.length, 0); }
+  else { assert.equal(f.activations.at(-1)?.target.distribution, "standalone"); assert.equal(f.receipts.at(-1)?.status, "succeeded"); }
+});
+
+test("a stale standalone plan stops before any side effects", async () => {
+  const f = fixture();
+  await assert.rejects(f.service.update({ ...options, plannedTarget: { schemaVersion:2, currentVersion:"0.0.0", targetVersion:"0.1.0-alpha.2", channel:"preview",
+    selection: {} as import("@palmagent/shared/standalone").StandaloneSelection } }), /plan no longer matches/);
+  assert(!f.calls.includes("lock")); assert.equal(f.receipts.length, 0);
+});
