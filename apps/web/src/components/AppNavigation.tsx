@@ -117,10 +117,14 @@ export function AppNavigation({ tasks, conn, children }: {
   const recentSpaces = useMemo(() => [...repos.values()].sort((a, b) =>
     (activities.get(b.id)?.latest ?? 0) - (activities.get(a.id)?.latest ?? 0) || a.name.localeCompare(b.name)).slice(0, 6), [repos, activities]);
   const newTask = () => go(newTaskPath(route.name === "space" ? route.repoId : undefined));
+  const brand = <>
+    <span aria-hidden="true" className="size-6 shrink-0 bg-primary" style={{ mask: "url('/logo.svg') center / contain no-repeat" }} />
+    <span>Palmagent</span>
+  </>;
   return <NavigationContext.Provider value={context}>
     <div className={desktopSidebar ? "mx-auto flex max-w-[1360px]" : undefined}>
       {desktopSidebar && <aside aria-label="Space navigation" className="hidden h-app w-60 shrink-0 flex-col border-r md:flex">
-        <p className="px-6 pb-5 pt-[calc(24px+var(--safe-top))] text-lg font-semibold">Palmagent</p>
+        <p className="flex items-center gap-2.5 px-6 pb-5 pt-[calc(24px+var(--safe-top))] text-lg font-semibold">{brand}</p>
         {navigationLinks}
         <ScrollArea className="flex-1">
           {pinnedNavigation}
@@ -143,7 +147,7 @@ export function AppNavigation({ tasks, conn, children }: {
         else restoreFocus();
       }}>
         <div className="flex shrink-0 items-center gap-3 px-5 pt-[calc(12px+var(--safe-top))] pb-4">
-          <NavigationDrawerTitle className="min-w-0 flex-1 text-xl font-semibold tracking-tight text-strong">Palmagent</NavigationDrawerTitle>
+          <NavigationDrawerTitle className="flex min-w-0 flex-1 items-center gap-2.5 text-xl font-semibold tracking-tight text-strong">{brand}</NavigationDrawerTitle>
           <Button variant="ghost" size="icon-lg" aria-label="Close navigation" onClick={() => setOpen(false)}><PanelLeftClose /></Button>
         </div>
         <NavigationDrawerDescription className="sr-only">Navigate your tasks, spaces, and settings.</NavigationDrawerDescription>
