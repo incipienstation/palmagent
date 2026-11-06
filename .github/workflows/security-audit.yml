@@ -18,6 +18,8 @@ on:
       - rust-toolchain.toml
       - '.cargo/**'
       - .github/workflows/security-audit.yml
+      - scripts/audit-javascript.mjs
+      - scripts/tests/audit-javascript.test.mjs
 
 permissions:
   contents: read
@@ -49,7 +51,7 @@ jobs:
       - name: Audit dependencies from the lockfile
         shell: bash
         # JSON retains low-severity findings even when they do not fail the all-dependencies gate.
-        run: pnpm audit --json --audit-level '${{ matrix.level }}' ${{ matrix.scope == 'production' && '--prod' || '' }} | tee "$RUNNER_TEMP/javascript-audit.json"
+        run: node scripts/audit-javascript.mjs '${{ matrix.scope }}' '${{ matrix.level }}' | tee "$RUNNER_TEMP/javascript-audit.json"
       - name: Preserve audit report even on failure
         if: always()
         uses: actions/upload-artifact@v4

@@ -79,8 +79,8 @@ To repeat the checks locally, use the Node and Rust versions declared in `.nvmrc
 and `rust-toolchain.toml`:
 
 ```bash
-pnpm audit --prod --json --audit-level low
-pnpm audit --json --audit-level moderate
+node scripts/audit-javascript.mjs production low
+node scripts/audit-javascript.mjs all moderate
 cargo install cargo-audit --locked --version 0.22.2
 cargo audit
 ```
