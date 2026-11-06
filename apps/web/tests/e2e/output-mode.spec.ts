@@ -3,7 +3,7 @@ import { assertViewportLocked, openSessionDetails } from "./_helpers";
 import { installScopedStream, open, send } from "./_scoped-stream";
 
 const ONLY_WHEN_EXPANDED = "zero 503s under the new nginx.conf";
-const viewport = (page: Page) => page.locator("[data-radix-scroll-area-viewport]").first();
+const viewport = (page: Page) => page.locator('[data-radix-scroll-area-viewport][aria-label="Session transcript"]').first();
 
 for (const mode of ["compact", "verbose"] as const) {
   test(`${mode}: output density and full record access on mobile`, async ({ page }) => {
@@ -64,6 +64,17 @@ for (const mode of ["compact"] as const) {
     await page.getByRole("button", { name: "Completed: echo checked", exact: true }).first().click();
     await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
     await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 50; el.dispatchEvent(new Event("scroll")); });
+    // Establish a painted reading position after the expansion's measurements,
+    // then verify the next event preserves it.
+    const readingPositions = await viewport(page).evaluate(async el => {
+      const positions: number[] = [];
+      for (let frame = 0; frame < 4; frame++) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        positions.push(el.scrollTop);
+      }
+      return positions;
+    });
+    expect(readingPositions).toEqual([50, 50, 50, 50]);
     await emit("tool_call", { id: "next-tool", name: "bash", command: "echo more" });
     await expect(group).toHaveAttribute("aria-expanded", "true");
     expect(await viewport(page).evaluate((el) => el.scrollTop)).toBe(50);
