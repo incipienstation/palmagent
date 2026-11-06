@@ -52,7 +52,7 @@ for (const width of [360, 1280]) test(`first send keeps the conversation and com
   await expect(page.getByTestId("toast")).toHaveCount(0);
   await assertViewportLocked(page);
   await captureForReview(page, `palmagent-new-chat-${width}.png`);
-  await page.getByRole("button", { name: "New task", exact: true }).click();
+  await page.getByRole("group", { name: "Header actions" }).getByRole("button", { name: "New task", exact: true }).click();
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue("");
   await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(0);
   await expect(page.getByText("What should we work on?", { exact: true })).toBeVisible();

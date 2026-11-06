@@ -3,7 +3,6 @@ import { test, expect, type Page } from "@playwright/test";
 test.use({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false, serviceWorkers: "block" });
 
 async function settings(page: Page) {
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   return page.getByRole("radiogroup", { name: "Send message with" });
 }

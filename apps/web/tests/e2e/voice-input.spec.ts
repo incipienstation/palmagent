@@ -372,7 +372,6 @@ test("shake opt-in starts and stops dictation in a visible conversation and keep
     });
   });
 
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   const shake = settings.getByRole("switch", { name: "Shake to dictate" });
@@ -398,7 +397,6 @@ test("shake opt-in starts and stops dictation in a visible conversation and keep
   expect(calls.starts()).toBe(0);
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
 
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(settings).toBeVisible();
   await expect(settings).toHaveAttribute("data-state", "open");
@@ -437,7 +435,6 @@ test("denied microphone permission leaves shake input off and explains the fallb
   await page.setViewportSize({ width: 1280, height: 800 });
   await microphone(page, "denied");
   await page.goto("/#/task/t-idle-interrupted");
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
 
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
