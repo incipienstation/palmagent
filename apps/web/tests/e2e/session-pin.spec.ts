@@ -37,9 +37,9 @@ for (const width of [360, 1280]) test(`pin syncs list, detail and navigation at 
   await page.getByRole("button", { name: "Task actions", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Pin", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Open navigation" }).click();
+  if (width < 768) await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(pinned).toHaveCount(0);
-  await expect(page.getByRole("dialog").getByRole("button", { name: title, exact: true })).toBeVisible();
+  await expect(navigation.getByRole("button", { name: title, exact: true })).toBeVisible();
 });
 
 test("failed pin rolls back and blocks duplicate requests while pending", async ({ page }) => {

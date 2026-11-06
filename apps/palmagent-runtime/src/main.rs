@@ -157,6 +157,21 @@ async fn serve(args: &[String]) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "routine-host") {
+        ensure!(
+            args.len() == 3,
+            "Usage: palmagent-runtime routine-host <directory> <id>"
+        );
+        return palmagent_runtime::modules::routines::adapters::outbound::retained_host::run(
+            std::path::Path::new(&args[1]),
+            &args[2],
+        );
+    }
+    if args.first().is_some_and(|arg| arg == "script-watchdog") {
+        ensure!(args.len() == 2, "Script watchdog requires a command");
+        let code = platform::script_process::watchdog(&args[1])?;
+        std::process::exit(code);
+    }
     if matches!(
         args.first().map(String::as_str),
         Some("version" | "--version")

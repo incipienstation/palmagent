@@ -17,7 +17,8 @@ for (const width of [320, 1280]) {
     const actions = page.getByRole("group", { name: "Header actions" });
     const compose = actions.getByRole("button", { name: "New task", exact: true });
     const taskActions = actions.getByRole("button", { name: "Task actions", exact: true });
-    await expect(navigation).toBeVisible();
+    if (width < 768) await expect(navigation).toBeVisible();
+    else await expect(page.getByRole("button", { name: "Collapse navigation", exact: true })).toBeVisible();
     await expect(header.getByRole("button", { name: "Back", exact: true })).toHaveCount(0);
     await expect(compose).toBeVisible();
     await expect(taskActions).toBeVisible();
@@ -25,7 +26,7 @@ for (const width of [320, 1280]) {
     const actionBounds = (await actions.boundingBox())!;
     expect(actionBounds.width).toBeGreaterThanOrEqual(88);
     expect(actionBounds.width).toBeLessThanOrEqual(96);
-    for (const control of [navigation, compose, taskActions]) {
+    for (const control of [...(width < 768 ? [navigation] : []), compose, taskActions]) {
       expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
 
@@ -39,7 +40,7 @@ for (const width of [320, 1280]) {
     expect(fadeStyle.backdropFilter).toBe("none");
     expect(fadeStyle.height).toBeGreaterThan((await header.boundingBox())!.height);
 
-    const transcript = page.locator("[data-radix-scroll-area-viewport]").first();
+    const transcript = page.locator('[data-radix-scroll-area-viewport][aria-label="Session transcript"]').first();
     const topImage = await fade.evaluate(element => getComputedStyle(element).backgroundImage);
     const scrollRange = await transcript.evaluate(element => element.scrollHeight - element.clientHeight);
     if (scrollRange > 0) {

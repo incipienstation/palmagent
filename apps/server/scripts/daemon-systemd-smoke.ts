@@ -228,16 +228,14 @@ try {
   assert(!existsSync(join(root, "forbidden-service-call")), "User installation and removal must not invoke sudo");
   console.log("PASS: Rust daemon replacement/crash and web activation preserve provider PIDs, input, journals, terminal state, routine results, readiness and orphan cgroup cleanup without privileged runtime calls");
 } catch (error) {
-  // Capture only this fixture's service state before cleanup removes the evidence.
-  const scopeArgs = systemScope ? [] : ["--user"];
-  const env = systemScope ? process.env : userServiceEnvironment();
-  for (const [command, args] of [
-    ["/usr/bin/systemctl", [...scopeArgs, "show", unit, "--property=ActiveState,SubState,Result,MainPID,NRestarts,ExecMainCode,ExecMainStatus"]],
-    ["/usr/bin/journalctl", [...scopeArgs, "--unit", unit, "--lines", "40", "--no-pager"]],
-  ] as const) {
-    const report = spawnSync(command, args, { encoding: "utf8", env, timeout: 5000 });
-    console.error(`[acceptance] ${command}:\n${report.stdout ?? ""}${report.stderr ?? ""}`);
-  }
+  // Capture only this disposable service before cleanup removes the failure evidence.
+  const scope = systemScope ? [] : ["--user"];
+  const options = { encoding: "utf8" as const, env: userServiceEnvironment(), timeout: 5000, maxBuffer: 1024 * 1024 };
+  const state = spawnSync("/usr/bin/systemctl", [...scope, "show", unit,
+    "--property=ActiveState,SubState,Result,MainPID,NRestarts,ExecMainCode,ExecMainStatus"], options);
+  console.error("Acceptance service state:", state.stdout, state.stderr);
+  const journal = spawnSync("/usr/bin/journalctl", [systemScope ? "--unit" : "--user-unit", unit, "--no-pager", "-n", "60"], options);
+  console.error("Acceptance service journal:", journal.stdout, journal.stderr);
   throw error;
 } finally {
   terminalChannel?.close(); executions?.close(); terminals?.close();

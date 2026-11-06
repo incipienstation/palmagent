@@ -43,4 +43,4 @@ for (const [platform, target] of Object.entries(targets)) {
   applicationArtifacts[platform] = createHash('sha256').update(readFileSync(application)).digest('hex');
 }
 } finally { toolchain.close(); }
-writeFileSync(join(output, 'manifest.json'), JSON.stringify({ protocol: 1, hostReadiness: 1, applicationRuntime: 1, version, sourceCommit, artifacts, applicationArtifacts }, null, 2) + '\n');
+writeFileSync(join(output, 'manifest.json'), JSON.stringify({ protocol: 1, hostReadiness: 1, applicationRuntime: 1, routineHost: 1, version, sourceCommit, artifacts, applicationArtifacts }, null, 2) + '\n');

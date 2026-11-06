@@ -378,9 +378,9 @@ for (const width of [320, 1280]) test(`unified filters preserve search and compo
   await expect(trigger).toBeFocused();
   await expect(trigger).toHaveAccessibleName("Filters, 2 active");
   await expect(page.getByText("1 task found", { exact: true })).toBeVisible();
-  await expect(page.getByText("Worktree task", { exact: true })).toBeVisible();
-  await expect(page.getByText("Review Space navigation", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Separate Space task", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("inbox-content").getByText("Worktree task", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("inbox-content").getByText("Review Space navigation", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("inbox-content").getByText("Separate Space task", { exact: true })).toHaveCount(0);
   await captureForReview(page, `unified-filters-active-${width}.png`);
   await page.getByRole("button", { name: "Clear status filter" }).click();
   await expect(trigger).toBeFocused();

@@ -6,6 +6,31 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.1.0-alpha.240
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/0a2dbcb95f79bb16d0dd334e9103fe2e302d87a9...7bbdea64b3c2b9c678bc0f2639cd9879b28eed50) for details.
+
+## 0.1.0-alpha.239
+
+### Changed
+
+- Script routines use native execution hosts and watchdogs, preserving cancellation, bounded output,
+  retained results, and execution across application restarts. Older retained releases remain compatible.
+
+## 0.1.0-alpha.238
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/a1a9e702ffe5b5b43ee9a07b9b2aa3a23d84d8e7...e1cefb7c9d395ec4de791dfe141b62337fe7a2b8) for details.
+
+## 0.1.0-alpha.237
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/1b1b4371171d89e4662652fd1d2e192144162462...af4b582f1fe91d8566d682fec71a85eef177e0ff) for details.
+
 ## 0.1.0-alpha.236
 
 ### Changed
