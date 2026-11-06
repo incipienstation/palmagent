@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Script routines use native execution hosts and watchdogs, preserving cancellation, bounded output,
+  retained results, and execution across application restarts. Older retained releases remain compatible.
+
 ## 0.1.0-alpha.238
 
 ### Changed

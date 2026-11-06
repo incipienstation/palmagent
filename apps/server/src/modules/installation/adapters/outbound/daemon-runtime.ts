@@ -13,6 +13,9 @@ import { userConfigPath } from "./user-config.js";
 export function daemonBinary(release: string, platform = process.platform, arch = process.arch): string {
   const name = `${platform}-${arch}`;
   const manifest = JSON.parse(readFileSync(join(release, "daemon", "manifest.json"), "utf8"));
+  if (manifest.routineHost !== undefined && (manifest.routineHost !== 1 || manifest.applicationRuntime !== 1)) {
+    throw new Error("This package has no compatible native routine host");
+  }
   if (manifest.protocol !== DAEMON_PROTOCOL || typeof manifest.artifacts?.[name] !== "string") throw new Error("This package has no compatible daemon for the host");
   const binary = join(release, "daemon", name, "palmagentd");
   const digest = createHash("sha256").update(readFileSync(binary)).digest("hex");

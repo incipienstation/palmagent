@@ -127,6 +127,26 @@ fn readiness_required(release: &Path) -> Result<bool> {
     Ok(manifest["hostReadiness"] == 1)
 }
 
+fn native_routine_host(release: &Path) -> Result<bool> {
+    let path = release.join("daemon/manifest.json");
+    if !path.exists() {
+        return Ok(false);
+    }
+    ensure!(
+        std::fs::metadata(&path)?.len() <= 65_536,
+        "Daemon manifest is too large"
+    );
+    let manifest: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    if manifest.get("routineHost").is_none() {
+        return Ok(false);
+    }
+    ensure!(
+        manifest["routineHost"] == 1 && manifest["applicationRuntime"] == 1,
+        "Unsupported native routine host capability"
+    );
+    Ok(true)
+}
+
 pub fn launch(
     data: &Path,
     config: &Configuration,
@@ -301,7 +321,8 @@ pub fn run(data: &Path, kind: Kind, id: &str) -> Result<()> {
 fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> Result<()> {
     storage::retained(&record.release, &data.join("releases"))?;
     storage::retained(&record.node, &data.join("runtimes"))?;
-    let mut command = if record.kind == Kind::Application {
+    let native_routine = record.kind == Kind::Routine && native_routine_host(&record.release)?;
+    let mut command = if record.kind == Kind::Application || native_routine {
         let platform = if cfg!(target_arch = "aarch64") {
             "linux-arm64"
         } else {
@@ -334,6 +355,8 @@ fn run_child(data: &Path, record: &mut HostRecord, stopped: Arc<AtomicBool>) -> 
             .arg(&record.release)
             .arg("--node")
             .arg(&record.node);
+    } else if native_routine {
+        command.arg("routine-host");
     } else {
         command.arg(record.release.join(entry));
     }

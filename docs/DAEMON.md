@@ -10,7 +10,7 @@ TypeScript. Nx runs the Rust build and checks alongside the existing projects.
 `palmagentd` owns host reservations, process identity, launch, inspection, cleanup,
 web recovery and update executor launch. Each execution, terminal, routine script, web process and
 updater has an independent guardian from its retained release. Guardians own their
-Node child, output pipes and bounded log files. Replacing or crashing the control
+child process, output pipes and bounded log files. Replacing or crashing the control
 daemon does not replace those guardians or their provider input channels.
 
 The Linux adapter implements PID/start-time/boot identity, pidfd signaling, private
@@ -27,6 +27,15 @@ systemd 254+ (`DelegateSubgroup=control`), cgroup v2 with writable `cgroup.kill`
 and an accessible systemd user manager. The control subgroup lets systemd restart
 the daemon while other groups remain populated. Account lingering keeps the user
 manager running after logout and starts it at boot, without a login session.
+
+The Ubuntu 26.04 hosted CI image currently fails to restart a delegated service with
+retained processes: systemd reports `Failed to spawn executor: Device or resource busy`
+before launching the daemon. This matches the cgroup reuse limitation described in
+[systemd issue 41278](https://github.com/systemd/systemd/issues/41278); the linked fix
+does not resolve reuse while child groups still contain live processes. Packed user
+and system service acceptance therefore runs on Ubuntu 24.04. Those passing checks
+do not establish crash-recovery support on affected newer systemd builds. Moving the
+acceptance runner requires both service scopes to pass with retained work still alive.
 
 Installation enables linger with `loginctl --no-ask-password enable-linger` when
 needed, verifies the manager's version and unit search path, then exercises the
@@ -47,7 +56,7 @@ rely on it.
 
 ## Readiness and recovery
 
-New packages advertise `hostReadiness: 1` in the daemon artifact manifest. Their Node
+New packages advertise `hostReadiness: 1` in the daemon artifact manifest. Their
 hosts publish a private readiness marker bound to PID, process start time and boot
 identity. Web reports ready after its listeners start; terminal after PTY and local
 transport initialization; execution after its command handler is installed; routine
@@ -113,6 +122,9 @@ build identity, and replaces the web process. Existing hosts keep their original
 release. Daemon-managed routine scripts also keep their original release and process. Script scheduling,
 admission and run history belong to the independent application service; the script host persists its result
 independently and the application service records it without rerunning the command.
+Releases advertising `routineHost: 1` run the retained host and its pipe-lease watchdog
+with the native application binary. Host selection uses the invocation's retained
+release, so older Node hosts and their pending results continue to work across updates.
 Timeouts and explicit cancellation still clean up the script and its descendants.
 Source and legacy installations keep web-owned scripts, so activation still waits
 for those scripts to finish and retains the pending update request.

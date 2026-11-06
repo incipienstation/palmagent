@@ -32,7 +32,7 @@ test("native scripts schedule and persist without web, recover without replay, a
   copyFileSync(binary, join(root, "daemon/launcher"));
   const node = join(root, "runtimes/node"); copyFileSync(process.execPath, node);
   const version = JSON.parse(execFileSync(join(artifact, "palmagent-runtime"), ["version"], { encoding: "utf8" }));
-  writeFileSync(join(release, "daemon/manifest.json"), JSON.stringify({ ...version, applicationRuntime: 1, hostReadiness: 1 }));
+  writeFileSync(join(release, "daemon/manifest.json"), JSON.stringify({ ...version, applicationRuntime: 1, hostReadiness: 1, routineHost: 1 }));
   writeFileSync(join(release, "package.json"), '{"type":"module"}');
   buildSync({ stdin: { contents: `
     import { NativeScriptRuntime } from ${JSON.stringify(join(repository, "apps/server/src/modules/routines/adapters/outbound/native-script-runtime.ts"))};
@@ -41,7 +41,7 @@ test("native scripts schedule and persist without web, recover without replay, a
     await new NativeScriptRuntime(${JSON.stringify(root)}).connect(${JSON.stringify(release)});
     ready(); setInterval(() => {}, 1000);
   `, resolveDir: repository, loader: "ts" }, outfile: join(release, "server.js"), bundle: true, platform: "node", format: "esm", target: "node24" });
-  buildSync({ entryPoints: [join(repository, "apps/server/src/bootstrap/routine-host.ts")], outfile: join(release, "routine-host.js"), bundle: true, platform: "node", format: "esm", target: "node24" });
+  writeFileSync(join(release, "routine-host.js"), 'throw new Error("Native releases must not start the Node routine host");');
   const preference = join(root, "telemetry.json");
   const consent = { schemaVersion: 2, enabled: true, disclosed: true, revision: "00000000-0000-4000-8000-000000000001" };
   writeFileSync(preference, JSON.stringify(consent));
@@ -90,6 +90,9 @@ test("native scripts schedule and persist without web, recover without replay, a
   const held = await create("echo once >> invocations; touch started; while [ ! -f finish ]; do sleep 0.1; done; printf retained");
   await native.run(held.id);
   await until(() => existsSync(join(root, "repo/started")), "script started");
+  const heldRun = (await native.runs(held.id))[0];
+  const host = await daemonRequest(root, { action: "inspect", kind: "routine", id: heldRun.id.toString(16) }) as { child: { pid: number } };
+  assert.equal(readFileSync(`/proc/${host.child.pid}/cmdline`, "utf8").split("\0")[1], "routine-host");
   await assert.rejects(native.run(held.id), /already running/);
   await assert.rejects(native.remove(held.id), /running/);
   assert((await snapshot()).telemetry!.points.some(p => p.attributes.operation === "routine.run" && p.attributes.outcome === "error"));
@@ -121,10 +124,23 @@ test("native scripts schedule and persist without web, recover without replay, a
 
   // Selecting a pre-capability release stops the sole native writer before its
   // older web can resume the legacy scheduler. Retained script hosts survive.
+  const retained = await create("echo once >> rollback-invocations; touch rollback-started; while [ ! -f rollback-finish ]; do sleep 0.05; done; printf rollback-retained");
+  await native.run(retained.id);
+  await until(() => existsSync(join(root, "repo/rollback-started")), "retained host starts before rollback");
+  const retainedRun = (await native.runs(retained.id))[0];
   const rollback = join(root, "releases/legacy"); mkdirSync(rollback, { mode: 0o700 });
   writeFileSync(join(rollback, "server.js"), "setInterval(() => {}, 1000);\n");
   writeFileSync(join(root, "daemon/config.json"), JSON.stringify({ ...config, release: rollback }), { mode: 0o600 });
   await daemonRequest(root, { action: "restart-web" });
   await assert.rejects(native.status());
   assert.equal((await status()).application?.alive, false);
+  const retainedHost = await daemonRequest(root, { action: "inspect", kind: "routine", id: retainedRun.id.toString(16) }) as { alive: boolean };
+  assert.equal(retainedHost.alive, true);
+  writeFileSync(join(root, "repo/rollback-finish"), "");
+  await until(() => existsSync(join(root, "routines", `${retainedRun.id.toString(16)}.result`)), "retained native result survives rollback");
+  writeFileSync(join(root, "daemon/config.json"), JSON.stringify(config), { mode: 0o600 });
+  await daemonRequest(root, { action: "restart-web" });
+  await until(async () => { try { return await native.status(); } catch { return false; } }, "native scheduler returns");
+  assert.equal((await finished(retained.id)).output, "rollback-retained");
+  assert.equal(readFileSync(join(root, "repo/rollback-invocations"), "utf8"), "once\n");
 });
