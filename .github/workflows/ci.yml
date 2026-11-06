@@ -151,7 +151,8 @@ jobs:
         run: |
           # The pnpm store cache is shared across Linux images. Its native side
           # effects can require a newer glibc than this systemd acceptance runner.
-          npm_config_build_from_source=true pnpm rebuild better-sqlite3 node-pty
+          npm_config_build_from_source=true pnpm --dir apps/server rebuild better-sqlite3 node-pty
+          pnpm --dir apps/server exec node -e "require('node-pty'); const Database = require('better-sqlite3'); new Database(':memory:').close()"
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/candidate
