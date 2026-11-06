@@ -181,8 +181,8 @@ capacity panels before interpreting a change in observed sample volume as a prod
 
 ### Script-runtime migration boundary
 
-The first native application slice moves script routines while retaining the public Node
-HTTP adapter and Node invocation hosts. Existing HTTP metrics remain end-to-end web
+Script scheduling, persistence, and retained invocation hosts use Rust while retaining the public Node
+HTTP adapter. Older retained releases can still use Node invocation hosts. Existing HTTP metrics remain end-to-end web
 measurements and retain their Node label. The application service exports its own CPU, resident memory, command, queue, polling and
 SQLite write observations as `service.name=palmagent.application`, `runtime.implementation=rust`.
 The web transports these bounded snapshots using the existing consent and upload controls.
@@ -192,7 +192,9 @@ of the serialized routine owner.
 Local collection continues while the web is down; network export requires the web exporter.
 Daemon metrics remain limited to the daemon process.
 Compare the same routine workload across releases, and measure the total participating
-processes when assessing resource savings. Do not infer a Rust speedup from daemon graphs.
+processes when assessing resource savings. The application resource samples cover the scheduler,
+not its separate invocation hosts, watchdogs, or user commands. Measure those processes separately
+when comparing script startup and total resources. Do not infer a Rust speedup from daemon graphs.
 
 The loopback benchmark also accepts `--scenario routines` and checks the routine count
 throughout each run. Routine lists retain their SQLite read projection in the web; native ownership applies

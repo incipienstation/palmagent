@@ -6,11 +6,17 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Script routines use native execution hosts and watchdogs, preserving cancellation, bounded output,
+  retained results, and execution across application restarts. Older retained releases remain compatible.
+
 ## 0.1.0-alpha.238
 
 ### Changed
 
 - Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/a1a9e702ffe5b5b43ee9a07b9b2aa3a23d84d8e7...e1cefb7c9d395ec4de791dfe141b62337fe7a2b8) for details.
+
 
 ## 0.1.0-alpha.237
 

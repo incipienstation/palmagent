@@ -10,7 +10,7 @@ TypeScript. Nx runs the Rust build and checks alongside the existing projects.
 `palmagentd` owns host reservations, process identity, launch, inspection, cleanup,
 web recovery and update executor launch. Each execution, terminal, routine script, web process and
 updater has an independent guardian from its retained release. Guardians own their
-Node child, output pipes and bounded log files. Replacing or crashing the control
+child process, output pipes and bounded log files. Replacing or crashing the control
 daemon does not replace those guardians or their provider input channels.
 
 The Linux adapter implements PID/start-time/boot identity, pidfd signaling, private
@@ -47,7 +47,7 @@ rely on it.
 
 ## Readiness and recovery
 
-New packages advertise `hostReadiness: 1` in the daemon artifact manifest. Their Node
+New packages advertise `hostReadiness: 1` in the daemon artifact manifest. Their
 hosts publish a private readiness marker bound to PID, process start time and boot
 identity. Web reports ready after its listeners start; terminal after PTY and local
 transport initialization; execution after its command handler is installed; routine
@@ -113,6 +113,9 @@ build identity, and replaces the web process. Existing hosts keep their original
 release. Daemon-managed routine scripts also keep their original release and process. Script scheduling,
 admission and run history belong to the independent application service; the script host persists its result
 independently and the application service records it without rerunning the command.
+Releases advertising `routineHost: 1` run the retained host and its pipe-lease watchdog
+with the native application binary. Host selection uses the invocation's retained
+release, so older Node hosts and their pending results continue to work across updates.
 Timeouts and explicit cancellation still clean up the script and its descendants.
 Source and legacy installations keep web-owned scripts, so activation still waits
 for those scripts to finish and retains the pending update request.

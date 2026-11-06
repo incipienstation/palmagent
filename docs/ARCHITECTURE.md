@@ -127,6 +127,14 @@ filesystem and process transport live in `platform.rs`. Native aggregate telemet
 by the daemon and application through `packages/native-telemetry`; application adapters use
 `platform/telemetry.rs`. Core routine policy does not import the collector or host timing APIs.
 
+Retained script invocations use the same binary in `routine-host` mode. The
+`application/retained.rs` use case owns one-shot admission and completion persistence policy;
+its file adapter preserves the existing claim, stop, and result protocol. The platform process
+adapter runs a native watchdog with a pipe lease and a separate process group. The host stays
+independent of the scheduling process, and the daemon guardian retains cgroup cleanup ownership.
+The retained release's `routineHost: 1` capability selects this host; releases without it keep
+their Node host. The Node entrypoint remains packaged for older daemon compatibility.
+
 `pnpm architecture:check` also runs the Rust syntax-tree boundary check, including imports,
 qualified paths, unknown source placement and cycles. Rust has an explicit wire projection
 of the TypeScript contracts; calendar vectors and real-process server contracts check parity
