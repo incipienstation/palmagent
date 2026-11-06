@@ -316,7 +316,7 @@ for (const legacyBusy of [false, true]) test(`standalone migration stages pinned
 
 test("a stale standalone plan stops before any side effects", async () => {
   const f = fixture();
-  await assert.rejects(f.service.update({ ...options, plannedTarget: { schemaVersion:2, currentVersion:"0.0.0", targetVersion:"0.1.0-alpha.2", channel:"preview",
+  await assert.rejects(f.service.update({ ...options, plannedTarget: { currentVersion:"0.0.0", targetVersion:"0.1.0-alpha.2", channel:"preview",
     selection: {} as import("@palmagent/shared/standalone").StandaloneSelection } }), /plan no longer matches/);
   assert(!f.calls.includes("lock")); assert.equal(f.receipts.length, 0);
 });

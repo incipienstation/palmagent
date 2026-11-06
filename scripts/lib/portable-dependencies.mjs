@@ -17,6 +17,34 @@ function resolveDependency(name, from) {
 export function copyRuntimeDependencies(names, from, destination) {
   let count = 0;
   const sources = new Map(names.map(name => [name, resolveDependency(name, from)]));
+  const graph = new Map();
+  const variants = new Map();
+  function visit(name, source) {
+    if (graph.has(source)) return;
+    if (graph.size >= 3000) throw new Error('Runtime dependency graph is unexpectedly large');
+    const pkg = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
+    if (pkg.name !== name || typeof pkg.version !== 'string') throw new Error('Invalid locked dependency identity');
+    const dependencies = new Map();
+    graph.set(source, dependencies);
+    if (!variants.has(name)) variants.set(name, new Set());
+    variants.get(name).add(source);
+    for (const dependency of new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {}), ...Object.keys(pkg.peerDependencies ?? {})])) {
+      let dependencySource;
+      try { dependencySource = resolveDependency(dependency, source); }
+      catch (error) {
+        if (Object.hasOwn(pkg.optionalDependencies ?? {}, dependency) || pkg.peerDependenciesMeta?.[dependency]?.optional) continue;
+        throw error;
+      }
+      dependencies.set(dependency, dependencySource);
+      visit(dependency, dependencySource);
+    }
+  }
+  for (const [name, source] of sources) visit(name, source);
+  // Hoist single-identity dependencies once. Duplicating a shared package in
+  // sibling subtrees splits module state (for example ASN.1 schema registries).
+  // Conflicting versions remain nested and resolve against their own ancestors.
+  const hoisted = new Map([...variants].filter(([, values]) => values.size === 1).map(([name, values]) => [name, [...values][0]]));
+  for (const [name, source] of sources) hoisted.set(name, source);
   function copy(name, source, target, ancestors) {
     if (++count > 3000) throw new Error('Runtime dependency graph is unexpectedly large');
     const pkg = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
@@ -33,21 +61,13 @@ export function copyRuntimeDependencies(names, from, destination) {
       return true;
     } });
     const available = new Map(ancestors); available.set(name, source);
-    const required = { ...pkg.dependencies };
-    const optional = { ...pkg.optionalDependencies };
-    for (const dependency of new Set([...Object.keys(required), ...Object.keys(optional), ...Object.keys(pkg.peerDependencies ?? {})])) {
-      let dependencySource;
-      try { dependencySource = resolveDependency(dependency, source); }
-      catch (error) {
-        if (Object.hasOwn(optional, dependency) || pkg.peerDependenciesMeta?.[dependency]?.optional) continue;
-        throw error;
-      }
+    for (const [dependency, dependencySource] of graph.get(source)) {
       if (available.get(dependency) === dependencySource) continue;
       copy(dependency, dependencySource, join(target, 'node_modules', dependency), available);
     }
   }
   mkdirSync(destination, { recursive: true });
-  for (const [name, source] of sources) copy(name, source, join(destination, name), sources);
+  for (const [name, source] of hoisted) copy(name, source, join(destination, name), hoisted);
   return Object.fromEntries([...sources].map(([name, source]) => [name, JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')).version]));
 }
 
