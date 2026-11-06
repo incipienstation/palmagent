@@ -14,7 +14,8 @@ export function isProductPath(path) {
   return /^(?:apps\/(?:server|web)\/|packages\/shared\/|skills\/|plugins\/claude\/|plugins\/codex\/plugins\/palmagent\/)/.test(path)
     || ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'LICENSE',
       '.claude-plugin/marketplace.json', 'plugins/codex/.agents/plugins/marketplace.json',
-      'scripts/build-pkg.ts'].includes(path);
+      'scripts/build-pkg.ts', 'scripts/build-standalone.mjs', 'scripts/build-daemon.mjs',
+      'scripts/lib/portable-dependencies.mjs', 'scripts/templates/install.sh', 'scripts/render-installer.mjs'].includes(path);
 }
 
 function normalizedJson(path, value, { ignoreScripts = true } = {}) {

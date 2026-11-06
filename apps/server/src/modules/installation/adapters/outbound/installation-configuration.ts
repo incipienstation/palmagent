@@ -7,6 +7,7 @@ import { getUserConfig, setUserChannel, initUserConfig, assertUserConfigPreserve
 import { productVersion } from "../../domain/release-policy.js";
 import { userServiceDirectory } from "./user-service.js";
 import { installedVersion } from "./installation-releases.js";
+import { installedDistribution } from "./standalone-release.js";
 import { ask } from "./sh.js";
 
 function detectRuntime(): {
@@ -98,6 +99,7 @@ async function gatherConfig(
     ...base,
     releaseChannel: selectedChannel,
     mode: rt.mode,
+    distribution: rt.mode === "package" ? installedDistribution({ pkgDir: rt.pkgDir }) : undefined,
     pkgDir: rt.pkgDir,
     repoDir: rt.repoDir,
     workingDir:

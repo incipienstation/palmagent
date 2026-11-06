@@ -24,7 +24,7 @@ export function github(repository, path, { method = 'GET', body, binary = false 
   for (let attempt = 0; ; attempt++) {
     try {
       result = execute('gh', args, { input: body === undefined ? undefined : JSON.stringify(body),
-        encoding: binary ? undefined : 'utf8', maxBuffer: 128 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'],
+        encoding: binary ? undefined : 'utf8', maxBuffer: (binary ? 512 : 128) * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'],
         ...(method === 'GET' ? { timeout: 60000, killSignal: 'SIGKILL' } : {}) });
       break;
     } catch (error) {

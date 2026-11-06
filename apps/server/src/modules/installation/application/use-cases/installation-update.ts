@@ -4,6 +4,7 @@ import { channelTag, compatiblePlugin, releaseChannel, validateUpdateTarget } fr
 import type { InstallationOptions, InstallationUseCases } from "../ports/inbound/installation-use-cases.js";
 import type { InstallationDependencies } from "../ports/outbound/installation.js";
 import { verifyIndependentActivation } from "./installation-activation.js";
+import type { StandaloneSelection } from "@palmagent/shared/standalone";
 
 export function createInstallationUpdate(dependencies: InstallationDependencies,
   lifecycle: Pick<InstallationUseCases, "provisionRuntime"> & { applyInstalledUpdate(config: InstallConfig, options: InstallationOptions): Promise<boolean> }) {
@@ -15,7 +16,14 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
     cfg.releaseChannel = options.channel !== undefined
       ? releaseChannel(options.channel!)
       : configuration.preferences(cfg.dataDir).channel;
-    const explicitVersion = options.targetVersion;
+    const currentVersion = cfg.mode === "package" && !options.dryRun ? releases.installedVersion(cfg.pkgDir) : "";
+    if (options.plannedTarget && (options.plannedTarget.currentVersion !== currentVersion || options.plannedTarget.channel !== cfg.releaseChannel ||
+        options.plannedTarget.targetVersion !== options.plannedTarget.selection.version ||
+        (options.targetVersion && options.targetVersion !== options.plannedTarget.targetVersion) || options.distribution === "npm" || !options.pull))
+      throw new Error("Update plan no longer matches this installation or request; plan again");
+    const explicitVersion = options.targetVersion ?? options.plannedTarget?.targetVersion;
+    const resolution = { installation: cfg, distribution: options.distribution,
+      selection: options.request?.selection ?? options.plannedTarget?.selection };
     // Durable requests pin the version discovered on the saved channel; they are
     // not public --to overrides. Request validity is rechecked under the host lock.
     const requestedVersion = options.request?.targetVersion ?? explicitVersion;
@@ -33,19 +41,22 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
     let plugins = releases.readPlugins(pluginPaths);
     if (options.plan) {
       if (options.dryRun || options.automatic) throw new Error("--plan cannot be combined with --dry-run or --automatic");
-      feedback.plan(releases.resolvePlan(releases.installedVersion(cfg.pkgDir), cfg.releaseChannel, releases.participatingPlugins(releases.discoverPlugins(cfg), pluginPaths), requestedVersion));
+      feedback.plan(releases.resolvePlan(currentVersion, cfg.releaseChannel, releases.participatingPlugins(releases.discoverPlugins(cfg), pluginPaths), requestedVersion, resolution));
       return true;
     }
     if (options.automatic && (!options.pull || explicitVersion || options.channel)) throw new Error("--automatic requires --pull and follows only the saved channel");
     feedback.step(`${BRANDING.productName} update`);
-    feedback.info(`Update channel: ${cfg.releaseChannel === "stable" ? "Stable" : "Preview"} (${channelTag(cfg.releaseChannel)})`);
+    feedback.info(`Update channel: ${cfg.releaseChannel === "stable" ? "Stable" : "Preview"}`);
     if (!options.pull) return applyInstalledUpdate(cfg, options);
     if (options.automatic && !configuration.preferences(cfg.dataDir).autoUpdate) {
       feedback.info("automatic updates are off; nothing changed");
       return true;
     }
     if (options.dryRun) {
-      feedback.info(`[dry-run] would resolve ${BRANDING.packageName}@${requestedVersion ?? channelTag(cfg.releaseChannel)}, verify plugin compatibility, install the exact target, and verify runtime health`);
+      const standalone = options.distribution === "standalone" || cfg.distribution === "standalone" || cfg.releaseChannel === "preview";
+      const target = standalone ? `${BRANDING.packageName} standalone ${requestedVersion ?? cfg.releaseChannel}`
+        : `${BRANDING.packageName}@${requestedVersion ?? channelTag(cfg.releaseChannel)}`;
+      feedback.info(`[dry-run] would resolve ${target}, verify plugin compatibility, install the exact target, and verify runtime health`);
       return true;
     }
 
@@ -64,7 +75,7 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
       const native = releases.discoverPlugins(cfg);
       plugins = releases.participatingPlugins(native, pluginPaths);
       pluginPaths = plugins.map((p) => p.manifest);
-      const plan = releases.resolvePlan(releases.installedVersion(cfg.pkgDir), cfg.releaseChannel, plugins, requestedVersion);
+      const plan = releases.resolvePlan(currentVersion, cfg.releaseChannel, plugins, requestedVersion, resolution);
       let pluginsUpdated = 0;
       const record = (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => {
         state.writeUpdate(cfg.dataDir, {
@@ -108,10 +119,10 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
         feedback.ok(`package ${plan.currentVersion} is current and healthy; participating plugins are up to date`);
         return true;
       }
-      if (cfg.executionNode) {
+      if (cfg.executionNode || plan.targetDistribution === "standalone") {
         try {
-          const result = await updateIndependentRelease(cfg, plan.targetVersion, options, record);
-          keepRequestedUpdate = state.readUpdate(cfg.dataDir)?.reason === "routine-scripts-active";
+          const result = await updateIndependentRelease(cfg, plan.targetVersion, options, record, plan.selection);
+          keepRequestedUpdate = ["routine-scripts-active", "tasks-active"].includes(state.readUpdate(cfg.dataDir)?.reason ?? "");
           return result;
         }
         catch (error) {
@@ -186,19 +197,21 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
   }
 
   async function updateIndependentRelease(cfg: InstallConfig, version: string, options: InstallationOptions,
-    record: (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => void): Promise<boolean> {
+    record: (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => void,
+    selection?: StandaloneSelection): Promise<boolean> {
     if (!cfg.supervisor && !runtime.canManageServices()) throw new Error("Updates require non-interactive service-management access");
     record("applying", "candidate-preparation");
-    const candidate = releases.stage(cfg, version);
+    const candidate = releases.stage(cfg, version, selection);
     const identity = releases.identity(candidate.pkgDir!);
     releases.verifyCli(candidate, version, true);
     const endMaintenance = state.beginMaintenance(cfg);
     let changed = false;
     try {
-      if (!await verifyIndependentActivation(runtime, cfg)) {
-        record("deferred", "routine-scripts-active");
+      if (!(cfg.executionNode ? await verifyIndependentActivation(runtime, cfg) : await runtime.legacyIdle(cfg))) {
+        record("deferred", cfg.executionNode ? "routine-scripts-active" : "tasks-active");
         return true;
       }
+      configuration.initializePreferences(cfg.dataDir);
       const settings = configuration.preferences(cfg.dataDir);
       if ((options.automatic && !settings.autoUpdate) || ((options.automatic || options.request) && settings.channel !== candidate.releaseChannel)) {
         record("deferred", "settings-changed"); return true;

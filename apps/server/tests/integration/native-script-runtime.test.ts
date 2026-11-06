@@ -91,6 +91,11 @@ test("native scripts schedule and persist without web, recover without replay, a
   await native.run(held.id);
   await until(() => existsSync(join(root, "repo/started")), "script started");
   const heldRun = (await native.runs(held.id))[0];
+  // The child may run before its guardian persists the process identity.
+  await until(async () => {
+    const host = await daemonRequest(root, { action: "inspect", kind: "routine", id: heldRun.id.toString(16) }) as { child?: { pid: number } | null };
+    return Boolean(host.child);
+  }, "routine host identity persisted");
   const host = await daemonRequest(root, { action: "inspect", kind: "routine", id: heldRun.id.toString(16) }) as { child: { pid: number } };
   assert.equal(readFileSync(`/proc/${host.child.pid}/cmdline`, "utf8").split("\0")[1], "routine-host");
   await assert.rejects(native.run(held.id), /already running/);

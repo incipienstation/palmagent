@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { StandaloneSelectionSchema } from "./standalone.js";
 
 export const UpdateChannelSchema = z.enum(["stable", "preview"]);
 export type UpdateChannel = z.infer<typeof UpdateChannelSchema>;
@@ -32,7 +33,7 @@ export type UpdateAction = z.infer<typeof UpdateActionSchema>;
 // Only allowlisted diagnostics cross the CLI/web boundary. Never include command
 // output, environment values, registry URLs, or local plugin paths.
 export const UpdateDiscoveryFailureSchema = z.object({
-  source: z.enum(["codex-plugins", "claude-plugins", "registry", "release-policy", "unknown"]),
+  source: z.enum(["codex-plugins", "claude-plugins", "registry", "standalone", "release-policy", "unknown"]),
   code: z.enum(["command-not-found", "permission-denied", "timeout", "output-limit", "command-failed",
     "network", "registry-auth", "release-unavailable", "invalid-response", "invalid-plugin", "incompatible-release", "unknown"]),
   exitCode: z.number().int().nullable().optional(),
@@ -46,6 +47,8 @@ export const UpdateDiscoverySchema = z.object({
   checkedAt: z.string().datetime(),
   eligible: z.boolean(),
   pluginsPending: z.number().int().nonnegative().optional(),
+  packagePending: z.boolean().optional(),
+  selection: StandaloneSelectionSchema.optional(),
   error: z.boolean(),
   failure: UpdateDiscoveryFailureSchema.optional(),
 });
@@ -54,6 +57,7 @@ export type UpdateDiscovery = z.infer<typeof UpdateDiscoverySchema>;
 export const UpdateRequestSchema = z.object({
   id: z.string().uuid(), channel: UpdateChannelSchema,
   currentVersion: z.string(), targetVersion: z.string(), automatic: z.boolean(),
+  selection: StandaloneSelectionSchema.optional(),
 });
 export type UpdateRequest = z.infer<typeof UpdateRequestSchema>;
 

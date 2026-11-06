@@ -7,6 +7,7 @@ import { versionPolicy } from './lib/release-version.mjs';
 import { hashFile, inspectPackage } from './lib/package-artifact.mjs';
 import { releaseNotes } from './release-tag.mjs';
 import { github, githubPages } from './lib/release-github.mjs';
+import { assembleStandaloneManifest, inspectStandaloneArtifacts, supportsStandalone } from './lib/standalone-release.mjs';
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 export function inspectSource(cwd, commit) {
@@ -23,6 +24,18 @@ export function prepareCandidate(cwd, directory, commit, runId, repository) {
   const identity = inspectSource(cwd, commit);
   assert(/^[1-9]\d*$/.test(String(runId)), 'Candidate requires its Actions run ID');
   assert(/^[\w.-]+\/[\w.-]+$/.test(repository), 'Candidate requires its repository');
+  if (supportsStandalone(cwd)) {
+    const manifest = assembleStandaloneManifest(directory, identity, runId);
+    const filename = 'standalone-manifest.json';
+    if (manifest.npm) inspectPackage(join(directory, manifest.npm.filename), { ...identity, publishable: true });
+    const candidate = { schemaVersion: 2, ...identity, filename, sha256: hashFile(join(directory, filename)),
+      runId: String(runId), repository, runUrl: `https://github.com/${repository}/actions/runs/${runId}` };
+    writeFileSync(join(directory, 'candidate.json'), JSON.stringify(candidate, null, 2) + '\n');
+    const files = [filename, ...manifest.artifacts.map(artifact => artifact.filename), ...(manifest.npm ? [manifest.npm.filename] : [])];
+    writeFileSync(join(directory, 'SHA256SUMS'), files.map(file => `${hashFile(join(directory, file))}  ${file}\n`).join(''));
+    writeFileSync(join(directory, 'RELEASE_NOTES.md'), releaseNotes(cwd, identity.version));
+    return candidate;
+  }
   const filename = `palmagent-${identity.version}.tgz`;
   assert(readdirSync(directory).filter((name) => name.endsWith('.tgz')).join() === filename, 'Expected one candidate tarball');
   inspectPackage(join(directory, filename), { ...identity, publishable: true });
@@ -37,14 +50,24 @@ export function prepareCandidate(cwd, directory, commit, runId, repository) {
 export function validateCandidate(cwd, directory, { commit, runId, repository, sha256 } = {}) {
   const candidate = JSON.parse(readFileSync(join(directory, 'candidate.json'), 'utf8'));
   const identity = inspectSource(cwd, commit);
-  assert(candidate.schemaVersion === 1, 'Unsupported candidate manifest');
+  assert([1, 2].includes(candidate.schemaVersion), 'Unsupported candidate manifest');
   for (const [key, value] of Object.entries(identity)) assert(candidate[key] === value, `Candidate identity mismatch: ${key}`);
   assert(candidate.runId === String(runId) && candidate.repository === repository, 'Candidate producer differs from the selected run');
   assert(candidate.runUrl === `https://github.com/${repository}/actions/runs/${runId}`, 'Candidate run URL mismatch');
-  assert(candidate.filename === `palmagent-${identity.version}.tgz`, 'Unexpected candidate filename');
+  assert(candidate.filename === (candidate.schemaVersion === 2 ? 'standalone-manifest.json' : `palmagent-${identity.version}.tgz`), 'Unexpected candidate filename');
   assert(/^[a-f0-9]{64}$/.test(candidate.sha256) && (!sha256 || candidate.sha256 === sha256), 'Candidate changed after approval preparation');
   const path = join(directory, candidate.filename);
   assert(hashFile(path) === candidate.sha256, 'Candidate checksum mismatch');
+  if (candidate.schemaVersion === 2) {
+    const manifest = inspectStandaloneArtifacts(directory, JSON.parse(readFileSync(path, 'utf8')));
+    assert(manifest.version === identity.version && manifest.sourceCommit === identity.commit && manifest.runId === String(runId), 'Standalone manifest source differs');
+    assert(Boolean(manifest.npm) === (identity.channel === 'latest'), 'Stable requires npm and Preview forbids it');
+    if (manifest.npm) inspectPackage(join(directory, manifest.npm.filename), { ...identity, publishable: true });
+    const files = [candidate.filename, ...manifest.artifacts.map(artifact => artifact.filename), ...(manifest.npm ? [manifest.npm.filename] : [])];
+    assert(readFileSync(join(directory, 'SHA256SUMS'), 'utf8') === files.map(file => `${hashFile(join(directory, file))}  ${file}\n`).join(''), 'Candidate checksum file mismatch');
+    assert(readFileSync(join(directory, 'RELEASE_NOTES.md'), 'utf8') === releaseNotes(cwd, candidate.version), 'Candidate release notes mismatch');
+    return { ...candidate, path, manifest, environment: identity.channel === 'next' ? 'standalone-preview' : 'npm-latest' };
+  }
   assert(readFileSync(join(directory, 'SHA256SUMS'), 'utf8') === `${candidate.sha256}  ${candidate.filename}\n`, 'Candidate checksum file mismatch');
   assert(readFileSync(join(directory, 'RELEASE_NOTES.md'), 'utf8') === releaseNotes(cwd, candidate.version), 'Candidate release notes mismatch');
   inspectPackage(path, { ...identity, publishable: true });
@@ -77,13 +100,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const env = process.env;
     let result;
     if (command === 'artifact') result = candidateArtifact(env.RELEASE_COMMIT, env.CANDIDATE_RUN_ID || env.GITHUB_RUN_ID, env.GH_REPO, { reuse: Boolean(env.CANDIDATE_RUN_ID) });
-    else if (command === 'source') result = inspectSource(resolve(source), env.RELEASE_COMMIT);
+    else if (command === 'source') result = { ...inspectSource(resolve(source), env.RELEASE_COMMIT), standalone: supportsStandalone(resolve(source)) };
     else if (command === 'prepare') result = prepareCandidate(resolve(source), resolve(directory), env.RELEASE_COMMIT, env.GITHUB_RUN_ID, env.GH_REPO);
     else if (command === 'check') result = validateCandidate(resolve(source), resolve(directory), {
       commit: env.RELEASE_COMMIT, runId: env.CANDIDATE_RUN_ID, repository: env.GH_REPO, sha256: env.EXPECTED_ARTIFACT_SHA256,
     });
     else throw new Error('Usage: node scripts/release-candidate.mjs source|prepare|check [source] [directory]');
-    if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, Object.entries(result).filter(([key]) => ['version', 'channel', 'branch', 'commit', 'sha256', 'environment', 'artifact', 'producer', 'reuse'].includes(key)).map(([key, value]) => `${key}=${value}\n`).join(''));
+    if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, Object.entries(result).filter(([key]) => ['version', 'channel', 'branch', 'commit', 'sha256', 'environment', 'artifact', 'producer', 'reuse', 'standalone'].includes(key)).map(([key, value]) => `${key}=${value}\n`).join(''));
     if (command === 'check' && env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY,
       `## Release candidate\n\nPackage: palmagent@${result.version}\n\nChannel: ${result.channel}\n\nSource: ${result.commit}\n\nSHA-256: ${result.sha256}\n\nValidation: ${result.runUrl}\n\n${readFileSync(join(resolve(directory), 'RELEASE_NOTES.md'), 'utf8')}\n`);
     console.log(JSON.stringify(result));

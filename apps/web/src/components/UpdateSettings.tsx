@@ -23,7 +23,7 @@ const unavailable: Record<Exclude<UpdateSettingsState["availability"], "availabl
 
 function discoveryMessage(failure?: UpdateDiscoveryFailure): string {
   if (!failure || failure.source === "unknown") return "Could not check for updates. Check again or use the doctor plugin to investigate.";
-  const source = { "codex-plugins": "Codex plugin check", "claude-plugins": "Claude plugin check", registry: "Package registry check", "release-policy": "Release compatibility check" }[failure.source];
+  const source = { "codex-plugins": "Codex plugin check", "claude-plugins": "Claude plugin check", registry: "Package registry check", standalone: "Standalone release check", "release-policy": "Release compatibility check" }[failure.source];
   const reasons: Record<UpdateDiscoveryFailure["code"], string> = {
     "command-not-found": "The required command was not found in the server environment.",
     "permission-denied": "Access was denied. Check the installation owner's permissions.",
@@ -32,7 +32,7 @@ function discoveryMessage(failure?: UpdateDiscoveryFailure): string {
     "command-failed": "The command failed. Use the doctor plugin to inspect the installation.",
     network: "The registry could not be reached. Check the connection and try again.",
     "registry-auth": "The registry rejected authentication. Check its access settings.",
-    "release-unavailable": "The selected release is not available in the registry. Try again later.",
+    "release-unavailable": "The selected release is not available. Try again later.",
     "invalid-response": "The response could not be read. Check the installed tools with the doctor plugin.",
     "invalid-plugin": "Installed plugin records could not be verified. Use the update plugin to repair them.",
     "incompatible-release": "The available release does not match this channel or would downgrade the application.",
@@ -65,7 +65,7 @@ export function UpdateSettings() {
   const discovery = settings?.discovery;
   const pending = settings?.pending;
   const checkedAt = discovery ? new Date(discovery.checkedAt) : null;
-  const newer = discovery?.targetVersion && (discovery.targetVersion !== status?.currentVersion || Boolean(discovery.pluginsPending));
+  const newer = discovery?.targetVersion && (discovery.targetVersion !== status?.currentVersion || Boolean(discovery.pluginsPending) || discovery.packagePending);
   const paused = last?.status === "failed" || last?.status === "applying";
 
   const current = Boolean(discovery && !discovery.error && !newer && !pending && !paused && last?.status !== "deferred" && !stale);
@@ -83,7 +83,7 @@ export function UpdateSettings() {
             {current && !progress && <Check className="size-3.5" aria-hidden="true" />}
             <span>{progress ?? (paused ? last?.status === "failed" ? "Update paused" : "Updating…"
               : pending ? "Update scheduled" : last?.status === "deferred" ? "Update postponed"
-              : discovery?.error ? "Check failed" : newer ? discovery.targetVersion === status?.currentVersion ? "Plugin updates available" : `Version ${discovery.targetVersion} is available.`
+              : discovery?.error ? "Check failed" : newer ? discovery.targetVersion === status?.currentVersion ? discovery.packagePending ? "Installation update available" : "Plugin updates available" : `Version ${discovery.targetVersion} is available.`
               : current ? "Up to date" : "Not checked yet")}</span>
           </div>}
         </div>

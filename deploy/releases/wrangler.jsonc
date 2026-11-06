@@ -1,0 +1,13 @@
+{
+  "name": "palmagent-releases",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "releases.palmagent.dev", "custom_domain": true },
+    { "pattern": "palmagent.dev/install.sh", "zone_name": "palmagent.dev" }
+  ],
+  "assets": { "directory": "../../build/installer", "binding": "ASSETS", "run_worker_first": true },
+  "r2_buckets": [{ "binding": "RELEASE_INDEX", "bucket_name": "palmagent-release-index" }],
+  "vars": { "REPOSITORY_ID": "1334755084" }
+}

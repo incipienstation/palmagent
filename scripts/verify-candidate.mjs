@@ -62,6 +62,9 @@ export function requireCandidateChecks(results) {
   if (required ? verify?.result !== 'success' : verify?.result !== 'skipped') {
     throw new Error('Candidate verification lanes did not satisfy the selected plan.');
   }
+  if (prepare.outputs.standalone === 'true' && prepare.outputs.reuse === 'false' && results.standalone?.result !== 'success') {
+    throw new Error('Both standalone platform builds and smoke checks must pass.');
+  }
 }
 
 function distributedSource(cwd) {

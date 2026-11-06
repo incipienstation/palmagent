@@ -106,7 +106,8 @@ export function preflight(): Check[] {
         },
   );
   need("systemctl", "this tool requires a systemd Linux host");
-  need("node", "install Node.js ≥ 22");
+  checks.push({ name: "node", level: Number(process.versions.node.split(".")[0]) >= 22 ? "ok" : "fail",
+    detail: `${process.versions.node} (${process.execPath})` });
   need("git", "install git");
   checks.push(...checkAgents());
 

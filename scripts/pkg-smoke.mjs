@@ -103,6 +103,7 @@ try {
   execFileSync(bin, ["config", "init"], { env, encoding: "utf8" });
   execFileSync(bin, ["config", "set", "--channel", "preview"], { env, encoding: "utf8" });
   assert.equal(readPreferences(join(scratch, "home")).channel, "preview", "another process and working directory share preferences");
+  execFileSync(bin, ["config", "set", "--channel", "stable"], { env, encoding: "utf8" });
   const savedPreferences = readFileSync(configPath, "utf8");
   execFileSync(bin, ["config", "init"], { env, encoding: "utf8" });
   execFileSync(bin, ["config", "set", "--channel", "stable", "--dry-run"], { env, encoding: "utf8" });
@@ -174,7 +175,7 @@ try {
   const beforePlan = readFileSync(installEnv, "utf8");
   const updateSettings = await (await fetch(origin + "/api/settings/updates", { signal: AbortSignal.timeout(10_000) })).json();
   assert.equal(updateSettings.currentVersion, pkg.version, "settings report the running server's embedded version");
-  assert.equal(updateSettings.settings.channel, "preview", "packed web/CLI bridge reads the shared preferences");
+  assert.equal(updateSettings.settings.channel, "stable", "packed web/CLI bridge reads the shared preferences");
   assert.equal(updateSettings.settings.autoUpdate, false);
   const unauthenticatedChange = await fetch(origin + "/api/settings/updates", {
     method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ autoUpdate: true }),

@@ -13,7 +13,7 @@ run the CLI, edit configuration, or manually restart services.
 
 Read and follow the [shared CLI bootstrap guidance](../.shared/bootstrap.md).
 Honor an explicit channel request through `settings` and preserve the installation's
-custom `--data-dir` throughout. Check `<cli> --help` for `--plan` and `--plugin-manifest`
+custom `--data-dir` throughout. Check `<cli> --help` for `--plan-file`, `--distribution`, and `--plugin-manifest`
 before using them: older CLIs may ignore unknown flags. If absent, bootstrap an
 exact published CLI release compatible with this plugin into a temporary command,
 without replacing the installed service package, and check its help again. Stop
@@ -32,8 +32,12 @@ The manifest relative to this skill is `../../.claude-plugin/plugin.json` or
 ```
 
 Repeat `--plugin-manifest` for each participating plugin. Add `--to <version>`
-only for an explicitly requested exact release. Planning contacts npm, returns
-JSON, and changes no package, preferences, services, or plugin state.
+only for an explicitly requested exact release. Planning returns schema v2 JSON and contacts
+signed standalone metadata (or npm for an existing Stable npm installation). It changes no
+package, preferences, services, or plugin state. Save the exact plan to a private file.
+Add `--distribution standalone` to migrate a Stable npm installation explicitly; Preview
+selects standalone automatically. Explain `action: migrate` even if the version is unchanged.
+The plan pins the manifest hash, architecture and archive hash through activation.
 
 Explain the current and target package versions and which plugins can stay or
 need updating. The package includes the CLI, server, web app, native daemon, and
@@ -103,8 +107,14 @@ including manual calls and `--force`. Let it finish naturally; never stop sessio
 to make an update proceed. Drive the CLI service logic, not manual unit restarts.
 
 ```bash
-<cli> update --pull --to <planned-target> --plugin-manifest <verified-installed-manifest>
+<cli> update --pull --plan-file <private-plan.json> --plugin-manifest <verified-installed-manifest>
 ```
+
+Use `--plan-file` for standalone targets. For a retained Stable npm target, use
+`--to <planned-target>` instead. A 0.1.x to 0.2.x migration uses the candidate CLI with
+`PALMAGENT_CLI_FORWARDED=1`; first prepare and verify the new participating plugins.
+The 0.1.x CLI and 0.2.x plugin (and the reverse pair) are incompatible. Retain the old
+npm installation and all execution releases after success; never uninstall them as cleanup.
 
 Repeat the verified manifest argument for all participating plugins. The CLI
 rechecks target compatibility before package replacement, installs the exact

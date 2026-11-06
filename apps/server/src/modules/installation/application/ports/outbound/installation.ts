@@ -74,9 +74,14 @@ export interface InstallationRuntime {
   provisionCandidate(config: InstallConfig, dryRun: boolean): void;
   isPostUpgrade(): boolean;
 }
+export interface ReleaseResolution {
+  installation?: InstallConfig;
+  distribution?: import("@palmagent/shared/standalone").Distribution;
+  selection?: import("@palmagent/shared/standalone").StandaloneSelection;
+}
 export interface InstallationReleases {
   installedVersion(packageDirectory?: string): string;
-  stage(config: InstallConfig, version: string): InstallConfig;
+  stage(config: InstallConfig, version: string, selection?: import("@palmagent/shared/standalone").StandaloneSelection): InstallConfig;
   identity(packageDirectory: string): ApplicationIdentity;
   verifyCli(config: InstallConfig, version: string, retained: boolean): void;
   verifyApplication(identity: ApplicationIdentity, config: InstallConfig): Promise<void>;
@@ -86,7 +91,7 @@ export interface InstallationReleases {
   readPlugins(paths: string[]): PluginVersion[];
   discoverPlugins(config: InstallConfig): NativePlugin[];
   participatingPlugins(native: NativePlugin[], paths: string[]): PluginVersion[];
-  resolvePlan(current: string, channel: UpdateChannel, plugins: PluginVersion[], requested?: string): UpdatePlan;
+  resolvePlan(current: string, channel: UpdateChannel, plugins: PluginVersion[], requested?: string, options?: ReleaseResolution): UpdatePlan;
   refreshPlugins(config: InstallConfig, plan: UpdatePlan, native: NativePlugin[]): NativePlugin[];
   canonicalPluginPath(path: string): string;
 }
@@ -116,7 +121,7 @@ export interface InstallationDependencies {
 }
 
 export interface RetainedReleaseOperations {
-  stageRelease(config: InstallConfig, version: string): InstallConfig;
+  stageRelease(config: InstallConfig, version: string, selection?: import("@palmagent/shared/standalone").StandaloneSelection): InstallConfig;
   verifyActiveExecutionCompatibility(config: InstallConfig): void;
   assertExecutionsFinished(config: InstallConfig): void;
 }

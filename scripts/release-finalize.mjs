@@ -10,6 +10,7 @@ import { publishPackage, validatePublicationEnvironment } from './release-publis
 import { github, githubPages, registryMetadata, registryTarball } from './lib/release-github.mjs';
 import { compareVersions } from './lib/release-version.mjs';
 import { releaseTiming } from './lib/release-timing.mjs';
+import { signReleaseDocument, readChannel, preflightStandalonePublication, publishStandaloneChannel } from './lib/standalone-release.mjs';
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
@@ -102,6 +103,8 @@ export async function finalizeRelease(cwd, directory, env, adapters = {}) {
   assert(env.EXPECTED_ARTIFACT_SHA256, 'Finalization requires the pre-approval checksum');
   assert(env.RELEASE_ENVIRONMENT === candidate.environment, 'Finalization environment mismatch');
   const api = adapters.api ?? ((path, options) => github(env.GH_REPO, path, options));
+  if (candidate.schemaVersion === 2) return finalizeStandalone(cwd, directory, env, adapters, candidate, api, measure);
+  assert(candidate.channel !== 'next', 'Preview publication requires a standalone candidate; npm prereleases are disabled');
   validatePublicationEnvironment(candidate, api(`environments/${candidate.environment}`));
   assert(env.NPM_PUBLISH_ENABLED === 'true', 'Publication is not enabled');
   const metadata = adapters.metadata ?? registryMetadata;
@@ -158,6 +161,85 @@ export async function finalizeRelease(cwd, directory, env, adapters = {}) {
   // A failed upload or registry verification leaves the exact draft available for recovery.
   if (release.draft) await measure('release-publication', () => api(`releases/${release.id}`, { method: 'PATCH', body: { draft: false, make_latest: candidate.channel === 'latest' ? 'true' : 'false' } }));
   return { ...manifest, publication: result, releaseUrl: release.html_url };
+}
+
+async function finalizeStandalone(cwd, directory, env, adapters, candidate, api, measure) {
+  assert(env.STANDALONE_PUBLISH_ENABLED === 'true', 'Standalone publication is not enabled');
+  const protection = api(`environments/${candidate.environment}`);
+  assert(protection.name === candidate.environment, 'Publication environment mismatch');
+  if (candidate.channel === 'latest') {
+    validatePublicationEnvironment(candidate, protection);
+    assert(env.NPM_PUBLISH_ENABLED === 'true', 'Stable npm publication is not enabled');
+  }
+  const manifest = candidate.manifest;
+  const signed = (adapters.sign ?? signReleaseDocument)(manifest, env.RELEASE_SIGNING_KEY_ID, env.RELEASE_SIGNING_KEY);
+  await measure('standalone-preflight', () => (adapters.standalonePreflight ?? preflightStandalonePublication)(manifest, signed, env));
+  const channel = candidate.channel === 'next' ? 'preview' : 'stable';
+  const current = await (adapters.channel ?? readChannel)(channel);
+  assert(!current || compareVersions(current.value.version, candidate.version) <= 0, 'Candidate is older than the published channel');
+  const signedHash = createHash('sha256').update(signed).digest('hex');
+  assert(current?.value.version !== candidate.version || current.value.releaseManifestSha256 === signedHash, 'Published release manifest differs');
+  const metadata = adapters.metadata ?? registryMetadata;
+  let npmCandidate;
+  if (manifest.npm) {
+    npmCandidate = { ...candidate, ...manifest.npm, path: join(directory, manifest.npm.filename) };
+    await measure('registry-preflight', async () => {
+      const before = await metadata();
+      assert(!before['dist-tags'].latest || compareVersions(before['dist-tags'].latest, candidate.version) <= 0, 'Stable npm channel is newer');
+      const integrity = `sha512-${createHash('sha512').update(readFileSync(npmCandidate.path)).digest('base64')}`;
+      assert(!before.versions[candidate.version] || before.versions[candidate.version].dist?.integrity === integrity, 'Stable npm version contains different bytes');
+    });
+  }
+  const identity = await measure('release-tag', () => {
+    const tagObject = ensureReleaseTag(cwd, candidate, api);
+    if (!adapters.skipFetch) execFileSync('git', ['fetch', 'origin', `refs/tags/${candidate.tag}:refs/tags/${candidate.tag}`], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    return adapters.checkTag ? adapters.checkTag(candidate, tagObject) : checkTag(cwd, candidate.tag, candidate.commit, tagObject);
+  });
+  const receipt = { ...identity, distribution: 'standalone', filename: 'standalone.json', sha256: signedHash, runUrl: candidate.runUrl };
+  const files = {
+    'standalone.json': signed,
+    'standalone-manifest.json': readFileSync(candidate.path),
+    'release.json': Buffer.from(JSON.stringify(receipt, null, 2) + '\n'),
+    'SHA256SUMS': readFileSync(join(directory, 'SHA256SUMS')),
+  };
+  for (const artifact of manifest.artifacts) files[artifact.filename] = readFileSync(join(directory, artifact.filename));
+  if (manifest.npm) files[manifest.npm.filename] = readFileSync(npmCandidate.path);
+  const release = await measure('release-assets', () => {
+    const draft = ensureReleaseDraft(identity, { ...candidate, notes: readFileSync(join(directory, 'RELEASE_NOTES.md'), 'utf8') },
+      adapters.releases ? adapters.releases() : githubPages(env.GH_REPO, 'releases'), api);
+    return ensureReleaseAssets(draft, files, {
+      ...(adapters.assets ?? {
+        download: asset => github(env.GH_REPO, `releases/assets/${asset.id}`, { binary: true }),
+        upload: (name, bytes) => {
+          writeFileSync(join(directory, name), bytes);
+          execFileSync('gh', ['release', 'upload', candidate.tag, join(directory, name), '--repo', env.GH_REPO], { stdio: ['ignore', 'pipe', 'pipe'] });
+        },
+      }),
+      refresh: value => adapters.refreshRelease ? adapters.refreshRelease(value) : refreshRelease(value, api),
+    });
+  });
+  let npmPublication;
+  if (npmCandidate) {
+    npmPublication = await publishPackage(npmCandidate, { env, measure, registryVersion: async version => (await metadata()).versions[version] ?? null,
+      run: adapters.publish ?? ((command, args) => execFileSync(command, args, { stdio: 'inherit', env: { ...env, ALLOW_PUBLISH: '1' } })),
+    });
+    await measure('published-integrity', async () => {
+      const registry = await metadata(), bytes = await (adapters.tarball ?? registryTarball)(registry.versions[candidate.version]);
+      assert(createHash('sha256').update(bytes).digest('hex') === manifest.npm.sha256 && registry['dist-tags'].latest === candidate.version, 'Published Stable npm identity differs');
+    });
+  }
+  if (release.draft) await measure('release-publication', () => api(`releases/${release.id}`, { method: 'PATCH', body: { draft: false, make_latest: candidate.channel === 'latest' ? 'true' : 'false' } }));
+  await measure('standalone-public-integrity', async () => {
+    if (adapters.verifyPublicStandalone) return adapters.verifyPublicStandalone(manifest, signed);
+    const response = await fetch(`${manifest.artifacts[0].url.slice(0, manifest.artifacts[0].url.lastIndexOf('/'))}/standalone.json`, { signal: AbortSignal.timeout(30_000) });
+    assert(response.ok && Buffer.from(await response.arrayBuffer()).equals(signed), 'Public standalone manifest differs');
+    for (const artifact of manifest.artifacts) {
+      const asset = await fetch(artifact.url, { method: 'HEAD', signal: AbortSignal.timeout(30_000) });
+      assert(asset.ok && Number(asset.headers.get('content-length')) === artifact.size, 'Public standalone archive is unavailable or has the wrong size');
+    }
+  });
+  await measure('channel-activation', () => (adapters.publishChannel ?? publishStandaloneChannel)(manifest, signed, env));
+  return { ...receipt, publication: 'standalone-published', ...(npmPublication ? { npmPublication } : {}), releaseUrl: release.html_url };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

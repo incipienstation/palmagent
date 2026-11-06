@@ -15,6 +15,11 @@ export interface InstallationOptions {
   channel?: string;
   targetVersion?: string;
   expectedVersion?: string;
+  distribution?: import("@palmagent/shared/standalone").Distribution;
+  plannedTarget?: {
+    currentVersion: string; targetVersion: string; channel: "stable" | "preview";
+    selection: import("@palmagent/shared/standalone").StandaloneSelection;
+  };
   pluginManifests: string[];
   domain?: string;
   host?: string;

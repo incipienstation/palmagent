@@ -9,7 +9,7 @@ import { packageFixture } from './package-fixture.mjs';
 import { releaseFixture } from './release-fixture.mjs';
 import { releaseTiming } from '../lib/release-timing.mjs';
 
-for (const version of ['0.1.0-alpha.1', '0.1.0']) test(`${version}: validate first, then tag, publish exact bytes, and expose Release last; retry is immutable`, async (t) => {
+for (const version of ['0.1.0']) test(`${version}: validate first, then tag, publish exact bytes, and expose Release last; retry is immutable`, async (t) => {
   const f = releaseFixture(t, version), directory = join(f.root, 'bundle');
   const pkg = packageFixture(directory, { version, sourceCommit: f.source });
   const candidate = prepareCandidate(f.root, directory, f.source, 42, 'example/palmagent');
@@ -77,4 +77,15 @@ test('ambiguous duplicate uploads reconcile an exact existing asset without retr
     upload: () => { uploaded = true; attempts++; throw new Error('asset under the same name already exists'); },
   }));
   assert.equal(attempts, 1);
+});
+
+test('old npm Preview candidates cannot bypass the standalone publication boundary', async t => {
+  const f = releaseFixture(t), directory = join(f.root, 'bundle');
+  packageFixture(directory, { version: '0.1.0-alpha.1', sourceCommit: f.source });
+  const candidate = prepareCandidate(f.root, directory, f.source, 42, 'example/palmagent');
+  await assert.rejects(finalizeRelease(f.root, directory, {
+    GITHUB_ACTIONS: 'true', ACTIONS_ID_TOKEN_REQUEST_URL: 'oidc', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'test-only',
+    RELEASE_COMMIT: f.source, CANDIDATE_RUN_ID: '42', GH_REPO: 'example/palmagent',
+    EXPECTED_ARTIFACT_SHA256: candidate.sha256, RELEASE_ENVIRONMENT: 'npm-next',
+  }, { api: () => assert.fail('no remote mutations') }), /standalone candidate/);
 });

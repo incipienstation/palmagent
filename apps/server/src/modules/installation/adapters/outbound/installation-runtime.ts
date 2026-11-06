@@ -155,7 +155,7 @@ function finishMigrationCleanup(previous: InstallConfig): void {
 
 
 function provisionIndependentRuntime(cfg: InstallConfig, dryRun: boolean): void {
-  if (!dryRun && releaseContract(cfg.pkgDir!).hostSetup === 1 && releaseContract(cfg.pkgDir!).ingressOwner === "plugin") {
+  if (!dryRun && cfg.executionNode && releaseContract(cfg.pkgDir!).hostSetup === 1 && releaseContract(cfg.pkgDir!).ingressOwner === "plugin") {
     const result = run(cfg.executionNode!, [join(cfg.pkgDir!, "cli.js"), "runtime-setup", "--data-dir", cfg.dataDir, "--non-interactive"], {
       env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 60_000,
     });
@@ -230,8 +230,9 @@ export function createInstallationRuntime(releases: RetainedReleaseOperations): 
     },
     retainedCandidate(config, packageDirectory, node) {
       const release = realpathSync(packageDirectory), runtime = realpathSync(node);
+      const bundled = existsSync(join(release, "../bundle.json")) && runtime === realpathSync(join(release, "../runtime/bin/node"));
       if (!release.startsWith(realpathSync(join(config.dataDir, "releases")) + sep) ||
-          !runtime.startsWith(realpathSync(join(config.dataDir, "runtimes")) + sep)) throw new Error("Runtime setup requires retained package and Node artifacts");
+          (!bundled && !runtime.startsWith(realpathSync(join(config.dataDir, "runtimes")) + sep))) throw new Error("Runtime setup requires retained package and Node artifacts");
       return { ...config, pkgDir: release, workingDir: release, executionNode: runtime };
     },
     provisionCandidate: provisionIndependentRuntime,

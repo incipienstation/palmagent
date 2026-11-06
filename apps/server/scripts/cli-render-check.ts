@@ -361,7 +361,7 @@ try {
   try {
     await update({ ...customFlags, pull: true, get: (key) => key === "channel" ? "preview" : customFlags.get(key) });
   } finally { console.log = originalLog; }
-  check(captured.some((line) => line.includes("palmagent@next")), "Preview dry-run selects next");
+  check(captured.some((line) => line.includes("palmagent standalone preview")), "Preview dry-run selects standalone without a registry lookup");
   check(readFileSync(installEnvPath(scratch), "utf8") === beforeChannelDryRun, "channel dry-run leaves config byte-identical");
 
   const migrationPackage = join(scratch, "palmagent");
@@ -373,7 +373,7 @@ try {
   console.log = (...values: unknown[]) => captured.push(values.map(String).join(" "));
   try { await update({ ...customFlags, pull: true }); }
   finally { console.log = originalLog; }
-  check(captured.some((line) => line.includes("palmagent@next")), "legacy prerelease installations keep Preview until explicitly changed");
+  check(captured.some((line) => line.includes("palmagent standalone preview")), "legacy prerelease installations keep Preview until explicitly changed");
   saveConfig({ ...written, pkgDir: migrationPackage });
   setUserChannel("stable");
   captured.length = 0;
@@ -403,7 +403,7 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
   const preflightConfig = readFileSync(installEnvPath(scratch), "utf8");
   const savedPreferences = readFileSync(userConfigPath(), "utf8");
   const pluginManifest = join(scratch, "plugin.json");
-  writeFileSync(pluginManifest, JSON.stringify({ name: "palmagent", version: "0.1.0-alpha.3" }));
+  writeFileSync(pluginManifest, JSON.stringify({ name: "palmagent", version: "0.1.0" }));
   try {
     process.env.PATH = fakeBin + ":" + process.env.PATH;
     process.env.TEST_NPM_CALLS = npmCalls;
@@ -419,12 +419,12 @@ if (process.argv[2] === "view" && process.env.TEST_NPM_TARGET) {
       "a prerelease behind latest is refused before npm installation");
 
     writeFileSync(npmCalls, "");
-    process.env.TEST_NPM_TARGET = "0.1.0-alpha.3";
+    process.env.TEST_NPM_TARGET = "0.1.0";
     const failedPull = await update({ ...customFlags, dryRun: false, pull: true,
-      get: (key) => key === "channel" ? "preview" : key === "plugin-manifest" ? pluginManifest : customFlags.get(key) });
+      get: (key) => key === "channel" ? "stable" : key === "plugin-manifest" ? pluginManifest : customFlags.get(key) });
     const installCalls = readFileSync(npmCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     check(failedPull === 1 && JSON.stringify(installCalls) === JSON.stringify([
-      ["view", "palmagent@next", "version", "--json"],
+      ["view", "palmagent@latest", "version", "--json"],
       ["root", "-g"],
     ]), "a real pull refuses package replacement when an idle maintenance window cannot be verified");
 

@@ -92,7 +92,7 @@ function parseFlags(argv: string[]): Flags {
       continue;
     }
     const key = a.slice(2);
-    if (["channel", "to", "plugin-version", "plugin-manifest", "expected-version"].includes(key) &&
+    if (["channel", "to", "plugin-version", "plugin-manifest", "expected-version", "distribution", "plan-file"].includes(key) &&
         (i + 1 === argv.length || argv[i + 1].startsWith("-"))) {
       throw new Error(`--${key} requires a value`);
     }
@@ -150,8 +150,10 @@ Common options:
   --repo-roots <list>  Colon-separated repo scan roots
   --claude-config-dir <path>  Claude CLI config/creds dir (CLAUDE_CONFIG_DIR); blank = ~/.claude
   --force              Proceed past failed preflight (install)
-  --pull               update: fetch the selected npm release channel (package installs only)
+  --pull               update: fetch the selected release channel (package installs only)
   --plan               update: resolve the exact target and plugin actions as JSON; change nothing
+  --plan-file <path>    update --pull: apply a standalone plan with its pinned artifact identity
+  --distribution <d>   update: npm or standalone; Preview requires standalone
   --plugin-manifest <p> update: installed plugin.json path; repeat for each participating plugin
   --automatic          update --pull: saved opt-in and compatible releases; existing executions continue
   --channel <name>     stable (default for new installs) or preview; remembered for updates
@@ -234,6 +236,8 @@ async function main(): Promise<void> {
     "plugin-version": ["compatibility"],
     "plugin-manifest": ["update"],
     "expected-version": ["update"],
+    distribution: ["update"],
+    "plan-file": ["update"],
   })) {
     if (flags.get(flag) !== undefined && !commands.includes(cmd)) {
       throw new Error(`--${flag} is only supported by ${commands.join("/")}`);
@@ -292,6 +296,7 @@ async function main(): Promise<void> {
         pull: { type: "boolean" }, plan: { type: "boolean" }, automatic: { type: "boolean" },
         "data-dir": { type: "string" }, channel: { type: "string" }, to: { type: "string" },
         "plugin-manifest": { type: "string", multiple: true }, "expected-version": { type: "string" },
+        distribution: { type: "string" }, "plan-file": { type: "string" },
       } });
       // Update and setup own their locks across activity checks and activation.
       process.exit(await update(flags));

@@ -55,9 +55,11 @@ export function checkUpdateAccess(cfg: InstallConfig, force: boolean, now = Date
   const age = cached ? now - Date.parse(cached.checkedAt) : Infinity;
   if (!force && cached?.channel === channel && cached.currentVersion === currentVersion && (cached.error || cached.pluginsPending !== undefined) && age >= 0 && age < (cached.error ? FAILED_CHECK_CACHE_MS : CHECK_CACHE_MS)) return state;
   try {
-    const plan = resolveUpdatePlan(currentVersion, channel, discoverPlugins(cfg));
+    const plan = resolveUpdatePlan(currentVersion, channel, discoverPlugins(cfg), undefined, { installation: cfg });
     state.discovery = { channel, currentVersion, targetVersion: plan.targetVersion,
-      eligible: plan.automaticEligible, pluginsPending: plan.plugins.filter((p) => p.action === "update").length, checkedAt: new Date(now).toISOString(), error: false };
+      eligible: plan.automaticEligible, pluginsPending: plan.plugins.filter((p) => p.action === "update").length,
+      packagePending: plan.packageAction === "update", ...(plan.selection ? { selection: plan.selection } : {}),
+      checkedAt: new Date(now).toISOString(), error: false };
   } catch (error) {
     // Throttle reconnect storms, but let the next visit recover promptly from a
     // transient failure. Old clients still understand the error boolean.
@@ -79,7 +81,7 @@ export function requestUpdateAccess(cfg: InstallConfig, automatic: boolean, vers
   const state = readUpdateAccess(cfg.dataDir);
   const check = state.discovery;
   const preferences = getUserConfig({ dataDir: cfg.dataDir });
-  if (!check || check.error || !check.eligible || !check.targetVersion || (check.targetVersion === check.currentVersion && !check.pluginsPending) ||
+  if (!check || check.error || !check.eligible || !check.targetVersion || (check.targetVersion === check.currentVersion && !check.pluginsPending && !check.packagePending) ||
       check.channel !== preferences.channel || check.currentVersion !== packageVersion(cfg) ||
       (automatic && !preferences.autoUpdate) || (version !== undefined && version !== check.targetVersion)) {
     throw new Error("check for updates again");
@@ -87,7 +89,7 @@ export function requestUpdateAccess(cfg: InstallConfig, automatic: boolean, vers
   if (state.pending && automatic) return;
   if (state.pending?.targetVersion === check.targetVersion && state.pending.channel === check.channel && !state.pending.automatic) return;
   state.pending = { id: randomUUID(), channel: check.channel, currentVersion: check.currentVersion,
-    targetVersion: check.targetVersion, automatic };
+    targetVersion: check.targetVersion, automatic, ...(check.selection ? { selection: check.selection } : {}) };
   writeUpdateAccess(cfg.dataDir, state);
 }
 

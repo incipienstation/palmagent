@@ -72,8 +72,10 @@ async function main(): Promise<void> {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
 
-  execFileSync(process.execPath, [join(ROOT, "scripts", "build-daemon.mjs")], { cwd: ROOT, stdio: "inherit" });
-  cpSync(join(ROOT, "build", "daemon"), join(OUT, "daemon"), { recursive: true });
+  if (process.env.PALMAGENT_PACKAGE_NATIVE !== "none") {
+    execFileSync(process.execPath, [join(ROOT, "scripts", "build-daemon.mjs")], { cwd: ROOT, stdio: "inherit" });
+    cpSync(join(ROOT, "build", "daemon"), join(OUT, "daemon"), { recursive: true });
+  }
 
   const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
   const buildInfo = {
@@ -187,7 +189,7 @@ async function main(): Promise<void> {
     // and npm trusted publisher are separately approved.
     scripts: {
       prepublishOnly:
-        "node -e \"if(process.env.ALLOW_PUBLISH!=='1'){console.error('publishing is disabled — set ALLOW_PUBLISH=1');process.exit(1)}\"",
+        "node -e \"const p=require('./package.json');if(p.version.includes('-')||process.env.ALLOW_PUBLISH!=='1'){console.error('npm publication requires an authorized Stable release');process.exit(1)}\"",
     },
   };
   writeFileSync(join(OUT, "package.json"), JSON.stringify(pkg, null, 2) + "\n");

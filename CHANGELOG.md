@@ -6,6 +6,17 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Breaking: the 0.2.x CLI/operator contract introduces signed standalone release plans and
+  bundled Node on Linux x64 and arm64. Upgrade participating plugins and use a temporary
+  compatible CLI for the first migration; 0.1.x and 0.2.x CLI/plugin pairs are incompatible.
+  Existing data, service scope, and retained executions are preserved. See
+  [the migration guide](docs/STANDALONE.md).
+- Preview publication and updates now use standalone archives instead of npm. Stable keeps
+  both distributions. Missing signing or hosting configuration stops publication before
+  creating a tag; old npm prereleases remain available as historical artifacts.
+
 ## 0.1.0-alpha.241
 
 ### Changed

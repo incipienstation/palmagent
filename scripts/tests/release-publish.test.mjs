@@ -32,13 +32,13 @@ test('publish reviewed bytes once; retry checks registry integrity without movin
   const root = mkdtempSync(join(tmpdir(), 'palmagent-publish-test-'));
   try {
     const path = join(root, 'package.tgz'); writeFileSync(path, 'reviewed bytes');
-    const identity = { path, version: '0.1.0-alpha.1', channel: 'next' };
+    const identity = { path, version: '0.1.0', channel: 'latest' };
     const published = { dist: { integrity: `sha512-${hashFile(path, 'sha512', 'base64')}` } };
     const calls = []; let exists = false;
     const adapters = { env, registryVersion: async () => exists ? published : null, run: (...args) => { calls.push(args); exists = true; } };
     assert.equal(await publishPackage(identity, adapters), 'published');
     assert.equal(calls.length, 1);
-    assert(calls[0][1].includes('next'));
+    assert(calls[0][1].includes('latest'));
     assert(calls[0][1].includes('--provenance'));
     assert.equal(await publishPackage(identity, adapters), 'already-published');
     assert.equal(calls.length, 1);
@@ -54,7 +54,7 @@ test('post-upload verification tolerates delayed visibility without republishing
   const root = mkdtempSync(join(tmpdir(), 'palmagent-publish-test-'));
   t.after(() => rmSync(root, { recursive: true }));
   const path = join(root, 'package.tgz'); writeFileSync(path, 'reviewed bytes');
-  const identity = { path, version: '0.1.0-alpha.1', channel: 'next' };
+  const identity = { path, version: '0.1.0', channel: 'latest' };
   const published = { dist: { integrity: `sha512-${hashFile(path, 'sha512', 'base64')}` } };
   let reads = 0, uploads = 0, waits = 0;
   const adapters = { env, run: () => { uploads++; }, sleep: async () => { waits++; },
@@ -80,7 +80,7 @@ test('a multi-minute registry propagation delay completes in one publication att
   const root = mkdtempSync(join(tmpdir(), 'palmagent-propagation-'));
   t.after(() => rmSync(root, { recursive: true }));
   const path = join(root, 'package.tgz'); writeFileSync(path, 'reviewed bytes');
-  const identity = { path, version: '0.1.0-alpha.1', channel: 'next' };
+  const identity = { path, version: '0.1.0', channel: 'latest' };
   const published = { dist: { integrity: `sha512-${hashFile(path, 'sha512', 'base64')}` } };
   let elapsed = 0, uploads = 0;
   const timings = [];
@@ -133,3 +133,11 @@ for (const version of ['0.1.0-alpha.1', '0.1.0-beta.1', '0.1.0-rc.1', '0.1.0']) 
     } finally { rmSync(root, { recursive: true }); }
   });
 }
+
+test('npm refuses every prerelease before contacting a registry or invoking npm', async () => {
+  for (const version of ['0.2.0-alpha.1', '0.2.0-beta.1', '0.2.0-rc.1']) {
+    await assert.rejects(publishPackage({ version, channel: 'next' }, {
+      env, registryVersion: () => assert.fail('no registry access'), run: () => assert.fail('no npm'),
+    }), /only Stable/);
+  }
+});
