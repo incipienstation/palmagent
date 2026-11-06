@@ -149,6 +149,9 @@ jobs:
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
         run: |
+          # The pnpm store cache is shared across Linux images. Its native side
+          # effects can require a newer glibc than this systemd acceptance runner.
+          npm_config_build_from_source=true pnpm rebuild better-sqlite3 node-pty
           pnpm pkg:assemble
           pnpm release:check --artifact
           node scripts/pkg-smoke.mjs --pack-destination build/candidate
