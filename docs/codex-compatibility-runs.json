@@ -94,5 +94,17 @@
     "node": "v24.21.0",
     "baselineSchemaSha256": "a4fad05a2b7671d583d159941b2fd06df3978542e41661588adb2e9cef397ce9",
     "candidateSchemaSha256": "fa18b0a74c2f1b00062eec2cc3c77ca158f6dc436cb90080e5bdcb638e181ab4"
+  },
+  {
+    "version": "0.167.0",
+    "baseline": "0.166.0",
+    "source": "0a2dbcb95f79bb16d0dd334e9103fe2e302d87a9",
+    "checkedAt": "2026-11-06T12:14:18.777Z",
+    "mode": "schema-contract",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "fa18b0a74c2f1b00062eec2cc3c77ca158f6dc436cb90080e5bdcb638e181ab4",
+    "candidateSchemaSha256": "fa18b0a74c2f1b00062eec2cc3c77ca158f6dc436cb90080e5bdcb638e181ab4"
   }
 ]
