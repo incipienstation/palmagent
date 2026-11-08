@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { assertViewportLocked, captureForReview } from "./_helpers";
 import { installScopedStream, open, send } from "./_scoped-stream";
@@ -6,6 +6,25 @@ import { installScopedStream, open, send } from "./_scoped-stream";
 test.use({ serviceWorkers: "block" });
 
 const png = readFileSync(new URL("../../public/icon-512.png", import.meta.url));
+async function expectImageDownload(page: Page, dialog: Locator, filename: string) {
+  const button = dialog.getByRole("button", { name: "Download image", exact: true });
+  await expect(button).toBeInViewport({ ratio: 1 });
+  await dialog.evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
+  const box = (await button.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  const downloaded = page.waitForEvent("download");
+  await button.focus();
+  await page.keyboard.press("Enter");
+  const download = await downloaded;
+  expect(download.suggestedFilename()).toBe(filename);
+  expect(await download.failure()).toBeNull();
+  expect(readFileSync((await download.path())!)).toEqual(png);
+  await expect(dialog).toBeVisible();
+}
+
 async function reply(page: Page, text: string, running = false) {
   await installScopedStream(page);
   await open(page, running ? "t-run-charts" : "t-idle-rich");
@@ -108,6 +127,7 @@ for (const parser of ["static", "streaming", "long"] as const) {
     await expect(dialog.getByRole("img")).toBeVisible();
     await assertViewportLocked(page);
     if (parser === "static") await expect(page).toHaveScreenshot("image-enlarged-mobile.png");
+    await expectImageDownload(page, dialog, "preview #1.png");
     await dialog.getByRole("button", { name: "Zoom in image" }).click();
     await expect.poll(() => imageTransform(page).then(value => value.scale)).toBeGreaterThan(1);
     await assertViewportLocked(page);
@@ -156,7 +176,7 @@ test("remote, file URL, and embedded tool images render, while unsafe sources st
   const output = page.getByRole("button", { name: "Enlarge image: Session output" });
   await output.scrollIntoViewIfNeeded();
   await output.click();
-  await expect(page.getByRole("dialog", { name: "Session output" })).toBeVisible();
+  await expectImageDownload(page, page.getByRole("dialog", { name: "Session output" }), "image.png");
 });
 
 test("failed images can be retried and linked images keep their destination", async ({ page }) => {
@@ -214,7 +234,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
     await expect(preview.locator("img")).toHaveAttribute("src", path);
     await expect.poll(() => preview.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
     await preview.click();
-    await expect(page.getByRole("dialog", { name: "Attached image 1", exact: true })).toBeVisible();
+    await expectImageDownload(page, page.getByRole("dialog", { name: "Attached image 1", exact: true }), "image.png");
     await page.keyboard.press("Escape");
     await page.reload();
     await expect.poll(() => page.evaluate(id => (window as unknown as { hasScopedStream(id: string): boolean }).hasScopedStream(id), taskId)).toBe(true);
@@ -353,4 +373,82 @@ test("inline images preserve transcript wheel and touch scrolling", async ({ pag
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await cdp.detach();
   await assertViewportLocked(page);
+});
+
+for (const width of [360, 1280]) {
+  test(`image downloads report failures and retry without leaving the viewer at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    let downloads = 0;
+    let release: (() => void) | undefined;
+    await page.route("**/api/tasks/*/image?*", async route => {
+      if (route.request().resourceType() !== "fetch") return route.fulfill({ contentType: "image/png", body: png });
+      downloads++;
+      if (downloads === 1) {
+        await new Promise<void>(resolve => { release = resolve; });
+        return route.fulfill({ status: 410, body: "Expired" });
+      }
+      return route.fulfill({ contentType: "image/png", body: png });
+    });
+    await reply(page, "![A long image title that must leave room for the download and close controls](<images/미리보기 #1.png>)");
+    await page.getByRole("button", { name: /^Enlarge image:/ }).click();
+    const dialog = page.getByRole("dialog");
+    const url = page.url();
+    await dialog.getByRole("button", { name: "Download image", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "Downloading image" })).toBeDisabled();
+    await expect.poll(() => downloads).toBe(1);
+    release!();
+    await expect(dialog.getByRole("alert")).toHaveText("Could not download image. Please try again.");
+    await captureForReview(page, `image-download-error-${width}.png`);
+    await expectImageDownload(page, dialog, "미리보기 #1.png");
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    expect(page.url()).toBe(url);
+    await expect(dialog.getByRole("button", { name: "Exit image fullscreen" })).toBeInViewport({ ratio: 1 });
+    await assertViewportLocked(page);
+  });
+}
+
+test("external images offer an original link without fetching across origins", async ({ page }) => {
+  let fetches = 0;
+  await page.route("https://images.example.invalid/**", route => {
+    if (route.request().resourceType() === "fetch") fetches++;
+    return route.fulfill({ contentType: "image/png", body: png });
+  });
+  await reply(page, "![External](https://images.example.invalid/original.png)");
+  await page.getByRole("button", { name: "Enlarge image: External" }).click();
+  const dialog = page.getByRole("dialog");
+  const original = dialog.getByRole("link", { name: "Open original image" });
+  await expect(original).toHaveAttribute("href", "https://images.example.invalid/original.png");
+  await expect(original).toHaveAttribute("target", "_blank");
+  await expect(original).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(dialog.getByRole("button", { name: "Download image" })).toHaveCount(0);
+  expect(fetches).toBe(0);
+});
+
+test("closing the viewer cancels a pending image download", async ({ page }) => {
+  let requested = false;
+  let release: (() => void) | undefined;
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  await page.route("**/api/tasks/*/image?*", async route => {
+    if (route.request().resourceType() === "fetch") {
+      requested = true;
+      await new Promise<void>(resolve => { release = resolve; });
+    }
+    await route.fulfill({ contentType: "image/png", body: png });
+  });
+  await reply(page, "![Preview](preview.png)");
+  const trigger = page.getByRole("button", { name: "Enlarge image: Preview" });
+  await trigger.click();
+  await page.getByRole("button", { name: "Download image", exact: true }).click();
+  await expect.poll(() => requested).toBe(true);
+  const aborted = page.waitForEvent("requestfailed", request => request.resourceType() === "fetch" && request.url().includes("/image?"));
+  await page.getByRole("button", { name: "Exit image fullscreen" }).click();
+  await aborted;
+  release!();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(page.getByRole("button", { name: "Download image", exact: true })).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(downloads).toBe(0);
 });
