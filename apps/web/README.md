@@ -256,6 +256,10 @@ Agent replies render Markdown images with relative file paths or URLs such as
 `![Preview](https://example.invalid/preview.png)`. Tap an image or embedded tool
 image to open a larger view; choose **Actual size** to pan across its full resolution.
 An image wrapped in a Markdown link keeps that link.
+In the image viewer, **Download image** saves local previews and conversation
+attachments in their original format. Local previews retain their filename;
+images without one use `image` plus the format extension. External images offer
+**Open original image** so you can save them using the browser.
 Relative paths resolve from the task's working directory; absolute paths and local
 `file:` URLs work only inside that directory, including after resolving symlinks.
 Local previews support PNG, JPEG, GIF, and WebP up to 5 MB. SVG and files outside
