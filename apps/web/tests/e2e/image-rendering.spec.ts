@@ -9,6 +9,9 @@ const png = readFileSync(new URL("../../public/icon-512.png", import.meta.url));
 async function expectImageDownload(page: Page, dialog: Locator, filename: string) {
   const button = dialog.getByRole("button", { name: "Download image", exact: true });
   await expect(button).toBeInViewport({ ratio: 1 });
+  await dialog.evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  });
   const box = (await button.boundingBox())!;
   expect(box.width).toBeGreaterThanOrEqual(44);
   expect(box.height).toBeGreaterThanOrEqual(44);
