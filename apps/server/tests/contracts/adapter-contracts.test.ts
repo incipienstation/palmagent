@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { PERMISSIONS, type AnswerRequest, type QuestionRequest } from "@palmagent/shared";
+import { AGENT_HOOK_STOPPED, PERMISSIONS, type AnswerRequest, type QuestionRequest } from "@palmagent/shared";
 import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../../src/modules/agents/adapters/outbound/claude.js";
 import { buildCodexArgv, CodexRunner } from "../../src/modules/agents/adapters/outbound/codex.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
@@ -745,6 +745,31 @@ test("Codex interactive adapter acknowledges Send, uses the active turn, and rec
   assert.equal(writtenJson(replay.proc).at(-1).method, "turn/interrupt");
   replay.proc.exit(0); await recovered.done;
 });
+
+for (const status of ["stopped", "blocked", "failed", "completed"] as const) {
+  test(`Codex hook ${status} preserves the correct terminal outcome on replay`, async () => {
+    for (const reattach of [false, true]) {
+      const backend = new FakeBackend(), events: RawEvent[] = [];
+      const handle = new CodexRunner().start(startArgs({ interactive: true, resumeId: "thread-1", reattach }), e => events.push(e), backend);
+      backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
+      backend.proc.emit({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1" } } });
+      backend.proc.emit({ method: "hook/completed", params: { threadId: "other-thread", turnId: "turn-1", run: { id: "other", status: "stopped" } } });
+      backend.proc.emit({ method: "hook/completed", params: { threadId: "thread-1", turnId: "turn-1", run: {
+        id: "recovery", status, entries: [{ kind: "stop", text: "Context recovery could not be verified." }],
+      } } });
+      backend.proc.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } } });
+      const result = events.find(e => e.kind === "result")!.payload as Record<string, unknown>;
+      assert.equal(result.is_error, status === "stopped");
+      assert.equal(events.some(e => e.kind === "error" && (e.payload as { code: string }).code === AGENT_HOOK_STOPPED), status === "stopped");
+      if (status === "stopped") {
+        assert.equal(result.subtype, "hook_stopped");
+        assert.equal(result.providerStatus, "completed");
+      }
+      if (reattach) assert.equal(backend.proc.writes.length, 0, "recovery must not resend input");
+      backend.proc.exit(0); await handle.done;
+    }
+  });
+}
 
 test("Claude interactive Send waits for interruption and echoed input; Stop wins before delivery", async () => {
   const backend = new FakeBackend(), events: RawEvent[] = [];

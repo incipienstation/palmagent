@@ -1,6 +1,6 @@
 import { recoverTasks } from "./recover-tasks.js";
 import type { TaskUseCases } from "../ports/inbound/task-use-cases.js";
-import { isClosedTaskStatus, compactUnavailableReason, type CompactTaskRequest } from "@palmagent/shared";
+import { AGENT_HOOK_STOPPED, isClosedTaskStatus, compactUnavailableReason, type CompactTaskRequest } from "@palmagent/shared";
 import { sanitizeImages } from "../attachments/image-input.js";
 import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagent/shared";
 import { MessageController } from "./message-controller.js";
@@ -594,6 +594,12 @@ export class TaskService implements PrStatusSink {
       const history = await connection.history();
       if (this.shuttingDown || isClosedTaskStatus(task.status)) { connection.close(); return; }
       const control = { ...task.sessionControl!, owner: "shared" as const, connection: "connected" as const, sharedHistory: source, sharedSocket: socket, error: undefined };
+      for (const { event } of history) {
+        const stopped = event.payload as { code?: string; turnId?: string; message?: string } | null;
+        if (event.kind === "error" && stopped?.code === AGENT_HOOK_STOPPED && typeof stopped.turnId === "string" && typeof stopped.message === "string") {
+          control.stoppedHook = { turnId: stopped.turnId, message: stopped.message };
+        }
+      }
       delete control.waitPid; delete control.waitIdentity;
       const update = { ...task, sessionControl: control };
       const imported = source === "transcript" ? this.nativeSession.synchronize(update, { preview: true }) : undefined;
@@ -602,6 +608,11 @@ export class TaskService implements PrStatusSink {
         const output = event.kind === "tool_result" || event.kind === "tool_call" || event.kind === "status"
           ? extractOutputImages(event.payload) : { payload: event.payload, images: [] };
         const normalized = { ...event, payload: output.payload, agent: task.agent, ts: Date.now() } as AgentEvent;
+        const result = event.payload as { turnId?: string; subtype?: string; is_error?: boolean } | null;
+        if (event.kind === "result" && !result?.is_error && result?.turnId && result.turnId === control.stoppedHook?.turnId) {
+          normalized.payload = { ...result, is_error: true, subtype: "hook_stopped", providerStatus: result.subtype,
+            error: { message: control.stoppedHook.message } };
+        }
         if (event.kind === "status") {
           const payload = normalized.payload as { messageId?: string; attachments?: unknown; images?: number };
           const message = payload.messageId && this.messages.state(id).messages.find(message => message.id === payload.messageId);
@@ -617,7 +628,8 @@ export class TaskService implements PrStatusSink {
       const rows = this.db.transaction(() => {
         const rows = this.db.importSessionEvents(update, events, imported ? undefined : providerEvents.map(event => event.key));
         if (imported) {
-          const results = providerEvents.filter(({ event }) => event.kind === "result");
+          const results = providerEvents.filter(({ event }) => event.kind === "result" ||
+            event.kind === "error" && (event.payload as { code?: string } | null)?.code === AGENT_HOOK_STOPPED);
           rows.push(...this.db.importSessionEvents(update, results.map(({ event }) => event), results.map(({ key }) => key)));
         }
         return rows;
@@ -633,7 +645,7 @@ export class TaskService implements PrStatusSink {
       }
       for (const row of rows) this.hub.emitEvent(row);
       if (rows.length) { task.lastActivityAt = Date.now(); this.refreshPrs(task); this.refreshContextUsage(task); }
-      const result = history.filter(({ event }) => event.kind === "result").at(-1)?.event.payload as { turnId?: string; is_error?: boolean } | undefined;
+      const result = providerEvents.filter(({ event }) => event.kind === "result").at(-1)?.event.payload as { turnId?: string; is_error?: boolean } | undefined;
       if (result && (!result.turnId || !this.sharedTurns.has(id) || result.turnId === this.sharedTurns.get(id))) this.sharedTerminal.set(id, !result.is_error);
       this.applySharedSnapshot(task, snapshot, this.sharedTerminal.get(id));
       this.broadcastTasks();

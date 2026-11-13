@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { AGENT_HOOK_STOPPED } from "@palmagent/shared";
 import { sharedCodexServer as fixture } from "../support/codex-shared-server.js";
 import { createInputFiles } from "../../src/modules/agents/adapters/outbound/input-files.js";
 
@@ -56,6 +57,23 @@ test("unloaded sessions are never resumed into a second writer", async t => {
   const f = await fixture(t, { loaded: false });
   await assert.rejects(f.connector.connect(f.target, () => {}), /not running on the Codex shared server/);
   assert.ok(!f.requests.some(r => r.method === "thread/resume" || r.method === "thread/start"));
+});
+
+test("shared hook stops have stable identities without treating continuation or failed hooks as terminal", async t => {
+  const f = await fixture(t);
+  const connection = await f.connector.connect(f.target, () => {});
+  assert.ok(connection); t.after(() => connection.close());
+  await connection.history();
+  for (const status of ["blocked", "failed", "completed", "stopped"]) {
+    f.notify("hook/completed", { turnId: "turn-1", run: { id: `hook-${status}`, status,
+      entries: [{ kind: "stop", text: "Task recovery is unavailable." }] } });
+  }
+  await tick();
+  const events = await connection.history();
+  assert.equal(events.length, 1);
+  assert.equal(events[0].key, "turn/turn-1/hook/hook-stopped/stopped");
+  assert.equal(events[0].event.kind, "error");
+  assert.deepEqual(events[0].event.payload, { code: AGENT_HOOK_STOPPED, hookId: "hook-stopped", turnId: "turn-1", message: "Task recovery is unavailable." });
 });
 
 test("history uses provider identities and lost send acknowledgements remain unknown", async t => {

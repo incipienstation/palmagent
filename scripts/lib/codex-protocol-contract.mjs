@@ -36,6 +36,9 @@ export const protocolContracts = [
     'thread/started': { thread },
     'turn/started': { threadId: true, turn: { id: true } },
     'turn/completed': { threadId: true, turn },
+    'hook/completed': { ...fields('threadId', 'turnId'), run: {
+      ...fields('id', 'status'), entries: { $items: fields('kind', 'text') },
+    } },
     'item/agentMessage/delta': fields('threadId', 'itemId', 'delta'),
     'item/started': { threadId: true, item },
     'item/completed': { threadId: true, item },

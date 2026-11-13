@@ -6,6 +6,7 @@ import type { AnswerRequest, AssistantPhase, InputAttachment, PermissionRequest,
 import type { SharedSessionConnection, SharedSessionConnector, SharedSessionEvent, SharedSessionSnapshot } from "../../application/ports/inbound/shared-session.js";
 import { codexInput } from "./codex-interactive.js";
 import { createInputFiles } from "./input-files.js";
+import { codexHookStop } from "./codex-hooks.js";
 
 type Json = Record<string, any>;
 class RpcFailure extends Error {}
@@ -83,7 +84,7 @@ class CodexConnection implements SharedSessionConnection {
       }
       const p = row.params ?? {};
       if (p.threadId !== this.target.sessionId && p.thread?.id !== this.target.sessionId) return;
-      if (row.id === undefined && !["serverRequest/resolved", "turn/started", "turn/completed", "item/started", "item/completed", "item/agentMessage/delta", "thread/status/changed"].includes(row.method)) return;
+      if (row.id === undefined && !["serverRequest/resolved", "turn/started", "turn/completed", "item/started", "item/completed", "item/agentMessage/delta", "thread/status/changed", "hook/completed"].includes(row.method)) return;
       if (row.id !== undefined) this.requests.set(JSON.stringify(row.id), { id: row.id, method: row.method, params: p });
       if (row.method === "serverRequest/resolved") {
         const key = JSON.stringify(p.requestId), pending = this.responding.get(key);
@@ -91,6 +92,10 @@ class CodexConnection implements SharedSessionConnection {
         if (pending) { clearTimeout(pending.timer); this.responding.delete(key); pending.resolve(true); }
       }
       if (row.method === "turn/started") this.turnId = p.turn?.id;
+      if (row.method === "hook/completed") {
+        const stopped = codexHookStop(p);
+        if (stopped) this.events.push(this.event(`turn/${stopped.turnId}/hook/${stopped.hookId}/stopped`, "error", stopped));
+      }
       if (row.method === "turn/completed") {
         if (!p.turn?.id) { this.close(); return; }
         this.turnId = undefined; this.requests.clear();

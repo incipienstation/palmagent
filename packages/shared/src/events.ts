@@ -6,6 +6,7 @@ import type { ImageAttachment } from "./requests.js";
 
 /** Stable normalized error meaning, independent of provider-facing message text. */
 export const TURN_RESULT_MISSING = "turn_result_missing";
+export const AGENT_HOOK_STOPPED = "agent_hook_stopped";
 
 export type AgentKind = "claude" | "codex";
 
