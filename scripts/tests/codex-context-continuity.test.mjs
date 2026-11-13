@@ -139,6 +139,15 @@ test('attachment-only user requests are not replaced by an earlier text request'
   assert.doesNotMatch(await readFile(join(f.directory, 'conversation.jsonl'), 'utf8'), /PRIVATE_ATTACHMENT/);
 });
 
+test('progress messages cannot crowd the latest user request out of the recovery preview', async t => {
+  const f = await fixture(t, Array.from({ length: 24 }, () => message('assistant', 'Progress '.repeat(1000), 'commentary')));
+  f.rows[5] = message('user', 'Preserve the approved scope and finish the original task.'); await f.save();
+  const result = await runHook(f.input, f.home);
+  assert.match(result.reason, /Latest user message:/);
+  assert.match(result.reason, /Preserve the approved scope and finish the original task/);
+  assert.ok(result.reason.length < 30_000);
+});
+
 test('concurrent Stop calls make at most one continuation claim', async t => {
   const f = await fixture(t);
   const results = await Promise.all([runHook(f.input, f.home), runHook(f.input, f.home)]);
