@@ -16,7 +16,7 @@ macOS, Windows, musl and 32-bit hosts are rejected. Platform archives are built 
 22.04 and tested in a baseline container with no network, system Node, or npm. That test
 covers runtime loading; service acceptance needs a host with the service prerequisites.
 
-The HTTPS bootstrap entry point is `https://palmagent.dev/install.sh`. It discovers the
+The HTTPS bootstrap entry point is `https://releases.palmagent.dev/install.sh`. It discovers the
 saved channel, defaults a fresh installation to Stable, verifies signed metadata and
 archive SHA-256, and retains the bundle under the user's Palmagent CLI directory. An
 explicit `--prefix` isolates a temporary CLI and leaves the user's command link alone.
@@ -53,7 +53,8 @@ not automatically deleted.
 
 Channel and release documents are Ed25519-signed envelopes. Verification uses their exact
 decoded payload bytes, followed by schema and identity checks. Official immutable GitHub
-Release assets carry the per-platform archives; the channel pointer is activated last with
-an atomic ETag condition. The initial trust root is the HTTPS bootstrap and its embedded
+Release assets carry the per-platform archives. A signed channel journal records publication
+with non-fast-forward overwrite protection; GitHub Pages activates the complete channel site
+after the release assets have been verified. The initial trust root is the HTTPS bootstrap and its embedded
 public keys. Publish a client trusting the replacement key before switching signing keys.
 An empty trust store intentionally prevents any release from being installed or published.

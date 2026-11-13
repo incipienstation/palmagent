@@ -134,7 +134,7 @@ The operator plugin handles bootstrap, service setup, and updates. Installation 
 system Node, npm, or native compiler. Runtime services still require systemd 254+, a user
 manager, lingering, and delegated cgroup v2.
 
-The official bootstrap entry point is `https://palmagent.dev/install.sh`. See
+The official bootstrap entry point is `https://releases.palmagent.dev/install.sh`. See
 [standalone installation and migration](docs/STANDALONE.md) for platform prerequisites,
 verification, and the 0.1.x to 0.2.x compatibility transition. See
 [release hosting setup](docs/RELEASE-HOSTING.md) for deployment prerequisites; source support

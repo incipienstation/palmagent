@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "keys": {
-    "release-2026-11": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAzkKPe2RihkMvgzXBf8M/gu69EzShWqMXc8hJ7ncV93U=\n-----END PUBLIC KEY-----\n"
+    "release-2026-11": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAzkKPe2RihkMvgzXBf8M/gu69EzShWqMXc8hJ7ncV93U=\n-----END PUBLIC KEY-----\n",
+    "release-2026-11-pages": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAdpsG1Xulc4O9nsflBuH0e/FkNja1UphQ44QNski37iE=\n-----END PUBLIC KEY-----\n"
   }
 }

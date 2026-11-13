@@ -1,10 +1,9 @@
-import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
+import { createPrivateKey, createPublicKey, randomUUID, sign } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BundleIdentitySchema, ChannelIndexSchema, RELEASE_PUBLIC_KEYS, StandaloneManifestSchema } from '../../packages/shared/src/standalone.ts';
 import { inspectReleaseArchive, sha256File, verifySignedPayload } from '../../apps/server/src/platform/filesystem/release-artifact.ts';
 import { DISTRIBUTION } from './product.mjs';
-import { compareVersions } from './release-version.mjs';
 
 export const standaloneTargets = ['linux-x64-glibc', 'linux-arm64-glibc'];
 export function supportsStandalone(cwd) {
@@ -53,61 +52,20 @@ export function signReleaseDocument(value, keyId, privateKey, trustedKeys = RELE
     signatures: [{ keyId, signature: sign(null, payload, key).toString('base64') }] }) + '\n');
 }
 
-export async function readChannel(channel, { fetcher = fetch, origin = DISTRIBUTION.releaseOrigin, keys = RELEASE_PUBLIC_KEYS } = {}) {
-  const response = await fetcher(`${origin}/channels/${channel}.json`, { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error('Standalone channel is unavailable');
-  const bytes = Buffer.from(await response.arrayBuffer());
+export function verifyChannelDocument(bytes, channel, keys = RELEASE_PUBLIC_KEYS) {
+  if (bytes.byteLength > 64 * 1024) throw new Error('Channel document is too large');
   const value = ChannelIndexSchema.parse(verifySignedPayload(bytes, keys));
   if (value.channel !== channel || value.releaseManifestUrl !== `${DISTRIBUTION.repositoryUrl}/releases/download/v${value.version}/standalone.json`)
     throw new Error('Standalone channel identity mismatch');
-  const etag = response.headers.get('etag');
-  if (!etag) throw new Error('Standalone channel has no conditional-write identity');
-  return { value, bytes, etag };
-}
-
-export async function githubReleaseToken(env, fetcher = fetch) {
-  if (!env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) throw new Error('GitHub release identity is unavailable');
-  const url = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
-  url.searchParams.set('audience', DISTRIBUTION.releaseOrigin);
-  const response = await fetcher(url, { headers: { Authorization: `Bearer ${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` }, signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error('Could not obtain release publication identity');
-  const body = await response.json();
-  if (typeof body.value !== 'string') throw new Error('Invalid release publication identity');
-  return body.value;
-}
-
-export async function preflightStandalonePublication(manifest, signedManifest, env, { fetcher = fetch, keys = RELEASE_PUBLIC_KEYS, token = githubReleaseToken } = {}) {
-  const channel = manifest.version.includes('-') ? 'preview' : 'stable';
-  const probe = ChannelIndexSchema.parse({ schemaVersion: 1, channel, revision: 1, version: manifest.version,
-    releaseManifestUrl: `${DISTRIBUTION.repositoryUrl}/releases/download/v${manifest.version}/standalone.json`,
-    releaseManifestSha256: createHash('sha256').update(signedManifest).digest('hex') });
-  const bytes = signReleaseDocument(probe, env.RELEASE_SIGNING_KEY_ID, env.RELEASE_SIGNING_KEY, keys);
-  const identity = await token(env, fetcher);
-  const response = await fetcher(`${DISTRIBUTION.releaseOrigin}/channels/${channel}.json`, { method: 'POST', body: bytes,
-    headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(30_000) });
-  if (response.status !== 204) throw new Error('Standalone publication preflight failed; check the domain, bucket, OIDC policy and trust keys before creating a release');
-}
-
-/** Publication is complete only when the public channel reads back the pinned bytes. */
-export async function publishStandaloneChannel(manifest, signedManifest, env, { fetcher = fetch, keys = RELEASE_PUBLIC_KEYS, read = readChannel, token = githubReleaseToken } = {}) {
-  const channel = manifest.version.includes('-') ? 'preview' : 'stable';
-  const prior = await read(channel, { fetcher, keys });
-  const digest = createHash('sha256').update(signedManifest).digest('hex');
-  if (prior && compareVersions(prior.value.version, manifest.version) > 0) throw new Error('A newer release already owns this channel');
-  if (prior?.value.version === manifest.version) {
-    if (prior.value.releaseManifestSha256 !== digest) throw new Error('Channel contains different bytes for this version');
-    return prior.value;
-  }
-  const value = ChannelIndexSchema.parse({ schemaVersion: 1, channel, revision: (prior?.value.revision ?? 0) + 1,
-    version: manifest.version, releaseManifestUrl: `${DISTRIBUTION.repositoryUrl}/releases/download/v${manifest.version}/standalone.json`, releaseManifestSha256: digest });
-  const bytes = signReleaseDocument(value, env.RELEASE_SIGNING_KEY_ID, env.RELEASE_SIGNING_KEY, keys);
-  const identity = await token(env, fetcher);
-  const response = await fetcher(`${DISTRIBUTION.releaseOrigin}/channels/${channel}.json`, { method: 'PUT', body: bytes,
-    headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json',
-      ...(prior ? { 'If-Match': prior.etag } : { 'If-None-Match': '*' }) }, signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(response.status === 412 ? 'Channel changed concurrently; inspect before retrying' : 'Channel activation failed');
-  const observed = await read(channel, { fetcher, keys });
-  if (!observed || !observed.bytes.equals(bytes)) throw new Error('Public channel activation was not verified');
   return value;
+}
+
+export async function readChannel(channel, { fetcher = fetch, origin = DISTRIBUTION.releaseOrigin, keys = RELEASE_PUBLIC_KEYS } = {}) {
+  if (!['preview', 'stable'].includes(channel)) throw new Error('Unknown release channel');
+  // Publication decisions must not reuse a pre-deployment Pages/CDN response.
+  const response = await fetcher(`${origin}/channels/${channel}.json?verification=${randomUUID()}`, { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('Standalone channel is unavailable');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return { value: verifyChannelDocument(bytes, channel, keys), bytes };
 }
