@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.2.0-alpha.1
+
 ### Changed
 
 - The standalone installer and signed release channels are hosted on GitHub Pages at
