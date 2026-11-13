@@ -96,6 +96,7 @@ desktop to register access, then choose a Space and start a task.
 | [Message delivery](docs/MESSAGES.md) | Queues, delivery behavior, and recovery |
 | [Native supervisor](docs/DAEMON.md) | Rust runtime, OS adapters, updates and migration |
 | [Session lifecycle](docs/SESSION-LIFECYCLE.md) | Session ownership and application updates |
+| [Codex context recovery](docs/CODEX-CONTINUITY.md) | Optional safeguard for context switches that lose the active request |
 | [Persistent shells](docs/terminals.md) | Task and Space shell access |
 | [Skills](docs/SKILLS.md) | Selecting skills for messages |
 | [Host ingress](docs/HOST-INGRESS.md) | HTTPS access, setup, and migration |

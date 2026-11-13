@@ -4,6 +4,7 @@ import type { InputAttachment, QuestionRequest } from "@palmagent/shared";
 import type { Emit, RawEvent, StartArgs } from "../../domain/execution.js";
 import type { RunHandle } from "../../domain/run-handle.js";
 import type { ProcessBackend } from "../../application/ports/outbound/provider-process.js";
+import { codexHookStop } from "./codex-hooks.js";
 
 export const codexInput = (text: string, images?: InputAttachment[], skills?: StartArgs["skills"]) => {
   const input = sampledAgentInput(text, images);
@@ -25,6 +26,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
   let sessionId = args.resumeId;
   let turnId: string | undefined;
   let completed = false;
+  let stoppedHook: ReturnType<typeof codexHookStop>;
   let usage: Record<string, number> | undefined;
   const pending = new Map<string, { resolve: (s: "delivered" | "rejected" | "unknown") => void; timer: ReturnType<typeof setTimeout> }>();
   const questions = new Map<string, QuestionRequest>();
@@ -93,6 +95,11 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
         sessionId = p.thread.id; event("status", { subtype: "thread_started" }, seq); break;
       case "turn/started":
         turnId = p.turn.id; clearTimeout(startup); event("status", { subtype: "turn_started", turnId }, seq); break;
+      case "hook/completed": {
+        const stopped = codexHookStop(p);
+        if (stopped && (!turnId || stopped.turnId === turnId)) { stoppedHook = stopped; event("error", stopped, seq); }
+        break;
+      }
       case "item/agentMessage/delta":
         event("assistant_text", { text: p.delta, messageId: p.itemId }, seq); break;
       case "item/started":
@@ -115,7 +122,11 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
         completed = true; turnId = undefined; questions.clear(); clearTimeout(startup);
         const missingCompaction = compacting && p.turn.status === "completed" && !compactionCompleted;
         if (p.turn.status === "failed" || missingCompaction) event("error", { message: p.turn.error?.message ?? (missingCompaction ? "Codex did not confirm context compaction." : "Codex turn failed.") }, seq);
-        event("result", { is_error: p.turn.status !== "completed" || missingCompaction, subtype: p.turn.status, error: p.turn.error, usage }, seq);
+        const hookStopped = !!stoppedHook && p.turn.status === "completed" && stoppedHook.turnId === p.turn.id;
+        event("result", { is_error: p.turn.status !== "completed" || missingCompaction || hookStopped,
+          subtype: hookStopped ? "hook_stopped" : p.turn.status,
+          error: hookStopped ? { message: stoppedHook!.message } : p.turn.error,
+          ...(hookStopped ? { providerStatus: p.turn.status } : {}), usage }, seq);
         proc.closeStdin(); break;
       }
       case "thread/tokenUsage/updated":

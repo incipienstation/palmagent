@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { AGENT_HOOK_STOPPED } from "@palmagent/shared";
 import type { SharedSessionConnection, SharedSessionEvent, SharedSessionSnapshot } from "../../src/modules/agents/api.js";
 import { createTaskService } from "../../src/composition/task-service.js";
 import { Db } from "../../src/composition/database.js";
@@ -42,7 +43,7 @@ async function setup(t: test.TestContext, preview = false) {
   let unavailable = false, ack: "delivered" | "unknown" | "rejected" = "delivered", interruptCount = 0, opens = 0;
   const events: SharedSessionEvent[] = [];
   let taskId = "";
-  const event = (key: string, kind: "assistant_text" | "result" | "tool_result" | "status", payload: any) => events.push({ key, event: { taskId, sessionId, kind, payload } });
+  const event = (key: string, kind: "assistant_text" | "result" | "tool_result" | "status" | "error", payload: any) => events.push({ key, event: { taskId, sessionId, kind, payload } });
   const services: ReturnType<typeof createTaskService>[] = [];
   const make = async () => {
     const backend = new InProcessBackend();
@@ -147,6 +148,37 @@ test("connection loss fails closed and queued input waits for the existing turn"
   assert.equal(f.task.sessionControl?.connection, "reconnecting");
   assert.throws(() => f.service.followup(id, "Must not start another process"), /reconnecting/);
   assert.equal(f.writer.exitCode, null);
+});
+
+for (const preview of [false, true]) test(`a stopped hook survives reconnect with ${preview ? "transcript" : "provider"} history and pauses queued work`, { skip: process.platform !== "linux" }, async t => {
+  const f = await setup(t, preview), id = f.task.taskId;
+  if (preview) { await f.refresh(); f.enableConnection(); await f.refresh(); }
+  f.service.submitMessage(id, { clientMessageId: "after-hook-stop", text: "Next work", mode: "queue", expectedRunId: f.service.messages.state(id).runId });
+  f.event("hook-stop", "error", { code: AGENT_HOOK_STOPPED, turnId: "native-turn", message: "Task recovery is unavailable." });
+  await f.refresh();
+  assert.equal(f.db.getTask(id)?.sessionControl?.stoppedHook?.turnId, "native-turn");
+  f.event("completed", "result", { turnId: "native-turn", is_error: false, subtype: "completed" });
+  f.snapshot.status = "idle";
+  await f.refresh();
+  assert.equal(f.service.messages.state(id).paused, true);
+  assert.equal(f.task.interrupted, true);
+  assert.deepEqual(f.sent, []);
+  const result = f.db.eventsAfterSeq(id, 0).filter(row => row.event.kind === "result").at(-1)!.event.payload as Record<string, unknown>;
+  assert.equal(result.is_error, true);
+  assert.equal(result.providerStatus, "completed");
+  assert.ok(f.db.eventsAfterSeq(id, 0).some(row => row.event.kind === "error" && (row.event.payload as { code: string }).code === AGENT_HOOK_STOPPED));
+  f.service.beginShutdown(); f.clearEvents();
+  f.event("completed", "result", { turnId: "native-turn", is_error: false, subtype: "completed" });
+  const restarted = await f.make(); await f.refresh(restarted);
+  assert.equal(restarted.getTask(id).interrupted, true);
+  assert.equal(restarted.messages.state(id).paused, true);
+  assert.deepEqual(f.sent, []);
+  f.snapshot.turnId = "next-turn"; f.snapshot.status = "running"; f.clearEvents();
+  await f.refresh(restarted);
+  f.snapshot.status = "idle";
+  f.event("next-completed", "result", { turnId: "next-turn", is_error: false, subtype: "completed" });
+  await f.refresh(restarted);
+  assert.equal(restarted.getTask(id).interrupted, false, "a hook stop must not poison another native turn");
 });
 
 test("a failed latest turn does not drain the queue after an earlier success", { skip: process.platform !== "linux" }, async t => {

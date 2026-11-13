@@ -166,6 +166,8 @@ export interface SessionControl {
   connection?: "connected" | "reconnecting";
   sharedHistory?: "provider" | "transcript";
   sharedSocket?: string;
+  /** Retain an observed hook stop when native history only replays normal completion. */
+  stoppedHook?: { turnId: string; message: string };
 }
 export interface SessionHandoffResponse {
   task: TaskState;
