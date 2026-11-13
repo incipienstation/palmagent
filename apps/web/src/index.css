@@ -338,6 +338,9 @@
   text-overflow: ellipsis;
   overflow: hidden;
 }
+.composer[data-expanded="false"][data-leading-control="false"] .composer-input {
+  padding-left: 12px;
+}
 .composer[data-expanded="false"][data-voice="true"] .composer-input {
   padding-right: 104px;
 }

@@ -69,10 +69,27 @@ for (const width of [360, 1280]) test(`side chat lifecycle preserves both drafts
   const panel = page.getByRole("complementary", { name: "Side chat" });
   const question = panel.getByRole("textbox", { name: "Side question" });
   await expect(question).toBeFocused();
+  const composer = panel.getByRole("group", { name: "Side message composer" });
+  await question.blur();
+  await expect.poll(() => composer.evaluate(el => Math.round(el.getBoundingClientRect().height))).toBe(54);
+  await question.focus();
+  await expect.poll(() => composer.evaluate(el => Math.round(el.getBoundingClientRect().height))).toBe(110);
   if (width < 1024) await expect(main).toBeHidden(); else await expect(main).toBeVisible();
   await question.fill("Why this design?");
+  // Confirming an IME candidate must never submit the side question.
+  await question.dispatchEvent("compositionstart");
+  await question.press("Control+Enter");
+  await question.dispatchEvent("compositionend");
+  await question.dispatchEvent("keydown", { key: "Enter", ctrlKey: true, keyCode: 229 });
+  expect(f.calls.filter(call => call.path.endsWith("/messages"))).toHaveLength(0);
+  await expect(question).toHaveValue("Why this design?");
   await panel.getByRole("button", { name: "Send side question" }).click();
   await expect(panel.getByRole("button", { name: "Stop side response" })).toBeVisible();
+  await expect(panel.getByRole("group", { name: "Your message" })).toContainText("Why this design?");
+  const multilineDraft = Array.from({ length: 20 }, (_, index) => `Draft line ${index + 1}`).join("\n");
+  await question.fill(multilineDraft);
+  await expect.poll(() => question.evaluate(el => Math.round(el.getBoundingClientRect().height))).toBe(144);
+  await expect(panel.getByRole("button", { name: "Stop side response" })).toBeInViewport({ ratio: 1 });
   await question.fill("Keep my side draft");
   await panel.getByRole("button", { name: "Back to main chat" }).click();
   await expect(main).toHaveValue("Keep my main draft");

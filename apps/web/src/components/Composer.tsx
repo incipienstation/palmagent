@@ -1,9 +1,9 @@
 import { VoiceWaveform } from "./VoiceWaveform";
-import { ComposerScrollbar } from "./ComposerScrollbar";
+import { ComposerAction, ComposerInput, ComposerSurface } from "./ComposerPrimitives";
 import { useVoiceInput } from "../use-voice-input";
 import { Alert } from "./ui/alert";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, Check, ChevronDown, Loader2, Mic, Square } from "lucide-react";
+import { Check, ChevronDown, Loader2, Mic, Square } from "lucide-react";
 import { SkillChips, SkillMenu, SkillTrigger, useSkillPicker } from "./SkillPicker";
 import { Popover, PopoverAnchor } from "./ui/popover";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
@@ -11,18 +11,14 @@ import type { AgentKind } from "@palmagent/shared";
 import { DEFAULT_OPTION } from "../api";
 import { effortChoices, modelChoices, useAgentCatalog } from "../model-catalog";
 import { useUpdateState } from "../update-state";
-import { useSendShortcut } from "../SendShortcutProvider";
 import { AttachmentMenu, AttachmentTray, type useImageAttachments } from "./Attachments";
 import { Button } from "./ui/button";
 import { Field, FieldGroup, FieldLabel } from "./ui/field";
-import { InputGroup, InputGroupAddon, InputGroupTextarea } from "./ui/input-group";
+import { InputGroupAddon } from "./ui/input-group";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { PermissionPicker, permissionLabel } from "./PermissionPicker";
-import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
-import { useFadingPlaceholder } from "../hooks/useFadingPlaceholder";
-import { cn } from "../lib/utils";
 
 export interface ComposerSettings {
   agent: AgentKind;
@@ -103,14 +99,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   const [menuOpen, setMenuOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  useKeyboardDismiss(textarea);
   useLayoutEffect(() => {
     // Removing a focused action (Send becoming Stop, for example) does not
     // dispatch blur in every browser. Reconcile after DOM updates as well.
     if (focused && !textarea.current?.closest(".composer")?.contains(document.activeElement)) setFocused(false);
   });
   const composing = useRef(false);
-  const { shortcut } = useSendShortcut();
   const catalog = useAgentCatalog(settings.agent);
   const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy || commandActive });
   const latest = useRef({ value, onChange }); latest.current = { value, onChange };
@@ -121,45 +115,15 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   }, () => !composing.current);
   const hasDraft = !!value.trim() || attachments.images.length > 0 || !!skills?.length;
   const compactVoice = voice.active && !hasDraft;
-  const hint = useFadingPlaceholder(placeholder, value.length === 0 && !compactVoice);
   const cannotSend = voice.active || disabled || busy || sendDisabled || attachments.preparing || !hasDraft;
   const expanded = hasDraft || focused || voice.active || !!voice.error || picker.open || !!header || configure || menuOpen || attachments.preparing;
-  useLayoutEffect(() => {
-    const el = textarea.current;
-    if (!el || compactVoice) return;
-    const resize = () => {
-      // Measure without animating through zero. Resume from the current visual
-      // height so a focus reversal during the transition remains continuous.
-      const current = el.getBoundingClientRect().height;
-      const { paddingLeft, paddingRight } = getComputedStyle(el);
-      el.style.transition = "none";
-      el.style.height = "0px";
-      el.style.paddingLeft = el.style.paddingRight = "12px";
-      const target = expanded ? Math.max(56, Math.min(el.scrollHeight, 144)) : 44;
-      el.style.height = `${current}px`;
-      el.style.paddingLeft = paddingLeft;
-      el.style.paddingRight = paddingRight;
-      void el.offsetHeight;
-      el.style.transition = "";
-      el.style.paddingLeft = el.style.paddingRight = "";
-      el.style.height = `${target}px`;
-    };
-    resize();
-    let width = el.clientWidth;
-    const observer = new ResizeObserver(() => {
-      // Width changes can wrap text without a value change (rotation/split view).
-      if (width !== el.clientWidth) { width = el.clientWidth; resize(); }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [value, expanded, compactVoice]);
   const model = settings.model === DEFAULT_OPTION
     ? (settings.agent === "claude" ? "Claude" : "Codex")
     : modelChoices(catalog, settings.model).find((m) => m.value === settings.model)?.label ?? settings.model;
   const effort = settings.effort === DEFAULT_OPTION ? "" : effortChoices(catalog, settings.model, settings.effort).find((e) => e.value === settings.effort)?.label ?? settings.effort;
   const permission = permissionLabel(settings.agent, settings.permission);
 
-  return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><InputGroup aria-label="Message composer" data-expanded={expanded}
+  return <Popover open={picker.open} onOpenChange={open => { if (!open) picker.close(); }}><PopoverAnchor asChild><ComposerSurface aria-label="Message composer" data-expanded={expanded}
     data-voice={settings.agent === "codex"} data-voice-active={voice.active}
     onFocusCapture={event => {
       // React also bubbles focus from portalled menus outside this surface.
@@ -168,35 +132,17 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     onBlurCapture={event => {
       if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
     }}
-    className={cn("composer overflow-clip rounded-3xl p-1", (busy || stopping) && "composer-pending")}>
-    <div className="relative order-1 basis-full" hidden={compactVoice}>
-    <InputGroupTextarea ref={textarea} id={id} aria-label={label} value={value} rows={1}
-      onChange={(e) => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
+    pending={busy || stopping}>
+    <ComposerInput textarea={textarea} composing={composing} expanded={expanded} hidden={compactVoice}
+      id={id} aria-label={label} value={value} placeholder={placeholder} disabled={disabled || busy}
+      cannotSend={cannotSend} onSend={onSend} submitOnEnter={!controls}
+      onChange={e => { onChange(e.target.value); picker.cursor(e.target, true); }} onPaste={attachments.onPaste}
       onSelect={e => picker.cursor(e.currentTarget)}
       aria-autocomplete={skillContext ? "list" : undefined} aria-controls={picker.open ? picker.id : undefined}
       aria-haspopup={skillContext ? "listbox" : undefined}
       aria-activedescendant={picker.open && picker.matches.length && !picker.loading ? `${picker.id}-${picker.selected}` : undefined}
-      aria-keyshortcuts={shortcut === "enter" ? "Enter Meta+Enter Control+Enter" : "Meta+Enter Control+Enter"}
-      onCompositionStart={() => { composing.current = true; }}
-      onCompositionEnd={() => { composing.current = false; }}
-      onBlur={() => { composing.current = false; }}
-      onKeyDown={(event) => {
-        if (!event.defaultPrevented && !composing.current && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && picker.keyDown(event)) return;
-        // keyCode 229 also covers IME confirmation in browsers that end
-        // composition before dispatching the final Enter keydown.
-        if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.altKey ||
-          composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-        if (shortcut !== "enter" && !event.metaKey && !event.ctrlKey) return;
-        event.preventDefault();
-        if (event.repeat || cannotSend) return;
-        if (onSend) onSend();
-        else if (!controls) event.currentTarget.form?.requestSubmit();
-      }}
-      hidden={compactVoice} placeholder={hint.text} data-placeholder-fading={hint.fading} disabled={disabled || busy}
-      className="composer-input block w-full max-h-36 px-3 py-2.5"
+      onKeyDown={event => { if (!event.defaultPrevented) picker.keyDown(event); }}
     />
-    <ComposerScrollbar textarea={textarea} value={value} />
-    </div>
     {voice.active && <span role="status" className="sr-only">{voice.state === "stopping" ? "Finishing transcription…" : "Recording…"}</span>}
     {voice.error && <InputGroupAddon align="block-start" className="px-3">
       <Alert variant="destructive">{voice.error}</Alert>
@@ -252,19 +198,11 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
         aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); setConfigure(false); picker.close(); voice.toggle(); }}>
         {voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
-      {onStop && <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
-        disabled={stopping} onClick={onStop}>
-        <span data-stop-visual="true" aria-hidden="true" className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
-          <Square className="size-[18px]" fill="currentColor" />
-        </span>
-      </Button>}
-      {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : !onStop && <Button type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
-        variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent"
-        disabled={cannotSend}>
-        <span data-send-visual="true" aria-hidden="true" className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
-          {busy ? <Loader2 className="size-[18px] animate-spin" /> : <ArrowUp className="size-[18px]" />}
-        </span>
-      </Button>}
+      {onStop && <ComposerAction stop aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
+        disabled={stopping} onClick={onStop} />}
+      {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : !onStop &&
+        <ComposerAction type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}
+          disabled={cannotSend} busy={busy} />}
     </InputGroupAddon>
-  </InputGroup></PopoverAnchor><SkillMenu picker={picker} textarea={textarea} /></Popover>;
+  </ComposerSurface></PopoverAnchor><SkillMenu picker={picker} textarea={textarea} /></Popover>;
 }
