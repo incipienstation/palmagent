@@ -8,6 +8,9 @@ An entry does not mean a version has been published.
 
 ### Changed
 
+- The standalone installer and signed release channels are hosted on GitHub Pages at
+  `releases.palmagent.dev`, with versioned downloads on GitHub Releases. Release hosting
+  no longer requires a Cloudflare Worker or R2 subscription.
 - Breaking: the 0.2.x CLI/operator contract introduces signed standalone release plans and
   bundled Node on Linux x64 and arm64. Upgrade participating plugins and use a temporary
   compatible CLI for the first migration; 0.1.x and 0.2.x CLI/plugin pairs are incompatible.

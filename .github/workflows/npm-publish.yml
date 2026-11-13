@@ -62,12 +62,15 @@ jobs:
     # This is the single Stable approval, before tag creation, npm publication, or public Release.
     environment: ${{ needs.candidate.outputs.channel == 'next' && 'standalone-preview' || 'npm-latest' }}
     concurrency:
-      group: npm-channel-${{ needs.candidate.outputs.channel }}
+      # A Pages deployment contains both channels. Serialize the complete
+      # read/stage/deploy/readback cycle across Preview, Stable and site recovery.
+      group: release-pages-publication
       cancel-in-progress: false
       queue: max
     permissions:
       contents: write
       actions: read
+      pages: write
       id-token: write
     steps:
       - name: Check out workflow tools
@@ -102,6 +105,7 @@ jobs:
         working-directory: tooling
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Finalize the reviewed candidate without rebuilding
+        id: finalize
         run: node tooling/scripts/release-finalize.mjs source source/build/release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,6 +117,28 @@ jobs:
           RELEASE_SIGNING_KEY_ID: ${{ vars.RELEASE_SIGNING_KEY_ID }}
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           NPM_PUBLISH_ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}
+      - name: Build the release Pages site from the staged channel snapshot
+        if: steps.finalize.outputs.pages_commit != ''
+        run: node tooling/scripts/release-pages.mjs build source/build/release-pages "$PAGES_COMMIT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_COMMIT: ${{ steps.finalize.outputs.pages_commit }}
+      - uses: actions/upload-pages-artifact@v4
+        if: steps.finalize.outputs.pages_commit != ''
+        with:
+          path: source/build/release-pages
+      - name: Check that the channel snapshot is still current
+        if: steps.finalize.outputs.pages_commit != ''
+        run: node tooling/scripts/release-pages.mjs check source/build/release-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/deploy-pages@v4
+        if: steps.finalize.outputs.pages_commit != ''
+      - name: Verify the public installer and both channels
+        if: steps.finalize.outputs.pages_commit != ''
+        run: node tooling/scripts/release-pages.mjs verify source/build/release-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   legacy-inspect:
     needs: input

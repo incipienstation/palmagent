@@ -1,0 +1,49 @@
+name: release Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: standalone-preview
+    concurrency:
+      group: release-pages-publication
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: pnpm/action-setup@v4
+      - name: Install release tool dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the site with the current signed channel journal
+        run: node scripts/release-pages.mjs build build/release-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/release-pages
+      - name: Check that the channel snapshot is still current
+        run: node scripts/release-pages.mjs check build/release-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/deploy-pages@v4
+      - name: Verify public readback
+        run: node scripts/release-pages.mjs verify build/release-pages
+        env:
+          GH_TOKEN: ${{ github.token }}

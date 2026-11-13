@@ -10,7 +10,9 @@ import { publishPackage, validatePublicationEnvironment } from './release-publis
 import { github, githubPages, registryMetadata, registryTarball } from './lib/release-github.mjs';
 import { compareVersions } from './lib/release-version.mjs';
 import { releaseTiming } from './lib/release-timing.mjs';
-import { signReleaseDocument, readChannel, preflightStandalonePublication, publishStandaloneChannel } from './lib/standalone-release.mjs';
+import { signReleaseDocument } from './lib/standalone-release.mjs';
+import { preflightStandalonePublication, stageStandaloneChannel } from './lib/release-pages.mjs';
+import { verifySignedPayload } from '../apps/server/src/platform/filesystem/release-artifact.ts';
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
@@ -173,9 +175,13 @@ async function finalizeStandalone(cwd, directory, env, adapters, candidate, api,
   }
   const manifest = candidate.manifest;
   const signed = (adapters.sign ?? signReleaseDocument)(manifest, env.RELEASE_SIGNING_KEY_ID, env.RELEASE_SIGNING_KEY);
-  await measure('standalone-preflight', () => (adapters.standalonePreflight ?? preflightStandalonePublication)(manifest, signed, env));
+  // The shipped client, not just the current workflow tooling, must trust the
+  // key used for this release. This matters when rotating keys during recovery.
+  const sourceTrust = JSON.parse(readFileSync(join(cwd, 'packages/shared/src/release-trust.json'), 'utf8'));
+  verifySignedPayload(signed, sourceTrust.keys);
+  const state = await measure('standalone-preflight', () => (adapters.standalonePreflight ?? preflightStandalonePublication)(manifest, signed, env));
   const channel = candidate.channel === 'next' ? 'preview' : 'stable';
-  const current = await (adapters.channel ?? readChannel)(channel);
+  const current = adapters.channel ? await adapters.channel(channel) : state.channels[channel];
   assert(!current || compareVersions(current.value.version, candidate.version) <= 0, 'Candidate is older than the published channel');
   const signedHash = createHash('sha256').update(signed).digest('hex');
   assert(current?.value.version !== candidate.version || current.value.releaseManifestSha256 === signedHash, 'Published release manifest differs');
@@ -238,16 +244,18 @@ async function finalizeStandalone(cwd, directory, env, adapters, candidate, api,
       assert(asset.ok && Number(asset.headers.get('content-length')) === artifact.size, 'Public standalone archive is unavailable or has the wrong size');
     }
   });
-  await measure('channel-activation', () => (adapters.publishChannel ?? publishStandaloneChannel)(manifest, signed, env));
-  return { ...receipt, publication: 'standalone-published', ...(npmPublication ? { npmPublication } : {}), releaseUrl: release.html_url };
+  const staged = await measure('channel-staging', () => (adapters.stageChannel ?? stageStandaloneChannel)(manifest, signed, env));
+  return { ...receipt, publication: 'standalone-staged', pagesCommit: staged.commit,
+    ...(npmPublication ? { npmPublication } : {}), releaseUrl: release.html_url };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const [source = '.', directory = 'build/release'] = process.argv.slice(2);
     const result = await finalizeRelease(resolve(source), resolve(directory), process.env);
+    if (result.pagesCommit && process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `pages_commit=${result.pagesCommit}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-      `Published palmagent@${result.version} to ${result.channel}\n\nCommit: ${result.commit}\n\nSHA-256: ${result.sha256}\n`);
+      `${result.pagesCommit ? 'Published release assets and staged the channel for Pages deployment:' : 'Published'} palmagent@${result.version}\n\nCommit: ${result.commit}\n\nSHA-256: ${result.sha256}\n`);
     console.log(JSON.stringify(result));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

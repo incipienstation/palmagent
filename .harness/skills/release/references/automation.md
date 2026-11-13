@@ -9,6 +9,12 @@ new Preview. The controller discovers success from the signed channel and GitHub
 version allocation no longer depends on registry visibility. A public release whose channel
 activation failed resumes from its retained candidate run.
 
+GitHub Pages hosts the installer and both signed channels. Publication stages the signed
+channel bytes in the `release-channels` data branch, deploys a complete Pages artifact, and
+requires exact public readback. Preview, Stable and `release-pages.yml` site recovery share
+one publication concurrency group. Never force-push or reset the channel journal. See
+[release hosting setup](../../../../docs/RELEASE-HOSTING.md) for custom DNS, HTTPS and recovery.
+
 # Release automation and verification
 
 ## Candidate automation
@@ -103,7 +109,8 @@ A candidate build alone does not imply staging acceptance or publication.
 
 Publication records structured phase timings in the Actions log and a table in the job summary.
 Candidate validation, standalone preflight, tag/assets, published integrity, public Release
-creation and channel activation (plus Stable-only npm phases) are measured separately. Failed phases retain their
+creation and channel staging (plus Stable-only npm phases) are measured separately. Pages
+deployment and public readback are separate workflow steps. Failed phases retain their
 elapsed time; timings contain no command arguments or error payloads. Timing output failures
 cannot change the publication outcome or trigger another upload. Registry polling limits,
 immutable-byte verification, and the Stable approval boundary are unchanged.

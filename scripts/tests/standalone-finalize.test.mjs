@@ -13,7 +13,9 @@ import { DISTRIBUTION } from '../lib/product.mjs';
 
 test('Preview finalization exposes verified standalone assets before the channel and never calls npm', async t => {
   const version = '0.2.0-alpha.1', f = releaseFixture(t, version);
+  const pair = generateKeyPairSync('ed25519'), keys = {test:pair.publicKey.export({type:'spki',format:'pem'})};
   f.put('packages/shared/src/distribution.json', JSON.stringify(DISTRIBUTION));
+  f.put('packages/shared/src/release-trust.json', JSON.stringify({schemaVersion:1, keys}));
   const commit = f.commit(); f.git('update-ref', 'refs/remotes/origin/develop', commit);
   const directory = join(f.root,'bundle'), fixture = join(f.root,'fixture'); mkdirSync(directory);
   for (const name of ['runtime/bin/node', 'app/package.json', 'bundle.json']) {
@@ -28,7 +30,6 @@ test('Preview finalization exposes verified standalone assets before the channel
   const candidate = prepareCandidate(f.root,directory,commit,42,'example/palmagent');
   const env = {GITHUB_ACTIONS:'true',ACTIONS_ID_TOKEN_REQUEST_URL:'oidc',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'test-only',STANDALONE_PUBLISH_ENABLED:'true',
     RELEASE_COMMIT:commit,CANDIDATE_RUN_ID:'42',GH_REPO:'example/palmagent',EXPECTED_ARTIFACT_SHA256:candidate.sha256,RELEASE_ENVIRONMENT:'standalone-preview'};
-  const pair = generateKeyPairSync('ed25519'), keys = {test:pair.publicKey.export({type:'spki',format:'pem'})};
   let release, tag, failPreflight = true, failChannel = true;
   const calls = [], assets = new Map();
   const adapters = {
@@ -40,7 +41,7 @@ test('Preview finalization exposes verified standalone assets before the channel
     releases: () => release ? [release] : [], refreshRelease: () => release,
     assets: { download: asset => assets.get(asset.name), upload: (name,bytes) => {assets.set(name,bytes);release.assets.push({name,id:name});calls.push('asset');} },
     verifyPublicStandalone: async () => { assert.equal(release.draft,false);calls.push('public-verified'); },
-    publishChannel: async () => { if(failChannel) throw new Error('conditional update failed'); calls.push('channel'); },
+    stageChannel: async () => { if(failChannel) throw new Error('conditional update failed'); calls.push('channel'); return {commit:'c'.repeat(40)}; },
     api: (path,options) => {
       if(path.startsWith('environments/')) return {name:'standalone-preview'};
       if(path.startsWith('git/matching-refs')) return tag ? [{ref:`refs/tags/v${version}`,object:{type:'tag',sha:tag}}] : [];
@@ -56,7 +57,9 @@ test('Preview finalization exposes verified standalone assets before the channel
   await assert.rejects(finalizeRelease(f.root,directory,env,adapters),/conditional update failed/);
   assert.equal(release.draft,false);assert.equal(calls.at(-1),'public-verified');
   const snapshot=new Map(assets);failChannel=false;
-  await finalizeRelease(f.root,directory,env,adapters);
+  const staged = await finalizeRelease(f.root,directory,env,adapters);
+  assert.equal(staged.publication,'standalone-staged');
+  assert.equal(staged.pagesCommit,'c'.repeat(40));
   assert.equal(calls.at(-1),'channel');assert.equal(calls.filter(c=>c==='tag').length,1);assert.deepEqual(assets,snapshot);
   assert(![...assets.keys()].some(name=>name.endsWith('.tgz')));
 });
