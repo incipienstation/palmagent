@@ -55,7 +55,7 @@ test('restores a short follow-up with its preceding task and action evidence, on
   assert.equal((await stat(ledger)).mode & 0o777, 0o600);
   assert.equal((await stat(f.directory)).mode & 0o777, 0o700);
   assert.equal((await runHook(f.input, f.home)).continue, false, 'an unconfirmed receipt is not silently retried');
-  assert.deepEqual(await runHook({ ...f.input, stop_hook_active: true }, f.home), {});
+  assert.equal((await runHook({ ...f.input, stop_hook_active: true }, f.home)).continue, false);
 });
 
 test('SessionStart compact restores before generation and suppresses the Stop fallback', async t => {
@@ -72,6 +72,18 @@ test('a missing SessionStart delivery remains eligible for bounded Stop recovery
   const f = await fixture(t);
   await runHook({ ...f.input, hook_event_name: 'SessionStart', source: 'compact' }, f.home);
   assert.equal((await runHook(f.input, f.home)).decision, 'block');
+});
+
+test('a second loss during fallback stops explicitly while a restored continuation can finish', async t => {
+  const f = await fixture(t);
+  const restored = await runHook({ ...f.input, hook_event_name: 'SessionStart', source: 'compact' }, f.home);
+  f.rows.push(message('developer', restored.hookSpecificOutput.additionalContext)); await f.save();
+  assert.deepEqual(await runHook({ ...f.input, stop_hook_active: true }, f.home), {});
+  f.rows.push(compacted()); await f.save();
+  const result = await runHook({ ...f.input, stop_hook_active: true }, f.home);
+  assert.equal(result.continue, false);
+  assert.equal(result.decision, undefined, 'a second loss must not create another continuation');
+  assert.match(result.stopReason, /lost again/);
 });
 
 test('normal compaction summaries, retained requests and unknown formats are left alone', () => {

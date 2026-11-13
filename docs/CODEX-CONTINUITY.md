@@ -26,6 +26,8 @@ change Palmagent's session ownership or automatically submit another turn.
 - A `Stop` hook provides at most one continuation for an affected native turn if
   no restoration was recorded. A durable receipt prevents duplicate attempts
   after reconnecting. An unconfirmed attempt produces an explicit warning.
+  Another context loss during that continuation stops explicitly instead of
+  starting another recovery loop or accepting normal completion.
 - Palmagent retains an explicit hook stop as an incomplete turn, even when Codex
   subsequently reports normal completion. It shows the reason and pauses queued
   work; reconnecting does not erase an already observed stop.

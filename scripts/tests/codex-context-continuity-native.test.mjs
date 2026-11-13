@@ -15,8 +15,8 @@ const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
 
 // Explicit opt-in: exercises the installed native runtime with an isolated home
 // and a loopback model fixture. No credentials, API calls or live sessions.
-for (const mode of ['before', 'automatic', 'fallback', 'failure']) {
-  const restoreBeforeModel = mode !== 'fallback';
+for (const mode of ['before', 'automatic', 'fallback', 'repeated-loss', 'failure']) {
+  const restoreBeforeModel = !['fallback', 'repeated-loss'].includes(mode);
   test(`native Codex context recovery: ${mode}`, {
     skip: !binary && 'Set PALMAGENT_CODEX_BINARY to test an installed Codex runtime.', timeout: 45_000,
   }, async t => {
@@ -41,14 +41,15 @@ for (const mode of ['before', 'automatic', 'fallback', 'failure']) {
       if (req.url !== '/v1/responses') { res.writeHead(404); res.end(); return; }
       requests.push(JSON.parse(body));
       const number = requests.length;
-      const item = number === 1
-        ? { type: 'function_call', id: 'fc-reset', call_id: 'call-reset',
+      const reset = number === 1 || mode === 'repeated-loss' && number === 3;
+      const item = reset
+        ? { type: 'function_call', id: `fc-reset-${number}`, call_id: `call-reset-${number}`,
           name: mode === 'automatic' ? 'exec_command' : 'new_context',
           arguments: mode === 'automatic' ? JSON.stringify({ cmd: 'pwd' }) : '{}' }
         : { type: 'message', id: `answer-${number}`, role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'Fixture response.' }] };
       const events = [
         { type: 'response.created', response: { id: `response-${number}`, status: 'in_progress' } },
-        { type: 'response.output_item.added', output_index: 0, item: { ...item, ...(number === 1 ? { arguments: '' } : {}) } },
+        { type: 'response.output_item.added', output_index: 0, item: { ...item, ...(reset ? { arguments: '' } : {}) } },
         { type: 'response.output_item.done', output_index: 0, item },
         { type: 'response.completed', response: { id: `response-${number}`, status: 'completed', output: [item],
           usage: { input_tokens: mode === 'automatic' && number === 1 ? 25_000 : 100,
@@ -131,8 +132,8 @@ requires_openai_auth = false
       approvalPolicy: 'never', sandbox: 'read-only', baseInstructions: 'Follow the user request.' });
     await rpc('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: 'ORIGINAL_REQUEST_42: finish the requested check.' }] });
     assert.equal((await completion).status, 'completed');
-    if (mode === 'failure') {
-      assert.equal(requests.length, 1, 'a stopped recovery must prevent another model request');
+    if (mode === 'failure' || mode === 'repeated-loss') {
+      assert.equal(requests.length, mode === 'failure' ? 1 : 4, 'a stopped recovery must prevent another model request');
       assert.ok(notifications.some(row => row.method === 'hook/completed' && row.params.run.status === 'stopped'),
         'the hook stop must be observed independently of normal provider completion');
       return;

@@ -163,13 +163,17 @@ export async function runHook(input, home = process.env.CODEX_HOME || join(homed
   const compact = input.hook_event_name === 'SessionStart' && input.source === 'compact';
   const stop = input.hook_event_name === 'Stop';
   if (!compact && !stop) return {};
-  // Codex owns interruptions. Never request another Stop continuation recursively.
-  if (stop && input.stop_hook_active) return {};
   // Ephemeral sessions have no persisted history to inspect. An ordinary Stop
   // without a transcript is not evidence of a lost request.
   if (stop && input.transcript_path == null) return {};
   const loss = await inspectContinuity(input);
   if (!loss || stop && loss.restored) return {};
+  // A continuation may itself lose context. Never loop or silently accept that
+  // loss after the one allowed recovery attempt.
+  if (stop && input.stop_hook_active) return {
+    continue: false, stopReason: 'Task context was lost again during recovery.',
+    systemMessage: 'Task context was lost again during recovery. Inspect the conversation before resuming.',
+  };
   const directory = join(resolve(home), 'palmagent-continuity', input.session_id);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const receipt = join(directory, `${loss.key}.json`);
