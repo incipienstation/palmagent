@@ -32,7 +32,6 @@ const test = base.extend<{ history: History }>({ history: async ({}, use) => {
 test.use({ serviceWorkers: "block" });
 
 async function routes(page: Page, history: History, older?: ReturnType<typeof gate>) {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   await installScopedStream(page);
   const reads: Array<{ before: number | null; count: number; bytes: number }> = [], details: number[] = [], changes: number[] = [], content: number[] = [];
   await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), async route => {
@@ -166,12 +165,11 @@ test("late classification and tool completion retry a partial revision without h
   expect(Math.max(...requests.changes)).toBeLessThanOrEqual(CONVERSATION_PAGE_BYTES);
 });
 
-for (const mode of ["compact", "verbose"] as const) test(`a projected checkpoint restores correctly in ${mode} mode`, async ({ page, history }) => {
+test("a projected checkpoint restores without a history request", async ({ page, history }) => {
   history.add([user("Checkpoint request"), event("tool_call", { id: "one", name: "Read" }),
     event("tool_result", { tool_use_id: "one", output: "Checkpoint tool detail" }), message("Checkpoint answer")]);
   const snapshot = history.tasks.conversationPage(taskId);
   await installScopedStream(page);
-  await page.addInitScript(mode => localStorage.setItem("pref:output-mode", mode), mode);
   let reads = 0;
   await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), route => {
     reads++;

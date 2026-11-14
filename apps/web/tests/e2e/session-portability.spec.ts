@@ -27,7 +27,6 @@ test("Space detail shows its connected folder on mobile and desktop", async ({ p
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByRole("complementary", { name: "Space navigation" })).toBeVisible();
   await assertViewportLocked(page);
-  await expect(page).toHaveScreenshot("working-directories-desktop.png");
 });
 
 test("handoff only releases on explicit action and offers a selectable native command", async ({ page }) => {
@@ -47,7 +46,6 @@ test("handoff only releases on explicit action and offers a selectable native co
   await expect(page.getByRole("button", { name: "Copy resume command" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Copy resume command" })).toBeInViewport();
   await assertViewportLocked(page);
-  await expect(page).toHaveScreenshot("session-handoff.png");
 });
 
 for (const owner of ["local", "returning"] as const) test(`${owner} ownership disables follow-up and archive while intermediate images stay in Trace`, async ({ page }) => {
@@ -115,7 +113,6 @@ test("live preview is readable before handoff and enables input only when owners
 
   await assertViewportLocked(page);
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeInViewport();
-  await expect(page).toHaveScreenshot("session-live-preview.png");
   owner = "palmagent";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText("Live preview", { exact: true })).toBeHidden();

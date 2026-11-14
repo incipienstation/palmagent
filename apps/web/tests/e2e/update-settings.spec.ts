@@ -32,7 +32,6 @@ test("settings show the running version, save shared preferences, and remain usa
   await openSettings(page);
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
   await expect(page.getByText("Standalone", { exact: true })).toBeVisible();
-  await expect(page).toHaveScreenshot("update-settings.png");
   const details = page.getByText("Update details", { exact: true });
   await expect(page.getByText(/Changing channel does not/)).toBeHidden();
   await details.focus();

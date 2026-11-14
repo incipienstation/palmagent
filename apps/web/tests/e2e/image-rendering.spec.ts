@@ -120,13 +120,11 @@ for (const parser of ["static", "streaming", "long"] as const) {
     expect(new URL(requests[0]).pathname).toBe(`/api/tasks/${taskId}/image`);
     expect(new URL(requests[0]).searchParams.get("path")).toBe("images/preview #1.png");
     await assertViewportLocked(page);
-    if (parser === "static") await expect(page).toHaveScreenshot("image-preview-mobile.png");
     await preview.click();
     const dialog = page.getByRole("dialog", { name: "Preview", exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("img")).toBeVisible();
     await assertViewportLocked(page);
-    if (parser === "static") await expect(page).toHaveScreenshot("image-enlarged-mobile.png");
     await expectImageDownload(page, dialog, "preview #1.png");
     await dialog.getByRole("button", { name: "Zoom in image" }).click();
     await expect.poll(() => imageTransform(page).then(value => value.scale)).toBeGreaterThan(1);

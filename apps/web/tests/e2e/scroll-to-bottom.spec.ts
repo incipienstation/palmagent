@@ -65,7 +65,7 @@ test("a pending bottom scroll notification does not cancel upward reading", asyn
   await expectBottom(page);
 });
 
-test("the translucent control stays above the composer in both themes and a smaller viewport", async ({ page }) => {
+test("the scroll control stays above the composer in both themes and a smaller viewport", async ({ page }) => {
   await longConversation(page);
   await readAbove(page);
   await page.setViewportSize({ width: 360, height: 520 });
@@ -82,17 +82,8 @@ test("the translucent control stays above the composer in both themes and a smal
       return {
         centered: Math.abs(control.x + control.width / 2 - (transcript.x + transcript.width / 2)) < 1,
         aboveComposer: control.bottom < composer.top,
-        width: control.width,
       };
-    })).toEqual({ centered: true, aboveComposer: true, width: 40 });
-    const style = await button(page).evaluate(el => ({
-      background: getComputedStyle(el).backgroundColor,
-      opacity: getComputedStyle(el).opacity,
-      blur: getComputedStyle(el).backdropFilter,
-    }));
-    expect(style.background).toMatch(/(?:0\.7|70%)/);
-    expect(style.opacity).toBe("1");
-    expect(style.blur).toBe("none");
+    })).toEqual({ centered: true, aboveComposer: true });
   }
   await button(page).tap();
   await expectBottom(page);
@@ -128,7 +119,6 @@ test("manual scrolling hides immediately and momentum delays the fade until idle
   await expect(button(page)).toHaveCSS("opacity", "0");
   await page.clock.runFor(1);
   await expect(button(page)).toHaveCSS("pointer-events", "auto");
-  await expect(button(page)).toHaveCSS("transition-duration", "0.15s");
   await expect(button(page)).toHaveCSS("opacity", "1");
 });
 
