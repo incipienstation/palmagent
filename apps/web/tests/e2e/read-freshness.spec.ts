@@ -112,7 +112,7 @@ test("terminal SSE changes coalesce during slow reads without idle polling", asy
   await page.clock.fastForward(11_000);
   expect(reads).toBe(1);
   first.release();
-  await expect(page.getByText("Open a terminal to work in this directory.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toBeVisible();
   await send(page, { type: "read-change", terminals: true });
   await expect.poll(() => reads).toBe(2);
   await page.clock.fastForward(11_000);
