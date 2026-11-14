@@ -8,7 +8,7 @@ import type { UpdateSettingsChange, UpdateSettingsState } from "@palmagent/share
 import { createUpdateSettingsService } from "../../src/modules/installation/adapters/outbound/cli-update-settings.js";
 import { runUpdateSettingsCommand as executeSettingsCommand } from "../../src/modules/installation/adapters/outbound/update-settings.js";
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../../src/modules/installation/adapters/outbound/user-config.js";
-import { acquireUpdateLock } from "../../src/modules/installation/adapters/outbound/update-state.js";
+import { writeUpdateReceipt, acquireUpdateLock } from "../../src/modules/installation/adapters/outbound/update-state.js";
 import { loadConfig } from "../../src/modules/installation/adapters/outbound/config.js";
 import { renderUnits } from "../../src/modules/installation/adapters/outbound/units.js";
 
@@ -53,6 +53,8 @@ test("the web bridge invokes only its own CLI, validates input/output, and hides
   response({ ok: true, state });
   await service.status();
   assert.equal(warnings.length, 1, "successful checks do not erase or duplicate the failure log");
+  await service.action({ action: "migrate" });
+  assert.deepEqual(JSON.parse(readFileSync(join(root, "call.json"), "utf8")).args.slice(0, 2), ["update-settings", "migrate"]);
   await service.change({ autoUpdate: true });
   assert.deepEqual(JSON.parse(readFileSync(join(root, "call.json"), "utf8")).args.slice(-2), ["--auto-update", "true"]);
   await service.change({ channel: "stable" });
@@ -101,6 +103,7 @@ test("CLI settings share preferences, preserve other keys, and exclude concurren
   const initial = await runUpdateSettingsCommand(["status", ...f.args]);
   assert.equal(initial.ok, true);
   if (!initial.ok) return;
+  assert.equal(initial.state.settings?.distribution, "npm");
   assert.equal(initial.state.settings?.autoUpdate, false);
   assert.equal(initial.state.settings?.channel, "stable");
   assert.equal(existsSync(userConfigPath()), false, "reading status does not initialize preferences");
@@ -162,3 +165,30 @@ test("automatic settings are saved only after executor preparation and preserve 
 function runUpdateSettingsCommand(args: string[]) {
   return executeSettingsCommand(args, () => ({ discovery: null, pending: null }));
 }
+
+test("migration rejects standalone and paused installations before discovery", async (t) => {
+  const f = installedFixture(t);
+  let checks = 0;
+  const check = () => { checks++; return { discovery: null, pending: null }; };
+  writeFileSync(join(f.data, "install.env"), f.content + "DISTRIBUTION=standalone\n");
+  assert.deepEqual(await executeSettingsCommand(["migrate", ...f.args], check), { ok: false, error: "stale-update" });
+  writeFileSync(join(f.data, "install.env"), f.content);
+  writeUpdateReceipt(f.data, { status: "failed", previousVersion: "0.2.0", targetVersion: "0.2.0", reason: "recovery-required" });
+  assert.deepEqual(await executeSettingsCommand(["migrate", ...f.args], check), { ok: false, error: "stale-update" });
+  assert.equal(checks, 0);
+});
+
+test("migration explicitly checks standalone and leaves saved preferences unchanged when no compatible release is found", async (t) => {
+  const f = installedFixture(t);
+  setUserChannel("stable");
+  setUserAutoUpdate(true);
+  const before = readFileSync(userConfigPath(), "utf8");
+  let distribution: string | undefined;
+  const result = await executeSettingsCommand(["migrate", ...f.args], (_cfg, force, _now, selected) => {
+    assert.equal(force, true); distribution = selected;
+    return { discovery: null, pending: null };
+  });
+  assert.deepEqual(result, { ok: false, error: "stale-update" });
+  assert.equal(distribution, "standalone");
+  assert.equal(readFileSync(userConfigPath(), "utf8"), before);
+});

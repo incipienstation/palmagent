@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { StandaloneSelectionSchema } from "./standalone.js";
+import { DistributionSchema, StandaloneSelectionSchema } from "./standalone.js";
 
 export const UpdateChannelSchema = z.enum(["stable", "preview"]);
 export type UpdateChannel = z.infer<typeof UpdateChannelSchema>;
@@ -25,7 +25,7 @@ export const UpdateSettingsChangeSchema = z.union([
 export type UpdateSettingsChange = z.infer<typeof UpdateSettingsChangeSchema>;
 
 export const UpdateActionSchema = z.union([
-  z.object({ action: z.enum(["visit", "check"]) }).strict(),
+  z.object({ action: z.enum(["visit", "check", "migrate"]) }).strict(),
   z.object({ action: z.literal("install"), version: z.string().min(1).max(100) }).strict(),
 ]);
 export type UpdateAction = z.infer<typeof UpdateActionSchema>;
@@ -41,6 +41,7 @@ export const UpdateDiscoveryFailureSchema = z.object({
 export type UpdateDiscoveryFailure = z.infer<typeof UpdateDiscoveryFailureSchema>;
 
 export const UpdateDiscoverySchema = z.object({
+  distribution: DistributionSchema.optional(),
   channel: UpdateChannelSchema,
   currentVersion: z.string(),
   targetVersion: z.string().nullable(),
@@ -64,6 +65,7 @@ export type UpdateRequest = z.infer<typeof UpdateRequestSchema>;
 export const UpdateSettingsStateSchema = z.object({
   availability: z.enum(["available", "not-installed", "source-install", "installation-mismatch", "permission-required", "authentication-required", "unavailable"]),
   settings: z.object({
+    distribution: DistributionSchema.optional(),
     channel: UpdateChannelSchema,
     autoUpdate: z.boolean(),
     independentExecutions: z.boolean().optional(),

@@ -121,3 +121,8 @@ On a nonzero exit, stop and explain the failure. Invalid JSON, unsupported schem
 versions, and invalid channels must not be replaced with defaults. Use the internal
 config API for channel preferences and the settings CLI for search paths; never rewrite the entire file from a conversation snapshot,
 remove unknown settings, or copy user configuration into the plugin distribution.
+
+The app's Settings → Updates also reports the installation distribution and offers
+**Move to standalone** for npm installations. This is an explicit installation action,
+not a preference change. It follows the saved channel and preserves automatic-update
+preferences. For an operator-requested migration, continue through the `update` skill.
