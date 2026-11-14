@@ -56,7 +56,7 @@ function updateMessage(result: UpdateReceipt): string {
 }
 
 export function UpdateSettings() {
-  const { status, busy, saving, stale, error, action, reload, install, change } = useUpdateSettings();
+  const { status, busy, saving, stale, error, action, reload, install, migrate, change } = useUpdateSettings();
   const automaticId = useId();
   const channelId = useId();
   const settings = status?.settings;
@@ -69,7 +69,7 @@ export function UpdateSettings() {
   const paused = last?.status === "failed" || last?.status === "applying";
 
   const current = Boolean(discovery && !discovery.error && !newer && !pending && !paused && last?.status !== "deferred" && !stale);
-  const progress = saving ? "Saving…" : action === "install" ? "Requesting update…" : busy && status ? "Checking…" : null;
+  const progress = saving ? "Saving…" : action === "migrate" ? "Preparing migration…" : action === "install" ? "Requesting update…" : busy && status ? "Checking…" : null;
 
   return (
     <SettingsPanel aria-label="Updates">
@@ -107,6 +107,18 @@ export function UpdateSettings() {
           onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
 
         <SettingsCard>
+          {settings.distribution && <>
+            <SettingsField className="flex-wrap">
+              <FieldLabel variant="setting">Installation</FieldLabel>
+              <span className="text-sm text-muted-foreground">{settings.distribution === "standalone" ? "Standalone" : "npm"}</span>
+            </SettingsField>
+            {settings.distribution === "npm" && <div className="flex flex-col gap-2 pb-3">
+              <Button variant="outline" disabled={disabled || busy || Boolean(pending) || paused}
+                onClick={() => void migrate()}>{action === "migrate" ? "Preparing migration…" : "Move to standalone"}</Button>
+              <p className="text-xs text-muted-foreground">Installs the latest compatible {settings.channel === "preview" ? "Preview" : "Stable"} release. Your data and settings are kept.</p>
+            </div>}
+            <Separator />
+          </>}
           <SettingsField data-disabled={disabled}>
             <FieldLabel variant="setting" htmlFor={automaticId}>Automatic updates</FieldLabel>
             <Switch id={automaticId} checked={settings.autoUpdate} disabled={disabled} aria-busy={saving}

@@ -8,7 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { checkUpdateAccess, readUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../../src/modules/installation/adapters/outbound/update-access.js";
+import { checkUpdateAccess, writeUpdateAccess, readUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../../src/modules/installation/adapters/outbound/update-access.js";
 import { planUpdate, readPluginVersions, resolveUpdatePlan } from "../../src/modules/installation/adapters/outbound/update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "../../src/modules/installation/adapters/outbound/update-state.js";
 import { autoUpdateService, startRequestedUpdate, retireAutoUpdateTimer, renderAutoUpdateUnits } from "../../src/modules/installation/adapters/outbound/auto-update.js";
@@ -953,4 +953,24 @@ test("rollback provisioning never executes an older candidate's ingress-managing
   const calls = readFileSync(join(f.root, "host.jsonl"), "utf8");
   assert.match(calls, /palmagent.service/);
   assert.doesNotMatch(calls, /nginx|certbot|letsencrypt|openssl|caddy/);
+});
+
+test("same-version Stable migration pins the artifact, preserves preferences, and cannot become automatic", (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.cfg.pkgDir!, "package.json"), JSON.stringify({ version: "0.1.0" }));
+  setUserAutoUpdate(true);
+  const before = readFileSync(userConfigPath(), "utf8");
+  const selection = { distribution: "standalone" as const, version: "0.1.0", manifestUrl: "https://example.invalid/standalone.json", manifestSha256: "a".repeat(64),
+    artifact: { target: "linux-arm64-glibc" as const, filename: "palmagent-0.1.0-linux-arm64-glibc.tar.gz", url: "https://example.invalid/release.tar.gz", sha256: "b".repeat(64), size: 1, unpackedSize: 1, minGlibc: "2.35", requiredLibraries: [] } };
+  writeUpdateAccess(f.cfg.dataDir, { pending: null, discovery: { distribution: "standalone", channel: "stable", currentVersion: "0.1.0", targetVersion: "0.1.0",
+    eligible: true, error: false, packagePending: true, pluginsPending: 0, checkedAt: new Date().toISOString(), selection } });
+  assert.throws(() => requestUpdateAccess(f.cfg, true), /check for updates/);
+  requestUpdateAccess(f.cfg, false, "0.1.0");
+  const pending = readUpdateAccess(f.cfg.dataDir).pending!;
+  assert.equal(pending.automatic, false);
+  assert.deepEqual(pending.selection, selection);
+  assert.equal(readFileSync(userConfigPath(), "utf8"), before);
+  // A later ordinary Stable check must not reuse migration discovery or change its pinned request.
+  assert.equal(checkUpdateAccess(f.cfg, false).discovery?.distribution, "npm");
+  assert.deepEqual(readUpdateAccess(f.cfg.dataDir).pending, pending);
 });

@@ -60,3 +60,12 @@ with non-fast-forward overwrite protection; GitHub Pages activates the complete 
 after the release assets have been verified. The initial trust root is the HTTPS bootstrap and its embedded
 public keys. Publish a client trusting the replacement key before switching signing keys.
 An empty trust store intentionally prevents any release from being installed or published.
+
+## Migration from Settings
+
+Settings → Updates shows the current installation type. For npm installations,
+**Move to standalone** resolves a signed release on the selected channel and requests
+the migration without changing the channel or automatic-update preference. The existing
+updater checks plugin compatibility, pins the artifact, and preserves data and settings.
+Legacy installations wait for active tasks to finish. Pending or failed updates must be
+resolved before requesting a migration. There is no reverse conversion to npm in Settings.

@@ -80,7 +80,7 @@ async function request(operation?: UpdateAction) {
     if (generation !== epoch) return;
     error = cause instanceof Error ? cause.message : "Could not load update settings.";
     if (operation) toast({ title: error, variant: "destructive" });
-    try { if (operation?.action !== "install") throw cause; const next = await api.updateSettings.get(); if (generation === epoch) accept(next); }
+    try { if (operation?.action !== "install" && operation?.action !== "migrate") throw cause; const next = await api.updateSettings.get(); if (generation === epoch) accept(next); }
     catch { if (generation === epoch) stale = true; }
   } finally { if (generation === epoch) { action = null; publish(); } }
 }
@@ -92,7 +92,7 @@ const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listen
 export function useUpdateSettings() {
   const state = useSyncExternalStore(subscribe, () => snapshot);
   useEffect(() => { void request(); }, []);
-  return { ...state, reload: () => request({ action: "check" }), install: (version: string) => request({ action: "install", version }),
+  return { ...state, migrate: () => request({ action: "migrate" }), reload: () => request({ action: "check" }), install: (version: string) => request({ action: "install", version }),
     change: (change: UpdateSettingsChange) => {
       if (action || !preference || status?.availability !== "available") return;
       error = null;

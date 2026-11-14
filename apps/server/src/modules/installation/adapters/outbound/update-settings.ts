@@ -11,6 +11,7 @@ import { prepareUpdateService, startRequestedUpdate, retireAutoUpdateTimer, conf
 import { callerPkgDir, installEnvPath, loadConfig, type InstallConfig } from "./config.js";
 import { getUserConfig, setUserChannel, userConfigPath } from "./user-config.js";
 import { acquireUpdateLock, readUpdateReceipt, UpdateBusyError } from "./update-state.js";
+import { installedDistribution } from "./standalone-release.js";
 import { canSudoNonInteractive } from "./sh.js";
 
 export function readUpdateSettings(cfg: InstallConfig): NonNullable<UpdateSettingsState["settings"]> {
@@ -19,6 +20,7 @@ export function readUpdateSettings(cfg: InstallConfig): NonNullable<UpdateSettin
   if (access.discovery?.channel !== preferences.channel) access.discovery = null;
   if (access.pending && (access.pending.channel !== preferences.channel || (access.pending.automatic && !preferences.autoUpdate))) access.pending = null;
   return {
+    distribution: installedDistribution(cfg),
     channel: preferences.channel,
     autoUpdate: preferences.autoUpdate ?? false,
     independentExecutions: Boolean(cfg.executionNode),
@@ -63,7 +65,7 @@ export async function runUpdateSettingsCommand(args: string[], checkAvailability
       "data-dir": { type: "string" }, "expected-db": { type: "string" },
       channel: { type: "string" }, "auto-update": { type: "string" }, target: { type: "string" },
     } });
-    if (positionals.length !== 1 || !["status", "set", "visit", "check", "install", "resume"].includes(positionals[0]) || !values["data-dir"] || !values["expected-db"]) {
+    if (positionals.length !== 1 || !["status", "set", "visit", "check", "install", "migrate", "resume"].includes(positionals[0]) || !values["data-dir"] || !values["expected-db"]) {
       throw new Error("invalid update settings command");
     }
     action = positionals[0];
@@ -80,6 +82,17 @@ export async function runUpdateSettingsCommand(args: string[], checkAvailability
     const { cfg, availability } = installation(values["data-dir"], values["expected-db"]);
     if (changing && (availability !== "available" || !cfg)) return { ok: false, error: "unavailable" };
     if (cfg && changing) {
+      if (action === "migrate") {
+        if (installedDistribution(cfg) !== "npm" || updatePaused(cfg) || readUpdateAccess(cfg.dataDir).pending) {
+          return { ok: false, error: "stale-update" };
+        }
+        const checked = checkAvailability(cfg, true, Date.now(), "standalone");
+        if (checked.discovery?.error) return { ok: true, state: { availability, settings: readUpdateSettings(cfg) } };
+        try {
+          if (!checked.discovery?.selection) throw new Error("standalone release required");
+          requestUpdateAccess(cfg, false, checked.discovery.targetVersion ?? undefined);
+        } catch { return { ok: false, error: "stale-update" }; }
+      }
       if (change) await applyUpdateSettings(cfg, change);
       if (!cfg.supervisor) retireAutoUpdateTimer();
       const check = action === "visit" || action === "check" || (change && ("channel" in change || change.autoUpdate));
