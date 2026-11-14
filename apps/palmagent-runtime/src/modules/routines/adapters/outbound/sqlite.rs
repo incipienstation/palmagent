@@ -193,7 +193,7 @@ impl Repository for SqliteRepository {
         }
     }
     fn runs(&self, id: &str, limit: usize) -> Result<Vec<Run>> {
-        Ok(self.connection.prepare("SELECT * FROM routine_runs WHERE routine_id=? ORDER BY fired_at DESC,id DESC LIMIT ?")?.query_map(params![id, limit.min(100)], run)?.collect::<rusqlite::Result<_>>()?)
+        Ok(self.connection.prepare("SELECT * FROM routine_runs WHERE routine_id=? ORDER BY fired_at DESC,id DESC LIMIT ?")?.query_map(params![id, limit.min(100) as i64], run)?.collect::<rusqlite::Result<_>>()?)
     }
     fn running(&self) -> Result<Vec<Run>> {
         Ok(self.connection.prepare("SELECT rr.* FROM routine_runs rr JOIN routines r ON r.id=rr.routine_id WHERE r.kind='script' AND rr.status='running' ORDER BY rr.id")?.query_map([], run)?.collect::<rusqlite::Result<_>>()?)
