@@ -1,5 +1,7 @@
 import type { MessageTiming } from "../ports/outbound/message-timing.js";
-import { recoverTasks } from "./recover-tasks.js";
+import { recoverTaskExecutions } from "./recover-tasks.js";
+import { TaskExecution } from "./task-execution.js";
+import { turnFailed, type TurnEvidence } from "../../domain/turn-policy.js";
 import type { TaskUseCases } from "../ports/inbound/task-use-cases.js";
 import { AGENT_HOOK_STOPPED, isClosedTaskStatus, compactUnavailableReason, type CompactTaskRequest } from "@palmagent/shared";
 import { sanitizeImages } from "../attachments/image-input.js";
@@ -20,7 +22,7 @@ import type { NativeSessionOperations } from "../ports/outbound/native-session.j
 import type { TaskSpaces } from "../ports/outbound/spaces.js";
 import type { TaskPushNotifier } from "../ports/outbound/notifications.js";
 import type { TaskRepository } from "../ports/outbound/persistence.js";
-import type { RawEvent, RunHandle, RunnerBackend } from "../../../agents/api.js";
+import type { RawEvent, RunnerBackend } from "../../../agents/api.js";
 import type { SharedSessionConnector, SharedSessionConnection, SharedSessionSnapshot } from "../../../agents/api.js";
 import type { AgentEvent } from "@palmagent/shared";
 
@@ -28,14 +30,6 @@ import { ApplicationError } from "../../../../kernel/errors.js";
 const badRequest = (m: string) => new ApplicationError("bad_request", m);
 const notFound = (m: string) => new ApplicationError("not_found", m);
 const conflict = (m: string) => new ApplicationError("conflict", m);
-
-interface TurnState {
-  failureMessage?: string;
-  sawResult: boolean; // a terminal result event arrived (claude result / codex turn.completed)
-  lastResultError: boolean; // is_error of the LAST result (so an interrupt's aborted result is superseded)
-  errored: boolean; // a non-result error event arrived (used only when no result ever did)
-  abnormalExit?: boolean; // signal, spawn failure, or lost backend connection
-}
 
 // The state machine + persistence + lifecycle glue. Everything agent-specific
 // stays behind the injected execution backend — this file never branches on agent kind.
@@ -144,6 +138,7 @@ export class TaskService implements PrStatusSink {
   private sharedTerminal = new Map<string, boolean>();
   beginShutdown(): void {
     this.shuttingDown = true;
+    this.execution.close();
     this.sideChats?.close();
     for (const connection of this.sharedConnections.values()) connection.close();
     this.sharedConnections.clear();
@@ -153,15 +148,10 @@ export class TaskService implements PrStatusSink {
   }
 
   private cache = new Map<string, TaskState>(); // live mirror of the tasks table
-  private sessionMismatch = new Set<string>();
-  private turnState = new Map<string, TurnState>(); // per-active-turn error tracking
   private pendingSteer = new Map<string, { text: string; images: InputAttachment[] }[]>(); // codex steer → next-turn queue
   private stopping = new Set<string>(); // user-requested stop → settle idle(interrupted), not failed
   private steerRestart = new Set<string>(); // steer changed model/effort → interrupt was deliberate, not a failure
-  // Per-active-turn reattach baseline: stdout line seqs <= this were already
-  // persisted in a prior web-server life, so on replay they update in-memory
-  // state but are NOT re-persisted/re-broadcast (exactly-once).
-  private turnBaseline = new Map<string, number>();
+  private readonly execution: TaskExecution;
   readonly messages: MessageController;
   sideChats?: import("../../../agents/api.js").SideChatOperations;
   private sideChatOperations(id: string, writable = false) {
@@ -232,7 +222,7 @@ export class TaskService implements PrStatusSink {
   skillCatalog?: TaskSkillCatalog;
 
   constructor(
-    messageTiming: MessageTiming,
+    private readonly timing: MessageTiming,
     private readonly db: TaskRepository,
     private readonly hub: TaskEventPublisher,
     private readonly supervisor: TaskSupervisor,
@@ -293,7 +283,7 @@ export class TaskService implements PrStatusSink {
         }
         this.applySettings(task, message.settings?.model, message.settings?.effort, message.settings?.permission);
         this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
-        void this.runTurn(task, message.text, task.sessionId, images, message.id, message.skills);
+        void this.execution.run(task, message.text, task.sessionId, images, message.id, message.skills);
       },
       steer: async (id, message) => {
         const task = this.getTask(id), handle = this.supervisor.get(id);
@@ -307,7 +297,15 @@ export class TaskService implements PrStatusSink {
         } catch { return "rejected"; }
       },
       changed: () => this.broadcastTasks(),
-    }, attachments, ids, messageTiming);
+    }, attachments, ids, timing);
+    this.execution = new TaskExecution(db, supervisor, backend, this.messages, {
+      transition: (task, status, opts) => this.transition(task, status, opts),
+      resolveSkills: (taskId, skills) => this.resolveSkills({ taskId }, skills),
+      error: (task, message) => this.emitSynthetic(task, { subtype: "error", message }),
+      sessionMismatch: id => { this.pendingSteer.delete(id); this.persistControl(id); },
+      event: (task, event, rawSeq, replayed) => this.onRaw(task, event, rawSeq, replayed),
+      finished: (task, evidence) => this.finishTurn(task, evidence),
+    });
   }
 
   async resolveMessageSkills(id: string, req: SubmitMessage) {
@@ -343,7 +341,7 @@ export class TaskService implements PrStatusSink {
     if (reason) throw conflict(reason);
     if (this.supervisor.has(id)) throw conflict("Available after the response finishes.");
     this.emitSynthetic(task, { subtype: "compaction_requested" });
-    void this.runTurn(task, "", task.sessionId, undefined, undefined, undefined, request.requestId);
+    void this.execution.run(task, "", task.sessionId, undefined, undefined, undefined, request.requestId);
     return this.getTask(id);
   }
 
@@ -373,51 +371,17 @@ export class TaskService implements PrStatusSink {
       task.sessionControl = { ...task.sessionControl!, connection: "reconnecting" };
       this.db.setSessionControl(task.taskId, task.sessionControl);
     }
-    const inFlight = new Set(this.db.inFlightTaskIds().filter(id => this.cache.get(id)?.sessionControl?.owner !== "shared"));
-    let live: string[] = [];
-    if (inFlight.size || this.backend.independent) {
-      try {
-        live = (await this.backend.listLive()).filter((id) => inFlight.has(id) || (this.backend.independent && this.cache.get(id)?.status === "cancelled"));
-      } catch (error) {
-        if (this.backend.independent) throw error;
-        live = [];
-      }
-    }
-    if (this.backend.independent && [...inFlight].some(id => !live.includes(id))) {
-      throw new Error("An in-flight task has no execution identity; refusing automatic recovery");
-    }
-    const reattached: string[] = [];
-    for (const id of live) {
-      const t = this.cache.get(id);
-      // Only resume-capable turns (running/awaiting) reattach; a queued task
-      // never captured a session, so let it fall through to reset.
-      if (t && (t.status === "running" || t.status === "awaiting_approval" || t.status === "awaiting_input" || (this.backend.independent && (t.status === "queued" || t.status === "cancelled")))) {
-        try {
-          this.reattachTurn(t);
-          reattached.push(id);
-        } catch (error) {
-          if (this.backend.independent) throw error;
-          /* fall through to reset below */
-        }
-      }
-    }
-
-    const keep = new Set([...reattached, ...shared.map(task => task.taskId)]);
-    const recovered = recoverTasks(this.db, Date.now(), keep);
-    for (const id of recovered) {
-      const t = this.cache.get(id);
-      if (t) {
-        t.status = "idle";
-        t.interrupted = true;
-      }
-    }
+    const { reattached, recovered } = await recoverTaskExecutions(this.db, this.backend, this.cache, {
+      reattach: task => this.execution.reattach(task),
+      recoverMessages: (id, live) => this.messages.recover(id, live),
+      now: () => this.timing.now(),
+    });
     if (reattached.length) {
       console.log(`[recovery] reattached ${reattached.length} live turn(s) from the execution backend`);
     }
     if (recovered.length) {
       console.log(`[recovery] reset ${recovered.length} in-flight task(s) to idle(interrupted)`);
     }
-    for (const id of this.db.messageTaskIds()) this.messages.recover(id, keep.has(id));
     for (const task of shared) void this.refreshShared(task);
     this.broadcastTasks();
   }
@@ -857,7 +821,7 @@ export class TaskService implements PrStatusSink {
     // otherwise opening a fresh task before its snapshot lands shows no prompt.
     const nImages = images?.length ?? 0;
     this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, attachments, images: nImages || undefined, ...(req.clientRequestId ? { messageId: req.clientRequestId } : {}) });
-    void this.runTurn(task, req.prompt, undefined, images, undefined, skills); // new session
+    void this.execution.run(task, req.prompt, undefined, images, undefined, skills); // new session
     return task;
   }
 
@@ -880,7 +844,7 @@ export class TaskService implements PrStatusSink {
     this.applySettings(task, model, effort, permission); // resumes with the new model/effort/permission if changed
     const nImages = images?.length ?? 0;
     this.emitSynthetic(task, { subtype: "followup", text: prompt, attachments, images: nImages || undefined });
-    void this.runTurn(task, prompt, task.sessionId, images); // resume by id off the local transcript
+    void this.execution.run(task, prompt, task.sessionId, images); // resume by id off the local transcript
     return task;
   }
 
@@ -929,7 +893,7 @@ export class TaskService implements PrStatusSink {
     }
     // No active turn: run the steer as an immediate follow-up if resumable.
     if (task.status === "idle" || task.status === "failed") {
-      void this.runTurn(task, text, task.sessionId, images);
+      void this.execution.run(task, text, task.sessionId, images);
       this.emitSynthetic(task, { subtype: "steer", injected: false, queued: false, text, attachments, images: nImages || undefined, note: "ran as follow-up" });
       return { injected: false, queued: false };
     }
@@ -1062,128 +1026,10 @@ export class TaskService implements PrStatusSink {
     return task;
   }
 
-  // ---- turn execution ----
-  private async runTurn(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string, skills?: SkillSelection[], compactionRequestId?: string): Promise<void> {
-    const runId = this.messages.beginRun(task.taskId, messageId, compactionRequestId);
-    if (!this.backend.independent && !this.supervisor.tryAcquire()) {
-      this.transition(task, "queued"); // over the concurrency cap — wait for a slot
-      await this.supervisor.acquire();
-      // The wait is the only interleave point: bail if the task was cancelled,
-      // archived, or stopped (→ idle) while queued.
-      if (this.shuttingDown || task.status !== "queued" || this.messages.state(task.taskId).runId !== runId) {
-        this.supervisor.release(task.taskId);
-        return;
-      }
-    }
-    if (skills?.length) {
-      this.transition(task, "queued");
-      try { skills = await this.resolveSkills({ taskId: task.taskId }, skills); }
-      catch (error) {
-        this.supervisor.release(task.taskId);
-        if (this.shuttingDown || this.messages.state(task.taskId).runId !== runId || task.status !== "queued") return;
-        const message = error instanceof Error ? error.message : "Skill is unavailable.";
-        this.emitSynthetic(task, { subtype: "error", message });
-        this.transition(task, "failed"); this.messages.rejectBeforeStart(task.taskId, message); return;
-      }
-      if (this.shuttingDown || this.messages.state(task.taskId).runId !== runId || isClosedTaskStatus(task.status)) {
-        this.supervisor.release(task.taskId); return;
-      }
-    }
-    this.startTurnNow(task, prompt, resumeId, images, messageId, skills);
-  }
-
-  private startTurnNow(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string, skills?: SkillSelection[]): void {
-    if (this.shuttingDown) { this.supervisor.release(task.taskId); return; }
-    const runner = this.backend.agentRunner(task.agent);
-    this.sessionMismatch.delete(task.taskId);
-    this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
-    // A brand-new turn starts a fresh stdout stream: baseline 0, nothing replayed.
-    this.turnBaseline.set(task.taskId, 0);
-    this.db.setTaskRawSeq(task.taskId, 0);
-    this.transition(task, "running", { interrupted: false });
-    let handle: RunHandle;
-    this.messages.startingRuntime(task.taskId);
-    try {
-      handle = runner.start(
-        {
-          taskId: task.taskId,
-          messageId, interactive: true,
-          operation: this.messages.state(task.taskId).compaction?.status === "running" ? "compact" : undefined,
-          cwd: task.worktreePath!, // stable for the task's whole life
-          prompt,
-          skills,
-          images,
-          resumeId,
-          providerHome: task.sessionControl?.home,
-          permission: task.permission,
-          model: task.model,
-          effort: task.effort,
-        },
-        (raw, rawSeq) => this.onRaw(task, raw, rawSeq),
-      );
-    } catch (e) {
-      // A synchronous spawn failure must release the slot, not leak it / wedge the task.
-      this.turnState.delete(task.taskId);
-      this.supervisor.release(task.taskId);
-      this.emitSynthetic(task, { subtype: "error", message: `failed to start turn: ${String(e)}` });
-      this.transition(task, "failed");
-      this.messages.finish(task.taskId, true, false, "Context compaction could not start. Try again.");
-      return;
-    }
-    this.supervisor.register(task.taskId, handle);
-    handle.done.then(() => this.finishTurn(task), () => this.finishTurn(task));
-  }
-
-  // Restart recovery: rebuild a RunHandle for a turn STILL RUNNING in the daemon.
-  // The adapter reattaches (replays the buffered stream, does not re-send the
-  // prompt); the service replays through onRaw but suppresses already-persisted
-  // events via the baseline. The turn keeps its slot (reclaim) and stays running.
-  private reattachTurn(task: TaskState): void {
-    const runner = this.backend.agentRunner(task.agent);
-    this.turnState.set(task.taskId, { sawResult: false, lastResultError: false, errored: false });
-    const baseline = this.db.getTaskRawSeq(task.taskId);
-    this.turnBaseline.set(task.taskId, baseline);
-    const handle = runner.start(
-      {
-        taskId: task.taskId,
-        cwd: task.worktreePath!,
-        messageId: this.messages.state(task.taskId).initialMessageId,
-        interactive: this.messages.state(task.taskId).protocol === "interactive",
-        operation: this.messages.state(task.taskId).compaction?.status === "running" ? "compact" : undefined,
-        prompt: "", // unused on reattach — the live turn already got its prompt
-        resumeId: task.sessionId,
-        permission: task.permission,
-        model: task.model,
-        effort: task.effort,
-        reattach: true,
-        resumeFromSeq: baseline,
-        // If the turn is paused on AskUserQuestion, hand the adapter the persisted
-        // question so historical control requests can be skipped during replay.
-        pendingInput: task.pendingInput,
-        pendingApproval: task.pendingApproval,
-      },
-      (raw, rawSeq) => this.onRaw(task, raw, rawSeq),
-    );
-    this.supervisor.reclaim(task.taskId, handle);
-    handle.done.then(() => this.finishTurn(task), () => this.finishTurn(task));
-  }
-
-  // `rawSeq` is the source stdout line's per-turn sequence (undefined for stderr/
-  // synthetic events). In-memory bookkeeping (session/turnState/approval/PR) runs
-  // for EVERY event so reattach rebuilds state from the replayed stream; only the
-  // DB insert + SSE fan-out are suppressed for events at or below the reattach
-  // baseline (already persisted in a prior life).
-  private onRaw(task: TaskState, raw: RawEvent, rawSeq?: number): void {
+  // The execution coordinator rebuilds terminal evidence from all replayed lines.
+  // Persist task effects only for lines beyond the recovery baseline.
+  private onRaw(task: TaskState, raw: RawEvent, rawSeq: number | undefined, replayed: boolean): void {
     if (this.shuttingDown) return;
-    if (this.sessionMismatch.has(task.taskId)) return;
-    if (task.sessionId && raw.sessionId && task.sessionId !== raw.sessionId) {
-      this.sessionMismatch.add(task.taskId);
-      const state = this.turnState.get(task.taskId);
-      if (state) { state.errored = true; state.abnormalExit = true; }
-      this.pendingSteer.delete(task.taskId); this.persistControl(task.taskId);
-      raw = { taskId: task.taskId, sessionId: task.sessionId, kind: "error", payload: { message: "The CLI returned a different session identity. The turn was stopped; the original session is retained." } };
-      queueMicrotask(() => this.supervisor.get(task.taskId)?.cancel());
-    }
     const now = Date.now();
     const output = raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status" ? extractOutputImages(raw.payload) : { payload: raw.payload, images: [] };
     if (raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status") raw = { ...raw, payload: output.payload };
@@ -1196,26 +1042,7 @@ export class TaskService implements PrStatusSink {
       this.broadcastTasks();
     }
 
-    const ts = this.turnState.get(task.taskId);
-    if (ts) {
-      if (event.kind === "error") {
-        ts.errored = true;
-        const message = (event.payload as { message?: unknown } | null)?.message;
-        if (typeof message === "string") ts.failureMessage = message;
-      }
-      if (event.kind === "result") {
-        ts.sawResult = true;
-        ts.lastResultError = !!(event.payload as { is_error?: boolean })?.is_error;
-      }
-      if (event.kind === "status") {
-        const status = event.payload as { subtype?: string; code?: number | null };
-        if (status.subtype === "process_exit") ts.abnormalExit = status.code !== 0;
-        if (status.subtype === "reattach_failed") ts.abnormalExit = true;
-      }
-    }
-    // Rebuild terminal bookkeeping above, but never repeat persisted effects
-    // such as questions, notifications, event inserts, or SSE broadcasts.
-    if (rawSeq !== undefined && rawSeq <= (this.turnBaseline.get(task.taskId) ?? 0)) return;
+    if (replayed) return;
 
     if (event.kind === "status") {
       const p = event.payload as { subtype?: string; messageId?: string; requestId?: string };
@@ -1279,15 +1106,8 @@ export class TaskService implements PrStatusSink {
     this.requestPrRefresh?.(task.taskId);
   }
 
-  private finishTurn(task: TaskState): void {
+  private finishTurn(task: TaskState, evidence: TurnEvidence): void {
     if (this.shuttingDown) return;
-    this.supervisor.release(task.taskId);
-    // The turn's process has exited — tell the daemon to drop its replay buffer
-    // (no-op for the in-process backend) and forget this turn's reattach baseline.
-    this.backend.release?.(task.taskId);
-    this.turnBaseline.delete(task.taskId);
-    const ts = this.turnState.get(task.taskId);
-    this.turnState.delete(task.taskId);
     const stopped = this.stopping.delete(task.taskId);
     // The turn is over — no question can be pending anymore (e.g. Stop while
     // awaiting_input, or the CLI declined). Clear it so the UI drops the answer form.
@@ -1319,18 +1139,12 @@ export class TaskService implements PrStatusSink {
       this.messages.finish(task.taskId, true, false, "Context compaction was stopped.");
       return;
     }
-    // Decide off the TERMINAL signal: if a result arrived, trust its is_error
-    // (Codex success = turn.completed with no is_error; a transient mid-turn
-    // error item does NOT fail the turn). Only fall back to `errored` (e.g.
-    // codex turn.failed, which has no result) when no result ever arrived.
-    // A signal, lost backend, or failed spawn is never a normal completion.
     const compacting = this.messages.state(task.taskId).compaction?.status === "running";
-    const failed = compacting && !ts?.sawResult || !steerRestart && !!ts &&
-      (ts.abnormalExit || (ts.sawResult ? ts.lastResultError : ts.errored));
+    const failed = turnFailed(evidence, compacting, steerRestart);
     this.db.transaction(() => {
       this.transition(task, failed ? "failed" : "idle");
       if (compacting && !failed) this.emitSynthetic(task, { subtype: "context_compacted" });
-      this.messages.finish(task.taskId, failed, false, ts?.failureMessage);
+      this.messages.finish(task.taskId, failed, false, evidence.failureMessage);
     });
 
     // Legacy-client compatibility: old steers drain separately from the explicit queue.
@@ -1338,7 +1152,7 @@ export class TaskService implements PrStatusSink {
     const chains = !failed && !!pending && pending.length > 0;
     if (chains && pending) {
       this.pendingSteer.delete(task.taskId); this.persistControl(task.taskId);
-      void this.runTurn(
+      void this.execution.run(
         task,
         pending.map((p) => p.text).join("\n"),
         task.sessionId,

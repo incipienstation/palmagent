@@ -108,6 +108,20 @@ cycles. Check type imports and re-exports as well as runtime imports. Unknown so
 locations must not silently escape classification. Folder placement alone is not
 evidence that a boundary is respected.
 
+## Task execution and recovery
+
+`MessagePolicy` owns queue and delivery decisions. `TaskExecution` owns execution admission,
+reserved capacity, active handles, replay baselines, and terminal evidence. `TaskService` applies
+persisted task effects and coordinates queue advancement after execution ownership is released.
+A discarded reservation releases only its capacity; late callbacks cannot affect a newer turn
+for the same task. View shutdown leaves retained executions and their durable receipts intact.
+
+`recoverTaskExecutions` reattaches known executions before resetting orphaned tasks, then
+reconciles message queues using the same retained-task set. Shared sessions keep their separate
+connection recovery. Independent execution identity or connectivity uncertainty stops recovery
+rather than resetting a task or resending a message. Recovery timestamps and queue scheduling use
+the clock supplied by composition.
+
 ## Design references
 
 - [Ports and Adapters, Alistair Cockburn](https://alistair.cockburn.us/hexagonal-architecture)
