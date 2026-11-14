@@ -1,6 +1,6 @@
 # Test coverage audit — November 2026
 
-The audit inventories 186 test-bearing files at commit `007b369`: 60 server,
+The audit inventories 188 test-bearing files at commit `dbef80c`: 62 server,
 83 browser, six browser-game, six Rust, and 31 tooling test files. It also checks
 the PWA state and web-harness scripts and the smoke/verification entry points.
 The inventory covers test declarations, parameterized variants, assertion patterns,
@@ -39,7 +39,9 @@ a measurement of runtime or of assertions removed from retained cases.
   ambiguous outcomes, persistence/migrations, authentication, path containment,
   attachment quotas/retention, process ownership, recovery, routines, terminals,
   updates and read freshness. Similar routes exercise different failure boundaries;
-  unit and real process/HTTP tests are not interchangeable coverage.
+  unit and real process/HTTP tests are not interchangeable coverage. The added
+  message-policy and injected-clock tests cover FIFO lease boundaries, uncertain
+  delivery, failed persistence, and shutdown without introducing real-time waits.
 - **Rust:** workspace boundaries, calendar calculations, routine scheduling,
   recovery and daemon lifecycle. The 41-second startup regression crosses the old
   real startup deadline; deleting it for its duration would remove a distinct
