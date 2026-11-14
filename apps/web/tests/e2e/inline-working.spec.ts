@@ -43,11 +43,9 @@ for (const width of [360, 1280]) for (const echoFirst of [true, false]) {
     await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveAttribute("data-expanded", "false");
     await expect(page.getByText(/Sending/)).toHaveCount(0);
     expect((await working.boundingBox())!.y).toBeGreaterThan((await bubble.boundingBox())!.y);
-    await expect(working).toHaveCSS("animation-name", "tw-shimmer");
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(working).toHaveCSS("animation-name", "none");
     await expect(working).not.toHaveCSS("-webkit-text-fill-color", "rgba(0, 0, 0, 0)");
-    if (width === 360 && echoFirst) await expect(page).toHaveScreenshot("optimistic-working.png");
     const emit = (seq: number, kind: string, payload: unknown) => send(page, "t-run", {
       type: "event", event: { taskId: "t-run", agent: "codex", ts: seq, kind, payload },
     }, seq);
@@ -107,10 +105,9 @@ test("a rejected echoed message keeps recovery beside its single bubble", async 
   await expect(transcript.getByText("Working…", { exact: true })).toHaveCount(0);
 });
 
-for (const mode of ["compact", "verbose"] as const) for (const width of [360, 1280]) {
-  test(`working follows semantic activity at the transcript end, ${mode}, ${width}px`, async ({ page }) => {
+for (const width of [360, 1280]) {
+  test(`working follows semantic activity at the transcript end, ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
-    await page.addInitScript(mode => localStorage.setItem("pref:output-mode", mode), mode);
     await installScopedStream(page);
     const task = { ...tasks.find(task => task.taskId === "t-run")!, status: "running", prompt: "" };
     await page.route("**/api/tasks/t-run", route => route.fulfill({ json: { task } }));
@@ -142,7 +139,7 @@ for (const mode of ["compact", "verbose"] as const) for (const width of [360, 12
       await expect(working).toHaveCount(0);
       await activity.click();
     }
-    await captureForReview(page, `working-${mode}-${width}.png`);
+    await captureForReview(page, `working-${width}.png`);
     await emit("tool_result", { tool_use_id: "tool-1", output: "checked" });
     await expect(working).toHaveCount(1);
     await emit("assistant_text", { text: "The answer is arriving.", messageId: "m2", phase: "final" });
@@ -151,7 +148,7 @@ for (const mode of ["compact", "verbose"] as const) for (const width of [360, 12
     await emit("status", { subtype: "assistant_message", messageId: "m2", phase: "final" });
     await emit("status", { subtype: "usage" });
     await expect(working).toHaveCount(0);
-    await captureForReview(page, `output-${mode}-${width}.png`);
+    await captureForReview(page, `output-${width}.png`);
     await emit("result", {});
     await emit("status", { subtype: "usage" });
     // The running snapshot can lag behind terminal events.

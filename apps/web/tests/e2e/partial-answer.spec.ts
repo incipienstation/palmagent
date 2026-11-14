@@ -3,7 +3,6 @@ import { installScopedStream, open, send } from "./_scoped-stream";
 
 for (const width of [360, 1280]) test(`partial answers retain reading order, draft and activity state at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   await installScopedStream(page);
   await open(page, "t-run");
   await send(page, "t-run", { type: "tasks", tasks: [], historyThrough: 0 });

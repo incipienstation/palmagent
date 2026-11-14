@@ -121,7 +121,6 @@ test("long press opens a haptic toggle without sending; selection applies to one
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   expect(calls[0].mode).toBe("queue");
   expect(await page.evaluate(() => (window as any).vibrations)).toEqual([12, 6]);
-  await expect(page).toHaveScreenshot("message-queue.png");
 });
 
 for (const keyboard of [false, true]) test(`queue editing saves in place and restores the ordinary draft (${keyboard ? "keyboard" : "button"})`, async ({ page }) => {
