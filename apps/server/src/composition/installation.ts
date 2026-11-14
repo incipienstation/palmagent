@@ -1,3 +1,4 @@
+import { updateAccess } from "./update-settings.js";
 import { TerminalStore } from "../modules/terminals/adapters/outbound/sqlite-terminal-store.js";
 import { ExecutionStore } from "../modules/agents/adapters/outbound/execution-store.js";
 import { RoutineHostStore } from "../modules/routines/adapters/outbound/routine-host-store.js";
@@ -33,7 +34,7 @@ export const loadInstalledConfig = (flags: Flags) => installationConfiguration.l
 
 export function createInstaller(retained: RetainedReleaseOperations & Pick<InstallationDiagnostics, "doctor">) {
   const service = createInstallationService({
-    configuration: installationConfiguration, state: installationState,
+    configuration: installationConfiguration, state: { ...installationState, validRequest: updateAccess.valid, clearRequest: updateAccess.clear },
     runtime: createInstallationRuntime(retained), releases: createInstallationReleases(retained),
     feedback: installationFeedback, diagnostics: { doctor: retained.doctor, application: applicationChecks },
   });

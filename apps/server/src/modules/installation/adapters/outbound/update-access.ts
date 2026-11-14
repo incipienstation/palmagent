@@ -2,25 +2,12 @@ import { randomUUID } from "node:crypto";
 import { closeSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import type { Distribution } from "@palmagent/shared/standalone";
-import { UpdateDiscoverySchema, UpdateRequestSchema, type UpdateRequest } from "@palmagent/shared/updates";
+import { UpdateDiscoverySchema, UpdateRequestSchema } from "@palmagent/shared/updates";
 import { ensurePrivateParent } from "../../../../platform/filesystem/private-files.js";
-import type { InstallConfig } from "./config.js";
-import { getUserConfig } from "./user-config.js";
-import { discoverPlugins } from "./plugin-update.js";
-import { installedDistribution } from "./standalone-release.js";
-import { resolveUpdatePlan } from "./update-plan.js";
-import { readUpdateReceipt } from "./update-state.js";
-import { UpdateDiscoveryError } from "./update-discovery-error.js";
-
-const AccessStateSchema = z.object({
-  discovery: UpdateDiscoverySchema.nullable(), pending: UpdateRequestSchema.nullable(),
-});
-type AccessState = z.infer<typeof AccessStateSchema>;
+import type { InstallConfig } from "../../domain/installation.js";
+import type { UpdateAccessState as AccessState } from "../../domain/update-access.js";
+const AccessStateSchema = z.object({ discovery: UpdateDiscoverySchema.nullable(), pending: UpdateRequestSchema.nullable() });
 export const updateAccessFile = "update-access.json";
-// This is a cache lifetime, never a scheduled wake-up.
-const CHECK_CACHE_MS = 15 * 60 * 1000;
-const FAILED_CHECK_CACHE_MS = 60 * 1000;
 
 export function readUpdateAccess(dataDir: string): AccessState {
   try { return AccessStateSchema.parse(JSON.parse(readFileSync(join(dataDir, updateAccessFile), "utf8"))); }
@@ -47,65 +34,4 @@ export function writeUpdateAccess(dataDir: string, state: AccessState): void {
 
 export function packageVersion(cfg: InstallConfig): string {
   return JSON.parse(readFileSync(join(cfg.pkgDir!, "package.json"), "utf8")).version;
-}
-
-export function checkUpdateAccess(cfg: InstallConfig, force: boolean, now = Date.now(), distribution?: Distribution): AccessState {
-  const state = readUpdateAccess(cfg.dataDir);
-  const { channel } = getUserConfig({ dataDir: cfg.dataDir });
-  const currentVersion = packageVersion(cfg);
-  const targetDistribution = distribution ?? (channel === "preview" ? "standalone" : installedDistribution(cfg));
-  const cached = state.discovery;
-  const cachedDistribution = cached?.distribution ?? (cached?.selection ? "standalone" : targetDistribution);
-  const age = cached ? now - Date.parse(cached.checkedAt) : Infinity;
-  if (!force && cachedDistribution === targetDistribution && cached?.channel === channel && cached.currentVersion === currentVersion && (cached.error || cached.pluginsPending !== undefined) && age >= 0 && age < (cached.error ? FAILED_CHECK_CACHE_MS : CHECK_CACHE_MS)) return state;
-  try {
-    const plan = resolveUpdatePlan(currentVersion, channel, discoverPlugins(cfg), undefined, { installation: cfg, distribution });
-    state.discovery = { distribution: targetDistribution, channel, currentVersion, targetVersion: plan.targetVersion,
-      eligible: plan.automaticEligible, pluginsPending: plan.plugins.filter((p) => p.action === "update").length,
-      packagePending: plan.packageAction === "update", ...(plan.selection ? { selection: plan.selection } : {}),
-      checkedAt: new Date(now).toISOString(), error: false };
-  } catch (error) {
-    // Throttle reconnect storms, but let the next visit recover promptly from a
-    // transient failure. Old clients still understand the error boolean.
-    state.discovery = { distribution: targetDistribution, channel, currentVersion, targetVersion: null,
-      eligible: false, checkedAt: new Date(now).toISOString(), error: true,
-      failure: error instanceof UpdateDiscoveryError ? error.failure : { source: "unknown", code: "unknown" } };
-  }
-  writeUpdateAccess(cfg.dataDir, state);
-  return state;
-}
-
-export function updatePaused(cfg: InstallConfig): boolean {
-  const receipt = readUpdateReceipt(cfg.dataDir);
-  return receipt?.status === "failed" || receipt?.status === "applying";
-}
-
-export function requestUpdateAccess(cfg: InstallConfig, automatic: boolean, version?: string): void {
-  if (updatePaused(cfg)) throw new Error("update requires recovery");
-  const state = readUpdateAccess(cfg.dataDir);
-  const check = state.discovery;
-  const preferences = getUserConfig({ dataDir: cfg.dataDir });
-  const requiresMigration = preferences.channel === "stable" && installedDistribution(cfg) === "npm" && Boolean(check?.selection);
-  if (!check || check.error || !check.eligible || !check.targetVersion || (check.targetVersion === check.currentVersion && !check.pluginsPending && !check.packagePending) ||
-      check.channel !== preferences.channel || check.currentVersion !== packageVersion(cfg) ||
-      (automatic && (!preferences.autoUpdate || requiresMigration)) || (version !== undefined && version !== check.targetVersion)) {
-    throw new Error("check for updates again");
-  }
-  if (state.pending && automatic) return;
-  if (state.pending?.targetVersion === check.targetVersion && state.pending.channel === check.channel && !state.pending.automatic) return;
-  state.pending = { id: randomUUID(), channel: check.channel, currentVersion: check.currentVersion,
-    targetVersion: check.targetVersion, automatic, ...(check.selection ? { selection: check.selection } : {}) };
-  writeUpdateAccess(cfg.dataDir, state);
-}
-
-export function validUpdateRequest(cfg: InstallConfig, request: UpdateRequest): boolean {
-  const preferences = getUserConfig({ dataDir: cfg.dataDir });
-  return readUpdateAccess(cfg.dataDir).pending?.id === request.id && preferences.channel === request.channel &&
-    (!request.automatic || preferences.autoUpdate === true) && packageVersion(cfg) === request.currentVersion;
-}
-
-export function clearUpdateRequest(cfg: InstallConfig, id?: string): void {
-  const state = readUpdateAccess(cfg.dataDir);
-  if (!state.pending || (id && state.pending.id !== id)) return;
-  writeUpdateAccess(cfg.dataDir, { ...state, pending: null });
 }

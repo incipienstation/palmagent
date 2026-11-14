@@ -1,47 +1,29 @@
-// Shared controller for the operator CLI and the web service's bounded CLI bridge.
-// Availability and requests are durable; package installation stays in the updater.
 import { existsSync, realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { userInfo } from "node:os";
-import { parseArgs } from "node:util";
-import { UpdateSettingsChangeSchema, type UpdateSettingsChange, type UpdateSettingsCommandResult, type UpdateSettingsState } from "@palmagent/shared/updates";
-import Database from "better-sqlite3";
-import { readUpdateAccess, checkUpdateAccess, clearUpdateRequest, requestUpdateAccess, validUpdateRequest, updatePaused } from "./update-access.js";
+import type { UpdateSettingsState } from "@palmagent/shared/updates";
+import type { UpdateAccessStore, UpdateDiscoveryHost, UpdateSettingsHost } from "../../application/ports/outbound/update-settings.js";
+import { readUpdateAccess, writeUpdateAccess, packageVersion } from "./update-access.js";
 import { prepareUpdateService, startRequestedUpdate, retireAutoUpdateTimer, configureAutoUpdate } from "./auto-update.js";
 import { callerPkgDir, installEnvPath, loadConfig, type InstallConfig } from "./config.js";
 import { getUserConfig, setUserChannel, userConfigPath } from "./user-config.js";
 import { acquireUpdateLock, readUpdateReceipt, UpdateBusyError } from "./update-state.js";
 import { installedDistribution } from "./standalone-release.js";
 import { canSudoNonInteractive } from "./sh.js";
+import { discoverPlugins } from "./plugin-update.js";
+import { resolveUpdatePlan } from "./update-plan.js";
+import { UpdateDiscoveryError } from "./update-discovery-error.js";
 
-export function readUpdateSettings(cfg: InstallConfig): NonNullable<UpdateSettingsState["settings"]> {
-  const preferences = getUserConfig({ dataDir: cfg.dataDir });
-  const access = readUpdateAccess(cfg.dataDir);
-  if (access.discovery?.channel !== preferences.channel) access.discovery = null;
-  if (access.pending && (access.pending.channel !== preferences.channel || (access.pending.automatic && !preferences.autoUpdate))) access.pending = null;
-  return {
-    distribution: installedDistribution(cfg),
-    channel: preferences.channel,
-    autoUpdate: preferences.autoUpdate ?? false,
-    independentExecutions: Boolean(cfg.executionNode),
-    ...access,
-    lastUpdate: readUpdateReceipt(cfg.dataDir) ?? null,
-  };
-}
-
-/** Keep the CLI enabled flag while sharing availability and pending state. */
-export function autoUpdateStatus(cfg: InstallConfig) {
-  const { autoUpdate, ...status } = readUpdateSettings(cfg);
-  return { enabled: autoUpdate, ...status };
-}
-
-/** The caller holds the shared installation/update lock for a real mutation. */
-export async function applyUpdateSettings(cfg: InstallConfig, input: UpdateSettingsChange, dryRun = false): Promise<void> {
-  const change = UpdateSettingsChangeSchema.parse(input);
-  if ("channel" in change) setUserChannel(change.channel, { dataDir: cfg.dataDir, dryRun });
-  else await configureAutoUpdate(cfg, change.autoUpdate, dryRun);
-  if (!dryRun && ("channel" in change || readUpdateAccess(cfg.dataDir).pending?.automatic)) clearUpdateRequest(cfg);
-}
+export const updateAccessStore: UpdateAccessStore = { read: readUpdateAccess, write: writeUpdateAccess, receipt: readUpdateReceipt };
+export const updateDiscoveryHost: UpdateDiscoveryHost = {
+  preferences: dataDir => getUserConfig({ dataDir }), version: packageVersion, distribution: installedDistribution,
+  now: () => Date.now(), requestId: randomUUID,
+  discover(config, current, channel, distribution) {
+    try { return { ok: true, plan: resolveUpdatePlan(current, channel, discoverPlugins(config), undefined, { installation: config, distribution }) }; }
+    catch (error) { return { ok: false, failure: error instanceof UpdateDiscoveryError ? error.failure : { source: "unknown", code: "unknown" } }; }
+  },
+};
 
 function installation(dataDir: string, expectedDb: string): { cfg?: InstallConfig; availability: UpdateSettingsState["availability"] } {
   if (!existsSync(installEnvPath(dataDir))) return { availability: "not-installed" };
@@ -56,81 +38,12 @@ function installation(dataDir: string, expectedDb: string): { cfg?: InstallConfi
   return { cfg, availability: owner && process.platform === "linux" && (cfg.supervisor === "palmagentd" || canSudoNonInteractive()) ? "available" : "permission-required" };
 }
 
-export async function runUpdateSettingsCommand(args: string[], checkAvailability = checkUpdateAccess): Promise<UpdateSettingsCommandResult> {
-  let unlock: (() => void) | undefined;
-  let changing = false;
-  let action = "status";
-  try {
-    const { values, positionals } = parseArgs({ args, strict: true, allowPositionals: true, options: {
-      "data-dir": { type: "string" }, "expected-db": { type: "string" },
-      channel: { type: "string" }, "auto-update": { type: "string" }, target: { type: "string" },
-    } });
-    if (positionals.length !== 1 || !["status", "set", "visit", "check", "install", "migrate", "resume"].includes(positionals[0]) || !values["data-dir"] || !values["expected-db"]) {
-      throw new Error("invalid update settings command");
-    }
-    action = positionals[0];
-    changing = action !== "status";
-    if ((action === "install") !== (values.target !== undefined)) throw new Error("invalid update target");
-    let change: UpdateSettingsChange | undefined;
-    if (action === "set") {
-      change = UpdateSettingsChangeSchema.parse({
-        ...(values.channel !== undefined ? { channel: values.channel } : {}),
-        ...(values["auto-update"] !== undefined ? { autoUpdate: values["auto-update"] === "true" ? true : values["auto-update"] === "false" ? false : values["auto-update"] } : {}),
-      });
-    } else if (values.channel !== undefined || values["auto-update"] !== undefined) throw new Error("status cannot change preferences");
-    if (changing) unlock = acquireUpdateLock(dirname(userConfigPath()));
-    const { cfg, availability } = installation(values["data-dir"], values["expected-db"]);
-    if (changing && (availability !== "available" || !cfg)) return { ok: false, error: "unavailable" };
-    if (cfg && changing) {
-      if (action === "migrate") {
-        if (installedDistribution(cfg) !== "npm" || updatePaused(cfg) || readUpdateAccess(cfg.dataDir).pending) {
-          return { ok: false, error: "stale-update" };
-        }
-        const checked = checkAvailability(cfg, true, Date.now(), "standalone");
-        if (checked.discovery?.error) return { ok: true, state: { availability, settings: readUpdateSettings(cfg) } };
-        try {
-          if (!checked.discovery?.selection) throw new Error("standalone release required");
-          requestUpdateAccess(cfg, false, checked.discovery.targetVersion ?? undefined);
-        } catch { return { ok: false, error: "stale-update" }; }
-      }
-      if (change) await applyUpdateSettings(cfg, change);
-      if (!cfg.supervisor) retireAutoUpdateTimer();
-      const check = action === "visit" || action === "check" || (change && ("channel" in change || change.autoUpdate));
-      if (check) {
-        const state = checkAvailability(cfg, action !== "visit");
-        // Changing channel only checks availability; installation needs a later
-        // visit or an explicit Update action in the newly selected channel.
-        if (!(change && "channel" in change) && state.discovery?.eligible &&
-            (state.discovery.targetVersion !== state.discovery.currentVersion || Boolean(state.discovery.pluginsPending) || state.discovery.packagePending) &&
-            getUserConfig({ dataDir: cfg.dataDir }).autoUpdate && !updatePaused(cfg)) {
-          requestUpdateAccess(cfg, true);
-        }
-      }
-      if (action === "install") {
-        try { requestUpdateAccess(cfg, false, values.target); }
-        catch { return { ok: false, error: "stale-update" }; }
-      }
-      const pending = readUpdateAccess(cfg.dataDir).pending;
-      if (pending && !validUpdateRequest(cfg, pending)) clearUpdateRequest(cfg, pending.id);
-      else if (pending && !updatePaused(cfg)) {
-        let ready = Boolean(cfg.executionNode);
-        if (!ready) {
-          const db = new Database(cfg.dbPath, { readonly: true, fileMustExist: true });
-          try { ready = (db.prepare("SELECT count(*) AS count FROM tasks WHERE status IN ('running','awaiting_approval','awaiting_input','queued')").get() as { count: number }).count === 0; }
-          finally { db.close(); }
-        }
-        if (ready) {
-          await prepareUpdateService(cfg);
-          // The executor also takes this lock; release before asking the supervisor to start it.
-          unlock?.(); unlock = undefined;
-          await startRequestedUpdate(cfg);
-        }
-      }
-    }
-    return { ok: true, state: { availability, settings: cfg ? readUpdateSettings(cfg) : null } };
-  } catch (error) {
-    // Installation/parser/subprocess errors may contain private paths or config
-    // values. The bridge exposes only these stable, public error categories.
-    return { ok: false, error: error instanceof UpdateBusyError ? "busy" : action === "set" ? "save-failed" : changing ? "update-failed" : "unavailable" };
-  } finally { unlock?.(); }
+export function createUpdateSettingsHost(legacyTasksIdle: UpdateSettingsHost["legacyTasksIdle"]): UpdateSettingsHost {
+  return {
+    lock() { try { return acquireUpdateLock(dirname(userConfigPath())); } catch (error) { if (error instanceof UpdateBusyError) return undefined; throw error; } },
+    installation, legacyTasksIdle,
+    setChannel: (config, channel, dryRun) => { setUserChannel(channel, { dataDir: config.dataDir, dryRun }); },
+    configureAutomatic: configureAutoUpdate, retireTimer: retireAutoUpdateTimer,
+    prepare: prepareUpdateService, start: startRequestedUpdate,
+  };
 }
