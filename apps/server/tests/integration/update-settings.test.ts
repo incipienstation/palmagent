@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UpdateSettingsChange, UpdateSettingsState } from "@palmagent/shared";
 import { createUpdateSettingsService } from "../../src/modules/installation/adapters/outbound/cli-update-settings.js";
-import { runUpdateSettingsCommand as executeSettingsCommand } from "../../src/modules/installation/adapters/outbound/update-settings.js";
+import { runUpdateSettingsCommand as executeSettingsCommand } from "../../src/composition/update-settings.js";
 import { getUserConfig, setUserAutoUpdate, setUserChannel, userConfigPath } from "../../src/modules/installation/adapters/outbound/user-config.js";
 import { writeUpdateReceipt, acquireUpdateLock } from "../../src/modules/installation/adapters/outbound/update-state.js";
 import { loadConfig } from "../../src/modules/installation/adapters/outbound/config.js";

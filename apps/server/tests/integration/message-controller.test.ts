@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Db } from "../../src/composition/database.js";
-import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { MessageController } from "../../src/modules/tasks/application/use-cases/message-controller.js";
 
 function fixture(t: test.TestContext) {
@@ -23,7 +23,7 @@ function fixture(t: test.TestContext) {
     start(_id: string, m: { id: string; text: string }) { active = true; starts.push(m.text); controller.beginRun("t"); controller.delivered("t", m.id); },
     steer(_id: string, m: { text: string }) { steers.push(m.text); return new Promise<"delivered" | "unknown" | "rejected">(resolve => { receipt = resolve; }); },
   };
-  const attachments = new LocalAttachmentStorage(db);
+  const attachments = createAttachmentStorage(db);
   let controller = new MessageController(db, host, attachments, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   controller.beginRun("t");
   t.after(() => { controller.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });

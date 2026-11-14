@@ -5,9 +5,8 @@ import type {
   DiscoveredRepo,
   FsEntry,
   FsListResponse,
-  Repo,
-  ValidateRepoPathResponse,
 } from "@palmagent/shared";
+import type { SpaceDiscovery, DiscoveryPathInspection } from "../../application/ports/outbound/discovery.js";
 import { expandHome } from "../../../../platform/filesystem/paths.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import { detectDefaultBranch, gitToplevel } from "./worktree.js";
@@ -15,7 +14,7 @@ import { detectDefaultBranch, gitToplevel } from "./worktree.js";
 // Backs the PWA's tap-first "Add a repo" picker: scan the configured roots for
 // git repos (so registering is a tap, not typing an absolute path on a phone),
 // list directories for the drill-down browser, and pre-validate manual paths.
-// Read-only throughout — registration still goes through TaskService.createRepo.
+// Read-only throughout — registration still goes through SpaceService.createRepo.
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".palmagent", ".dispatcher", "dist", "build", "target"]);
 const MAX_DEPTH = 4;
@@ -25,7 +24,7 @@ type ScannedRepo = Omit<DiscoveredRepo, "repoId">;
 let cache: { key: string; at: number; repos: ScannedRepo[] } | undefined;
 
 // Scan results are cached briefly; `repoId` annotation happens per request (in
-// annotate()) so registration changes show up without waiting out the TTL.
+// the application) so registration changes show up without waiting out the TTL.
 export function discoverRepos(roots: string[], force = false): { repos: ScannedRepo[]; scannedAt: number } {
   const key = JSON.stringify(roots);
   if (!force && cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS) {
@@ -36,14 +35,6 @@ export function discoverRepos(roots: string[], force = false): { repos: ScannedR
   found.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   cache = { key, at: Date.now(), repos: found };
   return { repos: found, scannedAt: cache.at };
-}
-
-export function annotate(repos: ScannedRepo[], registered: Repo[]): DiscoveredRepo[] {
-  const byPath = new Map(registered.map((r) => [r.path, r.id]));
-  return repos.map((r) => {
-    const repoId = byPath.get(r.path);
-    return repoId ? { ...r, repoId } : r;
-  });
 }
 
 function walk(dir: string, depth: number, out: ScannedRepo[]): void {
@@ -123,56 +114,19 @@ export function listDirectory(rawPath: string, roots: string[]): FsListResponse 
   return { path, ...(parent !== path ? { parent } : {}), ...(root ? { root } : {}), entries };
 }
 
-// ---- manual-path pre-validation (the confirm step's ✓/✗/did-you-mean) ----
-
-export function validateRepoPath(input: string, roots: string[], registered: Repo[]): ValidateRepoPathResponse {
+/** Return host facts only; registration matching and suggestions belong to the application. */
+export function inspectRepoPath(input: string): DiscoveryPathInspection {
   const resolved = resolve(expandHome(input.trim()));
   const exists = existsSync(resolved);
   const isDir = exists && statSync(resolved).isDirectory();
   const root = isDir ? gitToplevel(resolved) : undefined;
-  const res: ValidateRepoPathResponse = { input, resolved, exists, isDir, isGit: !!root, suggestions: [] };
-  if (root) {
-    res.root = root;
-    res.branch = detectDefaultBranch(root);
-    const reg = registered.find((r) => r.path === root);
-    if (reg) res.repoId = reg.id;
-  } else if (isDir) {
-    // A plain directory is registrable as-is (vcs "none"); flag it registered
-    // if it already is, and skip typo suggestions — the path resolves fine.
-    const reg = registered.find((r) => r.path === resolved);
-    if (reg) res.repoId = reg.id;
-  } else {
-    // Typo recovery: closest discovered repos by leaf-name edit distance,
-    // surfaced as tappable "did you mean" chips instead of a dead-end error.
-    const leaf = basename(resolved).toLowerCase();
-    res.suggestions = discoverRepos(roots)
-      .repos.map((r) => ({ path: r.path, d: levenshtein(leaf, r.name.toLowerCase()) }))
-      .filter((x) => x.d <= Math.max(2, Math.floor(leaf.length / 2)))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 3)
-      .map((x) => x.path);
-  }
-  return res;
-}
-
-function levenshtein(a: string, b: string): number {
-  if (a === b) return 0;
-  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let diag = prev[0];
-    prev[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const tmp = prev[j];
-      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
-      diag = tmp;
-    }
-  }
-  return prev[b.length];
+  return { resolved, exists, isDir, name: basename(resolved),
+    ...(root ? { root, branch: detectDefaultBranch(root) } : {}) };
 }
 
 /** Filesystem implementation; route adapters never invoke these operations directly. */
-export const localSpaceDiscovery: import("../../application/ports/outbound/discovery.js").SpaceDiscovery = {
+export const localSpaceDiscovery: SpaceDiscovery = {
   scan: discoverRepos,
-  validate: validateRepoPath,
+  inspect: inspectRepoPath,
   browse: (path, roots) => listDirectory(path || defaultBrowseRoot(roots), roots),
 };

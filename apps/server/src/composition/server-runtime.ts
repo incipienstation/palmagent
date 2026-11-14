@@ -10,7 +10,7 @@ import { TerminalTickets } from "../modules/terminals/adapters/inbound/gateway.j
 import { dirname, join } from "node:path";
 import { AuthService } from "../modules/auth/application/use-cases/auth-service.js";
 import { AccountLimitReader } from "../modules/agents/adapters/outbound/account-limits.js";
-import { LocalAttachmentStorage } from "../modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "./attachments.js";
 import { SkillDiscovery } from "../modules/agents/adapters/outbound/skills.js";
 import { VoiceSessions } from "../modules/agents/adapters/outbound/voice.js";
 import { CodexSideChats } from "../modules/agents/adapters/outbound/side-chat.js";
@@ -75,7 +75,7 @@ export async function createRuntime() {
     backend = await selectBackend();
     const selectedBackend = backend;
     resources.defer(() => selectedBackend.close?.());
-    const attachments = new LocalAttachmentStorage(db, config.attachmentStorage);
+    const attachments = createAttachmentStorage(db, config.attachmentStorage);
     resources.defer(() => attachments.close());
     const voice = new VoiceSessions();
     resources.defer(() => voice.close());

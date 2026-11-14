@@ -8,7 +8,8 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { checkUpdateAccess, writeUpdateAccess, readUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../../src/modules/installation/adapters/outbound/update-access.js";
+import { writeUpdateAccess, readUpdateAccess } from "../../src/modules/installation/adapters/outbound/update-access.js";
+import { checkUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../../src/composition/update-settings.js";
 import { planUpdate, readPluginVersions, resolveUpdatePlan } from "../../src/modules/installation/adapters/outbound/update-plan.js";
 import { acquireUpdateLock, readUpdateReceipt, writeUpdateReceipt } from "../../src/modules/installation/adapters/outbound/update-state.js";
 import { autoUpdateService, startRequestedUpdate, retireAutoUpdateTimer, renderAutoUpdateUnits } from "../../src/modules/installation/adapters/outbound/auto-update.js";

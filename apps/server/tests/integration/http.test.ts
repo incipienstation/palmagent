@@ -17,7 +17,7 @@ import { defaultCodexModelCatalog } from "../../src/modules/agents/adapters/outb
 import { nativeHome } from "../../src/modules/tasks/adapters/outbound/native-session.js";
 import { config } from "../../src/composition/config.js";
 import { Db } from "../../src/composition/database.js";
-import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { readTaskImage } from "../../src/modules/tasks/adapters/outbound/task-images.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
@@ -42,7 +42,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
-  const service = createTaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), new LocalAttachmentStorage(db),
+  const service = createTaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
     undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }));
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };

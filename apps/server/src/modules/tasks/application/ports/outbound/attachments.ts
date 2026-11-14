@@ -15,13 +15,24 @@ export interface AttachmentIndex {
   setAttachmentLifecycle(id: string, unusedSince: number | null, expiredAt: number | null): void;
 }
 
-export interface AttachmentStorage {
-  start(): void;
-  close(): void;
-  prune(): void;
+export interface AttachmentContentStorage {
   save(taskId: string, images?: readonly InputAttachment[]): Attachment[] | undefined;
   read(taskId: string, id: string): { bytes: Uint8Array; mediaType: string };
   load(taskId: string, attachments?: readonly Attachment[]): InputAttachment[] | undefined;
+}
+
+export interface AttachmentStorage extends AttachmentContentStorage {
+  start(): void;
+  close(): void;
+  prune(): void;
+}
+
+export type AttachmentRetentionRepository = Pick<AttachmentIndex,
+  "transaction" | "attachmentInventory" | "attachmentReferences" | "setAttachmentLifecycle" | "deleteAttachment">;
+export interface AttachmentFileCollection {
+  exists(): boolean;
+  /** Called under the index writer lock, using references re-read in that transaction. */
+  removeUnreferenced(retained: ReadonlySet<string>): void;
 }
 
 export interface TaskAttachmentReader {

@@ -25,7 +25,7 @@ import { daemonRequest } from "../platform/process/daemon-client.js";
 import { userConfigPath } from "../modules/installation/adapters/outbound/user-config.js";
 import { readUpdateAccess } from "../modules/installation/adapters/outbound/update-access.js";
 import { acquireUpdateLock } from "../modules/installation/adapters/outbound/update-state.js";
-import { applyUpdateSettings, autoUpdateStatus, runUpdateSettingsCommand } from "../modules/installation/adapters/outbound/update-settings.js";
+import { applyUpdateSettings, autoUpdateStatus, runUpdateSettingsCommand } from "../composition/update-settings.js";
 import {
   install,
   loadInstalledConfig,
