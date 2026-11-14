@@ -8,6 +8,7 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { PopoverContent } from "./ui/popover";
+import palmIcon from "../assets/palm.svg?inline";
 
 function parseSkillDraft(raw: string): SkillSelection[] {
   try { return SelectedSkillsSchema.parse(JSON.parse(raw || "[]")) ?? []; } catch { return []; }
@@ -22,7 +23,8 @@ export function useSkillDraft(key: string): [SkillSelection[], Dispatch<SetState
 
 function SkillIcon({ skill }: { skill: SkillSelection }) {
   return skill.pluginId?.split("@")[0] === "palmagent"
-    ? <img src="/logo.svg" alt="Palmagent plugin" className="size-4 shrink-0" />
+    ? <span role="img" aria-label="Palmagent plugin" className="size-4 shrink-0 bg-primary"
+        style={{ mask: `url("${palmIcon}") center / contain no-repeat` }} />
     : <BookOpen className="size-4 shrink-0" aria-hidden />;
 }
 export function SkillChips({ skills, onRemove, disabled }: { skills?: SkillSelection[]; onRemove?: () => void; disabled?: boolean }) {
