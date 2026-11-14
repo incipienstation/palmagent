@@ -56,6 +56,7 @@ export class Db {
   readonly listTasks: SqliteTasks["listTasks"];
   readonly setSessionControl: SqliteTasks["setSessionControl"];
   readonly setTaskPin: SqliteTasks["setTaskPin"];
+  readonly setTaskPinOrder: SqliteTasks["setTaskPinOrder"];
   readonly setTaskTitle: SqliteTasks["setTaskTitle"];
   readonly appendAgentEvents: SqliteTasks["appendAgentEvents"];
   readonly importSessionEvents: SqliteTasks["importSessionEvents"];
@@ -148,6 +149,7 @@ export class Db {
     this.listTasks = tasks.listTasks.bind(tasks);
     this.setSessionControl = tasks.setSessionControl.bind(tasks);
     this.setTaskPin = tasks.setTaskPin.bind(tasks);
+    this.setTaskPinOrder = tasks.setTaskPinOrder.bind(tasks);
     this.setTaskTitle = tasks.setTaskTitle.bind(tasks);
     this.appendAgentEvents = tasks.appendAgentEvents.bind(tasks);
     this.importSessionEvents = tasks.importSessionEvents.bind(tasks);

@@ -33,6 +33,7 @@ export const CreateTaskSchema = z.object({
 });
 export const FollowupSchema = z.object({ prompt: text, images, ...settings });
 export const PinTaskSchema = z.object({ pinned: z.boolean() });
+export const MoveTaskPinSchema = z.object({ targetId: required, placement: z.enum(["before", "after"]) });
 export const RenameTaskSchema = z.object({ title: text.trim().min(1, "Enter a session name.").max(200, "Use 200 characters or fewer.").regex(/^[^\r\n]*$/, "Use a single line for the session name.") });
 export const SteerSchema = z.object({ text, images, ...settings });
 export const ApproveSchema = z.object({ decision: z.enum(["approve", "deny"]), scope: text.optional() });

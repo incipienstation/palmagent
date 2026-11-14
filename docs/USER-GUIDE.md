@@ -171,8 +171,12 @@ Choose **Pin** from a chat's **⋮** menu in the task list or conversation. Pinn
 chats appear above **Recent tasks** in navigation and first within each status
 group in the task list. Search and Space filters still apply to the task list.
 
-Pins are saved on the server and shared across devices. Their order stays fixed
-as new messages arrive. Choose **Unpin** to return a chat to recent-activity
+Drag a pinned chat to a new position in navigation, or open its **⋮** menu and
+choose **Move up** or **Move down**. These menu actions also work with touch and
+the keyboard.
+
+Pins and their order are saved on the server and shared across devices. Their
+order stays fixed as new messages arrive. Choose **Unpin** to return a chat to recent-activity
 ordering; archiving a chat also removes its pin. Pinning does not start or stop
 agent work.
 

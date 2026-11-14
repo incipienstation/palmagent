@@ -1456,3 +1456,52 @@ test("the served shell prevents framing and restricts scripts to this origin", a
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   }
 });
+
+test("manual pin moves are atomic, persistent, idempotent and use current pin membership", async t => {
+  const f = fixture(t);
+  f.db.insertRepo({ id: "pins", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const taskId of ["a", "b", "c", "d"]) f.db.insertTask({ taskId, repoId: "pins", agent: "codex", prompt: "Keep prompt", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 2, lastActivityAt: 3 });
+  await f.service.init();
+  const now = Date.now();
+  f.db.createSession("move-pins", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=move-pins`, "content-type": "application/json" };
+  const move = (id: string, input: unknown, requestHeaders = headers) => f.app.request(`/api/tasks/${id}/pin-position`, { method: "PATCH", headers: requestHeaders, body: JSON.stringify(input) });
+  const input = { targetId: "a", placement: "before" };
+  assert.equal((await move("c", input, { ...headers, cookie: "" })).status, 401);
+  assert.equal((await move("c", input, { ...headers, origin: "https://other.example" } as typeof headers)).status, 403);
+  for (const invalid of [{}, { targetId: "a" }, { targetId: "", placement: "before" }, { targetId: "a", placement: "up" }]) {
+    assert.equal((await move("c", invalid)).status, 400);
+  }
+  assert.equal((await move("c", input)).status, 409);
+  assert.equal((await move("missing", input)).status, 404);
+  assert.equal((await move("a", { targetId: "missing", placement: "after" })).status, 404);
+  for (const id of ["a", "b", "c"]) f.service.pin(id, true);
+  const before = f.service.listTasks().map(task => structuredClone(task));
+  const order = () => f.service.listTasks().filter(t => t.pinnedAt !== undefined).sort((a, b) => a.pinnedAt! - b.pinnedAt!).map(t => t.taskId);
+  let broadcasts = 0;
+  f.hub.onTasks(() => broadcasts++);
+  assert.equal((await move("c", input)).status, 200);
+  assert.deepEqual(order(), ["c", "a", "b"]);
+  assert.equal(broadcasts, 1);
+  assert.equal((await move("c", input)).status, 200);
+  assert.equal((await move("c", { targetId: "c", placement: "after" })).status, 200);
+  assert.equal(broadcasts, 1, "repeating a move does not change metadata");
+  for (const task of f.service.listTasks()) {
+    const original = before.find(t => t.taskId === task.taskId)!;
+    assert.deepEqual(task, { ...original, pinnedAt: task.pinnedAt, updatedAt: task.updatedAt });
+    assert.equal(f.db.eventCursor(task.taskId), 0);
+    assert.equal(f.db.getTask(task.taskId)!.lastActivityAt, 3);
+  }
+  const reopened = new Db(f.db.path);
+  try { assert.deepEqual(reopened.listTasks().filter(t => t.pinnedAt !== undefined).sort((a, b) => a.pinnedAt! - b.pinnedAt!).map(t => t.taskId), ["c", "a", "b"]); }
+  finally { reopened.close(); }
+  f.service.pin("d", true);
+  assert.deepEqual(order(), ["c", "a", "b", "d"], "new pins append after manual ordering");
+  await move("c", { targetId: "b", placement: "after" });
+  assert.deepEqual(order(), ["a", "b", "c", "d"], "relative move preserves a concurrently added pin");
+  f.service.pin("b", false);
+  assert.equal((await move("c", { targetId: "b", placement: "before" })).status, 409);
+  assert.deepEqual(order(), ["a", "c", "d"]);
+  f.service.archive("c");
+  assert.equal((await move("c", input)).status, 409);
+});
