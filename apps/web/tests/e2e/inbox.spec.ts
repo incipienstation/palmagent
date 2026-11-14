@@ -136,7 +136,7 @@ test("response requests escape folded Spaces and return once when work resumes",
 test("local and disconnected requests keep their real control state outside Needs you", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
-  await expect(page.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("inbox-content").getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
   const control = { owner: "local" as const, home: "/sessions", transcript: "/sessions/local.jsonl", cursor: 0, prefixHash: "fixture" };
   await send(page, { type: "tasks", tasks: [
     { ...tasks[0], taskId: "local-request", title: "Local request", sessionControl: control },
@@ -161,7 +161,7 @@ for (const width of [320, 390, 1280]) test(`attention rows keep Space context, s
     { ...repos[1], name: longName, path: "/projects/second/work" },
   ] } }));
   await page.goto("/");
-  await expect(page.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("inbox-content").getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
   await send(page, { type: "tasks", tasks: [tasks[0], { ...tasks[1], repoId: repos[1].id }] });
   const attention = page.getByRole("region", { name: "Needs you", exact: true });
   const context = attention.locator("[title]").filter({ hasText: longName });
