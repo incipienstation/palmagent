@@ -55,7 +55,7 @@ for (const width of [320, 1280]) test(`empty composers reveal the toolbar on foc
     const add = composer.getByRole("button", { name: "Add attachments" });
     await onScreen(add);
     const action = composer.getByRole("button", { name: /^(Send now|Stop)$/ });
-    await onScreen(action);
+    await expect(action).toBeInViewport({ ratio: 1 });
     await input.focus();
     await expect(composer).toHaveAttribute("data-expanded", "true");
     await expect(input).toBeFocused();
