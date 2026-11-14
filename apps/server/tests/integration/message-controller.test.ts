@@ -24,7 +24,7 @@ function fixture(t: test.TestContext) {
     steer(_id: string, m: { text: string }) { steers.push(m.text); return new Promise<"delivered" | "unknown" | "rejected">(resolve => { receipt = resolve; }); },
   };
   const attachments = new LocalAttachmentStorage(db);
-  let controller = new MessageController(db, host, attachments, new NodeIdentifierGenerator());
+  let controller = new MessageController(db, host, attachments, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   controller.beginRun("t");
   t.after(() => { controller.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   return { get c() { return controller; }, starts, steers,
@@ -34,7 +34,7 @@ function fixture(t: test.TestContext) {
     finish(failed = false) { active = false; controller.finish("t", failed); },
     writable(value: boolean) { writable = value; },
     receipt(value: "delivered" | "unknown" | "rejected") { receipt(value); },
-    restart(live: boolean) { controller.close(); controller = new MessageController(db, host, attachments, new NodeIdentifierGenerator()); controller.recover("t", live); },
+    restart(live: boolean) { controller.close(); controller = new MessageController(db, host, attachments, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} }); controller.recover("t", live); },
   };
 }
 test("FIFO preserves individual prompts and settings through persistence", t => {
