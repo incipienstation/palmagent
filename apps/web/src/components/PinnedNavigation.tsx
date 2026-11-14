@@ -16,6 +16,7 @@ export function PinnedNavigation({ tasks, activeId, onNavigate }: {
   const dragging = useRef<string | null>(null);
   const [destination, setDestination] = useState<Destination | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
   const clearDrag = () => { dragging.current = null; setDestination(null); };
   const move = async (id: string, target: Destination) => {
     setAnnouncement("");
@@ -64,13 +65,16 @@ export function PinnedNavigation({ tasks, activeId, onNavigate }: {
         onClick={() => onNavigate(task.taskId)}>
         <GripVertical data-icon="inline-start" className="cursor-grab" /><span className="truncate">{taskTitle(task)}</span>
       </Button>
-      {tasks.length > 1 && <DropdownMenu>
+      {tasks.length > 1 && <DropdownMenu open={menuTaskId === task.taskId} onOpenChange={open => {
+        setMenuTaskId(current => open ? task.taskId : current === task.taskId ? null : current);
+      }}>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-lg" aria-label={`Reorder ${taskTitle(task)}`}>
             <MoreVertical />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        {/* Unmount closed menus so a quick next action cannot reach their exit animation. */}
+        {menuTaskId === task.taskId && <DropdownMenuContent align="end">
           <DropdownMenuGroup>
             <DropdownMenuItem disabled={busy || index === 0} onSelect={() => { void move(task.taskId, { id: tasks[index - 1].taskId, placement: "before" }); }}>
               <ArrowUp />Move up
@@ -79,7 +83,7 @@ export function PinnedNavigation({ tasks, activeId, onNavigate }: {
               <ArrowDown />Move down
             </DropdownMenuItem>
           </DropdownMenuGroup>
-        </DropdownMenuContent>
+        </DropdownMenuContent>}
       </DropdownMenu>}
     </div>)}
   </section>;
