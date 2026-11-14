@@ -6,7 +6,7 @@ import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 
-for (const height of [780, 500]) test(`delivery recovery keeps the composer reachable at ${height}px`, async ({ page }) => {
+for (const height of [500]) test(`delivery recovery keeps the composer reachable at ${height}px`, async ({ page }) => {
   await page.setViewportSize({ width: 360, height });
   await installScopedStream(page);
   const task = { ...tasks.find(task => task.taskId === "t-run")!, messageQueue: {

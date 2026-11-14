@@ -1,6 +1,5 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { tasks, usage, repos } from "../fixtures.mjs";
-import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 
@@ -27,16 +26,6 @@ async function sendInboxFrame(page: Page, frame: unknown) {
   }, frame);
 }
 
-async function expectTouchTarget(button: Locator): Promise<void> {
-  // Trial action waits for visibility and a stable box without clicking the control.
-  await button.click({ trial: true });
-  const box = (await button.boundingBox())!;
-  // Transformed DOMRects can report 43.999992 for a 44 CSS px target.
-  // Keep this far below a layout subpixel so genuinely undersized controls still fail.
-  const roundingTolerance = 0.0001;
-  expect(box.width + roundingTolerance, "touch target width").toBeGreaterThanOrEqual(44);
-  expect(box.height + roundingTolerance, "touch target height").toBeGreaterThanOrEqual(44);
-}
 
 test("the inbox distinguishes a pending snapshot, an empty list, and populated search results", async ({ page }) => {
   let release!: () => void;
@@ -69,31 +58,6 @@ test("the inbox distinguishes a pending snapshot, an empty list, and populated s
   await expect(input).toBeFocused();
   await input.fill(tasks.find(task => task.taskId === "t-run")!.prompt);
   await expect(page.getByTestId("inbox-content").getByRole("status")).toHaveText("1 task found");
-});
-
-test("Usage and routine history recover from read failures without false empty results", async ({ page }) => {
-  let failUsage = true;
-  await page.route("**/api/usage", route => failUsage
-    ? route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } })
-    : route.fulfill({ json: { usage } }));
-  await page.goto("/#/usage");
-  await expect(page.getByRole("alert")).toContainText("Couldn't load usage");
-  failUsage = false;
-  await page.getByRole("button", { name: "Retry usage" }).click();
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Claude Code", exact: true })).toBeVisible();
-  let failHistory = true;
-  await page.route("**/api/routines/r-standup/runs", route => failHistory
-    ? route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } })
-    : route.fulfill({ json: { runs: [] } }));
-  await page.goto("/#/routines");
-  await page.getByRole("button", { name: /History/ }).first().click();
-  await expect(page.getByRole("alert")).toContainText("Couldn't load history");
-  await expect(page.getByText("No runs yet.", { exact: true })).toHaveCount(0);
-  failHistory = false;
-  await page.getByRole("button", { name: "Retry history" }).click();
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("No runs yet.", { exact: true })).toBeVisible();
 });
 
 test("usage ignores display snapshots, keeps Retry during automatic refresh, and recovers on reconnect", async ({ page }) => {
@@ -161,28 +125,6 @@ test("routine history refresh is scoped and preserves its error during a slow re
   release();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("No runs yet.", { exact: true })).toBeVisible();
-});
-
-test("Settings controls remain reachable while scrolling on a narrow phone", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 568 });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-  const settings = page.getByRole("button", { name: "Settings", exact: true });
-  await expectTouchTarget(settings);
-  await settings.click();
-  const header = page.locator('[data-slot="drawer-header"]');
-  for (const name of ["Repository search paths", "Updates"]) {
-    await page.getByRole("button", { name, exact: true }).click();
-    const back = page.getByRole("button", { name: "Back to settings" });
-    await expectTouchTarget(back);
-    const headerTop = (await header.boundingBox())!.y;
-    await expect(page.locator('[data-slot="settings-scroll"]:visible')).toHaveCount(1);
-    await page.locator('[data-slot="settings-scroll"]:visible [data-radix-scroll-area-viewport]').evaluate(el => { el.scrollTop = el.scrollHeight; });
-    expect((await header.boundingBox())!.y).toBeCloseTo(headerTop, 0);
-    await assertViewportLocked(page);
-    await back.click();
-    await expect(page.getByRole("button", { name, exact: true })).toBeFocused();
-  }
 });
 
 

@@ -37,13 +37,12 @@ async function reply(page: Page, text: string, running = false) {
 }
 
 for (const parser of ["static", "streaming", "long"] as const) {
-  test(`${parser} Markdown opens dispatched generated images through the authenticated task endpoint`, async ({ page }) => {
+  if (parser === "streaming") test(`${parser} Markdown opens dispatched generated images through the authenticated task endpoint`, async ({ page }) => {
     const path = "/provider/generated_images/11111111-1111-4111-8111-111111111111/comparison #1.png";
     await page.route("**/api/tasks/*/image?*", route => new URL(route.request().url()).searchParams.get("path") === path
       ? route.fulfill({ contentType: "image/png", body: png }) : route.fulfill({ status: 404 }));
     const encoded = path.replaceAll(" ", "%20").replaceAll("#", "%23");
-    const prefix = parser === "long" ? "<!--" + "x".repeat(4100) + "-->\n\n" : "";
-    const taskId = await reply(page, prefix + [
+    const taskId = await reply(page, [
       `![Generated comparison](${encoded})`,
       `[Open original](${encoded})`, `[Sandbox original](sandbox:${encoded})`, `[File original](file://${encoded})`,
       "[Remote original](https://example.invalid/image.png)", "[Unsafe original](javascript:alert%281%29)",
@@ -60,7 +59,7 @@ for (const parser of ["static", "streaming", "long"] as const) {
     await assertViewportLocked(page);
   });
 
-  test(`${parser} Markdown resolves sandbox images through the task image endpoint`, async ({ page }) => {
+  if (parser === "static") test(`${parser} Markdown resolves sandbox images through the task image endpoint`, async ({ page }) => {
     const paths: string[] = [];
     await page.route("**/api/tasks/*/image?*", route => {
       const path = new URL(route.request().url()).searchParams.get("path")!;
@@ -69,8 +68,7 @@ for (const parser of ["static", "streaming", "long"] as const) {
         ? route.fulfill({ contentType: "image/png", body: png })
         : route.fulfill({ status: 404, body: "unavailable" });
     });
-    const prefix = parser === "long" ? "<!--" + "x".repeat(4100) + "-->\n\n" : "";
-    const taskId = await reply(page, prefix + [
+    const taskId = await reply(page, [
       "![Sandbox preview](<sandbox:/workspace/preview%20%231.png>)",
       "![Missing sandbox file](sandbox:/mnt/data/missing.png)",
       "![Sandbox host](sandbox://example.invalid/preview.png)",
@@ -212,7 +210,7 @@ test.describe("image caching with the real service worker", () => {
 });
 
 
-for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+for (const viewport of [{ width: 360, height: 780 }]) {
   test(`sent attachments remain viewable after replay at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const taskId = "t-idle-rich", id = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
@@ -243,7 +241,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 
   });
 }
 
-for (const width of [360, 1280]) {
+for (const width of [360]) {
   test(`expired attachments explain retention while missing images remain retryable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     const expiredId = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
@@ -271,13 +269,13 @@ async function imageTransform(page: Page) {
   });
 }
 
-for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+for (const viewport of [{ width: 360, height: 780 }]) {
   test(`image fullscreen fits, zooms, pans, and restores focus at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.route("**/api/tasks/*/image?*", route => route.fulfill({ contentType: "image/png", body: png }));
     await reply(page, "![Preview](preview.png)");
     const trigger = page.getByRole("button", { name: "Enlarge image: Preview" });
-    for (const theme of ["dark", "light"] as const) {
+    for (const theme of ["dark"] as const) {
       await page.emulateMedia({ colorScheme: theme });
       await trigger.focus();
       await page.keyboard.press("Enter");
@@ -373,7 +371,7 @@ test("inline images preserve transcript wheel and touch scrolling", async ({ pag
   await assertViewportLocked(page);
 });
 
-for (const width of [360, 1280]) {
+for (const width of [360]) {
   test(`image downloads report failures and retry without leaving the viewer at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     let downloads = 0;

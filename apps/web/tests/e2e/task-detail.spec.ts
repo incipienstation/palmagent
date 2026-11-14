@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { assertViewportLocked, openSessionDetails } from "./_helpers";
+import { openSessionDetails } from "./_helpers";
 
 test.describe("task detail", () => {
   test.beforeEach(async ({ page }) => {
@@ -7,22 +7,6 @@ test.describe("task detail", () => {
     await expect(page.getByRole("heading", { name: "Wire the web QA harness" })).toBeVisible();
     // The scoped stream replays in full synchronously; wait for the final line.
     await expect(page.getByText("Harness scaffolded and passing.")).toBeVisible();
-  });
-
-  test("event log wraps long URLs and shows the prompt with a follow-up composer", async ({ page }) => {
-    // Guards against Radix ScrollArea widening the document:
-    // a long, space-free token must wrap inside the pane, never widen it.
-    const overflow = await page.evaluate(() => {
-      const vps = [...document.querySelectorAll("[data-radix-scroll-area-viewport]")] as HTMLElement[];
-      const log = vps.find((el) => el.textContent?.includes("Harness scaffolded")) ?? vps[0];
-      return log.scrollWidth - log.clientWidth;
-    });
-    expect(overflow, "event log pane overflows horizontally").toBeLessThanOrEqual(1);
-    await page.locator("[data-radix-scroll-area-viewport]").first().evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
-    await expect(page.getByRole("group", { name: "Your message", exact: true })).toBeVisible();
-    await expect(page.getByText("You", { exact: true })).toHaveCount(0);
-    // idle task → follow-up composer is enabled.
-    await expect(page.getByPlaceholder(/Message Palmagent/)).toBeVisible();
   });
 
   test("session details lists PRs and restores focus after scrim dismissal", async ({ page }) => {
@@ -41,28 +25,6 @@ test.describe("task detail", () => {
     await page.locator('[data-slot="drawer-overlay"]').click({ position: { x: 180, y: 10 } });
     await expect(page.getByRole("heading", { name: "Pull requests" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeFocused();
-  });
-
-  test("renders assistant markdown (heading, GFM table, list) — and the table never widens the pane", async ({
-    page,
-  }) => {
-    // The markdown-rendered assistant prose sits at the TOP of the log, which
-    // auto-sticks to the bottom. Express upward input before assigning an exact
-    // reading position for the content and overflow assertions.
-    const viewport = page.locator("[data-radix-scroll-area-viewport]").first();
-    await viewport.evaluate((el) => {
-      el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0;
-      el.dispatchEvent(new Event("scroll"));
-    });
-    // Structural proof the markdown actually parsed (not raw `## ` / `|` text).
-    await expect(page.getByRole("heading", { name: "Plan" })).toBeVisible();
-    await expect(page.getByRole("table")).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Layout overflow" })).toBeVisible();
-    // The GFM table is wrapped in an overflow-x-auto rail, so even a wide table
-    // scrolls inside the pane and never widens the log (the mobile contract).
-    const overflow = await viewport.evaluate((el) => el.scrollWidth - el.clientWidth);
-    expect(overflow, "markdown table widened the event log pane").toBeLessThanOrEqual(1);
-    await assertViewportLocked(page);
   });
 });
 

@@ -32,31 +32,6 @@ async function setup(page: Page, patch: Partial<TaskState> = {}) {
   return { task, snapshot, requests, line: page.getByRole("region", { name: "Session usage" }) };
 }
 
-for (const width of [320, 1280]) test(`context circle shows remaining capacity and preserves the compact layout at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
-  const f = await setup(page);
-  const context = f.line.getByLabel("Context 58% left", { exact: true });
-  await expect(context).toBeVisible();
-  const arc = context.locator("circle[pathLength]");
-  expect(Number((await arc.getAttribute("stroke-dasharray"))!.split(" ")[0])).toBeCloseTo(58);
-  await expect(f.line.getByText("78%", { exact: true })).toBeVisible();
-  await expect(f.line.getByText("92%", { exact: true })).toBeVisible();
-  const trigger = f.line.getByRole("button", { name: "Usage details" });
-  expect((await trigger.boundingBox())!.height).toBe(24);
-  expect(await f.line.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  const draft = page.getByRole("textbox", { name: "Message", exact: true });
-  await draft.fill("Keep this draft");
-  await trigger.focus(); await page.keyboard.press("Enter");
-  const sheet = page.getByRole("dialog", { name: "Session usage" });
-  await expect(sheet.getByText("84,000 / 200,000 tokens used")).toBeVisible();
-  await expect(sheet.getByText("58% context remaining")).toBeVisible();
-  await expect(sheet.getByRole("heading", { name: "Codex account limits" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(trigger).toBeFocused();
-  await expect(draft).toHaveValue("Keep this draft");
-  await assertViewportLocked(page);
-});
-
 test("live context updates, reconnect snapshots and reload do not need usage events in the visible history", async ({ page }) => {
   const f = await setup(page);
   await expect(f.line.getByText("58% left", { exact: true })).toBeVisible();

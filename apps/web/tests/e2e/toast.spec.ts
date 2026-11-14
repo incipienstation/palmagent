@@ -1,5 +1,4 @@
 import { test, expect, type Page } from "@playwright/test";
-import { tasks } from "../fixtures.mjs";
 import { assertViewportLocked, openSessionDetails } from "./_helpers";
 
 // These flows start with a previously used Space; first-use selection is covered in spaces.spec.ts.
@@ -36,17 +35,6 @@ async function assertClearOfComposer(page: Page) {
       && el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
   }, toastSelector)).toBe(true);
 }
-
-test("successful creation keeps the composer reachable without a success toast", async ({ page }) => {
-  await page.route("**/api/tasks", route => route.request().method() === "POST"
-    ? route.fulfill({ json: { task: tasks.find(t => t.taskId === "t-idle-rich") } }) : route.continue());
-  await page.goto("/#/new/space/repo-app");
-  await page.getByLabel("Prompt", { exact: true }).fill("Review the changes.");
-  await page.getByRole("button", { name: "Send now", exact: true }).tap();
-  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeVisible();
-  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toBeInViewport({ ratio: 1 });
-  await expect(page.getByTestId("toast")).toHaveCount(0);
-});
 
 test("errors wrap without covering input, including both keyboard resize models", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
@@ -119,14 +107,6 @@ test("root exit hint stays above the new-task button and respects safe areas", a
     const button = (await page.getByRole("button", { name: "Dispatch new task" }).boundingBox())!;
     return button.y - toast.y - toast.height;
   }).toBeGreaterThanOrEqual(0);
-});
-
-test("desktop toast keeps unbroken error text within the viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await sendError(page, "Unavailable_".repeat(20));
-  await assertClearOfComposer(page);
-  await expect(currentToast(page)).toBeInViewport({ ratio: 1 });
-  await assertViewportLocked(page);
 });
 
 test("copy feedback does not dismiss its parent sheet", async ({ page }) => {

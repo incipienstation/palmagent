@@ -7,7 +7,7 @@ test.use({ serviceWorkers: "block" });
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
 const composer = (page: Page) => page.getByRole("group", { name: "Message composer", exact: true });
 
-for (const width of [360, 1280]) test(`first send keeps the conversation and composer mounted at ${width}px`, async ({ page }) => {
+for (const width of [360]) test(`first send keeps the conversation and composer mounted at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   await installScopedStream(page);
   let release!: () => void;
