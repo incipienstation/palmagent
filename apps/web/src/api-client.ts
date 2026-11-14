@@ -199,6 +199,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         });
       }, { write: true, messageScope: "dispatch", images: json.images }) : write(() => client.tasks.$post({ json }, attachmentOptions(json)))).then(r => r.task);
     },
+    moveTaskPin: (id: string, targetId: string, placement: "before" | "after") => write(() => tasks["pin-position"].$patch({ param: idParam(id), json: { targetId, placement } })).then((r) => r.tasks),
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
     agentInstallations: (signal?: AbortSignal) => request(() => client.agents.$get({}, requestOptions(signal))),

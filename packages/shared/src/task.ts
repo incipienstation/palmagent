@@ -125,7 +125,7 @@ export function makePrRef(url: string): PrRef | null {
 // `sessionId` off the CLI's local transcript (no external session store).
 export interface TaskState {
   taskId: string;
-  pinnedAt?: number; // stable pin order; absent when unpinned
+  pinnedAt?: number; // mutable pin ordering key; absent when unpinned
   contextUsage?: import("./context-usage.js").ContextUsage;
   messageQueue?: import("./messages.js").MessageQueue;
   repoId: string;

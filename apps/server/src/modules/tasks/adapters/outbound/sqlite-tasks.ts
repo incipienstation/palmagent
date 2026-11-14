@@ -307,6 +307,13 @@ setTaskPin(id: string, pinned: boolean, now: number): number | undefined {
     return row.pinned_at ?? undefined;
   }
 
+setTaskPinOrder(pins: { taskId: string; pinnedAt: number }[], now: number) {
+    this.db.transaction(() => {
+      const update = this.db.prepare("UPDATE tasks SET pinned_at = ?, updated_at = ? WHERE id = ?");
+      for (const pin of pins) update.run(pin.pinnedAt, now, pin.taskId);
+    })();
+  }
+
 setTaskTitle(id: string, title: string, now: number) {
     this.db.prepare("UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
   }

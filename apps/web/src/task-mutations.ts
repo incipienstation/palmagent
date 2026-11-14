@@ -94,6 +94,47 @@ export async function mutateTask(taskId: string, change: { title: string } | { p
     return false;
   } finally { if (generation === cacheSession()) publish(); }
 }
+export async function moveTaskPin(pins: TaskState[], taskId: string, targetId: string, placement: "before" | "after"): Promise<boolean> {
+  if (taskId === targetId || pins.some(task => changes.get(task.taskId)?.pending)) return false;
+  const task = pins.find(task => task.taskId === taskId);
+  if (!task || !pins.some(task => task.taskId === targetId)) return false;
+  const ordered = pins.filter(task => task.taskId !== taskId);
+  ordered.splice(ordered.findIndex(task => task.taskId === targetId) + (placement === "after" ? 1 : 0), 0, task);
+  if (ordered.every((task, i) => task.taskId === pins[i].taskId)) return false;
+  const generation = cacheSession();
+  const previous = new Map(pins.map(task => [task.taskId, changes.get(task.taskId)]));
+  for (const [index, task] of ordered.entries()) {
+    changes.set(task.taskId, { ...previous.get(task.taskId), pinnedAt: pins[index].pinnedAt, pending: true });
+  }
+  publish();
+  const accept = (actual: TaskState) => changes.set(actual.taskId, {
+    ...previous.get(actual.taskId), pinnedAt: actual.pinnedAt ?? null,
+    pending: false, acknowledgedAt: actual.updatedAt,
+  });
+  try {
+    const actual = await api.moveTaskPin(taskId, targetId, placement);
+    if (generation !== cacheSession()) return false;
+    // A pin may have been removed by another client while this request was in flight.
+    const removed = await Promise.all(pins.filter(task => !actual.some(t => t.taskId === task.taskId)).map(task => api.getTask(task.taskId)));
+    if (generation !== cacheSession()) return false;
+    for (const task of [...actual, ...removed]) if (previous.has(task.taskId)) accept(task);
+    return true;
+  } catch (error) {
+    if (generation !== cacheSession()) return false;
+    // Keep actions locked until reconciliation settles: a lost response can hide a successful write.
+    const actual = await Promise.allSettled(pins.map(task => api.getTask(task.taskId)));
+    if (generation !== cacheSession()) return false;
+    for (const [index, result] of actual.entries()) {
+      const id = pins[index].taskId;
+      if (result.status === "fulfilled") accept(result.value);
+      else if (previous.get(id)) changes.set(id, previous.get(id)!);
+      else changes.delete(id);
+    }
+    toast({ title: "Couldn't reorder pinned chats", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
+    return false;
+  } finally { if (generation === cacheSession()) publish(); }
+}
+
 onCacheSessionReset(() => {
   if (archiveToast !== undefined) dismissToast(archiveToast);
   queuedArchives.clear();

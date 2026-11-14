@@ -288,7 +288,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, updateSettings);
     }
     if (m === "PATCH" && pathname.startsWith("/api/tasks/")) {
-      const task = tasks.find((t) => t.taskId === decodeURIComponent(pathname.slice("/api/tasks/".length).replace(/\/pin$/, "")));
+      const task = tasks.find((t) => t.taskId === decodeURIComponent(pathname.slice("/api/tasks/".length).replace(/\/pin(?:-position)?$/, "")));
       if (!task) return json(res, 404, { error: "no such task" });
       let input;
       try {
@@ -296,6 +296,21 @@ const server = createServer(async (req, res) => {
         for await (const chunk of req) body += chunk;
         input = JSON.parse(body);
       } catch { return json(res, 400, { error: "invalid JSON" }); }
+      if (pathname.endsWith("/pin-position")) {
+        const target = tasks.find(t => t.taskId === input.targetId);
+        if (!target) return json(res, 404, { error: "no such target" });
+        if (!["before", "after"].includes(input.placement)) return json(res, 400, { error: "invalid placement" });
+        if ([task, target].some(t => t.pinnedAt === undefined || t.status === "archived")) return json(res, 409, { error: "not pinned" });
+        const pins = tasks.filter(t => t.pinnedAt !== undefined).sort((a, b) => a.pinnedAt - b.pinnedAt);
+        if (task !== target) {
+          const slots = pins.map(t => t.pinnedAt);
+          const ordered = pins.filter(t => t !== task);
+          ordered.splice(ordered.indexOf(target) + (input.placement === "after" ? 1 : 0), 0, task);
+          ordered.forEach((t, index) => { t.pinnedAt = slots[index]; t.updatedAt = Date.now(); });
+        }
+        for (const [client, taskId] of taskClients) tasksFrame(client, undefined, taskId);
+        return json(res, 200, { tasks: pins });
+      }
       if (pathname.endsWith("/pin")) {
         if (typeof input?.pinned !== "boolean") return json(res, 400, { error: "invalid pin" });
         if (input.pinned && task.status === "archived") return json(res, 409, { error: "archived" });
