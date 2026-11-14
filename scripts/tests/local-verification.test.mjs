@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -342,4 +342,18 @@ test('workspace dependency links do not fingerprint generated workspace output',
   f.messages.length = 0;
   assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
   assert(f.messages.includes('RUN source'));
+});
+
+
+test('pnpm-style hardlink churn does not invalidate unchanged dependency contents', async t => {
+  const f = retryFixture(t), steps = [f.step('source')];
+  f.write('node_modules/dependency.js', 'unchanged');
+  f.write('build/.keep', '');
+  assert.equal(await runVerification(steps, f.options), 0);
+  const resume = f.logDirectory();
+  linkSync(join(f.cwd, 'node_modules/dependency.js'), join(f.cwd, 'build/another-install'));
+  rmSync(join(f.cwd, 'build/another-install'));
+  f.messages.length = 0;
+  assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
+  assert(f.messages.includes('REUSE source'));
 });

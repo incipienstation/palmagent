@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
+import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 // Hash source bytes, Git state, environment values (never stored), and installed dependency
-// metadata. This is explicit retry evidence, not a cache for external services or release acceptance.
+// contents. This is explicit retry evidence, not a cache for external services or release acceptance.
 export function verificationFingerprint(cwd, context, steps, env) {
   const hash = createHash('sha256'), inputs = {};
   const mark = name => { inputs[name] = hash.copy().digest('hex'); };
@@ -36,30 +36,40 @@ export function verificationFingerprint(cwd, context, steps, env) {
   }
   mark('source');
   const visited = new Set();
-  function metadata(path) {
+  const buffer = Buffer.allocUnsafe(256 * 1024);
+  function hashTree(path) {
     let stat;
     try { stat = lstatSync(path, { bigint: true }); }
     catch (error) { if (error.code === 'ENOENT') { add([path, 'missing']); return; } throw error; }
-    add([path, String(stat.mode), String(stat.size), String(stat.mtimeNs), String(stat.ctimeNs)]);
+    // pnpm hardlink creation/removal changes ctime in unrelated worktrees. Hash semantic
+    // contents, not timestamps; directory sizes and modification times are not inputs either.
+    add([path, String(stat.mode)]);
     if (stat.isSymbolicLink()) {
       add(readlinkSync(path));
       const target = realpathSync(path);
       // Workspace package source is already hashed above. Following its entire directory
       // would mistake generated build/runtime output for installed dependency changes.
       if (roots.has(target)) add(target);
-      else metadata(target);
+      else hashTree(target);
     } else if (stat.isDirectory()) {
       if (visited.has(path)) return;
       visited.add(path);
-      for (const child of readdirSync(path).sort()) metadata(join(path, child));
-    }
+      for (const child of readdirSync(path).sort()) hashTree(join(path, child));
+    } else if (stat.isFile()) {
+      const content = createHash('sha256'), fd = openSync(path, 'r');
+      try {
+        let bytes;
+        while ((bytes = readSync(fd, buffer)) > 0) content.update(buffer.subarray(0, bytes));
+      } finally { closeSync(fd); }
+      add(content.digest('hex'));
+    } else throw new Error('Unsupported verification dependency entry');
   }
-  for (const target of linkedSources.sort()) metadata(target);
-  metadata(process.execPath);
+  for (const target of linkedSources.sort()) hashTree(target);
+  hashTree(process.execPath);
   for (const root of [...roots].sort()) {
-    metadata(join(root, 'node_modules'));
+    hashTree(join(root, 'node_modules'));
     for (const name of readdirSync(root).filter(name => name === '.env' || name.startsWith('.env.')).sort()) {
-      metadata(join(root, name));
+      hashTree(join(root, name));
     }
   }
   mark('installed or linked files');
