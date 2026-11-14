@@ -95,6 +95,17 @@ retry deduplication and is never exported into metrics.
 | Node event-loop delay | Lateness of a 100 ms timer | Distribution of timer delays; not a Rust metric or a request latency |
 | SQLite busy retries | Busy attempts in execution persistence | Scope does not include every SQLite operation in the web process |
 
+HTTP groups distinguish agent installation reads/writes (`http.agents.read/write`),
+provider account-limit reads (`http.agents.limits`), model catalog (`http.models.read`),
+skills (`http.skills.read`), Palmagent update settings/actions (`http.installation.read/write`),
+and other settings (`http.settings.read/write`). Existing task, Space, routine, terminal,
+and health groups remain unchanged; other requests use `http.request`. These are fixed
+operation names, never URLs, provider homes, query strings, or identifiers. Task and agent
+SSE endpoints and telemetry settings are excluded. Update the receiver's operation allowlist
+before releasing a producer with new names; a strict older receiver rejects unknown operations.
+Older releases retain their original groups, so category counts are not directly comparable
+across the classification change.
+
 For HTTP and web resources, concurrency is in-flight non-streaming HTTP requests. For the Rust daemon it is
 open control connections; for the application runtime it is active admitted script routines
 (sampled before a command/pass, with at most four slots). Execution and terminal hosts each represent one invocation.

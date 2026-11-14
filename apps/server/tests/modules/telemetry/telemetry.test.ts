@@ -132,6 +132,53 @@ test("HTTP metrics separate operations, omit streaming lifetimes, and count hand
   assert.equal(requestOperation("/api/stream", "GET"), undefined);
   assert(TELEMETRY.operations.includes(requestOperation("/api/tasks", "POST")!));
 });
+test("HTTP diagnostic groups stay bounded and omit provider streams and telemetry settings", async t => {
+  const cases: [string, string, string | undefined][] = [
+    ["/api/agents", "GET", "http.agents.read"],
+    ["/api/agents/codex/limits", "GET", "http.agents.limits"],
+    ["/api/agents/claude/limits", "HEAD", "http.agents.limits"],
+    ["/api/agents/codex/update", "POST", "http.agents.write"],
+    ["/api/model-catalog", "GET", "http.models.read"],
+    ["/api/skills", "GET", "http.skills.read"],
+    ["/api/settings/updates", "GET", "http.installation.read"],
+    ["/api/settings/updates", "POST", "http.installation.write"],
+    ["/api/settings/updates", "PATCH", "http.installation.write"],
+    ["/api/settings/repos", "GET", "http.settings.read"],
+    ["/api/settings/repos", "PATCH", "http.settings.write"],
+    ["/api/agents/stream", "GET", undefined],
+    ["/api/settings/telemetry", "PATCH", undefined],
+    ["/api/settings/telemetry/status", "GET", undefined],
+    ["/api/agents-private-marker", "GET", "http.request"],
+    ["/api/model-catalog/private-marker", "GET", "http.request"],
+    ["/api/unknown/private-marker", "GET", "http.request"],
+  ];
+  for (const [path, method, expected] of cases) {
+    assert.equal(requestOperation(path, method), expected);
+    if (expected) assert(TELEMETRY.operations.includes(expected));
+  }
+  const sent: string[] = [];
+  const f = fixture(t, (async (_url, init) => { sent.push(String(init!.body)); return new Response(null); }) as typeof fetch);
+  f.settings.change(true);
+  const load = { active: 0 }, app = new Hono();
+  app.use("*", requestMeasurements(f.producer, load));
+  app.get("/api/agents/stream", c => { assert.equal(load.active, 0); return c.text("stream"); });
+  app.get("/api/agents/:agent/limits", c => c.json({ error: "private-marker" }, 503));
+  app.get("/api/skills", c => c.json({ skills: [] }));
+  await app.request("/api/agents/stream");
+  await app.request("/api/agents/codex/limits?home=private-marker");
+  await app.request("/api/skills?cwd=private-marker");
+  assert.equal(load.active, 0);
+  f.producer.flush(); await f.producer.send();
+  assert.equal(sent.length, 1);
+  assert(!sent[0].includes("private-marker"));
+  const metrics = JSON.parse(sent[0]).resourceMetrics[0].scopeMetrics[0].metrics;
+  const points = metrics.flatMap((metric: { histogram: { dataPoints: unknown[] } }) => metric.histogram.dataPoints);
+  const labels = points.map((point: { attributes: { key: string; value: { stringValue: string } }[] }) =>
+    Object.fromEntries(point.attributes.map(a => [a.key, a.value.stringValue])));
+  assert.deepEqual(labels.map((a: Record<string, string>) => [a.operation, a.outcome]).sort(), [
+    ["http.agents.limits", "error"], ["http.skills.read", "success"],
+  ]);
+});
 test("settings require enabled auth, validate inputs, persist choice, and retain the default until disclosure", async t => {
   const f = fixture(t);
   const request = (body: unknown) => ({ method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
