@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Db } from "../../src/composition/database.js";
-import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import { TaskService } from "../../src/modules/tasks/application/use-cases/task-service.js";
 import { NodeIdentifierGenerator } from "../../src/platform/process/id-generator.js";
@@ -34,7 +34,7 @@ async function fixture(t: TestContext) {
   let backend: ExecutionBackend, service: TaskService;
   const start = async () => {
     backend = new ExecutionBackend(store.directory, "/opt/fixture", process.execPath, 1, () => {});
-    service = createTaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), new LocalAttachmentStorage(db), new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
+    service = createTaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
     await service.init();
     return service;
   };

@@ -4,8 +4,8 @@ import { closeSync, constants, existsSync, fstatSync, lstatSync, statfsSync, ope
 import { basename, dirname, join } from "node:path";
 import type { Attachment, InputAttachment } from "@palmagent/shared";
 import type { AttachmentRecord } from "../../domain/models.js";
-import type { AttachmentIndex, AttachmentStorage } from "../../application/ports/outbound/attachments.js";
-import { ATTACHMENT_DEFAULTS, ATTACHMENT_MAINTENANCE_MS, type AttachmentPolicy } from "../../domain/attachment-policy.js";
+import type { AttachmentIndex, AttachmentContentStorage, AttachmentFileCollection } from "../../application/ports/outbound/attachments.js";
+import { ATTACHMENT_DEFAULTS, type AttachmentPolicy } from "../../domain/attachment-policy.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import { rasterMediaType } from "../../application/attachments/output-images.js";
 import { ensurePrivateDirectory, writePrivateFileAtomic } from "../../../../platform/filesystem/private-files.js";
@@ -18,11 +18,9 @@ const reference = ({ id, mediaType, size }: AttachmentRecord, image: InputAttach
   ...(image.width && image.height ? { width: image.width, height: image.height } : {}) });
 
 /** Immutable private files with a task-scoped SQLite index. Only the index grants access. */
-export class LocalAttachmentStorage implements AttachmentStorage {
+export class LocalAttachmentFiles implements AttachmentContentStorage, AttachmentFileCollection {
   private readonly directory: string;
-  private timer?: ReturnType<typeof setInterval>;
-  constructor(private readonly db: AttachmentIndex, private readonly policy: AttachmentPolicy = ATTACHMENT_DEFAULTS,
-    private readonly now: () => number = Date.now) {
+  constructor(private readonly db: AttachmentIndex, private readonly policy: AttachmentPolicy = ATTACHMENT_DEFAULTS) {
     this.directory = join(dirname(db.path), "attachments", basename(db.path));
   }
   save(taskId: string, images?: readonly InputAttachment[]): Attachment[] | undefined {
@@ -102,51 +100,10 @@ export class LocalAttachmentStorage implements AttachmentStorage {
       } } : {}) };
     });
   }
-  start(): void {
-    this.close();
-    this.prune();
-    this.timer = setInterval(() => {
-      if (!this.db.isOpen) { this.close(); return; }
-      this.prune();
-    }, ATTACHMENT_MAINTENANCE_MS);
-    this.timer.unref();
-  }
-  close(): void { clearInterval(this.timer); this.timer = undefined; }
-
-  /** Mark first, then unlink: interrupted cleanup must never resurrect expired access. */
-  prune(): void {
-    try {
-      this.db.transaction(() => {
-        const now = this.now();
-        const refs = new Map<string, { history: Set<string>; pending: Set<string> }>();
-        for (const record of this.db.attachmentInventory()) {
-          if (record.expiredAt !== null) continue;
-          let taskRefs = refs.get(record.taskId);
-          if (!taskRefs) { taskRefs = this.db.attachmentReferences(record.taskId); refs.set(record.taskId, taskRefs); }
-          if (taskRefs.pending.has(record.id)) {
-            this.db.setAttachmentLifecycle(record.id, null, null);
-          } else if (taskRefs.history.has(record.id)) {
-            const expired = this.policy.retentionMs > 0 && record.status === "archived"
-              && now - record.updatedAt >= this.policy.retentionMs;
-            this.db.setAttachmentLifecycle(record.id, null, expired ? now : null);
-          } else if (record.unusedSince === null) {
-            this.db.setAttachmentLifecycle(record.id, now, null);
-          } else if (now - record.unusedSince >= this.policy.unusedGraceMs) {
-            this.db.deleteAttachment(record.id);
-          }
-        }
-      });
-      if (!existsSync(this.directory)) return;
-      // Re-read under the writer lock: an explicit upload may have restored a file
-      // after the marking transaction. Never unlink that newly accepted content.
-      this.db.transaction(() => {
-        const retained = new Set(this.db.attachmentInventory().filter(r => r.expiredAt === null).map(r => r.id));
-        for (const name of readdirSync(this.directory)) {
-          if (/^[0-9a-f-]{36}(?:\.[0-9a-f-]{36}\.tmp)?$/.test(name) && !retained.has(name)) this.remove(join(this.directory, name));
-        }
-      });
-    } catch {
-      console.warn("[attachments] Cleanup deferred; check database and storage permissions");
+  exists(): boolean { return existsSync(this.directory); }
+  removeUnreferenced(retained: ReadonlySet<string>): void {
+    for (const name of readdirSync(this.directory)) {
+      if (/^[0-9a-f-]{36}(?:\.[0-9a-f-]{36}\.tmp)?$/.test(name) && !retained.has(name)) this.remove(join(this.directory, name));
     }
   }
   private assertCapacity(bytes: number): void {

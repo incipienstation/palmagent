@@ -9,7 +9,7 @@ import { AGENT_HOOK_STOPPED } from "@palmagent/shared";
 import type { SharedSessionConnection, SharedSessionEvent, SharedSessionSnapshot } from "../../src/modules/agents/api.js";
 import { createTaskService } from "../../src/composition/task-service.js";
 import { Db } from "../../src/composition/database.js";
-import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
 import { LocalNativeSessionAdapter } from "../../src/modules/tasks/adapters/outbound/native-session-adapter.js";
@@ -48,7 +48,7 @@ async function setup(t: test.TestContext, preview = false) {
   const make = async () => {
     const backend = new InProcessBackend();
     backend.agentRunner = () => { throw new Error("A shared session must not start a second writer"); };
-    const service = createTaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), new LocalAttachmentStorage(db), new LocalRepositoryPaths(), native, new NodeIdentifierGenerator());
+    const service = createTaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), native, new NodeIdentifierGenerator());
     service.sharedSessions = { connect: async request => {
       opens++; taskId = request.taskId;
       const connection: SharedSessionConnection = {

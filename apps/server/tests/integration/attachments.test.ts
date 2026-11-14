@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
 import { sanitizeImages } from "../../src/modules/tasks/application/attachments/image-input.js";
 import { buildClaudeUserMessage } from "../../src/modules/agents/adapters/outbound/claude.js";
@@ -17,12 +17,12 @@ import { MessageController } from "../../src/modules/tasks/application/use-cases
 const image = { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
 function fixture(t: test.TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-attachments-")), path = join(dir, "state.db");
-  let db = new Db(path), storage = new LocalAttachmentStorage(db);
+  let db = new Db(path), storage = createAttachmentStorage(db);
   db.insertRepo({ id: "r", name: "Fixture", path: dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   for (const taskId of ["one", "two"]) db.insertTask({ taskId, repoId: "r", agent: "codex", prompt: "Fixture", status: "idle", interrupted: false, permission: "read-only", createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
   return { get db() { return db; }, get storage() { return storage; }, directory: join(dir, "attachments", "state.db"),
-    restart() { db.close(); db = new Db(path); storage = new LocalAttachmentStorage(db); storage.prune(); } };
+    restart() { db.close(); db = new Db(path); storage = createAttachmentStorage(db); storage.prune(); } };
 }
 
 test("private attachments survive restart, deduplicate within a task, and reject cross-task reads", t => {
@@ -124,13 +124,13 @@ test("an unreadable queued attachment rejects before execution even after a prev
 
 const bytes = Buffer.from(image.data, "base64").length;
 const policy = { maxBytes: 1024 * 1024, minFreeBytes: 0, unusedGraceMs: 1000, retentionMs: 0 };
-function remember(db: Db, taskId: string, attachments: ReturnType<LocalAttachmentStorage["save"]>) {
+function remember(db: Db, taskId: string, attachments: ReturnType<ReturnType<typeof createAttachmentStorage>["save"]>) {
   db.appendAgentEvents(taskId, [{ taskId, agent: "codex", kind: "status", ts: 1,
     payload: { subtype: "followup", attachments } }]);
 }
 
 test("capacity charges actual files and unique content; quota failure rolls back the whole batch", t => {
-  const f = fixture(t), storage = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes });
+  const f = fixture(t), storage = createAttachmentStorage(f.db, { ...policy, maxBytes: bytes });
   const [ref] = storage.save("one", [image, image])!;
   assert.deepEqual(storage.save("one", [image]), [ref]);
   assert.throws(() => storage.save("two", [image]), { code: "insufficient_storage" });
@@ -150,7 +150,7 @@ test("capacity charges actual files and unique content; quota failure rolls back
 
 test("disk reserve rejects writes and queue submission without discarding an existing edit", t => {
   const f = fixture(t);
-  const storage = new LocalAttachmentStorage(f.db, { ...policy, minFreeBytes: Number.MAX_SAFE_INTEGER });
+  const storage = createAttachmentStorage(f.db, { ...policy, minFreeBytes: Number.MAX_SAFE_INTEGER });
   const [ref] = f.storage.save("one", [image])!;
   assert.deepEqual(storage.save("one", [image]), [ref]);
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
@@ -168,12 +168,12 @@ test("disk reserve rejects writes and queue submission without discarding an exi
 
 test("unused cleanup waits a full observed grace period, survives restart, and protects history", t => {
   const f = fixture(t); let now = 1000;
-  let storage = new LocalAttachmentStorage(f.db, policy, () => now);
+  let storage = createAttachmentStorage(f.db, policy, () => now);
   const [unused] = storage.save("one", [image])!, [used] = storage.save("two", [image])!;
   remember(f.db, "two", [used]);
   storage.prune(); now += 999; storage.prune();
   assert.equal(storage.read("one", unused.id).bytes.length, bytes);
-  f.restart(); storage = new LocalAttachmentStorage(f.db, policy, () => now);
+  f.restart(); storage = createAttachmentStorage(f.db, policy, () => now);
   now++; storage.prune();
   assert.throws(() => storage.read("one", unused.id), { code: "not_found" });
   assert.deepEqual(readdirSync(f.directory), [used.id]);
@@ -183,7 +183,7 @@ test("unused cleanup waits a full observed grace period, survives restart, and p
 
 test("resubmission resets the unused grace period before the reference is committed", t => {
   const f = fixture(t); let now = 1000;
-  const storage = new LocalAttachmentStorage(f.db, policy, () => now);
+  const storage = createAttachmentStorage(f.db, policy, () => now);
   const [ref] = storage.save("one", [image])!;
   storage.prune(); now += 1000;
   assert.deepEqual(storage.save("one", [image]), [ref]);
@@ -194,7 +194,7 @@ test("resubmission resets the unused grace period before the reference is commit
 
 test("pending and recoverable messages survive archived retention; cancelled references become unused", t => {
   const f = fixture(t); let now = 10_000;
-  const storage = new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
+  const storage = createAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
   const [ref] = storage.save("one", [image])!;
   f.db.setTaskStatus("one", "archived", false, 1);
   for (const status of ["queued", "sending", "rejected", "unknown"] as const) {
@@ -213,9 +213,9 @@ test("retention is opt-in, only expires archived history, and keeps durable tomb
   const [archived] = f.storage.save("one", [image])!, [active] = f.storage.save("two", [image])!;
   remember(f.db, "one", [archived]); remember(f.db, "two", [active]);
   f.db.setTaskStatus("one", "archived", false, now);
-  const disabled = new LocalAttachmentStorage(f.db, policy, () => now);
+  const disabled = createAttachmentStorage(f.db, policy, () => now);
   disabled.prune(); assert.deepEqual(disabled.load("one", [archived]), [image]);
-  const enabled = new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
+  const enabled = createAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
   now += 999; enabled.prune(); assert.deepEqual(enabled.load("one", [archived]), [image]);
   now++; enabled.prune();
   assert.throws(() => enabled.read("one", archived.id), { code: "gone" });
@@ -231,7 +231,7 @@ test("retention is opt-in, only expires archived history, and keeps durable tomb
 test("periodic maintenance collects unused files and stops when the database closes", t => {
   const f = fixture(t); let now = 1000;
   t.mock.timers.enable({ apis: ["setInterval"] });
-  const storage = new LocalAttachmentStorage(f.db, policy, () => now);
+  const storage = createAttachmentStorage(f.db, policy, () => now);
   t.after(() => storage.close());
   const [ref] = storage.save("one", [image])!;
   storage.start(); now += 1000;
@@ -245,7 +245,7 @@ test("interrupted expiration denies access durably and charges bytes until delet
   const f = fixture(t);
   const [ref] = f.storage.save("one", [image])!;
   remember(f.db, "one", [ref]); f.db.setTaskStatus("one", "archived", false, 1);
-  const storage = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes, retentionMs: 1000 }, () => 5000);
+  const storage = createAttachmentStorage(f.db, { ...policy, maxBytes: bytes, retentionMs: 1000 }, () => 5000);
   const inventory = f.db.attachmentInventory.bind(f.db); let calls = 0;
   const failure = t.mock.method(f.db, "attachmentInventory", () => { if (++calls === 2) throw new Error("Interrupted before unlink"); return inventory(); });
   const warning = t.mock.method(console, "warn", () => {});
@@ -257,7 +257,7 @@ test("interrupted expiration denies access durably and charges bytes until delet
   failure.mock.restore(); f.restart();
   assert.throws(() => f.storage.read("one", ref.id), { code: "gone" });
   assert.deepEqual(readdirSync(f.directory), []);
-  assert.equal(new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes }).save("two", [image])?.length, 1);
+  assert.equal(createAttachmentStorage(f.db, { ...policy, maxBytes: bytes }).save("two", [image])?.length, 1);
 });
 
 
@@ -276,10 +276,10 @@ test("existing attachment indexes gain lifecycle metadata without migrating imag
 test("atomic repairs reserve a temporary copy and release its allocation before the next image", t => {
   const f = fixture(t), [ref] = f.storage.save("one", [image])!;
   writeFileSync(join(f.directory, ref.id), Buffer.alloc(bytes));
-  const full = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes });
+  const full = createAttachmentStorage(f.db, { ...policy, maxBytes: bytes });
   assert.throws(() => full.save("one", [image]), { code: "insufficient_storage" });
   const different = { ...image, data: Buffer.concat([Buffer.from(image.data, "base64"), Buffer.from([0])]).toString("base64") };
-  const room = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: bytes * 2 + 1 });
+  const room = createAttachmentStorage(f.db, { ...policy, maxBytes: bytes * 2 + 1 });
   const refs = room.save("one", [image, different])!;
   assert.deepEqual(room.load("one", refs), [image, different]);
 });
@@ -303,7 +303,7 @@ test("video originals and sampled frames survive restart, queue edits, and histo
   remember(f.db, "one", refs); f.restart();
   assert.deepEqual(f.storage.load("one", refs), [video, image]);
   let now = 10_000;
-  const storage = new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
+  const storage = createAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => now);
   storage.prune(); now += 2000; storage.prune();
   assert.deepEqual(storage.load("one", refs), [video, image]);
   f.db.writeMessageState("one", { revision: 1, runId: null, paused: false, messages: [] });
@@ -327,7 +327,7 @@ test("video validation rejects MIME spoofing, unbounded or unordered frames, and
   assert.equal(normalized[0].data, video.data);
   assert.deepEqual(normalized[0].video!.frames.map(frame => frame.timestamp), [0, 3]);
   assert.deepEqual(normalized[0].video!.frames[0].image, { ...image, width: 1, height: 1 });
-  const storage = new LocalAttachmentStorage(f.db, { ...policy, maxBytes: Buffer.from(video.data, "base64").length });
+  const storage = createAttachmentStorage(f.db, { ...policy, maxBytes: Buffer.from(video.data, "base64").length });
   assert.throws(() => storage.save("one", [video]), { code: "insufficient_storage" });
   assert.equal(f.db.attachmentIds().size, 0);
   assert.deepEqual(readdirSync(f.directory), []);
@@ -379,7 +379,7 @@ test("general files preserve names, bytes, queue editing, and retention across r
   assert.equal(refs[0].file?.name, "report.html");
   f.db.writeMessageState("one", { revision: 1, runId: null, paused: false, messages: [] });
   f.db.setTaskStatus("one", "archived", false, 1);
-  new LocalAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => 10_000).prune();
+  createAttachmentStorage(f.db, { ...policy, retentionMs: 1000 }, () => 10_000).prune();
   assert.throws(() => f.storage.read("one", refs[0].id), { code: "gone" });
 });
 

@@ -12,7 +12,7 @@ import { NodeIdentifierGenerator } from "../../src/platform/process/id-generator
 import { ProcessSupervisor } from "../../src/modules/agents/adapters/outbound/supervisor.js";
 import { WorktreeManager } from "../../src/modules/spaces/adapters/outbound/worktree.js";
 import { LocalRepositoryPaths } from "../../src/modules/spaces/adapters/outbound/repository-paths.js";
-import { LocalAttachmentStorage } from "../../src/modules/tasks/adapters/outbound/file-attachment-storage.js";
+import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { LocalNativeSessionAdapter } from "../../src/modules/tasks/adapters/outbound/native-session-adapter.js";
 import type { RunnerBackend } from "../../src/modules/agents/application/ports/inbound/execution.js";
 import type { Emit, StartArgs } from "../../src/modules/agents/domain/execution.js";
@@ -35,7 +35,7 @@ async function fixture(t: test.TestContext, patch: Partial<TaskState> = {}) {
         steer: () => false, interrupt: () => false, approve: () => false, answer: () => false, cancel: () => finish() };
     } }),
   };
-  const makeService = () => createTaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), new LocalAttachmentStorage(db),
+  const makeService = () => createTaskService(db, new Hub(), new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
   let service = makeService(); await service.init();
   t.after(() => { service.beginShutdown(); db.close(); rmSync(dir, { recursive: true, force: true }); });
