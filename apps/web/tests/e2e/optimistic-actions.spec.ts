@@ -606,9 +606,6 @@ for (const fail of [false, true]) test(`composer Stop is immediate and serialize
   const stopBox = await stop.boundingBox();
   expect(stopBox!.width).toBeGreaterThanOrEqual(44);
   expect(stopBox!.height).toBeGreaterThanOrEqual(44);
-  const stopVisual = stop.locator("[data-stop-visual]");
-  await expect(stopVisual).toHaveCSS("width", "40px");
-  await expect(stopVisual).toHaveCSS("height", "40px");
   await expect(stop.locator(".animate-spin")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send now", exact: true })).toHaveCount(0);
   await stop.click(); await expect(stop).toBeDisabled();

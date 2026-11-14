@@ -12,7 +12,6 @@ function message(seq: number, paragraphs: number) {
 }
 
 async function unevenHistory(page: Page) {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "verbose"));
   await installScopedStream(page);
   let requested = 0;
   let release!: () => void;

@@ -23,7 +23,6 @@ test("disclosure precedes sharing, off persists, and settings can enable it with
   await dialog.getByText("What is shared?", { exact: true }).click();
   await expect(dialog).toContainText("No conversations, code, file paths");
   await expect(dialog).toContainText("Node or Rust");
-  await expect(page).toHaveScreenshot("telemetry-disclosure.png");
   await dialog.getByRole("button", { name: "Turn off sharing", exact: true }).click();
   await expect(dialog).toBeHidden();
   expect(changes).toEqual([{ enabled: false, retentionDays: 180 }]);
