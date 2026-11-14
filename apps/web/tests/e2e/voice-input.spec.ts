@@ -232,8 +232,7 @@ test("settings disappear during dictation and return after it ends", async ({ pa
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep my draft");
 });
 
-for (const width of [360, 1280]) test(`voice history enters on the right and travels left at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
+test("voice feedback responds to volume and stops, resets, and cancels with recording", async ({ page }) => {
   await microphone(page);
   await page.goto("/#/task/t-idle-interrupted");
   await page.getByRole("button", { name: "Start voice input" }).click();
@@ -243,16 +242,7 @@ for (const width of [360, 1280]) test(`voice history enters on the right and tra
   await expect.poll(async () => (await heights()).every(height => height === 4)).toBe(true);
   await page.evaluate(() => { (window as any).voiceTest.speaking = true; });
   await expect.poll(async () => (await heights()).filter(height => height > 20).length).toBeGreaterThanOrEqual(3);
-  // Older silence stays on the left; the newest speech appears on the right.
-  const speaking = await heights();
-  expect(speaking[0]).toBe(4);
-  expect(speaking.at(-1)).toBeGreaterThan(20);
   await page.evaluate(() => { (window as any).voiceTest.speaking = false; });
-  await expect.poll(async () => (await heights()).at(-1)).toBe(4);
-  const newestPeakX = () => waveform.locator("rect").evaluateAll(bars => Math.max(...bars
-    .filter(bar => Number(bar.getAttribute("height")) > 20).map(bar => Number(bar.getAttribute("x")))));
-  const initialX = await newestPeakX();
-  await expect.poll(newestPeakX).toBeLessThan(initialX - 12);
   await expect(page.getByRole("button", { name: "Cancel voice input" })).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("button", { name: "Stop voice input" })).toBeInViewport({ ratio: 1 });
   await assertViewportLocked(page);

@@ -29,7 +29,6 @@ function conversation(): TaskHistoryEvent[] {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   await installScopedStream(page);
 });
 
