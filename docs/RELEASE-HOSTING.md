@@ -5,6 +5,13 @@ Preview/Stable channel documents. Versioned archives and manifests remain immuta
 Release assets. GitHub Actions builds and publishes both; no Worker, R2 bucket, or separate
 hosting account is needed. Cloudflare can remain the domain's DNS provider.
 
+The official bootstrap entry point remains `https://palmagent.dev/install.sh`. Configure
+an exact `/install.sh` route on the main website's HTTPS server to redirect temporarily
+to `https://releases.palmagent.dev/install.sh`. Keep the Pages URL available for existing
+clients. This route needs no website rebuild for each release; signed channel discovery
+continues to use `releases.palmagent.dev`. Verify the public redirect and compare the final
+script bytes with Pages separately from the Pages publication checks.
+
 ## Configure before enabling publication
 
 1. Enable Pages for this repository with **GitHub Actions** as its publishing source. Set

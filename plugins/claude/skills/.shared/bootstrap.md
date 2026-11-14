@@ -32,7 +32,9 @@ Preview is standalone-only. Stable npm installations may continue using npm. A c
 lookup failure never selects another channel or distribution.
 
 For standalone bootstrap, download `https://palmagent.dev/install.sh` to a private temporary
-file over HTTPS, inspect its help, and run it with the chosen `--channel`. The script checks
+file over HTTPS, following redirects only to HTTPS and rejecting HTTP errors (with curl,
+use `--fail --location --proto '=https' --proto-redir '=https'`). Inspect its help, then run
+it with the chosen `--channel`. The script checks
 Linux x64/arm64, glibc, OpenSSL 3, signed release metadata, and the archive checksum before
 running the bundled Node. It needs curl, GNU tar/coreutils, jq and OpenSSL 3; installation
 needs no system Node, npm, or compiler. Resolve these prerequisites within the authorized
