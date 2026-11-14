@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import { Virtuoso, type SizeFunction, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -254,16 +254,19 @@ function RunFailureSummary({ failure, open, toggle }: { failure: RunFailure; ope
   const title = failure.previous
     ? interrupted ? "Previous run interrupted" : "Previous run reported an error"
     : failure.completed ? "Earlier errors in this run" : interrupted ? "Run interrupted" : "Run reported an error";
-  return <Alert data-run-failure variant={historical ? "default" : interrupted ? "destructive" : "warning"}
+  return <Alert data-run-failure variant={historical ? "default" : "destructive"}
     role={historical ? "group" : "alert"} aria-label={title} className="mb-3 font-sans">
-    <div className="flex items-center gap-2 font-semibold"><AlertTriangle className="size-4 shrink-0" aria-hidden />{title}</div>
-    {!historical && <p className="mt-1">{interrupted
-      ? "This run ended before completing. Send a follow-up to continue."
-      : "Review the details if the problem persists."}</p>}
-    <Button variant="ghost" size="sm" className="mt-1" aria-expanded={open} onClick={toggle}>
-      <ChevronRight data-icon="inline-start" className={open ? "rotate-90" : undefined} />
-      {open ? "Hide error details" : "Show error details"}
-    </Button>
+    <AlertTriangle aria-hidden />
+    <AlertTitle>{title}</AlertTitle>
+    <AlertDescription>
+      {!historical && <p>{interrupted
+        ? "This run ended before completing. Send a follow-up to continue."
+        : "Review the details if the problem persists."}</p>}
+      <Button variant="ghost" size="sm" aria-expanded={open} onClick={toggle}>
+        <ChevronRight data-icon="inline-start" className={open ? "rotate-90" : undefined} />
+        {open ? "Hide error details" : "Show error details"}
+      </Button>
+    </AlertDescription>
   </Alert>;
 }
 
