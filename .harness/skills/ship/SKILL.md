@@ -10,10 +10,10 @@ safe task cleanup. Honor draft, PR-only, merge-hold, and retention requests. `ma
 merge-policy changes, and repository visibility changes use [release](../release/SKILL.md).
 
 Commit and push the task branch, preserving intended author and committer identities. Open a PR
-into `develop`. Watch required checks in one session:
+into `develop`. Watch checks in one session:
 
 ```bash
-gh pr checks <number> --required --watch --fail-fast --interval 30
+gh pr checks <number> --watch --fail-fast --interval 30
 ```
 
 Follow [Waiting for checks](../verify/SKILL.md#waiting-for-checks). Reverify affected checks if the
