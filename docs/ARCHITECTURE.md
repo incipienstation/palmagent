@@ -122,6 +122,10 @@ connection recovery. Independent execution identity or connectivity uncertainty 
 rather than resetting a task or resending a message. Recovery timestamps and queue scheduling use
 the clock supplied by composition.
 
+Provider execution independence does not make Task admission independent. The current server
+still owns the Task message pump and public API. The [runtime boundary experiment](performance/task-runtime/README.md)
+compares retained ownership and API routing; its candidate topology is not a deployed architecture.
+
 ## Design references
 
 - [Ports and Adapters, Alistair Cockburn](https://alistair.cockburn.us/hexagonal-architecture)
