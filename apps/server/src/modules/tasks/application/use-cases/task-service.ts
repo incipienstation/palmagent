@@ -1,3 +1,4 @@
+import type { MessageTiming } from "../ports/outbound/message-timing.js";
 import { recoverTasks } from "./recover-tasks.js";
 import type { TaskUseCases } from "../ports/inbound/task-use-cases.js";
 import { AGENT_HOOK_STOPPED, isClosedTaskStatus, compactUnavailableReason, type CompactTaskRequest } from "@palmagent/shared";
@@ -231,6 +232,7 @@ export class TaskService implements PrStatusSink {
   skillCatalog?: TaskSkillCatalog;
 
   constructor(
+    messageTiming: MessageTiming,
     private readonly db: TaskRepository,
     private readonly hub: TaskEventPublisher,
     private readonly supervisor: TaskSupervisor,
@@ -305,7 +307,7 @@ export class TaskService implements PrStatusSink {
         } catch { return "rejected"; }
       },
       changed: () => this.broadcastTasks(),
-    }, attachments, ids);
+    }, attachments, ids, messageTiming);
   }
 
   async resolveMessageSkills(id: string, req: SubmitMessage) {
