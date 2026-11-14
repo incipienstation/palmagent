@@ -38,7 +38,10 @@ node scripts/finish-task.mjs --pr <number> --worktree <absolute-task-path>
 The helper previews Git safety checks. After releasing task sessions and pending tools, add
 `--apply` for a manual `.harness/worktrees/` worktree. It refreshes and fast-forwards a clean primary
 `develop`, removes only a clean merged task worktree with no ignored files or observable process use,
-and attempts non-force branch deletion. Retained resources and reasons are summarized.
+and deletes the local branch only while its ref exactly matches the merged PR head and the PR merge
+commit is in `origin/develop`. This covers squash merges without relying on branch ancestry. The
+same command can finish branch cleanup after the worktree is gone. Changed or checked-out branches
+are retained; the expected commit is checked atomically during deletion.
 
 For Claude Code- or Codex app-managed worktrees, use the native lifecycle controls instead of
 external deletion. Unknown ignored files, private data, or active sessions require retention;

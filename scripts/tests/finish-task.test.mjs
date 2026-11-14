@@ -49,12 +49,32 @@ test('preview keeps files and refs; apply fast-forwards and removes only the mer
   assert(applied.includes('REMOVED branch feature/task'));
 });
 
-test('squash cleanup retains the branch when non-force ancestry cannot be proved', t => {
+test('squash cleanup deletes the exact merged branch and its tracking configuration', t => {
   const f = fixture(t, { squash: true });
+  f.git(f.primary, 'config', 'branch.feature/task.remote', 'origin');
   const reports = finishTask({ ...f.options, apply: true });
   assert(!existsSync(f.worktree));
-  assert(reports.some(line => line.startsWith('RETAIN branch')));
+  assert(reports.includes('REMOVED branch feature/task'));
+  assert.throws(() => f.git(f.primary, 'show-ref', '--verify', 'refs/heads/feature/task'));
+  assert.throws(() => f.git(f.primary, 'config', '--get', 'branch.feature/task.remote'));
+});
+
+test('retry after worktree removal preserves a moved or checked-out branch, then removes the verified head', t => {
+  const f = fixture(t, { squash: true });
+  f.git(f.primary, 'worktree', 'remove', f.worktree);
+  f.git(f.primary, 'update-ref', 'refs/heads/feature/task', f.base);
+  assert(finishTask({ ...f.options, apply: true }).some(line => line.startsWith('RETAIN branch')));
+  assert.equal(f.git(f.primary, 'rev-parse', 'feature/task'), f.base);
+  f.git(f.primary, 'update-ref', 'refs/heads/feature/task', f.options.pr.headRefOid);
+  const other = join(f.primary, '.harness/worktrees/other');
+  f.git(f.primary, 'worktree', 'add', other, 'feature/task');
+  assert(finishTask({ ...f.options, apply: true }).some(line => line.includes('checked out')));
   assert.equal(f.git(f.primary, 'rev-parse', 'feature/task'), f.options.pr.headRefOid);
+  f.git(f.primary, 'worktree', 'remove', other);
+  finishTask(f.options);
+  assert.equal(f.git(f.primary, 'rev-parse', 'feature/task'), f.options.pr.headRefOid);
+  assert(finishTask({ ...f.options, apply: true }).includes('REMOVED branch feature/task'));
+  assert.throws(() => f.git(f.primary, 'show-ref', '--verify', 'refs/heads/feature/task'));
 });
 
 for (const reason of ['tracked', 'untracked', 'ignored', 'later-commit', 'process', 'operation']) {
