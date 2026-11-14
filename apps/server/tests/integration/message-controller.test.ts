@@ -27,7 +27,7 @@ function fixture(t: test.TestContext) {
   let controller = new MessageController(db, host, attachments, new NodeIdentifierGenerator());
   controller.beginRun("t");
   t.after(() => { controller.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
-  return { get c() { return controller; }, starts, steers,
+  return { get c() { return controller; }, db, starts, steers,
     submit(text: string, mode: "send" | "queue" = "queue", id = randomUUID()) {
       return controller.submit("t", { clientMessageId: id, text, mode, expectedRunId: controller.state("t").runId });
     },
@@ -58,6 +58,81 @@ test("Stop and failure preserve prompts and require explicit resume", t => {
   assert.deepEqual(f.starts, []); assert.equal(f.c.snapshot("t").messages[0].text, "later");
   f.c.resume("t"); assert.deepEqual(f.starts, ["later"]);
   f.submit("after failure"); f.finish(true); assert.equal(f.c.snapshot("t").paused, true);
+});
+test("stopping an empty queue does not pause future messages, including after a new Send", t => {
+  const f = fixture(t);
+  f.c.pause("t"); f.finish(true);
+  assert.equal(f.c.snapshot("t").paused, false);
+  f.submit("new turn", "send");
+  f.submit("next turn"); f.finish();
+  assert.deepEqual(f.starts, ["new turn", "next turn"]);
+});
+test("an empty queue stays usable after failure and missing-run recovery", t => {
+  const f = fixture(t);
+  f.finish(true);
+  f.submit("after failure");
+  assert.deepEqual(f.starts, ["after failure"]);
+  f.restart(false); f.finish(true);
+  f.submit("after recovery");
+  assert.deepEqual(f.starts, ["after failure", "after recovery"]);
+});
+test("legacy empty pauses expire but persisted pending pauses survive recovery", t => {
+  const f = fixture(t);
+  f.finish();
+  f.db.writeMessageState("t", { ...f.c.state("t"), paused: true });
+  f.submit("new queue");
+  assert.deepEqual(f.starts, ["new queue"]);
+  f.submit("held"); f.c.pause("t"); f.finish(); f.restart(false);
+  assert.equal(f.c.snapshot("t").paused, true);
+  f.submit("later");
+  assert.deepEqual(f.starts, ["new queue"]);
+  f.c.resume("t"); f.finish();
+  assert.deepEqual(f.starts, ["new queue", "held", "later"]);
+});
+test("Send does not resume existing queued prompts; removing the last one expires pause", t => {
+  const f = fixture(t);
+  f.submit("held"); f.c.pause("t"); f.finish(true);
+  f.submit("explicit turn", "send"); f.finish();
+  assert.equal(f.c.snapshot("t").paused, true);
+  assert.deepEqual(f.starts, ["explicit turn"]);
+  const held = f.c.snapshot("t").messages[0];
+  f.c.action("t", held.id, { action: "delete", version: held.version });
+  assert.equal(f.db.readMessageState("t")?.paused, false);
+  f.submit("fresh queue");
+  assert.deepEqual(f.starts, ["explicit turn", "fresh queue"]);
+});
+test("sending the last paused message explicitly leaves no pause for future messages", t => {
+  const f = fixture(t);
+  f.submit("held"); f.c.pause("t"); f.finish();
+  const held = f.c.snapshot("t").messages[0];
+  f.c.action("t", held.id, { action: "send", version: held.version, expectedRunId: null });
+  assert.equal(f.c.snapshot("t").paused, false);
+  f.submit("fresh queue"); f.finish();
+  assert.deepEqual(f.starts, ["held", "fresh queue"]);
+});
+test("unconfirmed delivery blocks new queue entries until resolved and resumed", async t => {
+  const f = fixture(t);
+  const id = randomUUID();
+  f.submit("uncertain", "send", id); f.receipt("unknown"); await Promise.resolve();
+  f.finish(); f.submit("later"); f.restart(false);
+  assert.equal(f.c.snapshot("t").paused, true);
+  assert.throws(() => f.c.resume("t"), /unconfirmed/);
+  assert.deepEqual(f.starts, []);
+  f.c.delivered("t", id);
+  assert.equal(f.c.snapshot("t").paused, true);
+  f.c.resume("t");
+  assert.deepEqual(f.starts, ["later"]);
+  assert.deepEqual(f.steers, ["uncertain"]);
+});
+test("resolving the final uncertain delivery expires pause without resending it", async t => {
+  const f = fixture(t);
+  const id = randomUUID();
+  f.submit("uncertain", "send", id); f.receipt("unknown"); await Promise.resolve();
+  f.c.delivered("t", id); f.finish();
+  assert.equal(f.db.readMessageState("t")?.paused, false);
+  f.submit("fresh queue");
+  assert.deepEqual(f.starts, ["fresh queue"]);
+  assert.deepEqual(f.steers, ["uncertain"]);
 });
 test("Send targets a run, never silently queues, and lost acknowledgement is not retried", async t => {
   const f = fixture(t); const id = randomUUID(), expectedRunId = f.c.state("t").runId;

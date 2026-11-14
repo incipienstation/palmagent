@@ -32,7 +32,9 @@ export class MessageController {
   }
   close() { this.closed = true; clearInterval(this.timer); }
   state(id: string): MessageState {
-    return this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
+    const s = this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
+    this.clearEmptyPause(s); // Also normalize empty pauses saved by older versions.
+    return s;
   }
   snapshot(id: string): MessageQueue {
     const s = this.state(id);
@@ -40,9 +42,15 @@ export class MessageController {
       messages: s.messages.filter(m => !["delivered", "cancelled"].includes(m.status)).map(({ fingerprint: _, editToken: __, ...m }) => m) };
   }
   private save(id: string, s: MessageState) {
+    this.clearEmptyPause(s);
     s.revision++;
     this.db.writeMessageState(id, s);
     this.host.changed(id);
+  }
+  private clearEmptyPause(s: MessageState) {
+    // Pause protects pending messages, not future submissions to this task.
+    // Sending, rejected and unknown entries still need delivery resolution.
+    if (!s.messages.some(m => m.status !== "delivered" && m.status !== "cancelled")) s.paused = false;
   }
   beginRun(id: string, initialMessageId?: string, compactionRequestId?: string) {
     const s = this.state(id);

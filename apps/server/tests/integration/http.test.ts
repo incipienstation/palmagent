@@ -932,7 +932,9 @@ test("retrying an accepted skill message returns its receipt after plugin remova
   f.db.insertRepo({ id: "skill-retry", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   f.db.insertTask({ taskId: "skill-retry-task", repoId: "skill-retry", agent: "codex", prompt: "Hello", status: "idle", interrupted: false,
     permission: "read-only", createdAt: 1, updatedAt: 1, lastActivityAt: 1, worktreePath: f.dir });
-  await f.service.init(); f.service.messages.pause("skill-retry-task");
+  await f.service.init();
+  // Keep the submitted prompt queued behind an existing run during the receipt retry.
+  f.service.messages.beginRun("skill-retry-task");
   const skill = { id: "selected", name: "check", source: "repo" };
   let discoveries = 0;
   f.service.skillCatalog!.resolve = async () => { if (++discoveries > 1) throw Error("Plugin removed"); return [skill]; };
