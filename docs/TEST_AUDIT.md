@@ -101,7 +101,10 @@ regressions outside the retained representatives may no longer be caught. This
 is not a claim that every removed case had an identical replacement. In
 particular, game balance/relay rules stay at the engine layer, shared zoom/pan
 behavior is exercised through images, and Mermaid keeps its rendering and
-navigation integration checks.
+navigation integration checks. The partial-answer browser case retains draft,
+disclosure and answer visibility checks; chronological ordering stays in the
+transcript-model tests and scroll anchoring in the history suites, avoiding
+one-shot coordinates of rows that virtualization can temporarily unmount.
 
 For example, six sprite-failure browser scenarios previously repeated the same
 retry and attention flow. They now exercise one asset. Scheme variants no longer
