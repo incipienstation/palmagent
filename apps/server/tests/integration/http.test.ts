@@ -20,6 +20,7 @@ import { Db } from "../../src/composition/database.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { readTaskImage } from "../../src/modules/tasks/adapters/outbound/task-images.js";
 import { Hub } from "../../src/platform/events/hub.js";
+import type { RunnerBackend } from "../../src/modules/agents/api.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
 import { PushService } from "../../src/modules/tasks/adapters/outbound/web-push.js";
 import { RoutineService } from "../../src/modules/routines/application/use-cases/routine-service.js";
@@ -38,11 +39,11 @@ import type { HttpDependencies } from "../../src/composition/http-dependencies.j
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend()) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
-  const service = createTaskService(db, hub, new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db),
+  const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
     undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }));
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
@@ -64,7 +65,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   t.after(async () => {
     shutdown.abort();
     try { for (const dispose of cleanup.reverse()) await dispose(); }
-    finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+    finally { service.beginShutdown(); await backend.close?.(); db.close(); rmSync(dir, { recursive: true, force: true }); }
   });
   const closeListener = (server: ReturnType<typeof createServer>) => cleanup.push(async () => {
     server.closeAllConnections();
@@ -1036,11 +1037,18 @@ test("pins persist, broadcast, keep stable order and clear on archive without ac
 });
 
 test("creation request IDs reconcile a lost response without another task or turn", async t => {
-  const f = fixture(t, false);
-  f.db.insertRepo({ id: "creation-repo", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   let turns = 0;
-  // Count admission to the provider boundary without launching a native agent.
-  (f.service as unknown as { runTurn: () => Promise<void> }).runTurn = async () => { turns++; };
+  // Exercise the real admission path with a fake provider boundary.
+  const backend: RunnerBackend = {
+    listLive: async () => [],
+    agentRunner: agent => ({ agent, start() {
+      turns++;
+      return { done: new Promise<void>(() => {}), steer: () => false, interrupt: () => false,
+        approve: () => false, answer: () => false, cancel() {} };
+    } }),
+  };
+  const f = fixture(t, false, {}, backend);
+  f.db.insertRepo({ id: "creation-repo", name: "Example", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   const input = { repoId: "creation-repo", agent: "codex", prompt: "First message", clientRequestId: "65ae4e67-cea2-4b86-a7ed-f4b2b654c620" };
   const post = (body: unknown) => f.app.request("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const responses = await Promise.all([post(input), post(input)]);
