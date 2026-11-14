@@ -471,6 +471,28 @@ export class TaskService implements PrStatusSink {
     return task;
   }
 
+  movePin(id: string, targetId: string, placement: "before" | "after"): TaskState[] {
+    const task = this.getTask(id);
+    const target = this.getTask(targetId);
+    if ([task, target].some(t => t.status === "archived" || t.pinnedAt === undefined)) {
+      throw conflict("Both chats must still be pinned. Refresh and try again.");
+    }
+    const pins = [...this.cache.values()].filter(t => t.status !== "archived" && t.pinnedAt !== undefined)
+      .sort((a, b) => a.pinnedAt! - b.pinnedAt! || a.taskId.localeCompare(b.taskId));
+    if (id === targetId) return pins;
+    const slots = pins.map(t => t.pinnedAt!);
+    const ordered = pins.filter(t => t.taskId !== id);
+    ordered.splice(ordered.findIndex(t => t.taskId === targetId) + (placement === "after" ? 1 : 0), 0, task);
+    const changed = ordered.flatMap((t, i) => t.pinnedAt === slots[i] ? [] : [{ taskId: t.taskId, pinnedAt: slots[i] }]);
+    if (!changed.length) return ordered;
+    // Reuse existing slots atomically. New pins still append, and activity is untouched.
+    const now = Math.max(Date.now(), ...pins.map(t => t.updatedAt + 1));
+    this.db.setTaskPinOrder(changed, now);
+    for (const pin of changed) Object.assign(this.getTask(pin.taskId), { pinnedAt: pin.pinnedAt, updatedAt: now });
+    this.broadcastTasks();
+    return ordered;
+  }
+
   rename(id: string, title: string): TaskState {
     const task = this.getTask(id);
     if (task.title === title) return task;

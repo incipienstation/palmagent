@@ -2,12 +2,13 @@ import { onConversationNotification } from "../conversation-notifications";
 import { needsTaskAttention } from "@palmagent/shared";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskState } from "@palmagent/shared";
-import { BarChart3, Check, Clock3, Folder, Gamepad2, ListTodo, PanelLeftClose, Pin, Settings, SquarePen, Terminal } from "lucide-react";
+import { BarChart3, Check, Clock3, Folder, Gamepad2, ListTodo, PanelLeftClose, Settings, SquarePen, Terminal } from "lucide-react";
 import type { ConnState } from "../hooks/useInbox";
 import { useStoredPreference } from "../hooks/useStoredPreference";
 import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
 import { compareTasks } from "../lib/task-order";
+import { PinnedNavigation } from "./PinnedNavigation";
 import { taskTitle } from "../lib/task-title";
 import { useRepos } from "../hooks/useRepos";
 import { newTaskPath, spaceActivities, spacePath } from "../space-context";
@@ -149,16 +150,8 @@ export function AppNavigation({ tasks, conn, children }: {
           }}><Gamepad2 data-icon="inline-start" />Arcade</Button>}
         </nav>
   );
-  const pinnedNavigation = (pinned.length > 0 && <section aria-label="Pinned" className="px-3 pt-4">
-          <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Pinned</h2>
-          {pinned.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
-            className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
-            aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
-            onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
-            <Pin data-icon="inline-start" /><span className="truncate">{taskTitle(task)}</span>
-          </Button>)}
-        </section>
-  );
+  const pinnedNavigation = <PinnedNavigation tasks={pinned} activeId={route.name === "task" ? route.id : undefined}
+    onNavigate={id => go(`/task/${encodeURIComponent(id)}`)} />;
   const recentNavigation = (
         <div className="px-3 py-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
