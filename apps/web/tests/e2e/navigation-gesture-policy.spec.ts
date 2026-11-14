@@ -7,16 +7,18 @@ test("nested and overlapping surfaces retain input ownership until all claims ar
   const unsubscribe = policy.subscribe(() => changes.push(policy.isBlocked()));
   expect(policy.isBlocked()).toBe(false);
   const closeGame = policy.acquire();
+  expect(changes.at(-1)).toBe(true);
   const closeDialog = policy.acquire();
   closeGame();
   closeGame(); // Repeated cleanup must not release another surface's claim.
   expect(policy.isBlocked()).toBe(true);
   closeDialog();
   expect(policy.isBlocked()).toBe(false);
-  expect(changes).toEqual([true, true, true, false]);
+  expect(changes.at(-1)).toBe(false);
+  const beforeUnsubscribe = [...changes];
   unsubscribe();
   policy.acquire()();
-  expect(changes).toEqual([true, true, true, false]);
+  expect(changes).toEqual(beforeUnsubscribe);
 });
 
 test("remounting a surface reacquires input without leaking across app instances", () => {

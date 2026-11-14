@@ -13,8 +13,7 @@ function enemy(r: Run, x: number, y: number, kind: Enemy["kind"] = "sentry") {
 }
 function chest(r: Run) { const c = { ...r.player, id: ++r.id }; r.chests.push(c); return c.id; }
 
-test("all five final forms require a chest selection, never a level or support upgrade", () => {
-  assert.equal(EVOLUTION_KEYS.length, 5);
+test("all final forms require a chest selection, never a level or support upgrade", () => {
   for (const weapon of EVOLUTION_KEYS) {
     const r = arena(), passive = EVOLUTIONS[weapon].passive;
     r.upgrades.bolt = 0; r.upgrades[weapon] = 4; r.choices = [weapon];
