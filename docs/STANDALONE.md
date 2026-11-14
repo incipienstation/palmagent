@@ -16,7 +16,9 @@ macOS, Windows, musl and 32-bit hosts are rejected. Platform archives are built 
 22.04 and tested in a baseline container with no network, system Node, or npm. That test
 covers runtime loading; service acceptance needs a host with the service prerequisites.
 
-The HTTPS bootstrap entry point is `https://releases.palmagent.dev/install.sh`. It discovers the
+The HTTPS bootstrap entry point is `https://palmagent.dev/install.sh`, which redirects to
+the installer hosted at `https://releases.palmagent.dev/install.sh`. Downloads must follow
+HTTPS redirects (for example, with `curl --fail --location --proto '=https' --proto-redir '=https'`). It discovers the
 saved channel, defaults a fresh installation to Stable, verifies signed metadata and
 archive SHA-256, and retains the bundle under the user's Palmagent CLI directory. An
 explicit `--prefix` isolates a temporary CLI and leaves the user's command link alone.
