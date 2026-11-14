@@ -47,19 +47,20 @@ export function checkoutBusy(root, { primary = false, excluded = [] } = {}) {
 export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBusy }) {
   const reports = [];
   const primary = realpathSync(git(cwd, 'worktree', 'list', '--porcelain').split('\n')[0].slice(9));
-  const target = realpathSync(worktree);
+  const target = existsSync(worktree) ? realpathSync(worktree) : resolve(worktree);
   const registry = git(primary, 'worktree', 'list', '--porcelain').split('\n\n').map(block => {
     const lines = block.split('\n');
     return { path: lines.find(line => line.startsWith('worktree '))?.slice(9),
       branch: lines.find(line => line.startsWith('branch '))?.slice(7) };
   });
   const entry = registry.find(item => item.path === target);
-  if (target === primary || !entry || !inside(join(primary, '.harness/worktrees'), target)
-      || !entry.branch?.startsWith('refs/heads/feature/')) {
+  const branch = entry?.branch?.slice('refs/heads/'.length) ?? pr.headRefName;
+  if (target === primary || !inside(join(primary, '.harness/worktrees'), target)
+      || (existsSync(target) && !entry) || (entry && !entry.branch?.startsWith('refs/heads/feature/'))
+      || !branch?.startsWith('feature/')) {
     throw new Error('Expected a registered manual feature worktree under .harness/worktrees.');
   }
   if (inside(target, realpathSync(cwd))) throw new Error('Run cleanup from outside the task worktree.');
-  const branch = entry.branch.slice('refs/heads/'.length);
   if (pr.state !== 'MERGED' || pr.baseRefName !== 'develop' || pr.isCrossRepository
       || pr.headRefName !== branch || !/^[a-f0-9]{40}$/.test(pr.headRefOid ?? '')
       || !/^[a-f0-9]{40}$/.test(pr.mergeCommit?.oid ?? '')) {
@@ -86,6 +87,7 @@ export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBu
   } else reports.push('READY develop: fast-forward');
 
   const taskBlock = () => {
+    if (!existsSync(target)) return entry ? 'registered worktree is missing; inspect before cleanup' : undefined;
     if (git(target, 'symbolic-ref', 'HEAD') !== entry.branch || git(target, 'rev-parse', 'HEAD') !== pr.headRefOid) return 'task no longer matches merged PR head';
     if (operationInProgress(target)) return 'task has a Git operation in progress';
     if (git(target, 'status', '--porcelain', '--untracked-files=normal', '--ignored=matching')) return 'task contains changed, untracked, or ignored files';
@@ -94,17 +96,30 @@ export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBu
   const retained = taskBlock();
   const label = relative(primary, target);
   if (retained) reports.push(`RETAIN ${label}: ${retained}`);
-  else if (!apply) reports.push(`READY ${label}: remove worktree and attempt non-force branch deletion`);
+  else if (!apply) reports.push(`READY ${label}: remove worktree and verified merged branch`);
   else {
-    git(primary, 'worktree', 'remove', target);
+    if (existsSync(target)) git(primary, 'worktree', 'remove', target);
     if (existsSync(target) || git(primary, 'worktree', 'list', '--porcelain').split('\n').includes(`worktree ${target}`)) throw new Error('Worktree removal verification failed');
     reports.push(`REMOVED ${label}`);
-    // git branch -d can consult an upstream instead of HEAD. Guard the intended merged base too.
+    // Squash merges have different ancestry. The merged PR head is the deletion boundary.
+    // Recheck worktree use and atomically compare the ref to avoid deleting newer local work.
     try {
-      git(primary, 'merge-base', '--is-ancestor', pr.headRefOid, 'origin/develop');
-      git(primary, 'branch', '-d', branch);
-      reports.push(`REMOVED branch ${branch}`);
-    } catch { reports.push(`RETAIN branch ${branch}: non-force deletion requires merged ancestry`); }
+      const ref = `refs/heads/${branch}`;
+      if (git(primary, 'worktree', 'list', '--porcelain').split('\n').includes(`branch ${ref}`)) {
+        reports.push(`RETAIN branch ${branch}: checked out in another worktree`);
+        return reports;
+      }
+      git(primary, 'update-ref', '--no-deref', '-d', ref, pr.headRefOid);
+    } catch {
+      reports.push(`RETAIN branch ${branch}: ref changed or deletion failed`);
+      return reports;
+    }
+    reports.push(`REMOVED branch ${branch}`);
+    // update-ref removes the reflog but leaves branch configuration behind.
+    try { git(primary, 'config', '--local', '--remove-section', `branch.${branch}`); }
+    catch (error) {
+      if (!String(error.stderr).includes('no such section')) reports.push(`RETAIN branch configuration ${branch}: cleanup failed`);
+    }
   }
   return reports;
 }
