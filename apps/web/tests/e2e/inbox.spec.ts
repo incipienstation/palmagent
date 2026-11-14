@@ -19,13 +19,17 @@ test.describe("inbox", () => {
     await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   });
 
-  test("groups every task once by Space and retains explicit row status", async ({ page }) => {
+  test("shows response requests first and groups remaining tasks once by Space", async ({ page }) => {
     await expect(page).toHaveTitle("Tasks · PalmAgent");
     await assertViewportLocked(page);
     const content = page.getByTestId("inbox-content");
     await expect(content.getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.length);
+    const attention = content.getByRole("region", { name: "Needs you", exact: true });
+    const needsResponse = (task: typeof tasks[number]) => ["awaiting_input", "awaiting_approval"].includes(task.status);
+    await expect(attention.getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(needsResponse).length);
+    await expect(content.getByRole("region").first()).toHaveAccessibleName("Needs you");
     for (const repo of repos) {
-      const groupTasks = tasks.filter(task => task.repoId === repo.id);
+      const groupTasks = tasks.filter(task => task.repoId === repo.id && !needsResponse(task));
       if (!groupTasks.length) continue;
       const group = content.getByRole("region", { name: `${repo.name} tasks`, exact: true });
       await expect(group.getByRole("button", { name: /^Actions for / })).toHaveCount(groupTasks.length);
@@ -42,9 +46,10 @@ test.describe("inbox", () => {
     await fold.click();
     await expect(fold).toHaveAttribute("aria-expanded", "false");
     await filterStatus(page, "Needs answer");
-    await expect(group.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
+    const attention = page.getByRole("region", { name: "Needs you", exact: true });
+    await expect(attention.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_input").length);
-    await group.getByRole("button", { name: /Scaffold a new settings screen/ }).first().click();
+    await attention.getByRole("button", { name: /Scaffold a new settings screen/ }).first().click();
     await page.goBack();
     await expect(page.getByRole("button", { name: "Clear status filter" })).toContainText("Needs answer");
     await filterStatus(page, "Needs approval");
@@ -100,6 +105,89 @@ test.describe("inbox", () => {
     expect(loads).toBe(0);
   });
 
+});
+
+test("response requests escape folded Spaces and return once when work resumes", async ({ page }) => {
+  await installInbox(page);
+  await page.goto("/");
+  const content = page.getByTestId("inbox-content");
+  const attention = content.getByRole("region", { name: "Needs you", exact: true });
+  const group = content.getByRole("region", { name: "notes tasks", exact: true });
+  const fold = group.getByRole("button", { name: "notes tasks", exact: true });
+  await fold.click();
+  const request = { ...tasks[0], taskId: "new-request", repoId: "repo-notes", title: "Choose a release target" };
+  await send(page, { type: "tasks", tasks: [...tasks, request] });
+  const row = attention.locator("[data-swipe-surface]").filter({ hasText: request.title });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("notes", { exact: true })).toBeVisible();
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(content.getByRole("button", { name: `Actions for ${request.title}`, exact: true })).toHaveCount(1);
+  await send(page, { type: "tasks", tasks: [...tasks, { ...request, status: "running", pendingInput: undefined }] });
+  await expect(row).toHaveCount(0);
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await fold.click();
+  await expect(group.getByText(request.title, { exact: true })).toBeVisible();
+  await expect(content.getByRole("button", { name: `Actions for ${request.title}`, exact: true })).toHaveCount(1);
+  await send(page, { type: "tasks", tasks: tasks.filter(task => !["awaiting_input", "awaiting_approval"].includes(task.status)) });
+  await expect(attention).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "No tasks yet" })).toHaveCount(0);
+});
+
+test("local and disconnected requests keep their real control state outside Needs you", async ({ page }) => {
+  await installInbox(page);
+  await page.goto("/");
+  await expect(page.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
+  const control = { owner: "local" as const, home: "/sessions", transcript: "/sessions/local.jsonl", cursor: 0, prefixHash: "fixture" };
+  await send(page, { type: "tasks", tasks: [
+    { ...tasks[0], taskId: "local-request", title: "Local request", sessionControl: control },
+    { ...tasks[0], taskId: "disconnected-request", title: "Disconnected request", sessionControl: { ...control, owner: "shared", connection: "reconnecting" } },
+  ] });
+  await expect(page.getByRole("region", { name: "Needs you", exact: true })).toHaveCount(0);
+  const group = page.getByRole("region", { name: "sample-app tasks", exact: true });
+  await expect(group.getByText("Local shell", { exact: true })).toBeVisible();
+  await expect(group.getByText("Reconnecting", { exact: true })).toBeVisible();
+  await send(page, { type: "tasks", tasks: [
+    { ...tasks[0], taskId: "disconnected-request", title: "Reconnected request", sessionControl: { ...control, owner: "shared", connection: "connected" } },
+  ] });
+  await expect(page.getByRole("region", { name: "Needs you", exact: true }).getByText("Reconnected request", { exact: true })).toBeVisible();
+});
+
+for (const width of [320, 390, 1280]) test(`attention rows keep Space context, search and navigation at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await installInbox(page);
+  const longName = "A long Space name shared by multiple folders";
+  await page.route("**/api/repos", route => route.fulfill({ json: { repos: [
+    { ...repos[0], name: longName, path: "/projects/first/work" },
+    { ...repos[1], name: longName, path: "/projects/second/work" },
+  ] } }));
+  await page.goto("/");
+  await expect(page.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
+  await send(page, { type: "tasks", tasks: [tasks[0], { ...tasks[1], repoId: repos[1].id }] });
+  const attention = page.getByRole("region", { name: "Needs you", exact: true });
+  const context = attention.locator("[title]").filter({ hasText: longName });
+  await expect(context).toHaveCount(2);
+  const names = await context.allTextContents();
+  expect(names[0]).not.toBe(names[1]);
+  for (const row of await attention.locator("[data-swipe-surface]").all()) {
+    expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const contextBox = (await row.locator("[title]").boundingBox())!;
+    const timeBox = (await row.locator("time").boundingBox())!;
+    expect(Math.abs(contextBox.y - timeBox.y)).toBeLessThan(2);
+    expect(contextBox.x + contextBox.width).toBeLessThan(timeBox.x);
+  }
+  await assertViewportLocked(page);
+  await captureForReview(page, `tasks-attention-${width}.png`);
+  const search = page.getByRole("searchbox", { name: "Search tasks" });
+  await search.fill("Scaffold");
+  await expect(attention.locator("[data-swipe-surface]")).toHaveCount(1);
+  const match = attention.locator("[data-swipe-surface]");
+  await match.focus();
+  await expect(match).toBeFocused();
+  await match.press("Enter");
+  await expect(page).toHaveURL(/#\/task\/t-input$/);
+  await page.goBack();
+  await expect(search).toHaveValue("Scaffold");
+  await expect(attention.locator("[data-swipe-surface]")).toHaveCount(1);
 });
 
 test("every status folds independently and filters temporarily reveal its tasks", async ({ page }) => {
