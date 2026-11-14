@@ -386,9 +386,9 @@ independent.
 Existing Android installations need a WebAPK manifest update before the new
 fallback takes effect; reloading the page or updating its service worker alone
 does not guarantee that update. See [Chrome's manifest update guidance](https://web.dev/articles/manifest-updates).
-Browser tests cover the generated manifest and live page metadata. System-bar
-rendering still needs a physical-device check because browser, Android, and
-edge-to-edge behavior can override the requested color.
+Review the generated manifest, live page metadata, contrast, and installed assets
+when changing the palette. System-bar rendering needs a physical-device check because
+browser, Android, and edge-to-edge behavior can override the requested color.
 
 After editing the palette or `src/assets/palm.svg`, run
 `pnpm --filter @palmagent/web icons:generate` to refresh the favicon, adaptive

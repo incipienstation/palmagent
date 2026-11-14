@@ -29,40 +29,6 @@ async function show(page: Page, report: AccountLimits, id = report.agent === "cl
   return page.getByRole("region", { name: "Session usage" });
 }
 
-test("Claude allowances share one summary with reset times and model windows in Details", async ({ page }) => {
-  const line = await show(page, claude);
-  await expect(line.getByText("72%", { exact: true })).toBeVisible();
-  await expect(line.getByText("38%", { exact: true })).toBeVisible();
-  await expect(line.getByText(/Resets in/)).toHaveCount(0);
-  await expect(line.getByText(/Input|Output|Cache|Reasoning/)).toHaveCount(0);
-  await assertViewportLocked(page);
-  await line.getByRole("button", { name: "Usage details" }).focus();
-  await page.keyboard.press("Enter");
-  const sheet = page.getByRole("dialog", { name: "Session usage" });
-  await expect(sheet.getByText("Resets in 1h 40m", { exact: true })).toBeVisible();
-  await expect(sheet.getByText("Fable · Weekly")).toBeVisible();
-  await expect(sheet.getByText("5% left", { exact: true })).toBeVisible();
-  await expect(sheet.getByText("Extra usage enabled · 12% used")).toBeVisible();
-  await expect(sheet.getByText(/Shared across sessions/)).toBeVisible();
-  await assertViewportLocked(page);
-});
-
-test("Codex uses the reported weekly primary window and keeps model buckets distinct", async ({ page }) => {
-  const line = await show(page, codex);
-  await expect(line.getByText("Weekly", { exact: true })).toBeVisible();
-  await expect(line.getByText("79%", { exact: true })).toBeVisible();
-  await expect(line.getByText("5h", { exact: true })).toHaveCount(0);
-  await line.getByRole("button", { name: "Usage details" }).focus();
-  await page.keyboard.press("Enter");
-  const sheet = page.getByRole("dialog", { name: "Session usage" });
-  await expect(sheet.getByRole("heading", { name: "Spark" })).toBeVisible();
-  await expect(sheet.getByText("5h", { exact: true })).toBeVisible();
-  await expect(sheet.getByText("100% left", { exact: true })).toBeVisible();
-  await expect(sheet.getByText("0% left", { exact: true })).toBeVisible();
-  await expect(sheet.getByText("Credits: 12.5")).toBeVisible();
-  await assertViewportLocked(page);
-});
-
 test("missing percentages stay unknown and expired windows await a fresh report", async ({ page }) => {
   const line = await show(page, { ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 90, resetsAt: now - 1000 } });
   await expect(line.getByText("Unknown")).toBeVisible();
@@ -86,15 +52,6 @@ test("the reset countdown advances locally and SSE replaces old quota numbers", 
   await line.getByRole("button", { name: "Usage details" }).click();
   await expect(page.getByRole("dialog").getByText("Resets in 1h 39m")).toBeVisible();
   await expect(line.getByText("72%")).toHaveCount(0);
-});
-
-test("failed and unsupported reads show no fabricated allowance", async ({ page }) => {
-  const line = await show(page, { agent: "claude", state: "unavailable", checkedAt: now, modelLimits: [] });
-  await expect(line.getByText("Limits not reported")).toBeVisible();
-  await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ status: 503, json: { error: "offline" } }));
-  await changeRead(page, "/api/stream?task=t-idle-rich&details=summary");
-  await expect(line.getByText("Limits unavailable")).toBeVisible();
-  await expect(line.getByText(/%/)).toHaveCount(0);
 });
 
 test("switching tasks clears the previous account report while the new read is pending", async ({ page }) => {

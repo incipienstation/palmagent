@@ -30,16 +30,6 @@ function toolActivityRows(from: number, to: number): TaskHistoryEvent[] {
     return { seq, event: { taskId, agent: "codex", ts: seq, kind, payload } };
   });
 }
-function longMarkdownRows(from: number, to: number): TaskHistoryEvent[] {
-  return Array.from({ length: to - from + 1 }, (_, i) => {
-    const seq = from + i;
-    const event: AgentEvent = seq % 2 ? {
-      taskId, agent: "codex", ts: seq, kind: "assistant_text",
-      payload: { text: `## History entry ${seq}\n\n${"Paragraph with **formatted text** and a [link](https://example.invalid).\n\n".repeat(500)}` },
-    } : { taskId, agent: "codex", ts: seq, kind: "tool_result", payload: { output: `Tool ${seq}` } };
-    return { seq, event };
-  });
-}
 async function deliver(page: Page, entries: TaskHistoryEvent[]) {
   await page.evaluate((entries) => {
     const harness = window as unknown as Harness;
@@ -125,7 +115,7 @@ test("prepending an older page preserves the visible message through simultaneou
   expect(requested).toBe(1);
 });
 
-for (const phase of ["touch", "momentum"] as const) test(`an older page arriving during upward ${phase} preserves the ongoing movement`, async ({ page }, testInfo) => {
+for (const phase of ["momentum"]) test(`an older page arriving during upward ${phase} preserves the ongoing movement`, async ({ page }, testInfo) => {
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   let requested = 0;
@@ -290,7 +280,7 @@ for (const first of ["catch-up", "older page"] as const) {
   });
 }
 
-for (const olderAnswers of [false, true]) test(`prepending older history preserves a cross-page Activity (older answers=${olderAnswers})`, async ({ page }) => {
+for (const olderAnswers of [true]) test(`prepending older history preserves a cross-page Activity (older answers=${olderAnswers})`, async ({ page }) => {
   const older = toolActivityRows(1601, 1800);
   if (olderAnswers) {
     // Earlier answers stay separate from the work crossing the page boundary.
@@ -332,45 +322,6 @@ for (const olderAnswers of [false, true]) test(`prepending older history preserv
     });
     expect(restored).toEqual({ connected: true, key: "activity-1801" });
   }
-});
-
-test("fast upward scrolling formats long Markdown before it reaches the viewport", async ({ page }) => {
-  // Keep the first answer beyond the premeasured row buffer so this exercises
-  // a genuinely unmounted message approaching the visible viewport.
-  await page.route(new RegExp(`/api/tasks/${taskId}/history(?:\\?.*)?$`), route => route.fulfill({
-    json: { events: longMarkdownRows(1801, 1816), before: null, cursor: 1816 },
-  }));
-  await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 1816 });
-  await expectBottom(page);
-  await expect(page.getByText("History entry 1815", { exact: true })).toBeVisible();
-  const target = page.locator('[data-message-key="1801"]');
-  await expect(target).toHaveCount(0);
-  const samples = await page.evaluate(() => new Promise<Array<{ formatted: boolean; height: number }>>((resolve) => {
-    const viewport = document.querySelector<HTMLElement>('[data-radix-scroll-area-viewport][aria-label="Session transcript"]')!;
-    const samples: Array<{ formatted: boolean; height: number }> = [];
-    const capture = () => {
-      const row = viewport.querySelector<HTMLElement>('[data-message-key="1801"]');
-      if (row) {
-        const rect = row.getBoundingClientRect();
-        const pane = viewport.getBoundingClientRect();
-        if (rect.bottom > pane.top && rect.top < pane.bottom) {
-          samples.push({ formatted: !!row.querySelector("h2"), height: rect.height });
-        }
-      }
-      if (viewport.scrollTop > 0) {
-        viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
-        viewport.scrollTop = Math.max(0, viewport.scrollTop - 300);
-      }
-      if (viewport.scrollTop > 0 || samples.length < 60) requestAnimationFrame(capture);
-      else resolve(samples);
-    };
-    requestAnimationFrame(capture);
-  }));
-  await expect(page.getByRole("heading", { name: "History entry 1801", exact: true })).toBeVisible();
-  expect(samples.length).toBeGreaterThan(0);
-  expect(samples.every(sample => sample.formatted)).toBe(true);
-  expect(samples.some(sample => sample.formatted)).toBe(true);
 });
 
 for (const scenario of [
@@ -527,53 +478,6 @@ test("earlier history pauses offline while keeping current messages and resumes 
   expect(latestRequests()).toBe(1);
 });
 
-test("scrolling away and back preserves a step disclosure", async ({ page }) => {
-  await recent(page);
-  const full = "Expanded tool output\n".repeat(80) + "Expansion survived remount";
-  await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 2001, kind: "tool_result", payload: { output: full } } }, 2001);
-  await expectBottom(page);
-  const activity = page.locator('[data-row-key="activity-2000"]');
-  await activity.getByRole("button").first().click();
-  const step = page.locator('[data-trace-step="2001"]');
-  await step.click();
-  await expect(page.getByText(/Expansion survived remount/)).toBeVisible();
-  await step.click();
-  await expect(step).toHaveAttribute("aria-expanded", "false");
-  // Wait through disclosure measurement, then move far enough to unmount the row.
-  await expect.poll(async () => {
-    await viewport(page).evaluate(el => { el.scrollTop = 0; });
-    return step.count();
-  }).toBe(0);
-  await viewport(page).evaluate(el => { el.scrollTop = el.scrollHeight; });
-  await expect(step).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByText(/Expansion survived remount/)).toHaveCount(0);
-});
-
-test("loading the oldest page preserves the anchor as the oldest page completes", async ({ page }) => {
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => { release = resolve; });
-  let requested = false;
-  await page.route("**/history?before=201*", async (route) => {
-    requested = true; await pending;
-    await route.fulfill({ json: { events: rows(1, 200), before: null, cursor: 400 } });
-  });
-  await installLatestHistory(page, rows(201, 400), 201, 400);
-  await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 400 });
-  await expect(page.getByText("History message 399", { exact: true })).toBeVisible();
-  await expectBottom(page);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
-  await expect.poll(() => requested).toBe(true);
-  const anchor = page.locator('[data-message-key="201"]');
-  const top = (await anchor.boundingBox())!.y;
-  const inset = page.locator("[data-transcript-top-inset]");
-  const insetHeight = (await inset.boundingBox())!.height;
-  release();
-  await expect(page.getByText("Beginning of conversation", { exact: true })).toHaveCount(0);
-  await expect.poll(async () => (await inset.boundingBox())!.height).toBe(insetHeight);
-  await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
-});
-
 test("compact mode automatically skips consecutive pages of hidden status events", async ({ page }) => {
   const cursors: string[] = [];
   await page.route("**/history*", (route) => {
@@ -596,61 +500,6 @@ test("compact mode automatically skips consecutive pages of hidden status events
   expect(cursors).toEqual(["latest", "201", "101"]);
 });
 
-test("large legacy activities reveal a bounded number of steps and retain disclosure state", async ({ page }) => {
-  await installLatestHistory(page, [], null, 0);
-  await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
-  const entries: TaskHistoryEvent[] = Array.from({ length: 1000 }, (_, index) => {
-    const seq = index + 1;
-    return { seq, event: { taskId, agent: "codex", ts: seq, kind: seq % 2 ? "tool_call" : "tool_result",
-      payload: seq % 2 ? { id: `tool-${seq}`, name: "bash", command: `echo ${seq}` } : { tool_use_id: `tool-${seq - 1}`, output: `Activity record ${seq}` } } };
-  });
-  await deliver(page, entries);
-  const disclosure = page.getByRole("button", { name: "Activity · 500 tools", exact: true });
-  await disclosure.click();
-  await expect(page.locator("[data-trace-step]")).toHaveCount(50);
-  const step = page.locator('[data-trace-step="1"]'); await step.click();
-  await expect(page.getByText("tool_result: Activity record 2", { exact: true })).toBeVisible();
-  await expect(page.getByText("tool_result: Activity record 1000", { exact: true })).toHaveCount(0);
-  await disclosure.click(); await disclosure.click();
-  await expect(step).toHaveAttribute("aria-expanded", "true");
-  await page.getByRole("button", { name: "Load more steps", exact: true }).click();
-  await expect(page.locator("[data-trace-step]")).toHaveCount(100);
-});
-
-test("short history prefetch keeps its first message clear of the floating toolbar", async ({ page }) => {
-  const cursors: string[] = [];
-  await page.route("**/history*", (route) => {
-    const before = new URL(route.request().url()).searchParams.get("before");
-    const cursor = before ?? "latest";
-    cursors.push(cursor);
-    return route.fulfill({ json: cursor === "latest" ? { events: rows(5, 6), before: 5, cursor: 6 } :
-      cursor === "5" ? { events: rows(3, 4), before: 3, cursor: 6 } : { events: rows(1, 2), before: null, cursor: 6 } });
-  });
-  await open(page, taskId, { serverHistory: true });
-  await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 6 });
-  await expect(page.getByText("Beginning of conversation", { exact: true })).toHaveCount(0);
-  // Let every short page prepend and settle its anchor before measuring the true top.
-  await expect.poll(() => cursors).toEqual(["latest", "5", "3"]);
-  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
-  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBe(0);
-  await expect(page.getByText("History message 1", { exact: true })).toBeVisible();
-  const prompt = page.locator('[data-row-key="prompt"]');
-  const inset = page.locator("[data-transcript-top-inset]");
-  const toolbar = page.locator("header").first();
-  const [promptBounds, insetBounds, toolbarBounds] = await Promise.all([
-    prompt.boundingBox(), inset.boundingBox(), toolbar.boundingBox(),
-  ]);
-  expect(promptBounds).not.toBeNull();
-  expect(insetBounds).not.toBeNull();
-  expect(toolbarBounds).not.toBeNull();
-  expect(insetBounds!.height).toBeGreaterThanOrEqual(toolbarBounds!.height + 12);
-  expect(promptBounds!.y).toBeGreaterThanOrEqual(toolbarBounds!.y + toolbarBounds!.height + 12);
-  await captureForReview(page, "history-top-inset.png");
-});
-
-
 test("returning to a conversation keeps messages and resumes only missed events", async ({ page }) => {
   const latestRequests = await recent(page);
   await page.evaluate(() => { location.hash = "/"; });
@@ -663,88 +512,6 @@ test("returning to a conversation keeps messages and resumes only missed events"
   await deliver(page, rows(2000, 2002));
   await expect(page.getByText("History message 2001", { exact: true })).toBeVisible();
   await expect(page.locator('[data-row-key="activity-2000"]')).toHaveCount(1);
-});
-
-for (const size of [{ width: 360, height: 780 }]) {
-  test(`early loading keeps continuous scrolling away from the unloaded edge at ${size.width}px`, async ({ page }, testInfo) => {
-    await page.setViewportSize(size);
-    let requested = 0;
-    await page.route("**/history?before=1801*", async (route) => {
-      requested++;
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
-    });
-    await recent(page);
-    const metrics = await viewport(page).evaluate(async (el) => {
-      el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = el.clientHeight * 2.5;
-      // Settle the test's initial jump before simulating a continuous drag.
-      for (let frame = 0; frame < 4; frame++) {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
-      }
-      const longTasks: number[] = [];
-      const observer = new PerformanceObserver((list) => {
-        longTasks.push(...list.getEntries().map((entry) => entry.duration));
-      });
-      observer.observe({ type: "longtask" });
-      const started = performance.now();
-      let previous = started;
-      let edgeFrames = 0;
-      let maxFrameGap = 0;
-      while (performance.now() - started < 3000) {
-        // Let this frame's resize measurements and layout corrections finish.
-        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
-        const now = performance.now();
-        const elapsed = now - previous;
-        maxFrameGap = Math.max(maxFrameGap, elapsed);
-        previous = now;
-        // One viewport per second: a continuous upward drag through the page boundary.
-        el.scrollTop -= el.clientHeight * elapsed / 1000;
-        if (el.scrollTop <= 1) edgeFrames++;
-      }
-      longTasks.push(...observer.takeRecords().map((entry) => entry.duration));
-      observer.disconnect();
-      return { edgeFrames, maxFrameGap, longTasks };
-    });
-    await testInfo.attach("scroll-metrics", { body: JSON.stringify(metrics), contentType: "application/json" });
-    expect(requested).toBe(1);
-    expect(metrics.edgeFrames).toBe(0);
-    // The drag crossed into the older page without waiting at its boundary.
-    await expect.poll(() => viewport(page).evaluate((el) => {
-      const pane = el.getBoundingClientRect();
-      return Array.from(el.querySelectorAll<HTMLElement>("[data-message-key]"))
-        .some((row) => Number(row.dataset.messageKey) < 1801 && row.getBoundingClientRect().bottom > pane.top && row.getBoundingClientRect().top < pane.bottom);
-    })).toBe(true);
-    await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-  });
-}
-
-test("fast upward reading starts history loading while several screens remain", async ({ page }) => {
-  let release!: () => void;
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  let requested = 0;
-  await page.route("**/history?before=1801*", async route => {
-    requested++;
-    await pending;
-    await route.fulfill({ json: { events: rows(1601, 1800), before: null, cursor: 2000 } });
-  });
-  await recent(page);
-  await viewport(page).evaluate(el => {
-    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
-    el.scrollTop = el.clientHeight * 9;
-  });
-  await page.waitForTimeout(250);
-  try {
-    await viewport(page).evaluate(async el => {
-      for (let step = 0; step < 8; step++) {
-        el.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
-        el.scrollTop -= 100;
-        await new Promise(resolve => setTimeout(resolve, 25));
-      }
-    });
-    await expect.poll(() => requested).toBe(1);
-    expect(await viewport(page).evaluate(el => el.scrollTop / el.clientHeight)).toBeGreaterThan(3);
-  } finally { release(); }
-  await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
 });
 
 test("early loading adapts to a resized viewport without another scroll gesture", async ({ page }) => {

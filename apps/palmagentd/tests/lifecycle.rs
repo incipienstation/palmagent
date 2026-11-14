@@ -633,14 +633,14 @@ fn readiness_requires_the_actual_host_identity_and_survives_daemon_replacement()
 }
 
 #[test]
-fn slow_web_activation_survives_former_launch_and_transport_deadlines() {
+fn web_activation_waits_for_readiness_and_preserves_other_hosts() {
     let mut fixture = Fixture::new();
     let terminal = fixture.launch("terminal", "abc060");
     readiness_manifest(&fixture);
     let previous = fixture.request(json!({"action":"status"}))["web"]["child"].clone();
     let binary = fixture.binary.clone();
     let data = fixture.data.clone();
-    // Exercise the native client deadline as well as the daemon's control connection.
+    // Exercise the real native client and daemon readiness handshake.
     let activation = thread::spawn(move || {
         let mut child = Command::new(binary)
             .args(["request", "--data-dir"])
@@ -665,11 +665,13 @@ fn slow_web_activation_survives_former_launch_and_transport_deadlines() {
     let id: String =
         serde_json::from_slice(&fs::read(fixture.data.join("daemon/web.json")).unwrap()).unwrap();
     let (path, record) = host_record(&fixture, "web", &id);
-    // Exceed the old launch (15s), recovery (30s), and client (35s/40s) limits.
-    thread::sleep(Duration::from_secs(41));
     let pending = fixture.request(json!({"action":"status"}))["web"].clone();
     assert_eq!(pending["child"], record["child"]);
     assert_eq!(pending["lifecycle"]["phase"], "starting");
+    assert!(
+        !activation.is_finished(),
+        "activation completed before readiness"
+    );
     let mut ready = record["child"].clone();
     ready["readyAt"] = json!(now_ms());
     write(&path.with_extension("ready"), &ready);

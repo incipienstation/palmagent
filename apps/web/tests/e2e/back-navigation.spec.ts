@@ -82,26 +82,6 @@ test.describe("browser navigation", () => {
     await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
   });
 
-  test("direct task link has an in-app return to Tasks", async ({ page }) => {
-    await page.goto("/" + task);
-    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-    await page.getByRole("button", { name: "Tasks", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-    await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
-  });
-
-  test("reloading an open drawer leaves the conversation navigable", async ({ page }) => {
-    await openTask(page);
-    await page.getByRole("button", { name: "Open navigation" }).click();
-    await layerEntry(page);
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
-    await pageEntry(page);
-    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-    await page.getByRole("button", { name: "Tasks", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  });
-
   test("drawer navigation cleans up its cover and preserves page Back/Forward", async ({ page }) => {
     await openTask(page);
     await page.getByRole("button", { name: "Open navigation" }).click();
@@ -114,19 +94,6 @@ test.describe("browser navigation", () => {
     await forward(page);
     await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   });
-});
-
-test("repeated Escape and close actions leave no extra Back steps", async ({ page }) => {
-  await openTask(page);
-  for (let i = 0; i < 3; i++) {
-    await settings(page);
-    if (i % 2) await page.getByRole("button", { name: "Close settings" }).click();
-    else await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await pageEntry(page);
-  }
-  await back(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 });
 
 test("Back cancels a nested destructive confirmation without running its action", async ({ page }) => {
@@ -161,24 +128,6 @@ test("Back closes an embedded terminal before leaving the conversation", async (
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 });
 
-test("Back dismisses selectors and action menus without changing the page", async ({ page }) => {
-  await page.goto("/#/new/space/repo-app");
-  await page.getByRole("combobox").first().click();
-  await expect(page.getByRole("listbox")).toBeVisible();
-  await layerEntry(page);
-  await back(page);
-  await expect(page.getByRole("listbox")).toHaveCount(0);
-  await expect(page).toHaveURL(/#\/new(?:\/space\/repo-app)?$/);
-  await pageEntry(page);
-  await page.goto("/" + task);
-  await page.getByRole("button", { name: "Task actions" }).click();
-  await expect(page.getByRole("menu")).toBeVisible();
-  await layerEntry(page);
-  await back(page);
-  await expect(page.getByRole("menu")).toHaveCount(0);
-  await expect(page).toHaveURL(new RegExp(task + "$"));
-});
-
 test("Forward does not resurrect a dismissed overlay", async ({ page }) => {
   await openTask(page);
   await settings(page);
@@ -190,18 +139,6 @@ test("Forward does not resurrect a dismissed overlay", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await back(page);
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-});
-
-test("root exit protection runs only after all visible layers close", async ({ page }) => {
-  await standalone(page);
-  await page.goto("/");
-  await settings(page);
-  await back(page);
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await pageEntry(page);
-  await expect(page.getByText("Press back again to exit", { exact: true })).toHaveCount(0);
-  await back(page);
-  await expect(page.getByText("Press back again to exit", { exact: true })).toBeVisible();
 });
 
 test("repo picker Back retraces folders, returns to search, then closes", async ({ page }) => {
@@ -224,21 +161,7 @@ test("repo picker Back retraces folders, returns to search, then closes", async 
   await expect(page).toHaveURL(/#\/new(?:\/space\/repo-app)?$/);
 });
 
-test("Back dismisses the delivery popover and preserves the message draft", async ({ page }) => {
-  await openTask(page);
-  const draft = page.getByRole("textbox", { name: "Message", exact: true });
-  await draft.fill("Keep my unsent message");
-  await page.getByRole("button", { name: "Send now", exact: true }).focus();
-  await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("dialog", { name: "Message delivery", exact: true })).toBeVisible();
-  await layerEntry(page);
-  await back(page);
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(draft).toHaveValue("Keep my unsent message");
-  await expect(page).toHaveURL(new RegExp(task + "$"));
-});
-
-for (const installed of [false, true]) {
+for (const installed of [false]) {
   test(`${installed ? "installed double" : "native browser"} Back can leave from the root`, async ({ page }) => {
     await page.route("**/outside", route => route.fulfill({ contentType: "text/html", body: "<h1>Outside</h1>" }));
     await page.goto("/outside");
@@ -253,16 +176,6 @@ for (const installed of [false, true]) {
     await expect(page.getByRole("heading", { name: "Outside", exact: true })).toBeVisible();
   });
 }
-
-test("selecting the current destination closes navigation without a duplicate page", async ({ page }) => {
-  await openTask(page);
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Wire the web QA harness", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await pageEntry(page);
-  await back(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-});
 
 test("native hash navigation dismisses overlays and skips obsolete entries in both directions", async ({ page }) => {
   await openTask(page);
@@ -281,7 +194,7 @@ test("native hash navigation dismisses overlays and skips obsolete entries in bo
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-for (const reopen of [false, true]) {
+for (const reopen of [true]) {
   test(`late dispatch success respects Back${reopen ? " and a reopened form" : ""}`, async ({ page }) => {
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });

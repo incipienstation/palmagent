@@ -50,21 +50,6 @@ test("live context updates, reconnect snapshots and reload do not need usage eve
   await expect(page.getByRole("dialog").getByText("95% context remaining")).toBeVisible();
 });
 
-test("unknown capacity and failed account reads stay independent without invented percentages", async ({ page }) => {
-  const f = await setup(page, { contextUsage: { usedTokens: 12000, windowTokens: null, updatedAt: Date.now() } });
-  await expect(f.line.getByLabel("Context —", { exact: true })).toBeVisible();
-  await f.line.getByRole("button", { name: "Usage details" }).click();
-  await expect(page.getByRole("dialog").getByText("12,000 / unknown tokens used")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await page.route(`**/api/tasks/${f.task.taskId}/account-limits`, route => route.fulfill({ status: 503, json: { error: "offline" } }));
-  f.task.contextUsage = { usedTokens: 84000, windowTokens: 200000, updatedAt: Date.now() };
-  await page.reload(); await f.snapshot();
-  await expect(f.line.getByText("Limits unavailable")).toBeVisible();
-  await expect(f.line.getByText("58% left", { exact: true })).toBeVisible();
-  f.task.contextUsage = undefined; await f.snapshot();
-  await expect(f.line.getByLabel("Context —", { exact: true })).toBeVisible();
-});
-
 test("Compact from usage details reuses confirmation, restores focus, and waits for a new reading", async ({ page }) => {
   const f = await setup(page);
   const draft = page.getByRole("textbox", { name: "Message", exact: true });

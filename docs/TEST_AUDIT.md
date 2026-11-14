@@ -1,5 +1,8 @@
 # Test coverage audit — November 2026
 
+The sections below record successive audits. The latest scope and coverage tradeoffs
+are in [Further reduction](#further-reduction-representative-coverage-and-test-selection).
+
 The audit inventories 188 test-bearing files at commit `dbef80c`: 62 server,
 83 browser, six browser-game, six Rust, and 31 tooling test files. It also checks
 the PWA state and web-harness scripts and the smoke/verification entry points.
@@ -124,3 +127,50 @@ contracts/runtime step, including native builds and process tests. Slow retained
 cases exercise delayed startup, native routine recovery, provider continuity and
 large durable uploads. This browser-only change does not shorten that lane or
 change which CI checks run. Security, persistence and release gates remain.
+
+## Further reduction: representative coverage and test selection
+
+At base `b319b403`, Playwright collects 585 cases. This pass leaves 443: 142 removed
+(24.3%). Cases are deleted, not skipped or combined into unrelated mega-tests. Product
+code and CI lane selection are unchanged. The earlier retention decisions above are
+historical; this pass intentionally narrows them further.
+
+- **Shared UI and display:** remove repeated sheet/dialog reachability, toast variants,
+  brand metadata/palette assertions, status-display fixtures, composer decoration, and
+  per-screen search/accordion geometry. Settings persistence, responsive navigation,
+  native input/IME, keyboard resize, and representative scroll/focus checks remain.
+- **Workflow repetition:** retain delivery identity, uncertain outcomes, stale responses,
+  Stop serialization, queue conflicts, and destructive-action recovery. Remove extra
+  pending-state/display cases and generic form-error scenarios. Retry scenarios replace
+  separate success-only legacy-history variants; one browser approval-failure path
+  represents shared feedback while server approval policy remains unchanged.
+- **Navigation:** native CDP exit coverage and nested Back/Forward flows remain. Remove
+  repeated simulated sentinel checks, dismissal methods, and per-overlay cases; keep
+  one simulated lifecycle signal and one pending-dispatch return scenario.
+- **History and rendering:** retain bounded virtualization, prepend/live races, touch and
+  wheel reading, delayed media, offline/retry, and projected history paging. Remove extra
+  scroll-distance, legacy disclosure, styling, and activity-state scenarios. Detailed
+  activity/answer semantics remain in transcript-model and transcript-activity tests;
+  shared code-copy and viewer behavior use representative browser consumers.
+- **Games and attachments:** engine tests retain every evolution rule; browser tests keep
+  movement, controls, persistence, attention, and campaign settlement. Large upload and
+  attachment recovery tests each use one route; new-task and follow-up submission still
+  have separate workflow coverage. Media formats with different decoders remain distinct.
+
+This is a risk/cost reduction, not identical replacement coverage. Individual consumer
+wiring errors, omitted viewport/theme permutations, palette/asset defects, and some
+generic form-error regressions may now escape automation. Palette changes require
+targeted visual review. Security, persistence, provider protocol, and release tests remain.
+
+The Rust web-activation test now releases readiness after observing the pending real
+client/daemon handshake, without a fixed 41-second sleep. It still checks the same host
+identity, successful readiness, and preservation of another host. The separate startup
+deadline test still checks actual timeout handling by aging the persisted lifecycle.
+The suite no longer proves that a live request crosses the obsolete 15/30/35/40-second
+limits. Removing the forced sleep is not a measured 41-second workflow speedup.
+
+The harness now routes planning, implementation, and verification through one
+[test selection policy](../.harness/skills/plan/references/testing.md), with a PR-template
+prompt for coverage decisions. It explicitly permits no new test, prefers the cheapest
+effective layer, and requires a concrete reason for extra matrices, real waits, and
+large fixtures. These are authoring/review rules, not a semantic CI detector.
