@@ -313,15 +313,25 @@ test("Stop stays pending after acceptance until the live run actually stops", as
   await expect.poll(() => calls).toBe(1);
   await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toBeVisible();
   const actions = page.getByRole("button", { name: "Task actions", exact: true });
+  await expect(page.getByTestId("toast")).toHaveCount(0);
   await expect(actions).toBeEnabled();
   await actions.click();
   await expect(page.getByRole("menuitem", { name: "Session details", exact: true })).toBeEnabled();
   await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeDisabled();
   await expect(page.getByRole("menuitem", { name: "Open terminal", exact: true })).toBeDisabled();
   await page.keyboard.press("Escape");
+  for (const [seq, kind, payload] of [
+    [1, "status", { subtype: "stop" }],
+    [2, "error", { code: "turn_result_missing", message: "Codex exited before a terminal turn result." }],
+    [3, "status", { subtype: "process_exit", code: 130 }],
+  ] as const) await send(page, "t-run", { type: "event", event: { taskId: "t-run", agent: "codex", ts: seq, kind, payload } }, seq);
   await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "idle", interrupted: true, updatedAt: task.updatedAt + 1 }] });
   await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeEnabled();
+  await expect(page.getByTestId("toast")).toHaveText("Response stopped");
+  await expect(page.locator("[data-run-failure]")).toHaveCount(0);
+  await expect(page.getByText("Codex exited before a terminal turn result.", { exact: false })).toHaveCount(0);
+  await assertViewportLocked(page);
 });
 
 for (const decision of ["approve"]) test(`${decision} waits for confirmation and restores controls on failure`, async ({ page }) => {

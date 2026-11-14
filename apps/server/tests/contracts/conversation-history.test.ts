@@ -54,7 +54,7 @@ test("phase migration rebuilds completed and active history once without changin
   assert.deepEqual(f.connection.prepare("SELECT * FROM session_imports").all(), imports);
   assert.deepEqual(upgraded.getTask("task")?.sessionControl, control);
   assert.equal(upgraded.eventCursor("task"), cursor);
-  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 5 });
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 6 });
   f.connection.exec("CREATE TRIGGER no_phase_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
   assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
   f.connection.exec("DROP TRIGGER no_phase_rebuild");
@@ -78,6 +78,31 @@ test("a failed phase migration rolls back its display records and version before
   assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 4 });
   f.connection.exec("DROP TRIGGER fail_phase_rebuild");
   assert.ok(JSON.stringify(new SqliteTasks(f.connection).conversationPage("task")).includes("Retained answer"));
+});
+
+test("stop presentation rebuilds saved failures once and preserves execution records", t => {
+  const f = fixture(t);
+  f.add([message("Partial answer"), event("status", { subtype: "stop" }),
+    event("error", { code: "turn_result_missing", message: "Codex exited before a terminal turn result." }),
+    event("status", { subtype: "process_exit", code: 130 }), user("Continue"),
+    message("Next partial answer"), event("result", { is_error: true, subtype: "interrupted" })]);
+  const raw = f.tasks.eventsAfterSeq("task", 0);
+  const expected = f.tasks.conversationPage("task");
+  assert.ok(expected.transcript!.every(row => row.type !== "failure"));
+  for (const [seq, start] of [[3, 1], [7, 5]]) {
+    const old = JSON.stringify({ type: "failure", key: seq, items: [], previous: start === 1, revision: 7, endSeq: seq });
+    f.connection.prepare("INSERT OR REPLACE INTO conversation_rows (task_id, seq, block_start, end_seq, revision, body_json, wire_json) VALUES ('task', ?, ?, ?, 7, ?, ?)")
+      .run(seq, start, seq, old, old);
+  }
+  f.connection.exec("UPDATE conversation_projection_version SET version = 5");
+  const upgraded = new SqliteTasks(f.connection);
+  const page = upgraded.conversationPage("task");
+  assert.deepEqual(page.transcript!.map(row => row.key), expected.transcript!.map(row => row.key));
+  assert.ok(page.transcript!.every(row => row.type !== "failure"));
+  assert.deepEqual(upgraded.eventsAfterSeq("task", 0), raw);
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 6 });
+  f.connection.exec("CREATE TRIGGER no_stop_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
+  assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
 });
 
 test("native environment updates stay out of live and stored conversations without resetting activity", t => {

@@ -102,6 +102,41 @@ test("interruption is determined by code, independent of provider wording", () =
   expect(runInterrupted({ type: "failure", key: 1, previous: false, items: [textOnly] })).toBe(false);
 });
 
+test("user stops retain real errors and raw records without an interruption warning", () => {
+  const priorError = event(1, "error", { message: "Request unavailable" });
+  const stopped = [priorError, event(2, "status", { subtype: "stop" }),
+    event(3, "error", { code: "turn_result_missing" }),
+    event(4, "result", { is_error: true, subtype: "error_during_execution" }),
+    event(5, "status", { subtype: "process_exit", code: 130 })];
+  const rows = presentTranscript(stopped, "compact", false);
+  const failure = rows.find(row => row.type === "failure")!;
+  expect(failure.items).toEqual([priorError]);
+  expect(runInterrupted(failure)).toBe(false);
+  expect(presentTranscript(stopped.slice(1), "compact", false)).toEqual([]);
+  expect(presentTranscript(stopped, "verbose", false).map(row => row.key)).toEqual(stopped.map(item => item.key));
+
+  const nextError = event(7, "error", { code: "turn_result_missing" });
+  const continued = presentTranscript([...stopped,
+    event(6, "status", { subtype: "followup", text: "Continue" }), nextError], "compact", false);
+  const failures = continued.filter(row => row.type === "failure");
+  expect(failures[0]).toMatchObject({ previous: true, items: [priorError] });
+  expect(failures[1].items).toEqual([nextError]);
+  expect(runInterrupted(failures[1])).toBe(true);
+
+  // Stop does not hide a distinct failure received during shutdown.
+  const lateError = event(6, "error", { message: "Storage failed" });
+  expect(presentTranscript([...stopped, lateError], "compact", false)
+    .find(row => row.type === "failure")!.items).toEqual([priorError, lateError]);
+});
+
+test("native interruptions are neutral without treating arbitrary failed results as stops", () => {
+  const log = [prose(1, "Partial answer"), event(2, "result", { is_error: true, subtype: "interrupted" }),
+    event(3, "status", { subtype: "process_exit", code: 130 })];
+  expect(presentTranscript(log, "compact", false).map(row => row.key)).toEqual([1]);
+  const failures = presentTranscript([event(1, "result", { is_error: true, subtype: "error_during_execution" })], "compact", false);
+  expect(failures[0].type).toBe("failure");
+});
+
 test("old flat and paged update checkpoints migrate once while preserving cursors and keys", async () => {
   const { restoredHistory } = await import("../../src/history-checkpoint");
   const old = { ...event(7, "error", { message: "Codex exited before a terminal turn result.", extra: true }) };
