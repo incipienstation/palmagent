@@ -1,23 +1,16 @@
 ---
 name: start
-description: Second stage of the plan → start → verify → ship loop. Start implementation in an isolated git worktree on a feature/* branch from develop. Use when starting implementation.
+description: Start Palmagent implementation in a task-owned worktree on feature/* from develop.
 ---
 
 # Start
 
-1. Apply [context discipline](../../../AGENTS.md#context-and-scope) and inspect the current checkout
-   and worktrees. Reuse an existing task-owned linked worktree when appropriate; preserve unrelated changes.
-2. For a new feature, fetch `origin develop` and create an isolated linked worktree with a
-   `feature/<slug>` branch from `origin/develop`. For example, from the main checkout:
-   `git worktree add .harness/worktrees/<slug> -b feature/<slug> origin/develop`.
-   Local task worktrees belong under the ignored `.harness/worktrees/` directory.
-   Run subsequent commands and edits in that worktree. If the platform provides a worktree tool,
-   use it as required by its hooks, then create the feature branch from the fetched `origin/develop`.
-   Compare that checkout's `AGENTS.md` and relevant skills with the working-file contents already
-   read, including local edits. Reuse identical instructions; read differences or missing context
-   before editing, as required by context discipline.
-3. Make the scoped change, following the repository's
-   [skill source guidance](../garden/SKILL.md#skill-sources) when editing skills.
-   Apply the [test selection policy](../plan/references/testing.md) when adding or changing tests;
-   an implementation change does not automatically require a new test.
-4. Apply the public-safety rule when changing files. Then [verify](../verify/SKILL.md).
+Reuse the task's linked worktree, or fetch `origin develop` and create one:
+
+```bash
+git worktree add .harness/worktrees/<slug> -b feature/<slug> origin/develop
+```
+
+Use a platform-managed worktree when required by its hooks. Keep manual task worktrees under
+`.harness/worktrees/`. Compare checkout instructions with those already read; load only differences.
+Implement in the task worktree, then [verify](../verify/SKILL.md).

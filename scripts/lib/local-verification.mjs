@@ -3,6 +3,7 @@ import { closeSync, mkdtempSync, openSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { changedPaths, classifyChanges } from './ci-scope.mjs';
+import { readEvidence, verificationFingerprint, writeEvidence } from './verification-evidence.mjs';
 
 export function requireVerificationNode(cwd, version = process.versions.node) {
   const expected = readFileSync(join(cwd, '.nvmrc'), 'utf8').trim();
@@ -127,7 +128,7 @@ function runStep(step, { cwd, env, fd, timeoutMs, killGraceMs, signal }) {
 // Sequential execution avoids concurrent installs/builds and reuses this run's PWA output.
 // Child output stays in private temporary files, including on failure; never dump raw logs.
 export async function runVerification(steps, {
-  cwd, env = process.env, report = console.log, signal, timeoutMs, killGraceMs = 2000,
+  cwd, env = process.env, report = console.log, signal, timeoutMs, killGraceMs = 2000, context, resume,
 } = {}) {
   const validDelay = value => Number.isInteger(value) && value > 0 && value <= 2_147_483_647;
   if (!validDelay(killGraceMs) || (timeoutMs !== undefined && !validDelay(timeoutMs))
@@ -136,10 +137,44 @@ export async function runVerification(steps, {
   }
   const logs = mkdtempSync(join(tmpdir(), 'palmagent-verify-'));
   report(`Logs: ${logs}`);
+  const fingerprint = () => verificationFingerprint(cwd, context, steps, env);
+  let initial;
+  try { if (context?.base && context?.head) initial = fingerprint(); }
+  catch { report('Evidence unavailable; running all selected checks.'); }
+  const previous = resume ? readEvidence(resume) : undefined;
+  const reusable = initial && previous?.fingerprint === initial.fingerprint ? new Set(previous.passed) : new Set();
+  if (resume && !reusable.size) {
+    const changed = initial && previous?.inputs && Object.keys(initial.inputs)
+      .find(name => initial.inputs[name] !== previous.inputs[name]);
+    report(`No matching evidence${changed ? ` (${changed} changed)` : ''}; running all selected checks.`);
+  }
+  const passed = [];
+  if (initial) writeEvidence(logs, initial, passed);
+  const inputsUnchanged = () => {
+    if (!initial) return true;
+    let changed;
+    try {
+      const current = fingerprint();
+      if (current.fingerprint === initial.fingerprint) return true;
+      changed = Object.keys(initial.inputs).find(name => current.inputs[name] !== initial.inputs[name]);
+    } catch { /* Fail closed. */ }
+    writeEvidence(logs, undefined, []);
+    report(`FAIL: verification inputs changed during checks${changed ? ` (${changed})` : ''}; rerun with current inputs.`);
+    return false;
+  };
+  // Recreate build outputs and recheck their consumers even when source evidence matches.
+  const artifactStep = id => id === 'web-build' || id === 'web-tests' || id.startsWith('package-');
   for (const step of steps) {
     if (signal?.aborted) {
+      inputsUnchanged();
       report('CANCELLED: verification stopped before the next check.');
       return signal.reason === 'SIGTERM' ? 143 : 130;
+    }
+    if (!artifactStep(step.id) && reusable.has(step.id)) {
+      passed.push(step.id);
+      writeEvidence(logs, initial, passed);
+      report(`REUSE ${step.id}`);
+      continue;
     }
     const log = join(logs, `${step.id}.log`);
     const fd = openSync(log, 'wx', 0o600);
@@ -153,15 +188,22 @@ export async function runVerification(steps, {
       });
     } finally { closeSync(fd); }
     if (result.stopped) {
+      inputsUnchanged();
       report(`${result.stopped === 'timeout' ? 'TIMEOUT' : 'CANCELLED'} ${step.id}: ${log}`);
       return result.stopped === 'timeout' ? 124 : result.stopped === 'SIGTERM' ? 143 : 130;
     }
     if (result.error || result.signal || result.status !== 0) {
+      inputsUnchanged();
       report(`FAIL ${step.id}: ${log}`);
       return result.status > 0 ? result.status : 1;
     }
+    if (initial) {
+      passed.push(step.id);
+      writeEvidence(logs, initial, passed);
+    }
     report(`PASS ${step.id} (${((Date.now() - start) / 1000).toFixed(1)}s)`);
   }
+  if (!inputsUnchanged()) return 1;
   report(`PASS: ${steps.length} checks completed.`);
   return 0;
 }

@@ -244,3 +244,83 @@ test('an already cancelled run starts no checks', async t => {
   assert(!messages.includes('RUN never'));
   rmSync(messages.find(line => line.startsWith('Logs: ')).slice(6), { recursive: true, force: true });
 });
+
+function retryFixture(t) {
+  const f = fixture(t);
+  f.write('.gitignore', 'build/\nnode_modules/\n.env\n');
+  f.git('add', '.'); f.git('commit', '-m', 'ignore outputs');
+  const context = localScope(f.cwd, f.git('rev-parse', 'HEAD'));
+  const messages = [];
+  const report = message => {
+    messages.push(message);
+    if (message.startsWith('Logs: ')) t.after(() => rmSync(message.slice(6), { recursive: true, force: true }));
+  };
+  const step = (id, code = '') => ({ id, command: process.execPath, args: ['-e', code] });
+  const options = { cwd: f.cwd, context, report, env: { PATH: process.env.PATH } };
+  const logDirectory = () => messages.findLast(message => message.startsWith('Logs: ')).slice(6);
+  return { ...f, context, messages, step, options, logDirectory };
+}
+
+test('resume reuses passed source checks but retries failures and recreates artifacts', async t => {
+  const f = retryFixture(t);
+  const steps = [f.step('source'), f.step('web-build'), f.step('package-smoke', `
+    const fs = require('node:fs');
+    if (!fs.existsSync('build/retry')) { fs.mkdirSync('build', {recursive:true}); fs.writeFileSync('build/retry', '1'); process.exit(7); }
+  `)];
+  assert.equal(await runVerification(steps, f.options), 7);
+  const resume = f.logDirectory();
+  assert.deepEqual(JSON.parse(readFileSync(join(resume, 'evidence.json'))).passed, ['source', 'web-build']);
+  f.messages.length = 0;
+  assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
+  assert(f.messages.includes('REUSE source'));
+  assert(f.messages.includes('RUN web-build'));
+  assert(f.messages.includes('RUN package-smoke'));
+});
+
+for (const change of ['source', 'staged', 'untracked', 'base', 'head', 'environment', 'dependencies', 'ignored-env', 'command']) {
+  test(`resume invalidates prior successes after changed ${change}`, async t => {
+    const f = retryFixture(t);
+    f.write('node_modules/dependency.js', 'old');
+    const steps = [f.step('source')];
+    assert.equal(await runVerification(steps, f.options), 0);
+    const resume = f.logDirectory();
+    if (change === 'source') f.write('README.md', 'changed');
+    if (change === 'staged') { f.write('README.md', 'staged'); f.git('add', '.'); f.write('README.md', 'base\n'); }
+    if (change === 'untracked') f.write('new.txt', 'new');
+    if (change === 'base') f.options.context = { ...f.context, base: 'a'.repeat(40) };
+    if (change === 'head') f.git('commit', '--allow-empty', '-m', 'new head');
+    if (change === 'environment') f.options.env = { ...f.options.env, CHANGED: 'secret-value' };
+    if (change === 'dependencies') f.write('node_modules/dependency.js', 'new');
+    if (change === 'ignored-env') f.write('.env', 'TOKEN=secret-value');
+    if (change === 'command') steps[0] = f.step('source', 'void 0');
+    f.messages.length = 0;
+    assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
+    assert(f.messages.includes('RUN source'));
+    assert(!f.messages.includes('REUSE source'));
+    assert(!readFileSync(join(f.logDirectory(), 'evidence.json'), 'utf8').includes('secret-value'));
+  });
+}
+
+test('missing or corrupt evidence runs fresh and in-run edits invalidate success', async t => {
+  const f = retryFixture(t);
+  const steps = [f.step('source')];
+  for (const receipt of ['not-json', JSON.stringify({ version: 1, passed: 'source' })]) {
+    f.write('build/evidence.json', receipt);
+    assert.equal(await runVerification(steps, { ...f.options, resume: join(f.cwd, 'build') }), 0);
+    assert(f.messages.includes('RUN source'));
+  }
+  assert.equal(await runVerification([f.step('edit', `require('node:fs').writeFileSync('README.md', 'edited')`)], f.options), 1);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.logDirectory(), 'evidence.json'))).passed, []);
+});
+
+
+test('resume ignores tool invocation IDs and shell bookkeeping', async t => {
+  const f = retryFixture(t), steps = [f.step('source')];
+  f.options.env = { ...f.options.env, CODEX_TOOL_CALL_ID: 'first', _: 'first-command', SHLVL: '1' };
+  assert.equal(await runVerification(steps, f.options), 0);
+  const resume = f.logDirectory();
+  f.options.env = { ...f.options.env, CODEX_TOOL_CALL_ID: 'second', _: 'second-command', SHLVL: '2' };
+  f.messages.length = 0;
+  assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
+  assert(f.messages.includes('REUSE source'));
+});
