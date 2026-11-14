@@ -10,6 +10,7 @@ import { ensurePrivateDirectory } from "../../../../platform/filesystem/private-
 import { extractReleaseArchive, MAX_RELEASE_DOCUMENT_BYTES, sha256File, verifySignedPayload } from "../../../../platform/filesystem/release-artifact.js";
 import type { InstallConfig } from "../../domain/installation.js";
 import type { ReleaseChannel } from "../../domain/release-policy.js";
+import { pinNode } from "./retained-node.js";
 
 export function installedDistribution(cfg?: Pick<InstallConfig, "distribution" | "pkgDir">): Distribution {
   if (cfg?.distribution) return cfg.distribution;
@@ -155,7 +156,8 @@ export function stageStandaloneRelease(cfg: InstallConfig, selected: StandaloneS
       }
     }
     const root = join(directory, "palmagent"), pkgDir = join(root, "app");
-    return { ...cfg, distribution: "standalone", artifactId: id, pkgDir, workingDir: pkgDir, executionNode: join(root, "runtime/bin/node") };
+    const executionNode = pinNode(cfg.dataDir, join(root, "runtime/bin/node"));
+    return { ...cfg, distribution: "standalone", artifactId: id, pkgDir, workingDir: pkgDir, executionNode };
   } finally {
     rmSync(download, { recursive: true, force: true });
     rmSync(staging, { recursive: true, force: true });

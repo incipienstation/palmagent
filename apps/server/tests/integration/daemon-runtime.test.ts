@@ -16,6 +16,7 @@ import { configureAutoUpdate, prepareUpdateService, startRequestedUpdate } from 
 import { DEFAULT_CAPS, saveConfig, loadConfig, type InstallConfig } from "../../src/modules/installation/adapters/outbound/config.js";
 import { daemonServiceName, prepareUserService, verifyUserIsolation } from "../../src/modules/installation/adapters/outbound/user-service.js";
 import { getUserConfig } from "../../src/modules/installation/adapters/outbound/user-config.js";
+import { pinNode, retainInstalledRelease } from "../../src/modules/installation/adapters/outbound/execution-release.js";
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "palmagent-daemon-contract-"));
@@ -66,6 +67,43 @@ test("daemon configuration pins native and Node artifacts and preserves the supe
   assert.equal(config.limits.memoryMax, 16 * 1024 ** 3);
   assert.equal(loadConfig({ dataDir: f.root }).supervisor, "palmagentd");
   assert(!existsSync(f.privileged));
+});
+
+test("standalone installation retains the bundled Node in the daemon runtime tree", t => {
+  const f = fixture(t), bundle = join(f.root, "bootstrap/palmagent");
+  const app = join(bundle, "app"), runtime = join(bundle, "runtime/bin/node");
+  cpSync(f.release, app, { recursive: true });
+  mkdirSync(join(bundle, "runtime/bin"), { recursive: true });
+  const bundledBytes = "#!/bin/sh\nexit 0\n";
+  writeFileSync(runtime, bundledBytes, { mode: 0o700 });
+  writeFileSync(join(bundle, "bundle.json"), JSON.stringify({ schemaVersion: 1, distribution: "standalone",
+    version: "0.2.0-alpha.1", sourceCommit: "a".repeat(40), target: "linux-arm64-glibc",
+    nodeVersion: "24.21.0", nodeAbi: "137", minGlibc: "2.35" }));
+  writeFileSync(join(app, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, daemonProtocol: 1 }));
+  for (const file of ["cli.js", "server.js", "execution-host.js", "execution-launcher.js"]) writeFileSync(join(app, file), "");
+  const cfg = { ...f.cfg, pkgDir: app, workingDir: app, executionNode: undefined as string | undefined };
+  retainInstalledRelease(cfg);
+  assert.equal(cfg.distribution, "standalone");
+  assert(realpathSync(cfg.executionNode!).startsWith(realpathSync(join(f.root, "runtimes")) + "/"));
+  assert.equal(readFileSync(cfg.executionNode!, "utf8"), bundledBytes, "use the bundle's Node, not the invoking process");
+  assert.equal(lstatSync(cfg.executionNode!).isSymbolicLink(), false, "canonical path must remain inside runtimes");
+  configureDaemon(cfg);
+  const config = JSON.parse(readFileSync(join(f.root, "daemon/config.json"), "utf8"));
+  assert.equal(config.node, cfg.executionNode);
+  assert.equal(config.environment.EXECUTION_NODE, cfg.executionNode);
+  rmSync(bundle, { recursive: true });
+  assert.equal(readFileSync(config.node, "utf8"), bundledBytes, "bootstrap cleanup cannot remove the selected runtime");
+});
+
+test("bundled runtime retention reuses matching bytes and rejects a corrupted retained copy", t => {
+  const f = fixture(t), bundled = join(f.root, "bundled-node");
+  writeFileSync(bundled, "bundled runtime bytes", { mode: 0o700 });
+  const node = pinNode(f.root, bundled);
+  assert.equal(readFileSync(node, "utf8"), "bundled runtime bytes");
+  assert.equal(pinNode(f.root, bundled), node);
+  writeFileSync(node, "corrupted runtime");
+  assert.throws(() => pinNode(f.root, bundled), /integrity mismatch/);
+  assert.equal(readFileSync(node, "utf8"), "corrupted runtime", "retain evidence rather than silently overwriting it");
 });
 
 test("domain reconfiguration preserves saved environment even when the caller changes or unsets it", t => {
