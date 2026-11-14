@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { tasks, repos } from "../fixtures.mjs";
 import { installScopedStream, open, send } from "./_scoped-stream";
 import { assertViewportLocked } from "./_helpers";
@@ -7,6 +7,18 @@ const palm = { id: "palm-doctor", name: "palmagent:doctor", source: "palmagent",
 const project = { id: "project-check", name: "check", source: "repo", description: "Check this project's changes." };
 async function catalogue(page: Page) {
   await page.route("**/api/skills?**", route => route.fulfill({ json: { skills: [palm, project] } }));
+}
+
+async function expectDecodedIcon(icon: Locator) {
+  await expect(icon).toBeVisible();
+  expect(await icon.evaluate(async el => {
+    const source = el instanceof HTMLImageElement ? el.src
+      : getComputedStyle(el).maskImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+    if (!source) return false;
+    const image = new Image();
+    image.src = source;
+    try { await image.decode(); return image.naturalWidth > 0; } catch { return false; }
+  })).toBe(true);
 }
 
 test("long skill lists keep keyboard selection visible without moving the composer", async ({ page }) => {
@@ -53,7 +65,7 @@ for (const route of ["new", "task/t-idle-rich"]) test(`slash selection is explic
   await input.press("Enter");
   expect(calls).toHaveLength(0);
   await expect(input).toHaveValue("");
-  await expect(page.getByLabel("Selected skills").getByAltText("Palmagent plugin")).toBeVisible();
+  await expectDecodedIcon(page.getByLabel("Selected skills").getByRole("img", { name: "Palmagent plugin" }));
   await input.fill("Check HTTPS");
   await page.reload();
   await expect(page.getByRole("button", { name: "Remove palmagent:doctor skill" })).toBeVisible();
@@ -126,13 +138,15 @@ test("queue editing keeps skill selection and transcript displays the source log
   await page.getByRole("button", { name: "Save queued message" }).click();
   expect(calls.find(c => c.action === "save").skills[0].id).toBe(palm.id);
   await send(page, "t-run", { type: "event", event: { id: 10001, taskId: "t-run", agent: "codex", ts: Date.now(), kind: "status", payload: { subtype: "steer", text: "Check service", skills: [palm] } } }, 10001);
-  await expect(page.getByAltText("Palmagent plugin")).toBeVisible();
+  await expectDecodedIcon(page.getByRole("img", { name: "Palmagent plugin" }));
 });
 
 // Width drives this geometry contract; sample both themes without a cross product.
 for (const { theme, width } of [{ theme: "light", width: 360 }, { theme: "dark", width: 1280 }]) test(`picker fits ${width}px in ${theme} mode`, async ({ page }) => {
   await page.setViewportSize({ width, height: 850 });
   await catalogue(page);
+  // Skill artwork must remain available when the standalone public logo cannot load.
+  await page.route("**/logo.svg", route => route.abort());
   await page.goto(`/?__theme=${theme}#/new/space/repo-app`);
   await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("/");
   const menu = page.getByRole("listbox", { name: "Available skills" });
@@ -140,6 +154,13 @@ for (const { theme, width } of [{ theme: "light", width: 360 }, { theme: "dark",
   const box = (await menu.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expectDecodedIcon(menu.getByRole("img", { name: "Palmagent plugin" }));
+  await menu.getByRole("option", { name: /palmagent:doctor/ }).click();
+  const selectedIcon = page.getByLabel("Selected skills").getByRole("img", { name: "Palmagent plugin" });
+  await expectDecodedIcon(selectedIcon);
+  await expect(selectedIcon).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.reload();
+  await expectDecodedIcon(selectedIcon);
 });
 
 
