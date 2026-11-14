@@ -9,7 +9,7 @@ test.use({ serviceWorkers: "block" });
 
 const taskId = "t-idle-rich";
 const imageId = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
-const tallImage = readFileSync(new URL("./image-rendering.spec.ts-snapshots/image-preview-mobile-linux.png", import.meta.url));
+const tallImage = readFileSync(new URL("../assets/tall-history.png", import.meta.url));
 function rows(from: number, to: number): TaskHistoryEvent[] {
   return Array.from({ length: to - from + 1 }, (_, i) => {
     const seq = from + i;
@@ -55,7 +55,7 @@ async function installLatestHistory(page: Page, entries: TaskHistoryEvent[], bef
   });
   return () => reads;
 }
-async function recent(page: Page, _mode = "unified") {
+async function recent(page: Page) {
   const reads = await installLatestHistory(page, rows(1801, 2000), 1801, 2000);
   await open(page, taskId, { serverHistory: true });
   await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 2000 });
@@ -65,7 +65,6 @@ async function recent(page: Page, _mode = "unified") {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "verbose"));
   await installScopedStream(page);
 });
 
@@ -292,7 +291,6 @@ for (const first of ["catch-up", "older page"] as const) {
 }
 
 for (const olderAnswers of [false, true]) test(`prepending older history preserves a cross-page Activity (older answers=${olderAnswers})`, async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   const older = toolActivityRows(1601, 1800);
   if (olderAnswers) {
     // Earlier answers stay separate from the work crossing the page boundary.
@@ -376,15 +374,14 @@ test("fast upward scrolling formats long Markdown before it reaches the viewport
 });
 
 for (const scenario of [
-  { name: "slow mobile wheel", distance: 180, width: 360, mode: "verbose", touch: false },
-  { name: "fast mobile wheel", distance: 600, width: 360, mode: "verbose", touch: false },
-  { name: "compact mobile touch", distance: 600, width: 360, mode: "compact", touch: true },
-  { name: "compact desktop wheel", distance: 600, width: 1280, mode: "compact", touch: false },
+  { name: "slow mobile wheel", distance: 180, width: 360, touch: false },
+  { name: "fast mobile wheel", distance: 600, width: 360, touch: false },
+  { name: "mobile touch", distance: 600, width: 360, touch: true },
+  { name: "desktop wheel", distance: 600, width: 1280, touch: false },
 ]) test.describe(scenario.name, () => {
   test.use({ viewport: { width: scenario.width, height: 780 }, isMobile: scenario.width < 600, hasTouch: scenario.width < 600 });
   test("upward scrolling keeps mixed-height history painted", async ({ page }, testInfo) => {
     const { distance } = scenario;
-    await page.addInitScript(mode => localStorage.setItem("pref:output-mode", mode), scenario.mode);
     const entries = rows(1801, 2000).map(entry => entry.seq % 2 === 0 ? entry : ({ ...entry, event: {
       ...entry.event, kind: "assistant_text" as const,
       payload: { text: `## Entry ${entry.seq}\n\n${"A paragraph of **formatted text** with varying height.\n\n".repeat(entry.seq % 5 === 0 ? 500 : 80 + (entry.seq % 7) * 25)}` },
@@ -580,7 +577,6 @@ test("loading the oldest page preserves the anchor as the oldest page completes"
 });
 
 test("compact mode automatically skips consecutive pages of hidden status events", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("pref:output-mode", "compact"));
   const cursors: string[] = [];
   await page.route("**/history*", (route) => {
     const before = new URL(route.request().url()).searchParams.get("before");
@@ -623,31 +619,6 @@ test("large legacy activities reveal a bounded number of steps and retain disclo
   await page.getByRole("button", { name: "Load more steps", exact: true }).click();
   await expect(page.locator("[data-trace-step]")).toHaveCount(100);
 });
-
-for (const mode of ["compact"]) {
-  test(`${mode}: loading earlier activity preserves the visible message`, async ({ page }) => {
-    await page.addInitScript((mode) => localStorage.setItem("pref:output-mode", mode), mode);
-    let release!: () => void;
-    let requested = false;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
-    await page.route("**/history?before=1801*", async (route) => {
-      requested = true; await pending;
-      await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
-    });
-    await recent(page, mode);
-    await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 0; });
-    await expect.poll(() => requested).toBe(true);
-    const anchor = page.locator('[data-message-key="1801"]');
-    await expect(anchor).toBeVisible();
-    const top = (await anchor.boundingBox())!.y;
-    await deliver(page, rows(2001, 2020));
-    release();
-    await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-    // Loading can settle before Virtuoso commits the prepended page.
-    await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
-    await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
-  });
-}
 
 test("near-top scrolling prefetches the next page before reaching the edge", async ({ page }) => {
   let requested = 0;

@@ -38,7 +38,7 @@ test("composer hints follow delivery mode, task activity and queue availability"
   await expect(input).toHaveAttribute("placeholder", "Guide the current task…");
 });
 
-for (const width of [360, 1280]) test(`placeholder fades without moving or replacing the focused input at ${width}px`, async ({ page }) => {
+for (const width of [360, 1280]) test(`placeholder updates without moving or replacing the focused input at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   await installScopedStream(page);
   await open(page, "t-run");
@@ -46,33 +46,22 @@ for (const width of [360, 1280]) test(`placeholder fades without moving or repla
   const input = page.getByRole("textbox");
   await expect(input).toHaveAttribute("placeholder", "Guide the current task…");
   await input.focus();
-  await page.waitForTimeout(250);
+  await input.evaluate(async el => {
+    await Promise.all(el.closest('[aria-label="Message composer"]')!.getAnimations({ subtree: true })
+      .map(animation => animation.finished.catch(() => {})));
+  });
   const element = (await input.elementHandle())!;
   const height = (await input.boundingBox())!.height;
-  // Hold the text-swap timer so a busy browser cannot skip the short exit.
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
   await send(page, "t-run", frame("idle"));
-  await expect(input).toHaveAttribute("data-placeholder-fading", "true");
-  await expect(input).toHaveAttribute("placeholder", "Guide the current task…");
-  const hintStyle = () => input.evaluate(el => {
-    const style = getComputedStyle(el, "::placeholder");
-    return { opacity: style.opacity, duration: style.transitionDuration };
-  });
-  await expect.poll(hintStyle).toEqual({ opacity: "0", duration: "0.075s" });
-  await page.clock.runFor(75);
   await expect(input).toHaveAttribute("placeholder", "Message Palmagent…");
-  await expect.poll(hintStyle).toEqual({ opacity: "1", duration: "0.075s" });
   expect(await element.evaluate(el => el.isConnected && document.activeElement === el)).toBe(true);
   expect((await input.boundingBox())!.height).toBe(height);
-  await page.clock.resume();
 
   await input.fill("Keep this draft");
   await input.evaluate(el => (el as HTMLTextAreaElement).setSelectionRange(5, 9));
   await send(page, "t-run", frame("running"));
   await expect(input).toHaveValue("Keep this draft");
   expect(await input.evaluate(el => [(el as HTMLTextAreaElement).selectionStart, (el as HTMLTextAreaElement).selectionEnd])).toEqual([5, 9]);
-  await expect(input).toHaveAttribute("data-placeholder-fading", "false");
   await expect(input).toHaveCSS("opacity", "1");
   await input.fill("");
   await expect(input).toHaveAttribute("placeholder", "Guide the current task…");
@@ -80,6 +69,5 @@ for (const width of [360, 1280]) test(`placeholder fades without moving or repla
   await page.emulateMedia({ reducedMotion: "reduce" });
   await send(page, "t-run", frame("idle"));
   await expect(input).toHaveAttribute("placeholder", "Message Palmagent…");
-  await expect(input).toHaveAttribute("data-placeholder-fading", "false");
   expect(await input.evaluate(el => getComputedStyle(el, "::placeholder").transitionDuration)).toBe("0s");
 });

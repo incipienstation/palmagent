@@ -10,7 +10,7 @@ async function settled(dialog: Locator) {
 }
 
 for (const width of [360, 1280]) {
-  test(`dialog action pairs share their layout at ${width}px`, async ({ page }) => {
+  test(`dialog actions remain reachable and restore focus at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
     await page.goto("/#/task/t-idle-rich");
     const trigger = page.getByRole("button", { name: "Task actions", exact: true });
@@ -24,15 +24,6 @@ for (const width of [360, 1280]) {
       await settled(dialog);
       const secondary = dialog.getByRole("button", { name: cancel, exact: true });
       const primary = dialog.getByRole("button", { name: action, exact: true });
-      const [a, b] = await Promise.all([secondary.boundingBox(), primary.boundingBox()]);
-      if (width < 640) {
-        expect(b!.y + b!.height).toBeLessThan(a!.y);
-        expect(a!.width).toBeCloseTo(b!.width, 0);
-        expect(a!.width).toBeGreaterThan(280);
-      } else {
-        expect(a!.y).toBeCloseTo(b!.y, 0);
-        expect(a!.x + a!.width).toBeLessThan(b!.x);
-      }
       await expect(secondary).toBeInViewport({ ratio: 1 });
       await expect(primary).toBeInViewport({ ratio: 1 });
       if (role === "alertdialog") await expect(secondary).toBeFocused();

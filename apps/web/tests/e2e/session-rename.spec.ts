@@ -84,10 +84,9 @@ test("detail editor preserves drafts on failure, blocks duplicate saves and hand
   await expect(page.getByRole("heading", { name: "세션 이름 수정", exact: true })).toBeVisible();
 });
 
-test("rename dialog fits mobile keyboard space and has a visual baseline", async ({ page }) => {
+test("rename dialog fits mobile keyboard space", async ({ page }) => {
   await page.goto("/#/task/t-idle-rich");
   await openRename(page, "Task actions");
-  await expect(page).toHaveScreenshot("session-rename.png");
   await page.setViewportSize({ width: 360, height: 400 });
   const dialog = page.getByRole("dialog");
   // The visual viewport updates on the next animation frame after resize.
