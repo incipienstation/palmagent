@@ -8,6 +8,12 @@ export class MessageConflict extends ApplicationError {
 }
 const conflict = (message: string): never => { throw new MessageConflict(message); };
 
+// Apply at state load/save boundaries. Pause protects pending messages, not
+// future submissions. Sending, rejected and unknown entries remain pending.
+export function clearEmptyQueuePause(state: MessageState): void {
+  if (!state.messages.some(message => message.status !== "delivered" && message.status !== "cancelled")) state.paused = false;
+}
+
 // Mutates an exclusively owned state snapshot. The caller persists it before
 // executing effects. Time, identity and execution availability are explicit facts;
 // this policy performs no I/O and does not advance the persistence revision.

@@ -1,7 +1,7 @@
 import type { IdentifierGenerator } from "../../../../kernel/identifiers.js";
 import type { MessageAction, MessageQueue, MessageSettings, PendingMessage, SubmitMessage } from "@palmagent/shared";
 import type { MessageState } from "../../domain/models.js";
-import { MessagePolicy } from "../../domain/message-policy.js";
+import { clearEmptyQueuePause, MessagePolicy } from "../../domain/message-policy.js";
 import type { AttachmentStorage } from "../ports/outbound/attachments.js";
 import type { MessageStateRepository } from "../ports/outbound/persistence.js";
 import type { MessageTiming } from "../ports/outbound/message-timing.js";
@@ -35,11 +35,14 @@ export class MessageController {
     this.closed = true; this.cancelPolling();
   }
   state(id: string): MessageState {
-    return this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
+    const s = this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
+    clearEmptyQueuePause(s); // Also normalize empty pauses saved by older versions.
+    return s;
   }
   private policy(id: string) { return new MessagePolicy(this.state(id)); }
   snapshot(id: string): MessageQueue { return this.policy(id).snapshot(); }
   private save(id: string, s: MessageState) {
+    clearEmptyQueuePause(s);
     s.revision++;
     this.db.writeMessageState(id, s);
     this.host.changed(id);
