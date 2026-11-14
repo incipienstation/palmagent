@@ -41,6 +41,9 @@ Dependency, script, file-mode, runtime, or other changes retain the ordinary che
 release candidate still runs the full source and packed-install verification.
 
 After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
+The server matrix separates Node-only contracts and runtime smoke from Rust checks followed by
+contracts that execute Rust debug binaries. Every contract file is assigned to exactly one group;
+the combined local server command still runs the complete gate.
 The required `validate` job aggregates their results and rejects any failure or cancellation.
 Static and version-only changes skip the runtime jobs. PWA tests use four shards on separate
 runners, preserving the sequential stateful test group. Service-worker checks run on a fifth
@@ -79,6 +82,8 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 3. Install frozen dependencies and run the full source gate, including generic leak checks.
    For known source gates, metadata checks and one PWA build precede separate
    type/tooling, server, four browser-shard runners, and an independent service-worker runner.
+   Known server partition commands use separate native/Node lanes as in PR CI. Older source,
+   modified nested commands, or lifecycle hooks retain the original combined server lane.
    Browser runners, service-worker checks, and packaging download the same build artifact from
    this run; its name is retained in preparation outputs so rerunning failed jobs reuses the
    verified build. Every selected lane must succeed before packaging; missing, skipped, failed,

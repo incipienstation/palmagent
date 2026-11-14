@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { candidatePlan, verifyCandidate, canDistributeCandidate, candidateLane, requireCandidateChecks } from '../verify-candidate.mjs';
+import { contractFiles } from '../../apps/server/scripts/run-contracts.mjs';
+import { candidatePlan, verifyCandidate, canDistributeCandidate, candidateLane, candidateLaneNames, canSplitServerContracts, serverLane, requireCandidateChecks } from '../verify-candidate.mjs';
 
 const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
 const webManifest = JSON.parse(readFileSync('apps/web/package.json', 'utf8'));
+const serverManifest = JSON.parse(readFileSync('apps/server/package.json', 'utf8'));
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'palmagent-candidate-gate-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
@@ -23,13 +25,12 @@ test('parallel plan retains every source check exactly once', () => {
 test('distributed verification covers all four browser shards and the service worker once', () => {
   assert.equal(canDistributeCandidate(manifest, webManifest), true);
   const workflow = readFileSync('.github/workflows/release-candidate.yml', 'utf8');
-  const matrix = /^        lane: \[([^\]]+)\]$/m.exec(workflow);
-  assert(matrix, 'release workflow must declare its verification lanes');
-  const names = matrix[1].split(',').map(name => name.trim());
-  assert.deepEqual(names, ['tooling', 'server', 'web-1', 'web-2', 'web-3', 'web-4', 'sw']);
+  assert.match(workflow, /lane: \$\{\{ fromJSON\(needs\.prepare\.outputs\.lanes\) \}\}/);
+  const names = candidateLaneNames(manifest, serverManifest);
+  assert.deepEqual(names, ['tooling', 'server-native', 'server-node', 'web-1', 'web-2', 'web-3', 'web-4', 'sw']);
   const lanes = names.map(candidateLane);
   assert.deepEqual(lanes.flat().filter(s => s.command === 'pnpm').map(s => s.args[0]),
-    ['typecheck', 'pkg:check', 'server:contracts', 'server:smoke']);
+    ['typecheck', 'pkg:check', 'server:contracts:native', 'server:contracts:node', 'server:smoke']);
   assert.deepEqual(lanes.flat().filter(s => s.command !== 'pnpm').map(s => s.args), [
     ['apps/web/scripts/run-e2e.mjs', '--shard=1/4'],
     ['apps/web/scripts/run-e2e.mjs', '--shard=2/4'],
@@ -38,6 +39,36 @@ test('distributed verification covers all four browser shards and the service wo
     ['apps/web/scripts/test-sw-update.mjs'],
   ]);
   for (const name of ['', 'web-5', 'constructor', '__proto__']) assert.throws(() => candidateLane(name));
+});
+
+test('split server lanes cover each contract file once and preserve the combined gate for older or changed sources', () => {
+  assert.equal(canSplitServerContracts(manifest, serverManifest), true);
+  const cwd = 'apps/server';
+  const native = contractFiles('native', cwd), node = contractFiles('node', cwd);
+  assert.deepEqual([...native, ...node].sort(), [...globSync(['tests/**/*.test.ts', 'tests/**/*.test.mjs'], { cwd })].sort());
+  assert(native.every(path => !node.includes(path)));
+  assert(native.includes('tests/integration/native-script-runtime.test.ts'));
+  assert.throws(() => contractFiles('unknown', cwd), /Expected/);
+  assert.throws(() => contractFiles('native', 'scripts/tests'), /Missing native/);
+  const original = structuredClone(manifest);
+  delete original.scripts['server:contracts:native']; delete original.scripts['server:contracts:node'];
+  const combined = ['tooling', 'server', 'web-1', 'web-2', 'web-3', 'web-4', 'sw'];
+  assert.deepEqual(candidateLaneNames(original, serverManifest), combined);
+  assert.deepEqual(serverLane(original, serverManifest, 'native'), candidateLane('server'));
+  assert.deepEqual(serverLane(original, serverManifest, 'node'), []);
+  assert.deepEqual(serverLane(manifest, serverManifest, 'node'), candidateLane('server-node'));
+  assert.throws(() => serverLane(manifest, serverManifest, 'unknown'), /Unknown/);
+  assert.deepEqual(candidateLaneNames(manifest, undefined), combined);
+  for (const [which, name] of [['root', 'server:contracts'], ['root', 'server:contracts:native'], ['root', 'server:contracts:node'],
+    ['server', 'contracts'], ['server', 'contracts:native'], ['server', 'contracts:node']]) {
+    for (const hook of [false, true]) {
+      const root = structuredClone(manifest), server = structuredClone(serverManifest);
+      const scripts = (which === 'root' ? root : server).scripts;
+      if (hook) scripts[`post${name}`] = 'node extra-check.mjs';
+      else scripts[name] += ' && node extra-check.mjs';
+      assert.deepEqual(candidateLaneNames(root, server), combined);
+    }
+  }
 });
 
 test('browser gate additions and build lifecycle hooks keep the complete source fallback', () => {

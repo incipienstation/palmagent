@@ -14,7 +14,9 @@
     "runner": "tsx src/bootstrap/runner-daemon.ts",
     "smoke": "node scripts/runtime-smoke.mjs",
     "typecheck": "node ../../scripts/check-architecture.mjs && tsc --noEmit",
-    "start": "tsx src/bootstrap/server.ts"
+    "start": "tsx src/bootstrap/server.ts",
+    "contracts:native": "node scripts/run-contracts.mjs native",
+    "contracts:node": "node scripts/run-contracts.mjs node"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",

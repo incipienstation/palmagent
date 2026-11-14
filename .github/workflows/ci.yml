@@ -67,6 +67,10 @@ jobs:
     if: needs.scope.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [native, node]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,7 +83,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify server contracts and runtime
-        run: pnpm server:contracts && pnpm server:smoke
+        run: node scripts/verify-candidate.mjs . server-lane '${{ matrix.lane }}'
 
   web:
     needs: scope
