@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { freePort, smokeEnv, startSmokeServer } from "./lib/pkg-smoke-runtime.mjs";
 import { smokeTerminal } from "./lib/pkg-smoke-terminal.mjs";
+import { smokeRetainedView } from "./lib/pkg-smoke-view.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = join(ROOT, "build/pkg");
@@ -208,6 +209,7 @@ try {
   assert.equal(access("check").state.settings.discovery.error, true, "Check again reaches the registry instead of rereading status");
   execFileSync(bin, ["update-request", "--data-dir", join(scratch, "data")], { env: accessEnv, encoding: "utf8" });
   assert(!existsSync(join(scratch, "data/update-result.json")), "checking does not create an installation result");
+  await smokeRetainedView(installed, scratch, process.env);
   console.log("[smoke] PASS: packed CLI, access checks, isolated SQLite, and PWA");
 } finally {
   await server?.stop();

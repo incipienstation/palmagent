@@ -70,6 +70,16 @@ be replayed. Retain unconfirmed reservations and completed identity records; do 
 remove them to unblock launches. Automatic log retention protects active and uncertain
 hosts and never removes task history, execution journals or retained release artifacts.
 
+For installations whose CLI help lists `view`, `<cli> view status --data-dir <data-dir>`
+inspects the separate PWA file server. The daemon's historical `web` host is the retained
+API/Task owner; view status reports both owner and view PIDs. If the view is unavailable but
+API health is good, an authorized repair can use `<cli> view restart --data-dir <data-dir>`.
+This replaces only PWA serving and preserves Task queues, authenticated API admission, SSE,
+and terminal WebSockets. It does not activate a new release, repair a failed API owner, or
+bypass update maintenance. Older CLIs/runtimes may lack this capability; do not substitute a
+full service restart for a requested view-only restart. Continue diagnosis or use the normal
+update workflow within the user's scope.
+
 Legacy installations use **`palmagent.service`** for the web/SSE server:
 
 ```bash

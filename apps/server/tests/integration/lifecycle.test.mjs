@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { spawn, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
+import { Db } from "../../src/composition/database.ts";
+import { processIdentity } from "../../src/platform/process/identity.ts";
+import { spawn, execFileSync, execFile } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -56,7 +59,7 @@ async function freePort() {
 // Real HTTP server, daemon, SQLite and adapters, with only the external CLI
 // replaced. Build the environment from scratch: never inherit a live socket,
 // database, provider credentials, or user CLI configuration.
-async function harness(t, daemon = true) {
+async function harness(t, daemon = true, authenticated = false) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-lifecycle-"));
   const children = [];
   const logs = [];
@@ -96,6 +99,19 @@ async function harness(t, daemon = true) {
     PROBE_CONTROL: join(dir, "control"),
     DISPATCH_CONCURRENCY: "2",
   };
+  const headers = {};
+  if (authenticated) {
+    delete env.AUTH_DISABLED;
+    Object.assign(env, { AUTH_ENABLED: "1", AUTH_RP_ID: "fixture.example", AUTH_ORIGIN: "https://fixture.example",
+      STATIC_DIR: join(dir, "view") });
+    mkdirSync(env.STATIC_DIR);
+    writeFileSync(join(env.STATIC_DIR, "index.html"), "<html>Isolated view</html>");
+    const seed = new Db(env.DISPATCHER_DB);
+    const token = crypto.randomUUID();
+    seed.createSession(token, Date.now(), Date.now() + 600_000);
+    seed.close();
+    Object.assign(headers, { cookie: `palmagent_session=${token}`, origin: env.AUTH_ORIGIN });
+  }
   if (daemon === "independent") {
     env.EXECUTION_RELEASE = serverDir;
     env.EXECUTION_NODE = process.execPath;
@@ -115,7 +131,7 @@ spawn(process.execPath, ["--import", "tsx", ${JSON.stringify(join(serverDir, "sr
   git(["-c", "user.name=Validation", "-c", "user.email=validation",
     "commit", "--allow-empty", "-m", "Synthetic fixture"]);
 
-  const c = { dir, env, base: `http://localhost:${env.PORT}` };
+  const c = { dir, env, headers, base: `http://localhost:${env.PORT}` };
   c.start = (entry) => {
     const child = spawn(process.execPath, ["--import", "tsx", `src/bootstrap/${entry}.ts`], {
       cwd: serverDir, env, detached: true, stdio: ["ignore", "pipe", "pipe"],
@@ -128,7 +144,7 @@ spawn(process.execPath, ["--import", "tsx", ${JSON.stringify(join(serverDir, "sr
   c.api = async (route, body) => {
     const response = await fetch(c.base + "/api/" + route, {
       method: body === undefined ? "GET" : "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(3000),
     });
@@ -151,6 +167,9 @@ spawn(process.execPath, ["--import", "tsx", ${JSON.stringify(join(serverDir, "sr
     } else await kill(c.web);
     await c.webStart();
   };
+  c.view = async action => JSON.parse((await promisify(execFile)(process.execPath,
+    ["--import", "tsx", "src/bootstrap/cli.ts", "view", action, "--data-dir", env.DISPATCHER_DATA_DIR],
+    { cwd: serverDir, env, timeout: 25000 })).stdout);
   c.task = async (id) => (await c.api("tasks/" + id)).task;
   c.waitTask = (id, predicate) => until("task state " + id, async () => {
     const task = await c.task(id);
@@ -186,7 +205,7 @@ async function observeStream(c, taskId, global = false) {
   let snapshot;
   try {
     const response = await fetch(c.base + "/api/stream" + (global ? "" : "?task=" + taskId), {
-      headers: { "Last-Event-ID": "2" }, signal: controller.signal,
+      headers: { ...c.headers, "Last-Event-ID": "2" }, signal: controller.signal,
     });
     assert(response.ok);
     for await (const chunk of response.body) {
@@ -567,4 +586,82 @@ for (const agent of ["claude", "codex"]) test(`${agent}: new attachments remain 
   const archived = await fetch(c.base + `/api/tasks/${task.taskId}`, { method: "DELETE" });
   assert.equal(archived.status, 200);
   await c.restart(true); await verifyImage();
+});
+
+// Distinct boundary: stopping the file-serving view must not stop API admission,
+// the Task pump, or existing authenticated SSE. Reuse retained CLI lifecycle controls.
+test("retained API owns queues, auth and SSE through a stalled view and its restart", { ...options, timeout: 60000 }, async t => {
+  const c = await harness(t, "independent", true);
+  const initial = await c.view("status");
+  assert.equal(initial.state, "ready");
+  assert.equal(initial.ownerPid, c.web.pid);
+  assert.equal(await (await fetch(c.base + "/")).text(), "<html>Isolated view</html>");
+  const task = await c.create("codex", "view-a");
+  await c.waitTask(task.taskId, t => t.status === "running");
+  const duplicate = c.start("server");
+  await until("second owner rejected", () => duplicate.exitCode !== null);
+  assert.notEqual(duplicate.exitCode, 0);
+  assert.equal((await c.task(task.taskId)).status, "running", "duplicate startup must not recover/reset owned Tasks");
+  const message = (key, mode) => ({ clientMessageId: crypto.randomUUID(), mode: "queue", expectedRunId: null,
+    text: JSON.stringify({ key, mode }) });
+  await c.api(`tasks/${task.taskId}/messages`, message("view-d", "auto"));
+  const pending = message("view-e", "hold");
+  const controller = new AbortController();
+  let streamed = "";
+  const stream = await fetch(c.base + `/api/stream?task=${task.taskId}`, { headers: c.headers, signal: controller.signal });
+  assert.equal(stream.status, 200);
+  const reading = (async () => { for await (const chunk of stream.body) streamed += Buffer.from(chunk).toString(); })()
+    .catch(error => { if (error.name !== "AbortError") throw error; });
+  try {
+    await until("initial stream snapshot", () => streamed.includes('"type":"tasks"'));
+    process.kill(initial.pid, "SIGSTOP");
+    await assert.rejects(fetch(c.base + "/", { signal: AbortSignal.timeout(100) }));
+    c.mark("view-a", ".release");
+    await c.ready("view-d");
+    await c.api(`tasks/${task.taskId}/messages`, pending);
+    await c.ready("view-e");
+    assert.equal((await fetch(c.base + "/api/tasks")).status, 401);
+    assert.equal((await fetch(c.base + `/api/tasks/${task.taskId}/messages`, { method: "POST",
+      headers: { ...c.headers, origin: "https://other.example", "content-type": "application/json" }, body: JSON.stringify(pending) })).status, 403);
+    const next = await c.view("restart");
+    assert.equal(next.state, "ready");
+    assert.equal(next.ownerPid, initial.ownerPid);
+    assert.notEqual(next.pid, initial.pid);
+    assert.equal(next.generation, initial.generation + 1);
+    assert.equal(await (await fetch(c.base + "/")).text(), "<html>Isolated view</html>");
+    process.kill(next.pid, "SIGKILL");
+    const recoveredView = await until("view automatically recovers", async () => {
+      const state = await c.view("status");
+      return state.state === "ready" && state.generation > next.generation && state;
+    });
+    assert.equal(recoveredView.ownerPid, initial.ownerPid);
+    await c.api(`tasks/${task.taskId}/messages`, pending);
+    c.mark("view-e", ".ping");
+    await until("same SSE observes output after view restart", () => streamed.includes("view-e:ping"));
+    c.mark("view-e", ".release");
+    await c.waitTask(task.taskId, t => t.status === "idle");
+    assert.equal((await c.ready("view-e")).session, task.sessionId);
+    assert.equal(c.rows(task.taskId).filter(row => row.kind === "result").length, 3);
+    assert.deepEqual(c.rows(task.taskId).filter(row => row.kind === "assistant_text").map(row => JSON.parse(row.payload_json).text),
+      ["view-a:before", "view-a:after", "view-d:before", "view-e:before", "view-e:ping", "view-e:after"]);
+    const reconnected = await observeStream(c, task.taskId);
+    assert.equal(reconnected.snapshot.tasks[0].taskId, task.taskId);
+    assert.equal(reconnected.snapshot.tasks[0].status, "idle");
+    controller.abort(); await reading;
+    const finishMaintenance = beginUpdateMaintenance(c.env.DISPATCHER_DB);
+    try {
+      await assert.rejects(c.view("restart"), /maintenance is in progress/);
+      assert.equal((await c.view("status")).pid, recoveredView.pid);
+    } finally { finishMaintenance(); }
+    // Kill only the API PID: its IPC lease must end the child even without group cleanup.
+    c.web.kill("SIGKILL");
+    await until("API exited", () => c.web.signalCode !== null);
+    await until("view parent lease closed", () => !processIdentity(recoveredView.pid));
+    await c.webStart();
+    assert.equal((await c.view("status")).state, "ready");
+    assert.equal(c.rows(task.taskId).filter(row => row.kind === "result").length, 3);
+  } finally {
+    controller.abort(); await reading;
+    try { if (processIdentity(initial.pid)) process.kill(initial.pid, "SIGCONT"); } catch {}
+  }
 });

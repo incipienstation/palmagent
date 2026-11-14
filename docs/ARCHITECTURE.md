@@ -122,9 +122,15 @@ connection recovery. Independent execution identity or connectivity uncertainty 
 rather than resetting a task or resending a message. Recovery timestamps and queue scheduling use
 the clock supplied by composition.
 
-Provider execution independence does not make Task admission independent. The current server
-still owns the Task message pump and public API. The [runtime boundary experiment](performance/task-runtime/README.md)
-compares retained ownership and API routing; its candidate topology is not a deployed architecture.
+The daemon's historical `web` host now retains the API and Task owner. `server.js` holds a
+process-lifetime lock before opening the database, owns API/SSE/WebSocket listeners and local
+control, and launches `view.js` for PWA files only. The private view socket is never an API route;
+static requests are streamed through the owner. View restart or recovery cannot instantiate a
+second TaskService or stop admission. The child's IPC lease ends it when the owner exits.
+Full application restart still closes the owner and view together, preserving existing recovery
+and update-maintenance contracts. See [Task owner and web view](TASK_RUNTIME.md) for lifecycle,
+compatibility, verification and limits, and the [boundary experiment](performance/task-runtime/README.md)
+for the original measurements.
 
 ## Design references
 
@@ -156,4 +162,4 @@ their Node host. The Node entrypoint remains packaged for older daemon compatibi
 `pnpm architecture:check` also runs the Rust syntax-tree boundary check, including imports,
 qualified paths, unknown source placement and cycles. Rust has an explicit wire projection
 of the TypeScript contracts; calendar vectors and real-process server contracts check parity
-at that boundary. Product database migrations remain owned by the web bootstrap in this stage.
+at that boundary. Product database migrations remain owned by the retained TypeScript API bootstrap.

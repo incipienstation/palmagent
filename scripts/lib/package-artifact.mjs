@@ -37,6 +37,10 @@ export function inspectPackage(path, { version, commit, publishable = false, all
   for (const name of ['cli.js', 'server.js', 'runner-daemon.js', 'web/index.html']) {
     if (!files[name]) throw new Error(`Package missing ${name}`);
   }
+  if (unique.has('package/runtime-contract.json')) {
+    const contract = JSON.parse(read('runtime-contract.json'));
+    if (contract.viewControl !== undefined && (contract.viewControl !== 1 || !files['view.js'])) throw new Error('Package view runtime is incompatible or incomplete');
+  }
   if (unique.has('package/daemon/manifest.json')) {
     const manifest = JSON.parse(read('daemon/manifest.json'));
     if (manifest.protocol !== 1 || manifest.version !== pkg.version || manifest.sourceCommit !== info?.sourceCommit) throw new Error('Native daemon identity mismatch');
