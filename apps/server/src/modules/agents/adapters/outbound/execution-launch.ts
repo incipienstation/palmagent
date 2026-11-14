@@ -25,14 +25,19 @@ export function prepareLaunch(store: ExecutionStore, record: ExecutionRecord): v
   const directory = openSync(store.directory, "r");
   try { fsyncSync(directory); } finally { closeSync(directory); }
 }
-const attempted = new Map<string, number>();
+const attempted = new Map<string, { directory: string; at: number }>();
 const launching = new Set<string>();
 export function admitExecutions(store: ExecutionStore, limit: number, launch: ExecutionLauncher = launchExecution): void {
   store.admit(limit);
-  for (const record of store.list()) {
+  const pendingLaunches = store.pendingLaunches();
+  const pendingIds = new Set(pendingLaunches.map(record => record.id));
+  for (const [id, attempt] of attempted) {
+    if (attempt.directory === store.directory && !pendingIds.has(id)) attempted.delete(id);
+  }
+  for (const record of pendingLaunches) {
     if (record.state !== "starting" || record.pid !== null) { attempted.delete(record.id); continue; }
-    if (launching.has(record.id) || Date.now() - (attempted.get(record.id) ?? 0) < 5000) continue;
-    attempted.set(record.id, Date.now());
+    if (launching.has(record.id) || Date.now() - (attempted.get(record.id)?.at ?? 0) < 5000) continue;
+    attempted.set(record.id, { directory: store.directory, at: Date.now() });
     // A launch uncertainty is never reset to queued. Unit identity plus the
     // host's durable claim prevent a repeated invocation during reconciliation.
     try {

@@ -7,8 +7,8 @@ type Checkpoint = { cursor: number; prefixHash: string };
 const changed = () => new Error("Native transcript changed before the synchronization cursor");
 
 /** Scan a fixed file snapshot with one JSONL record in memory, not the entire history.
- * Previously imported bytes are still hashed to detect rewrites, but only identity
- * metadata and appended records are parsed. An unfinished preview never advances.
+ * Previously imported bytes are hashed in blocks after finding identity metadata;
+ * only appended records need further line splitting. An unfinished preview never advances.
  */
 export function scanTranscript(path: string, task: TaskState, previous: Checkpoint | undefined,
   preview: boolean, consume: (row: RecordValue) => void): Checkpoint {
@@ -54,6 +54,18 @@ export function scanTranscript(path: string, task: TaskState, previous: Checkpoi
       position += count;
       let start = 0;
       while (start < count) {
+        if (identity && cursor < from && length === 0) {
+          const end = Math.min(count, start + from - cursor);
+          hash.update(chunk.subarray(start, end));
+          cursor += end - start;
+          start = end;
+          if (cursor === from) {
+            // A matching hash alone must not admit a cursor inside a JSONL record.
+            if (chunk[end - 1] !== 10 || hash.copy().digest("hex") !== previous!.prefixHash) throw changed();
+            verified = true;
+          }
+          continue;
+        }
         const newline = chunk.indexOf(10, start);
         const end = newline >= 0 && newline < count ? newline + 1 : count;
         const part = chunk.subarray(start, end);
