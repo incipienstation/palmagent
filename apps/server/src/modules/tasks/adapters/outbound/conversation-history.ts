@@ -13,8 +13,8 @@ type State = { cursor: number; block_start: number; log_json: string; activity: 
 type StoredRow = { seq: number; end_seq: number; revision: number; body_json: string | null; wire_json: string | null };
 type EventRow = { seq: number; kind: AgentEvent["kind"]; payload_json: string; ts: number; agent: AgentEvent["agent"]; session_id: string | null };
 const version = (body: string) => createHash("sha256").update(body).digest("hex");
-// Version 5 fixes message placement to the first observed phase, including unknown.
-const PROJECTION_VERSION = 5;
+// Version 6 removes expected user-stop diagnostics from run failure notices.
+const PROJECTION_VERSION = 6;
 const reset = (event: AgentEvent) => event.kind === "status" &&
   ["dispatch", "followup", "turn_started"].includes(String((event.payload as { subtype?: unknown } | null)?.subtype));
 const endOf = (row: TranscriptRow) => row.type === "message" ? row.item.endSeq ?? row.key

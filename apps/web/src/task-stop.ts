@@ -17,7 +17,10 @@ export async function stopTaskTurn(taskId: string, runId?: string | null) {
     if (isActiveTaskStatus(actual.status)) observeTaskActivity(actual);
     // Keep the local Stop pending until the live task snapshot catches up, even
     // when the HTTP response already says a queued task is idle.
-    finishWhenStopped(taskId, stop.finish, actual.messageQueue?.runId ?? runId);
+    finishWhenStopped(taskId, () => {
+      stop.finish();
+      if (generation === cacheSession()) toast({ title: "Response stopped" });
+    }, actual.messageQueue?.runId ?? runId);
   } catch (error) {
     if (generation === cacheSession()) toast({ title: error instanceof Error ? error.message : String(error), variant: "destructive" });
     stop.finish();

@@ -432,6 +432,9 @@ new tasks. A Stop click during submission waits for that request to settle befor
 interrupting the turn and leaving the task resumable. Stop is available only in
 the composer, including while a question or approval is pending. Typing a follow-up
 exposes Send and Queue alongside Stop.
+Once the live task confirms the stop, a brief “Response stopped” toast acknowledges
+the action. Expected interruption and process-exit diagnostics do not create a run
+error notice; unrelated errors remain visible and raw execution records are retained.
 
 The composer stays compact until focused or holding a draft. Text and image
 previews expand above the action row, with long drafts scrolling inside the input.
