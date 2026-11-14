@@ -91,6 +91,12 @@ for (const agent of ["claude", "codex"] as const) test(`${agent} transcript sync
   assert.throws(() => synchronizeSession(f.task), /unfinished/);
   writeFileSync(f.transcript, snapshot);
   assert.equal(synchronizeSession(f.task).events.length, 0);
+  const insideRecord = snapshot.length - 1;
+  f.task.sessionControl = { ...first.control, cursor: insideRecord,
+    prefixHash: createHash("sha256").update(snapshot.subarray(0, insideRecord)).digest("hex") };
+  assert.throws(() => synchronizeSession(f.task), /before the synchronization cursor/,
+    "even a matching hash cannot resume inside a record");
+  f.task.sessionControl = first.control;
   const changed = Buffer.from(snapshot); changed[10] = changed[10] === 65 ? 66 : 65;
   writeFileSync(f.transcript, changed);
   assert.throws(() => synchronizeSession(f.task), /before the synchronization cursor/);

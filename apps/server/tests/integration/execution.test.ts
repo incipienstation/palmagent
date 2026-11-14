@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { ExecutionStore } from "../../src/modules/agents/adapters/outbound/execution-store.js";
+import { admitExecutions } from "../../src/modules/agents/adapters/outbound/execution-launch.js";
 import { ExecutionBackend } from "../../src/modules/agents/adapters/outbound/execution-client.js";
 import { drainExecutionCommands } from "../../src/modules/agents/adapters/outbound/execution-commands.js";
 import { ExecutionPersistence } from "../../src/modules/agents/adapters/outbound/execution-persistence.js";
@@ -27,6 +28,50 @@ function fixture(t: TestContext) {
   return { root, store };
 }
 const request = (taskId: string): ExecutionStart => ({ taskId, agent: "codex", cwd: `/tmp/${taskId}`, prompt: "Fixture" });
+
+test("launch reconciliation reads only candidates and retries uncertain launches without duplicating in-flight work", async t => {
+  const { store } = fixture(t);
+  for (const state of ["finished", "lost"] as const) {
+    const record = store.reserve(request(state), "/opt/releases/one", process.execPath);
+    store.finish(record.id, state === "lost");
+  }
+  const running = store.reserve(request("running"), "/opt/releases/one", process.execPath);
+  store.admit(1); store.claim(running.id);
+  const starting = store.reserve(request("starting"), "/opt/releases/one", process.execPath);
+  store.admit(2);
+  store.reserve(request("queued"), "/opt/releases/one", process.execPath);
+  // A reopened client must recover an existing reservation, not just newly admitted rows.
+  const client = new ExecutionStore(store.directory);
+  t.after(() => client.close());
+  const reads = t.mock.method(client, "get");
+  let now = 10_000, attempts = 0;
+  t.mock.method(Date, "now", () => now);
+  let resolveLaunch!: () => void;
+  const pending = new Promise<void>(resolve => { resolveLaunch = resolve; });
+  const launch = (record: ReturnType<ExecutionStore["get"]>) => {
+    assert.equal(record.id, starting.id);
+    attempts++;
+    if (attempts === 1) throw new Error("Uncertain launch");
+    return pending;
+  };
+  admitExecutions(client, 2, launch);
+  const unrelated = new ExecutionStore(join(store.directory, "unrelated"));
+  try { admitExecutions(unrelated, 2, launch); } finally { unrelated.close(); }
+  admitExecutions(client, 2, launch);
+  assert.equal(attempts, 1, "uncertain launches retain the retry delay");
+  now += 5000;
+  admitExecutions(client, 2, launch);
+  now += 5000;
+  admitExecutions(client, 2, launch);
+  assert.equal(attempts, 2, "an in-flight launch is not repeated after the retry delay");
+  assert.deepEqual(reads.mock.calls.map(call => call.arguments[0]), Array(4).fill(starting.id),
+    "retained history, queued and running executions are not decoded");
+  store.claim(starting.id);
+  resolveLaunch(); await pending; await Promise.resolve();
+  admitExecutions(client, 2, launch);
+  assert.equal(attempts, 2, "claimed executions stop being launch candidates");
+  assert.equal(reads.mock.callCount(), 4, "no candidates means no execution decoding");
+});
 
 test("execution admission, ownership and command receipts survive clients and reject duplicate intent", (t) => {
   const { store } = fixture(t);

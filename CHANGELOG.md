@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Reduce background work for retained executions and long native conversation histories while preserving execution recovery and transcript integrity checks.
+
 ## 0.2.0-alpha.18
 
 ### Changed

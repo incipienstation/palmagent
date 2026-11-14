@@ -38,6 +38,7 @@ export class ExecutionStore {
         question TEXT, lastSeq INTEGER NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS live_task ON executions(taskId) WHERE state IN ('queued','starting','running');
       CREATE UNIQUE INDEX IF NOT EXISTS live_owner ON executions(ownerKey) WHERE state IN ('queued','starting','running');
+      CREATE INDEX IF NOT EXISTS execution_state ON executions(state);
       CREATE TABLE IF NOT EXISTS events (execution TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(execution,seq));
       CREATE TABLE IF NOT EXISTS commands (execution TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL, result TEXT NOT NULL, claimed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(execution,id));
       CREATE TABLE IF NOT EXISTS admission_settings (id INTEGER PRIMARY KEY CHECK(id=1), capacity INTEGER NOT NULL);
@@ -65,6 +66,10 @@ export class ExecutionStore {
   }
   list(): ExecutionRecord[] {
     return (this.db.prepare("SELECT id FROM executions ORDER BY rowid").all() as { id: string }[]).map(({ id }) => this.get(id));
+  }
+  pendingLaunches(): ExecutionRecord[] {
+    return (this.db.prepare("SELECT id FROM executions WHERE state='starting' AND pid IS NULL ORDER BY rowid").all() as { id: string }[])
+      .map(({ id }) => this.get(id));
   }
   reserve(input: ExecutionStart, release: string, node: string, skills?: SkillSelection[]): ExecutionRecord {
     const args = ExecutionStartSchema.parse(input);
