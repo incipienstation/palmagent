@@ -1,12 +1,12 @@
 import type { IdentifierGenerator } from "../../../../kernel/identifiers.js";
 import type { MessageAction, MessageQueue, MessageSettings, PendingMessage, SubmitMessage } from "@palmagent/shared";
 import type { MessageState } from "../../domain/models.js";
+import { clearEmptyQueuePause, MessagePolicy } from "../../domain/message-policy.js";
 import type { AttachmentStorage } from "../ports/outbound/attachments.js";
 import type { MessageStateRepository } from "../ports/outbound/persistence.js";
-import { ApplicationError } from "../../../../kernel/errors.js";
+import type { MessageTiming } from "../ports/outbound/message-timing.js";
+export { MessageConflict } from "../../domain/message-policy.js";
 
-const EDIT_MS = 60_000;
-type StoredMessage = MessageState["messages"][number];
 interface Host {
   assertWritable(id: string): void;
   validateSubmission?(id: string, req: SubmitMessage): void;
@@ -16,202 +16,116 @@ interface Host {
   steer(id: string, message: PendingMessage): Promise<"delivered" | "rejected" | "unknown">;
   changed(id: string): void;
 }
-export class MessageConflict extends ApplicationError {
-  constructor(message: string) { super("conflict", message); }
-}
-const conflict = (s: string): never => { throw new MessageConflict(s); };
 
-// One controller owns ordering for both agents. Synchronous SQLite transitions
-// claim work before any asynchronous adapter call; callbacks always re-read it.
+// One controller owns ordering for both agents. Persist claims synchronously
+// before calling the host; asynchronous receipts always load the current state.
 export class MessageController {
   private closed = false;
-  private timer: ReturnType<typeof setInterval>;
-  constructor(private db: MessageStateRepository, private host: Host, private attachments: AttachmentStorage, private readonly ids: IdentifierGenerator) {
-    this.timer = setInterval(() => { if (!this.db.isOpen) { this.close(); return; } for (const id of this.db.messageTaskIds()) this.pump(id); }, 1000);
-    this.timer.unref();
+  private readonly cancelPolling: () => void;
+  constructor(private db: MessageStateRepository, private host: Host, private attachments: AttachmentStorage,
+    private readonly ids: IdentifierGenerator, private readonly timing: MessageTiming) {
+    this.cancelPolling = timing.every(1000, () => {
+      if (this.closed) return;
+      if (!this.db.isOpen) { this.close(); return; }
+      for (const id of this.db.messageTaskIds()) this.pump(id);
+    });
   }
-  close() { this.closed = true; clearInterval(this.timer); }
+  close() {
+    if (this.closed) return;
+    this.closed = true; this.cancelPolling();
+  }
   state(id: string): MessageState {
     const s = this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
-    this.clearEmptyPause(s); // Also normalize empty pauses saved by older versions.
+    clearEmptyQueuePause(s); // Also normalize empty pauses saved by older versions.
     return s;
   }
-  snapshot(id: string): MessageQueue {
-    const s = this.state(id);
-    return { revision: s.revision, paused: s.paused, runId: s.runId, ...(s.compaction ? { compaction: s.compaction } : {}),
-      messages: s.messages.filter(m => !["delivered", "cancelled"].includes(m.status)).map(({ fingerprint: _, editToken: __, ...m }) => m) };
-  }
+  private policy(id: string) { return new MessagePolicy(this.state(id)); }
+  snapshot(id: string): MessageQueue { return this.policy(id).snapshot(); }
   private save(id: string, s: MessageState) {
-    this.clearEmptyPause(s);
+    clearEmptyQueuePause(s);
     s.revision++;
     this.db.writeMessageState(id, s);
     this.host.changed(id);
   }
-  private clearEmptyPause(s: MessageState) {
-    // Pause protects pending messages, not future submissions to this task.
-    // Sending, rejected and unknown entries still need delivery resolution.
-    if (!s.messages.some(m => m.status !== "delivered" && m.status !== "cancelled")) s.paused = false;
+  private change(id: string, transition: (policy: MessagePolicy) => boolean | void) {
+    const policy = this.policy(id);
+    if (transition(policy) !== false) this.save(id, policy.state);
   }
   beginRun(id: string, initialMessageId?: string, compactionRequestId?: string) {
-    const s = this.state(id);
-    s.runId = this.ids.uuid(); s.initialMessageId = initialMessageId; s.runtimeStarted = false;
-    s.compaction = compactionRequestId ? { requestId: compactionRequestId, status: "running" } : undefined;
-    for (const m of s.messages) if (m.status === "sending" && !m.runId) m.runId = s.runId;
-    s.protocol = "interactive";
-    this.save(id, s);
-    return s.runId;
+    const runId = this.ids.uuid();
+    this.change(id, policy => { policy.beginRun(runId, initialMessageId, compactionRequestId); });
+    return runId;
   }
-  rejectBeforeStart(id: string, error: string) {
-    const s = this.state(id);
-    if (s.runtimeStarted) return;
-    for (const m of s.messages) if (m.status === "sending") { m.status = "rejected"; m.error = error; }
-    s.runId = null; s.paused = true; this.save(id, s);
-  }
-  startingRuntime(id: string) { const s = this.state(id); s.runtimeStarted = true; this.save(id, s); }
-  stopWaiting(id: string) {
-    const s = this.state(id);
-    const m = s.messages.find(m => m.id === s.initialMessageId);
-    if (!s.runtimeStarted && m?.status === "sending") { m.status = "queued"; m.runId = undefined; }
-    s.runId = null; s.paused = true;
-    if (s.compaction?.status === "running") s.compaction = { ...s.compaction, status: "failed", error: "Context compaction was stopped." };
-    this.save(id, s);
-  }
-  recover(id: string, live: boolean) {
-    const s = this.state(id);
-    // A send may have crossed the process boundary before the server died.
-    // Never replay it merely because its acknowledgement was lost.
-    for (const m of s.messages) if (m.status === "sending") { if (!live && !s.runtimeStarted && m.id === s.initialMessageId) { m.status = "queued"; m.runId = undefined; continue; } m.status = "unknown"; m.error = "Delivery could not be confirmed after reconnecting."; s.paused = true; }
-    if (!live && s.runId) { s.runId = null; s.paused = true; }
-    if (!live && s.compaction?.status === "running") s.compaction = { ...s.compaction, status: "failed", error: "Context compaction could not be confirmed after restarting. You can try again." };
-    this.save(id, s);
-  }
-  pause(id: string) { const s = this.state(id); s.paused = true; this.save(id, s); }
+  rejectBeforeStart(id: string, error: string) { this.change(id, policy => policy.rejectBeforeStart(error)); }
+  startingRuntime(id: string) { this.change(id, policy => policy.startingRuntime()); }
+  stopWaiting(id: string) { this.change(id, policy => policy.stopWaiting()); }
+  recover(id: string, live: boolean) { this.change(id, policy => policy.recover(live)); }
+  pause(id: string) { this.change(id, policy => policy.pause()); }
   resume(id: string) {
     this.host.assertWritable(id);
-    const s = this.state(id);
-    if (s.messages.some(m => m.status === "unknown" || m.status === "sending")) conflict("Resolve unconfirmed delivery before resuming the queue.");
-    s.paused = false; this.save(id, s); this.pump(id);
+    this.change(id, policy => policy.resume());
+    this.pump(id);
     return this.snapshot(id);
   }
   finish(id: string, failed: boolean, drain = true, error?: string) {
-    const s = this.state(id); s.runId = null;
-    if (s.compaction?.status === "running") s.compaction = { ...s.compaction, status: failed ? "failed" : "completed", ...(failed ? { error: error ?? "Context compaction did not finish. Try again." } : {}) };
-    if (failed) s.paused = true;
-    for (const m of s.messages) if (m.status === "sending") { m.status = "unknown"; m.error = "The run ended before delivery was confirmed."; s.paused = true; }
-    this.save(id, s);
+    this.change(id, policy => policy.finish(failed, error));
     if (!failed && drain) this.pump(id);
   }
-  delivered(id: string, messageId: string) {
-    const s = this.state(id), m = s.messages.find(m => m.id === messageId);
-    if (!m || !["sending", "unknown"].includes(m.status)) return;
-    m.status = "delivered"; m.error = undefined; this.save(id, s);
-  }
+  delivered(id: string, messageId: string) { this.change(id, policy => policy.delivered(messageId)); }
   deliveryFailed(id: string, messageId: string, status: "rejected" | "unknown") {
-    if (this.closed) return;
-    const state = this.state(id), entry = state.messages.find(message => message.id === messageId);
-    if (!entry || entry.status === "delivered") return;
-    entry.status = status;
-    entry.error = status === "rejected" ? "The shared session rejected this message." : "Delivery could not be confirmed. Check the conversation before sending again.";
-    state.paused = true; this.save(id, state);
+    if (!this.closed) this.change(id, policy => policy.deliveryFailed(messageId, status));
   }
   submit(id: string, req: SubmitMessage) {
-    const s = this.state(id), fingerprint = this.ids.digest(JSON.stringify(req));
-    const old = s.messages.find(m => m.id === req.clientMessageId);
-    if (old) { if (old.fingerprint !== fingerprint) conflict("This message ID was already used with different content."); return this.snapshot(id); }
-    // A lost HTTP receipt is a read of an already accepted submission. Return it
-    // even if maintenance or the task's lifecycle now prevents new messages.
+    const policy = this.policy(id), fingerprint = this.ids.digest(JSON.stringify(req));
+    // A lost HTTP receipt reads the accepted submission, even during maintenance
+    // or after ownership changes. It never sends the provider command again.
+    if (policy.hasSubmission(req.clientMessageId, fingerprint)) return this.snapshot(id);
     this.host.assertWritable(id);
     this.host.validateSubmission?.(id, req);
-    if (s.messages.filter(m => m.status !== "delivered" && m.status !== "cancelled").length >= 100) conflict("The message queue is full.");
-    if (req.mode === "send" && req.expectedRunId !== s.runId) conflict("The active run changed. Review the message and send again.");
-    if (req.mode === "send") {
-      if (s.messages.some(x => x.status === "sending" || x.status === "unknown")) conflict("Wait for the previous message delivery to be confirmed.");
-      if (!s.runId && !this.host.canStart(id)) conflict("The task cannot start a new run yet.");
-    }
-    if (req.mode === "send" && s.runId && req.settings && Object.keys(req.settings).length) conflict("Model and permission changes apply to queued messages or the next run.");
-    const m: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text, attachments: this.attachments.save(id, req.images), skills: req.skills,
-      settings: { ...this.host.settings(id), ...req.settings }, status: "queued", fingerprint };
-    s.messages.push(m); this.save(id, s);
-    if (req.mode === "send") this.sendNow(id, m.id);
+    policy.assertSubmission(req, req.mode !== "send" || !!policy.state.runId || this.host.canStart(id));
+    policy.enqueue({ id: req.clientMessageId, version: 1, mode: req.mode, text: req.text,
+      attachments: this.attachments.save(id, req.images), skills: req.skills,
+      settings: { ...this.host.settings(id), ...req.settings }, status: "queued", fingerprint });
+    this.save(id, policy.state);
+    if (req.mode === "send") this.sendNow(id, req.clientMessageId);
     else this.pump(id);
     return this.snapshot(id);
   }
   action(id: string, messageId: string, action: MessageAction) {
     this.host.assertWritable(id);
-    const s = this.state(id), m = s.messages.find(m => m.id === messageId);
-    if (!m) conflict("Message not found.");
-    const entry = m!;
-    let editImages: PendingMessage["images"];
-    if ("version" in action && action.version !== entry.version) conflict("This message changed. Reload it before editing.");
-    if (action.action === "delete") {
-      if (entry.status === "sending" || entry.status === "delivered") conflict("The message has already been sent.");
-      if (entry.editToken && (entry.editingUntil ?? 0) > Date.now()) conflict("This message is being edited.");
-      entry.status = "cancelled";
-    } else if (action.action === "send") {
-      if (entry.status !== "queued") conflict("Only waiting messages can be sent.");
-      if (entry.editToken && (entry.editingUntil ?? 0) > Date.now()) conflict("Finish editing before sending.");
-      if (action.expectedRunId !== s.runId) conflict("The active run changed. Try again.");
-      this.sendNow(id, messageId); return this.snapshot(id);
-    } else {
-      if (entry.status !== "queued") conflict("This message is no longer waiting.");
-      if (action.action === "edit") {
-        if (entry.editToken && entry.editToken !== action.token && (entry.editingUntil ?? 0) > Date.now()) conflict("This message is being edited on another device.");
-        editImages = this.attachments.load(id, entry.attachments) ?? entry.images;
-        entry.editToken = action.token; entry.editingUntil = Date.now() + EDIT_MS;
-      } else {
-        if (entry.editToken !== action.token || (entry.editingUntil ?? 0) <= Date.now()) conflict("The edit session expired. Your draft is preserved; reopen the message.");
-        if (action.action === "renew") entry.editingUntil = Date.now() + EDIT_MS;
-        else {
-          if (action.action === "save") {
-            const attachments = this.attachments.save(id, action.images);
-            entry.text = action.text; entry.attachments = attachments; delete entry.images;
-            entry.skills = action.skills; entry.version++;
-          }
-          delete entry.editToken; delete entry.editingUntil;
-        }
-      }
-    }
-    this.save(id, s); this.pump(id);
+    const policy = this.policy(id);
+    const entry = policy.checkAction(messageId, action, this.timing.now());
+    if (action.action === "send") { this.sendNow(id, messageId); return this.snapshot(id); }
+    const editImages = action.action === "edit" ? this.attachments.load(id, entry.attachments) ?? entry.images : undefined;
+    const attachments = action.action === "save" ? this.attachments.save(id, action.images) : undefined;
+    policy.applyAction(entry, action, this.timing.now(), attachments);
+    this.save(id, policy.state); this.pump(id);
     const snapshot = this.snapshot(id);
     if (action.action === "edit") snapshot.messages = snapshot.messages.map(message => message.id === messageId ? { ...message, images: editImages } : message);
     return snapshot;
   }
   private sendNow(id: string, messageId: string) {
-    const s = this.state(id), m = s.messages.find(m => m.id === messageId)!;
-    if (s.messages.some(x => x.status === "sending" || x.status === "unknown")) conflict("Wait for the previous message delivery to be confirmed.");
-    if (!s.runId && !this.host.canStart(id)) conflict("The task cannot start a new run yet.");
-    m.status = "sending"; m.mode = "send"; m.runId = s.runId ?? undefined;
-    this.save(id, s);
-    if (!s.runId) { this.start(id, m); return; }
-    void this.host.steer(id, m).then(status => {
-      if (this.closed) return;
-      const current = this.state(id), entry = current.messages.find(x => x.id === messageId)!;
-      if (entry.status === "delivered") return;
-      entry.status = status;
-      if (status !== "delivered") { entry.error = status === "unknown" ? "Delivery could not be confirmed. Check the conversation before sending again." : "The active run could not accept this message."; current.paused = true; }
-      this.save(id, current);
+    const policy = this.policy(id);
+    const message = policy.claimSend(messageId, !!policy.state.runId || this.host.canStart(id));
+    this.save(id, policy.state);
+    if (!policy.state.runId) { this.start(id, message); return; }
+    void this.host.steer(id, message).then(status => {
+      if (!this.closed) this.change(id, current => current.settleSteer(messageId, status));
     }, () => {
-      if (this.closed) return;
-      const current = this.state(id), entry = current.messages.find(x => x.id === messageId)!;
-      if (entry.status !== "delivered") { entry.status = "unknown"; entry.error = "Delivery could not be confirmed."; current.paused = true; this.save(id, current); }
+      if (!this.closed) this.change(id, current => current.settleSteer(messageId, "unknown", true));
     });
   }
   private start(id: string, message: PendingMessage) {
     try { this.host.start(id, message); }
     catch (error) {
-      const state = this.state(id), entry = state.messages.find(m => m.id === message.id);
-      if (!state.runId && entry?.status === "sending") {
-        entry.status = "rejected"; entry.error = error instanceof Error ? error.message : "Unable to start message";
-        state.paused = true; this.save(id, state);
-      } else throw error;
+      const policy = this.policy(id);
+      if (!policy.rejectStart(message.id, error instanceof Error ? error.message : "Unable to start message")) throw error;
+      this.save(id, policy.state);
     }
   }
   pump(id: string) {
-    const s = this.state(id);
-    if (s.paused || s.runId || !this.host.canStart(id)) return;
-    if (s.messages.some(m => m.status === "sending" || m.status === "unknown" || m.status === "rejected")) return;
-    const next = s.messages.find(m => m.status === "queued");
-    if (!next || (next.editingUntil ?? 0) > Date.now()) return;
-    next.status = "sending"; this.save(id, s); this.start(id, next);
+    const policy = this.policy(id);
+    const next = policy.claimNext(!policy.state.paused && !policy.state.runId && this.host.canStart(id), this.timing.now());
+    if (next) { this.save(id, policy.state); this.start(id, next); }
   }
 }

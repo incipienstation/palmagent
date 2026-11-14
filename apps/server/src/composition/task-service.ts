@@ -1,8 +1,9 @@
+import type { MessageTiming } from "../modules/tasks/application/ports/outbound/message-timing.js";
 import { TaskService } from "../modules/tasks/application/use-cases/task-service.js";
 import { SpaceService } from "../modules/spaces/application/use-cases/space-service.js";
 import type { RepoRepository, RepositoryPathOperations } from "../modules/spaces/application/ports/outbound/spaces.js";
 
-type TaskArguments = ConstructorParameters<typeof TaskService>;
+type TaskArguments = ConstructorParameters<typeof TaskService> extends [MessageTiming, ...infer Args] ? Args : never;
 type WireSpaces<T extends unknown[]> = {
   [Index in keyof T]: Index extends "0" ? T[Index] & RepoRepository & { hasRunningRoutine(repoId: string): boolean }
     : Index extends "6" ? RepositoryPathOperations : T[Index];
@@ -17,6 +18,15 @@ export function createTaskService(...args: TaskDependencies): TaskService {
     hasRunningRoutine: id => db.hasRunningRoutine(id),
     removed: id => service.spaceRemoved(id),
   });
-  const service: TaskService = new TaskService(db, hub, supervisor, backend, worktrees, attachments, spaces, nativeSession, ids, ...rest);
+  const service: TaskService = new TaskService(messageTiming, db, hub, supervisor, backend, worktrees, attachments, spaces, nativeSession, ids, ...rest);
   return service;
 }
+
+const messageTiming: MessageTiming = {
+  now: () => Date.now(),
+  every(intervalMs, callback) {
+    const timer = setInterval(callback, intervalMs);
+    timer.unref();
+    return () => clearInterval(timer);
+  },
+};
