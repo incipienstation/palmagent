@@ -44,10 +44,11 @@ After scope validation, type/tooling, server, and PWA checks run in separate con
 The required `validate` job aggregates their results and rejects any failure or cancellation.
 Static and version-only changes skip the runtime jobs. PWA tests use four shards on separate
 runners, preserving the sequential stateful test group. Service-worker checks run on a fifth
-runner concurrently with all shards. Each runner builds once; the first browser shard also
-runs selected package checks against its own build. Packaging-only scope uses one runner
-without browser or service-worker tests. All selected lanes, including all four browser shards
-and the service-worker runner, must succeed; an unexpectedly skipped lane fails validation.
+runner concurrently with all shards. Each runner builds once. Selected package checks run
+in an independent Ubuntu 24.04 job alongside the browser matrix, preserving the systemd smoke
+runner. Packaging-only scope starts no browser or service-worker jobs. All selected lanes,
+including package verification, all four browser shards, and the service-worker runner, must
+succeed; an unexpectedly skipped lane fails validation.
 Parallel jobs repeat setup and use more runner time to shorten the critical path. Release
 candidates retain every source check using the compatible distributed gate below.
 
