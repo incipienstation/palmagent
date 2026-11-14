@@ -78,7 +78,7 @@ test("cleanup preserves indexed attachments and removes crash remnants and perma
 test("queue stores references, preserves edits and retry identity, and hydrates only the leased editor", t => {
   const f = fixture(t);
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
-    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator());
+    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
   const req = { clientMessageId: randomUUID(), mode: "queue" as const, text: "Inspect", images: [image], expectedRunId: null };
   const first = c.submit("one", req).messages[0];
@@ -100,7 +100,7 @@ test("storage failures reject submission without creating a queue entry", t => {
   const f = fixture(t);
   writeFileSync(join(f.directory, ".."), "unwritable directory");
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
-    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator());
+    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
   assert.throws(() => c.submit("one", { clientMessageId: randomUUID(), mode: "queue", text: "Keep draft", expectedRunId: null, images: [image] }));
   assert.deepEqual(c.snapshot("one").messages, []);
@@ -112,7 +112,7 @@ test("an unreadable queued attachment rejects before execution even after a prev
   const f = fixture(t);
   let ready = false;
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return ready; }, settings() { return {}; }, changed() {},
-    start(id, message) { f.storage.load(id, message.attachments); }, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator());
+    start(id, message) { f.storage.load(id, message.attachments); }, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
   c.beginRun("one"); c.startingRuntime("one"); c.finish("one", false);
   const queued = c.submit("one", { clientMessageId: randomUUID(), mode: "queue", text: "Inspect", expectedRunId: null, images: [image] });
@@ -154,7 +154,7 @@ test("disk reserve rejects writes and queue submission without discarding an exi
   const [ref] = f.storage.save("one", [image])!;
   assert.deepEqual(storage.save("one", [image]), [ref]);
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
-    changed() {}, start() {}, async steer() { return "delivered"; } }, storage, new NodeIdentifierGenerator());
+    changed() {}, start() {}, async steer() { return "delivered"; } }, storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
   assert.throws(() => c.submit("two", { clientMessageId: randomUUID(), mode: "queue", text: "Keep draft", expectedRunId: null, images: [image] }), { code: "insufficient_storage" });
   assert.deepEqual(c.snapshot("two").messages, []);
@@ -291,7 +291,7 @@ const video: InputAttachment = { mediaType: "video/webm", data: readFileSync(new
 test("video originals and sampled frames survive restart, queue edits, and history retention", t => {
   const f = fixture(t);
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
-    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator());
+    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
   const message = c.submit("one", { clientMessageId: randomUUID(), mode: "queue", text: "Review the clip", images: [video, image], expectedRunId: null }).messages[0];
   const refs = message.attachments!;
@@ -364,7 +364,7 @@ test("general files preserve names, bytes, queue editing, and retention across r
   const file = { mediaType: "application/octet-stream", data: Buffer.from("<html>not a preview</html>").toString("base64"), file: { name: "report.html" } };
   const empty = { ...file, data: "", file: { name: "empty.txt" } };
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
-    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator());
+    changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
   const message = c.submit("one", { clientMessageId: randomUUID(), mode: "queue", text: "Read files", images: [file, empty], expectedRunId: null }).messages[0];
   const refs = message.attachments!;
