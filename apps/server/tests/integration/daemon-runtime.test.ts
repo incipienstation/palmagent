@@ -16,7 +16,7 @@ import { configureAutoUpdate, prepareUpdateService, startRequestedUpdate } from 
 import { DEFAULT_CAPS, saveConfig, loadConfig, type InstallConfig } from "../../src/modules/installation/adapters/outbound/config.js";
 import { daemonServiceName, prepareUserService, verifyUserIsolation } from "../../src/modules/installation/adapters/outbound/user-service.js";
 import { getUserConfig } from "../../src/modules/installation/adapters/outbound/user-config.js";
-import { pinNode, retainInstalledRelease } from "../../src/modules/installation/adapters/outbound/execution-release.js";
+import { releaseContract, pinNode, retainInstalledRelease } from "../../src/modules/installation/adapters/outbound/execution-release.js";
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "palmagent-daemon-contract-"));
@@ -443,4 +443,18 @@ test("application artifacts are verified before selecting a native configuration
   manifest.applicationRuntime = 2;
   writeFileSync(manifestPath, JSON.stringify(manifest));
   assert.throws(() => daemonBinary(f.release), /application runtime/i);
+});
+
+test("view capability preserves legacy releases and rejects incomplete or incompatible workers", t => {
+  const root = mkdtempSync(join(tmpdir(), "palmagent-view-contract-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const name of ["cli", "server", "execution-host", "execution-launcher"]) writeFileSync(join(root, name + ".js"), "");
+  const contract = { executionProtocol: 1, productStorage: 1, applicationApi: 1 };
+  const save = (value: unknown) => writeFileSync(join(root, "runtime-contract.json"), JSON.stringify(value));
+  save(contract); releaseContract(root);
+  save({ ...contract, viewControl: 1 });
+  assert.throws(() => releaseContract(root), /view control contract/);
+  writeFileSync(join(root, "view.js"), ""); releaseContract(root);
+  save({ ...contract, viewControl: 2 });
+  assert.throws(() => releaseContract(root), /view control contract/);
 });

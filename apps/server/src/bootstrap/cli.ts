@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { AGENT_CLI_COMPATIBILITY, BRANDING } from "@palmagent/shared";
+import { viewCommand } from "../composition/cli-commands.js";
 import { connectionCommand } from "../composition/cli-commands.js";
 import { terminalCommand } from "../composition/cli-commands.js";
 import { sessionCommand } from "../composition/cli-commands.js";
@@ -124,6 +125,7 @@ Usage: ${BRANDING.cliName} <command> [options]
 Commands:
   install      Install the application runtime (proxy/TLS managed by the plugin)
   setup        Reconfigure the application runtime and public domain
+  view         Inspect or restart PWA serving (status|restart)
   doctor       Diagnose the local application runtime
   connection   Print the connection contract; diagnose checks public HTTPS/auth/SSE
   update       Apply config, or fetch the selected release channel with --pull
@@ -183,6 +185,7 @@ async function main(): Promise<void> {
     process.exitCode = prepareIndependentRuntime(parseFlags(rest), PKG_DIR, process.execPath);
     return;
   }
+  if (cmd === "view") return viewCommand(rest);
   if (cmd === "terminal") return terminalCommand(rest);
   if (cmd === "connection") return connectionCommand(rest);
   if (cmd === "daemon") {

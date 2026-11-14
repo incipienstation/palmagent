@@ -31,7 +31,7 @@ export const MAX_BODY_BYTES = 1024 * 1024;
 // accept base64 attachments. Decoded media/count limits remain in the service.
 export const MAX_IMAGE_BODY_BYTES = HOST_INGRESS_REQUIREMENTS.maxBodyBytes;
 const IMAGE_BODY_PATH = /^\/api\/tasks(?:\/[^/]+\/(?:messages(?:\/[^/]+)?|followup|steer))?$/;
-export function createApp(deps: HttpDependencies) {
+export function createApp(deps: HttpDependencies, view?: import("hono").MiddlewareHandler) {
   const { service, config } = deps;
   const app = new Hono();
   app.onError(handleError);
@@ -45,6 +45,7 @@ export function createApp(deps: HttpDependencies) {
     c.req.method === "POST" && IMAGE_BODY_PATH.test(c.req.path) ? imageBody : standardBody
   )(c, next));
   const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol,
+    ...(deps.view ? { view: deps.view.status().state } : {}),
     activeRoutineScripts: deps.routines.activeScriptCount ?? 0,
     updateBlockingRoutineScripts: deps.routines.updateBlockingScriptCount ?? deps.routines.activeScriptCount ?? 0, ...(deps.build ? { build: deps.build } : {}) }, 200))
     .route("/api/auth", authRoutes(deps))
@@ -69,6 +70,6 @@ export function createApp(deps: HttpDependencies) {
     .route("/api/settings/updates", updateSettingsRoutes(deps))
     .route("/api/settings/repos", settingsRoutes(deps))
     .route("/api/settings/telemetry", telemetryRoutes(deps.telemetry, deps.auth.enabled));
-  app.get("*", staticFiles(config.staticDir));
+  app.get("*", view ?? staticFiles(config.staticDir));
   return api;
 }

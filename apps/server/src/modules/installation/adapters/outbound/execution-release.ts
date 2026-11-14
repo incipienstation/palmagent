@@ -15,13 +15,14 @@ import { installedDistribution, stageStandaloneRelease } from "./standalone-rele
 import { pinNode } from "./retained-node.js";
 export { pinNode } from "./retained-node.js";
 
-export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number; routineProtocol?: number }
+export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number; routineProtocol?: number; viewControl?: number }
 export function releaseContract(directory: string): ReleaseContract {
   const contract = JSON.parse(readFileSync(join(directory, "runtime-contract.json"), "utf8"));
   if (contract.executionProtocol !== EXECUTION_PROTOCOL || contract.productStorage !== 1 || contract.applicationApi !== 1) throw new Error("Candidate runtime or storage contract is incompatible");
   if (contract.terminalProtocol !== undefined && contract.terminalProtocol !== TERMINAL_PROTOCOL) throw new Error("Candidate terminal protocol is incompatible");
   if (contract.hostSetup !== undefined && contract.hostSetup !== 1) throw new Error("Candidate host setup protocol is incompatible");
   if (contract.routineProtocol !== undefined && (contract.routineProtocol !== 1 || !existsSync(join(directory, "routine-host.js")))) throw new Error("Candidate routine host contract is incompatible or incomplete");
+  if (contract.viewControl !== undefined && (contract.viewControl !== 1 || !existsSync(join(directory, "view.js")))) throw new Error("Candidate view control contract is incompatible or incomplete");
   if (contract.daemonProtocol !== undefined) {
     if (contract.daemonProtocol !== DAEMON_PROTOCOL) throw new Error("Candidate daemon protocol is incompatible");
     daemonBinary(directory);

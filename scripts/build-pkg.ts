@@ -112,10 +112,10 @@ async function main(): Promise<void> {
     banner: { js: "#!/usr/bin/env node" },
   });
 
-  for (const entry of ["execution-host", "execution-launcher", "terminal-host", "terminal-launcher", "routine-host"]) {
+  for (const entry of ["view", "execution-host", "execution-launcher", "terminal-host", "terminal-launcher", "routine-host"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/bootstrap/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, viewControl: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
@@ -172,6 +172,7 @@ async function main(): Promise<void> {
     files: [
       "cli.js",
       "server.js",
+      "view.js",
       "runner-daemon.js",
       "terminal-host.js",
       "routine-host.js",
@@ -247,6 +248,7 @@ async function main(): Promise<void> {
     `- \`${cli} auto-update\` Access-triggered updates: enable, disable, status`,
     `- \`${cli} install\`    Install the application runtime; the plugin configures proxy/TLS`,
     `- \`${cli} setup\`      Reconfigure the application runtime and public domain`,
+    `- \`${cli} view status|restart\`  Inspect or restart PWA files while API and Tasks stay running`,
     `- \`${cli} doctor\`     Diagnose the local application runtime`,
     `- \`${cli} connection\` Read-only public origin and upstream contract as JSON`,
     `- \`${cli} update\`     \`--plan\` resolves package/plugin actions; \`--pull\` applies with installed plugin manifests`,

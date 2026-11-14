@@ -1,3 +1,5 @@
+import { config } from "./config.js";
+import { ViewHost } from "../modules/installation/adapters/outbound/view-host.js";
 import { collectNativeMetrics } from "../modules/telemetry/adapters/outbound/native-metrics.js";
 import { createTelemetry } from "./telemetry.js";
 import { ResourceScope } from "../kernel/resource-scope.js";
@@ -16,7 +18,7 @@ import { startSessionControl } from "./session-control.js";
 import { createUpdateSettingsService } from "../modules/installation/adapters/outbound/cli-update-settings.js";
 import { createSpaceSettings } from "../modules/spaces/composition.js";
 import { createAgentInstallationService } from "../modules/agents/composition.js";
-import { acquireUpdateLock, UpdateBusyError } from "../platform/filesystem/update-lock.js";
+import { acquireRuntimeLock, acquireUpdateLock, UpdateBusyError } from "../platform/filesystem/update-lock.js";
 import { userConfigPath } from "../modules/installation/adapters/outbound/user-config.js";
 import { ApplicationError } from "../kernel/errors.js";
 
@@ -27,10 +29,11 @@ function closeServer(listener: Server): Promise<void> {
     listener.close(() => { clearTimeout(deadline); resolve(); });
   });
 }
-export async function startServer(options: { build?: { version: string; sourceCommit: string; dirty: boolean }; packageDir?: string }) {
+export async function startServer(options: { build?: { version: string; sourceCommit: string; dirty: boolean }; packageDir?: string; view?: { entry: string; execArgv: string[] } }) {
 const { build } = options;
 const resources = new ResourceScope();
 try {
+  resources.defer(acquireRuntimeLock(dirname(config.dbPath)));
   const runtime = await createRuntime();
   resources.defer(() => runtime.close());
   const shutdown = new AbortController();
@@ -61,8 +64,17 @@ try {
   telemetry.producer.start();
   resources.defer(() => telemetry.producer.close());
   if (process.env.PALMAGENT_DAEMON_DATA) resources.defer(collectNativeMetrics(runtime.config.dataDir, telemetry.preferencePath, telemetry.producer));
+  const view = options.view ? new ViewHost({ ...options.view, staticDir: runtime.config.staticDir }) : undefined;
+  if (view) { resources.defer(() => view.close()); await view.restart(); }
+  const viewControl = view ? {
+    status: () => view.status(),
+    restart: () => {
+      if (runtime.service.updating || shutdown.signal.aborted) throw new ApplicationError("service_unavailable", "Application maintenance is in progress");
+      return view.restart();
+    },
+  } : undefined;
   const app = createApp({ ...runtime, settings, build, updates, agentInstallations, shutdown: shutdown.signal,
-    telemetry: telemetry.settings, measurements: telemetry.producer, requestLoad });
+    telemetry: telemetry.settings, measurements: telemetry.producer, requestLoad, view: viewControl }, view?.proxy());
   const server = createServer(getRequestListener(app.fetch));
   resources.defer(() => closeServer(server));
   const closeTerminals = installTerminalGateway(server, { service: runtime.terminals, auth: runtime.auth, tickets: runtime.terminalTickets,
@@ -71,7 +83,7 @@ try {
   resources.onStop(closeTerminals);
   // Recover retained admissions before either control socket accepts new work.
   runtime.start();
-  const local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines);
+  const local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines, viewControl);
   resources.defer(() => closeServer(local));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

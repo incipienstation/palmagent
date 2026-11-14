@@ -14,6 +14,7 @@ import type { LiveEventStream } from "../kernel/events.js";
 export type HttpTaskUseCases = TaskUseCases;
 
 export type HttpDependencies = {
+  view?: Pick<import("../modules/installation/api.js").ViewControl, "status">;
   telemetry?: import("../modules/telemetry/api.js").TelemetrySettings;
   measurements?: import("../kernel/performance.js").PerformanceMeasurements;
   requestLoad?: { active: number };

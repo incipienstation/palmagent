@@ -46,6 +46,25 @@ request, response or delivery semantics must advance that contract. Authenticati
 admission and the original target run remain enforced. Retrying an accepted request only reads
 its stored result and never retries an uncertain provider delivery.
 
+## Restart PWA serving independently
+
+On runtimes advertising `view` in CLI help, run as the installation owner:
+
+```sh
+palmagent view status --data-dir <installation-state-directory>
+palmagent view restart --data-dir <installation-state-directory>
+```
+
+The reply reports the owner PID, view PID, readiness state and successful-start generation.
+A view restart changes the view PID and generation while preserving the API owner and Task
+queues. New API submissions, SSE and terminal WebSockets continue on the existing listener.
+PWA file requests can receive a temporary 503 during replacement; already open pages keep their
+API connections. The view restarts automatically after a crash with bounded backoff.
+
+This command does not change releases or settings. Full updates, setup and rollback still use
+the existing maintenance/activation flow and may interrupt admission. Inspect status after an
+ambiguous CLI timeout before retrying. See [Task owner and web view](TASK_RUNTIME.md).
+
 ## Follow Preview
 
 Eligible product changes merged into `develop` trigger Preview preparation,

@@ -13,7 +13,7 @@ import { handleError } from "../platform/http/errors.js";
 import type { TaskService } from "../modules/tasks/application/use-cases/task-service.js";
 
 // A separate app: never mount this capability on the browser's TCP listener.
-export function createSessionApp(service: Pick<TaskService, "dispatchSession">, terminals?: TerminalService, routines?: RoutineUseCases) {
+export function createSessionApp(service: Pick<TaskService, "dispatchSession">, terminals?: TerminalService, routines?: RoutineUseCases, view?: import("../modules/installation/api.js").ViewControl) {
   const app = new Hono();
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
@@ -27,6 +27,10 @@ export function createSessionApp(service: Pick<TaskService, "dispatchSession">, 
   if (routines) {
     app.route("/routines", routineRoutes({ routines }));
     app.get("/routine-spaces", c => c.json(routines.context()));
+  }
+  if (view) {
+    app.get("/view", c => c.json(view.status()))
+      .post("/view/restart", async c => c.json(await view.restart()));
   }
   return app.post("/dispatch", jsonBody(DispatchSessionSchema), async (c) =>
     c.json({ task: await service.dispatchSession(c.req.valid("json")) }, 200));

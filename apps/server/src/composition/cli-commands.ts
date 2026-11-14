@@ -1,3 +1,4 @@
+import { viewCommand as view } from "../modules/installation/adapters/inbound/view-cli.js";
 import { createSpaceSettings } from "../modules/spaces/composition.js";
 import { terminalPlatform } from "../modules/terminals/adapters/outbound/terminal-platform.js";
 import { parseRepoRoots } from "../modules/spaces/adapters/outbound/settings-store.js";
@@ -21,3 +22,4 @@ export const settingsCommand = (args: string[]) => settings(args, resolveDataDir
 export const terminalCommand = (args: string[]) => terminal(args, { ...environment, platform: terminalPlatform,
   diagnose: async dataDir => (await import("./terminal-diagnostics.js")).diagnoseTerminal(loadConfig({ dataDir, requireInstalled: true })),
 });
+export const viewCommand = (args: string[]) => view(args, environment);
