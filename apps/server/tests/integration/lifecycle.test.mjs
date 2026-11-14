@@ -454,7 +454,8 @@ for (const backend of [true, "independent"]) for (const agent of ["claude", "cod
 
   await c.api(`tasks/${task.taskId}/followup`, { prompt: JSON.stringify({ key: "active-send", mode: "hold" }) });
   await c.ready("active-send");
-  const running = await c.task(task.taskId);
+  // Provider readiness can precede projection of execution_started into the web.
+  const running = await c.waitTask(task.taskId, task => task.status === "running");
   const id = crypto.randomUUID();
   await c.api(messagePath, { clientMessageId: id, mode: "send", expectedRunId: running.messageQueue.runId,
     text: JSON.stringify({ key: "sent-now", mode: "auto" }) });
