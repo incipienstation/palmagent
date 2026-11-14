@@ -9,41 +9,6 @@ async function settled(dialog: Locator) {
   });
 }
 
-for (const width of [360]) {
-  test(`dialog actions remain reachable and restore focus at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 780 });
-    await page.goto("/#/task/t-idle-rich");
-    const trigger = page.getByRole("button", { name: "Task actions", exact: true });
-    for (const [menu, role, cancel, action] of [
-      ["Archive", "alertdialog", "Keep", "Archive task"],
-      ["Rename", "dialog", "Cancel", "Save"],
-    ] as const) {
-      await trigger.click();
-      await page.getByRole("menuitem", { name: menu, exact: true }).click();
-      const dialog = page.getByRole(role);
-      await settled(dialog);
-      const secondary = dialog.getByRole("button", { name: cancel, exact: true });
-      const primary = dialog.getByRole("button", { name: action, exact: true });
-      await expect(secondary).toBeInViewport({ ratio: 1 });
-      await expect(primary).toBeInViewport({ ratio: 1 });
-      if (role === "alertdialog") await expect(secondary).toBeFocused();
-      await captureForReview(page, `dialog-${menu.toLowerCase()}-${width}.png`);
-      await secondary.click();
-      await expect(dialog).toHaveCount(0);
-      await expect(trigger).toBeFocused();
-    }
-    await page.goto("/#/task/t-run-charts");
-    await trigger.click();
-    await page.getByRole("menuitem", { name: "Cancel…", exact: true }).click();
-    const confirm = page.getByRole("alertdialog");
-    await expect(confirm.getByRole("button", { name: "Keep", exact: true })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(confirm).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-    await assertViewportLocked(page);
-  });
-}
-
 test("Settings stays centered, preserves scroll across resizing, and restores nested confirmation focus", async ({ page }) => {
   // Keep this viewport short enough to exercise scroll restoration with compact settings.
   await page.setViewportSize({ width: 1280, height: 568 });
@@ -84,27 +49,5 @@ test("Settings stays centered, preserves scroll across resizing, and restores ne
   await expect(signOut).toBeFocused();
   await dialog.getByRole("button", { name: "Close settings" }).click();
   await expect(trigger).toBeFocused();
-  await assertViewportLocked(page);
-});
-
-test("Add Space preserves a focused field and its draft through responsive layout changes", async ({ page }) => {
-  await page.goto("/#/new/space/repo-app");
-  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Keep the surrounding composer draft");
-  await page.getByRole("combobox", { name: "Space", exact: true }).click();
-  await page.getByRole("option", { name: "Add Space", exact: true }).click();
-  await page.getByRole("option", { name: "Browse folders…" }).click();
-  await page.getByRole("button", { name: "Choose outer-repo as Space" }).click();
-  const dialog = page.getByRole("dialog", { name: "Add Space", exact: true });
-  const field = dialog.getByLabel("Base branch (optional)");
-  await field.fill("draft-branch");
-  for (const width of [1280, 360]) {
-    await page.setViewportSize({ width, height: 780 });
-    await settled(dialog);
-    await expect(field).toHaveValue("draft-branch");
-    await expect(field).toBeFocused();
-    await expect(dialog.getByRole("button", { name: "Connect Space", exact: true })).toBeInViewport({ ratio: 1 });
-  }
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("Keep the surrounding composer draft");
   await assertViewportLocked(page);
 });

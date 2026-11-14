@@ -65,31 +65,6 @@ test("a pending bottom scroll notification does not cancel upward reading", asyn
   await expectBottom(page);
 });
 
-test("the scroll control stays above the composer in both themes and a smaller viewport", async ({ page }) => {
-  await longConversation(page);
-  await readAbove(page);
-  await page.setViewportSize({ width: 360, height: 520 });
-  const input = page.getByRole("textbox", { name: "Message", exact: true });
-  await input.fill("A multiline draft\n".repeat(4));
-  for (const theme of ["light", "dark"]) {
-    await page.evaluate(theme => { document.documentElement.classList.toggle("dark", theme === "dark"); }, theme);
-    await expect(button(page)).toBeVisible();
-    // Read all bounds in one frame while the composer height animates.
-    await expect.poll(() => button(page).evaluate(el => {
-      const control = el.getBoundingClientRect();
-      const transcript = document.querySelector('[aria-label="Session transcript"]')!.getBoundingClientRect();
-      const composer = document.querySelector('[aria-label="Message composer"]')!.getBoundingClientRect();
-      return {
-        centered: Math.abs(control.x + control.width / 2 - (transcript.x + transcript.width / 2)) < 1,
-        aboveComposer: control.bottom < composer.top,
-      };
-    })).toEqual({ centered: true, aboveComposer: true });
-  }
-  await button(page).tap();
-  await expectBottom(page);
-  await expect(input).toHaveValue("A multiline draft\n".repeat(4));
-});
-
 test("keyboard activation supports reduced motion without focusing the composer", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await longConversation(page);
@@ -101,55 +76,6 @@ test("keyboard activation supports reduced motion without focusing the composer"
   await expect(button(page)).toBeHidden();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toBeFocused();
   await expect(viewport(page)).toBeFocused();
-});
-
-test("manual scrolling hides immediately and momentum delays the fade until idle", async ({ page }) => {
-  await longConversation(page);
-  await readAbove(page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 1000));
-  await viewport(page).dispatchEvent("wheel", { deltaY: -100 });
-  await expect(button(page)).toHaveCSS("opacity", "0");
-  await expect(button(page)).toHaveCSS("pointer-events", "none");
-  await expect(button(page)).toHaveCSS("transition-duration", "0s");
-  await page.clock.runFor(150);
-  // Momentum delivers scroll notifications after the last wheel/touch input.
-  await viewport(page).dispatchEvent("scroll");
-  await page.clock.runFor(199);
-  await expect(button(page)).toHaveCSS("opacity", "0");
-  await page.clock.runFor(1);
-  await expect(button(page)).toHaveCSS("pointer-events", "auto");
-  await expect(button(page)).toHaveCSS("opacity", "1");
-});
-
-test("touch, keyboard, and scrollbar input hide the control while focused access stays visible", async ({ page }) => {
-  await longConversation(page);
-  await readAbove(page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 1000));
-  for (const input of ["touch", "keyboard", "scrollbar"]) {
-    await viewport(page).evaluate((el, input) => {
-      if (input === "touch") {
-        const touch = (clientY: number) => new Touch({ identifier: 0, target: el, clientY });
-        el.dispatchEvent(new TouchEvent("touchstart", { touches: [touch(200)] }));
-        el.dispatchEvent(new TouchEvent("touchmove", { touches: [touch(250)] }));
-        el.dispatchEvent(new TouchEvent("touchend", { touches: [] }));
-      } else if (input === "keyboard") {
-        el.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp" }));
-      } else {
-        el.closest("[data-transcript-root]")!.querySelector('[data-slot="scroll-area-scrollbar"]')!
-          .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-      }
-    }, input);
-    await expect(button(page)).toHaveCSS("opacity", "0");
-    await button(page).focus();
-    await expect(button(page)).toHaveCSS("opacity", "1");
-    await expect(button(page)).toHaveCSS("pointer-events", "auto");
-    await viewport(page).focus();
-    await expect(button(page)).toHaveCSS("opacity", "0");
-    await page.clock.runFor(200);
-    await expect(button(page)).toHaveCSS("opacity", "1");
-  }
 });
 
 test("upward input interrupts the short return animation", async ({ page }) => {

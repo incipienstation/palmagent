@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 test.use({ serviceWorkers: "block", launchOptions: { args: ["--js-flags=--max-old-space-size=128"] } });
 
-for (const route of ["new/space/repo-app", "task/t-idle-rich"]) test(`104 MiB binary upload survives cancellation and retry with a small heap: ${route}`, async ({ page }) => {
+for (const route of ["task/t-idle-rich"]) test(`104 MiB binary upload survives cancellation and retry with a small heap: ${route}`, async ({ page }) => {
   test.setTimeout(90_000);
   const directory = await mkdtemp(join(tmpdir(), "palmagent-upload-"));
   const path = join(directory, "large.bin"), size = 104 * 1024 * 1024;

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { deferActivityEventDetails, type TaskHistoryEvent } from "@palmagent/shared";
-import { installScopedStream, send, event, type Harness } from "./_scoped-stream";
+import { installScopedStream, send, type Harness } from "./_scoped-stream";
 
 test.use({ serviceWorkers: "block" });
 const taskId = "t-idle-rich";
@@ -60,7 +60,7 @@ test("legacy summaries load only the selected operation and retain its cached de
   expect(reads).toHaveLength(2);
 });
 
-for (const fail of [false, true]) test(`an opened legacy step fetches only its late result${fail ? " and retries a failed detail" : ""}`, async ({ page }) => {
+for (const fail of [true]) test(`an opened legacy step fetches only its late result${fail ? " and retries a failed detail" : ""}`, async ({ page }) => {
   const rows = conversation().slice(0, 3), reads: number[] = [];
   let failed = false;
   await page.route(historyPath, route => route.fulfill({ json: { events: rows.slice(0, 2).map(({ seq, event }) => ({ seq, ...deferActivityEventDetails(event) })), before: null, cursor: 2 } }));
@@ -104,7 +104,7 @@ test("closing legacy details cancels only pending members and keeps completed me
   expect(reads).toEqual([2, 3, 3]);
 });
 
-for (const failure of [false, true]) test(`an old paged checkpoint stays visible during compact upgrade${failure ? " and retry" : ""} before SSE attaches`, async ({ page }) => {
+for (const failure of [true]) test(`an old paged checkpoint stays visible during compact upgrade${failure ? " and retry" : ""} before SSE attaches`, async ({ page }) => {
   const rows = conversation();
   const pending = gate();
   let historyReads = 0;

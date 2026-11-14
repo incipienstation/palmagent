@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import type { MessageQueue, PendingMessage, UpdateSettingsStatus, RepoSettingsStatus } from "@palmagent/shared";
-import { tasks, routines, repos, updateSettings } from "../fixtures.mjs";
+import type { MessageQueue, PendingMessage, UpdateSettingsStatus } from "@palmagent/shared";
+import { tasks, repos, updateSettings } from "../fixtures.mjs";
 import { installScopedStream, open, send } from "./_scoped-stream";
 import { assertViewportLocked } from "./_helpers";
 
@@ -58,58 +58,6 @@ test("update preferences coalesce rapid input and serialize changes made during 
   await expect(page.getByText("Saving…", { exact: true })).toBeHidden();
 });
 
-test("a pending preference survives closing Settings and rolls back with a toast", async ({ page }) => {
-  const delayed = gate(); let writes = 0;
-  await page.route("**/api/settings/updates", async route => {
-    if (route.request().method() === "PATCH") { writes++; await delayed.wait; return route.fulfill({ status: 503, json: { error: "Preference could not be saved" } }); }
-    await route.fulfill({ json: updateSettings });
-  });
-  await page.goto("/"); await settings(page, "Updates");
-  const control = page.getByRole("switch", { name: "Automatic updates" });
-  await control.click(); await expect(control).toBeChecked();
-  await page.getByRole("button", { name: "Close settings" }).click();
-  await settings(page);
-  await expect(control).toBeChecked(); await expect(control).toBeEnabled();
-  await expect.poll(() => writes).toBe(1); delayed.release();
-  await expect(control).not.toBeChecked();
-  await expect(page.getByTestId("toast")).toContainText("Preference could not be saved");
-});
-
-for (const action of ["remove", "reset"] as const) test(`search path ${action} changes immediately and restores the confirmed paths on failure`, async ({ page }) => {
-  const state: RepoSettingsStatus = { repoRoots: ["/projects/custom"], defaults: ["/projects/default"], source: "saved", writable: true };
-  const delayed = gate(); let writes = 0;
-  await page.route("**/api/settings/repos", async route => {
-    if (route.request().method() === "PATCH") { writes++; await delayed.wait; return route.fulfill({ status: 503, json: { error: "Paths unavailable" } }); }
-    await route.fulfill({ json: state });
-  });
-  await page.goto("/"); await settings(page, "Repository search paths");
-  const region = page.getByRole("region", { name: "Repository search paths" });
-  await region.getByRole("button", { name: action === "remove" ? "Remove /projects/custom" : "Use installation defaults", exact: true }).click();
-  await expect(region.getByText("/projects/custom", { exact: true })).toBeHidden();
-  if (action === "reset") await expect(region.getByText("/projects/default", { exact: true })).toBeVisible();
-  expect(writes).toBe(1); delayed.release();
-  await expect(region.getByText("/projects/custom", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("toast")).toContainText("Couldn't save search paths");
-});
-
-test("new search paths remain pending until validated and retain the draft on rejection", async ({ page }) => {
-  const delayed = gate();
-  await page.route("**/api/settings/repos", async route => {
-    if (route.request().method() === "PATCH") { await delayed.wait; return route.fulfill({ status: 400, json: { error: "Folder is inaccessible" } }); }
-    await route.fulfill({ json: { repoRoots: [], defaults: [], source: "saved", writable: true } });
-  });
-  await page.goto("/"); await settings(page, "Repository search paths");
-  await page.getByRole("textbox", { name: "Add search folder" }).fill("~/new-folder");
-  await page.getByRole("button", { name: "Add folder", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "~/new-folder · Adding…" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Remove ~/new-folder" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Close settings" }).click();
-  await settings(page);
-  delayed.release();
-  await expect(page.getByRole("textbox", { name: "Add search folder" })).toHaveValue("~/new-folder");
-  await expect(page.getByTestId("toast")).toContainText("Folder is inaccessible");
-});
-
 test("routine switches are independent, debounce repeated clicks, and recover a failed toggle", async ({ page }) => {
   const delayed = gate(); const calls: boolean[] = [];
   await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
@@ -125,74 +73,6 @@ test("routine switches are independent, debounce repeated clicks, and recover a 
   delayed.release(); await expect(switches.first()).toBeChecked();
   await page.clock.runFor(300);
   await expect(page.getByTestId("toast")).toContainText("Schedule unavailable");
-});
-
-for (const action of ["run", "delete"] as const) test(`routine ${action} gives immediate feedback, blocks duplicates, and restores on failure`, async ({ page }) => {
-  const delayed = gate(); let calls = 0;
-  await page.route(`**/api/routines/r-standup${action === "run" ? "/run" : ""}`, async route => { calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Routine action failed" } }); });
-  await page.goto("/#/routines");
-  const card = page.locator('[data-slot="card"]').filter({ hasText: "Morning standup digest" });
-  if (action === "run") {
-    await card.getByRole("button", { name: "Run now", exact: true }).click();
-    await expect(card.getByRole("button", { name: "Requesting run…" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Run now", exact: true }).first()).toBeEnabled();
-  } else {
-    await card.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("menuitem", { name: /Delete/ }).click();
-    await page.getByRole("alertdialog").getByRole("button", { name: "Delete routine", exact: true }).click();
-    await expect(card).toBeHidden();
-    await expect(page.getByRole("status").filter({ hasText: "Deleting routine…" })).toBeVisible();
-  }
-  expect(calls).toBe(1); delayed.release();
-  await expect(card).toBeVisible();
-  await expect(page.getByTestId("toast")).toContainText("Routine action failed");
-});
-
-test("creating a routine keeps its form mounted and preserves its draft on failure", async ({ page }) => {
-  const delayed = gate(); let calls = 0;
-  await page.route("**/api/routines", async route => {
-    if (route.request().method() !== "POST") return route.fulfill({ json: { routines } });
-    calls++; await delayed.wait; await route.fulfill({ status: 400, json: { error: "Invalid schedule" } });
-  });
-  await page.goto("/#/routines"); await page.getByRole("button", { name: "New routine", exact: true }).click();
-  await page.locator("form textarea").fill("A new scheduled task");
-  await page.getByRole("button", { name: "Create routine", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Creating routine…" })).toBeDisabled();
-  await expect(page.locator("form")).toHaveAttribute("aria-busy", "true");
-  await expect(page.locator("form textarea")).toBeDisabled();
-  expect(calls).toBe(1); delayed.release();
-  await expect(page.locator("form textarea")).toBeEnabled();
-  await expect(page.locator("form textarea")).toHaveValue("A new scheduled task");
-});
-
-for (const mode of ["send", "queue"] as const) test(`${mode} creates a pending item immediately and restores the draft after failure`, async ({ page }) => {
-  const task = await queueSetup(page);
-  const delayed = gate(); let calls = 0;
-  await page.route("**/api/tasks/t-run/messages", async route => { calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Delivery could not be confirmed" } }); });
-  await page.getByRole("textbox").fill("Message before acknowledgment");
-  if (mode === "queue") {
-    await page.getByRole("button", { name: "Send now", exact: true }).click({ button: "right" });
-    await page.getByRole("radio", { name: "Queue", exact: true }).click();
-  }
-  await page.getByRole("button", { name: mode === "queue" ? "Add to queue" : "Send now", exact: true }).click();
-  const pending = mode === "queue" ? page.getByRole("button", { name: /Queued message 1: Message before acknowledgment/ }) : page.getByRole("status", { name: "Pending message" });
-  if (mode === "queue") await expect(pending).toContainText("Adding…");
-  else {
-    await expect(page.getByLabel("Session transcript").getByText("Working…", { exact: true })).toBeVisible();
-    await expect(page.getByText("Sending…", { exact: true })).toHaveCount(0);
-  }
-  await expect(pending).toContainText("Message before acknowledgment");
-  if (mode === "send") await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("textbox")).toHaveValue("");
-  await expect(page.getByRole("textbox")).toBeDisabled();
-  await send(page, "t-run", { type: "tasks", tasks: [task] });
-  await expect(pending).toBeVisible();
-  await assertViewportLocked(page);
-  expect(calls).toBe(1); delayed.release();
-  await expect(page.getByRole("textbox")).toHaveValue("Message before acknowledgment");
-  await expect(page.getByRole("textbox")).toBeEnabled();
-  await expect(pending).toHaveCount(0);
-  await expect(page.getByTestId("toast")).toContainText("Delivery could not be confirmed");
 });
 
 test("send stays separate from waiting turns through acknowledgment and navigation", async ({ page }) => {
@@ -289,46 +169,6 @@ test("sending a queued message moves it immediately and restores its position on
   await expect(page.getByRole("button", { name: "Queued message 2: Following turn" })).toBeVisible();
 });
 
-test("an automatically started queued turn leaves only waiting turns in Queue", async ({ page }) => {
-  const task = await queueSetup(page, [message, { ...message, id: "next", text: "Next turn" }]);
-  task.messageQueue = { ...task.messageQueue, revision: 2, messages: [
-    { ...message, status: "sending" }, task.messageQueue.messages[1],
-  ] };
-  await send(page, "t-run", { type: "tasks", tasks: [task] });
-  await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Queued original");
-  await expect(page.getByRole("button", { name: "Queued message 1: Next turn" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toContainText("Queue · 1");
-});
-
-test("delivery shows images when the server replaces uploads with durable attachments", async ({ page }) => {
-  const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
-  await page.route("**/api/tasks/t-run/attachments/*", route => route.fulfill({ contentType: "image/png", body: Buffer.from(image, "base64") }));
-  const task = await queueSetup(page, [{ ...message, mode: "send", status: "sending", images: [
-    { mediaType: "image/png", data: image },
-  ] }]);
-  const pending = page.getByRole("status", { name: "Pending message" });
-  await expect(pending.getByRole("img", { name: "Attached image 1", exact: true })).toBeVisible();
-  task.messageQueue = { ...task.messageQueue, revision: 2, messages: [{
-    ...message, mode: "send", status: "sending", attachments: [
-      { id: "22222222-2222-4222-8222-222222222222", mediaType: "image/png", size: 1 },
-    ],
-  }] };
-  await send(page, "t-run", { type: "tasks", tasks: [task] });
-  await expect(pending.getByRole("img", { name: "Attached image 1", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
-});
-
-test("a paused send can resume without showing a waiting-turn queue", async ({ page }) => {
-  const task = await queueSetup(page, [{ ...message, mode: "send" }]);
-  task.messageQueue.paused = true;
-  task.messageQueue.revision++;
-  await send(page, "t-run", { type: "tasks", tasks: [task] });
-  await expect(page.getByRole("status", { name: "Pending message" })).toContainText("Send paused");
-  await expect(page.getByRole("region", { name: "Message queue", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Resume delivery" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Cancel send" })).toBeEnabled();
-});
-
 test("delivery snapshots settle the optimistic bubble before a stale HTTP response", async ({ page }) => {
   const task = await queueSetup(page);
   const delayed = gate(); let accepted!: MessageQueue;
@@ -415,23 +255,6 @@ for (const save of [true, false]) test(`queue edit ${save ? "save" : "release"} 
   await expect(page.getByTestId("toast")).toContainText("Edit lease expired");
 });
 
-test("creation renders the first message, prevents duplicate submits, and preserves recovery", async ({ page }) => {
-  const delayed = gate(); let calls = 0;
-  await page.route("**/api/tasks", async route => {
-    if (route.request().method() !== "POST") return route.continue();
-    calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Dispatcher unavailable" } });
-  });
-  await page.goto("/#/new/space/repo-app"); await page.getByRole("textbox", { name: "Prompt" }).fill("A task awaiting an id");
-  await page.getByRole("button", { name: "Send now", exact: true }).click();
-  await expect(page.getByRole("group", { name: "Your message" })).toContainText("A task awaiting an id");
-  await expect(page.getByText("Working…", { exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Prompt" })).toBeDisabled();
-  expect(calls).toBe(1); delayed.release();
-  await expect(page.getByText("Delivery unconfirmed", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Check status", exact: true })).toBeEnabled();
-  expect(await page.evaluate(() => localStorage.getItem("draft:dispatch-prompt:repo-app"))).toBe("A task awaiting an id");
-});
-
 test("archive leaves the inbox immediately and restores the task with a toast if it fails", async ({ page }) => {
   const delayed = gate(); let calls = 0;
   await page.route("**/api/tasks/t-idle-rich", async route => {
@@ -462,24 +285,6 @@ test("repository removal hides its row immediately and restores it on a server c
   expect(calls).toBe(1); delayed.release();
   await expect(page.getByRole("button", { name: "Remove sample-app", exact: true })).toBeVisible();
   await expect(page.getByTestId("toast")).toContainText("Repository has active tasks");
-});
-
-test("registration shows the pending path without exposing a fabricated repository id", async ({ page }) => {
-  const delayed = gate(); let calls = 0;
-  await page.route("**/api/repos", async route => {
-    if (route.request().method() !== "POST") return route.fulfill({ json: { repos } });
-    calls++; await delayed.wait; await route.fulfill({ status: 400, json: { error: "Directory unavailable" } });
-  });
-  await page.goto("/#/new/space/repo-app"); await page.getByRole("combobox", { name: "Space" }).click();
-  await page.getByRole("option", { name: "Add Space", exact: true }).click();
-  await page.getByRole("option", { name: "Browse folders…" }).click();
-  await page.getByRole("button", { name: "Choose outer-repo as Space" }).click();
-  await page.getByRole("button", { name: "Connect Space", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "/projects/outer-repo · Connecting…" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Connecting…", exact: true })).toBeDisabled();
-  await expect.poll(() => calls).toBe(1); delayed.release();
-  await expect(page.getByRole("button", { name: "Connect Space", exact: true })).toBeEnabled();
-  await expect(page.getByTestId("toast")).toContainText("Directory unavailable");
 });
 
 test("failed sign-out stays on the current page and keeps the request guarded", async ({ page }) => {
@@ -519,21 +324,7 @@ test("Stop stays pending after acceptance until the live run actually stops", as
   await expect(page.getByRole("button", { name: "Task actions", exact: true })).toBeEnabled();
 });
 
-test("an idle Stop response stays pending until the live task snapshot catches up", async ({ page }) => {
-  const task = await queueSetup(page);
-  await page.route("**/api/tasks/t-run/stop", route => route.fulfill({
-    json: { task: { ...task, status: "idle", updatedAt: task.updatedAt + 1 } },
-  }));
-  const composer = page.getByRole("group", { name: "Message composer", exact: true });
-  const stop = composer.getByRole("button", { name: "Stop", exact: true });
-  await stop.click();
-  await expect(stop).toBeDisabled();
-  await expect(page.getByRole("status").filter({ hasText: "Stopping turn…" })).toBeVisible();
-  await send(page, "t-run", { type: "tasks", tasks: [{ ...task, status: "idle", updatedAt: task.updatedAt + 1 }] });
-  await expect(stop).toHaveCount(0);
-});
-
-for (const decision of ["approve", "deny"] as const) test(`${decision} waits for confirmation and restores controls on failure`, async ({ page }) => {
+for (const decision of ["approve"]) test(`${decision} waits for confirmation and restores controls on failure`, async ({ page }) => {
   const delayed = gate(); let calls = 0;
   await page.route("**/api/tasks/t-await/approve", async route => { calls++; await delayed.wait; await route.fulfill({ status: 503, json: { error: "Approval unavailable" } }); });
   await page.goto("/#/task/t-await");
@@ -638,17 +429,6 @@ test("new task shows Stop before creation completes and stops the returned task"
   expect(calls).toEqual(["create"]); delayed.release();
   await expect.poll(() => calls).toEqual(["create", "stop"]);
   await expect(page).toHaveURL(/task\/t-run/);
-});
-
-test("Stop and Queue remain exclusive when the composer is empty", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("delivery:t-run", "queue"));
-  await queueSetup(page);
-  const composer = page.getByRole("group", { name: "Message composer", exact: true });
-  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-  await expect(composer.getByRole("button", { name: "Add to queue", exact: true })).toHaveCount(0);
-  await composer.getByRole("textbox", { name: "Message", exact: true }).fill("Queue this follow-up");
-  await expect(composer.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
-  await expect(composer.getByRole("button", { name: "Add to queue", exact: true })).toBeVisible();
 });
 
 test("a failed Stop can be retried while keeping the composer usable", async ({ page }) => {

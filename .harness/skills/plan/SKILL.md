@@ -13,7 +13,9 @@ description: Scope a requested Palmagent monorepo change before implementation, 
    Include required plugin edits and the release compatibility boundary in the implementation scope.
 3. Follow the [skill source guidance](../garden/SKILL.md#skill-sources) for
    repository-maintenance skills and operator plugin skills.
-4. Identify proportionate verification and explicit merge, release, or deployment gates.
+4. Apply the [test selection policy](references/testing.md): identify distinct failures and existing
+   coverage before proposing tests. Identify proportionate verification and explicit merge,
+   release, or deployment gates.
 5. For a plan-only request, report the plan and stop before implementation. When implementation
    is requested or already authorized, plan small commits and continue to [start](../start/SKILL.md).
 

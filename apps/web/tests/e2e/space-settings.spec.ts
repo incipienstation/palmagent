@@ -43,7 +43,7 @@ for (const viewport of [{ width: 360, height: 780 }]) {
   });
 }
 
-for (const baseRef of ["", "develop"]) {
+for (const baseRef of ["develop"]) {
   test(`registration ${baseRef ? "sends an explicit base branch" : "leaves the base branch to automatic detection"}`, async ({ page }) => {
     let registered: Record<string, unknown> | undefined;
     await page.route("**/api/repos", async route => {

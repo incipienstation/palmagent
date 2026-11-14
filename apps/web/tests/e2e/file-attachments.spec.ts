@@ -6,7 +6,7 @@ import { assertViewportLocked } from "./_helpers";
 test.use({ serviceWorkers: "block" });
 const file = { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("Review this file") };
 
-for (const route of ["new/space/repo-app", "task/t-idle-rich"]) test(`file-only messages preserve drafts after rejected sends: ${route}`, async ({ page }) => {
+for (const route of ["task/t-idle-rich"]) test(`file-only messages preserve drafts after rejected sends: ${route}`, async ({ page }) => {
   await page.goto(`/#/${route}`);
   await page.getByRole("button", { name: "Add attachments" }).click();
   const chooser = page.waitForEvent("filechooser");

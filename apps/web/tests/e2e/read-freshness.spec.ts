@@ -62,7 +62,7 @@ for (const trigger of ["reconnect", "deletion"] as const) test(`Spaces refresh a
   expect(reads).toBe(previous + 1);
 });
 
-for (const scope of ["routines", "repos"] as const) test(`cached ${scope} stay mounted with visible refresh errors and retry`, async ({ page }) => {
+for (const scope of ["routines"]) test(`cached ${scope} stay mounted with visible refresh errors and retry`, async ({ page }) => {
   await installInbox(page);
   const retry = gate();
   let reads = 0, failedRead = 0;

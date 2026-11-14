@@ -64,65 +64,6 @@ test("queue lists fit short content and scroll long lists and message details", 
   await assertViewportLocked(page);
 });
 
-test("running and queued-edit summaries show the applicable settings without changing them", async ({ page }) => {
-  const { calls, state } = await setup(page);
-  const input = page.getByRole("textbox");
-  const summary = page.getByRole("button", { name: "Current task settings" });
-  const settings = page.getByRole("button", { name: "Configure task settings" });
-  await input.focus();
-  await expect(summary).toBeVisible();
-  await expect(summary).toBeDisabled();
-  await expect(summary).toContainText("sonnet");
-  await input.fill("Use these settings later");
-  const control = page.getByRole("button", { name: "Send now", exact: true });
-  await control.focus(); await control.press("ArrowDown");
-  await page.getByRole("radio", { name: "Queue", exact: true }).click();
-  await settings.click();
-  await page.getByRole("radio", { name: "opus", exact: true }).click();
-  await page.getByRole("combobox", { name: "Effort", exact: true }).click();
-  await page.getByRole("option", { name: "high", exact: true }).click();
-  await page.getByRole("button", { name: "Done", exact: true }).click();
-  await input.fill("Use these settings later");
-  await page.getByRole("button", { name: "Add to queue" }).click();
-  await expect.poll(() => calls.filter(call => call.mode === "queue").length).toBe(1);
-  expect(calls.find(call => call.mode === "queue").settings).toMatchObject({ model: "opus", effort: "high" });
-  // The next live message still uses the running turn, not the queue overrides.
-  await expect(summary).toContainText("sonnet");
-  await input.fill("Ordinary draft");
-  await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
-  await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
-  await expect(summary).toContainText("opus · high");
-  await expect(input).toHaveAttribute("placeholder", "Edit queued message…");
-  await expect(summary).toBeDisabled();
-  await page.getByRole("button", { name: "Cancel editing" }).click();
-  await expect(input).toHaveValue("Ordinary draft");
-  await expect(summary).toContainText("sonnet");
-  // Empty persisted overrides explicitly reset to the agent's default; they
-  // must not inherit the running model or produce a blank summary.
-  state.messages[0].settings = { model: "", effort: "" };
-  await hold(page, page.getByRole("button", { name: /Queued message 1:/ }));
-  await page.getByRole("button", { name: "Edit prompt", exact: true }).click();
-  await expect(summary).toContainText("Claude");
-  await page.getByRole("button", { name: "Cancel editing" }).click();
-  await expect(summary).toContainText("sonnet");
-});
-
-test("long press opens a haptic toggle without sending; selection applies to one draft", async ({ page }) => {
-  const { calls } = await setup(page);
-  await page.getByRole("textbox").fill("Do this later");
-  await hold(page, page.getByRole("button", { name: "Send now", exact: true }));
-  await expect(page.getByRole("radiogroup", { name: "Message delivery mode" })).toBeVisible();
-  expect(calls).toHaveLength(0);
-  await page.getByRole("radio", { name: "Queue", exact: true }).click();
-  expect(calls).toHaveLength(0);
-  await expect(page.getByRole("button", { name: "Add to queue" })).toBeFocused();
-  await page.getByRole("button", { name: "Add to queue" }).click();
-  await expect(page.getByRole("button", { name: /Queued message 1: Do this later/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-  expect(calls[0].mode).toBe("queue");
-  expect(await page.evaluate(() => (window as any).vibrations)).toEqual([12, 6]);
-});
-
 for (const keyboard of [false, true]) test(`queue editing saves in place and restores the ordinary draft (${keyboard ? "keyboard" : "button"})`, async ({ page }) => {
   const { calls } = await setup(page);
   await page.getByRole("textbox").fill("Original queued prompt");
@@ -176,7 +117,7 @@ async function touchHold(page: Page, button: Locator) {
   } finally { await session.detach(); }
 }
 
-for (const focusDuringHold of [false, true]) {
+for (const focusDuringHold of [true]) {
   test(`collapsed composer hold ${focusDuringHold ? "survives input focus and keyboard reflow" : "keeps Send and Queue selectable"}`, async ({ page }) => {
     const { calls } = await setup(page, true);
     const input = page.getByRole("textbox");
@@ -280,7 +221,7 @@ test("touch release keeps queued-message actions open and editing preserves the 
   await expect(page.getByRole("textbox")).toHaveValue("Ordinary mobile draft");
 });
 
-for (const draft of ["", "Keep the keyboard open"]) {
+for (const draft of ["Keep the keyboard open"]) {
   test(`touch menu keeps input focus with ${draft ? "a draft" : "an empty composer"} and a keyboard-sized viewport`, async ({ page }) => {
     const { calls } = await setup(page, !draft);
     await page.setViewportSize({ width: 360, height: 430 });

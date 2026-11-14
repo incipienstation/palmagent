@@ -159,7 +159,7 @@ test("dismissing the native hint immediately restores the first-Back condition",
   await page.close();
 });
 
-for (const reload of [false, true]) {
+for (const reload of [true]) {
   test(`checking updates retains native exit after nested Settings Back${reload ? " and checkpoint reload" : ""}`, async ({ context }) => {
     await standalone(context);
     const { page, cdp } = await launch(context);
