@@ -16,9 +16,9 @@ const fixtureTasks = [
   { ...tasks[0], taskId: "work", repoId: "main", title: "Worktree task", branch: "feature/navigation", worktreePath: "/spaces/customer-experience/palmagent/.worktrees/navigation" },
   { ...tasks[0], taskId: "other-task", repoId: "other", title: "Separate Space task", branch: undefined, worktreePath: undefined },
 ];
-async function setup(page: Page, path = "/") {
+async function setup(page: Page, path = "/", snapshot: TaskState[] = fixtureTasks) {
   await page.route("**/api/repos", route => route.fulfill({ json: { repos: fixtureRepos } }));
-  await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: fixtureTasks })}\n\n` }));
+  await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: snapshot })}\n\n` }));
   await page.goto(path);
 }
 const mainSpace = (page: Page) => page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /customer-experience/ });
@@ -340,9 +340,9 @@ test("Space search clearing keeps editing active and closing preserves filters",
 });
 
 
-test("home separates same-name Spaces and retains tasks from disconnected Spaces", async ({ page }) => {
+test("Space groups separate same-name Spaces and retain tasks from disconnected Spaces", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
-  await setup(page);
+  await setup(page, "/", fixtureTasks.map(task => ({ ...task, status: "running" })));
   for (const qualifier of ["customer-experience", "experiments"]) {
     const group = page.getByRole("region", { name: new RegExp(`Palmagent.*${qualifier}.*tasks`) });
     await expect(group).toBeVisible();
