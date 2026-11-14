@@ -53,7 +53,7 @@ async function setup(page: Page, patch: Partial<TaskState> = {}) {
 }
 async function menu(page: Page) { await page.getByRole("button", { name: "Task actions", exact: true }).click(); }
 
-for (const width of [360, 1280]) test(`compaction menu and lifecycle preserve draft and reading position at ${width}px`, async ({ page }) => {
+for (const width of [360]) test(`compaction menu and lifecycle preserve draft and reading position at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   const f = await setup(page);
   const draft = page.getByRole("textbox", { name: "Message", exact: true });

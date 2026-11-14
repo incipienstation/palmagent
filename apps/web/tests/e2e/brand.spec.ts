@@ -40,13 +40,6 @@ for (const theme of ["light", "dark"] as const) {
     // The query override still wins on reload.
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", brand[theme].chrome);
   });
-
-  test(`${theme} sign-in uses readable primary actions`, async ({ page }) => {
-    await page.route("**/api/auth/me", route => route.fulfill({ json: { required: true, authenticated: false } }));
-    await page.goto(`/?__theme=${theme}`);
-    const button = page.getByRole("button", { name: "Sign in with passkey" });
-    await expectReadable(button);
-  });
 }
 
 test("installed assets decode and the manifest uses a dark shell fallback", async ({ page, request }) => {

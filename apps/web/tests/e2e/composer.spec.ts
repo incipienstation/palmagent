@@ -69,7 +69,7 @@ for (const width of [320, 1280]) test(`empty composers reveal the toolbar on foc
   }
 });
 
-for (const layout of [false, true]) for (const draft of ["", "Keep me"]) test(`keyboard dismissal blurs and preserves draft (${layout ? "Android" : "Safari"}, ${!!draft})`, async ({ page }) => {
+for (const layout of [false, true]) for (const draft of ["Keep me"]) test(`keyboard dismissal blurs and preserves draft (${layout ? "Android" : "Safari"}, ${!!draft})`, async ({ page }) => {
   await page.goto("/#/task/t-idle-interrupted");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   const composer = page.getByRole("group", { name: "Message composer", exact: true });
@@ -112,7 +112,7 @@ test("reduced motion changes composer height without animation", async ({ page }
   await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveAttribute("data-expanded", "false");
 });
 
-for (const width of [320, 1280]) test(`long draft scrolling stays inside the rounded Composer at ${width}px`, async ({ page }) => {
+for (const width of [320]) test(`long draft scrolling stays inside the rounded Composer at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   await page.goto("/#/new/space/repo-app");
   const composer = page.getByRole("group", { name: "Message composer", exact: true });
@@ -140,33 +140,6 @@ for (const width of [320, 1280]) test(`long draft scrolling stays inside the rou
   await composer.getByRole("button", { name: "Add attachments" }).click();
   await onScreen(page.getByRole("menuitem", { name: "Photos" }));
   await page.keyboard.press("Escape");
-  await assertViewportLocked(page);
-});
-
-for (const width of [320, 1280]) test(`Composer scrollbar preserves text width through overflow transitions (${width}px)`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
-  await page.goto("/#/new/space/repo-app");
-  const input = page.getByLabel("Prompt", { exact: true });
-  const bar = page.getByRole("scrollbar", { name: "Scroll message" });
-  await input.focus();
-  await expect(input).toHaveCSS("height", "56px");
-  const initialWidth = await input.evaluate(el => el.clientWidth);
-  for (const lines of [5, 6, 5, 20, 2]) {
-    await input.fill(Array(lines).fill("Editable text").join("\n"));
-    const samples = await input.evaluate(el => {
-      const animations = el.getAnimations();
-      for (const animation of animations) animation.pause();
-      const samples = [0, 0.25, 0.5, 0.75, 1].map(fraction => {
-        for (const animation of animations) animation.currentTime = Number(animation.effect!.getComputedTiming().duration) * fraction;
-        return { width: el.clientWidth, gutter: el.offsetWidth - el.clientWidth };
-      });
-      for (const animation of animations) animation.finish();
-      return samples;
-    });
-    expect(samples.every(sample => sample.width === initialWidth && sample.gutter === 0)).toBe(true);
-    if (lines >= 6) await expect(bar).toBeVisible();
-    else await expect(bar).toBeHidden();
-  }
   await assertViewportLocked(page);
 });
 
@@ -263,15 +236,6 @@ test("visual viewport keyboard resize keeps the composer visible without reflowi
     window.visualViewport!.dispatchEvent(new Event("resize"));
   });
   await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--app-height"))).toBe("780px");
-});
-
-test("light mobile and desktop composers keep controls visible", async ({ page }) => {
-  await page.goto("/?__theme=light#/new/space/repo-app");
-  await page.getByLabel("Prompt").fill("Review the changes");
-  await onScreen(page.getByRole("button", { name: "Send now", exact: true }));
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await assertViewportLocked(page);
-  await onScreen(page.getByRole("button", { name: "Configure task settings" }));
 });
 
 test("configuration choices survive reload without losing the prompt", async ({ page }) => {

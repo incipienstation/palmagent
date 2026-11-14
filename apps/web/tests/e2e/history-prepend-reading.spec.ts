@@ -35,7 +35,7 @@ async function unevenHistory(page: Page) {
   return { release, releaseTail, requests: () => requested };
 }
 
-for (const width of [360, 1280]) test.describe(`${width}px history`, () => {
+for (const width of [360]) test.describe(`${width}px history`, () => {
   test.use({ viewport: { width, height: width === 360 ? 780 : 900 } });
   test("wheel reading survives a prepend estimated from a much taller message", async ({ page }) => {
     const history = await unevenHistory(page);

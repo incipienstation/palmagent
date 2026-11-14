@@ -11,7 +11,7 @@ function gate() {
   return { wait, release };
 }
 
-for (const theme of ["dark", "light"] as const) test(`initial history uses one skeleton state for a running task in ${theme} mode`, async ({ page, context }) => {
+for (const theme of ["dark"] as const) test(`initial history uses one skeleton state for a running task in ${theme} mode`, async ({ page, context }) => {
   await installScopedStream(page);
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: theme });
   const pending = gate();

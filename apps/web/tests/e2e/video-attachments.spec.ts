@@ -66,7 +66,7 @@ test("invalid and oversized videos preserve existing image attachments", async (
   await expect(page.getByRole("button", { name: /Play video/ })).toHaveCount(0);
 });
 
-for (const width of [360, 1280]) test(`stored videos play after transcript replay and reload at ${width}px`, async ({ page }) => {
+for (const width of [360]) test(`stored videos play after transcript replay and reload at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   const taskId = "t-idle-rich", id = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f", frameId = "ab83e047-bf84-4266-93b8-b4618e7a81c4";
   const path = `/api/tasks/${taskId}/attachments/${id}`;

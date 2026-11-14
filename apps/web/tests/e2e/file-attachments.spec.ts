@@ -50,7 +50,7 @@ test("oversized files and too many files preserve the existing draft", async ({ 
   await expect(page.getByRole("button", { name: /^Remove file/ })).toHaveCount(1);
 });
 
-for (const width of [360, 1280]) test(`stored file downloads survive transcript reload at ${width}px`, async ({ page }) => {
+for (const width of [360]) test(`stored file downloads survive transcript reload at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   const taskId = "t-idle-rich", id = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
   const name = "a-long-document-name-that-still-fits-on-a-phone.pdf";

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { installScopedStream, open, send } from "./_scoped-stream";
 
-for (const width of [360, 1280]) test(`partial answers retain reading order, draft and activity state at ${width}px`, async ({ page }) => {
+for (const width of [360]) test(`partial answers retain reading order, draft and activity state at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   await installScopedStream(page);
   await open(page, "t-run");

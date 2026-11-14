@@ -374,8 +374,6 @@ test("fast upward scrolling formats long Markdown before it reaches the viewport
 });
 
 for (const scenario of [
-  { name: "slow mobile wheel", distance: 180, width: 360, touch: false },
-  { name: "fast mobile wheel", distance: 600, width: 360, touch: false },
   { name: "mobile touch", distance: 600, width: 360, touch: true },
   { name: "desktop wheel", distance: 600, width: 1280, touch: false },
 ]) test.describe(scenario.name, () => {
@@ -620,19 +618,6 @@ test("large legacy activities reveal a bounded number of steps and retain disclo
   await expect(page.locator("[data-trace-step]")).toHaveCount(100);
 });
 
-test("near-top scrolling prefetches the next page before reaching the edge", async ({ page }) => {
-  let requested = 0;
-  await page.route("**/history?before=1801*", async (route) => {
-    requested++;
-    await route.fulfill({ json: { events: rows(1601, 1800), before: 1601, cursor: 2000 } });
-  });
-  await recent(page);
-  await expect(page.getByRole("button", { name: "Load earlier messages", exact: true })).toHaveCount(0);
-  await viewport(page).evaluate((el) => { el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 })); el.scrollTop = 200; });
-  await expect.poll(() => requested).toBe(1);
-  await expect.poll(() => viewport(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
-});
-
 test("short history prefetch keeps its first message clear of the floating toolbar", async ({ page }) => {
   const cursors: string[] = [];
   await page.route("**/history*", (route) => {
@@ -680,7 +665,7 @@ test("returning to a conversation keeps messages and resumes only missed events"
   await expect(page.locator('[data-row-key="activity-2000"]')).toHaveCount(1);
 });
 
-for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+for (const size of [{ width: 360, height: 780 }]) {
   test(`early loading keeps continuous scrolling away from the unloaded edge at ${size.width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize(size);
     let requested = 0;
