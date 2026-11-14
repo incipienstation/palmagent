@@ -36,11 +36,39 @@ export function canDistributeCandidate(manifest, webManifest) {
     && !web.prebuild && !web.postbuild;
 }
 
+// Older sources and modified nested gates keep the original combined server lane.
+// Splitting is safe only for the known partition with no reordered lifecycle hooks.
+export function canSplitServerContracts(manifest, serverManifest) {
+  const scripts = manifest.scripts ?? {}, server = serverManifest?.scripts ?? {};
+  const rootCommands = {
+    'server:contracts': 'pnpm daemon:check && pnpm --filter @palmagent/server contracts',
+    'server:contracts:native': 'pnpm daemon:check && pnpm --filter @palmagent/server contracts:native',
+    'server:contracts:node': 'pnpm --filter @palmagent/server contracts:node',
+  };
+  const serverCommands = {
+    contracts: 'node --import tsx --test "tests/**/*.test.ts" "tests/**/*.test.mjs"',
+    'contracts:native': 'node scripts/run-contracts.mjs native',
+    'contracts:node': 'node scripts/run-contracts.mjs node',
+  };
+  const unhooked = (commands, names) => names.every(name => !commands[`pre${name}`] && !commands[`post${name}`]);
+  return Object.entries(rootCommands).every(([name, command]) => scripts[name] === command)
+    && Object.entries(serverCommands).every(([name, command]) => server[name] === command)
+    && unhooked(scripts, [...Object.keys(rootCommands), 'daemon:check', 'server:smoke'])
+    && unhooked(server, Object.keys(serverCommands));
+}
+
+export function candidateLaneNames(manifest, serverManifest) {
+  return ['tooling', ...(canSplitServerContracts(manifest, serverManifest) ? ['server-native', 'server-node'] : ['server']),
+    'web-1', 'web-2', 'web-3', 'web-4', 'sw'];
+}
+
 export function candidateLane(name) {
   const node = (id, ...args) => ({ id, command: process.execPath, args, timeoutMs: 15 * 60_000 });
   const lanes = {
     tooling: ['typecheck', 'pkg:check'].map(step),
     server: ['server:contracts', 'server:smoke'].map(step),
+    'server-native': ['server:contracts:native'].map(step),
+    'server-node': ['server:contracts:node', 'server:smoke'].map(step),
     'web-1': [node('web-shard-1', 'apps/web/scripts/run-e2e.mjs', '--shard=1/4')],
     'web-2': [node('web-shard-2', 'apps/web/scripts/run-e2e.mjs', '--shard=2/4')],
     'web-3': [node('web-shard-3', 'apps/web/scripts/run-e2e.mjs', '--shard=3/4')],
@@ -49,6 +77,12 @@ export function candidateLane(name) {
   };
   if (!Object.hasOwn(lanes, name)) throw new Error('Unknown candidate verification lane.');
   return lanes[name];
+}
+
+export function serverLane(manifest, serverManifest, name) {
+  if (!['native', 'node'].includes(name)) throw new Error('Unknown server lane');
+  if (canSplitServerContracts(manifest, serverManifest)) return candidateLane(`server-${name}`);
+  return name === 'native' ? candidateLane('server') : [];
 }
 
 export function requireCandidateChecks(results) {
@@ -72,6 +106,13 @@ function distributedSource(cwd) {
     return canDistributeCandidate(JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')),
       JSON.parse(readFileSync(join(cwd, 'apps/web/package.json'), 'utf8')));
   } catch { return false; }
+}
+
+function sourceLaneNames(cwd) {
+  const manifest = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'));
+  let server;
+  try { server = JSON.parse(readFileSync(join(cwd, 'apps/server/package.json'), 'utf8')); } catch {}
+  return candidateLaneNames(manifest, server);
 }
 
 function reportCheck(message) {
@@ -125,13 +166,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const cwd = resolve(source);
     if (mode === 'plan') {
       const distributed = distributedSource(cwd);
-      if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `distributed=${distributed}\n`);
-      console.log(JSON.stringify({ distributed }));
+      const lanes = distributed ? sourceLaneNames(cwd) : [];
+      if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `distributed=${distributed}\nlanes=${JSON.stringify(lanes)}\n`);
+      console.log(JSON.stringify({ distributed, lanes }));
     } else if (mode === 'results') {
       requireCandidateChecks(JSON.parse(process.env.RESULTS));
     } else if (mode === 'lane') {
-      if (!distributedSource(cwd)) throw new Error('Source gate cannot be distributed.');
+      if (!distributedSource(cwd) || !sourceLaneNames(cwd).includes(lane)) throw new Error('Source gate cannot use this distributed lane.');
       process.exitCode = await runVerification(candidateLane(lane), { cwd, signal: controller.signal, report: reportCheck });
+    } else if (mode === 'server-lane') {
+      const manifest = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'));
+      const server = JSON.parse(readFileSync(join(cwd, 'apps/server/package.json'), 'utf8'));
+      const steps = serverLane(manifest, server, lane);
+      if (steps.length === 0) console.log('Combined server gate runs in the native lane.');
+      else process.exitCode = await runVerification(steps, { cwd, signal: controller.signal, report: reportCheck });
     } else if (mode === 'full') {
       process.exitCode = await verifyCandidate(cwd, { signal: controller.signal });
     } else throw new Error('Unknown candidate verification mode.');

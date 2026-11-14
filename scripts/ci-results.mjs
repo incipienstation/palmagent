@@ -11,7 +11,9 @@ export function requireSuccessfulChecks(results, trusted) {
   const selected = {
     tooling: scope.types === 'true' || scope.tooling === 'true',
     server: scope.server === 'true',
-    web: scope.web === 'true' || (trusted && scope.package === 'true'),
+    web: scope.web === 'true',
+    native: trusted && scope.package === 'true',
+    package: trusted && scope.package === 'true',
     standalone: trusted && scope.package === 'true',
   };
   for (const [lane, required] of Object.entries(selected)) {

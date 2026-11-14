@@ -41,15 +41,22 @@ Dependency, script, file-mode, runtime, or other changes retain the ordinary che
 release candidate still runs the full source and packed-install verification.
 
 After scope validation, type/tooling, server, and PWA checks run in separate concurrent jobs.
+The server matrix separates Node-only contracts and runtime smoke from Rust checks followed by
+contracts that execute Rust debug binaries. Every contract file is assigned to exactly one group;
+the combined local server command still runs the complete gate.
 The required `validate` job aggregates their results and rejects any failure or cancellation.
 Static and version-only changes skip the runtime jobs. PWA tests use four shards on separate
 runners, preserving the sequential stateful test group. Service-worker checks run on a fifth
-runner concurrently with all shards. Each runner builds once; the first browser shard also
-runs selected package checks against its own build. Packaging-only scope uses one runner
-without browser or service-worker tests. All selected lanes, including all four browser shards
-and the service-worker runner, must succeed; an unexpectedly skipped lane fails validation.
-Parallel jobs repeat setup and use more runner time to shorten the critical path. Release
-candidates retain every source check using the compatible distributed gate below.
+runner concurrently with all shards. Each runner builds once. Selected package checks run
+in an independent Ubuntu 24.04 job alongside the browser matrix, preserving the systemd smoke
+runner. Packaging-only scope starts no browser or service-worker jobs. All selected lanes,
+including package verification, all four browser shards, and the service-worker runner, must
+succeed; an unexpectedly skipped lane fails validation.
+Native x64/arm64 jobs build Rust binaries once on Ubuntu 22.04. Package and standalone jobs
+import artifacts from those successful jobs in the same run, checking source/version identity,
+platform contracts, and both binary hashes before restoring executable modes. Platform smoke
+checks remain independent and mandatory. Parallel jobs repeat setup to shorten the critical path;
+release candidates retain every source check using the compatible distributed gate below.
 
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
@@ -75,6 +82,8 @@ it on the maintainer's behalf; no Run workflow UI interaction is required.
 3. Install frozen dependencies and run the full source gate, including generic leak checks.
    For known source gates, metadata checks and one PWA build precede separate
    type/tooling, server, four browser-shard runners, and an independent service-worker runner.
+   Known server partition commands use separate native/Node lanes as in PR CI. Older source,
+   modified nested commands, or lifecycle hooks retain the original combined server lane.
    Browser runners, service-worker checks, and packaging download the same build artifact from
    this run; its name is retained in preparation outputs so rerunning failed jobs reuses the
    verified build. Every selected lane must succeed before packaging; missing, skipped, failed,

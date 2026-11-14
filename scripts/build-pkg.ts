@@ -15,6 +15,7 @@
 // PKG_PUBLISHABLE=1 to inspect the real manifest, but publishing still requires
 // the protected Trusted Publishing workflow.
 import { build, type Plugin } from "esbuild";
+import { importNativeArtifacts } from "./lib/native-artifacts.mjs";
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -73,7 +74,15 @@ async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
 
   if (process.env.PALMAGENT_PACKAGE_NATIVE !== "none") {
-    execFileSync(process.execPath, [join(ROOT, "scripts", "build-daemon.mjs")], { cwd: ROOT, stdio: "inherit" });
+    if (process.env.PALMAGENT_NATIVE_ARTIFACTS) {
+      importNativeArtifacts(process.env.PALMAGENT_NATIVE_ARTIFACTS, join(ROOT, "build", "daemon"), {
+        version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version,
+        sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim(),
+        platforms: process.env.PALMAGENT_NATIVE_PLATFORM ? [process.env.PALMAGENT_NATIVE_PLATFORM] : undefined,
+      });
+    } else {
+      execFileSync(process.execPath, [join(ROOT, "scripts", "build-daemon.mjs")], { cwd: ROOT, stdio: "inherit" });
+    }
     cpSync(join(ROOT, "build", "daemon"), join(OUT, "daemon"), { recursive: true });
   }
 

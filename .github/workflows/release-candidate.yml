@@ -43,6 +43,7 @@ jobs:
       producer: ${{ steps.artifact.outputs.producer }}
       reuse: ${{ steps.artifact.outputs.reuse }}
       distributed: ${{ steps.plan.outputs.distributed }}
+      lanes: ${{ steps.plan.outputs.lanes }}
       standalone: ${{ steps.source.outputs.standalone }}
       channel: ${{ steps.source.outputs.channel }}
       web_artifact: candidate-web-${{ inputs.commit || github.sha }}-${{ github.run_attempt }}
@@ -115,7 +116,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        lane: [tooling, server, web-1, web-2, web-3, web-4, sw]
+        lane: ${{ fromJSON(needs.prepare.outputs.lanes) }}
     env:
       RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
     steps:

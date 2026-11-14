@@ -29,7 +29,9 @@
     "pkg:leakcheck": "node scripts/pkg-leakcheck.mjs build/pkg",
     "pkg:smoke": "node scripts/pkg-smoke.mjs",
     "release:check": "node scripts/check-release.mjs",
-    "release:prepare": "node scripts/release-version.mjs"
+    "release:prepare": "node scripts/release-version.mjs",
+    "server:contracts:native": "pnpm daemon:check && pnpm --filter @palmagent/server contracts:native",
+    "server:contracts:node": "pnpm --filter @palmagent/server contracts:node"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",
