@@ -13,7 +13,7 @@ test.use({ serviceWorkers: "block" });
 
 async function openSettings(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  if ((page.viewportSize()?.width ?? 360) < 768) await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Updates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
@@ -31,6 +31,7 @@ test("settings show the running version, save shared preferences, and remain usa
   });
   await openSettings(page);
   await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
+  await expect(page.getByText("Standalone", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("update-settings.png");
   const details = page.getByText("Update details", { exact: true });
   await expect(page.getByText(/Changing channel does not/)).toBeHidden();
@@ -48,7 +49,7 @@ test("settings show the running version, save shared preferences, and remain usa
   await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeChecked();
   await expect.poll(() => changes).toEqual(expect.arrayContaining([{ autoUpdate: true }, { channel: "stable" }]));
   await page.reload();
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  if ((page.viewportSize()?.width ?? 360) < 768) await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Updates", exact: true }).click();
   await expect(automatic).toBeChecked();
@@ -295,4 +296,63 @@ test("plugin-only updates remain actionable and explain when new skills become a
   await expect(page.getByText("Last update included plugins. New agent sessions use the updated plugins.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
   await expect(page.getByTestId("current-version")).toHaveText(state.currentVersion!);
+});
+
+for (const width of [320, 1280]) test(`npm migration is explicit and preserves preferences at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 800 });
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  state.settings!.distribution = "npm";
+  state.settings!.channel = "stable";
+  state.settings!.autoUpdate = true;
+  const actions: unknown[] = [];
+  await page.route("**/api/settings/updates", async route => {
+    if (route.request().method() === "POST") {
+      const action = route.request().postDataJSON(); actions.push(action);
+      if (action.action === "migrate") state.settings!.pending = {
+        id: "ddc3ac21-a723-4c89-b0ab-a21a4cdd9b4d", channel: "stable", currentVersion: state.currentVersion!, targetVersion: "0.2.0", automatic: false,
+      };
+    }
+    await route.fulfill({ json: state });
+  });
+  await openSettings(page);
+  await expect(page.getByText("npm", { exact: true })).toBeVisible();
+  await expect(page.getByText("Installs the latest compatible Stable release. Your data and settings are kept.")).toBeVisible();
+  const migrate = page.getByRole("button", { name: "Move to standalone", exact: true });
+  await migrate.focus();
+  await page.keyboard.press("Enter");
+  await expect(migrate).toBeDisabled();
+  await expect(page.getByText(/It will start after active tasks finish/)).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Stable", exact: true })).toBeChecked();
+  expect(actions.filter((a: any) => a.action === "migrate")).toEqual([{ action: "migrate" }]);
+  expect(await page.locator('[data-slot="settings-scroll"]:visible').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  await assertViewportLocked(page);
+});
+
+test("standalone has no reverse action and paused npm installations cannot migrate", async ({ page }) => {
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  await page.route("**/api/settings/updates", route => route.fulfill({ json: state }));
+  await openSettings(page);
+  await expect(page.getByText("Standalone", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move to standalone" })).toHaveCount(0);
+  state.settings!.distribution = "npm";
+  state.settings!.lastUpdate!.status = "failed";
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Move to standalone" })).toBeDisabled();
+});
+
+test("an interrupted migration response reconciles the accepted request before allowing a retry", async ({ page }) => {
+  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
+  state.settings!.distribution = "npm";
+  await page.route("**/api/settings/updates", async route => {
+    if (route.request().method() === "POST" && route.request().postDataJSON().action === "migrate") {
+      state.settings!.pending = { id: "ddc3ac21-a723-4c89-b0ab-a21a4cdd9b4d", channel: "preview", currentVersion: state.currentVersion!, targetVersion: "0.2.0-alpha.5", automatic: false };
+      return route.abort("failed");
+    }
+    await route.fulfill({ json: state });
+  });
+  await openSettings(page);
+  await page.getByRole("button", { name: "Move to standalone" }).click();
+  await expect(page.getByRole("button", { name: "Move to standalone" })).toBeDisabled();
+  await expect(page.getByText(/It will start after active tasks finish/)).toBeVisible();
 });

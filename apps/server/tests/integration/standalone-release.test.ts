@@ -65,3 +65,11 @@ test("schema v2 distinguishes same-version migration and enforces the new plugin
   assert.equal(compatiblePlugin("0.2.0-alpha.1", "0.2.0-alpha.1"), true);
   assert.throws(() => resolveUpdatePlan("0.1.0-alpha.1", "preview", [], undefined, {distribution:"npm"}), /standalone/);
 });
+
+test("a pinned Stable migration selects signed verification instead of npm resolution", () => {
+  // Invalid signed metadata must reach standalone verification even on a Stable npm install.
+  const selected = { distribution: "standalone" as const, version: "0.2.0", manifestUrl: "https://example.invalid/standalone.json", manifestSha256: "a".repeat(64),
+    artifact: { target: "linux-arm64-glibc" as const, filename: "palmagent-0.2.0-linux-arm64-glibc.tar.gz", url: "https://example.invalid/release.tar.gz", sha256: "b".repeat(64), size: 1, unpackedSize: 1, minGlibc: "2.35", requiredLibraries: [] } };
+  assert.throws(() => resolveUpdatePlan("0.2.0", "stable", [], "0.2.0", { selection: selected }),
+    (error: unknown) => (error as { failure?: { source: string } }).failure?.source === "standalone");
+});

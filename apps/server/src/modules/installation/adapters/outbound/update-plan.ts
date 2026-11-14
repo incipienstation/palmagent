@@ -30,7 +30,7 @@ export function readPluginVersions(paths: string[]): PluginVersion[] {
 export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plugins: PluginVersion[], requested?: string, options: ReleaseResolution = {}): UpdatePlan {
   if (requested !== undefined) validateUpdateTarget(current, requested, channel);
   const currentDistribution = installedDistribution(options.installation);
-  const distribution = options.distribution ?? (channel === "preview" || currentDistribution === "standalone" ? "standalone" : "npm");
+  const distribution = options.distribution ?? (options.selection || channel === "preview" || currentDistribution === "standalone" ? "standalone" : "npm");
   if (distribution === "npm" && channel === "preview") throw new Error("Preview is available only through standalone; use --distribution standalone");
   if (currentDistribution === "standalone" && distribution === "npm") throw new Error("Converting standalone to npm is not an update operation");
   if (distribution === "standalone") {
