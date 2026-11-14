@@ -73,8 +73,8 @@ test("pins keep creation order within their Space group and respect search and S
   await expect(done.getByRole("button", { name: /^Actions for / }).nth(1)).toHaveAccessibleName(`Actions for ${title}`);
   await page.getByRole("button", { name: "Open navigation" }).click();
   const pinned = page.getByRole("region", { name: "Pinned", exact: true });
-  await expect(pinned.getByRole("button").nth(0)).toHaveText("Interrupted across a deploy");
-  await expect(pinned.getByRole("button").nth(1)).toHaveText(title);
+  await expect(pinned.locator("[data-pinned-task] > button[draggable]").nth(0)).toHaveText("Interrupted across a deploy");
+  await expect(pinned.locator("[data-pinned-task] > button[draggable]").nth(1)).toHaveText(title);
   await page.getByRole("button", { name: "Close navigation" }).click();
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("Wire the web");
   await expect(page.getByRole("button", { name: /^Actions for / })).toHaveCount(1);
@@ -83,4 +83,78 @@ test("pins keep creation order within their Space group and respect search and S
   await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /notes/ }).click();
   await expect(page.getByRole("button", { name: `Actions for ${title}`, exact: true })).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Pinned", exact: true })).toHaveCount(0);
+});
+
+const otherTitle = "Interrupted across a deploy";
+async function seedPins(page: Page) {
+  await page.request.patch(path, { data: { pinned: true } });
+  await page.request.patch("/api/tasks/t-idle-interrupted/pin", { data: { pinned: true } });
+}
+const pinRows = (page: Page) => page.getByRole("region", { name: "Pinned", exact: true }).locator("[data-pinned-task] > button[draggable]");
+
+for (const width of [360, 1280]) test(`pin reorder menu preserves focus, syncs and persists at ${width}px`, async ({ page, context }) => {
+  await page.setViewportSize({ width, height: 780 });
+  await seedPins(page);
+  await page.goto("/");
+  if (width < 768) await page.getByRole("button", { name: "Open navigation" }).click();
+  const other = await context.newPage();
+  await other.setViewportSize({ width: 1280, height: 780 });
+  await other.goto("/");
+  const trigger = page.getByRole("button", { name: `Reorder ${otherTitle}`, exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("menuitem", { name: "Move down", exact: true })).toBeDisabled();
+  await page.getByRole("menuitem", { name: "Move up", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(pinRows(page)).toHaveText([otherTitle, title]);
+  await expect(trigger).toBeFocused();
+  await expect(pinRows(other)).toHaveText([otherTitle, title]);
+  await assertViewportLocked(page);
+  await page.reload();
+  if (width < 768) await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(pinRows(page)).toHaveText([otherTitle, title]);
+  await page.getByRole("button", { name: `Reorder ${otherTitle}`, exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Move up", exact: true })).toBeDisabled();
+  await page.getByRole("menuitem", { name: "Move down", exact: true }).click();
+  await expect(pinRows(page)).toHaveText([title, otherTitle]);
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("dragging a pin saves its position without opening the chat", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 780 });
+  await seedPins(page);
+  await page.goto("/");
+  const rows = pinRows(page);
+  await expect(rows).toHaveText([title, otherTitle]);
+  await rows.nth(1).dragTo(rows.nth(0), { targetPosition: { x: 30, y: 4 } });
+  await expect(rows).toHaveText([otherTitle, title]);
+  await expect(page.getByRole("status").filter({ hasText: "Pinned chat order saved." })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await page.reload();
+  await expect(rows).toHaveText([otherTitle, title]);
+});
+
+for (const lostResponse of [false, true]) test(`pin reorder reconciles ${lostResponse ? "a lost response" : "a failed save"} and blocks duplicate moves`, async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 780 });
+  await seedPins(page);
+  await page.goto("/");
+  let release: () => void = () => {};
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let requests = 0;
+  await page.route("**/api/tasks/*/pin-position", async route => {
+    requests++;
+    await pending;
+    if (lostResponse) await route.fetch();
+    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Try again." }) });
+  });
+  await page.getByRole("button", { name: `Reorder ${otherTitle}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move up", exact: true }).click();
+  await expect(pinRows(page)).toHaveText([otherTitle, title]);
+  await page.getByRole("button", { name: `Reorder ${title}`, exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Move up", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  expect(requests).toBe(1);
+  release();
+  await expect(page.getByText("Couldn't reorder pinned chats", { exact: true })).toBeVisible();
+  await expect(pinRows(page)).toHaveText(lostResponse ? [otherTitle, title] : [title, otherTitle]);
 });

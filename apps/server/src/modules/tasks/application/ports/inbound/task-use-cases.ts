@@ -53,6 +53,7 @@ export interface TaskUseCases {
   listTasks(status?: TaskStatus): TaskState[];
   getTask(id: string): TaskState;
   pin(id: string, pinned: boolean): TaskState;
+  movePin(id: string, targetId: string, placement: "before" | "after"): TaskState[];
   rename(id: string, title: string): TaskState;
   handoff(id: string): SessionHandoffResponse;
   dispatchSession(req: DispatchSessionRequest): Promise<TaskState>;

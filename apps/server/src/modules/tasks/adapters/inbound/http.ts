@@ -2,7 +2,7 @@ import { attachmentBody } from "./attachment-body.js";
 import { ConversationStepDetailsQuerySchema, ExecutionRecordsQuerySchema, ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
 import { FILE_MEDIA_TYPE, AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
-import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, MoveTaskPinSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../../../../platform/http/input.js";
 import type { HttpDependencies } from "./http-dependencies.js";
 import { TaskImageQuerySchema } from "@palmagent/shared/requests";
@@ -68,6 +68,10 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
     .get("/:id/account-limits", params(IdParamsSchema), async (c) => {
       c.header("Cache-Control", "no-store");
       return c.json(await service.accountLimits(c.req.valid("param").id), 200);
+    })
+    .patch("/:id/pin-position", params(IdParamsSchema), jsonBody(MoveTaskPinSchema), (c) => {
+      const { targetId, placement } = c.req.valid("json");
+      return c.json({ tasks: service.movePin(c.req.valid("param").id, targetId, placement) }, 200);
     })
     .patch("/:id/pin", params(IdParamsSchema), jsonBody(PinTaskSchema), (c) =>
       c.json({ task: service.pin(c.req.valid("param").id, c.req.valid("json").pinned) }, 200))

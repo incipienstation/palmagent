@@ -7,6 +7,7 @@ export interface TaskRepository extends MessageStateRepository, TaskHistoryReade
   insertTask(task: TaskState): void;
   setSessionControl(id: string, control: TaskState["sessionControl"]): void;
   setTaskPin(id: string, pinned: boolean, now: number): number | undefined;
+  setTaskPinOrder(pins: { taskId: string; pinnedAt: number }[], now: number): void;
   setTaskTitle(id: string, title: string, now: number): void;
   setTaskStatus(id: string, status: TaskStatus, interrupted: boolean, now: number): void;
   setTaskSession(id: string, sessionId: string, now: number): void;
