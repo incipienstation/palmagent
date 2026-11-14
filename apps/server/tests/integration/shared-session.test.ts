@@ -118,6 +118,28 @@ test("dispatch joins the live writer; browser input, questions and stop use that
   assert.match(f.service.handoff(id).command, /'--remote' 'unix:\/\/.*native.sock'/);
 });
 
+test("Stop with no pending messages allows a later queue submission without Resume", { skip: process.platform !== "linux" }, async t => {
+  const f = await setup(t), id = f.task.taskId;
+  await f.service.stop(id);
+  assert.equal(f.task.status, "idle");
+  assert.equal(f.service.messages.snapshot(id).paused, false);
+  f.service.submitMessage(id, { clientMessageId: "after-stop", text: "New work", mode: "queue", expectedRunId: null });
+  await eventually(() => f.service.messages.state(id).messages[0]?.status === "delivered");
+  assert.deepEqual(f.sent, ["New work"]);
+});
+
+test("Stop with pending messages still requires Resume even after adding more", { skip: process.platform !== "linux" }, async t => {
+  const f = await setup(t), id = f.task.taskId;
+  f.service.submitMessage(id, { clientMessageId: "before-stop", text: "Held work", mode: "queue", expectedRunId: f.service.messages.state(id).runId });
+  await f.service.stop(id);
+  f.service.submitMessage(id, { clientMessageId: "after-stop", text: "Later work", mode: "queue", expectedRunId: null });
+  assert.equal(f.service.messages.snapshot(id).paused, true);
+  assert.deepEqual(f.sent, []);
+  f.service.resumeQueue(id);
+  await eventually(() => f.sent.length === 1);
+  assert.deepEqual(f.sent, ["Held work"]);
+});
+
 test("reconnect deduplicates history and never replays an unconfirmed message", { skip: process.platform !== "linux" }, async t => {
   const f = await setup(t), id = f.task.taskId;
   f.event("item-1", "assistant_text", { text: "Saved response", messageId: "item-1" });
