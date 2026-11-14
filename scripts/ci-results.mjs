@@ -12,6 +12,7 @@ export function requireSuccessfulChecks(results, trusted) {
     tooling: scope.types === 'true' || scope.tooling === 'true',
     server: scope.server === 'true',
     web: scope.web === 'true',
+    native: trusted && scope.package === 'true',
     package: trusted && scope.package === 'true',
     standalone: trusted && scope.package === 'true',
   };

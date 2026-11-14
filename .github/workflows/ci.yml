@@ -163,8 +163,40 @@ jobs:
           BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
         run: node scripts/ci-web-cache.mjs summary
 
-  package:
+  native:
     needs: scope
+    if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Build the shared native binaries
+        env:
+          PALMAGENT_NATIVE_PLATFORM: linux-${{ matrix.arch }}
+        run: node scripts/build-daemon.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-${{ matrix.arch }}
+          overwrite: true
+          path: build/daemon
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    needs: [scope, native]
     if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     # Retained-cgroup smoke requires this image; Ubuntu 26.04 fails before exec
     # with EBUSY. See docs/DAEMON.md and systemd/systemd#41278.
@@ -213,8 +245,13 @@ jobs:
         env:
           PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
         run: node scripts/ci-web-cache.mjs build
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-linux-*
+          path: build/native-input
       - name: Verify packed candidate
         env:
+          PALMAGENT_NATIVE_ARTIFACTS: build/native-input
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
         run: |
@@ -246,7 +283,7 @@ jobs:
         run: node scripts/ci-web-cache.mjs summary
 
   standalone:
-    needs: scope
+    needs: [scope, native]
     if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -268,8 +305,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-linux-${{ matrix.arch }}
+          path: build/native-input/native-linux-${{ matrix.arch }}
       - name: Build and smoke-test the native standalone archive
         env:
+          PALMAGENT_NATIVE_ARTIFACTS: build/native-input
           PALMAGENT_NATIVE_PLATFORM: linux-${{ matrix.arch }}
         run: |
           pnpm pkg:build
@@ -277,7 +319,7 @@ jobs:
           node scripts/standalone-smoke.mjs build/standalone
 
   validate:
-    needs: [scope, tooling, server, web, package, standalone]
+    needs: [scope, tooling, server, web, native, package, standalone]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

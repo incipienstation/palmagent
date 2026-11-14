@@ -49,8 +49,11 @@ in an independent Ubuntu 24.04 job alongside the browser matrix, preserving the 
 runner. Packaging-only scope starts no browser or service-worker jobs. All selected lanes,
 including package verification, all four browser shards, and the service-worker runner, must
 succeed; an unexpectedly skipped lane fails validation.
-Parallel jobs repeat setup and use more runner time to shorten the critical path. Release
-candidates retain every source check using the compatible distributed gate below.
+Native x64/arm64 jobs build Rust binaries once on Ubuntu 22.04. Package and standalone jobs
+import artifacts from those successful jobs in the same run, checking source/version identity,
+platform contracts, and both binary hashes before restoring executable modes. Platform smoke
+checks remain independent and mandatory. Parallel jobs repeat setup to shorten the critical path;
+release candidates retain every source check using the compatible distributed gate below.
 
 Ordinary code PRs do not build or upload a deployment package. Packaging, CLI,
 dependency, workflow, and unknown changes add packed-install verification for
