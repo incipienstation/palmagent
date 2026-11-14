@@ -50,9 +50,16 @@ conversation, the operator can explicitly resume the remaining queue.
 
 ## Queue and editing
 
-Queue entries run individually in FIFO order. Stop or a failed run pauses the
-queue without deleting entries. Resume is explicit. A server restart reattaches
-surviving processes; missing runs remain interrupted with a paused queue.
+Queue entries run individually in FIFO order. Stop or a failed run pauses pending
+messages without deleting them. Resume is explicit while those messages remain;
+sending another prompt does not resume them. A server restart reattaches surviving
+processes; missing runs remain interrupted and their pending messages stay paused.
+
+Pause expires when no pending messages remain. Stopping or failing with an empty
+queue does not pause future submissions. Removing or confirming delivery of the
+last pending message also clears the pause, including empty pauses saved by older
+versions. Sending, rejected and unconfirmed entries count as pending; adding new
+messages cannot bypass their protection.
 
 Editing holds one waiting entry for 60 seconds, renewed every 20 seconds by the
 open editor. Following entries cannot overtake it. Save checks both lease token
