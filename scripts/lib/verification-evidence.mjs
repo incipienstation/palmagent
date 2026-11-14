@@ -44,7 +44,10 @@ export function verificationFingerprint(cwd, context, steps, env) {
     if (stat.isSymbolicLink()) {
       add(readlinkSync(path));
       const target = realpathSync(path);
-      metadata(target);
+      // Workspace package source is already hashed above. Following its entire directory
+      // would mistake generated build/runtime output for installed dependency changes.
+      if (roots.has(target)) add(target);
+      else metadata(target);
     } else if (stat.isDirectory()) {
       if (visited.has(path)) return;
       visited.add(path);

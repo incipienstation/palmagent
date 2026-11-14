@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -323,4 +323,23 @@ test('resume ignores tool invocation IDs and shell bookkeeping', async t => {
   f.messages.length = 0;
   assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
   assert(f.messages.includes('REUSE source'));
+});
+
+
+test('workspace dependency links do not fingerprint generated workspace output', async t => {
+  const f = retryFixture(t), steps = [f.step('source')];
+  f.write('apps/example/package.json', '{"name":"example"}');
+  f.write('apps/example/source.js', 'original');
+  f.write('node_modules/.keep', '');
+  symlinkSync(join(f.cwd, 'apps/example'), join(f.cwd, 'node_modules/example'));
+  assert.equal(await runVerification(steps, f.options), 0);
+  const resume = f.logDirectory();
+  f.write('apps/example/build/generated.js', 'generated');
+  f.messages.length = 0;
+  assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
+  assert(f.messages.includes('REUSE source'));
+  f.write('apps/example/source.js', 'changed');
+  f.messages.length = 0;
+  assert.equal(await runVerification(steps, { ...f.options, resume }), 0);
+  assert(f.messages.includes('RUN source'));
 });
