@@ -1,8 +1,8 @@
 import type { RetainedReleaseOperations } from "../../application/ports/outbound/installation.js";
 import { activeTerminal, activeExecution, verifyRetainedTerminal, verifyRetainedExecution } from "../../domain/runtime-retention.js";
 import { TERMINAL_PROTOCOL } from "@palmagent/shared/terminals";
-import { createHash, randomUUID } from "node:crypto";
-import { accessSync, constants, statSync, cpSync, copyFileSync, existsSync, readFileSync, renameSync, chmodSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { accessSync, constants, statSync, cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import type { InstallConfig } from "./config.js";
 import { ensurePrivateDirectory } from "../../../../platform/filesystem/private-files.js";
@@ -12,6 +12,8 @@ import { DAEMON_PROTOCOL } from "@palmagent/shared/daemon";
 import { daemonBinary } from "./daemon-runtime.js";
 import { BundleIdentitySchema, type StandaloneSelection } from "@palmagent/shared/standalone";
 import { installedDistribution, stageStandaloneRelease } from "./standalone-release.js";
+import { pinNode } from "./retained-node.js";
+export { pinNode } from "./retained-node.js";
 
 export interface ReleaseContract { executionProtocol: number; productStorage: number; applicationApi: number; terminalProtocol?: number; hostSetup?: number; ingressOwner?: "plugin"; daemonProtocol?: number; routineProtocol?: number }
 export function releaseContract(directory: string): ReleaseContract {
@@ -34,15 +36,6 @@ export function releaseContract(directory: string): ReleaseContract {
   }
   return contract;
 }
-export function pinNode(dataDir: string): string {
-  const hash = createHash("sha256").update(readFileSync(process.execPath)).digest("hex");
-  const directory = join(dataDir, "runtimes", hash);
-  ensurePrivateDirectory(directory);
-  const node = join(directory, "node");
-  if (!existsSync(node)) { copyFileSync(process.execPath, `${node}.tmp`); chmodSync(`${node}.tmp`, 0o700); renameSync(`${node}.tmp`, node); }
-  if (createHash("sha256").update(readFileSync(node)).digest("hex") !== hash) throw new Error("Retained Node runtime integrity mismatch");
-  return node;
-}
 /** First activation snapshots the installed global package before any executions
  * reference it. Future updates stage a new tree rather than overwriting this one. */
 export function retainInstalledRelease(cfg: InstallConfig): void {
@@ -56,7 +49,7 @@ export function retainInstalledRelease(cfg: InstallConfig): void {
     cpSync(root, join(directory, "palmagent"), { recursive: true, dereference: true });
     cfg.pkgDir = join(directory, "palmagent/app");
     cfg.workingDir = cfg.pkgDir;
-    cfg.executionNode = join(directory, "palmagent/runtime/bin/node");
+    cfg.executionNode = pinNode(cfg.dataDir, join(directory, "palmagent/runtime/bin/node"));
     cfg.distribution = "standalone";
     return;
   }

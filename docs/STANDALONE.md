@@ -42,7 +42,9 @@ disabled for migration. Keep the existing data directory, account and service sc
 Automatic updates defer this compatibility-line transition for operator handling.
 
 Candidates are verified before maintenance, then retained under the installation's releases
-directory. Activation uses the existing maintenance lock, compatibility checks and health
+directory. Their bundled Node binary is copied by checksum into the retained runtimes directory,
+which both existing and new daemons accept; the host's Node is not substituted. Activation uses
+the existing maintenance lock, compatibility checks and health
 verification. Independent executions keep their original release and Node paths. Legacy
 installations must become idle before migration. Failed activation attempts restore the
 previous application when possible and otherwise retain a recovery receipt. Neither a
