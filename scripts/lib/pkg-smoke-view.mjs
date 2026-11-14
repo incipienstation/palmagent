@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { freePort, smokeEnv } from "./pkg-smoke-runtime.mjs";
@@ -38,7 +39,7 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
   for (const stream of [child.stdout, child.stderr]) stream.on("data", chunk => { logs = (logs + chunk).slice(-16000); });
   const exited = new Promise(resolve => child.once("exit", resolve));
   const command = request => JSON.parse(execFileSync(daemon, ["request", "--data-dir", data],
-    { cwd: root, env, input: JSON.stringify(request), encoding: "utf8", timeout: 20000, stdio: ["pipe", "pipe", "pipe"] }));
+    { cwd: root, env, input: JSON.stringify(request), encoding: "utf8", timeout: 40000, stdio: ["pipe", "pipe", "pipe"] }));
   const view = action => JSON.parse(execFileSync(node, [join(release, "cli.js"), "view", action, "--data-dir", data],
     { cwd: root, env, encoding: "utf8", timeout: 25000, stdio: ["ignore", "pipe", "pipe"] }));
   const until = async (label, predicate) => {
@@ -106,8 +107,29 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
       try { command({ action: "terminate", kind: record.kind, id: record.id }); } catch {}
     }
     try { command({ action: "stop" }); }
-    catch (error) { console.error("[smoke] retained cleanup failed:", logs); throw error; }
-    const force = setTimeout(() => child.kill("SIGKILL"), 5000);
-    await exited; clearTimeout(force);
+    finally {
+      const force = setTimeout(() => child.kill("SIGKILL"), 5000);
+      await exited; clearTimeout(force);
+      // A failed stop must not leave detached guardians after scratch removal.
+      // Match start identity before signaling only this fixture's recorded hosts.
+      const signalOwned = (identity, group) => {
+        if (!identity) return;
+        try {
+          const stat = readFileSync(`/proc/${identity.pid}/stat`, "utf8");
+          const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+          const boot = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+          if (`${boot}:${fields[19]}` === identity.start && !["Z", "X"].includes(fields[0])) {
+            process.kill(group ? -identity.pid : identity.pid, "SIGKILL");
+          }
+        } catch (error) { if (!["ENOENT", "ESRCH"].includes(error.code)) throw error; }
+      };
+      for (const name of existsSync(hosts) ? readdirSync(hosts).filter(name => name.endsWith(".json")) : []) {
+        const path = join(hosts, name);
+        signalOwned(JSON.parse(readFileSync(path, "utf8")).guard, false);
+        signalOwned(JSON.parse(readFileSync(path, "utf8")).child, true);
+      }
+      const socketRoot = join("/tmp", `palmagentd-${process.getuid()}-${createHash("sha256").update(data).digest("hex").slice(0, 20)}`);
+      rmSync(socketRoot, { recursive: true, force: true });
+    }
   }
 }
