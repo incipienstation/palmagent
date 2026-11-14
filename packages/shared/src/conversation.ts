@@ -86,6 +86,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
   const rows: TranscriptRow[] = [];
   let turn: LogItem[] = [];
   let failure: RunFailure | undefined;
+  let stopped = false;
   const flush = (active: boolean) => {
     if (!turn.length) return;
     const start = rows.length;
@@ -104,6 +105,15 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
     const texts = new Set(turn.flatMap((item) => item.kind === "assistant_text" && phaseOf(item) !== "progress" ? [item.text.trim()] : []));
     for (const item of turn) {
       const p = payload(item);
+      // User interruption is a control outcome. Keep its raw diagnostics in
+      // execution records without presenting expected shutdown as a run failure.
+      // Native/shared sessions report interruption directly, without a Stop marker.
+      if (item.kind === "status" && p.subtype === "stop" || item.kind === "result" && p.subtype === "interrupted") stopped = true;
+      if (stopped && (
+        item.kind === "error" && p.code === TURN_RESULT_MISSING ||
+        item.kind === "status" && p.subtype === "process_exit" ||
+        item.kind === "result" && ["interrupted", "error_during_execution"].includes(String(p.subtype))
+      )) continue;
       // Tool failures are work details. Run errors have one disclosure across
       // error/result/process-exit signals, including signals after result flush.
       if (failed(item) && item.kind !== "tool_call" && item.kind !== "tool_result") {
@@ -179,6 +189,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
       flush(false);
       if (failure) failure.previous = true;
       failure = undefined;
+      stopped = false;
     }
     if (userMessage(item) || item.kind === "question" || item.kind === "approval_request") {
       flush(false);

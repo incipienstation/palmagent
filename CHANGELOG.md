@@ -6,6 +6,12 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.2.0-alpha.17
+
+### Fixed
+
+- Stopping a response now shows a brief confirmation toast instead of an interruption error. Unrelated failures remain visible.
+
 ## 0.2.0-alpha.16
 
 ### Changed
