@@ -61,3 +61,20 @@ No production behavior, CI lane, security boundary or server test is changed.
 The browser case count and retained behavior can be checked with Playwright
 collection and the scoped verifier. This audit does not establish a CI speedup;
 in particular, it does not shorten the server verification lane.
+
+## Follow-up: implementation-shaped assertions
+
+A focused follow-up removes three constraints without changing product code:
+
+- The final-evolution test visits every catalog entry and checks chest-only
+  evolution; it no longer pins the catalog to exactly five entries.
+- Navigation ownership still checks overlapping claims, repeated cleanup,
+  blocked/unblocked notifications and unsubscribe. It no longer requires a
+  notification for each claim change while the blocked state stays the same.
+- The shared API read test retains concurrent and subsequent fresh reads plus
+  `no-store`. The model-catalog wrapper's duplicate cache/call-count test and
+  the redundant final repository-read count are removed.
+
+This removes one Playwright case from the preceding audit's 674-case baseline.
+Permission mappings, queue ordering, expiry boundaries and stale-response
+protection remain unchanged. No runtime improvement is claimed.
