@@ -83,17 +83,14 @@ jobs:
 
   web:
     needs: scope
-    if: needs.scope.outputs.web == 'true' || (needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
-    # Shard 1 exercises retained cgroups across systemd restarts. The Ubuntu 26.04
-    # image fails before exec with EBUSY; see docs/DAEMON.md and systemd/systemd#41278.
+    if: needs.scope.outputs.web == 'true'
     runs-on: ${{ matrix.shard == 1 && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         # Keep browser shards independent from the service-worker runner.
-        # Packaging-only changes need one build and no browser shards.
-        shard: ${{ fromJSON(needs.scope.outputs.web == 'true' && '[1,2,3,4,"sw"]' || '[1]') }}
+        shard: [1, 2, 3, 4, sw]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -147,8 +144,76 @@ jobs:
       - name: Verify service-worker updates once
         if: needs.scope.outputs.web == 'true' && matrix.shard == 'sw'
         run: node apps/web/scripts/test-sw-update.mjs
+      - name: Save the tested PWA build
+        if: steps.pwa-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        with:
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          key: ${{ steps.pwa-key.outputs.key }}
+      - name: Report PWA cache outcome and build time
+        if: always()
+        env:
+          CACHE_STATE: ${{ steps.pwa-restore.outputs.state }}
+          RESTORE_OUTCOME: ${{ steps.pwa-cache.outcome }}
+          BUILD_SECONDS: ${{ steps.pwa-build.outputs.seconds }}
+          BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
+        run: node scripts/ci-web-cache.mjs summary
+
+  package:
+    needs: scope
+    if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    # Retained-cgroup smoke requires this image; Ubuntu 26.04 fails before exec
+    # with EBUSY. See docs/DAEMON.md and systemd/systemd#41278.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        # Jobs share a pnpm store across Ubuntu images with different
+        # system libraries. Rebuild native addons instead of restoring build output.
+        run: |
+          pnpm install --frozen-lockfile --side-effects-cache=false
+          pnpm --filter @palmagent/server exec node -e "require('node-pty'); new (require('better-sqlite3'))(':memory:').close()"
+      - name: Fingerprint PWA build inputs
+        id: pwa-key
+        run: node scripts/ci-web-cache.mjs key
+      - name: Restore exact PWA build
+        id: pwa-cache
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
+        with:
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          key: ${{ steps.pwa-key.outputs.key }}
+      - name: Validate restored PWA or discard it
+        id: pwa-restore
+        env:
+          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
+          PWA_CACHE_HIT: ${{ steps.pwa-cache.outputs.cache-hit }}
+        run: node scripts/ci-web-cache.mjs restore
+      - name: Build PWA on a cache miss
+        id: pwa-build
+        if: steps.pwa-restore.outputs.usable != 'true'
+        env:
+          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
+        run: node scripts/ci-web-cache.mjs build
       - name: Verify packed candidate
-        if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository && matrix.shard == 1
         env:
           PKG_PUBLISHABLE: '1'
           EXPECT_PUBLISHABLE: '1'
@@ -212,7 +277,7 @@ jobs:
           node scripts/standalone-smoke.mjs build/standalone
 
   validate:
-    needs: [scope, tooling, server, web, standalone]
+    needs: [scope, tooling, server, web, package, standalone]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

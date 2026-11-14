@@ -6,7 +6,7 @@ import { requireSuccessfulChecks } from '../ci-results.mjs';
 function results(outputs = {}) {
   return {
     scope: { result: 'success', outputs: { types: 'false', tooling: 'false', server: 'false', web: 'false', package: 'false', ...outputs } },
-    tooling: { result: 'skipped' }, server: { result: 'skipped' }, web: { result: 'skipped' }, standalone: {result:'skipped'},
+    tooling: { result: 'skipped' }, server: { result: 'skipped' }, web: { result: 'skipped' }, package: { result: 'skipped' }, standalone: { result: 'skipped' },
   };
 }
 
@@ -14,12 +14,22 @@ test('metadata and trusted/fork packaging scopes require exactly their selected 
   for (const trusted of [true, false]) {
     requireSuccessfulChecks(results(), trusted);
     const packed = results({ package: 'true' });
-    if (trusted) assert.throws(() => requireSuccessfulChecks(packed, trusted), /web/);
+    if (trusted) assert.throws(() => requireSuccessfulChecks(packed, trusted), /package/);
     else requireSuccessfulChecks(packed, trusted);
-    packed.web.result = 'success';
+    packed.package.result = 'success';
     if (trusted) {
       assert.throws(() => requireSuccessfulChecks(packed, trusted), /standalone/);
       packed.standalone.result = 'success';
+      for (const lane of ['package', 'standalone']) {
+        for (const result of ['skipped', 'cancelled', 'failure', undefined]) {
+          const invalid = structuredClone(packed);
+          invalid[lane].result = result;
+          assert.throws(() => requireSuccessfulChecks(invalid, trusted), new RegExp(lane));
+        }
+        const missing = structuredClone(packed);
+        delete missing[lane];
+        assert.throws(() => requireSuccessfulChecks(missing, trusted), new RegExp(lane));
+      }
     }
     requireSuccessfulChecks(packed, trusted);
   }
@@ -52,7 +62,7 @@ test('scope failure, malformed selection and failed unselected checks fail close
     value.scope.outputs[output] = true;
     assert.throws(() => requireSuccessfulChecks(value, true), /outputs/);
   }
-  for (const lane of ['tooling', 'server', 'web', 'standalone']) {
+  for (const lane of ['tooling', 'server', 'web', 'package', 'standalone']) {
     const value = results(); value[lane].result = 'failure';
     assert.throws(() => requireSuccessfulChecks(value, true), new RegExp(lane));
   }
