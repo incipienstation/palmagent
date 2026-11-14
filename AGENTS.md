@@ -4,13 +4,8 @@ Guidance for coding agents maintaining the Palmagent repository.
 
 ## Context and scope
 
-- At task start, read current instructions and only the skills and references needed. Reuse unchanged
-  instructions; after switching checkouts or before relying on a rule to pause, compare current files,
-  including local edits. Read changed or missing context.
-- Use current files, history, and the user's latest decisions over stale snapshots. Carry authorization
-  through follow-ups in the same scope; ask only about unresolved ambiguity or new actions.
-- Read linked references when they affect a decision. Keep searches and output focused; store full
-  test logs outside the repository and inspect relevant excerpts.
+- Load only task-relevant skills and references; reuse unchanged instructions across stages and
+  checkouts. Keep full test logs outside the repository and inspect relevant excerpts.
 - Deliver screenshot links from the conversation's registered working directory or its supported
   attachment storage. Copy temporary captures there before linking them, and verify image access;
   a successful local image preview does not prove the conversation can serve that path.

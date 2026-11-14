@@ -1,76 +1,45 @@
 ---
 name: ship
-description: Final stage of Palmagent's plan → start → verify → ship loop. Automatically squash-merge verified task pull requests into develop, update local develop, and clean up the completed task's verified worktree.
+description: Merge a verified Palmagent task PR into develop, update local develop, and clean up its worktree.
 ---
 
 # Ship
 
-An authorized implementation includes merge, updating the primary local `develop`, and safe
-cleanup of its task worktree and local branch. Honor PR-only, draft, merge-hold, and worktree
-retention requests. For branch promotion, other `main` merges, merge-policy changes, or repository
-visibility changes, read [release](../release/SKILL.md) before acting.
+Authorized implementation includes squash merge into `develop`, updating local `develop`, and
+safe task cleanup. Honor draft, PR-only, merge-hold, and retention requests. `main` merges,
+merge-policy changes, and repository visibility changes use [release](../release/SKILL.md).
 
-1. Review the complete diff and commit with a clear message. Preserve intended author and committer
-   identities; inspect `%ae` and `%ce` across the new commit range.
-2. Push the `feature/*` branch and open a PR into `develop` (never directly into `main`).
-3. Watch required checks in one CLI session with
-   `gh pr checks <number> --required --watch --fail-fast --interval 30`, following
-   [Waiting for checks](../verify/SKILL.md#waiting-for-checks). Keep the watcher session until it
-   finishes; do not launch parallel watchers or query the same CI status separately while it runs.
-   A missing required-check entry or interrupted watcher is not a pass; inspect the current CI
-   state before resuming or replacing the watcher. Inspect job logs when checks fail.
-   Reuse evidence only while inputs are unchanged; if the head or base changes, update and reverify.
-   Resolve task-owned conflicts. After checks and review requirements pass, squash-merge unless the
-   user requested draft, PR-only, or merge hold. Confirm base and head immediately before merging;
-   use `gh pr merge <number> --squash --match-head-commit <verified-head-sha>`. Verify the merged
-   commit identity and metadata. Never bypass failed checks, unresolved reviews, or protections with
-   `--admin`.
-4. Report the merge commit and validation evidence. Ordinary feature delivery ends with merge
-   and local cleanup; CI/CD handles eligible Preview publication. Do not load Release or wait for
-   Preview solely because a feature was merged. Release intervention uses the release skill;
-   explicit publication or host-verification requests retain their own scope. Do not require a
-   staging deployment after a merge.
-5. Keep the worktree while implementation or review is active. After merge, update local `develop`
-   and clean up the task worktree and branch using the checks below.
+Commit and push the task branch, preserving intended author and committer identities. Open a PR
+into `develop`. Watch checks in one session:
 
-## Update local develop after merge
+```bash
+gh pr checks <number> --watch --fail-fast --interval 30
+```
 
-Fetch `origin/develop` and identify the primary checkout with `git worktree list --porcelain`. Update
-it only if it already has `develop` checked out, has no tracked or untracked changes, and no Git
-operation is in progress. Do not switch branches or update another task's worktree.
+Follow [Waiting for checks](../verify/SKILL.md#waiting-for-checks). Reverify affected checks if the
+head or base changes. Once checks and reviews pass, confirm the base and merge the verified head:
 
-An open process whose working directory is the primary checkout is not by itself a reason to skip.
-Skip only with concrete evidence of an active edit, build, test, or server loading source from that
-checkout. If safe, confirm local `develop` is an ancestor of or equal to `origin/develop`, then run
-`git -C <primary-checkout> merge --ff-only origin/develop`. Never stash, reset, rebase, create a
-merge commit, or discard files to force the update.
+```bash
+gh pr merge <number> --squash --match-head-commit <verified-head-sha>
+```
 
-Verify local `develop` equals fetched `origin/develop` and includes the PR merge commit. Report its
-final SHA and whether the update succeeded, was already current, or was skipped with a reason. On
-fetch or safety-check failure, preserve the checkout and continue independent cleanup.
+Never bypass protections with `--admin`. Report the merge identity and validation evidence.
+Ordinary delivery ends with merge and cleanup; CI/CD handles Preview. Load Release or check a host
+only when publication intervention or host verification is requested.
 
-## Clean up the task worktree after merge
+## Local cleanup
 
-Identify the exact task-owned worktree and branch. Confirm the PR is merged into its intended base
-and the local branch matches the merged PR head with no later commits. Inspect tracked, untracked,
-and ignored files; a clean `git status` does not account for ignored data.
+From outside the task worktree, run:
 
-Remove only the merged source and identified reproducible task output. Preserve any worktree with
-later commits, uncommitted work, private data, uncertain ignored files, or an active session or
-process. Do not switch or remove the primary checkout or another task's worktree. Report anything
-retained and ask only when resolving it needs a new decision.
+```bash
+node scripts/finish-task.mjs --pr <number> --worktree <absolute-task-path>
+```
 
-Use the exit procedure for the environment that created the worktree:
+The helper previews Git safety checks. After releasing task sessions and pending tools, add
+`--apply` for a manual `.harness/worktrees/` worktree. It refreshes and fast-forwards a clean primary
+`develop`, removes only a clean merged task worktree with no ignored files or observable process use,
+and attempts non-force branch deletion. Retained resources and reasons are summarized.
 
-- **Claude Code-managed:** use native `ExitWorktree` when available and verify the result before Git
-  cleanup; do not externally delete a directory still bound to the session.
-- **Codex app-managed:** use the app's lifecycle controls. If unavailable, retain the worktree and
-  report the remaining action; do not delete it externally.
-- **Manually created Git worktree, including Codex CLI:** move command and edit targets outside it,
-  then ensure no session, task process, or pending tool call still uses it. Run
-  `git worktree remove <path>` without `--force`.
-
-After removing the worktree, remove its local branch with `git branch -d <branch>`. If Git refuses,
-including after a squash merge, retain the branch; never escalate to `-D`. Remote branch deletion is
-separate. Recheck the registry, path, and branch refs, and report exactly what was removed or
-retained.
+For Claude Code- or Codex app-managed worktrees, use the native lifecycle controls instead of
+external deletion. Unknown ignored files, private data, or active sessions require retention;
+remove identified reproducible output only when safe. Report remaining cleanup without forcing it.
