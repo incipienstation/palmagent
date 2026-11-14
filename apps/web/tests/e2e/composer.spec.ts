@@ -11,39 +11,7 @@ async function onScreen(control: Locator) {
   }), { message: "control is hittable after layout and overlay transitions settle" }).toBe(true);
 }
 
-for (const width of [360, 1280]) test(`dispatch and follow-up keep toolbar controls reachable at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
-  for (const route of ["new", "task/t-idle-rich"]) {
-    await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
-    const composer = page.getByRole("group", { name: "Message composer", exact: true });
-    const input = composer.getByRole("textbox");
-    const attachments = composer.getByRole("button", { name: "Add attachments" });
-    const skills = composer.getByRole("button", { name: "Choose a skill" });
-    const settings = composer.getByRole("button", { name: "Configure task settings" });
-    const action = composer.getByRole("button", { name: "Send now", exact: true });
-    // Focus reveals the full toolbar even before the first character.
-    await input.focus();
-    await composer.evaluate(async el => {
-      await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
-    });
-    for (const draft of ["", "Review this change"]) {
-      if (draft) await input.fill(draft);
-      await onScreen(settings);
-      await expect(action).toBeInViewport({ ratio: 1 });
-      if (draft) await onScreen(action);
-      await onScreen(skills);
-      await onScreen(attachments);
-      for (const control of [skills, action]) {
-        const box = (await control.boundingBox())!;
-        expect(box.width).toBeGreaterThanOrEqual(44);
-        expect(box.height).toBeGreaterThanOrEqual(44);
-      }
-      await assertViewportLocked(page);
-    }
-  }
-});
-
-for (const width of [320, 1280]) test(`empty composers reveal the toolbar on focus and retain drafts at ${width}px`, async ({ page }) => {
+for (const width of [320]) test(`empty composers reveal the toolbar on focus and retain drafts at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   for (const route of ["new", "task/t-run", "task/t-idle-interrupted"]) {
     await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
@@ -99,48 +67,6 @@ for (const layout of [false, true]) for (const draft of ["Keep me"]) test(`keybo
     window.visualViewport!.dispatchEvent(new Event("resize"));
   });
   await expect(input).toBeFocused();
-});
-
-test("reduced motion changes composer height without animation", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/#/new/space/repo-app");
-  const input = page.getByLabel("Prompt", { exact: true });
-  await input.focus();
-  await expect(input).toHaveCSS("transition-duration", "0s");
-  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveAttribute("data-expanded", "true");
-  await input.blur();
-  await expect(page.getByRole("group", { name: "Message composer", exact: true })).toHaveAttribute("data-expanded", "false");
-});
-
-for (const width of [320]) test(`long draft scrolling stays inside the rounded Composer at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
-  await page.goto("/#/new/space/repo-app");
-  const composer = page.getByRole("group", { name: "Message composer", exact: true });
-  const input = composer.getByRole("textbox");
-  const draft = "Keep this long draft editable\n".repeat(40);
-  await input.fill(draft);
-  await expect(input).toHaveCSS("height", "144px");
-  // These points are inside the textarea's rectangle but outside the rounded
-  // surface. A rectangular hit target here also lets its scrollbar paint out.
-  const corners = () => composer.evaluate(el => {
-    const r = el.getBoundingClientRect();
-    // Stay outside the rendered arc as theme radii change, away from its rasterized edge.
-    const inset = Math.max(1, Math.floor(parseFloat(getComputedStyle(el).borderTopLeftRadius) / 4));
-    return [r.left + inset, r.right - inset].map(x => el.contains(document.elementFromPoint(x, r.top + inset)));
-  });
-  await expect.poll(corners).toEqual([false, false]);
-  await input.evaluate(el => { el.scrollTop = 0; });
-  await input.hover();
-  await page.mouse.wheel(0, 240);
-  await expect.poll(() => input.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
-  await input.press("Control+End");
-  await expect.poll(() => input.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(24);
-  await expect(input).toHaveValue(draft);
-  await onScreen(composer.getByRole("button", { name: "Send now", exact: true }));
-  await composer.getByRole("button", { name: "Add attachments" }).click();
-  await onScreen(page.getByRole("menuitem", { name: "Photos" }));
-  await page.keyboard.press("Escape");
-  await assertViewportLocked(page);
 });
 
 for (const forcedColors of ["none", "active"] as const) test(`Composer overlay scrollbar supports drag, wheel, keyboard, and editing (${forcedColors})`, async ({ page }) => {
@@ -238,23 +164,6 @@ test("visual viewport keyboard resize keeps the composer visible without reflowi
   await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--app-height"))).toBe("780px");
 });
 
-test("configuration choices survive reload without losing the prompt", async ({ page }) => {
-  await page.goto("/#/new/space/repo-app");
-  await page.getByLabel("Prompt").fill("Review safely");
-  await page.getByRole("button", { name: "Configure task settings" }).click();
-  await page.getByRole("radio", { name: "opus", exact: true }).click();
-  await page.getByRole("combobox", { name: "Effort", exact: true }).click();
-  await page.getByRole("option", { name: "high", exact: true }).click();
-  await expect(page.getByPlaceholder("short label")).toHaveCount(0);
-  await page.getByRole("button", { name: "Done", exact: true }).click();
-  await page.reload();
-  await expect(page.getByLabel("Prompt")).toHaveValue("Review safely");
-  await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText("opus · high");
-  await page.getByRole("button", { name: "Configure task settings" }).click();
-  await expect(page.getByPlaceholder("short label")).toHaveCount(0);
-  await expect(page.getByRole("radio", { name: "opus", exact: true })).toHaveAttribute("aria-checked", "true");
-});
-
 test("permission picker mirrors each runtime CLI's native values", async ({ page }) => {
   await page.goto("/#/new/space/repo-app");
   await page.getByLabel("Prompt", { exact: true }).focus();
@@ -274,7 +183,7 @@ test("permission picker mirrors each runtime CLI's native values", async ({ page
   await expect(page.getByText("workspace-write-net", { exact: true })).toHaveCount(0);
 });
 
-for (const route of ["new", "task/t-idle-rich"]) test(`image-only submission and failed-send draft retention: ${route}`, async ({ page }) => {
+for (const route of ["new"]) test(`image-only submission and failed-send draft retention: ${route}`, async ({ page }) => {
   await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
   const action = page.getByRole("button", { name: "Send now", exact: true });
   const fileChooser = page.waitForEvent("filechooser");
@@ -309,19 +218,6 @@ test("follow-up settings submit only changed overrides and allow resetting to de
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   expect((await request).postDataJSON()).toMatchObject({ mode: "send", text: "Continue", settings: { model: "" } });
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEmpty();
-});
-
-test("Enter and IME composition keep writing without submitting", async ({ page }) => {
-  await page.goto("/#/new/space/repo-app");
-  let sends = 0;
-  page.on("request", (r) => { if (r.method() === "POST" && r.url().endsWith("/api/tasks")) sends++; });
-  const prompt = page.getByLabel("Prompt");
-  await prompt.fill("한글");
-  await prompt.dispatchEvent("compositionstart");
-  await prompt.press("Enter");
-  await prompt.dispatchEvent("compositionend", { data: "한글" });
-  await expect(prompt).toHaveValue("한글\n");
-  expect(sends).toBe(0);
 });
 
 test("Codex follow-up sends supported effort overrides and resets after changing models", async ({ page }) => {

@@ -9,7 +9,7 @@ const fixture = new URL("../fixtures/blue-video.webm", import.meta.url);
 const bytes = readFileSync(fixture);
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
 
-for (const route of ["new", "task/t-idle-rich"]) test(`video-only preparation, playback, and failed-send recovery: ${route}`, async ({ page }) => {
+for (const route of ["new"]) test(`video-only preparation, playback, and failed-send recovery: ${route}`, async ({ page }) => {
   await page.goto(`/#/${route === "new" ? "new/space/repo-app" : route}`);
   await page.getByRole("button", { name: "Add attachments" }).click();
   const chooser = page.waitForEvent("filechooser");

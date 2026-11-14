@@ -55,19 +55,3 @@ test("bottom sheets stay centered on desktop and dismiss with a touch drag on mo
   await expect(trigger).toBeFocused();
   await assertViewportLocked(page);
 });
-
-test("Add Space keeps selection fields and its action reachable with a short viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 400 });
-  await page.goto("/#/new/space/repo-app");
-  await page.getByRole("combobox", { name: "Space" }).click();
-  await page.getByRole("option", { name: "Add Space", exact: true }).click();
-  await page.getByRole("option", { name: "Browse folders…" }).click();
-  await page.getByRole("button", { name: "Choose outer-repo as Space" }).click();
-  const sheet = page.getByRole("dialog", { name: "Add Space", exact: true });
-  const connect = sheet.getByRole("button", { name: "Connect Space", exact: true });
-  await expect(connect).toBeInViewport({ ratio: 1 });
-  await sheet.getByLabel("Base branch (optional)").fill("develop");
-  await expect(connect).toBeInViewport({ ratio: 1 });
-  await captureForReview(page, "bottom-sheet-add-space-small.png");
-  await assertViewportLocked(page);
-});

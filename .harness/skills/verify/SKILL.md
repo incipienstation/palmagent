@@ -5,6 +5,10 @@ description: Third stage of Palmagent's plan → start → verify → ship loop.
 
 # Verify
 
+For test changes, review the diff against the [test selection policy](../plan/references/testing.md).
+Remove assertions that repeat implementation, existing coverage, or framework behavior before
+running the selected checks. Record the distinct risk covered and any intentional coverage reduction.
+
 From the repository root, run the scoped verifier with the exact Node version in `.nvmrc`:
 
 ```bash

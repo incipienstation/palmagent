@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import { Virtuoso, type SizeFunction, type StateSnapshot, type VirtuosoHandle } from "react-virtuoso";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -159,7 +159,7 @@ type TranscriptRow = { key: string; seq: number; content?: ConversationContentRe
   | { type: "prompt"; text: string }
   | { type: "delivery"; message: PendingMessage }
   | { type: "working" }
-  | { type: "message"; item: LogItem; raw?: boolean; groupEnd?: boolean; delivery?: PendingMessage }
+  | { type: "message"; item: LogItem; delivery?: PendingMessage }
   | { type: "activity"; activity: Activity; open: boolean; detailsLoading?: boolean; detailsError?: boolean; retryDetails?: () => unknown }
   | { type: "failure"; failure: RunFailure; open: boolean }
 );
@@ -248,26 +248,28 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
   );
 });
 
-function RunFailureSummary({ failure, open, toggle }: { failure: RunFailure; open: boolean; toggle: () => void }) {
+function RunFailureSummary({ failure, open, toggle, children }: { failure: RunFailure; open: boolean; toggle: () => void; children: ReactNode }) {
   const interrupted = runInterrupted(failure);
   const historical = failure.previous || failure.completed;
   const title = failure.previous
     ? interrupted ? "Previous run interrupted" : "Previous run reported an error"
     : failure.completed ? "Earlier errors in this run" : interrupted ? "Run interrupted" : "Run reported an error";
-  return <Alert data-run-failure variant={historical ? "default" : "destructive"}
-    role={historical ? "group" : "alert"} aria-label={title} className="mb-3 font-sans">
-    <AlertTriangle aria-hidden />
-    <AlertTitle>{title}</AlertTitle>
-    <AlertDescription>
-      {!historical && <p>{interrupted
-        ? "This run ended before completing. Send a follow-up to continue."
-        : "Review the details if the problem persists."}</p>}
-      <Button variant="ghost" size="sm" aria-expanded={open} onClick={toggle}>
-        <ChevronRight data-icon="inline-start" className={open ? "rotate-90" : undefined} />
-        {open ? "Hide error details" : "Show error details"}
-      </Button>
-    </AlertDescription>
-  </Alert>;
+  return <Trace data-run-failure role={historical ? "group" : "alert"} aria-label={title} className="mb-3">
+    <TraceCollapsible open={open} onOpenChange={toggle}>
+      <TraceCollapsibleTrigger>
+        <TraceLine status={historical ? undefined : "error"}>
+          <TraceIcon><AlertTriangle /></TraceIcon>
+          <TraceTitle>{title}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent>
+        {!historical && <p className="mb-2 text-sm">{interrupted
+          ? "This run ended before completing. Send a follow-up to continue."
+          : "Review the details if the problem persists."}</p>}
+        {open && children}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  </Trace>;
 }
 
 function HistoryHeader({ context }: { context?: HistoryControls }) {
@@ -605,7 +607,12 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
           <UserBubble text={row.message.text} skills={row.message.skills} attachments={row.message.attachments} images={row.message.images} onImageLoad={followBottom} />
           {delivery && <MessageDelivery {...delivery} message={row.message} />}
         </div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
-        <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)} /> : row.type === "activity" ?
+        <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)}>
+          <div className="font-mono text-xs">
+            {taskId ? <ConversationRecord taskId={taskId} row={row.failure} onImageLoad={followBottom} />
+              : row.failure.items.map(item => <EventRow key={item.key} item={item} live={false} expanded raw toggle={() => {}} onImageLoad={followBottom} />)}
+          </div>
+        </RunFailureSummary> : row.type === "activity" ?
         <ActivityTrace activity={row.activity} running={running} sourceLog={sourceLog} open={row.open} revision={row.revision ?? 0} taskId={taskId}
           openSteps={toggled} onToggle={toggleActivityRow}
           onStepOpenChange={(key, open) => {
@@ -614,8 +621,8 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
           }}
           render={item => taskId ? <ConversationRecord taskId={taskId} row={item} onImageLoad={followBottom} />
             : item.type === "message" ? <EventRow item={item.item} live={false} expanded raw toggle={() => {}} onImageLoad={followBottom} /> : null} />
-        : row.content && taskId ? <ConversationRecord taskId={taskId} row={{ type: "message", key: row.seq, item: row.item, content: row.content }} onImageLoad={followBottom} /> : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined} data-activity={row.raw || undefined} className={cn(row.raw && "font-mono text-[12px]", row.groupEnd && "pb-4")}>
-          <EventRow item={row.item} live={row.item.key === liveKey} raw={row.raw}
+        : row.content && taskId ? <ConversationRecord taskId={taskId} row={{ type: "message", key: row.seq, item: row.item, content: row.content }} onImageLoad={followBottom} /> : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined}>
+          <EventRow item={row.item} live={row.item.key === liveKey}
             expanded={toggled.has(row.item.key)} toggle={toggleRow} onImageLoad={followBottom} />
           {row.delivery && delivery && <MessageDelivery {...delivery} message={row.delivery} />}
         </div>}
@@ -704,10 +711,6 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       } else if (row.type === "failure") {
         const open = toggled.has(row.key);
         rows.push({ key: `failure-${row.key}`, seq: row.key, type: "failure", failure: row, open });
-        if (open) for (const [index, item] of row.items.entries()) rows.push({
-          key: `failure-raw-${item.key}`, seq: item.key, type: "message", item, raw: true,
-          groupEnd: index === row.items.length - 1,
-        });
       } else {
         const open = row.details ? openActivity.has(row.disclosureKey ?? row.key) : row.items.some((item) => openActivity.has(item.key));
         rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, open, revision: "revision" in row ? Number(row.revision) : undefined });

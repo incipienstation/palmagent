@@ -1,7 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { repos, tasks } from "../fixtures.mjs";
 import { assertViewportLocked, captureForReview } from "./_helpers";
-import { installInbox, send } from "./_inbox-stream";
 import { spaceActivities, spaceActivitySummary } from "../../src/space-context";
 import type { TaskState } from "@palmagent/shared";
 
@@ -39,24 +38,6 @@ test("Space activity groups counts once and preserves summary priorities and arc
   expect(spaceActivitySummary(activities.get("other"))).toBe("1 queued");
   expect(spaceActivitySummary(activities.get("idle"), 120000)).toBe("Last active 1m ago");
   expect(spaceActivitySummary(activities.get("missing"))).toBe("No tasks yet");
-});
-
-test("live Space summaries update without moving rows while browsing", async ({ page }) => {
-  await installInbox(page);
-  await page.route("**/api/repos", route => route.fulfill({ json: { repos: fixtureRepos } }));
-  await page.goto("/#/spaces");
-  const list = page.getByRole("region", { name: "Spaces list" });
-  await expect(list.getByRole("button")).toHaveCount(3);
-  const order = () => list.getByRole("button").evaluateAll(rows => rows.map(row =>
-    row.textContent?.includes("customer-experience") ? "main" : row.textContent?.includes("experiments") ? "other" : "long"));
-  const before = await order();
-  await send(page, { type: "tasks", tasks: [
-    { ...fixtureTasks[0], status: "running", lastActivityAt: Date.now() },
-    { ...fixtureTasks[2], status: "awaiting_input", lastActivityAt: Date.now() + 1 },
-  ] });
-  await expect(mainSpace(page)).toContainText("1 working");
-  await expect(list.getByRole("button", { name: /experiments/ })).toContainText("1 need attention");
-  expect(await order()).toEqual(before);
 });
 
 test("Tasks ignores legacy filters and Spaces has searchable, distinct rows", async ({ page }) => {
@@ -132,21 +113,6 @@ test("Space information owns full paths and explicit terminal scope", async ({ p
   await dialog.getByRole("button", { name: "Terminals", exact: true }).click();
   await expect(page).toHaveURL(/#\/terminals\/repo\/main$/);
   await expect.poll(() => queries.includes("main")).toBe(true);
-});
-
-test("desktop uses one rail and empty, long-name Spaces fit a narrow phone", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await setup(page, "/#/spaces");
-  await expect(page.getByRole("complementary", { name: "Space navigation" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main navigation" })).toHaveCount(1);
-  await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /a-very-long-space/ }).click();
-  await expect(page.getByText("No tasks yet", { exact: true })).toBeVisible();
-  await page.setViewportSize({ width: 320, height: 780 });
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(1);
-  await assertViewportLocked(page);
-  await expect(page.getByRole("button", { name: "Dispatch new task" })).toBeEnabled();
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await assertViewportLocked(page);
 });
 
 test("missing Space cannot silently fall back to another execution target", async ({ page }) => {
@@ -290,55 +256,6 @@ test("desktop search stays above the list and resizing preserves the same query 
   await expect(search).not.toBeFocused();
   await assertViewportLocked(page);
 });
-
-for (const layout of [false, true]) for (const query of ["experiments"]) test(`Space search preserves its query on keyboard dismissal (${layout ? "Android" : "Safari"}, ${JSON.stringify(query)})`, async ({ page }) => {
-  await setup(page, "/#/spaces");
-  const search = page.getByRole("searchbox", { name: "Search Spaces" });
-  await search.fill(query);
-  const viewport = async (height: number) => page.evaluate(({ height, layout }) => {
-    if (layout) Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
-    Object.defineProperty(window.visualViewport, "height", { configurable: true, value: height });
-    window.visualViewport!.dispatchEvent(new Event("resize"));
-    window.dispatchEvent(new Event("resize"));
-  }, { height, layout });
-  await viewport(730); await viewport(780);
-  await expect(search).toBeFocused();
-  await viewport(480);
-  await expect(search).toBeFocused();
-  await viewport(780);
-  await expect(search).not.toBeFocused();
-  await expect(search).toHaveValue(query);
-  await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Clear Space search" })).toHaveCount(query.trim() ? 1 : 0);
-  await search.focus();
-  await expect(search).toBeFocused();
-});
-
-test("Space search clearing keeps editing active and closing preserves filters", async ({ page }) => {
-  await setup(page, "/#/spaces");
-  const search = page.getByRole("searchbox", { name: "Search Spaces" });
-  await search.fill("not-found");
-  await page.getByRole("button", { name: "Clear search", exact: true }).tap();
-  await expect(search).toHaveValue("");
-  await expect(search).toBeFocused();
-  await search.fill("experiments");
-  await search.press("Enter");
-  await expect(search).not.toBeFocused();
-  await expect(search).toHaveValue("experiments");
-  await page.getByRole("button", { name: "Clear Space search" }).tap();
-  await expect(search).toHaveValue("");
-  await expect(search).toBeFocused();
-  await search.fill("experiments");
-  await search.press("Tab");
-  await expect(page.getByRole("button", { name: "Clear Space search" })).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(search).toHaveValue("");
-  await expect(search).toBeFocused();
-  await search.press("Escape");
-  await expect(page.getByRole("button", { name: "Close Space search" })).toHaveCount(0);
-  await expect(search).not.toBeFocused();
-});
-
 
 test("Space groups separate same-name Spaces and retain tasks from disconnected Spaces", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });

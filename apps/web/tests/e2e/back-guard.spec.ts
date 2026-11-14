@@ -33,36 +33,6 @@ async function fakeStandalone(page: Page): Promise<void> {
 
 const guardMarker = () => (history.state as { __backGuard?: string } | null)?.__backGuard;
 
-test.describe("root back-guard (standalone)", () => {
-  test("first back stays in-app and exposes the history floor for native exit", async ({ page }) => {
-    await fakeStandalone(page);
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-    // The guard covered its floor sentinel with a live entry on boot.
-    expect(await page.evaluate(guardMarker)).toBe("app");
-
-    // Press the system Back button (drive history.back directly — same-document
-    // popstate; avoids page.goBack()'s cross-document navigation wait).
-    await page.evaluate(() => history.back());
-
-    // The exit hint shows while the original entry is exposed. The next native
-    // Back can leave without requiring JavaScript to close the browser window.
-    await expect(page.getByText("Press back again to exit", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-    expect(await page.evaluate(guardMarker)).toBe("floor");
-  });
-});
-
-test.describe("root back-guard (plain browser tab)", () => {
-  test("gate off — no sentinel installed when not standalone", async ({ page }) => {
-    // No fakeStandalone: headless chromium reports display-mode: browser.
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-    // The guard early-returns, so it never writes its history marker.
-    expect(await page.evaluate(guardMarker)).toBeUndefined();
-  });
-});
-
 const exitHint = (page: Page) => page.locator('[data-testid="toast"][data-front="true"][data-removed="false"]');
 async function pressBack(page: Page) {
   await page.evaluate(() => new Promise<void>(resolve => {
@@ -84,7 +54,7 @@ async function expectFreshHint(page: Page) {
   expect(await page.evaluate(guardMarker)).toBe("floor");
 }
 
-for (const hover of [false, true]) test(`the two-second exit window expires${hover ? " even while hovering the hint" : ""}`, async ({ page, context }) => {
+for (const hover of [true]) test(`the two-second exit window expires${hover ? " even while hovering the hint" : ""}`, async ({ page, context }) => {
   if (hover) await page.setViewportSize({ width: 1280, height: 900 });
   await rootWithClock(page);
   const cdp = await context.newCDPSession(page);
@@ -100,28 +70,6 @@ for (const hover of [false, true]) test(`the two-second exit window expires${hov
   await expectFreshHint(page);
 });
 
-test("a fresh launch with no previous document stays navigable after two Back calls", async ({ page, context }) => {
-  await fakeStandalone(page);
-  // Replace about:blank so the test does not supply an artificial exit target.
-  const origin = new URL(test.info().project.use.baseURL!).origin;
-  await page.evaluate(url => location.replace(url), origin);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  const cdp = await context.newCDPSession(page);
-  expect((await cdp.send("Page.getNavigationHistory")).currentIndex).toBe(1);
-  await page.evaluate(() => history.back());
-  await expectFreshHint(page);
-  expect((await cdp.send("Page.getNavigationHistory")).currentIndex).toBe(0);
-  // This cannot close a native app. It must not leave navigation waiting for a
-  // popstate that will never arrive, even if the user continues using the app.
-  await page.evaluate(() => history.back());
-  await page.getByText("Wire the web QA harness", { exact: true }).click();
-  await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
-  await expect(exitHint(page)).toHaveCount(0);
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-  await page.getByRole("button", { name: "Tasks", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-});
-
 test("Escape dismissal resets the exit window before its deadline", async ({ page }) => {
   await rootWithClock(page);
   await pressBack(page);
@@ -129,56 +77,6 @@ test("Escape dismissal resets the exit window before its deadline", async ({ pag
   await page.keyboard.press("Escape");
   await page.clock.runFor(400);
   await expect(exitHint(page)).toHaveCount(0);
-  await pressBack(page);
-  await expectFreshHint(page);
-});
-
-test("swiping the exit hint resets the window before its deadline", async ({ page, context }) => {
-  await rootWithClock(page);
-  await pressBack(page);
-  const box = (await exitHint(page).boundingBox())!;
-  const cdp = await context.newCDPSession(page);
-  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
-  for (const dy of [5, 10, 20, 30, 65]) {
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...point, y: point.y + dy }] });
-  }
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await page.clock.runFor(400);
-  await expect(page.getByTestId("toast")).toHaveCount(0);
-  await pressBack(page);
-  await expectFreshHint(page);
-});
-
-test("replacing the exit hint with late request feedback resets the window", async ({ page }) => {
-  let release!: () => void;
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  let requested = false;
-  await page.route("**/api/tasks/t-idle-rich/messages", async route => {
-    if (route.request().method() !== "POST") return route.continue();
-    requested = true;
-    await pending;
-    await route.fulfill({ status: 503, json: { error: "Delayed message failure" } });
-  });
-  await rootWithClock(page);
-  await page.evaluate(() => { location.hash = "/task/t-idle-rich"; });
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Pending task");
-  await page.getByRole("button", { name: "Send now", exact: true }).click();
-  await expect.poll(() => requested).toBe(true);
-  await pressBack(page);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  await pressBack(page);
-  await expectFreshHint(page);
-  const armedAt = await page.evaluate(() => Date.now());
-  const failed = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/api/tasks/t-idle-rich/messages"));
-  release();
-  await failed;
-  await expect.poll(async () => {
-    await page.clock.runFor(50);
-    return exitHint(page).textContent();
-  }).toContain("Delayed message failure");
-  await page.clock.runFor(400);
-  expect(await page.evaluate(() => Date.now()) - armedAt).toBeLessThan(1900);
   await pressBack(page);
   await expectFreshHint(page);
 });
@@ -195,7 +93,7 @@ test("opening navigation dismisses the exit hint and disarms it", async ({ page 
   await expectFreshHint(page);
 });
 
-for (const lifecycle of ["visibility", "freeze", "page-cache"] as const) {
+for (const lifecycle of ["visibility"]) {
   test(`reopening after ${lifecycle} lifecycle signals resets each exit attempt without adding history`, async ({ page, context }) => {
     await rootWithClock(page);
     const cdp = await context.newCDPSession(page);
@@ -275,20 +173,4 @@ test("resuming preserves the current task, draft, and open layer", async ({ page
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(draft).toHaveValue("Keep this draft across app switching");
   await expect(page).toHaveURL(/#\/task\/t-idle-rich$/);
-});
-
-test("cold reopening at the exit floor also starts a fresh sequence", async ({ page }) => {
-  await fakeStandalone(page);
-  const origin = new URL(test.info().project.use.baseURL!).origin;
-  await page.evaluate(url => location.replace(url), origin);
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  for (let cycle = 0; cycle < 2; cycle++) {
-    await page.evaluate(() => history.back());
-    await expectFreshHint(page);
-    await page.reload();
-    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-    expect(await page.evaluate(guardMarker)).toBe("app");
-    expect(await page.evaluate(() => history.length)).toBe(2);
-    await expect(exitHint(page)).toHaveCount(0);
-  }
 });

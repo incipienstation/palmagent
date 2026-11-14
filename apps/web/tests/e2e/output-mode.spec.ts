@@ -102,11 +102,11 @@ test("repeated tool failures and an interrupted run stay readable on mobile", as
   await expect(page.getByText("Codex exited before a terminal turn result.")).toHaveCount(0);
   await expect(page.locator("[data-activity]")).toHaveCount(1);
   await assertViewportLocked(page);
-  const details = summary.getByRole("button");
+  const details = summary.getByRole("button", { name: "Run interrupted", exact: true });
   await details.focus();
   await page.keyboard.press("Enter");
   await expect(details).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText("Codex exited before a terminal turn result.", { exact: false })).toBeVisible();
+  await expect(summary.getByText("Codex exited before a terminal turn result.", { exact: false })).toBeVisible();
   await details.click();
   await expect(details).toHaveAttribute("aria-expanded", "false");
   const activity = page.getByRole("button", { name: "Activity · 12 tools", exact: true });
@@ -126,6 +126,9 @@ test("repeated tool failures and an interrupted run stay readable on mobile", as
   await expect(sessionDetails).toBeHidden();
   await expect(summary).toHaveAttribute("aria-label", "Previous run interrupted");
   await expect(summary).toHaveAttribute("role", "group");
+  const previousDetails = summary.getByRole("button", { name: "Previous run interrupted", exact: true });
+  await previousDetails.click();
+  await expect(summary.getByText("Codex exited before a terminal turn result.", { exact: false })).toBeVisible();
   await expect(page.getByText("Finished the remaining work.", { exact: true })).toBeVisible();
   await expect(page.getByText("Send a follow-up to continue.", { exact: false })).toHaveCount(0);
   await assertViewportLocked(page);

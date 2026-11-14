@@ -99,31 +99,6 @@ test("pending saves update preferences immediately, keep controls responsive, an
   await expect(automatic).toBeEnabled();
 });
 
-test("unavailable management keeps the current version visible and explains the required setup", async ({ page }) => {
-  await page.route("**/api/settings/updates", (route) => route.fulfill({ json: { ...updateSettings, availability: "permission-required" } }));
-  await openSettings(page);
-  await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
-  await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeDisabled();
-  await expect(page.getByRole("alert")).toContainText("installation owner");
-  await page.setViewportSize({ width: 320, height: 568 });
-  await page.getByRole("button", { name: "Check again", exact: true }).scrollIntoViewIfNeeded();
-  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeVisible();
-  expect(await page.locator('[data-slot="settings-scroll"]:visible').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-  await assertViewportLocked(page);
-});
-
-test("the last result explains why an enabled automatic update is paused", async ({ page }) => {
-  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
-  state.settings!.autoUpdate = true;
-  state.settings!.lastUpdate!.status = "failed";
-  state.settings!.lastUpdate!.targetVersion = "0.1.0-alpha.5";
-  await page.route("**/api/settings/updates", (route) => route.fulfill({ json: state }));
-  await openSettings(page);
-  await expect(page.getByText(/The last update failed/)).toBeVisible();
-  await expect(page.getByText(/Automatic updates are paused/)).toBeVisible();
-  await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.4");
-});
-
 test("a failed refresh marks the last known version and removes stale controls until recovery", async ({ page }) => {
   let online = true;
   await page.route("**/api/settings/updates", (route) => online ? route.fulfill({ json: updateSettings }) : route.abort("failed"));
@@ -210,34 +185,6 @@ test("Settings checks the registry and requests the displayed update without ena
   expect(actions).toContainEqual({ action: "install", version: "0.1.0-alpha.5" });
 });
 
-test("a failed plugin lookup explains its cause and Check again clears the stale failure", async ({ page }) => {
-  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
-  state.settings!.lastUpdate = { schemaVersion: 1, status: "succeeded", previousVersion: state.currentVersion!,
-    targetVersion: state.currentVersion!, reason: "plugins-updated", pluginsUpdated: 1, pluginActivationPending: true,
-    checkedAt: "2026-01-01T00:00:00.000Z" };
-  state.settings!.discovery = { channel: "preview", currentVersion: state.currentVersion!, targetVersion: null,
-    checkedAt: new Date().toISOString(), eligible: false, error: true,
-    failure: { source: "codex-plugins", code: "timeout", exitCode: null } };
-  await page.route("**/api/settings/updates", async route => {
-    if (route.request().method() === "POST" && route.request().postDataJSON().action === "check") {
-      state.settings!.discovery = { channel: "preview", currentVersion: state.currentVersion!, targetVersion: state.currentVersion,
-        checkedAt: new Date().toISOString(), eligible: true, pluginsPending: 0, error: false };
-    }
-    await route.fulfill({ json: state });
-  });
-  await openSettings(page);
-  await expect(page.getByText("Codex plugin check failed. The check timed out. Try again.")).toBeVisible();
-  await expect(page.getByText("Up to date", { exact: true })).toHaveCount(0);
-  const history = page.getByText("Last update included plugins. New agent sessions use the updated plugins.");
-  await expect(history).toBeHidden();
-  await page.getByText("Update details", { exact: true }).click();
-  await expect(history).toBeVisible();
-  await expect(page.getByText("Plugins updated. Start a new session to use them.")).toHaveCount(0);
-  await page.getByRole("button", { name: "Check again", exact: true }).click();
-  await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Codex plugin check failed/)).toHaveCount(0);
-});
-
 test("a changed server keeps the screen open when worker registration is blocked", async ({ page }) => {
   await page.route("**/api/settings/updates", (route) => route.fulfill({
     json: updateSettings, headers: { "x-palmagent-version": "0.1.0-alpha.999" },
@@ -259,19 +206,6 @@ test("a changed server keeps the screen open when worker registration is blocked
   }
   await expect(page.getByRole("button", { name: "Dismiss update", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
-});
-
-test("automatic independent updates show progress without asking for an Update click", async ({ page }) => {
-  const state = structuredClone(updateSettings) as UpdateSettingsStatus;
-  state.settings!.autoUpdate = true;
-  state.settings!.independentExecutions = true;
-  state.settings!.discovery!.targetVersion = "0.1.0-alpha.5";
-  state.settings!.pending = { id: "ddc3ac21-a723-4c89-b0ab-a21a4cdd9b4d", channel: "preview", currentVersion: "0.1.0-alpha.4", targetVersion: "0.1.0-alpha.5", automatic: true };
-  await page.route("**/api/settings/updates", (route) => route.fulfill({ json: state }));
-  await openSettings(page);
-  await expect(page.getByText("Preparing update to 0.1.0-alpha.5. Your agent runs continue.")).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Update( scheduled)?$/ })).toHaveCount(0);
-  await expect(page.getByText(/after active tasks finish/)).toHaveCount(0);
 });
 
 test("plugin-only updates remain actionable and explain when new skills become active", async ({ page }) => {

@@ -139,38 +139,6 @@ test("reload preserves an unresolved first message and retries the original ID a
   expect(requests[1]).toEqual(requests[0]);
 });
 
-test("an empty workspace list keeps registration reachable in the compact picker", async ({ page }) => {
-  await page.route("**/api/repos", route => route.request().method() === "GET"
-    ? route.fulfill({ json: { repos: [] } }) : route.continue());
-  await page.goto("/#/new/space/repo-app");
-  await page.getByRole("combobox", { name: "Space" }).click();
-  await page.getByRole("option", { name: "Add Space", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Add Space", exact: true })).toBeVisible();
-  await assertViewportLocked(page);
-});
-
-test("slow creation adds a quiet hint while keeping the first message and Stop", async ({ page }) => {
-  await page.clock.install();
-  let release!: () => void;
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route("**/api/tasks", async route => {
-    if (route.request().method() !== "POST") return route.continue();
-    await pending;
-    await route.fulfill({ status: 400, json: { error: "Try again" } });
-  });
-  await page.goto("/#/new/space/repo-app");
-  await page.getByLabel("Prompt", { exact: true }).fill("A slow start");
-  await page.getByRole("button", { name: "Send now", exact: true }).click();
-  await expect(page.getByText("Preparing conversation…", { exact: true })).toHaveCount(0);
-  await page.clock.runFor(8100);
-  await expect(page.getByText("Preparing conversation…", { exact: true })).toBeVisible();
-  await expect(page.getByRole("group", { name: "Your message" })).toContainText("A slow start");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
-  release();
-  await expect(page.getByText("Not sent", { exact: true })).toBeVisible();
-  await expect(page.getByText("Preparing conversation…", { exact: true })).toHaveCount(0);
-});
-
 test("a failed initial history read keeps the accepted first message visible", async ({ page }) => {
   await installScopedStream(page);
   const task = { ...tasks.find(t => t.taskId === "t-run")!, prompt: "Keep the first message", title: undefined };

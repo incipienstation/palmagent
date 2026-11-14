@@ -17,6 +17,7 @@ Guidance for coding agents maintaining the Palmagent repository.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
 - For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) and verify
   module and layer boundaries with `pnpm architecture:check`.
+- Before adding or expanding tests, apply the [test selection policy](.harness/skills/plan/references/testing.md).
 
 ## Product UI
 
