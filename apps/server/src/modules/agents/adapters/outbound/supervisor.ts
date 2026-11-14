@@ -54,6 +54,9 @@ export class ProcessSupervisor {
   // Drop the handle and free the slot, handing it to the next queued waiter.
   release(taskId: string): void {
     this.handles.delete(taskId);
+    this.releaseSlot();
+  }
+  releaseSlot(): void {
     const next = this.waiters.shift();
     if (next) next();
     else if (this.active > 0) this.active--;

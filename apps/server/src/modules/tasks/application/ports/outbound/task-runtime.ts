@@ -25,6 +25,7 @@ export interface TaskSupervisor {
   get(taskId: string): RunHandle | undefined;
   has(taskId: string): boolean;
   release(taskId: string): void;
+  releaseSlot(): void; // An acquired reservation without a registered handle.
 }
 
 export interface TaskWorktreeManager {
