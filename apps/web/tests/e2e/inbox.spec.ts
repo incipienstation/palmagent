@@ -166,6 +166,7 @@ for (const width of [320, 390, 1280]) test(`attention rows keep Space context, s
   const attention = page.getByRole("region", { name: "Needs you", exact: true });
   const context = attention.locator("[title]").filter({ hasText: longName });
   await expect(context).toHaveCount(2);
+  await expect(context.filter({ hasText: "second/work" })).toHaveCount(1);
   const names = await context.allTextContents();
   expect(names[0]).not.toBe(names[1]);
   for (const row of await attention.locator("[data-swipe-surface]").all()) {
