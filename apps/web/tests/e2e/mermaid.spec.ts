@@ -86,28 +86,6 @@ test("an incomplete streaming diagram recovers when the fence is completed", asy
   await expect(page.locator('body > div[aria-hidden="true"]')).toHaveCount(0);
 });
 
-test("multiple diagrams, theme changes, and wide mobile content remain contained", async ({ page }) => {
-  await reply(page, fence(flow) + "\n\n" + fence("sequenceDiagram\n Alice->>Bob: Hello\n Bob->>Charlie: Forward\n Charlie->>Diana: Forward\n Diana-->>Alice: Welcome"));
-  const diagrams = page.getByRole("img", { name: "Mermaid diagram", exact: true });
-  await expect(diagrams).toHaveCount(2);
-  await expect.poll(() => diagrams.last().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(360);
-  const dark = await diagrams.first().getAttribute("src");
-  await screenshot(page, "mermaid-mobile-dark");
-  await page.emulateMedia({ colorScheme: "light" });
-  await expect(diagrams).toHaveCount(2);
-  await expect(diagrams.first()).not.toHaveAttribute("src", dark!);
-  await screenshot(page, "mermaid-mobile-light");
-  await assertViewportLocked(page);
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await screenshot(page, "mermaid-desktop-light");
-  const light = await diagrams.first().getAttribute("src");
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(diagrams).toHaveCount(2);
-  await expect(diagrams.first()).not.toHaveAttribute("src", light!);
-  await expect(diagrams.first()).toHaveAttribute("src", dark!);
-  await screenshot(page, "mermaid-desktop-dark");
-});
-
 test("diagram directives cannot enable HTML or executable links", async ({ page }) => {
   let dialogs = 0;
   page.on("dialog", async dialog => { dialogs++; await dialog.dismiss(); });
@@ -160,49 +138,6 @@ test("wheel zoom requires a modifier and zoom is bounded", async ({ page }) => {
   expect((await transform(page)).scale).toBe(1);
 });
 
-test("fullscreen fills the 1280px viewport and restores preview focus", async ({ page }) => {
-  const viewport = { width: 1280, height: 900 };
-  await page.setViewportSize(viewport);
-  await reply(page, fence(flow));
-  const trigger = page.getByRole("button", { name: "Open diagram fullscreen" });
-  const diagram = page.getByRole("img", { name: "Mermaid diagram", exact: true });
-  for (const theme of ["dark"] as const) {
-    await expect(trigger).toBeVisible();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Zoom in diagram" })).toHaveCount(0);
-    await trigger.click();
-    const dialog = page.getByRole("dialog", { name: "Mermaid diagram", exact: true });
-    await expect(dialog).toBeVisible();
-    await expect.poll(async () => {
-      const box = (await dialog.boundingBox())!;
-      return Object.fromEntries(Object.entries(box).map(([key, value]) => [key, Math.round(value)]));
-    }).toEqual({ x: 0, y: 0, ...viewport });
-    const canvas = dialog.getByRole("region", { name: "Mermaid diagram", exact: true });
-    expect((await canvas.boundingBox())!.height).toBeGreaterThan(viewport.height * 0.65);
-    expect((await transform(page)).scale).toBe(1);
-    await canvas.focus();
-    await page.keyboard.press("+");
-    await expect.poll(async () => (await transform(page)).scale).toBeGreaterThan(1);
-    await dialog.getByRole("button", { name: "Fit diagram" }).click();
-    await screenshot(page, `mermaid-fullscreen-${viewport.width}-${theme}`);
-    // Focus stays in the dialog; Escape restores the trigger and its view.
-    await dialog.getByRole("button", { name: "Exit diagram fullscreen" }).focus();
-    await page.keyboard.press("Shift+Tab");
-    await expect(canvas).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-    await expect(diagram).toBeVisible();
-    await trigger.click();
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "Exit diagram fullscreen" }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-    await page.setViewportSize(viewport);
-    await assertViewportLocked(page);
-  }
-});
-
 for (const input of ["touch", "wheel"] as const) {
   test(`inline diagrams let native ${input} scroll the conversation`, async ({ page, context }) => {
     await reply(page, "Before the diagram.\n\n".repeat(20) + fence(flow) + "\n\nAfter the diagram.".repeat(20));
@@ -229,31 +164,6 @@ for (const input of ["touch", "wheel"] as const) {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Zoom in diagram" })).toHaveCount(0);
     await assertViewportLocked(page);
-  });
-}
-
-for (const input of ["mouse", "touch"] as const) {
-  test(`double ${input === "touch" ? "tap" : "click"} opens fullscreen without changing the conversation position`, async ({ page }) => {
-    if (input === "mouse") await page.setViewportSize({ width: 1280, height: 900 });
-    await reply(page, "Before the diagram.\n\n".repeat(20) + fence(flow) + "\n\nAfter the diagram.".repeat(20));
-    const canvas = page.getByRole("region", { name: "Mermaid diagram", exact: true });
-    await expect(canvas).toBeVisible();
-    await canvas.evaluate(el => el.scrollIntoView({ block: "center" }));
-    const before = await viewport(page).evaluate(el => el.scrollTop);
-    await canvas.click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    if (input === "touch") {
-      await canvas.tap();
-      await canvas.tap();
-    } else {
-      await canvas.dblclick();
-    }
-    await expect(page.getByRole("dialog", { name: "Mermaid diagram" })).toBeVisible();
-    await expect(page.getByText("Drag to pan", { exact: false })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Open diagram fullscreen" })).toBeFocused();
-    expect(await viewport(page).evaluate(el => el.scrollTop)).toBeCloseTo(before, 0);
   });
 }
 

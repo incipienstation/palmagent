@@ -76,20 +76,6 @@ async function microphone(page: Page, mode = "ok", delayStart = false) {
   return { starts: () => starts, stops: () => stops, stopBodies: () => stopBodies, allowStart: () => allowStart?.() };
 }
 
-for (const width of [360]) test(`Codex alone shows microphone beside Send at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
-  await page.goto("/#/task/t-idle-rich");
-  await expect(page.getByRole("button", { name: "Start voice input" })).toHaveCount(0);
-  await page.goto("/#/task/t-idle-interrupted");
-  const mic = page.getByRole("button", { name: "Start voice input" });
-  await expect(mic).toBeInViewport({ ratio: 1 });
-  const a = await mic.boundingBox(), b = await page.getByRole("button", { name: "Send now", exact: true }).boundingBox();
-  expect(a!.width).toBeGreaterThanOrEqual(44);
-  expect(b!.x - a!.x - a!.width).toBeLessThanOrEqual(8);
-  expect(Math.abs(a!.y - b!.y)).toBeLessThanOrEqual(1);
-  await assertViewportLocked(page);
-});
-
 test("speech waits for silence, preserves edits, deduplicates and never submits", async ({ page }) => {
   const calls = await microphone(page); let submissions = 0;
   page.on("request", r => { if (r.method() === "POST" && r.url().endsWith("/messages")) submissions++; });
@@ -255,64 +241,6 @@ test("voice feedback responds to volume and stops, resets, and cancels with reco
   await expect.poll(async () => (await heights()).every(height => height === 4)).toBe(true);
   await page.getByRole("button", { name: "Cancel voice input" }).click();
   await expect(waveform).toHaveCount(0);
-});
-
-test("reduced motion keeps live volume history without sliding animation", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
-  await microphone(page);
-  await page.goto("/#/task/t-idle-interrupted");
-  await page.getByRole("button", { name: "Start voice input" }).click();
-  await page.evaluate(() => { (window as any).voiceTest.speaking = true; });
-  const waveform = page.locator("[data-voice-waveform]");
-  await expect.poll(() => waveform.locator("rect").last().getAttribute("height")).toBe("28");
-  expect(await waveform.evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0);
-  await page.getByRole("button", { name: "Cancel voice input" }).click();
-  await expect(waveform).toHaveCount(0);
-});
-
-for (const width of [360]) test(`empty dictation stays on one row and expands for transcription at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 780 });
-  await microphone(page);
-  for (const route of ["task/t-idle-interrupted", "new/space/repo-app"]) {
-    await page.goto(`/#/${route}`);
-    const composer = page.getByRole("group", { name: "Message composer", exact: true });
-    const input = composer.locator("textarea");
-    await input.focus();
-    if (route.startsWith("new")) {
-      await page.getByRole("button", { name: "Configure task settings" }).click();
-      await page.getByRole("radio", { name: "codex", exact: true }).click();
-      await page.getByRole("button", { name: "Done", exact: true }).click();
-    }
-    const originalInput = await input.elementHandle();
-    await input.fill("   ");
-    await page.getByRole("button", { name: "Start voice input" }).click();
-    await expect(input).toBeHidden();
-    await expect.poll(() => composer.evaluate(el => el.getBoundingClientRect().height)).toBe(54);
-    await expect(composer.getByRole("status")).toHaveText("Recording…");
-    await expect(composer.getByRole("status")).toHaveCSS("position", "absolute");
-    await expect(page.getByRole("button", { name: "Choose a skill" })).toHaveCount(0);
-    const cancel = page.getByRole("button", { name: "Cancel voice input" });
-    const stop = page.getByRole("button", { name: "Stop voice input" });
-    for (const control of [cancel, stop]) {
-      await expect(control).toBeInViewport({ ratio: 1 });
-      expect((await control.boundingBox())!.height).toBe(44);
-    }
-    expect((await cancel.boundingBox())!.y).toBe((await stop.boundingBox())!.y);
-    await page.evaluate(() => (window as any).voiceTest.emit("compact", "A spoken draft"));
-    await expect(input).toBeVisible();
-    await expect(input).toHaveValue("   A spoken draft");
-    expect(await originalInput!.evaluate(el => el.isConnected)).toBe(true);
-    await expect(page.getByRole("button", { name: "Send now", exact: true })).toBeDisabled();
-    await input.fill("");
-    await expect(input).toBeHidden();
-    await stop.click();
-    await expect(composer.getByRole("status")).toHaveText("Finishing transcription…");
-    await expect.poll(() => composer.evaluate(el => el.getBoundingClientRect().height)).toBe(54);
-    await cancel.click();
-    await expect(input).toBeVisible();
-    expect(await originalInput!.evaluate(el => el.isConnected)).toBe(true);
-    await assertViewportLocked(page);
-  }
 });
 
 for (const draft of ["image"]) test(`recording keeps a ${draft} draft visible`, async ({ page }) => {

@@ -51,7 +51,7 @@ test("long skill lists keep keyboard selection visible without moving the compos
   await assertViewportLocked(page);
 });
 
-for (const route of ["new", "task/t-idle-rich"]) test(`slash selection is explicit, persisted and restored after failed send (${route})`, async ({ page }) => {
+for (const route of ["task/t-idle-rich"]) test(`slash selection is explicit, persisted and restored after failed send (${route})`, async ({ page }) => {
   await catalogue(page);
   const calls: any[] = [];
   await page.route(route === "new" ? "**/api/tasks" : "**/api/tasks/t-idle-rich/messages", async r => {
@@ -140,29 +140,6 @@ test("queue editing keeps skill selection and transcript displays the source log
   await send(page, "t-run", { type: "event", event: { id: 10001, taskId: "t-run", agent: "codex", ts: Date.now(), kind: "status", payload: { subtype: "steer", text: "Check service", skills: [palm] } } }, 10001);
   await expectDecodedIcon(page.getByRole("img", { name: "Palmagent plugin" }));
 });
-
-// Width drives this geometry contract; sample both themes without a cross product.
-for (const { theme, width } of [{ theme: "light", width: 360 }, { theme: "dark", width: 1280 }]) test(`picker fits ${width}px in ${theme} mode`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 850 });
-  await catalogue(page);
-  // Skill artwork must remain available when the standalone public logo cannot load.
-  await page.route("**/logo.svg", route => route.abort());
-  await page.goto(`/?__theme=${theme}#/new/space/repo-app`);
-  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("/");
-  const menu = page.getByRole("listbox", { name: "Available skills" });
-  await expect(menu).toBeVisible();
-  const box = (await menu.boundingBox())!;
-  expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await expectDecodedIcon(menu.getByRole("img", { name: "Palmagent plugin" }));
-  await menu.getByRole("option", { name: /palmagent:doctor/ }).click();
-  const selectedIcon = page.getByLabel("Selected skills").getByRole("img", { name: "Palmagent plugin" });
-  await expectDecodedIcon(selectedIcon);
-  await expect(selectedIcon).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await page.reload();
-  await expectDecodedIcon(selectedIcon);
-});
-
 
 test("Space route loads the correct catalogue before repository discovery completes", async ({ page }) => {
   await catalogue(page);

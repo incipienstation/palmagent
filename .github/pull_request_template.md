@@ -5,6 +5,9 @@
 ## Verification
 
 <!-- List the commands and runtime evidence. -->
+<!-- For test changes, name the distinct failure covered, existing coverage reused, and any
+intentional reduction. Justify new browser matrices, real waits, or large fixtures using
+.harness/skills/plan/references/testing.md. No new test is a valid outcome. -->
 
 ## Delivery boundaries
 

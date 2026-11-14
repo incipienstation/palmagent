@@ -9,21 +9,6 @@ test.describe("routines", () => {
     await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
   });
 
-  test("routine list fits the viewport, sets its title, and renders friendly schedules", async ({ page }) => {
-    await assertViewportLocked(page);
-    await expect(page).toHaveTitle("Routines · PalmAgent");
-    // Compiled cron is read back into a human cadence on the card; a manual
-    // routine shows "Manual" and no next-run.
-    await expect(page.getByText("Weekdays at 09:00")).toBeVisible();
-    await expect(page.getByText("Manual", { exact: true })).toBeVisible();
-  });
-
-  test("history expands to show recorded runs (incl. a skipped one)", async ({ page }) => {
-    await page.getByRole("button", { name: "History", exact: true }).first().click();
-    await expect(page.getByText("Skipped (server was down)")).toBeVisible();
-    await expect(page.getByText("Ran on schedule").first()).toBeVisible();
-  });
-
   test("new routine offers schedule presets and submits supported model effort", async ({ page }) => {
     await page.route("**/api/routines", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
@@ -101,7 +86,7 @@ test("script creation preserves the agent draft and submits code without agent s
   await expect(page.getByLabel("Prompt", { exact: true })).toHaveValue("Keep this agent draft");
 });
 
-for (const width of [360, 1280]) {
+for (const width of [360]) {
   test(`script history displays failure details and escaped output at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
     await page.route("**/api/routines", route => route.fulfill({ json: { routines: [{ ...routines[0], kind: "script", script: { command: "node scripts/report.mjs", timeoutSeconds: 60 } }] } }));

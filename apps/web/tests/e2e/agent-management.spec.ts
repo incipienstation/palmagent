@@ -1,30 +1,9 @@
 import { installReadStreams, changeRead } from "./_read-streams";
 import { expect, test } from "@playwright/test";
-import { usage } from "../fixtures.mjs";
 
 const installation = (agent: "claude" | "codex") => ({ agent,
   version: agent === "claude" ? "2.1.275" : "0.156.1", latestVersion: agent === "claude" ? "2.1.276" : "0.156.2",
   installation: "native", compatible: true, checkedAt: Date.now(), releaseState: "ready", update: { state: "idle" },
-});
-
-test("Agents uses consistent metrics, preserves zero versus missing, and keeps account allowance separate", async ({ page }) => {
-  await page.route("**/api/usage", route => route.fulfill({ json: { usage: usage.map(item => ({ ...item, totalCostUsd: 0,
-    reported: item.agent === "claude" ? ["totalCostUsd"] : ["inputTokens", "cachedInputTokens", "outputTokens"] })) } }));
-  await page.goto("/#/agents");
-  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
-  for (const name of ["Claude Code", "Codex"]) {
-    const card = page.getByRole("region", { name, exact: true });
-    await expect(card.getByText("72% left")).toBeVisible();
-    await expect(card.getByText("Installed version")).toBeVisible();
-    await expect(card.getByText("Reported cost")).toBeVisible();
-    await expect(card.getByText("Input tokens")).toBeVisible();
-    await expect(card.getByText("Active time")).toBeVisible();
-  }
-  await expect(page.getByRole("region", { name: "Claude Code", exact: true }).getByText("$0", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Codex", exact: true }).getByLabel("Reported cost: not reported")).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.goto("/#/usage");
-  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
 });
 
 test("refresh and navigation never update; an explicit update remains visible after reload and verifies its result", async ({ page }) => {

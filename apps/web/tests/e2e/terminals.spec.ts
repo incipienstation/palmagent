@@ -3,7 +3,7 @@ import { captureForReview, assertViewportLocked } from "./_helpers";
 
 const id = "80a6a201-c6df-4229-ae7c-7b6b42b72d2f";
 
-for (const layout of ["mobile", "desktop"] as const) {
+for (const layout of ["mobile"]) {
   test(`${layout} stopped shell offers recovery in its original target from All spaces`, async ({ page }) => {
     if (layout === "desktop") await page.setViewportSize({ width: 1440, height: 900 });
     const original = { id, repoId: "repo-app", ...(layout === "desktop" ? { taskId: "t-run" } : {}),

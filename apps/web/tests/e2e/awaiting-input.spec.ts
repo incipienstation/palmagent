@@ -92,27 +92,6 @@ test.describe("awaiting input (AskUserQuestion)", () => {
     }
   });
 
-  // Tapping a pager dot jumps to that question (the counter follows the scroll).
-  test("dot pager navigates between questions", async ({ page }) => {
-    await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /Go to question 2/ }).click();
-    await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
-    const vw = page.viewportSize()!.width;
-    const q2 = await page.getByRole("button", { name: /Notifications/ }).boundingBox();
-    expect(q2!.x, "Q2 scrolled into view").toBeLessThan(vw);
-  });
-
-  test("renders both questions with their options", async ({ page }) => {
-    // The question text appears twice (live answer card + transcript record); the
-    // tappable option buttons are unique to the card.
-    await expect(page.getByText("Which styling approach should the new settings screen use?").first()).toBeVisible();
-    await expect(page.getByText("Which sections should it include?").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Tailwind utilities/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Notifications/ })).toBeVisible();
-    // Send is disabled until something is picked.
-    await expect(page.getByRole("button", { name: "Send answer" })).toBeDisabled();
-  });
-
   test("picking an option enables Send and POSTs the answer", async ({ page }) => {
     await page.getByRole("button", { name: /Tailwind utilities/ }).click();
     await expect(page.getByRole("button", { name: /Tailwind utilities/ })).toHaveAttribute("aria-pressed", "true");

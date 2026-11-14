@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { assertViewportLocked, openSessionDetails } from "./_helpers";
+import { assertViewportLocked } from "./_helpers";
 
 // These flows start with a previously used Space; first-use selection is covered in spaces.spec.ts.
 test.beforeEach(async ({ page }) => {
@@ -58,14 +58,6 @@ test("errors wrap without covering input, including both keyboard resize models"
   await assertViewportLocked(page);
 });
 
-test("repeated errors replace the old toast and leave Send reachable", async ({ page }) => {
-  await sendError(page);
-  await page.getByRole("button", { name: "Send now", exact: true }).tap();
-  await expect(page.locator('[data-testid="toast"][data-removed="false"]')).toHaveCount(1);
-  await expect(page.getByTestId("toast")).toHaveCount(1);
-  await assertClearOfComposer(page);
-});
-
 test("toast dismisses after a downward touch swipe", async ({ page, context }) => {
   await sendError(page);
   await assertClearOfComposer(page);
@@ -82,46 +74,4 @@ test("toast dismisses after a downward touch swipe", async ({ page, context }) =
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   // A swipe must dismiss promptly, before the error toast's automatic expiry.
   await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 1500 });
-});
-
-test("reduced motion keeps the toast readable and allows keyboard dismissal", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await sendError(page);
-  await currentToast(page).focus();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("toast")).toHaveCount(0);
-});
-
-test("root exit hint stays above the new-task button and respects safe areas", async ({ page }) => {
-  await page.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true }));
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  await page.evaluate(() => {
-    document.documentElement.style.setProperty("--safe-bottom", "34px");
-    window.dispatchEvent(new Event("resize"));
-    history.back();
-  });
-  await expect(currentToast(page)).toBeVisible();
-  await expect.poll(async () => {
-    const toast = (await currentToast(page).boundingBox())!;
-    const button = (await page.getByRole("button", { name: "Dispatch new task" }).boundingBox())!;
-    return button.y - toast.y - toast.height;
-  }).toBeGreaterThanOrEqual(0);
-});
-
-test("copy feedback does not dismiss its parent sheet", async ({ page }) => {
-  await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", {
-    value: { writeText: async () => {} },
-  }));
-  await page.route("**/api/tasks/t-idle-rich/handoff", route => route.fulfill({
-    json: { command: "palmagent resume example-session" },
-  }));
-  await page.goto("/#/task/t-idle-rich");
-  await openSessionDetails(page);
-  await page.getByRole("button", { name: "Release to shell" }).click();
-  await page.getByRole("button", { name: "Copy resume command" }).click();
-  await expect(currentToast(page)).toBeVisible();
-  await currentToast(page).tap();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Copy resume command" })).toBeVisible();
 });

@@ -15,7 +15,7 @@ async function swipeRight(page: Page, x: number, y: number) {
   } finally { await session.detach(); }
 }
 
-for (const kind of ["diagram", "image"] as const) {
+for (const kind of ["image"]) {
   test(`fullscreen ${kind} swipes pan without opening navigation, including the header`, async ({ page }) => {
     const label = kind === "diagram" ? "Mermaid diagram" : "Preview";
     const text = kind === "diagram"

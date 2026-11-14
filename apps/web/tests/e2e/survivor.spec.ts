@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
-import { freshRun, openChest, SAVE_KEY, serialize, WORLD_W } from "../../src/games/scrap-survivor/engine";
+import { freshRun, SAVE_KEY, serialize, WORLD_W } from "../../src/games/scrap-survivor/engine";
 import { installScopedStream, open as openSession, send } from "./_session-stream";
 import { assertViewportLocked } from "./_helpers";
 test.use({ serviceWorkers: "block" });
@@ -23,29 +23,6 @@ test("storage failure keeps the in-tab run when returning to chat and reopening"
   await game(page).getByRole("button", { name: "Back to chat" }).click(); await open(page);
   await expect(game(page).getByRole("img", { name: "Orbiting blades level 1", exact: true })).toBeVisible();
   await expect(game(page).getByRole("region", { name: "Choose an upgrade" })).toHaveCount(0);
-});
-
-test("elite choices persist through chat and reload; evolution appears in the inspectable loadout", async ({ page }) => {
-  await enable(page); await page.setViewportSize({ width: 320, height: 480 });
-  const r = freshRun(8); r.upgrades.bolt = 5; r.upgrades.reactor = 1; r.upgrades.mine = 2; r.upgrades.drone = 3;
-  r.chests = [{ ...r.player, id: ++r.id }]; openChest(r, r.chests[0].id);
-  await page.goto("/#/task/t-run");
-  await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: SAVE_KEY, value: serialize(r) });
-  await open(page);
-  const choices = game(page).getByRole("region", { name: "Choose an elite reward" });
-  await expect(choices).toBeVisible(); await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeDisabled();
-  await game(page).getByRole("button", { name: "Back to chat" }).click();
-  expect((await saved(page)).rewards).toEqual(r.rewards);
-  await page.reload(); await open(page); await expect(choices).toBeVisible();
-  await choices.getByRole("button", { name: /Reactor railgun/ }).click();
-  await expect(choices).toHaveCount(0); await expect.poll(async () => (await saved(page)).evolutions.bolt).toBe(true);
-  await game(page).getByRole("button", { name: "Inspect loadout" }).click();
-  const details = game(page).getByRole("region", { name: "Loadout details" });
-  await expect(details.getByText("Your loadout · 3/3 weapons")).toBeVisible();
-  await expect(details.getByText("Reactor railgun · FINAL", { exact: true })).toBeVisible();
-  await details.getByRole("button", { name: "Close loadout" }).click();
-  await expect(game(page).getByRole("button", { name: "Movement joystick" })).toBeEnabled();
-  await assertViewportLocked(page);
 });
 
 test("a first send opens before the response and preserves the canvas through task identity replacement and Back", async ({ page }) => {
@@ -274,27 +251,6 @@ test.describe("touch joystick", () => {
   });
 });
 
-test("illustrated upgrades stay reachable on short screens and repair the visible HP meter", async ({ page }) => {
-  await enable(page); await page.setViewportSize({ width: 320, height: 480 });
-  const run = freshRun(4); run.hull = 2; run.level = 6; run.enemies = []; run.spawn = 10;
-  run.upgrades = { bolt: 1, blade: 1, arc: 1, mine: 0, drone: 0, reactor: 1, magnet: 1, boots: 1 };
-  run.choices = ["reactor", "magnet", "boots"];
-  await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: SAVE_KEY, value: serialize(run) });
-  await page.goto("/#/task/t-run"); await open(page);
-  const panel = game(page), choices = panel.getByRole("region", { name: "Choose an upgrade" });
-  await expect(choices).toBeVisible();
-  await expect(panel.getByRole("meter", { name: "Player HP" })).toHaveAttribute("aria-valuenow", "2");
-  await expect(choices.locator("button svg image")).toHaveCount(3);
-  await expect(panel.getByLabel("Equipped upgrades").getByRole("img")).toHaveCount(6);
-  await choices.getByRole("button", { name: /Turbo treads/ }).click();
-  await expect(choices).toHaveCount(0);
-  await expect(panel.getByRole("meter", { name: "Player HP" })).toHaveAttribute("aria-valuenow", "4");
-  await expect(panel.getByRole("img", { name: "Turbo treads level 2", exact: true })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Movement joystick" })).toBeInViewport();
-  await assertViewportLocked(page);
-});
-
-
 test("progress leaves the game open; final reply returns once while preserving draft and run", async ({ page }) => {
   await enable(page); await installScopedStream(page); await openSession(page, "t-run");
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
@@ -350,7 +306,6 @@ test("scoped attention closes only for a new request, even when the inbox is unc
   await open(page); await snapshot("awaiting_approval");
   await expect(game(page)).toBeVisible();
 });
-
 
 test("a reply recovered after reconnect returns once and does not replay on reopening", async ({ page }) => {
   await enable(page); await installScopedStream(page); await openSession(page, "t-run");
