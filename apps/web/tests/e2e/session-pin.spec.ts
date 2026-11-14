@@ -13,7 +13,7 @@ test.afterEach(async ({ request }) => {
   await request.patch("/api/tasks/t-idle-interrupted/pin", { data: { pinned: false } });
 });
 
-for (const width of [360, 1280]) test(`pin syncs list, detail and navigation at ${width}px and survives reload`, async ({ page, context }) => {
+for (const width of [360]) test(`pin syncs list, detail and navigation at ${width}px and survives reload`, async ({ page, context }) => {
   await page.setViewportSize({ width, height: 780 });
   await page.goto("/");
   const other = await context.newPage();
@@ -92,7 +92,7 @@ async function seedPins(page: Page) {
 }
 const pinRows = (page: Page) => page.getByRole("region", { name: "Pinned", exact: true }).locator("[data-pinned-task] > button[draggable]");
 
-for (const width of [360, 1280]) test(`pin reorder menu preserves focus, syncs and persists at ${width}px`, async ({ page, context }) => {
+for (const width of [360]) test(`pin reorder menu preserves focus, syncs and persists at ${width}px`, async ({ page, context }) => {
   await page.setViewportSize({ width, height: 780 });
   await seedPins(page);
   await page.goto("/");

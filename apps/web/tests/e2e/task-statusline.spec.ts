@@ -132,29 +132,6 @@ test.describe("account limits with the real service worker", () => {
   });
 });
 
-test("allowance details remain reachable on a narrow phone, including unknown or expired readings", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 780 });
-  const line = await show(page, claude);
-  await expect(line.getByText("72%", { exact: true })).toBeVisible();
-  const action = await line.getByRole("button", { name: "Usage details" }).boundingBox();
-  expect(action!.width).toBeGreaterThanOrEqual(44);
-  expect(action!.height).toBe(24);
-  await line.getByText("72%", { exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Session usage" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(line.getByRole("button", { name: "Usage details" })).toBeFocused();
-  await assertViewportLocked(page);
-  await page.route("**/api/tasks/t-idle-rich/account-limits", route => route.fulfill({ json: {
-    ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 95, resetsAt: now - 1000 },
-  } }));
-  await changeRead(page, "/api/stream?task=t-idle-rich&details=summary");
-  await expect(line.getByText("Unknown")).toBeVisible();
-  await expect(line.getByText("Refreshing")).toBeVisible();
-  expect(await line.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  await assertViewportLocked(page);
-});
-
 test("low allowance shows its reset, but expired or stale readings never show a live warning", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 600 });
   const report = { ...claude, fiveHour: { usedPercent: 95, resetsAt: reset } };

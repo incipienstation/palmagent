@@ -297,7 +297,7 @@ test("plugin-only updates remain actionable and explain when new skills become a
   await expect(page.getByTestId("current-version")).toHaveText(state.currentVersion!);
 });
 
-for (const width of [320, 1280]) test(`npm migration is explicit and preserves preferences at ${width}px`, async ({ page }) => {
+for (const width of [320]) test(`npm migration is explicit and preserves preferences at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 800 });
   const state = structuredClone(updateSettings) as UpdateSettingsStatus;
   state.settings!.distribution = "npm";

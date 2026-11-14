@@ -3,7 +3,7 @@ import { repos } from "../fixtures.mjs";
 import { captureForReview, assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
-for (const viewport of [{ width: 360, height: 780 }, { width: 1280, height: 900 }]) {
+for (const viewport of [{ width: 360, height: 780 }]) {
   test(`base branch settings validate, save, and survive reload at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const state = structuredClone(repos);

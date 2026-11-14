@@ -46,7 +46,7 @@ async function routes(page: Page, history: History) {
 }
 const pair = (i: number) => [event("tool_call", { id: `call-${i}`, name: "bash", command: `check-${i}` }), event("tool_result", { tool_use_id: `call-${i}`, output: `Output for step ${i}`, exit_code: 0 })];
 
-for (const oldPreference of ["compact", "verbose"]) test(`one chat view ignores the old ${oldPreference} preference and loads only selected details`, async ({ page, history }) => {
+for (const oldPreference of ["verbose"]) test(`one chat view ignores the old ${oldPreference} preference and loads only selected details`, async ({ page, history }) => {
   history.add([event("status", { subtype: "followup", text: "Inspect the project" }), ...pair(0), ...pair(1), event("assistant_text", { text: "Inspection complete", phase: "final" }), event("result", {})]);
   const requests = await routes(page, history);
   await page.addInitScript(value => localStorage.setItem("pref:output-mode", value), oldPreference);
@@ -170,7 +170,7 @@ test("late classification preserves prose beside the open activity and operation
   await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
 });
 
-for (const phase of ["progress", "final", undefined] as const) test(`streaming placement stays stable with initial phase ${phase ?? "unknown"}`, async ({ page, history }) => {
+for (const phase of [undefined] as const) test(`streaming placement stays stable with initial phase ${phase ?? "unknown"}`, async ({ page, history }) => {
   history.add([event("status", { subtype: "turn_started" }), event("tool_call", { id: "stream-tool", name: "bash", command: "stream-check", status: "in_progress" })]);
   await routes(page, history);
   await page.goto(`/#/task/${taskId}`);
@@ -200,7 +200,7 @@ for (const phase of ["progress", "final", undefined] as const) test(`streaming p
 });
 
 
-for (const precedingSteps of [12, 40]) test(`collapsing nested output after ${precedingSteps} steps preserves its trigger position and keyboard focus`, async ({ page, history }) => {
+for (const precedingSteps of [40]) test(`collapsing nested output after ${precedingSteps} steps preserves its trigger position and keyboard focus`, async ({ page, history }) => {
   history.add([...Array.from({ length: precedingSteps }, (_, i) => pair(i)).flat(),
     event("tool_call", { id: "large", name: "bash", command: "long-output" }),
     event("tool_result", { tool_use_id: "large", output: "A line of output\n".repeat(100), exit_code: 0 }),

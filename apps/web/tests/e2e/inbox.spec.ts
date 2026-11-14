@@ -152,7 +152,7 @@ test("local and disconnected requests keep their real control state outside Need
   await expect(page.getByRole("region", { name: "Needs you", exact: true }).getByText("Reconnected request", { exact: true })).toBeVisible();
 });
 
-for (const width of [320, 390, 1280]) test(`attention rows keep Space context, search and navigation at ${width}px`, async ({ page }) => {
+for (const width of [320, 1280]) test(`attention rows keep Space context, search and navigation at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   await installInbox(page);
   const longName = "A long Space name shared by multiple folders";
@@ -335,7 +335,7 @@ test("Done accordion retains folding through search and navigation, and fits liv
   }
 });
 
-for (const width of [320, 360, 1280]) test(`task search shares the inline-clear dock without overlapping New task at ${width}px`, async ({ page }) => {
+for (const width of [320]) test(`task search shares the inline-clear dock without overlapping New task at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 780 });
   await page.goto(width === 360 ? "/" : "/#/spaces/repo-app");
   const search = page.getByRole("searchbox", { name: "Search tasks" });

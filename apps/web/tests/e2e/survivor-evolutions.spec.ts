@@ -3,7 +3,7 @@ import { freshRun, EVOLUTIONS, SAVE_KEY, serialize, type Weapon } from "../../sr
 import { assertViewportLocked } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
-for (const weapon of ["mine", "drone"] as Weapon[]) test(`${weapon} stays basic when eligible and becomes a persistent final form only after claiming a chest`, async ({ page }) => {
+for (const weapon of ["mine"] as Weapon[]) test(`${weapon} stays basic when eligible and becomes a persistent final form only after claiming a chest`, async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 480 });
   await page.addInitScript(() => localStorage.setItem("pref:adhd-mode", "on"));
   const r = freshRun(21), evo = EVOLUTIONS[weapon];

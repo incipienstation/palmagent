@@ -3,68 +3,6 @@ import { assertViewportLocked, captureForReview } from "./_helpers";
 
 test.use({ serviceWorkers: "block" });
 
-test("short filter sheets align content and actions above the safe area", async ({ page }) => {
-  await page.setViewportSize({ width: 360, height: 780 });
-  await page.goto("/");
-  await page.evaluate(() => document.documentElement.style.setProperty("--safe-bottom", "34px"));
-  const trigger = page.getByRole("button", { name: /^Filters(?:,|$)/ });
-  await trigger.click();
-  const sheet = page.getByRole("dialog", { name: "Task filters" });
-  const title = sheet.getByRole("heading", { name: "Task filters" });
-  const status = sheet.getByRole("combobox", { name: "Status" });
-  const done = sheet.getByRole("button", { name: "Done", exact: true });
-  await expect(done).toBeInViewport({ ratio: 1 });
-  await sheet.evaluate(async el => {
-    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
-  });
-  const [heading, field, action] = await Promise.all([title, status, done].map(el => el.boundingBox()));
-  expect(field!.x).toBeCloseTo(heading!.x, 0);
-  expect(action!.x).toBeCloseTo(field!.x, 0);
-  expect(action!.width).toBeCloseTo(field!.width, 0);
-  expect(action!.height).toBeGreaterThanOrEqual(44);
-  expect(action!.y + action!.height).toBeLessThanOrEqual(780 - 34);
-  expect(await sheet.locator('[data-slot="drawer-body"] [data-radix-scroll-area-viewport]').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
-  await captureForReview(page, "bottom-sheet-filters-dark.png");
-  await status.click();
-  await page.getByRole("option", { name: "Working", exact: true }).click();
-  await done.click();
-  await expect(sheet).toHaveCount(0);
-  await expect(trigger).toBeFocused();
-  await expect(page.getByRole("button", { name: "Clear status filter", exact: true })).toContainText("Working");
-  await assertViewportLocked(page);
-});
-
-test("long supporting sheets scroll their body while the title stays visible", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 568 });
-  await page.route("**/api/tasks/t-run-charts/account-limits", route => route.fulfill({ json: {
-    agent: "codex", state: "ready", checkedAt: Date.now(),
-    buckets: Array.from({ length: 20 }, (_, index) => ({
-      id: `bucket-${index}`, name: `Allowance ${index + 1}`,
-      primary: { usedPercent: 25, windowMinutes: 300, resetsAt: null },
-    })),
-  } }));
-  await page.goto("/#/task/t-run-charts");
-  await page.getByRole("button", { name: "Usage details" }).click();
-  const sheet = page.getByRole("dialog", { name: "Session usage" });
-  const title = sheet.getByRole("heading", { name: "Session usage" });
-  await expect(title).toBeInViewport({ ratio: 1 });
-  // Wait for the drawer's opening transition before comparing positions.
-  await sheet.evaluate(async el => {
-    await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
-  });
-  const top = (await title.boundingBox())!.y;
-  const viewport = sheet.locator('[data-radix-scroll-area-viewport]');
-  expect(await viewport.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0);
-  await sheet.getByRole("heading", { name: "Allowance 20", exact: true }).scrollIntoViewIfNeeded();
-  await expect(sheet.getByRole("heading", { name: "Allowance 20", exact: true })).toBeInViewport({ ratio: 1 });
-  await expect(title).toBeInViewport({ ratio: 1 });
-  expect(await viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
-  expect((await title.boundingBox())!.y).toBeCloseTo(top, 0);
-  expect(await sheet.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
-  await captureForReview(page, "bottom-sheet-long-content.png");
-  await assertViewportLocked(page);
-});
-
 test("Configure keeps its action reachable while content scrolls in a reduced viewport", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 400 });
   await page.goto("/#/new/space/repo-app");

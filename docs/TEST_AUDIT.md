@@ -78,3 +78,49 @@ A focused follow-up removes three constraints without changing product code:
 This removes one Playwright case from the preceding audit's 674-case baseline.
 Permission mappings, queue ordering, expiry boundaries and stale-response
 protection remain unchanged. No runtime improvement is claimed.
+
+## Broader follow-up: reduce browser scenario duplication
+
+At base `2a1246fd`, Playwright collects 683 cases. This pass reduces that to 585
+(98 removed, 14.3%) across 36 spec files. The earlier 674-case inventory is a
+historical snapshot, not the baseline for this change.
+
+| Area | Removed | Representative coverage retained |
+| --- | ---: | --- |
+| Image and Mermaid viewers | 16 | Local image smoke in static, streaming and long Markdown; generated-link and sandbox scheme cases; unsafe sources; image zoom/pan/touch; diagram wheel modifiers, keyboard access and desktop fullscreen; session cache invalidation |
+| Game browser scenarios | 11 | One sprite load-failure/retry path, one chest-evolution UI path, game movement/pause/save, final-reply and scoped-attention return, campaign settlement, failed storage and legacy migration; all 32 engine tests |
+| History and Trace | 10 | Mobile touch and desktop wheel reading, prepend anchors, late image measurement, pagination races, failed/offline loading, one continuous-prefetch viewport; pure transcript classification tests |
+| Composer, placeholder and voice | 12 | Shared composer interactions, both keyboard-resize models with a nonempty draft, narrow overflow, forced colors, IME and shortcuts, microphone lifecycle and one attachment draft during recording |
+| Spaces, inbox and pins | 12 | Narrow/desktop navigation and responsive transitions, search/filter state, one pin synchronization/reorder viewport, both keyboard-resize models with a real query |
+| Browser/installed navigation matrix | 5 | Browser layer/history flows plus dedicated installed root-exit and native Back/CDP regressions |
+| Remaining UI flows | 32 | Existing interaction tests replace duplicate header, Markdown, status display, toast, sheet and loading-theme checks; mobile cases represent width-independent persistence, migration and delivery behavior |
+
+The tradeoff is intentional: the suite no longer tests every width/theme/input
+combination or every consumer of a shared visual component. CSS/layout-specific
+regressions outside the retained representatives may no longer be caught. This
+is not a claim that every removed case had an identical replacement. In
+particular, game balance/relay rules stay at the engine layer, shared zoom/pan
+behavior is exercised through images, and Mermaid keeps its rendering and
+navigation integration checks. The partial-answer browser case retains draft,
+disclosure and answer visibility checks; chronological ordering stays in the
+transcript-model tests and scroll anchoring in the history suites, avoiding
+one-shot coordinates of rows that virtualization can temporarily unmount.
+
+For example, six sprite-failure browser scenarios previously repeated the same
+retry and attention flow. They now exercise one asset. Scheme variants no longer
+multiply the image smoke matrix, and diagrams no longer repeat the shared image
+viewer's pan/pinch tests. The installed/browser matrix is retained only where
+installation mode changes behavior.
+
+The removed cases account for 232.6 seconds of summed passing-test durations in
+CI run `43554946852`, attempt 2 (683 cases, 1320.3 summed seconds). This is 17.6%
+of that run's summed browser test time, not a wall-clock speedup: four shards run
+in parallel, setup/build time remains, and test distribution and runner load can
+change. Extra inner theme loops are also removed but are not counted in those
+232.6 seconds. The figures exclude the failed first attempt and its retry delay.
+
+Server CI has a separate bottleneck. Run `43557837425` spent 248 seconds in its
+contracts/runtime step, including native builds and process tests. Slow retained
+cases exercise delayed startup, native routine recovery, provider continuity and
+large durable uploads. This browser-only change does not shorten that lane or
+change which CI checks run. Security, persistence and release gates remain.

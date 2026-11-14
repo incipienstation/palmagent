@@ -9,7 +9,7 @@ async function settled(dialog: Locator) {
   });
 }
 
-for (const width of [360, 1280]) {
+for (const width of [360]) {
   test(`dialog actions remain reachable and restore focus at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 });
     await page.goto("/#/task/t-idle-rich");

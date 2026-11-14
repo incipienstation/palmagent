@@ -16,19 +16,6 @@ async function installHistory(page: import("@playwright/test").Page, kind: strin
   } }));
 }
 
-test("Space detail shows its connected folder on mobile and desktop", async ({ page }) => {
-  await page.goto("/#/spaces/repo-app");
-  await page.getByRole("button", { name: "Space details" }).click();
-  await expect(page.getByText("/projects/sample-app", { exact: true })).toBeVisible();
-  await assertViewportLocked(page);
-  await page.getByRole("button", { name: "Close Space details" }).click();
-  await page.reload();
-  await expect(page.getByRole("heading", { name: "sample-app", exact: true })).toBeVisible();
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(page.getByRole("complementary", { name: "Space navigation" })).toBeVisible();
-  await assertViewportLocked(page);
-});
-
 test("handoff only releases on explicit action and offers a selectable native command", async ({ page }) => {
   let releases = 0;
   const command = "cd '/projects/sample-app' && 'claude' '--resume' 'sess-idle-0003'";
