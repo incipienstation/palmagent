@@ -2,6 +2,112 @@ import { test, expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { captureForReview, assertViewportLocked } from "./_helpers";
 
 const id = "80a6a201-c6df-4229-ae7c-7b6b42b72d2f";
+
+for (const layout of ["mobile", "desktop"] as const) {
+  test(`${layout} stopped shell offers recovery in its original target from All spaces`, async ({ page }) => {
+    if (layout === "desktop") await page.setViewportSize({ width: 1440, height: 900 });
+    const original = { id, repoId: "repo-app", ...(layout === "desktop" ? { taskId: "t-run" } : {}),
+      title: "Shell", initialCwd: "/projects/sample-app", state: "lost", createdAt: 1, protocol: 1 };
+    const requests: { target: unknown; requestId: string }[] = [];
+    let created = false;
+    await page.route("**/api/terminals**", async route => {
+      if (route.request().method() === "POST") {
+        requests.push(route.request().postDataJSON());
+        // A failed request must leave a usable retry with the same idempotency key.
+        if (requests.length === 1) {
+          await route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+          return;
+        }
+        created = true;
+        await route.fulfill({ status: 201, json: { terminal: { ...original, id: "replacement", state: "starting" } } });
+      } else await route.fulfill({ json: { terminals: [original, ...(created ? [{ ...original, id: "replacement", state: "starting" }] : [])],
+        capabilities: { available: true, persistent: true } } });
+    });
+    await page.goto("/#/terminals");
+    const region = page.getByRole("region", { name: "Terminals", exact: true });
+    await expect(region.getByRole("button", { name: "New terminal", exact: true })).toBeEnabled();
+    await expect(region.getByRole("combobox", { name: "Select terminal" })).toHaveText("Shell · Stopped");
+    await expect(region.getByRole("combobox", { name: "Terminal Space" })).toHaveCount(0);
+    const recover = region.getByRole("button", { name: "Open new terminal", exact: true });
+    await expect(recover).toBeVisible();
+    await expect(region.locator("header")).toHaveCount(1);
+    await assertViewportLocked(page);
+    await captureForReview(page, `terminal-recovery-${layout}.png`);
+    await recover.focus();
+    await page.keyboard.press("Enter");
+    await expect(region.getByRole("alert")).toContainText("Temporarily unavailable");
+    await expect(recover).toBeEnabled();
+    if (layout === "desktop") await region.getByRole("button", { name: "New terminal", exact: true }).click();
+    else await recover.click();
+    await expect(region.getByRole("combobox", { name: "Select terminal" })).toHaveText("Shell · Starting");
+    expect(requests).toHaveLength(2);
+    expect(requests[0].target).toEqual({ repoId: "repo-app" });
+    expect(requests[1]).toEqual(requests[0]);
+  });
+}
+
+test("empty global terminals asks for a concrete Space before creation", async ({ page }) => {
+  const requests: { target: unknown }[] = [];
+  await page.route("**/api/terminals**", async route => {
+    if (route.request().method() === "POST") {
+      requests.push(route.request().postDataJSON());
+      await route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+    } else await route.fulfill({ json: { terminals: [], capabilities: { available: true, persistent: true } } });
+  });
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/#/terminals");
+  const picker = page.getByRole("combobox", { name: "Terminal Space" });
+  await expect(picker).toHaveText("Choose a Space");
+  await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toBeDisabled();
+  await picker.click();
+  await expect(page.getByRole("option", { name: "All spaces", exact: true })).toHaveCount(0);
+  await page.getByRole("option", { name: "sample-app", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toBeEnabled();
+  await assertViewportLocked(page);
+  await page.getByRole("button", { name: "Open terminal", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0].target).toEqual({ repoId: "repo-app" });
+});
+
+for (const available of [true, false]) {
+  test(`exited task shell recovery preserves task context with services ${available ? "available" : "unavailable"}`, async ({ page }) => {
+    const requests: { target: unknown }[] = [];
+    let releaseCreate: (() => void) | undefined;
+    await page.route("**/api/terminals**", async route => {
+      if (route.request().method() === "POST") {
+        requests.push(route.request().postDataJSON());
+        await new Promise<void>(resolve => { releaseCreate = resolve; });
+        await route.fulfill({ status: 503, json: { error: "Please retry" } });
+      } else await route.fulfill({ json: {
+        terminals: [{ id, repoId: "repo-app", taskId: "t-run", title: "Shell", initialCwd: "/projects/sample-app",
+          state: "exited", exitCode: 1, createdAt: 1, protocol: 1 }],
+        capabilities: { available, persistent: available, ...(!available ? { reason: "Terminal services unavailable" } : {}) },
+      } });
+    });
+    await page.goto("/#/task/t-run");
+    await page.getByRole("button", { name: "Task actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Open terminal" }).click();
+    await expect(page.getByText("Shell exited · 1", { exact: true })).toBeVisible();
+    const recover = page.getByRole("button", { name: "Open new terminal", exact: true });
+    expect(requests).toHaveLength(0);
+    if (!available) {
+      await expect(recover).toBeDisabled();
+      await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeDisabled();
+      await expect(page.getByRole("alert")).toContainText("Terminal services unavailable");
+      return;
+    }
+    await recover.click();
+    try {
+      await expect.poll(() => requests.length).toBe(1);
+      expect(requests[0].target).toEqual({ taskId: "t-run" });
+      await expect(page.getByRole("button", { name: "Opening terminal…", exact: true })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeDisabled();
+    } finally { releaseCreate?.(); }
+    await expect(page.getByRole("alert")).toContainText("Please retry");
+    await expect(recover).toBeEnabled();
+  });
+}
+
 async function terminalFixture(page: Page, options: { legacy?: boolean; occupied?: boolean } = {}) {
   let created = false, terminated = false, count = 0;
   const inputs: string[] = [];

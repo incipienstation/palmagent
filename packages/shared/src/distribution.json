@@ -2,7 +2,7 @@
   "repositoryUrl": "https://github.com/incipienstation/palmagent",
   "npmRegistry": "https://registry.npmjs.org",
   "releaseOrigin": "https://releases.palmagent.dev",
-  "installerUrl": "https://releases.palmagent.dev/install.sh",
+  "installerUrl": "https://palmagent.dev/install.sh",
   "versionedManifests": [
     "package.json",
     "plugins/claude/.claude-plugin/plugin.json",

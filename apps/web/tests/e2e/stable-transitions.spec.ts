@@ -15,11 +15,11 @@ test("terminal creation uses its response without an empty frame or waiting for 
   });
   await page.routeWebSocket("**/api/terminals/*/stream", ws => ws.onMessage(() => {}));
   await page.goto("/#/terminals/repo/repo-app");
-  await expect(page.getByText("Open a terminal to work in this directory.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toHaveCount(0);
   initial.release();
   await page.getByRole("button", { name: "New terminal", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Select terminal" })).toContainText("New shell");
-  await expect(page.getByText("Open a terminal to work in this directory.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toHaveCount(0);
   await expect(page.locator(".xterm")).toBeVisible();
   refresh.release();
 });
