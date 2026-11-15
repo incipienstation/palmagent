@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
-import { acceptRestore, cacheKey, cacheSummary, recordBuild } from '../ci-web-cache.mjs';
+import { acceptRestore, cacheKey, cacheSummary, recordBuild, verifyArtifact } from '../ci-web-cache.mjs';
 
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'palmagent-web-cache-'));
@@ -35,7 +35,7 @@ function fixture(t) {
 test('content keys reuse identical trees but invalidate version, dependencies, source and unknown configuration', t => {
   const f = fixture(t);
   let previous = f.key();
-  assert.match(previous, /^pr-pwa-v1-[a-f0-9]{64}$/);
+  assert.match(previous, /^pr-pwa-v2-[a-f0-9]{64}$/);
   f.git('commit', '--allow-empty', '-m', 'metadata only');
   assert.equal(f.key(), previous);
   for (const [path, value] of [
@@ -75,6 +75,7 @@ test('exact restored output stays reusable without putting its receipt in the PW
   const f = fixture(t);
   f.build();
   recordBuild(f.cwd, f.key());
+  verifyArtifact(f.cwd);
   assert.equal(acceptRestore(f.cwd, f.key(), 'true'), 'hit');
   assert(existsSync(join(f.cwd, 'apps/web/dist/index.html')));
   assert(!existsSync(join(f.cwd, 'apps/web/dist/ci-web-cache.json')));
@@ -93,7 +94,7 @@ test('missing, partial and failed restores discard stale output before rebuildin
 test('wrong keys, corrupt receipts, changed, extra, missing and linked files fall back to a fresh build', t => {
   const f = fixture(t);
   const mutate = [
-    () => recordBuild(f.cwd, `pr-pwa-v1-${'f'.repeat(64)}`),
+    () => recordBuild(f.cwd, `pr-pwa-v2-${'f'.repeat(64)}`),
     () => f.write('build/ci-web-cache.json', '{broken'),
     () => rmSync(join(f.cwd, 'build/ci-web-cache.json')),
     () => f.write('apps/web/dist/assets/app.js', 'changed output'),
@@ -103,6 +104,7 @@ test('wrong keys, corrupt receipts, changed, extra, missing and linked files fal
   ];
   for (const change of mutate) {
     f.build(); recordBuild(f.cwd, f.key()); change();
+    assert.throws(() => verifyArtifact(f.cwd, f.key()));
     assert.equal(acceptRestore(f.cwd, f.key(), 'true'), 'invalid');
     assert(!existsSync(join(f.cwd, 'apps/web/dist')));
     assert(existsSync(join(f.cwd, 'apps/web/src/main.ts')));
@@ -139,4 +141,14 @@ test('telemetry distinguishes hits, invalid caches and restore failures without 
   assert.match(cacheSummary({ CACHE_STATE: 'invalid', RESTORE_OUTCOME: 'success', BUILD_OUTCOME: 'success', BUILD_SECONDS: '25.2' }), /invalid \| success \| success \| 25.2/);
   assert.match(cacheSummary({ CACHE_STATE: 'miss', RESTORE_OUTCOME: 'failure', BUILD_OUTCOME: 'success', BUILD_SECONDS: '26.1' }), /miss \| failure \| success \| 26.1/);
   assert(!cacheSummary({ CACHE_STATE: '<unsafe>', BUILD_SECONDS: '<unsafe>' }).includes('<unsafe>'));
+});
+
+test('shared output rejects a different source tree without requiring the consumer runner image', t => {
+  const f = fixture(t);
+  f.build(); recordBuild(f.cwd, f.key());
+  f.inputs.env.ImageVersion = 'different-consumer';
+  verifyArtifact(f.cwd);
+  f.write('apps/web/src/main.ts', 'export const name = "changed";');
+  f.git('add', '.'); f.git('commit', '-m', 'change source');
+  assert.throws(() => verifyArtifact(f.cwd), /source mismatch/);
 });

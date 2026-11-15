@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url';
 const digest = value => createHash('sha256').update(value).digest('hex');
 const dist = 'apps/web/dist';
 const receipt = 'build/ci-web-cache.json';
-const validKey = key => /^pr-pwa-v1-[a-f0-9]{64}$/.test(key ?? '');
+const sourceTree = cwd => execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd, encoding: 'utf8' }).trim();
+const validKey = key => /^pr-pwa-v2-[a-f0-9]{64}$/.test(key ?? '');
 
 export function cacheKey(cwd, { env = process.env, node = process.version,
   platform = process.platform, arch = process.arch } = {}) {
@@ -27,7 +28,7 @@ export function cacheKey(cwd, { env = process.env, node = process.version,
       const path = join(directory, name);
       return [path, existsSync(join(cwd, path)) ? digest(readFileSync(join(cwd, path))) : null];
     }));
-  return `pr-pwa-v1-${digest(JSON.stringify({ tree, node, platform, arch, environment, dotenv }))}`;
+  return `pr-pwa-v2-${digest(JSON.stringify({ tree, node, platform, arch, environment, dotenv }))}`;
 }
 
 function outputFiles(cwd) {
@@ -57,7 +58,17 @@ export function recordBuild(cwd, key) {
   assert(validKey(key), 'Invalid PWA cache key');
   const files = outputFiles(cwd);
   mkdirSync(join(cwd, 'build'), { recursive: true });
-  writeFileSync(join(cwd, receipt), JSON.stringify({ schema: 1, key, files }) + '\n');
+  writeFileSync(join(cwd, receipt), JSON.stringify({ schema: 2, tree: sourceTree(cwd), key, files }) + '\n');
+}
+
+// Consumers validate the producer's static output, not their own runner image.
+// Artifact lookup is restricted to this workflow run; source and bytes must match.
+export function verifyArtifact(cwd, expectedKey) {
+  assert(lstatSync(join(cwd, receipt)).isFile() && !lstatSync(join(cwd, receipt)).isSymbolicLink());
+  const saved = JSON.parse(readFileSync(join(cwd, receipt), 'utf8'));
+  assert(saved.schema === 2 && saved.tree === sourceTree(cwd), 'PWA source mismatch');
+  assert(validKey(saved.key) && (expectedKey === undefined || saved.key === expectedKey), 'PWA key mismatch');
+  assert.deepEqual(saved.files, outputFiles(cwd), 'PWA checksum mismatch');
 }
 
 export function acceptRestore(cwd, key, hit) {
@@ -65,10 +76,7 @@ export function acceptRestore(cwd, key, hit) {
   let state = 'miss';
   if (hit === 'true') {
     try {
-      assert(lstatSync(join(cwd, receipt)).isFile() && !lstatSync(join(cwd, receipt)).isSymbolicLink());
-      const saved = JSON.parse(readFileSync(join(cwd, receipt), 'utf8'));
-      assert(saved.schema === 1 && saved.key === key);
-      assert.deepEqual(saved.files, outputFiles(cwd));
+      verifyArtifact(cwd, key);
       return 'hit';
     } catch { state = 'invalid'; }
   }
@@ -95,6 +103,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const key = process.env.PWA_CACHE_KEY;
   try {
     switch (process.argv[2]) {
+      case 'verify-artifact': verifyArtifact(cwd); break;
       case 'key': output('key', cacheKey(cwd)); break;
       case 'restore': {
         const state = acceptRestore(cwd, key, process.env.PWA_CACHE_HIT);
@@ -118,7 +127,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         console.log(summary);
         break;
       }
-      default: throw new Error('Expected key, restore, build, or summary');
+      default: throw new Error('Expected key, restore, build, verify-artifact, or summary');
     }
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

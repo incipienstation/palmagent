@@ -6,7 +6,7 @@ import { requireSuccessfulChecks } from '../ci-results.mjs';
 function results(outputs = {}) {
   return {
     scope: { result: 'success', outputs: { types: 'false', tooling: 'false', server: 'false', web: 'false', package: 'false', ...outputs } },
-    tooling: { result: 'skipped' }, server: { result: 'skipped' }, web: { result: 'skipped' }, native: { result: 'skipped' }, package: { result: 'skipped' }, standalone: { result: 'skipped' },
+    pwa: { result: 'skipped' }, tooling: { result: 'skipped' }, server: { result: 'skipped' }, web: { result: 'skipped' }, native: { result: 'skipped' }, package: { result: 'skipped' }, standalone: { result: 'skipped' },
   };
 }
 
@@ -14,7 +14,11 @@ test('metadata and trusted/fork packaging scopes require exactly their selected 
   for (const trusted of [true, false]) {
     requireSuccessfulChecks(results(), trusted);
     const packed = results({ package: 'true' });
-    if (trusted) assert.throws(() => requireSuccessfulChecks(packed, trusted), /native/);
+    if (trusted) {
+      assert.throws(() => requireSuccessfulChecks(packed, trusted), /pwa/);
+      packed.pwa.result = 'success';
+      assert.throws(() => requireSuccessfulChecks(packed, trusted), /native/);
+    }
     else requireSuccessfulChecks(packed, trusted);
     packed.native.result = 'success';
     if (trusted) assert.throws(() => requireSuccessfulChecks(packed, trusted), /package/);
@@ -22,7 +26,7 @@ test('metadata and trusted/fork packaging scopes require exactly their selected 
     if (trusted) {
       assert.throws(() => requireSuccessfulChecks(packed, trusted), /standalone/);
       packed.standalone.result = 'success';
-      for (const lane of ['native', 'package', 'standalone']) {
+      for (const lane of ['pwa', 'native', 'package', 'standalone']) {
         for (const result of ['skipped', 'cancelled', 'failure', undefined]) {
           const invalid = structuredClone(packed);
           invalid[lane].result = result;
@@ -38,9 +42,10 @@ test('metadata and trusted/fork packaging scopes require exactly their selected 
 });
 
 test('every selected lane rejects missing, skipped, cancelled and failed results', () => {
-  for (const [output, lane] of [['types', 'tooling'], ['tooling', 'tooling'], ['server', 'server'], ['web', 'web']]) {
+  for (const [output, lane] of [['types', 'tooling'], ['tooling', 'tooling'], ['server', 'server'], ['web', 'web'], ['web', 'pwa']]) {
     for (const trusted of [true, false]) {
       const selected = results({ [output]: 'true' });
+      if (output === 'web') selected.pwa.result = selected.web.result = 'success';
       selected[lane].result = 'success';
       requireSuccessfulChecks(selected, trusted);
       for (const result of ['skipped', 'cancelled', 'failure', undefined]) {
@@ -64,7 +69,7 @@ test('scope failure, malformed selection and failed unselected checks fail close
     value.scope.outputs[output] = true;
     assert.throws(() => requireSuccessfulChecks(value, true), /outputs/);
   }
-  for (const lane of ['tooling', 'server', 'web', 'native', 'package', 'standalone']) {
+  for (const lane of ['tooling', 'server', 'pwa', 'web', 'native', 'package', 'standalone']) {
     const value = results(); value[lane].result = 'failure';
     assert.throws(() => requireSuccessfulChecks(value, true), new RegExp(lane));
   }
