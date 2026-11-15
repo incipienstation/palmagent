@@ -130,6 +130,32 @@ test('detects a real process holding a task checkout', { skip: process.platform 
   child.kill(); await once(child, 'close');
 });
 
+test('Codex tool host cwd permits primary updates but file use and task deletion remain protected', { skip: process.platform !== 'linux' }, async t => {
+  const f = fixture(t);
+  const child = spawn(process.execPath, ['-e', `
+    process.stdin.once('data', path => {
+      require('node:fs').openSync(path.toString(), 'r');
+      console.log('opened');
+    });
+    console.log('ready');
+    setInterval(() => {}, 1000);
+  `], { argv0: '/opt/codex/bin/codex-code-mode-host', cwd: f.primary, stdio: ['pipe', 'pipe', 'ignore'] });
+  t.after(() => child.kill());
+  await once(child.stdout, 'data');
+  assert.equal(checkoutBusy(f.primary, { primary: true }), undefined);
+  assert.match(checkoutBusy(f.primary), /process \d+ uses checkout/);
+  assert(finishTask({ ...f.options, busy: checkoutBusy }).includes('READY develop: fast-forward'));
+
+  const opened = once(child.stdout, 'data');
+  child.stdin.end(join(f.primary, '.gitignore'));
+  await opened;
+  const reports = finishTask({ ...f.options, apply: true, busy: checkoutBusy });
+  assert(reports.some(line => line.startsWith('RETAIN develop: process')));
+  assert.equal(f.git(f.primary, 'rev-parse', 'HEAD'), f.base);
+  assert(!existsSync(f.worktree));
+  child.kill(); await once(child, 'close');
+});
+
 
 test('detects a process holding a worktree file from another cwd', { skip: process.platform !== 'linux' }, async t => {
   const f = fixture(t);
