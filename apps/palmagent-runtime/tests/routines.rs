@@ -1,6 +1,6 @@
 use palmagent_runtime::modules::routines::{
     adapters::outbound::sqlite::SqliteRepository,
-    application::{Completion, Environment, Job, Prepared, Repository, Service},
+    application::{Completion, Environment, ErrorKind, Job, Prepared, Repository, Service},
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -129,7 +129,10 @@ fn preserves_script_validation_cadence_and_patch_defaults() {
         json!({"script":{"command":" "}}),
         json!({"hour":24}),
     ] {
-        assert_eq!(service.update(&id, input).unwrap_err().status, 400);
+        assert_eq!(
+            service.update(&id, input).unwrap_err().kind,
+            ErrorKind::InvalidInput
+        );
     }
     service
         .update(&id, json!({"preset":"weekly","hour":10,"dayOfWeek":2}))
@@ -165,8 +168,8 @@ fn uncertain_launch_is_only_inspected_and_completed_results_survive_sqlite_conte
             "no hot-loop inspection or replay"
         );
     }
-    assert_eq!(service.run(&id).unwrap_err().status, 409);
-    assert_eq!(service.remove(&id).unwrap_err().status, 409);
+    assert_eq!(service.run(&id).unwrap_err().kind, ErrorKind::Conflict);
+    assert_eq!(service.remove(&id).unwrap_err().kind, ErrorKind::Conflict);
     let connection = fixture.connection();
     connection.execute_batch("BEGIN IMMEDIATE").unwrap();
     service.complete(Completion::Inspected(
@@ -200,7 +203,7 @@ fn admission_and_cadence_rollback_together_before_any_launch() {
     let original = serde_json::to_value(service.get(&id).unwrap()).unwrap();
     fixture.connection().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON routine_runs BEGIN SELECT RAISE(ABORT,'unavailable'); END;").unwrap();
     fixture.clock.store(1_900_000, Ordering::SeqCst);
-    assert_eq!(service.run(&id).unwrap_err().status, 503);
+    assert_eq!(service.run(&id).unwrap_err().kind, ErrorKind::Unavailable);
     assert_eq!(
         serde_json::to_value(service.get(&id).unwrap()).unwrap(),
         original
@@ -218,7 +221,10 @@ fn scheduled_capacity_and_maintenance_preserve_admission_rules() {
     fixture.clock.store(1_860_000, Ordering::SeqCst);
     fixture.updating.store(true, Ordering::SeqCst);
     assert!(service.poll(true).is_empty());
-    assert_eq!(service.run(&ids[0]).unwrap_err().status, 503);
+    assert_eq!(
+        service.run(&ids[0]).unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
     fixture.updating.store(false, Ordering::SeqCst);
     assert_eq!(service.poll(true).len(), 4);
     assert_eq!(service.active(), 4);
@@ -274,7 +280,7 @@ fn telemetry_records_success_and_failed_transaction_without_changing_rollback() 
     .unwrap();
     let id = create(&mut service, "manual");
     fixture.connection().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON routine_runs BEGIN SELECT RAISE(ABORT,'private failure'); END;").unwrap();
-    assert_eq!(service.run(&id).unwrap_err().status, 503);
+    assert_eq!(service.run(&id).unwrap_err().kind, ErrorKind::Unavailable);
     assert!(
         service.runs(&id).unwrap()["runs"]
             .as_array()
@@ -291,4 +297,23 @@ fn telemetry_records_success_and_failed_transaction_without_changing_rollback() 
     }
     assert!(!snapshot.to_string().contains("private failure"));
     assert!(!snapshot.to_string().contains(&id));
+}
+
+#[test]
+fn application_outcomes_preserve_http_error_contract() {
+    use axum::response::IntoResponse;
+    use palmagent_runtime::modules::routines::application::Error;
+    for (kind, status) in [
+        (ErrorKind::InvalidInput, 400),
+        (ErrorKind::NotFound, 404),
+        (ErrorKind::Conflict, 409),
+        (ErrorKind::Unavailable, 503),
+    ] {
+        let response = Error {
+            kind,
+            message: "unchanged diagnostic".into(),
+        }
+        .into_response();
+        assert_eq!(response.status().as_u16(), status);
+    }
 }

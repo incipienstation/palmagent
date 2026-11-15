@@ -17,3 +17,11 @@ Cross-tier contracts belong in `packages/shared`. Add packages or apps with thei
 For CLI changes, include affected operator skills and compatibility requirements from the
 [CLI/plugin contract-change workflow](../release/references/channels-and-updates.md#changing-the-cli-plugin-contract).
 For skill edits, use [skill source guidance](../garden/SKILL.md#skill-sources).
+
+## Rust migration slices
+
+For backend migration into Rust, apply the [migration gates](../../../docs/RUST-MIGRATION.md)
+and the [architecture policy](../../../docs/ARCHITECTURE.md). Identify the authoritative
+writer, public contracts, ports/adapters, retained TypeScript boundary and rollback behavior
+before changing ownership. Deliver a working vertical slice with parity and recovery evidence;
+do not treat a source-language port or passing layer check as completed product migration.

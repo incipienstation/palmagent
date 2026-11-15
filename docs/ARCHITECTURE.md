@@ -163,3 +163,25 @@ their Node host. The Node entrypoint remains packaged for older daemon compatibi
 qualified paths, unknown source placement and cycles. Rust has an explicit wire projection
 of the TypeScript contracts; calendar vectors and real-process server contracts check parity
 at that boundary. Product database migrations remain owned by the retained TypeScript API bootstrap.
+
+### Rust feature boundaries
+
+The native boundary checker classifies every source file, including `mod.rs`, by feature
+and layer. New features use `modules/<feature>/{domain,application,adapters}` with Rust's
+normal file or directory modules. A feature's optional `api.rs` only re-exports neutral
+domain types and application contracts. Other features enter through that API; domain
+code and platform utilities do not depend on another feature. Source and feature graphs
+must both remain acyclic. Assembly `mod.rs` files only declare modules; executable wiring
+belongs to composition. Application errors express outcomes; inbound adapters map those
+outcomes to HTTP status codes.
+
+The syntax-tree checks cover imports, re-exports, aliases at their import sites, qualified
+paths, inline module scopes, and explicit paths in macro input. Alternate `#[path]` modules
+and `include!` are rejected in production source. Direct Cargo dependencies (including
+renamed crates) are checked against a small core allowlist, so new dependencies require
+review before core code can use them. These checks are not Rust name resolution or macro
+expansion: review generated code, macro implementations and newly introduced technology
+dependencies explicitly. Existing native routine JSON projections remain a
+compatibility boundary, not permission to introduce HTTP or database handles into core APIs.
+
+Follow the [Rust migration gates](RUST-MIGRATION.md) for each ownership transfer.

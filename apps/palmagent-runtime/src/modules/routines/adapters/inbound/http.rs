@@ -1,5 +1,8 @@
 //! Axum is an inbound adapter. Requests enqueue use cases; disconnecting does not revoke admission.
-use crate::modules::routines::application::{Completion, Error};
+use crate::modules::routines::{
+    api::{Action, Error, ErrorKind},
+    application::Completion,
+};
 use crate::platform::telemetry::Measurements;
 use axum::{
     Json, Router,
@@ -12,32 +15,6 @@ use palmagent_telemetry::Measurement;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
-pub enum Action {
-    Status,
-    Telemetry,
-    List,
-    Get(String),
-    Create(Value),
-    Update(String, Value),
-    Remove(String),
-    Run(String),
-    Stop(String),
-    Runs(String),
-    Pending(String),
-}
-impl Action {
-    pub fn operation(&self) -> Option<&'static str> {
-        match self {
-            Self::Status | Self::Telemetry | Self::Pending(_) => None,
-            Self::List | Self::Get(_) | Self::Runs(_) => Some("routine.read"),
-            Self::Create(_) => Some("routine.create"),
-            Self::Update(_, _) => Some("routine.update"),
-            Self::Remove(_) => Some("routine.remove"),
-            Self::Run(_) => Some("routine.run"),
-            Self::Stop(_) => Some("routine.stop"),
-        }
-    }
-}
 pub enum Message {
     Request(
         Action,
@@ -81,7 +58,12 @@ impl Client {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         (
-            StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            match self.kind {
+                ErrorKind::InvalidInput => StatusCode::BAD_REQUEST,
+                ErrorKind::NotFound => StatusCode::NOT_FOUND,
+                ErrorKind::Conflict => StatusCode::CONFLICT,
+                ErrorKind::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            },
             Json(json!({"error":self.message})),
         )
             .into_response()

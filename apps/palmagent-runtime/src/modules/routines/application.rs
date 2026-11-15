@@ -1,4 +1,5 @@
 //! Routine use cases and outbound contracts. One owner serializes all script admissions.
+pub mod commands;
 pub mod retained;
 use crate::modules::routines::domain::{Routine, Run, SCRIPT_CAPACITY, Script, cadence};
 use serde::Deserialize;
@@ -39,27 +40,35 @@ pub trait Repository: Send {
     fn finish(&mut self, id: i64, result: &Value) -> anyhow::Result<()>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ErrorKind {
+    InvalidInput,
+    NotFound,
+    Conflict,
+    Unavailable,
+}
+
 #[derive(Debug)]
 pub struct Error {
-    pub status: u16,
+    pub kind: ErrorKind,
     pub message: String,
 }
 impl Error {
     pub fn bad(message: impl Into<String>) -> Self {
         Self {
-            status: 400,
+            kind: ErrorKind::InvalidInput,
             message: message.into(),
         }
     }
     pub fn busy() -> Self {
         Self {
-            status: 503,
+            kind: ErrorKind::Unavailable,
             message: "Application runtime is temporarily unavailable".into(),
         }
     }
     fn conflict(message: &str) -> Self {
         Self {
-            status: 409,
+            kind: ErrorKind::Conflict,
             message: message.into(),
         }
     }
@@ -238,7 +247,7 @@ impl Service {
     }
     pub fn get(&self, id: &str) -> Result<Routine> {
         self.repository.get(id)?.ok_or(Error {
-            status: 404,
+            kind: ErrorKind::NotFound,
             message: "No such script routine".into(),
         })
     }

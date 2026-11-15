@@ -11,7 +11,8 @@ Guidance for coding agents maintaining the Palmagent repository.
   a successful local image preview does not prove the conversation can serve that path.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
 - For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) and verify
-  module and layer boundaries with `pnpm architecture:check`.
+  module and layer boundaries with `pnpm architecture:check`. Rust migrations also follow
+  the [migration gates](docs/RUST-MIGRATION.md).
 - Before adding or expanding tests, apply the [test selection policy](.harness/skills/plan/references/testing.md).
 
 ## Product UI

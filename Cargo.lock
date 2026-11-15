@@ -378,6 +378,7 @@ dependencies = [
  "axum",
  "libc",
  "palmagent-telemetry",
+ "proc-macro2",
  "rusqlite",
  "serde",
  "serde_json",
