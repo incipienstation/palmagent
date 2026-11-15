@@ -85,7 +85,114 @@ jobs:
       - name: Verify server contracts and runtime
         run: node scripts/verify-candidate.mjs . server-lane '${{ matrix.lane }}'
 
+  pwa:
+    permissions:
+      contents: read
+      actions: read
+    # Select locally so the build overlaps scope validation as well as runner setup.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Select the PWA build from the complete change scope
+        id: pwa-scope
+        run: node scripts/ci-scope.mjs
+      - name: Find an immutable PWA from this run
+        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+        id: run-pwa
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-web-artifact.mjs find
+      - uses: actions/download-artifact@v4
+        if: steps.run-pwa.outputs.artifact_id != ''
+        with:
+          artifact-ids: ${{ steps.run-pwa.outputs.artifact_id }}
+          merge-multiple: true
+          path: .
+      - name: Verify the existing run PWA before reusing it
+        if: steps.run-pwa.outputs.artifact_id != ''
+        run: node scripts/ci-web-cache.mjs verify-artifact
+      - uses: pnpm/action-setup@v4
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
+      - uses: actions/setup-node@v4
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
+        run: pnpm install --frozen-lockfile --side-effects-cache=false
+      - name: Fingerprint PWA build inputs
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
+        id: pwa-key
+        run: node scripts/ci-web-cache.mjs key
+      - name: Restore exact PWA build
+        if: steps.pwa-key.outputs.key != ''
+        id: pwa-cache
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
+        with:
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          key: ${{ steps.pwa-key.outputs.key }}
+      - name: Validate restored PWA or discard it
+        if: steps.pwa-key.outputs.key != ''
+        id: pwa-restore
+        env:
+          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
+          PWA_CACHE_HIT: ${{ steps.pwa-cache.outputs.cache-hit }}
+        run: node scripts/ci-web-cache.mjs restore
+      - name: Build PWA on a cache miss
+        id: pwa-build
+        if: steps.pwa-key.outputs.key != '' && steps.pwa-restore.outputs.usable != 'true'
+        env:
+          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
+        run: node scripts/ci-web-cache.mjs build
+      - name: Share the PWA and its source/checksum receipt
+        if: steps.pwa-key.outputs.key != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-pwa
+          # Only missing or expired artifacts reach this step; never replace live output.
+          overwrite: true
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Save the reusable PWA build
+        if: steps.pwa-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        with:
+          path: |
+            apps/web/dist
+            build/ci-web-cache.json
+          key: ${{ steps.pwa-key.outputs.key }}
+      - name: Report PWA cache outcome and build time
+        if: always() && steps.pwa-key.outputs.key != ''
+        env:
+          CACHE_STATE: ${{ steps.pwa-restore.outputs.state }}
+          RESTORE_OUTCOME: ${{ steps.pwa-cache.outcome }}
+          BUILD_SECONDS: ${{ steps.pwa-build.outputs.seconds }}
+          BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
+        run: node scripts/ci-web-cache.mjs summary
+
   web:
+    permissions:
+      contents: read
+      actions: read
     needs: scope
     if: needs.scope.outputs.web == 'true'
     runs-on: ${{ matrix.shard == 1 && 'ubuntu-24.04' || 'ubuntu-latest' }}
@@ -111,61 +218,30 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --side-effects-cache=false
           pnpm --filter @palmagent/server exec node -e "require('node-pty'); new (require('better-sqlite3'))(':memory:').close()"
-      - name: Fingerprint PWA build inputs
-        id: pwa-key
-        run: node scripts/ci-web-cache.mjs key
-      - name: Restore exact PWA build
-        id: pwa-cache
-        uses: actions/cache/restore@v4
-        continue-on-error: true
-        timeout-minutes: 2
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
-        with:
-          path: |
-            apps/web/dist
-            build/ci-web-cache.json
-          key: ${{ steps.pwa-key.outputs.key }}
-      - name: Validate restored PWA or discard it
-        id: pwa-restore
-        env:
-          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
-          PWA_CACHE_HIT: ${{ steps.pwa-cache.outputs.cache-hit }}
-        run: node scripts/ci-web-cache.mjs restore
-      - name: Build PWA on a cache miss
-        id: pwa-build
-        if: steps.pwa-restore.outputs.usable != 'true'
-        env:
-          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
-        run: node scripts/ci-web-cache.mjs build
       - name: Install Chromium
         if: needs.scope.outputs.web == 'true'
         # Notification permission tests in browser shards require full Chromium.
         run: pnpm --filter @palmagent/web exec playwright install --with-deps ${{ matrix.shard == 'sw' && '--only-shell' || '' }} chromium
+      # Prepare the runner in parallel with pwa; wait only when the files are needed.
+      - name: Locate this run's shared PWA
+        id: shared-pwa
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-web-artifact.mjs wait
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.shared-pwa.outputs.artifact_id }}
+          merge-multiple: true
+          path: .
+      - name: Verify shared PWA source and checksums
+        run: node scripts/ci-web-cache.mjs verify-artifact
       - name: Verify PWA shard
         if: needs.scope.outputs.web == 'true' && matrix.shard != 'sw'
         run: node apps/web/scripts/run-e2e.mjs --shard=${{ matrix.shard }}/4
       - name: Verify service-worker updates once
         if: needs.scope.outputs.web == 'true' && matrix.shard == 'sw'
         run: node apps/web/scripts/test-sw-update.mjs
-      - name: Save the tested PWA build
-        if: steps.pwa-build.outcome == 'success'
-        uses: actions/cache/save@v4
-        continue-on-error: true
-        timeout-minutes: 2
-        with:
-          path: |
-            apps/web/dist
-            build/ci-web-cache.json
-          key: ${{ steps.pwa-key.outputs.key }}
-      - name: Report PWA cache outcome and build time
-        if: always()
-        env:
-          CACHE_STATE: ${{ steps.pwa-restore.outputs.state }}
-          RESTORE_OUTCOME: ${{ steps.pwa-cache.outcome }}
-          BUILD_SECONDS: ${{ steps.pwa-build.outputs.seconds }}
-          BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
-        run: node scripts/ci-web-cache.mjs summary
 
   native:
     needs: scope
@@ -200,6 +276,9 @@ jobs:
           retention-days: 1
 
   package:
+    permissions:
+      contents: read
+      actions: read
     needs: [scope, native]
     if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     # Retained-cgroup smoke requires this image; Ubuntu 26.04 fails before exec
@@ -222,37 +301,24 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --side-effects-cache=false
           pnpm --filter @palmagent/server exec node -e "require('node-pty'); new (require('better-sqlite3'))(':memory:').close()"
-      - name: Fingerprint PWA build inputs
-        id: pwa-key
-        run: node scripts/ci-web-cache.mjs key
-      - name: Restore exact PWA build
-        id: pwa-cache
-        uses: actions/cache/restore@v4
-        continue-on-error: true
-        timeout-minutes: 2
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
-        with:
-          path: |
-            apps/web/dist
-            build/ci-web-cache.json
-          key: ${{ steps.pwa-key.outputs.key }}
-      - name: Validate restored PWA or discard it
-        id: pwa-restore
-        env:
-          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
-          PWA_CACHE_HIT: ${{ steps.pwa-cache.outputs.cache-hit }}
-        run: node scripts/ci-web-cache.mjs restore
-      - name: Build PWA on a cache miss
-        id: pwa-build
-        if: steps.pwa-restore.outputs.usable != 'true'
-        env:
-          PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
-        run: node scripts/ci-web-cache.mjs build
       - uses: actions/download-artifact@v4
         with:
           pattern: native-linux-*
           path: build/native-input
+      # Prepare the runner in parallel with pwa; wait only when the files are needed.
+      - name: Locate this run's shared PWA
+        id: shared-pwa
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-web-artifact.mjs wait
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.shared-pwa.outputs.artifact_id }}
+          merge-multiple: true
+          path: .
+      - name: Verify shared PWA source and checksums
+        run: node scripts/ci-web-cache.mjs verify-artifact
       - name: Verify packed candidate
         env:
           PALMAGENT_NATIVE_ARTIFACTS: build/native-input
@@ -267,26 +333,11 @@ jobs:
           sudo systemctl start "user@$(id -u).service"
           pnpm exec tsx apps/server/scripts/daemon-systemd-smoke.ts
           pnpm exec tsx apps/server/scripts/daemon-systemd-smoke.ts build/pkg --system
-      - name: Save the tested PWA build
-        if: steps.pwa-build.outcome == 'success'
-        uses: actions/cache/save@v4
-        continue-on-error: true
-        timeout-minutes: 2
-        with:
-          path: |
-            apps/web/dist
-            build/ci-web-cache.json
-          key: ${{ steps.pwa-key.outputs.key }}
-      - name: Report PWA cache outcome and build time
-        if: always()
-        env:
-          CACHE_STATE: ${{ steps.pwa-restore.outputs.state }}
-          RESTORE_OUTCOME: ${{ steps.pwa-cache.outcome }}
-          BUILD_SECONDS: ${{ steps.pwa-build.outputs.seconds }}
-          BUILD_OUTCOME: ${{ steps.pwa-build.outcome }}
-        run: node scripts/ci-web-cache.mjs summary
 
   standalone:
+    permissions:
+      contents: read
+      actions: read
     needs: [scope, native]
     if: needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ matrix.runner }}
@@ -313,17 +364,31 @@ jobs:
         with:
           name: native-linux-${{ matrix.arch }}
           path: build/native-input/native-linux-${{ matrix.arch }}
+      # Prepare the runner in parallel with pwa; wait only when the files are needed.
+      - name: Locate this run's shared PWA
+        id: shared-pwa
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-web-artifact.mjs wait
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.shared-pwa.outputs.artifact_id }}
+          merge-multiple: true
+          path: .
+      - name: Verify shared PWA source and checksums
+        run: node scripts/ci-web-cache.mjs verify-artifact
       - name: Build and smoke-test the native standalone archive
         env:
           PALMAGENT_NATIVE_ARTIFACTS: build/native-input
           PALMAGENT_NATIVE_PLATFORM: linux-${{ matrix.arch }}
         run: |
-          pnpm pkg:build
+          pnpm pkg:assemble
           node scripts/build-standalone.mjs linux-${{ matrix.arch }}-glibc
           node scripts/standalone-smoke.mjs build/standalone
 
   validate:
-    needs: [scope, tooling, server, web, native, package, standalone]
+    needs: [scope, tooling, server, pwa, web, native, package, standalone]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

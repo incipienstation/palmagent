@@ -11,6 +11,7 @@ export function requireSuccessfulChecks(results, trusted) {
   const selected = {
     tooling: scope.types === 'true' || scope.tooling === 'true',
     server: scope.server === 'true',
+    pwa: scope.web === 'true' || (trusted && scope.package === 'true'),
     web: scope.web === 'true',
     native: trusted && scope.package === 'true',
     package: trusted && scope.package === 'true',
