@@ -21,11 +21,13 @@ The artifact carries a receipt outside the served PWA. Every consumer checks its
 Git source tree and the complete output file list and SHA-256 hashes. Static web
 assets can be consumed on different runner images and architectures; native
 binaries and addons keep their separate platform-specific builds and checks.
-Reruns reuse the immutable artifact from the same run and source, including in
-the producer itself, so a rebuild cannot replace files concurrent consumers are
-downloading. If the artifact has expired, rerun the producer as well: it creates
-a fresh upload while consumers wait. Missing or expired artifacts never bypass
-the final gate.
+Consumer-only reruns reuse the retained artifact from the same run and source.
+On a full rerun, GitHub may discard uploads from rerun jobs; the producer then
+restores its exact cache or builds a fresh upload. If a valid artifact remains
+visible, the producer reuses it too instead of replacing files consumers may be
+downloading. For missing or expired output, include the producer in the rerun;
+consumers wait for the fresh upload. Missing or invalid output never bypasses
+the final gate. See [GitHub's job rerun behavior](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
 
 The producer retains the exact-input cache as an optional build optimization.
 The `pr-pwa-v2` key includes the complete tracked repository tree, actual Node
