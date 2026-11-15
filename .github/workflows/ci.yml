@@ -86,6 +86,9 @@ jobs:
         run: node scripts/verify-candidate.mjs . server-lane '${{ matrix.lane }}'
 
   pwa:
+    permissions:
+      contents: read
+      actions: read
     # Select locally so the build overlaps scope validation as well as runner setup.
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -100,18 +103,33 @@ jobs:
       - name: Select the PWA build from the complete change scope
         id: pwa-scope
         run: node scripts/ci-scope.mjs
+      - name: Find an immutable PWA from this run
+        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+        id: run-pwa
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-web-artifact.mjs find
+      - uses: actions/download-artifact@v4
+        if: steps.run-pwa.outputs.artifact_id != ''
+        with:
+          artifact-ids: ${{ steps.run-pwa.outputs.artifact_id }}
+          merge-multiple: true
+          path: .
+      - name: Verify the existing run PWA before reusing it
+        if: steps.run-pwa.outputs.artifact_id != ''
+        run: node scripts/ci-web-cache.mjs verify-artifact
       - uses: pnpm/action-setup@v4
-        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
       - uses: actions/setup-node@v4
-        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - name: Install dependencies
-        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
         run: pnpm install --frozen-lockfile --side-effects-cache=false
       - name: Fingerprint PWA build inputs
-        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+        if: steps.run-pwa.outputs.artifact_id == '' && (steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository))
         id: pwa-key
         run: node scripts/ci-web-cache.mjs key
       - name: Restore exact PWA build
@@ -145,6 +163,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ci-pwa
+          # Only missing or expired artifacts reach this step; never replace live output.
           overwrite: true
           path: |
             apps/web/dist

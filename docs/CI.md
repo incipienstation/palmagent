@@ -12,16 +12,20 @@ install dependencies or build/upload a PWA. Consumers prepare concurrently: brow
 dependencies and Chromium before looking for the artifact. A bounded wait locates
 `ci-pwa` only within the current workflow run and downloads its immutable artifact
 ID. This avoids making runner setup wait for the build job to finish. The wait
-requires read-only Actions access and fails on missing, expired, ambiguous, or
-unavailable artifacts; consumers never silently rebuild. The final `validate` gate
+requires read-only Actions access and fails if usable output does not arrive
+within the deadline, or if artifact identity or API access is invalid; consumers
+never silently rebuild. The final `validate` gate
 also requires the selected `pwa` job to succeed.
 
 The artifact carries a receipt outside the served PWA. Every consumer checks its
 Git source tree and the complete output file list and SHA-256 hashes. Static web
 assets can be consumed on different runner images and architectures; native
 binaries and addons keep their separate platform-specific builds and checks.
-Failed-job reruns can reuse the artifact from the same run and source. If it has
-expired, rerun the producer as well. A producer rerun replaces the named artifact.
+Reruns reuse the immutable artifact from the same run and source, including in
+the producer itself, so a rebuild cannot replace files concurrent consumers are
+downloading. If the artifact has expired, rerun the producer as well: it creates
+a fresh upload while consumers wait. Missing or expired artifacts never bypass
+the final gate.
 
 The producer retains the exact-input cache as an optional build optimization.
 The `pr-pwa-v2` key includes the complete tracked repository tree, actual Node
