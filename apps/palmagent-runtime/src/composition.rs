@@ -1,8 +1,6 @@
 use crate::modules::routines::{
-    adapters::{
-        inbound::http::{Action, Message},
-        outbound::hosts::Hosts,
-    },
+    adapters::{inbound::http::Message, outbound::hosts::Hosts},
+    api::Action,
     application::{Error, Service},
 };
 use crate::platform::telemetry::Measurements;

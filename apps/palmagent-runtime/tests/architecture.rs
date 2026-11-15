@@ -1,221 +1,216 @@
-//! Parse Rust syntax so grouped imports, aliases, re-exports and qualified paths share the same rules.
+#[path = "support/architecture.rs"]
+mod architecture;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::{Path, PathBuf},
+    path::Path,
 };
-use syn::{
-    UseTree,
-    visit::{self, Visit},
-};
-
-fn files(directory: &Path, output: &mut Vec<PathBuf>) {
+fn sources(root: &Path, directory: &Path, output: &mut BTreeMap<String, String>) {
     for entry in fs::read_dir(directory).unwrap() {
         let path = entry.unwrap().path();
         if path.is_dir() {
-            files(&path, output);
+            sources(root, &path, output);
         } else if path.extension().is_some_and(|extension| extension == "rs") {
-            output.push(path);
+            output.insert(
+                path.strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace('\\', "/"),
+                fs::read_to_string(path).unwrap(),
+            );
         }
     }
 }
-fn imports(tree: &UseTree, prefix: Vec<String>, output: &mut Vec<Vec<String>>) {
-    match tree {
-        UseTree::Path(path) => {
-            let mut prefix = prefix;
-            prefix.push(path.ident.to_string());
-            imports(&path.tree, prefix, output);
-        }
-        UseTree::Name(name) => {
-            let mut prefix = prefix;
-            prefix.push(name.ident.to_string());
-            output.push(prefix);
-        }
-        UseTree::Rename(name) => {
-            let mut prefix = prefix;
-            prefix.push(name.ident.to_string());
-            output.push(prefix);
-        }
-        UseTree::Glob(_) => output.push(prefix),
-        UseTree::Group(group) => {
-            for tree in &group.items {
-                imports(tree, prefix.clone(), output);
-            }
-        }
-    }
-}
-struct Dependencies {
-    paths: Vec<Vec<String>>,
-    alternate_module_path: bool,
-}
-impl<'ast> Visit<'ast> for Dependencies {
-    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
-        imports(&item.tree, vec![], &mut self.paths);
-    }
-    fn visit_path(&mut self, path: &'ast syn::Path) {
-        self.paths
-            .push(path.segments.iter().map(|s| s.ident.to_string()).collect());
-        visit::visit_path(self, path);
-    }
-    fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
-        if attribute.path().is_ident("path") {
-            self.alternate_module_path = true;
-        }
-        visit::visit_attribute(self, attribute);
-    }
-}
-fn resolve(from: &str, path: &[String]) -> Option<String> {
-    if path.len() == 1 && path[0] == "self" {
-        return None;
-    }
-    let mut parts: Vec<_> = from
-        .trim_end_matches(".rs")
-        .split('/')
-        .map(str::to_owned)
-        .collect();
-    parts.pop();
-    let mut path = path;
-    match path.first()?.as_str() {
-        "crate" | "palmagent_runtime" => {
-            parts.clear();
-            path = &path[1..];
-        }
-        "super" => {
-            while path.first().is_some_and(|part| part == "super") {
-                parts.pop();
-                path = &path[1..];
-            }
-        }
-        "self" => {
-            path = &path[1..];
-        }
-        _ => return None,
-    }
-    parts.extend_from_slice(path);
-    Some(parts.join("/"))
-}
-fn layer(path: &str) -> &'static str {
-    if ["main.rs", "lib.rs", "composition.rs"].contains(&path) {
-        "composition"
-    } else if path == "platform.rs" || path.starts_with("platform/") {
-        "platform"
-    } else if path.ends_with("/mod.rs") {
-        "assembly"
-    } else if path == "modules/routines/domain.rs" || path.starts_with("modules/routines/domain/") {
-        "domain"
-    } else if path == "modules/routines/application.rs"
-        || path.starts_with("modules/routines/application/")
-    {
-        "application"
-    } else if path.starts_with("modules/routines/adapters/inbound/") {
-        "inbound"
-    } else if path.starts_with("modules/routines/adapters/outbound/") {
-        "outbound"
-    } else {
-        panic!("Unclassified native source: {path}")
-    }
-}
-fn cyclic(
-    node: &str,
-    graph: &BTreeMap<String, BTreeSet<String>>,
-    active: &mut BTreeSet<String>,
-    done: &mut BTreeSet<String>,
-) {
-    if done.contains(node) {
-        return;
-    }
-    assert!(
-        active.insert(node.to_owned()),
-        "Native dependency cycle at {node}"
-    );
-    for next in graph.get(node).into_iter().flatten() {
-        cyclic(next, graph, active, done);
-    }
-    active.remove(node);
-    done.insert(node.to_owned());
-}
-
 #[test]
 fn architecture_boundaries() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut sources = Vec::new();
-    files(&root, &mut sources);
-    let names: BTreeSet<_> = sources
+    let mut files = BTreeMap::new();
+    sources(&root, &root, &mut files);
+    // Cargo owns dependency names, including renamed crates. No network or builds are
+    // needed; failure to inventory dependencies must fail the check rather than skip it.
+    let metadata = std::process::Command::new("cargo")
+        .args([
+            "metadata",
+            "--no-deps",
+            "--format-version",
+            "1",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+        ])
+        .arg(root.parent().unwrap().join("Cargo.toml"))
+        .output()
+        .expect("read Cargo dependency metadata");
+    assert!(
+        metadata.status.success(),
+        "{}",
+        String::from_utf8_lossy(&metadata.stderr)
+    );
+    let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
+    let package = metadata["packages"]
+        .as_array()
+        .unwrap()
         .iter()
-        .map(|path| {
-            path.strip_prefix(&root)
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_owned()
+        .find(|package| package["name"] == "palmagent-runtime")
+        .unwrap();
+    let dependencies: BTreeSet<_> = package["dependencies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|dependency| {
+            dependency["rename"]
+                .as_str()
+                .unwrap_or(dependency["name"].as_str().unwrap())
+                .replace('-', "_")
         })
         .collect();
-    let mut graph = BTreeMap::<String, BTreeSet<String>>::new();
-    for file in sources {
-        let name = file.strip_prefix(&root).unwrap().to_str().unwrap();
-        let from = layer(name);
-        let syntax = syn::parse_file(&fs::read_to_string(&file).unwrap()).unwrap();
-        let mut dependencies = Dependencies {
-            paths: vec![],
-            alternate_module_path: false,
-        };
-        dependencies.visit_file(&syntax);
+    let failures = architecture::check(&files, &dependencies);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+fn check(files: &[(&str, &str)]) -> Vec<String> {
+    architecture::check(
+        &files
+            .iter()
+            .map(|(name, source)| (name.to_string(), source.to_string()))
+            .collect(),
+        &["tokio", "axum", "rusqlite", "future_io", "renamed_io"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+#[test]
+fn rejects_relative_qualified_grouped_and_macro_boundary_bypasses() {
+    for source in [
+        "use super::adapters::outbound::Store;",
+        "use crate::modules::tasks::adapters::{outbound::{self as store, Store as Alias}};",
+        "fn policy() { crate::modules::tasks::adapters::outbound::write(); }",
+        "fn policy() { example!(crate::modules::tasks::adapters::outbound::write()); }",
+        "mod nested { use super::super::adapters::outbound::Store; }",
+    ] {
         assert!(
-            !dependencies.alternate_module_path,
-            "Alternate module paths bypass ownership: {name}"
+            check(&[
+                ("modules/tasks/domain.rs", source),
+                ("modules/tasks/adapters/outbound/mod.rs", "")
+            ])
+            .iter()
+            .any(|failure| failure.contains("layer violation")),
+            "{source}"
         );
-        for path in dependencies.paths {
-            if ["domain", "application"].contains(&from) {
-                let host = ["tokio", "axum", "rusqlite", "libc", "palmagent_telemetry"]
-                    .contains(&path[0].as_str())
-                    || path[0] == "std"
-                        && path.get(1).is_some_and(|p| {
-                            ["fs", "io", "net", "process", "thread", "env", "time"]
-                                .contains(&p.as_str())
-                        });
-                assert!(
-                    !host,
-                    "Core imports host technology: {name}: {}",
-                    path.join("::")
-                );
-            }
-            let Some(mut resolved) = resolve(name, &path) else {
-                continue;
-            };
-            let target = loop {
-                if names.contains(&format!("{resolved}.rs")) {
-                    break Some(format!("{resolved}.rs"));
-                }
-                if names.contains(&format!("{resolved}/mod.rs")) {
-                    break Some(format!("{resolved}/mod.rs"));
-                }
-                let Some((parent, _)) = resolved.rsplit_once('/') else {
-                    break None;
-                };
-                resolved = parent.to_owned();
-            };
-            let Some(target) = target else {
-                continue;
-            };
-            if target == name {
-                continue;
-            }
-            let to = layer(&target);
-            let permitted = match from {
-                "domain" => to == "domain",
-                "application" => ["domain", "application"].contains(&to),
-                "inbound" => ["domain", "application", "inbound", "platform"].contains(&to),
-                "outbound" => ["domain", "application", "outbound", "platform"].contains(&to),
-                "platform" => to == "platform",
-                "assembly" => false,
-                _ => true,
-            };
-            assert!(permitted, "Native layer violation: {name} -> {target}");
-            graph.entry(name.to_owned()).or_default().insert(target);
-        }
     }
-    let mut done = BTreeSet::new();
-    for node in graph.keys() {
-        cyclic(node, &graph, &mut BTreeSet::new(), &mut done);
+    for source in [
+        "use std::{fs as storage};",
+        "extern crate tokio as runtime;",
+        "use future_io::Client;",
+        "#[derive(future_io::Client)] struct Policy;",
+        "fn policy() { renamed_io::open(); }",
+        "fn policy() { example!(std::fs::read(\"x\")); }",
+    ] {
+        assert!(
+            check(&[("modules/tasks/application/mod.rs", source)])
+                .iter()
+                .any(|failure| failure.contains("host technology")),
+            "{source}"
+        );
+    }
+}
+#[test]
+fn accepts_core_ports_and_feature_api_but_rejects_internal_access_and_cycles() {
+    let files = [
+        (
+            "modules/tasks/application.rs",
+            "use self::ports::Store; use crate::modules::spaces::api::Space;",
+        ),
+        ("modules/tasks/application/ports.rs", "pub trait Store {}"),
+        ("modules/tasks/domain.rs", "pub struct Task;"),
+        ("modules/tasks/api.rs", "pub use super::domain::Task;"),
+        ("modules/spaces/api.rs", "pub use super::domain::Space;"),
+        ("modules/spaces/domain.rs", "pub struct Space;"),
+    ];
+    assert!(check(&files).is_empty(), "{:?}", check(&files));
+    let mut internal = files.to_vec();
+    internal[0].1 = "use crate::modules::spaces::domain::Space;";
+    assert!(
+        check(&internal)
+            .iter()
+            .any(|failure| failure.contains("layer violation"))
+    );
+    let mut cyclic = files.to_vec();
+    cyclic.push((
+        "modules/spaces/application.rs",
+        "use crate::modules::tasks::api::Task;",
+    ));
+    assert!(
+        check(&cyclic)
+            .iter()
+            .any(|failure| failure.contains("feature dependency cycle"))
+    );
+    assert!(
+        check(&[
+            ("modules/tasks/application.rs", "use self::ports::Store;"),
+            ("modules/tasks/application/ports.rs", "use super::Service;")
+        ])
+        .iter()
+        .any(|failure| failure.contains("source dependency cycle"))
+    );
+}
+#[test]
+fn rejects_unclassified_sources_and_ownership_escape_hatches() {
+    for (path, source, message) in [
+        ("modules/tasks/misc.rs", "", "Unclassified"),
+        ("misc/mod.rs", "", "Unclassified"),
+        (
+            "lib.rs",
+            "pub use modules::tasks::adapters::outbound::Store;",
+            "only declare modules",
+        ),
+        (
+            "modules/tasks/application.rs",
+            "use crate as backend;",
+            "Whole-crate imports",
+        ),
+        (
+            "modules/tasks/application.rs",
+            "extern crate self as backend;",
+            "whole-crate aliases",
+        ),
+        (
+            "modules/tasks/mod.rs",
+            "pub mod hidden { fn work() {} }",
+            "only declare modules",
+        ),
+        (
+            "modules/tasks/mod.rs",
+            "pub fn hidden() {}",
+            "only declare modules",
+        ),
+        (
+            "modules/tasks/api.rs",
+            "pub use super::adapters::outbound::Store;",
+            "layer violation",
+        ),
+        (
+            "modules/tasks/domain.rs",
+            "#[path=\"other.rs\"] mod hidden;",
+            "alternate module",
+        ),
+        (
+            "modules/tasks/domain.rs",
+            "#[cfg_attr(unix, path=\"other.rs\")] mod hidden;",
+            "alternate module",
+        ),
+        (
+            "modules/tasks/domain.rs",
+            "include!(\"other.rs\");",
+            "include!",
+        ),
+    ] {
+        assert!(
+            check(&[(path, source), ("modules/tasks/adapters/outbound.rs", "")])
+                .iter()
+                .any(|failure| failure.contains(message)),
+            "{path}: {source}"
+        );
     }
 }
