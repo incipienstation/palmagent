@@ -1,10 +1,15 @@
 use anyhow::{Context, Result, ensure};
 use palmagent_runtime::modules::tasks::{
     adapters::{
-        inbound::{activity_http, http as task_http},
-        outbound::{sqlite_activity::SqliteActivity, sqlite_usage::SqliteUsage},
+        inbound::{activity_http, http as task_http, transcript_http},
+        outbound::{
+            sqlite_activity::SqliteActivity, sqlite_transcript::SqliteTranscript,
+            sqlite_usage::SqliteUsage,
+        },
     },
-    application::{Service as TaskUsageService, activity::ActivityService},
+    application::{
+        Service as TaskUsageService, activity::ActivityService, transcript::TranscriptService,
+    },
 };
 use palmagent_runtime::{
     composition,
@@ -84,6 +89,9 @@ async fn serve(args: &[String]) -> Result<()> {
     let activity = activity_http::Client::new(Box::new(ActivityService::new(Box::new(
         SqliteActivity::open(&db)?,
     ))));
+    let transcript = transcript_http::Client::new(Box::new(TranscriptService::new(Box::new(
+        SqliteTranscript::open(&db)?,
+    ))));
     let sampler = measurements.clone();
     let client = Client::new(sender.clone(), measurements.clone());
     let (ready_send, ready_receive) = tokio::sync::oneshot::channel();
@@ -155,7 +163,8 @@ async fn serve(args: &[String]) -> Result<()> {
         listener,
         http::router(client)
             .merge(task_http::router(usage))
-            .merge(activity_http::router(activity)),
+            .merge(activity_http::router(activity))
+            .merge(transcript_http::router(transcript)),
     )
     .with_graceful_shutdown(async move {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }

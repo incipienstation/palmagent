@@ -38,6 +38,7 @@ export interface TaskHistoryReader {
   conversationStepDetails(taskId: string, key: number, step: number, after?: number): import("@palmagent/shared").ConversationDetails;
   executionRecords(taskId: string, before?: number): import("@palmagent/shared").ExecutionRecords;
   executionRecordContent(taskId: string, key: number, version: string, offset: number): import("@palmagent/shared").ConversationContent;
+  prepareConversation(taskId: string): void;
   conversationPage(taskId: string, before?: number): TaskHistoryResponse;
   conversationChanges(taskId: string, after: number, through?: number, afterKey?: number): TaskHistoryChangesResponse;
   conversationDetails(taskId: string, key: number, after?: number): import("@palmagent/shared").ConversationDetails;

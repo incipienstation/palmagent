@@ -80,6 +80,7 @@ export class Db {
   readonly conversationStepDetails: SqliteTasks["conversationStepDetails"];
   readonly executionRecords: SqliteTasks["executionRecords"];
   readonly executionRecordContent: SqliteTasks["executionRecordContent"];
+  readonly prepareConversation: SqliteTasks["prepareConversation"];
   readonly conversationPage: SqliteTasks["conversationPage"];
   readonly conversationChanges: SqliteTasks["conversationChanges"];
   readonly conversationDetails: SqliteTasks["conversationDetails"];
@@ -173,6 +174,7 @@ export class Db {
     this.conversationStepDetails = tasks.conversationStepDetails.bind(tasks);
     this.executionRecords = tasks.executionRecords.bind(tasks);
     this.executionRecordContent = tasks.executionRecordContent.bind(tasks);
+    this.prepareConversation = tasks.prepareConversation.bind(tasks);
     this.conversationPage = tasks.conversationPage.bind(tasks);
     this.conversationChanges = tasks.conversationChanges.bind(tasks);
     this.conversationDetails = tasks.conversationDetails.bind(tasks);

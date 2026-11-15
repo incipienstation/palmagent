@@ -30,6 +30,8 @@ export function appendHistoryEvent(items: LogItem[], event: AgentEvent, seq: num
   } else items.push({ key: seq, endSeq: seq, kind: event.kind, event, ...(detailsDeferred ? { detailsDeferred: true } : {}) });
 }
 
+// Durable display projection version; native readers reject incompatible stored projections.
+export const CONVERSATION_PROJECTION_VERSION = 6;
 export const CONVERSATION_PAGE_ITEMS = 30;
 export const CONVERSATION_PAGE_BYTES = 256 * 1024;
 export const CONVERSATION_ITEM_BYTES = 48 * 1024;

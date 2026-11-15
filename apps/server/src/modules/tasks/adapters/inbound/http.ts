@@ -115,22 +115,22 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       c.header("cache-control", "no-store");
       return c.json(await service.taskActivityDetails(taskId, Number(from), Number(through)), 200);
     })
-    .get("/:id/history/changes", params(IdParamsSchema), query(HistoryChangesQuerySchema), (c) => {
+    .get("/:id/history/changes", params(IdParamsSchema), query(HistoryChangesQuerySchema), async (c) => {
       const taskId = c.req.valid("param").id;
       const { after: afterText, through: throughText, details, format, afterKey } = c.req.valid("query");
       const after = Number(afterText);
       const through = throughText === undefined ? undefined : Number(throughText);
       c.header("cache-control", "no-store");
-      return c.json(format === "transcript" ? service.conversationChanges(taskId, after, through, afterKey === undefined ? undefined : Number(afterKey))
+      return c.json(format === "transcript" ? await service.conversationChanges(taskId, after, through, afterKey === undefined ? undefined : Number(afterKey))
         : service.taskHistoryChanges(taskId, after, through, details !== "summary"), 200);
     })
-    .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), (c) => {
+    .get("/:id/history", params(IdParamsSchema), query(HistoryQuerySchema), async (c) => {
       const taskId = c.req.valid("param").id;
       const { before: beforeText, details, format } = c.req.valid("query");
       c.header("cache-control", "no-store");
       const before = beforeText === undefined ? undefined : Number(beforeText);
       const includeActivityDetails = details !== "summary";
-      return c.json(format === "transcript" ? service.conversationPage(taskId, before) : service.taskHistory(taskId, before, includeActivityDetails), 200);
+      return c.json(format === "transcript" ? await service.conversationPage(taskId, before) : service.taskHistory(taskId, before, includeActivityDetails), 200);
     })
     .delete("/:id", params(IdParamsSchema), (c) => c.json({ task: service.archive(c.req.valid("param").id) }, 200))
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))

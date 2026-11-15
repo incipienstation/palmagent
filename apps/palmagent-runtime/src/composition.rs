@@ -56,7 +56,7 @@ pub fn run_owner(
                 }
                 let result = match action {
                     Action::Status => Ok(
-                        json!({"protocol":1,"taskUsage":1,"taskActivityDetails":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping}),
+                        json!({"protocol":1,"taskUsage":1,"taskActivityDetails":1,"taskTranscript":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping}),
                     ),
                     Action::Telemetry => Ok(
                         json!({"version":env!("PALMAGENT_PRODUCT_VERSION"),"instance":instance,"telemetry":measurements.snapshot()}),
