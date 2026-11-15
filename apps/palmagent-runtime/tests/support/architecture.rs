@@ -164,6 +164,9 @@ impl<'ast> Visit<'ast> for Dependencies {
                 .push("alternate module paths bypass ownership");
         }
         visit::visit_attribute(self, attribute);
+        if let syn::Meta::List(list) = &attribute.meta {
+            token_paths(list.tokens.clone(), &mut |path| self.push(path));
+        }
     }
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
         if mac

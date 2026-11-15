@@ -103,6 +103,7 @@ fn rejects_relative_qualified_grouped_and_macro_boundary_bypasses() {
         "use std::{fs as storage};",
         "extern crate tokio as runtime;",
         "use future_io::Client;",
+        "#[derive(future_io::Client)] struct Policy;",
         "fn policy() { renamed_io::open(); }",
         "fn policy() { example!(std::fs::read(\"x\")); }",
     ] {
