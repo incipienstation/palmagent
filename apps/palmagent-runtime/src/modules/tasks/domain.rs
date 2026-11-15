@@ -1,4 +1,5 @@
 //! Provider-neutral usage accounting. Observations and counts come through a repository port.
+pub mod steps;
 pub mod transcript;
 
 use serde::Serialize;

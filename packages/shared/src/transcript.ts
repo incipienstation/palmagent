@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ConversationSteps } from "./conversation-trace.js";
 import type { ConversationItem } from "./conversation.js";
 import type { TaskHistoryResponse, TaskHistoryChangesResponse } from "./protocol.js";
 
@@ -18,4 +19,11 @@ export const TranscriptPageSchema: z.ZodType<TaskHistoryResponse> = z.object({
 export const TranscriptChangesSchema: z.ZodType<TaskHistoryChangesResponse> = z.object({
   events: z.array(z.never()).length(0), transcript: z.array(z.object({ key: cursor, revision: cursor, item: item.nullable() })),
   after: cursor, through: cursor, nextAfter: cursor.nullable(), nextKey: cursor.optional(), activity: activity.optional(),
+});
+
+export const TranscriptStepsSchema: z.ZodType<ConversationSteps> = z.object({
+  steps: z.array(z.object({ key: cursor, title: z.string(),
+    kind: z.enum(["tool", "reasoning", "progress", "event"]),
+    state: z.enum(["running", "completed", "error", "interrupted", "unknown"]), description: z.string().optional(),
+  }).passthrough()), nextAfter: cursor.nullable(), cursor,
 });

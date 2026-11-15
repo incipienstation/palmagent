@@ -701,6 +701,7 @@ test("display-record history is bounded and its scoped stream invalidates durabl
     if (fail) throw new ApplicationError("service_unavailable", "Task transcript is temporarily unavailable");
   };
   const transcriptReader: TaskTranscriptReader = {
+    async conversationSteps(id, key, after) { ready(); return f.db.conversationSteps(id, key, after); },
     async conversationPage(id, before) { ready(); return f.db.conversationPage(id, before); },
     async conversationChanges(id, after, through, afterKey) { ready(); return f.db.conversationChanges(id, after, through, afterKey); },
   };
@@ -1355,26 +1356,54 @@ test("general file downloads require task access and force inert binary response
 
 
 test("Trace HTTP queries separate summaries, selected output and execution records", async t => {
-  const f = fixture(t, false);
+  let reads = 0, fail = false;
+  const transcriptReader: TaskTranscriptReader = {
+    async conversationPage(id, before) { return f.db.conversationPage(id, before); },
+    async conversationChanges(id, after, through, afterKey) { return f.db.conversationChanges(id, after, through, afterKey); },
+    async conversationSteps(id, key, after) {
+      reads++;
+      assert.equal(observer.prepare("SELECT 1 FROM conversation_dirty WHERE task_id = ?").get(id), undefined);
+      if (fail) throw new ApplicationError("service_unavailable", "Task transcript is temporarily unavailable");
+      return f.db.conversationSteps(id, key, after);
+    },
+  };
+  const f = fixture(t, true, {}, undefined, undefined, undefined, transcriptReader);
+  const observer = new Database(f.db.path, { readonly: true }); t.after(() => observer.close());
+  const now = Date.now(); f.db.createSession("steps-session", now, now + 60_000);
+  const request = (path: string) => f.app.request(path, { headers: { cookie: `${f.settings.cookieName}=steps-session` } });
   f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "fixture", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   await f.service.init();
   f.db.insertEvent("t", "tool_call", { id: "a", name: "bash", command: "check" }, 1);
   f.db.insertEvent("t", "tool_result", { tool_use_id: "a", output: "Selected output", exit_code: 0 }, 2);
   f.db.insertEvent("t", "status", { subtype: "context_compacted" }, 3);
-  const summaries = await f.app.request("/api/tasks/t/history/steps?key=1");
+  assert.equal((await f.app.request("/api/tasks/t/history/steps?key=1")).status, 401);
+  assert.equal((await request("/api/tasks/missing/history/steps?key=1")).status, 404);
+  for (const range of ["key=0", "key=1&after=-1", "key=9007199254740992"]) {
+    assert.equal((await request(`/api/tasks/t/history/steps?${range}`)).status, 400);
+  }
+  assert.equal(reads, 0, "authenticate and validate before native reads");
+  const summaries = await request("/api/tasks/t/history/steps?key=1");
   assert.equal(summaries.status, 200); assert.equal(summaries.headers.get("cache-control"), "no-store");
   const steps = await summaries.json() as import("@palmagent/shared").ConversationSteps;
   assert.equal(steps.steps.length, 1); assert.equal(steps.steps[0].title, "check");
   assert.doesNotMatch(JSON.stringify(steps), /Selected output/);
-  const details = await f.app.request("/api/tasks/t/history/step-details?key=1&step=1");
+  assert.equal(reads, 1); assert.ok(!("members" in steps.steps[0]));
+  const missing = await request("/api/tasks/t/history/steps?key=9999");
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), { error: "Conversation item is no longer available.", code: "not_found" });
+  const details = await request("/api/tasks/t/history/step-details?key=1&step=1");
   assert.equal(details.status, 200); assert.match(await details.text(), /Selected output/);
-  const records = await f.app.request("/api/tasks/t/history/records");
+  const records = await request("/api/tasks/t/history/records");
   assert.equal(records.status, 200); assert.match(await records.text(), /context_compacted/);
   for (const path of ["steps?key=-1", "step-details?key=1&step=0", "records?before=-1", "record-content?key=1&version=bad&offset=0"]) {
-    assert.equal((await f.app.request(`/api/tasks/t/history/${path}`)).status, 400);
+    assert.equal((await request(`/api/tasks/t/history/${path}`)).status, 400);
   }
-  assert.equal((await f.app.request("/api/tasks/missing/history/records")).status, 404);
+  assert.equal((await request("/api/tasks/missing/history/records")).status, 404);
+  fail = true;
+  const failed = await request("/api/tasks/t/history/steps?key=1");
+  assert.equal(failed.status, 503);
+  assert.deepEqual(await failed.json(), { error: "Task transcript is temporarily unavailable", code: "service_unavailable" });
 });
 
 

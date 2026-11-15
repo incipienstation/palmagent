@@ -61,6 +61,7 @@ test("native Task reads preserve accounting, activity, transcript pagination and
     assert.equal((health.value as { taskUsage: number }).taskUsage, 1);
     assert.equal((health.value as { taskActivityDetails: number }).taskActivityDetails, 1);
     assert.equal((health.value as { taskTranscript: number }).taskTranscript, 1);
+    assert.equal((health.value as { taskTranscriptSteps: number }).taskTranscriptSteps, 1);
   };
   const wire = (value: unknown) => JSON.parse(JSON.stringify(value));
   const same = async () => {
@@ -179,7 +180,8 @@ test("native Task reads preserve accounting, activity, transcript pagination and
     return expected;
   };
   const transcriptTask = "transcript &/?한글"; task(transcriptTask, "codex");
-  await page(transcriptTask); await changes(transcriptTask, 0); await changes(transcriptTask, 99);
+  await page(transcriptTask); await changes(transcriptTask, 0);
+  await changes(transcriptTask, 99);
   for (let i = 0; i < 45; i++) db.insertEvent(transcriptTask, "assistant_text", {
     text: `Message ${i} 한글 😀 \ud800`, messageId: `message-${i}`, phase: "final",
   }, i);
@@ -235,7 +237,56 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run("{", budgetTask, budgetRows[0].seq);
   await assert.rejects(transcript.conversationPage(budgetTask, 2), unavailable);
   writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run(JSON.stringify(edge), budgetTask, budgetRows[0].seq);
+  const stepsTask = "steps &/?한글"; task(stepsTask, "codex");
+  for (let i = 0; i < 53; i++) {
+    db.insertEvent(stepsTask, "tool_call", { id: `call-${i}`, name: "bash", command: `check ${i}` }, i);
+    if (i < 52) db.insertEvent(stepsTask, "tool_result", { tool_use_id: `call-${i}`, output: "private detail", exit_code: i === 1 ? 1 : 0 }, i);
+  }
+  const parent = (await page(stepsTask)).transcript!.find(row => row.type === "activity")!.key;
+  const steps = async (id: string, key: number, after?: number) => {
+    const expected = db.conversationSteps(id, key, after);
+    const actual = await transcript.conversationSteps(id, key, after);
+    assert.deepEqual(actual, expected);
+    assert(actual.steps.every(step => !("members" in step)), "member references stay in the projection");
+    assert(!JSON.stringify(actual).includes("private detail"));
+    return actual;
+  };
+  const firstSteps = await steps(stepsTask, parent);
+  assert.equal(firstSteps.steps.length, 50);
+  const lastSteps = await steps(stepsTask, parent, firstSteps.nextAfter!);
+  assert.equal(lastSteps.steps.length, 3); assert.equal(lastSteps.nextAfter, null);
+  assert.equal(lastSteps.steps.at(-1)!.state, "running");
+  assert.equal(firstSteps.steps[1].state, "error");
+  await steps(stepsTask, parent, lastSteps.steps.at(-1)!.key);
+  assert.deepEqual((await steps(transcriptTask, 1)).steps, [], "message parents have no operations");
+  const missing = (error: unknown) => error instanceof ApplicationError && error.code === "not_found" && error.message === "Conversation item is no longer available.";
+  assert.throws(() => db.conversationSteps(stepsTask, 9999), missing);
+  await assert.rejects(transcript.conversationSteps(stepsTask, 9999), missing);
+  const stored = writer.prepare("SELECT body_json FROM conversation_rows WHERE task_id = ? AND seq = ?").get(stepsTask, parent) as { body_json: string };
+  const body = JSON.parse(stored.body_json);
+  body.operations.reverse();
+  body.operations[0].title = "한글 😀 \ud800";
+  body.operations[0].extension = { value: "future summary field" };
+  const setBody = (value: string | null) => writer.prepare("UPDATE conversation_rows SET body_json = ? WHERE task_id = ? AND seq = ?").run(value, stepsTask, parent);
+  setBody(JSON.stringify(body));
+  await steps(stepsTask, parent); await steps(stepsTask, parent, firstSteps.nextAfter!);
+  const committedSteps = await steps(stepsTask, parent);
+  writer.exec("BEGIN IMMEDIATE");
+  writer.prepare("UPDATE conversation_rows SET revision = 999, body_json = NULL WHERE task_id = ? AND seq = ?").run(stepsTask, parent);
+  assert.deepEqual(await transcript.conversationSteps(stepsTask, parent), committedSteps);
+  await stop(host!); await start();
+  assert.deepEqual(await transcript.conversationSteps(stepsTask, parent), committedSteps);
+  writer.exec("ROLLBACK");
+  setBody(JSON.stringify({ ...body, operations: null })); await steps(stepsTask, parent);
+  setBody(null); await assert.rejects(transcript.conversationSteps(stepsTask, parent), missing);
+  setBody("{"); await assert.rejects(transcript.conversationSteps(stepsTask, parent), unavailable);
+  setBody(stored.body_json);
+  db.insertEvent(stepsTask, "tool_result", { tool_use_id: "call-52", output: "private detail", exit_code: 0 }, 100);
+  assert.equal((await steps(stepsTask, parent, firstSteps.nextAfter!)).steps.at(-1)!.state, "completed");
+  assert.equal((await applicationRequest(root, "/v1/tasks/transcript/steps?taskId=x&key=0")).status, 400);
+  assert.equal((await applicationRequest(root, "/v1/tasks/transcript/steps?taskId=x&key=1&after=-1")).status, 400);
   writer.exec("UPDATE conversation_projection_version SET version = 0");
+  await assert.rejects(transcript.conversationSteps(stepsTask, parent), unavailable);
   await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
   await assert.rejects(transcript.conversationChanges(transcriptTask, 0), unavailable);
   writer.prepare("UPDATE conversation_projection_version SET version = ?").run(CONVERSATION_PROJECTION_VERSION);
@@ -247,6 +298,7 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   assert.equal((await applicationRequest(root, "/v1/tasks/transcript/page?taskId=x&before=0")).status, 400);
   db.deleteRepo("space"); assert.deepEqual(await client.usageByAgent(), []);
   await page(transcriptTask); await changes(transcriptTask, 0);
+  await assert.rejects(transcript.conversationSteps(stepsTask, parent), missing);
   await details(activityTask, 1, 9999);
 
   await stop(host!);
@@ -254,6 +306,7 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
   await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
   await assert.rejects(transcript.conversationChanges(transcriptTask, 0), unavailable);
+  await assert.rejects(transcript.conversationSteps(stepsTask, parent), unavailable);
   // The legacy reader remains usable for rollback; native failures never silently call it.
   assert.deepEqual(db.usageByAgent(), []);
   assert.deepEqual(db.activityDetails(activityTask, 1, 1), { events: [], from: 1, through: 0, cursor: 0 });

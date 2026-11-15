@@ -80,7 +80,10 @@ export class TaskService implements PrStatusSink {
   }
 
   conversationSteps(taskId: string, key: number, after?: number) {
-    this.getTask(taskId); return this.db.conversationSteps(taskId, key, after);
+    this.getTask(taskId);
+    if (!this.transcriptReader) return this.db.conversationSteps(taskId, key, after);
+    this.db.prepareConversation(taskId);
+    return this.transcriptReader.conversationSteps(taskId, key, after);
   }
   conversationStepDetails(taskId: string, key: number, step: number, after?: number) {
     this.getTask(taskId); return this.db.conversationStepDetails(taskId, key, step, after);
