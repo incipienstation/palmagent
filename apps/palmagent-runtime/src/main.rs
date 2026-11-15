@@ -1,7 +1,10 @@
 use anyhow::{Context, Result, ensure};
 use palmagent_runtime::modules::tasks::{
-    adapters::{inbound::http as task_http, outbound::sqlite_usage::SqliteUsage},
-    application::Service as TaskUsageService,
+    adapters::{
+        inbound::{activity_http, http as task_http},
+        outbound::{sqlite_activity::SqliteActivity, sqlite_usage::SqliteUsage},
+    },
+    application::{Service as TaskUsageService, activity::ActivityService},
 };
 use palmagent_runtime::{
     composition,
@@ -78,6 +81,9 @@ async fn serve(args: &[String]) -> Result<()> {
     let usage = task_http::Client::new(Box::new(TaskUsageService::new(Box::new(
         SqliteUsage::open(&db)?,
     ))));
+    let activity = activity_http::Client::new(Box::new(ActivityService::new(Box::new(
+        SqliteActivity::open(&db)?,
+    ))));
     let sampler = measurements.clone();
     let client = Client::new(sender.clone(), measurements.clone());
     let (ready_send, ready_receive) = tokio::sync::oneshot::channel();
@@ -147,7 +153,9 @@ async fn serve(args: &[String]) -> Result<()> {
     let closing = sender.clone();
     let result = axum::serve(
         listener,
-        http::router(client).merge(task_http::router(usage)),
+        http::router(client)
+            .merge(task_http::router(usage))
+            .merge(activity_http::router(activity)),
     )
     .with_graceful_shutdown(async move {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }

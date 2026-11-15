@@ -8,19 +8,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { Db } from "../../src/composition/database.js";
+import { NativeTaskActivity } from "../../src/modules/tasks/adapters/outbound/native-task-activity.js";
 import { NativeTaskUsage } from "../../src/modules/tasks/adapters/outbound/native-task-usage.js";
 import { applicationRequest, applicationSocket } from "../../src/platform/ipc/application-runtime.js";
 import { ApplicationError } from "../../src/kernel/errors.js";
 
 // One real runtime and the actual product schema exercise the cross-language read boundary.
-// No provider, scheduler workload or browser is needed for usage accounting.
-test("native Task usage preserves accounting, committed snapshots, cache invalidation and restart", { timeout: 30_000 }, async t => {
+// The same fixture covers usage accounting and activity expansion without a provider or browser.
+test("native Task reads preserve accounting, activity payloads, committed snapshots and restart", { timeout: 30_000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), "native-task-usage-"));
   const release = join(root, "releases/fixture"), node = join(root, "runtimes/node"), ready = join(root, "ready");
   mkdirSync(release, { recursive: true }); mkdirSync(dirname(node), { recursive: true });
   copyFileSync(process.execPath, node);
   const db = new Db(join(root, "palmagent.db")), writer = new Database(db.path);
   const client = new NativeTaskUsage(root);
+  const activity = new NativeTaskActivity(root);
   const binary = fileURLToPath(new URL("../../../../target/debug/palmagent-runtime", import.meta.url));
   const hosts: ChildProcess[] = [];
   let socketDirectory: string | undefined;
@@ -54,6 +56,7 @@ test("native Task usage preserves accounting, committed snapshots, cache invalid
     const health = await applicationRequest(root, "/health");
     assert.equal(health.status, 200);
     assert.equal((health.value as { taskUsage: number }).taskUsage, 1);
+    assert.equal((health.value as { taskActivityDetails: number }).taskActivityDetails, 1);
   };
   const wire = (value: unknown) => JSON.parse(JSON.stringify(value));
   const same = async () => {
@@ -107,10 +110,64 @@ test("native Task usage preserves accounting, committed snapshots, cache invalid
   await assert.rejects(client.usageByAgent(), error => error instanceof ApplicationError && error.code === "service_unavailable");
   writer.exec("ALTER TABLE temporarily_unavailable_usage RENAME TO task_usage_revision");
   await same();
+  // Activity is an inclusive range, independent of usage and history page sizes.
+  const details = async (id: string, from: number, through: number) => {
+    const expected = wire(db.activityDetails(id, from, through));
+    assert.deepEqual(wire(await activity.activityDetails(id, from, through)), expected);
+    return expected;
+  };
+  const activityTask = "activity &/?한글"; task(activityTask, "codex");
+  await details(activityTask, 1, 99); // empty cursor is zero, even when from is positive
+  const firstTool = db.insertEvent(activityTask, "tool_call", { command: "fixture", nested: [null, false, 0] }, 10);
+  db.insertEvent(activityTask, "assistant_text", { text: "not activity" }, 11);
+  for (let i = 0; i < 201; i++) db.insertEvent(activityTask, "tool_result", { output: `result ${i}` }, i + 12);
+  const activityBefore = await details(activityTask, 1, 9999);
+  assert.equal(activityBefore.events.length, 202, "activity must not stop at a history page");
+  assert.equal(activityBefore.through, activityBefore.cursor);
+  await details(activityTask, firstTool.seq, firstTool.seq);
+  await details(activityTask, 2, 2); // a range containing only a non-tool event
+  await details(activityTask, 9999, 9999);
+  assert.equal((await applicationRequest(root, "/v1/tasks/activity-details?taskId=x&from=2&through=1")).status, 400);
+  assert.equal((await applicationRequest(root, "/v1/tasks/activity-details?taskId=x&from=0&through=1")).status, 400);
+
+  writer.exec("BEGIN IMMEDIATE");
+  writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run('{"output":"uncommitted"}', firstTool.id);
+  assert.deepEqual(wire(await activity.activityDetails(activityTask, 1, 9999)), activityBefore);
+  await stop(host!); await start();
+  assert.deepEqual(wire(await activity.activityDetails(activityTask, 1, 9999)), activityBefore);
+  writer.exec("ROLLBACK");
+  writer.prepare("UPDATE tasks SET session_id = ?, agent = 'claude' WHERE id = ?").run("resumed-session", activityTask);
+  for (const payload of [
+    'null', '[]', '42', '"text"',
+    '{"key":1,"key":2,"overflow":1e400,"surrogate":"\\ud800","text":"한글 😀"}',
+    '['.repeat(200) + '0' + ']'.repeat(200),
+  ]) {
+    writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run(payload, firstTool.id);
+    await details(activityTask, firstTool.seq, firstTool.seq);
+  }
+  // A single historical tool result may exceed the private control response limit.
+  // This is the smallest fixture that catches silently introducing that limit here.
+  writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run(JSON.stringify({ output: "x".repeat(16 * 1024 * 1024) }), firstTool.id);
+  await details(activityTask, firstTool.seq, firstTool.seq);
+  await assert.rejects(applicationRequest(root, `/v1/tasks/activity-details?taskId=${encodeURIComponent(activityTask)}&from=1&through=1`), /too large/,
+    "other control transport callers retain their response limit");
+  writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run('{', firstTool.id);
+  await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
+  writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run('{"output":"committed"}', firstTool.id);
+  await details(activityTask, 1, 9999);
+  writer.prepare("DELETE FROM events WHERE id = ?").run(firstTool.id);
+  await details(activityTask, 1, 9999);
+  writer.exec("ALTER TABLE events RENAME TO unavailable_events");
+  await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
+  writer.exec("ALTER TABLE unavailable_events RENAME TO events");
+  await details(activityTask, 1, 9999);
   db.deleteRepo("space"); assert.deepEqual(await client.usageByAgent(), []);
+  await details(activityTask, 1, 9999);
 
   await stop(host!);
   await assert.rejects(client.usageByAgent(), error => error instanceof ApplicationError && error.code === "service_unavailable");
+  await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
   // The legacy reader remains usable for rollback; native failures never silently call it.
   assert.deepEqual(db.usageByAgent(), []);
+  assert.deepEqual(db.activityDetails(activityTask, 1, 1), { events: [], from: 1, through: 0, cursor: 0 });
 });

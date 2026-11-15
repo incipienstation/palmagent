@@ -42,3 +42,4 @@ export * from "./conversation-activity.js";
 export * from "./conversation-trace.js";
 
 export * from "./usage.js";
+export * from "./activity.js";

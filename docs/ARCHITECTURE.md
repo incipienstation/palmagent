@@ -194,3 +194,11 @@ blocking workers. Authentication and the public `/api/usage` route remain in Typ
 which selects the native reader during composition and awaits it through an outbound port.
 Source and legacy configurations retain their local reader. No native Task writer or second
 queue owner is introduced.
+
+Historical activity expansion follows the same composition-selected read boundary. Its application
+contract describes an ordered tool-event snapshot and inclusive range; the SQLite adapter reads
+cursor and rows in one transaction on a separate read-only connection. The inbound adapter retains
+opaque provider JSON while constructing the shared activity response. Bounded blocking workers
+perform reads and serialization outside the async executor. TypeScript retains authentication,
+task validation, JSON wire semantics and the public history-detail route; event writes and newer
+transcript/step/content use cases remain with the existing owner.

@@ -1,3 +1,4 @@
+import type { TaskActivityReader } from "../../src/modules/tasks/application/ports/outbound/activity.js";
 import type { TaskUsageReader } from "../../src/modules/tasks/application/ports/outbound/usage.js";
 import { ApplicationError } from "../../src/kernel/errors.js";
 import { createTaskService } from "../../src/composition/task-service.js";
@@ -41,13 +42,13 @@ import type { HttpDependencies } from "../../src/composition/http-dependencies.j
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend(), usageReader?: TaskUsageReader) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend(), usageReader?: TaskUsageReader, activityReader?: TaskActivityReader) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader);
+    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
@@ -726,7 +727,16 @@ test("display-record history is bounded and its scoped stream invalidates durabl
 });
 
 test("legacy compact history returns the complete conversation and defers tool payloads until expansion", async (t) => {
-  const f = fixture(t, false);
+  let reads = 0, fail = false;
+  const activityReader: TaskActivityReader = { async activityDetails(id, from, through) {
+    reads++;
+    if (fail) throw new ApplicationError("service_unavailable", "Task activity is temporarily unavailable");
+    return f.db.activityDetails(id, from, through);
+  } };
+  const f = fixture(t, true, {}, undefined, undefined, activityReader);
+  const now = Date.now(); f.db.createSession("activity-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=activity-session` };
+  const request = (path: string) => f.app.request(path, { headers });
   f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "Original request", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   f.db.insertEvent("t", "status", { subtype: "dispatch", text: "Original request" }, 1);
@@ -737,7 +747,13 @@ test("legacy compact history returns the complete conversation and defers tool p
   f.db.insertEvent("t", "assistant_text", { text: "Complete answer", phase: "final" }, 302);
   await f.service.init();
 
-  const response = await f.app.request("/api/tasks/t/history?details=summary");
+  assert.equal((await f.app.request("/api/tasks/t/history/details?from=1&through=2")).status, 401);
+  assert.equal((await request("/api/tasks/missing/history/details?from=1&through=2")).status, 404);
+  for (const range of ["from=0&through=1", "from=2&through=1", "from=1&through=9007199254740992"]) {
+    assert.equal((await request(`/api/tasks/t/history/details?${range}`)).status, 400);
+  }
+  assert.equal(reads, 0, "authentication, task existence and range validation precede native reads");
+  const response = await request("/api/tasks/t/history?details=summary");
   assert.equal(response.status, 200);
   const compact = await response.json() as import("@palmagent/shared").TaskHistoryResponse;
   assert.equal(compact.cursor, 602);
@@ -750,17 +766,23 @@ test("legacy compact history returns the complete conversation and defers tool p
   assert.deepEqual(compact.events[2].event.payload, { tool_use_id: "tool-0", is_error: true });
   assert.doesNotMatch(JSON.stringify(compact), /Detail \d+|content /);
 
-  const detailsResponse = await f.app.request("/api/tasks/t/history/details?from=2&through=601");
+  const detailsResponse = await request("/api/tasks/t/history/details?from=2&through=601");
   const details = await detailsResponse.json() as import("@palmagent/shared").TaskActivityDetailsResponse;
   assert.equal(detailsResponse.status, 200);
+  assert.equal(detailsResponse.headers.get("cache-control"), "no-store");
+  assert.equal(reads, 1);
   assert.equal(details.events.length, 600, "one Activity expansion covers more than a raw history page");
   assert.deepEqual(details.events[0].event.payload, { id: "tool-0", name: "Read", input: { path: "fixture.txt" } });
   assert.match(JSON.stringify(details.events.at(-1)!.event.payload), /Detail 299:/);
 
-  const verboseResponse = await f.app.request("/api/tasks/t/history?details=full");
+  const verboseResponse = await request("/api/tasks/t/history?details=full");
   const verbose = await verboseResponse.json() as import("@palmagent/shared").TaskHistoryResponse;
   assert.equal(verbose.events.length, 200);
   assert.equal(verbose.before, 403, "Verbose retains bounded full-payload pages");
+  fail = true;
+  const unavailable = await request("/api/tasks/t/history/details?from=1&through=601");
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), { error: "Task activity is temporarily unavailable", code: "service_unavailable" });
 });
 
 test("snapshot-only inbox streams omit historical and live event bodies", async (t) => {
