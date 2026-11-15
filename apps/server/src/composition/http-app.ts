@@ -55,7 +55,7 @@ export function createApp(deps: HttpDependencies, view?: import("hono").Middlewa
       c.header("Cache-Control", "no-store");
       return c.json(await deps.modelCatalog.get(service.providerHome("codex")), 200);
     })
-    .get("/api/usage", (c) => c.json({ usage: service.usage() }, 200))
+    .get("/api/usage", async (c) => c.json({ usage: await service.usage() }, 200))
     .get("/api/stream", query(StreamQuerySchema), (c) => sessionStream(c, deps, c.req.valid("query")))
     .get("/api/skills", query(SkillContextSchema), async (c) => {
       c.header("Cache-Control", "no-store");

@@ -221,3 +221,14 @@ application. Histogram boundaries, units, consent and retention are unchanged. K
 service/operation entries so retained releases remain accepted. Update the generated dashboard's
 component selector as well. Verify a synthetic native batch separately from production observations;
 receiver acceptance does not prove the new application version is installed or actively exporting.
+
+### Task usage read migration
+
+The existing `http.request` category includes `/api/usage` and its native round trip on
+daemon-backed installations. Application CPU and memory measurements include usage work
+alongside script routines; they do not isolate usage aggregation latency. This slice adds
+no producer operation names, so it remains compatible with the receiver's current allowlist.
+
+A future dedicated usage timing requires the receiver rollout described above. Compare the
+same event corpus and cache state, distinguishing a first read after a revision change from
+an unchanged cached read. This ownership transfer alone does not establish a speedup.

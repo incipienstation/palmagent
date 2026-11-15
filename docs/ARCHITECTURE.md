@@ -185,3 +185,12 @@ dependencies explicitly. Existing native routine JSON projections remain a
 compatibility boundary, not permission to introduce HTTP or database handles into core APIs.
 
 Follow the [Rust migration gates](RUST-MIGRATION.md) for each ownership transfer.
+
+The native Tasks module owns usage aggregation on daemon-backed installations. Its domain
+folds normalized observations; its application owns the read port and revision cache; its
+SQLite adapter decodes provider payloads and streams a single committed snapshot over a
+read-only connection. The inbound adapter bounds admitted work before dispatching it to
+blocking workers. Authentication and the public `/api/usage` route remain in TypeScript,
+which selects the native reader during composition and awaits it through an outbound port.
+Source and legacy configurations retain their local reader. No native Task writer or second
+queue owner is introduced.

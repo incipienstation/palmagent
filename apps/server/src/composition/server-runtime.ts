@@ -1,3 +1,4 @@
+import { NativeTaskUsage } from "../modules/tasks/adapters/outbound/native-task-usage.js";
 import { createTaskService } from "./task-service.js";
 import { CodexSharedSessions } from "../modules/agents/adapters/outbound/codex-shared-session.js";
 import { webauthn } from "../modules/auth/adapters/outbound/webauthn.js";
@@ -81,6 +82,8 @@ export async function createRuntime() {
     resources.defer(() => voice.close());
     const accountLimits = new AccountLimitReader();
     resources.defer(() => accountLimits.close());
+    const nativeScripts = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
+      ? new NativeScriptRuntime(config.dataDir) : undefined;
     const service = createTaskService(db, hub, supervisor, backend, worktrees, attachments,
       new LocalRepositoryPaths(), new LocalNativeSessionAdapter(config.dbPath), new NodeIdentifierGenerator(),
       push, () => isUpdateMaintenance(config.dbPath), {
@@ -91,7 +94,7 @@ export async function createRuntime() {
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
         : removeWorktree(),
-    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits);
+    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeScripts ? new NativeTaskUsage(config.dataDir) : db);
     resources.onStop(() => service.beginShutdown());
     service.sharedSessions = new CodexSharedSessions();
     const sideChats = new CodexSideChats();
@@ -110,9 +113,10 @@ export async function createRuntime() {
     const scriptRunner = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
       ? new DaemonRoutineScriptRunner(config.dataDir, config.executionRelease, config.executionNode, worktrees)
       : new LocalRoutineScriptRunner(worktrees);
-    const nativeScripts = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
-      ? new NativeScriptRuntime(config.dataDir) : undefined;
-    if (nativeScripts) await nativeScripts.connect(config.executionRelease!);
+    if (nativeScripts) {
+      const status = await nativeScripts.connect(config.executionRelease!);
+      if (status.taskUsage !== 1) throw new Error("This release requires native Task usage support");
+    }
     const localRoutines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub, Boolean(nativeScripts));
     const routines = nativeScripts ? new IndependentRoutines(localRoutines, nativeScripts, hub) : localRoutines;
     if (routines instanceof IndependentRoutines) await routines.initialize();

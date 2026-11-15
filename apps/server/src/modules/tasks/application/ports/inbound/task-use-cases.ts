@@ -60,7 +60,7 @@ export interface TaskUseCases {
   reconcileLocalSessions(): void;
   tasksWithPrs(): { taskId: string; prs: PrRef[]; }[];
   applyPrStatuses(taskId: string, patches: Map<string, Partial<PrRef>>): void;
-  usage(): AgentUsage[];
+  usage(): AgentUsage[] | Promise<AgentUsage[]>;
   createTask(req: CreateTaskRequest): TaskState;
   followup(id: string, prompt: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): TaskState;
   steer(id: string, text: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): SteerResponse;

@@ -9,7 +9,7 @@ import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 import type { ScriptRuntime } from "../../application/ports/outbound/script-runtime.js";
 
 const Status = z.object({ protocol: z.literal(1), version: z.string(), sourceCommit: z.string(), instance: z.string().min(1),
-  revision: z.number().int().nonnegative(), activeScripts: z.number().int().nonnegative(), stopping: z.boolean() });
+  revision: z.number().int().nonnegative(), taskUsage: z.literal(1).optional(), activeScripts: z.number().int().nonnegative(), stopping: z.boolean() });
 
 export class NativeScriptRuntime implements ScriptRuntime {
   private expected?: { version: string; sourceCommit: string };
@@ -24,7 +24,7 @@ export class NativeScriptRuntime implements ScriptRuntime {
     if (!state.alive || !["ready", "pending"].includes(state.lifecycle?.readiness ?? "")) throw new Error("Application startup was not confirmed");
     const deadline = Date.now() + 55_000;
     for (;;) {
-      try { await this.status(); return; }
+      try { return await this.status(); }
       catch (error) {
         if (Date.now() >= deadline) throw error;
         await new Promise(resolve => setTimeout(resolve, 100));
