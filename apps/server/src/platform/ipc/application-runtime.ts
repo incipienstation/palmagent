@@ -18,7 +18,7 @@ export function applicationSocket(dataDir: string): string {
   return socket;
 }
 
-export function applicationRequest(dataDir: string, path: string, method = "GET", input?: unknown): Promise<{ status: number; value: unknown }> {
+export function applicationRequest(dataDir: string, path: string, method = "GET", input?: unknown, options: { maxResponseBytes?: number } = {}): Promise<{ status: number; value: unknown }> {
   const socketPath = applicationSocket(dataDir);
   return new Promise((resolve, reject) => {
     const req = request({ socketPath, path, method, headers: { "content-type": "application/json" }, timeout: 15_000 }, res => {
@@ -26,7 +26,7 @@ export function applicationRequest(dataDir: string, path: string, method = "GET"
       let bytes = 0;
       res.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
-        if (bytes > 16 * 1024 * 1024) req.destroy(new Error("Application response is too large"));
+        if (bytes > (options.maxResponseBytes ?? 16 * 1024 * 1024)) req.destroy(new Error("Application response is too large"));
         else chunks.push(chunk);
       });
       res.on("error", reject);

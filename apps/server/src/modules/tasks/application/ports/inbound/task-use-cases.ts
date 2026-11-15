@@ -24,7 +24,7 @@ export interface TaskUseCases {
   eventCursor(taskId?: string): number;
   taskHistory(taskId: string, before?: number, includeActivityDetails?: boolean): TaskHistoryResponse;
   taskHistoryChanges(taskId: string, after: number, through?: number, includeActivityDetails?: boolean): TaskHistoryChangesResponse;
-  taskActivityDetails(taskId: string, from: number, through: number): TaskActivityDetailsResponse;
+  taskActivityDetails(taskId: string, from: number, through: number): TaskActivityDetailsResponse | Promise<TaskActivityDetailsResponse>;
   beginShutdown(): void;
   getSideChat(id: string): import("@palmagent/shared").SideChatSnapshot | null;
   openSideChat(id: string): Promise<import("@palmagent/shared").SideChatSnapshot>;

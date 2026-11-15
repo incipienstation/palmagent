@@ -1,4 +1,6 @@
 //! Usage reads and cache policy, independent of SQLite and transport.
+pub mod activity;
+
 use super::domain::{AgentUsage, Aggregate, UsageRecord};
 
 /// Stream counts and normalized observations from one committed snapshot. Return None only

@@ -1,3 +1,4 @@
+import type { TaskActivityReader } from "../ports/outbound/activity.js";
 import type { TaskUsageReader } from "../ports/outbound/usage.js";
 import type { MessageTiming } from "../ports/outbound/message-timing.js";
 import { recoverTaskExecutions } from "./recover-tasks.js";
@@ -126,7 +127,7 @@ export class TaskService implements PrStatusSink {
   taskActivityDetails(taskId: string, from: number, through: number) {
     this.getTask(taskId);
     if (from > through) throw badRequest("through must be at least from");
-    return this.db.activityDetails(taskId, from, through);
+    return this.activityReader.activityDetails(taskId, from, through);
   }
 
   private shuttingDown = false;
@@ -243,6 +244,7 @@ export class TaskService implements PrStatusSink {
     skillCatalog?: TaskSkillCatalog,
     private readonly accountLimitReader?: TaskAccountLimitReader,
     private readonly usageReader: TaskUsageReader = db,
+    private readonly activityReader: TaskActivityReader = db,
   ) {
     this.attachments = attachments;
     this.voice = voice;

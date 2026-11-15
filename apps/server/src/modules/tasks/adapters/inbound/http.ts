@@ -109,11 +109,11 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       c.header("cache-control", "no-store");
       return c.json(service.conversationContent(c.req.valid("param").id, Number(key), version, Number(offset), member === undefined ? undefined : Number(member)), 200);
     })
-    .get("/:id/history/details", params(IdParamsSchema), query(ActivityDetailsQuerySchema), (c) => {
+    .get("/:id/history/details", params(IdParamsSchema), query(ActivityDetailsQuerySchema), async (c) => {
       const taskId = c.req.valid("param").id;
       const { from, through } = c.req.valid("query");
       c.header("cache-control", "no-store");
-      return c.json(service.taskActivityDetails(taskId, Number(from), Number(through)), 200);
+      return c.json(await service.taskActivityDetails(taskId, Number(from), Number(through)), 200);
     })
     .get("/:id/history/changes", params(IdParamsSchema), query(HistoryChangesQuerySchema), (c) => {
       const taskId = c.req.valid("param").id;

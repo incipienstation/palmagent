@@ -13,6 +13,7 @@ alone does not establish a performance improvement.
 | Script routine scheduling, admission and persistence | Rust application runtime | TypeScript API/read projection and product database bootstrap |
 | Retained script execution and completion | Rust routine host | Older releases may still use the packaged Node host |
 | Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication, HTTP response contract and event writes; legacy/source setups keep their local reader |
+| Historical Task activity-detail expansion on daemon-backed installations | Rust Task activity read use case | TypeScript authentication, task/range validation and public response; legacy/source setups keep their local reader |
 | Task API, queue, agent execution coordination and recovery | TypeScript API owner | Separate PWA view process; retained execution hosts |
 | Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
@@ -25,6 +26,25 @@ caching. Task scheduling, execution and database write ownership remain in TypeS
 there is no schema change. Native startup requires the `taskUsage: 1` health capability,
 and native read failures return an unavailable response rather than changing readers.
 Rolling back to the prior release resumes its local reader against the unchanged schema.
+
+Activity-detail expansion is also a native read use case. The retained
+`GET /api/tasks/:id/history/details` route selects a read-only adapter through an application
+port after authentication and task/range validation. The native reader captures the task cursor
+and the inclusive tool-event range in one committed SQLite snapshot, preserves sequence ordering,
+and clamps the response's `through` to that cursor. It does not paginate or truncate the requested
+activity. Provider payloads remain opaque JSON until the TypeScript wire boundary, preserving
+historical primitive payloads, duplicate keys, numeric overflow and escaped Unicode.
+
+Startup requires the additive `taskActivityDetails: 1` health capability. Native read failures
+return 503 without falling back to the local implementation. This includes corrupt persisted JSON,
+which the local reader also rejects. The activity reader explicitly permits responses above the
+private control transport's default 16 MiB cap because this public endpoint already returns full
+activity payloads; other transport callers retain the cap. Two admitted native workers bound read
+and serialization concurrency. This slice introduces no writer, schema, queue or execution change;
+rollback resumes local reads. Transcript pages, step details and content-chunk APIs remain in
+TypeScript. Native read/serialization moves out of the API owner, but JSON parsing and public
+response encoding remain there; this is not a measured performance improvement.
+
 
 ## Gates for every slice
 

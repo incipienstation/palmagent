@@ -1,0 +1,132 @@
+//! Private activity read endpoint. Hold admission through database read and serialization.
+use crate::modules::tasks::api::{ActivityDetails, ActivityReader, ActivityRecord};
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    http::StatusCode,
+    routing::get,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json, value::RawValue};
+use std::sync::{Arc, Mutex};
+use tokio::sync::Semaphore;
+
+#[derive(Clone)]
+pub struct Client {
+    reader: Arc<Mutex<Box<dyn ActivityReader>>>,
+    slots: Arc<Semaphore>,
+}
+impl Client {
+    pub fn new(reader: Box<dyn ActivityReader>) -> Self {
+        Self {
+            reader: Arc::new(Mutex::new(reader)),
+            slots: Arc::new(Semaphore::new(2)),
+        }
+    }
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Request {
+    task_id: String,
+    from: i64,
+    through: i64,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Event<'a> {
+    task_id: &'a str,
+    agent: &'a str,
+    kind: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<&'a str>,
+    payload: &'a RawValue,
+    ts: i64,
+}
+#[derive(Serialize)]
+struct Row<'a> {
+    seq: i64,
+    event: Event<'a>,
+}
+#[derive(Serialize)]
+struct Response<'a> {
+    events: Vec<Row<'a>>,
+    from: i64,
+    through: i64,
+    cursor: i64,
+}
+fn row(record: &ActivityRecord) -> anyhow::Result<Row<'_>> {
+    // Raw JSON preserves duplicate keys, large numeric literals and escaped lone surrogates
+    // until the existing JavaScript API boundary applies JSON.parse/JSON.stringify semantics.
+    Ok(Row {
+        seq: record.seq,
+        event: Event {
+            task_id: &record.task_id,
+            agent: &record.agent,
+            kind: &record.kind,
+            session_id: record.session_id.as_deref(),
+            ts: record.ts,
+            payload: serde_json::from_str(&record.payload_json)?,
+        },
+    })
+}
+fn encode(details: &ActivityDetails) -> anyhow::Result<String> {
+    Ok(serde_json::to_string(&Response {
+        events: details
+            .snapshot
+            .events
+            .iter()
+            .map(row)
+            .collect::<anyhow::Result<_>>()?,
+        from: details.from,
+        through: details.through,
+        cursor: details.snapshot.cursor,
+    })?)
+}
+fn unavailable() -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({"error":"Task activity is temporarily unavailable"})),
+    )
+}
+pub fn router(client: Client) -> Router {
+    Router::new()
+        .route(
+            "/v1/tasks/activity-details",
+            get(
+                |State(client): State<Client>, Query(request): Query<Request>| async move {
+                    if request.task_id.is_empty()
+                        || request.from < 1
+                        || request.through < request.from
+                        || request.through > 9_007_199_254_740_991
+                    {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"error":"Invalid activity range"})),
+                        ));
+                    }
+                    let permit = client
+                        .slots
+                        .clone()
+                        .try_acquire_owned()
+                        .map_err(|_| unavailable())?;
+                    let body = tokio::task::spawn_blocking(move || {
+                        let _permit = permit;
+                        let details = client
+                            .reader
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Activity reader failed"))?
+                            .details(&request.task_id, request.from, request.through)?;
+                        encode(&details)
+                    })
+                    .await
+                    .map_err(|_| unavailable())?
+                    .map_err(|_| unavailable())?;
+                    Ok::<_, (StatusCode, Json<Value>)>((
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        body,
+                    ))
+                },
+            ),
+        )
+        .with_state(client)
+}
