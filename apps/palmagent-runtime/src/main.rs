@@ -1,4 +1,8 @@
 use anyhow::{Context, Result, ensure};
+use palmagent_runtime::modules::tasks::{
+    adapters::{inbound::http as task_http, outbound::sqlite_usage::SqliteUsage},
+    application::Service as TaskUsageService,
+};
 use palmagent_runtime::{
     composition,
     modules::routines::{
@@ -71,6 +75,9 @@ async fn serve(args: &[String]) -> Result<()> {
             .join("telemetry.json"),
     );
     measurements.tick(0);
+    let usage = task_http::Client::new(Box::new(TaskUsageService::new(Box::new(
+        SqliteUsage::open(&db)?,
+    ))));
     let sampler = measurements.clone();
     let client = Client::new(sender.clone(), measurements.clone());
     let (ready_send, ready_receive) = tokio::sync::oneshot::channel();
@@ -138,12 +145,15 @@ async fn serve(args: &[String]) -> Result<()> {
     });
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let closing = sender.clone();
-    let result = axum::serve(listener, http::router(client))
-        .with_graceful_shutdown(async move {
-            tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
-            let _ = sender.send(Message::Shutdown).await;
-        })
-        .await;
+    let result = axum::serve(
+        listener,
+        http::router(client).merge(task_http::router(usage)),
+    )
+    .with_graceful_shutdown(async move {
+        tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
+        let _ = sender.send(Message::Shutdown).await;
+    })
+    .await;
     timer.abort();
     let _ = closing.send(Message::Shutdown).await;
     tokio::task::spawn_blocking(move || owner.join())

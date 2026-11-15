@@ -12,13 +12,19 @@ alone does not establish a performance improvement.
 | Host supervision, retained processes and activation | Rust daemon | Existing installation and update protocols |
 | Script routine scheduling, admission and persistence | Rust application runtime | TypeScript API/read projection and product database bootstrap |
 | Retained script execution and completion | Rust routine host | Older releases may still use the packaged Node host |
+| Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication, HTTP response contract and event writes; legacy/source setups keep their local reader |
 | Task API, queue, agent execution coordination and recovery | TypeScript API owner | Separate PWA view process; retained execution hosts |
 | Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
 This is an ownership inventory, not a claim that the backend is fully migrated. The first
 harness change strengthens native architecture checks, gives routine commands an
 application-owned inbound contract and public API, and moves HTTP error mapping out of
-the core contract. It does not transfer Task ownership or change the storage schema.
+the core contract. Task usage is the first migrated Task use case: the native runtime reads
+committed event totals through a read-only SQLite adapter, with snapshot-consistent revision
+caching. Task scheduling, execution and database write ownership remain in TypeScript;
+there is no schema change. Native startup requires the `taskUsage: 1` health capability,
+and native read failures return an unavailable response rather than changing readers.
+Rolling back to the prior release resumes its local reader against the unchanged schema.
 
 ## Gates for every slice
 
@@ -48,7 +54,7 @@ the core contract. It does not transfer Task ownership or change the storage sch
 
 ## Following slices
 
-Select the next slice from observed ownership and coupling, not file count. First define
+Select the next slice from observed ownership and coupling, not file count. Extend
 Task inbound and outbound contracts that can preserve the existing API owner's queue,
 transactions and recovery behavior. Migrate a complete bounded use case and validate it
 through the retained API boundary before transferring Task scheduling or execution authority.

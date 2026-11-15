@@ -1,3 +1,4 @@
+import type { TaskUsageReader } from "../ports/outbound/usage.js";
 import type { MessageTiming } from "../ports/outbound/message-timing.js";
 import { recoverTaskExecutions } from "./recover-tasks.js";
 import { TaskExecution } from "./task-execution.js";
@@ -241,6 +242,7 @@ export class TaskService implements PrStatusSink {
     voice?: TaskVoiceOperations,
     skillCatalog?: TaskSkillCatalog,
     private readonly accountLimitReader?: TaskAccountLimitReader,
+    private readonly usageReader: TaskUsageReader = db,
   ) {
     this.attachments = attachments;
     this.voice = voice;
@@ -751,10 +753,9 @@ export class TaskService implements PrStatusSink {
   }
 
   // ---- usage ----
-  // Per-agent aggregate over the result event log (cost/tokens/turns). The DB
-  // owns the SQL + payload folding; this stays a thin agent-agnostic pass-through.
-  usage(): AgentUsage[] {
-    return this.db.usageByAgent();
+  // Composition selects the native read projection or the legacy local repository.
+  usage(): AgentUsage[] | Promise<AgentUsage[]> {
+    return this.usageReader.usageByAgent();
   }
 
   // ---- task lifecycle ----

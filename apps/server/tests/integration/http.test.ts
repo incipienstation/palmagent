@@ -1,3 +1,5 @@
+import type { TaskUsageReader } from "../../src/modules/tasks/application/ports/outbound/usage.js";
+import { ApplicationError } from "../../src/kernel/errors.js";
 import { createTaskService } from "../../src/composition/task-service.js";
 import { webauthn } from "../../src/modules/auth/adapters/outbound/webauthn.js";
 import assert from "node:assert/strict";
@@ -39,13 +41,13 @@ import type { HttpDependencies } from "../../src/composition/http-dependencies.j
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend()) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend(), usageReader?: TaskUsageReader) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }));
+    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
@@ -795,7 +797,7 @@ test("display-only task edits leave reads alone; repo deletion signals persisted
   assert.deepEqual(changes, []);
   f.service.deleteRepo("r");
   assert.deepEqual(changes, [{ type: "read-change", repos: true, usage: true, routines: true }]);
-  assert.deepEqual(f.service.usage(), []);
+  assert.deepEqual(await f.service.usage(), []);
 });
 
 test("task images require a session and serve only bounded raster files inside the task directory", async (t) => {
@@ -1167,18 +1169,36 @@ test("agent management reads are inert; updates require sign-in and validated pr
   assert.deepEqual(calls, ["codex:0.156.1"]);
 });
 
-test("usage distinguishes zero from missing metrics and normalizes Claude cache accounting", async t => {
-  const f = fixture(t, false);
+test("usage preserves accounting, authentication and asynchronous reader failures", async t => {
+  let fail = false, reads = 0;
+  const reader: TaskUsageReader = { async usageByAgent() {
+    reads++;
+    if (fail) throw new ApplicationError("service_unavailable", "Task usage is temporarily unavailable");
+    return f.db.usageByAgent();
+  } };
+  const f = fixture(t, true, {}, undefined, reader);
   f.db.insertRepo({ id: "usage-repo", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   for (const agent of ["claude", "codex"] as const) f.db.insertTask({ taskId: agent, repoId: "usage-repo", agent, prompt: "fixture", permission: agent === "codex" ? "read-only" : "plan", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   f.db.insertEvent("claude", "result", { total_cost_usd: 0, usage: { input_tokens: 10, cache_read_input_tokens: 20, cache_creation_input_tokens: 30, output_tokens: 0 } }, 1);
   f.db.insertEvent("codex", "result", { usage: { input_tokens: 100, cached_input_tokens: 80, output_tokens: 5 } }, 1);
-  const [claude, codex] = f.service.usage();
+  const [claude, codex] = await f.service.usage();
   assert.equal(claude.inputTokens, 60); assert.equal(claude.cachedInputTokens, 20);
   assert.equal(claude.totalCostUsd, 0); assert.ok(claude.reported?.includes("totalCostUsd"));
   assert.ok(claude.reported?.includes("outputTokens")); assert.ok(!claude.reported?.includes("durationMs"));
   assert.equal(codex.inputTokens, 100); assert.equal(codex.cachedInputTokens, 80);
   assert.ok(!codex.reported?.includes("totalCostUsd"));
+  const before = reads;
+  assert.equal((await f.app.request("/api/usage")).status, 401);
+  assert.equal(reads, before, "authentication runs before native reads");
+  const now = Date.now(); f.db.createSession("usage-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=usage-session` };
+  const response = await f.app.request("/api/usage", { headers });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { usage: [claude, codex] });
+  fail = true;
+  const unavailable = await f.app.request("/api/usage", { headers });
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), { error: "Task usage is temporarily unavailable", code: "service_unavailable" });
 });
 
 test("context compaction requires authentication and a bounded request without provider arguments", async t => {
