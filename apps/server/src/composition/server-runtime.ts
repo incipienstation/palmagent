@@ -1,3 +1,4 @@
+import { NativeTaskTranscript } from "../modules/tasks/adapters/outbound/native-task-transcript.js";
 import { NativeTaskActivity } from "../modules/tasks/adapters/outbound/native-task-activity.js";
 import { NativeTaskUsage } from "../modules/tasks/adapters/outbound/native-task-usage.js";
 import { createTaskService } from "./task-service.js";
@@ -95,7 +96,7 @@ export async function createRuntime() {
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
         : removeWorktree(),
-    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeScripts ? new NativeTaskUsage(config.dataDir) : db, nativeScripts ? new NativeTaskActivity(config.dataDir) : db);
+    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeScripts ? new NativeTaskUsage(config.dataDir) : db, nativeScripts ? new NativeTaskActivity(config.dataDir) : db, nativeScripts ? new NativeTaskTranscript(config.dataDir) : undefined);
     resources.onStop(() => service.beginShutdown());
     service.sharedSessions = new CodexSharedSessions();
     const sideChats = new CodexSideChats();
@@ -116,6 +117,7 @@ export async function createRuntime() {
       : new LocalRoutineScriptRunner(worktrees);
     if (nativeScripts) {
       const status = await nativeScripts.connect(config.executionRelease!);
+      if (status.taskTranscript !== 1) throw new Error("This release requires native Task transcript support");
       if (status.taskActivityDetails !== 1) throw new Error("This release requires native Task activity support");
       if (status.taskUsage !== 1) throw new Error("This release requires native Task usage support");
     }

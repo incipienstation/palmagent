@@ -9,7 +9,7 @@ import { daemonRequest } from "../../../../platform/process/daemon-client.js";
 import type { ScriptRuntime } from "../../application/ports/outbound/script-runtime.js";
 
 const Status = z.object({ protocol: z.literal(1), version: z.string(), sourceCommit: z.string(), instance: z.string().min(1),
-  revision: z.number().int().nonnegative(), taskUsage: z.literal(1).optional(), taskActivityDetails: z.literal(1).optional(), activeScripts: z.number().int().nonnegative(), stopping: z.boolean() });
+  revision: z.number().int().nonnegative(), taskUsage: z.literal(1).optional(), taskActivityDetails: z.literal(1).optional(), taskTranscript: z.literal(1).optional(), activeScripts: z.number().int().nonnegative(), stopping: z.boolean() });
 
 export class NativeScriptRuntime implements ScriptRuntime {
   private expected?: { version: string; sourceCommit: string };

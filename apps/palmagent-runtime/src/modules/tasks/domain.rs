@@ -1,4 +1,6 @@
 //! Provider-neutral usage accounting. Observations and counts come through a repository port.
+pub mod transcript;
+
 use serde::Serialize;
 use std::collections::BTreeMap;
 

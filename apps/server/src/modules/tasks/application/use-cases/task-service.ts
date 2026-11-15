@@ -1,3 +1,4 @@
+import type { TaskTranscriptReader } from "../ports/outbound/transcript.js";
 import type { TaskActivityReader } from "../ports/outbound/activity.js";
 import type { TaskUsageReader } from "../ports/outbound/usage.js";
 import type { MessageTiming } from "../ports/outbound/message-timing.js";
@@ -93,12 +94,16 @@ export class TaskService implements PrStatusSink {
 
   conversationPage(taskId: string, before?: number) {
     this.getTask(taskId);
-    return this.db.conversationPage(taskId, before);
+    if (!this.transcriptReader) return this.db.conversationPage(taskId, before);
+    this.db.prepareConversation(taskId);
+    return this.transcriptReader.conversationPage(taskId, before);
   }
   conversationChanges(taskId: string, after: number, through?: number, afterKey?: number) {
     this.getTask(taskId);
     if (through !== undefined && through < after) throw badRequest("through must be at least after");
-    return this.db.conversationChanges(taskId, after, through, afterKey);
+    if (!this.transcriptReader) return this.db.conversationChanges(taskId, after, through, afterKey);
+    this.db.prepareConversation(taskId);
+    return this.transcriptReader.conversationChanges(taskId, after, through, afterKey);
   }
   conversationDetails(taskId: string, key: number, after?: number) {
     this.getTask(taskId);
@@ -245,6 +250,7 @@ export class TaskService implements PrStatusSink {
     private readonly accountLimitReader?: TaskAccountLimitReader,
     private readonly usageReader: TaskUsageReader = db,
     private readonly activityReader: TaskActivityReader = db,
+    private readonly transcriptReader?: TaskTranscriptReader,
   ) {
     this.attachments = attachments;
     this.voice = voice;

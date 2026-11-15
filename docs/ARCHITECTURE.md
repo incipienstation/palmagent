@@ -202,3 +202,11 @@ opaque provider JSON while constructing the shared activity response. Bounded bl
 perform reads and serialization outside the async executor. TypeScript retains authentication,
 task validation, JSON wire semantics and the public history-detail route; event writes and newer
 transcript/step/content use cases remain with the existing owner.
+
+Transcript page and incremental-change reads use a separate application port. The Task owner first
+refreshes the durable display projection through its existing persistence port, then invokes the
+composition-selected native reader. The Rust domain applies page/byte limits and continuation policy;
+its repository supplies one committed head-and-row snapshot, while adapters own SQL, canonical wire
+byte accounting, and serialization. Projection schema upgrades, dirty-event repair and all writes
+remain in TypeScript. Incompatible stored projection versions fail closed. Step/detail/content reads
+and execution recovery keep their current ownership.

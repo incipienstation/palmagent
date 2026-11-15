@@ -1,9 +1,11 @@
+import type { TaskTranscriptReader } from "../../src/modules/tasks/application/ports/outbound/transcript.js";
 import type { TaskActivityReader } from "../../src/modules/tasks/application/ports/outbound/activity.js";
 import type { TaskUsageReader } from "../../src/modules/tasks/application/ports/outbound/usage.js";
 import { ApplicationError } from "../../src/kernel/errors.js";
 import { createTaskService } from "../../src/composition/task-service.js";
 import { webauthn } from "../../src/modules/auth/adapters/outbound/webauthn.js";
 import assert from "node:assert/strict";
+import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { sharedCodexServer } from "../support/codex-shared-server.js";
 import { createServer, request } from "node:http";
@@ -42,13 +44,13 @@ import type { HttpDependencies } from "../../src/composition/http-dependencies.j
 import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
-function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend(), usageReader?: TaskUsageReader, activityReader?: TaskActivityReader) {
+function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend(), usageReader?: TaskUsageReader, activityReader?: TaskActivityReader, transcriptReader?: TaskTranscriptReader) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-http-"));
   const db = new Db(join(dir, "state/palmagent.db"));
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader);
+    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
@@ -690,7 +692,24 @@ test("REST history pages and bounded catch-up keep persisted events out of SSE",
 });
 
 test("display-record history is bounded and its scoped stream invalidates durable records", async t => {
-  const f = fixture(t, false);
+  let reads = 0, fail = false;
+  const ready = () => {
+    reads++;
+    const projection = observer.prepare("SELECT cursor FROM conversation_state WHERE task_id = ?").get("t") as { cursor: number };
+    assert.equal(projection.cursor, f.db.eventCursor("t"), "the owner commits projection refresh before native reads");
+    assert.equal(observer.prepare("SELECT 1 FROM conversation_dirty WHERE task_id = ?").get("t"), undefined);
+    if (fail) throw new ApplicationError("service_unavailable", "Task transcript is temporarily unavailable");
+  };
+  const transcriptReader: TaskTranscriptReader = {
+    async conversationPage(id, before) { ready(); return f.db.conversationPage(id, before); },
+    async conversationChanges(id, after, through, afterKey) { ready(); return f.db.conversationChanges(id, after, through, afterKey); },
+  };
+  const f = fixture(t, true, {}, undefined, undefined, undefined, transcriptReader);
+  const observer = new Database(f.db.path, { readonly: true });
+  t.after(() => observer.close());
+  const now = Date.now(); f.db.createSession("transcript-session", now, now + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=transcript-session` };
+  const request = (path: string) => f.app.request(path, { headers });
   f.db.insertRepo({ id: "r", name: "fixture", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   f.db.insertTask({ taskId: "t", repoId: "r", agent: "codex", prompt: "Original request", permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   for (let i = 0; i < 40; i++) {
@@ -698,14 +717,21 @@ test("display-record history is bounded and its scoped stream invalidates durabl
     f.db.insertEvent("t", "assistant_text", { text: `Answer ${i}`, messageId: `answer-${i}`, phase: "final" }, i);
   }
   await f.service.init();
-  const response = await f.app.request("/api/tasks/t/history?details=summary&format=transcript");
+  for (const path of ["history?format=transcript", "history/changes?format=transcript&after=0"]) {
+    assert.equal((await f.app.request(`/api/tasks/t/${path}`)).status, 401);
+    assert.equal((await request(`/api/tasks/missing/${path}`)).status, 404);
+  }
+  assert.equal((await request("/api/tasks/t/history/changes?format=transcript&after=2&through=1")).status, 400);
+  assert.equal(reads, 0, "authenticate and validate before reading the native projection");
+  const response = await request("/api/tasks/t/history?details=summary&format=transcript");
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   const page = await response.json() as import("@palmagent/shared").TaskHistoryResponse;
   assert.equal(page.transcript!.length, 30);
   assert.equal(page.before, 51);
   assert.deepEqual(page.events, []);
-  const stream = await f.app.request("/api/stream?task=t&format=transcript");
+  assert.equal(reads, 1);
+  const stream = await request("/api/stream?task=t&format=transcript");
   const reader = stream.body!.getReader();
   let text = new TextDecoder().decode((await reader.read()).value);
   assert.ok(text.includes('"historyThrough":80'));
@@ -715,14 +741,21 @@ test("display-record history is bounded and its scoped stream invalidates durabl
   assert.ok(text.includes(`"through":${live.seq}`));
   assert.ok(!text.includes("extended"), "compact streams must not resend raw token or tool payloads");
   await reader.cancel();
-  const changes = await f.app.request(`/api/tasks/t/history/changes?format=transcript&after=80&through=${live.seq}`);
+  const changes = await request(`/api/tasks/t/history/changes?format=transcript&after=80&through=${live.seq}`);
   const patch = await changes.json() as import("@palmagent/shared").TaskHistoryChangesResponse;
   assert.equal(patch.transcript!.length, 1);
+  assert.equal(reads, 2);
   assert.equal(patch.transcript![0].key, 80);
   assert.ok(JSON.stringify(patch).includes("Answer 39 extended"));
-  assert.equal((await f.app.request("/api/tasks/missing/history?format=transcript")).status, 404);
+  assert.equal((await request("/api/tasks/missing/history?format=transcript")).status, 404);
   for (const path of ["history/items?key=0", "history/content?key=1&offset=0&version=bad", "history/changes?format=transcript&after=0&afterKey=-1"]) {
-    assert.equal((await f.app.request(`/api/tasks/t/${path}`)).status, 400);
+    assert.equal((await request(`/api/tasks/t/${path}`)).status, 400);
+  }
+  fail = true;
+  for (const path of ["history?format=transcript", "history/changes?format=transcript&after=0"]) {
+    const failed = await request(`/api/tasks/t/${path}`);
+    assert.equal(failed.status, 503);
+    assert.deepEqual(await failed.json(), { error: "Task transcript is temporarily unavailable", code: "service_unavailable" });
   }
 });
 

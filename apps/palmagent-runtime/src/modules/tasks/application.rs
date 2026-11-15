@@ -1,5 +1,6 @@
 //! Usage reads and cache policy, independent of SQLite and transport.
 pub mod activity;
+pub mod transcript;
 
 use super::domain::{AgentUsage, Aggregate, UsageRecord};
 

@@ -14,6 +14,7 @@ alone does not establish a performance improvement.
 | Retained script execution and completion | Rust routine host | Older releases may still use the packaged Node host |
 | Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication, HTTP response contract and event writes; legacy/source setups keep their local reader |
 | Historical Task activity-detail expansion on daemon-backed installations | Rust Task activity read use case | TypeScript authentication, task/range validation and public response; legacy/source setups keep their local reader |
+| Transcript pages and incremental changes on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh and writes, authentication, task validation and public response |
 | Task API, queue, agent execution coordination and recovery | TypeScript API owner | Separate PWA view process; retained execution hosts |
 | Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
@@ -41,10 +42,26 @@ which the local reader also rejects. The activity reader explicitly permits resp
 private control transport's default 16 MiB cap because this public endpoint already returns full
 activity payloads; other transport callers retain the cap. Two admitted native workers bound read
 and serialization concurrency. This slice introduces no writer, schema, queue or execution change;
-rollback resumes local reads. Transcript pages, step details and content-chunk APIs remain in
-TypeScript. Native read/serialization moves out of the API owner, but JSON parsing and public
+rollback resumes local reads. Step details and content-chunk APIs remain in TypeScript. Native read/serialization moves out of the API owner, but JSON parsing and public
 response encoding remain there; this is not a measured performance improvement.
 
+Transcript page and change reads now select the native reader after the API owner commits any
+pending projection refresh. That preparation remains a TypeScript write use case: it repairs
+`conversation_rows` and `conversation_state` from dirty events and retains sole authority over
+projection migrations. Rust never refreshes or writes the projection. Its read-only repository
+captures projection version, head and candidate rows in one transaction; domain policy applies
+the existing 30-item/256 KiB budgets, ordering, exclusive page cursor, inclusive change horizon,
+tombstones and `(revision, key)` continuation. The repository supplies the byte costs of the
+canonical JSON produced by the retained writer.
+
+Startup requires `taskTranscript: 1`. Native reads also reject incompatible projection versions;
+capability, version or read failures do not select a local fallback. Source and legacy configurations
+retain their local reads, and rollback needs no schema or data conversion. Existing
+`format=transcript` routes remain authenticated, validated and `no-store`; SSE still invalidates
+history through the durable event cursor. A write arriving after refresh may leave the last committed
+projection visible until the next read refreshes it, as with the existing local read path. This slice
+moves selection, paging and serialization to Rust, while projection computation, JSON parsing and
+public response encoding remain in TypeScript. It makes no performance claim.
 
 ## Gates for every slice
 

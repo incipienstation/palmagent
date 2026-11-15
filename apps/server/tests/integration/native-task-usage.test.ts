@@ -8,14 +8,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { Db } from "../../src/composition/database.js";
+import { CONVERSATION_PAGE_BYTES, CONVERSATION_ITEM_BYTES, CONVERSATION_PROJECTION_VERSION } from "@palmagent/shared";
+import { NativeTaskTranscript } from "../../src/modules/tasks/adapters/outbound/native-task-transcript.js";
 import { NativeTaskActivity } from "../../src/modules/tasks/adapters/outbound/native-task-activity.js";
 import { NativeTaskUsage } from "../../src/modules/tasks/adapters/outbound/native-task-usage.js";
 import { applicationRequest, applicationSocket } from "../../src/platform/ipc/application-runtime.js";
 import { ApplicationError } from "../../src/kernel/errors.js";
 
 // One real runtime and the actual product schema exercise the cross-language read boundary.
-// The same fixture covers usage accounting and activity expansion without a provider or browser.
-test("native Task reads preserve accounting, activity payloads, committed snapshots and restart", { timeout: 30_000 }, async t => {
+// The same fixture covers usage accounting, activity expansion and transcript pagination without a provider or browser.
+test("native Task reads preserve accounting, activity, transcript pagination and committed snapshots", { timeout: 30_000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), "native-task-usage-"));
   const release = join(root, "releases/fixture"), node = join(root, "runtimes/node"), ready = join(root, "ready");
   mkdirSync(release, { recursive: true }); mkdirSync(dirname(node), { recursive: true });
@@ -23,6 +25,7 @@ test("native Task reads preserve accounting, activity payloads, committed snapsh
   const db = new Db(join(root, "palmagent.db")), writer = new Database(db.path);
   const client = new NativeTaskUsage(root);
   const activity = new NativeTaskActivity(root);
+  const transcript = new NativeTaskTranscript(root);
   const binary = fileURLToPath(new URL("../../../../target/debug/palmagent-runtime", import.meta.url));
   const hosts: ChildProcess[] = [];
   let socketDirectory: string | undefined;
@@ -57,6 +60,7 @@ test("native Task reads preserve accounting, activity payloads, committed snapsh
     assert.equal(health.status, 200);
     assert.equal((health.value as { taskUsage: number }).taskUsage, 1);
     assert.equal((health.value as { taskActivityDetails: number }).taskActivityDetails, 1);
+    assert.equal((health.value as { taskTranscript: number }).taskTranscript, 1);
   };
   const wire = (value: unknown) => JSON.parse(JSON.stringify(value));
   const same = async () => {
@@ -161,12 +165,95 @@ test("native Task reads preserve accounting, activity payloads, committed snapsh
   await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
   writer.exec("ALTER TABLE unavailable_events RENAME TO events");
   await details(activityTask, 1, 9999);
+  const unavailable = (error: unknown) => error instanceof ApplicationError && error.code === "service_unavailable";
+  const page = async (id: string, before?: number) => {
+    const expected = db.conversationPage(id, before); // the retained writer refreshes before reading
+    assert.deepEqual(await transcript.conversationPage(id, before), expected);
+    assert(Buffer.byteLength(JSON.stringify(expected)) <= CONVERSATION_PAGE_BYTES);
+    return expected;
+  };
+  const changes = async (id: string, after: number, through?: number, afterKey?: number) => {
+    const expected = db.conversationChanges(id, after, through, afterKey);
+    assert.deepEqual(await transcript.conversationChanges(id, after, through, afterKey), expected);
+    assert(Buffer.byteLength(JSON.stringify(expected)) <= CONVERSATION_PAGE_BYTES);
+    return expected;
+  };
+  const transcriptTask = "transcript &/?한글"; task(transcriptTask, "codex");
+  await page(transcriptTask); await changes(transcriptTask, 0); await changes(transcriptTask, 99);
+  for (let i = 0; i < 45; i++) db.insertEvent(transcriptTask, "assistant_text", {
+    text: `Message ${i} 한글 😀 \ud800`, messageId: `message-${i}`, phase: "final",
+  }, i);
+  const initialPage = await page(transcriptTask);
+  assert.equal(initialPage.transcript!.length, 30);
+  const earlier = await page(transcriptTask, initialPage.before!);
+  assert.equal(earlier.transcript!.length, 15); assert.equal(earlier.before, null);
+  await page(transcriptTask, 1);
+  let after = 0, afterKey: number | undefined;
+  const keys: number[] = [];
+  do {
+    const result = await changes(transcriptTask, after, undefined, afterKey);
+    keys.push(...result.transcript!.map(row => row.key));
+    if (result.nextAfter === null) break;
+    assert.equal(result.nextAfter, initialPage.cursor, "resume within the same revision");
+    after = result.nextAfter; afterKey = result.nextKey;
+  } while (true);
+  assert.deepEqual(keys, Array.from({ length: 45 }, (_, i) => i + 1));
+  assert.equal((await changes(transcriptTask, 0, initialPage.cursor - 1)).activity, undefined);
+  await changes(transcriptTask, initialPage.cursor, 9999);
+  writer.prepare("DELETE FROM events WHERE task_id = ? AND seq = 5").run(transcriptTask);
+  db.insertEvent(transcriptTask, "status", { subtype: "followup", text: "Continue" }, 100);
+  const correction = await changes(transcriptTask, initialPage.cursor);
+  assert(correction.transcript!.some(row => row.key === 5 && row.item === null), "deleted rows remain tombstone patches");
+  const committed = await page(transcriptTask);
+  writer.exec("BEGIN IMMEDIATE");
+  writer.prepare("UPDATE conversation_state SET cursor = 999, activity = 'blocked' WHERE task_id = ?").run(transcriptTask);
+  writer.prepare("UPDATE conversation_rows SET wire_json = NULL WHERE task_id = ?").run(transcriptTask);
+  assert.deepEqual(await transcript.conversationPage(transcriptTask), committed);
+  await stop(host!); await start();
+  assert.deepEqual(await transcript.conversationPage(transcriptTask), committed);
+  writer.exec("ROLLBACK");
+  await page(transcriptTask);
+
+  // Six normal-sized canonical projection items exactly fill the byte budget. Change
+  // envelopes take extra bytes, and one extra UTF-8 byte must move a page boundary.
+  const budgetTask = "byte-budget"; task(budgetTask, "claude");
+  for (let i = 0; i < 6; i++) db.insertEvent(budgetTask, "assistant_text", {
+    text: "한".repeat(14_300), messageId: `budget-${i}`, phase: "final",
+  }, i);
+  db.prepareConversation(budgetTask);
+  const budgetRows = writer.prepare("SELECT seq, wire_json FROM conversation_rows WHERE task_id = ? ORDER BY seq").all(budgetTask) as { seq: number; wire_json: string }[];
+  const used = budgetRows.reduce((sum, row) => sum + Buffer.byteLength(row.wire_json), 0);
+  const edge = JSON.parse(budgetRows[0].wire_json);
+  edge.item.text += "x".repeat(CONVERSATION_PAGE_BYTES - 1024 - used);
+  writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run(JSON.stringify(edge), budgetTask, budgetRows[0].seq);
+  assert.equal((await page(budgetTask)).transcript!.length, 6);
+  assert.equal((await changes(budgetTask, 0)).transcript!.length, 5);
+  assert(Buffer.byteLength(JSON.stringify(edge)) <= CONVERSATION_ITEM_BYTES);
+  edge.item.text += "x";
+  writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run(JSON.stringify(edge), budgetTask, budgetRows[0].seq);
+  assert.equal((await page(budgetTask)).transcript!.length, 5);
+  writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run("{", budgetTask, budgetRows[0].seq);
+  await assert.rejects(transcript.conversationPage(budgetTask, 2), unavailable);
+  writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run(JSON.stringify(edge), budgetTask, budgetRows[0].seq);
+  writer.exec("UPDATE conversation_projection_version SET version = 0");
+  await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
+  await assert.rejects(transcript.conversationChanges(transcriptTask, 0), unavailable);
+  writer.prepare("UPDATE conversation_projection_version SET version = ?").run(CONVERSATION_PROJECTION_VERSION);
+  writer.exec("ALTER TABLE conversation_rows RENAME TO unavailable_projection");
+  await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
+  writer.exec("ALTER TABLE unavailable_projection RENAME TO conversation_rows");
+  await page(transcriptTask);
+  assert.equal((await applicationRequest(root, "/v1/tasks/transcript/changes?taskId=x&after=2&through=1")).status, 400);
+  assert.equal((await applicationRequest(root, "/v1/tasks/transcript/page?taskId=x&before=0")).status, 400);
   db.deleteRepo("space"); assert.deepEqual(await client.usageByAgent(), []);
+  await page(transcriptTask); await changes(transcriptTask, 0);
   await details(activityTask, 1, 9999);
 
   await stop(host!);
   await assert.rejects(client.usageByAgent(), error => error instanceof ApplicationError && error.code === "service_unavailable");
   await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
+  await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
+  await assert.rejects(transcript.conversationChanges(transcriptTask, 0), unavailable);
   // The legacy reader remains usable for rollback; native failures never silently call it.
   assert.deepEqual(db.usageByAgent(), []);
   assert.deepEqual(db.activityDetails(activityTask, 1, 1), { events: [], from: 1, through: 0, cursor: 0 });
