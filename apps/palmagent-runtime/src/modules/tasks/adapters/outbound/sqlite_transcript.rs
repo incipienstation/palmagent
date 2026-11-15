@@ -1,4 +1,5 @@
 //! Read only the versioned projection. Schema and projection writes remain in TypeScript.
+use crate::modules::tasks::domain::steps::{Step, StepsSnapshot};
 use crate::modules::tasks::{
     application::transcript::TranscriptRepository,
     domain::transcript::{
@@ -7,6 +8,8 @@ use crate::modules::tasks::{
 };
 use anyhow::{Result, ensure};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 use std::{path::Path, time::Duration};
 
 pub struct SqliteTranscript {
@@ -55,6 +58,18 @@ fn row(row: &rusqlite::Row<'_>, changes: bool) -> rusqlite::Result<ProjectionRow
     })
 }
 impl TranscriptRepository for SqliteTranscript {
+    fn steps(&mut self, task_id: &str, key: i64) -> Result<Option<StepsSnapshot>> {
+        let tx = self.connection.transaction()?;
+        check_version(&tx)?;
+        let record = tx.query_row("SELECT revision, body_json FROM conversation_rows WHERE task_id = ? AND seq = ? AND body_json IS NOT NULL",
+            params![task_id, key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))).optional()?;
+        let snapshot = record
+            .map(|(revision, body)| decode_steps(revision, &body))
+            .transpose()?;
+        tx.commit()?;
+        Ok(snapshot)
+    }
+
     fn read(&mut self, task_id: &str, query: TranscriptQuery) -> Result<TranscriptSnapshot> {
         let tx = self.connection.transaction()?;
         check_version(&tx)?;
@@ -103,4 +118,39 @@ impl TranscriptRepository for SqliteTranscript {
             rows,
         })
     }
+}
+
+// Decode only the operation projection. Raw values preserve escaped lone surrogates
+// and future summary fields without pulling provider payloads into the core contract.
+fn decode_steps(revision: i64, body: &str) -> Result<StepsSnapshot> {
+    type Fields = BTreeMap<String, Box<RawValue>>;
+    let body: Fields = serde_json::from_str(body)?;
+    let kind = body
+        .get("type")
+        .map(|value| serde_json::from_str::<String>(value.get()))
+        .transpose()?;
+    let operations = if kind.as_deref() == Some("activity") {
+        body.get("operations")
+            .map(|raw| serde_json::from_str::<Option<Vec<Fields>>>(raw.get()))
+            .transpose()?
+            .flatten()
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+    let mut steps = Vec::with_capacity(operations.len());
+    for mut operation in operations {
+        let key = serde_json::from_str(
+            operation
+                .get("key")
+                .ok_or_else(|| anyhow::anyhow!("Missing step key"))?
+                .get(),
+        )?;
+        operation.remove("members");
+        steps.push(Step {
+            key,
+            summary: serde_json::to_string(&operation)?,
+        });
+    }
+    Ok(StepsSnapshot { revision, steps })
 }

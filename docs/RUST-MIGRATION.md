@@ -15,6 +15,7 @@ alone does not establish a performance improvement.
 | Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication, HTTP response contract and event writes; legacy/source setups keep their local reader |
 | Historical Task activity-detail expansion on daemon-backed installations | Rust Task activity read use case | TypeScript authentication, task/range validation and public response; legacy/source setups keep their local reader |
 | Transcript pages and incremental changes on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh and writes, authentication, task validation and public response |
+| Transcript activity operation lists on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh, authentication and public response; operation details and content remain local |
 | Task API, queue, agent execution coordination and recovery | TypeScript API owner | Separate PWA view process; retained execution hosts |
 | Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
@@ -42,8 +43,8 @@ which the local reader also rejects. The activity reader explicitly permits resp
 private control transport's default 16 MiB cap because this public endpoint already returns full
 activity payloads; other transport callers retain the cap. Two admitted native workers bound read
 and serialization concurrency. This slice introduces no writer, schema, queue or execution change;
-rollback resumes local reads. Step details and content-chunk APIs remain in TypeScript. Native read/serialization moves out of the API owner, but JSON parsing and public
-response encoding remain there; this is not a measured performance improvement.
+rollback resumes local reads. Step details and content-chunk APIs remain in TypeScript. Native
+read/serialization moves out of the API owner, but JSON parsing and public response encoding remain there; this is not a measured performance improvement.
 
 Transcript page and change reads now select the native reader after the API owner commits any
 pending projection refresh. That preparation remains a TypeScript write use case: it repairs
@@ -62,6 +63,16 @@ history through the durable event cursor. A write arriving after refresh may lea
 projection visible until the next read refreshes it, as with the existing local read path. This slice
 moves selection, paging and serialization to Rust, while projection computation, JSON parsing and
 public response encoding remain in TypeScript. It makes no performance claim.
+
+Activity operation lists (`GET /api/tasks/:id/history/steps`) also use the native transcript port.
+The owner refreshes the projection before reading. Rust reads the parent record and its revision
+from one committed snapshot, strips the internal `members` field in its adapter, then applies the
+existing key ordering, exclusive `after` cursor and 50-step page limit in domain code. Summary
+fields remain opaque JSON through the native boundary, including escaped Unicode and additive
+projection fields. Non-activity records have no steps; absent or tombstoned parents preserve the
+existing 404 error. Incompatible projections, corrupt records and unavailable native reads fail
+closed with 503. Startup requires `taskTranscriptSteps: 1`; no schema or writer changes are involved.
+Operation-detail expansion, content chunks and execution-record reads remain in TypeScript.
 
 ## Gates for every slice
 

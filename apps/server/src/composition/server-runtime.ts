@@ -117,6 +117,7 @@ export async function createRuntime() {
       : new LocalRoutineScriptRunner(worktrees);
     if (nativeScripts) {
       const status = await nativeScripts.connect(config.executionRelease!);
+      if (status.taskTranscriptSteps !== 1) throw new Error("This release requires native Task transcript step support");
       if (status.taskTranscript !== 1) throw new Error("This release requires native Task transcript support");
       if (status.taskActivityDetails !== 1) throw new Error("This release requires native Task activity support");
       if (status.taskUsage !== 1) throw new Error("This release requires native Task usage support");

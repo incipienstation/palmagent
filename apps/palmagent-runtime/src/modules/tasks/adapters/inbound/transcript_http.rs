@@ -1,5 +1,7 @@
 //! Private projection reads with bounded admission and off-executor serialization.
-use crate::modules::tasks::api::{MAX_CURSOR, TranscriptQuery, TranscriptRead, TranscriptReader};
+use crate::modules::tasks::api::{
+    MAX_CURSOR, StepsError, StepsPage, TranscriptQuery, TranscriptRead, TranscriptReader,
+};
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -37,6 +39,35 @@ struct ChangesRequest {
     after: i64,
     through: Option<i64>,
     after_key: Option<i64>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StepsRequest {
+    task_id: String,
+    key: i64,
+    after: Option<i64>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Steps<'a> {
+    steps: Vec<&'a RawValue>,
+    next_after: Option<i64>,
+    cursor: i64,
+}
+fn encode_steps(page: &StepsPage) -> anyhow::Result<String> {
+    Ok(serde_json::to_string(&Steps {
+        steps: page
+            .steps
+            .iter()
+            .map(|step| serde_json::from_str(&step.summary))
+            .collect::<serde_json::Result<_>>()?,
+        next_after: page.next_after,
+        cursor: page.cursor,
+    })?)
+}
+enum Read {
+    Transcript(TranscriptQuery),
+    Steps { key: i64, after: i64 },
 }
 #[derive(Serialize)]
 struct Page<'a> {
@@ -122,7 +153,7 @@ fn cursor(value: i64) -> bool {
 async fn read(
     client: Client,
     task_id: String,
-    query: TranscriptQuery,
+    query: Read,
 ) -> Result<([(header::HeaderName, &'static str); 1], String), Failure> {
     if task_id.is_empty() {
         return Err(invalid());
@@ -134,16 +165,28 @@ async fn read(
         .map_err(|_| unavailable())?;
     let body = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let result = client
-            .reader
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Transcript reader failed"))?
-            .read(&task_id, query)?;
-        encode(&result)
+        let mut reader = client.reader.lock().map_err(|_| unavailable())?;
+        match query {
+            Read::Transcript(query) => {
+                let result = reader.read(&task_id, query).map_err(|_| unavailable())?;
+                encode(&result).map_err(|_| unavailable())
+            }
+            Read::Steps { key, after } => {
+                let result = reader
+                    .steps(&task_id, key, after)
+                    .map_err(|error| match error {
+                        StepsError::NotFound => (
+                            StatusCode::NOT_FOUND,
+                            Json(json!({"error":"Conversation item is no longer available."})),
+                        ),
+                        StepsError::Unavailable => unavailable(),
+                    })?;
+                encode_steps(&result).map_err(|_| unavailable())
+            }
+        }
     })
     .await
-    .map_err(|_| unavailable())?
-    .map_err(|_| unavailable())?;
+    .map_err(|_| unavailable())??;
     Ok(([(header::CONTENT_TYPE, "application/json")], body))
 }
 pub fn router(client: Client) -> Router {
@@ -158,9 +201,9 @@ pub fn router(client: Client) -> Router {
                     read(
                         client,
                         request.task_id,
-                        TranscriptQuery::Page {
+                        Read::Transcript(TranscriptQuery::Page {
                             before: request.before,
-                        },
+                        }),
                     )
                     .await
                 },
@@ -181,10 +224,32 @@ pub fn router(client: Client) -> Router {
                     read(
                         client,
                         request.task_id,
-                        TranscriptQuery::Changes {
+                        Read::Transcript(TranscriptQuery::Changes {
                             after: request.after,
                             through: request.through,
                             after_key: request.after_key,
+                        }),
+                    )
+                    .await
+                },
+            ),
+        )
+        .route(
+            "/v1/tasks/transcript/steps",
+            get(
+                |State(client): State<Client>, Query(request): Query<StepsRequest>| async move {
+                    if !cursor(request.key)
+                        || request.key == 0
+                        || request.after.is_some_and(|v| !cursor(v))
+                    {
+                        return Err(invalid());
+                    }
+                    read(
+                        client,
+                        request.task_id,
+                        Read::Steps {
+                            key: request.key,
+                            after: request.after.unwrap_or(0),
                         },
                     )
                     .await

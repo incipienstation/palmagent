@@ -79,10 +79,10 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       const input = c.req.valid("json");
       return c.json({ task: service.rename(c.req.valid("param").id, input.title) }, 200);
     })
-    .get("/:id/history/steps", params(IdParamsSchema), query(ConversationDetailsQuerySchema), (c) => {
+    .get("/:id/history/steps", params(IdParamsSchema), query(ConversationDetailsQuerySchema), async (c) => {
       const { key, after } = c.req.valid("query");
       c.header("cache-control", "no-store");
-      return c.json(service.conversationSteps(c.req.valid("param").id, Number(key), after === undefined ? undefined : Number(after)), 200);
+      return c.json(await service.conversationSteps(c.req.valid("param").id, Number(key), after === undefined ? undefined : Number(after)), 200);
     })
     .get("/:id/history/step-details", params(IdParamsSchema), query(ConversationStepDetailsQuerySchema), (c) => {
       const { key, step, after } = c.req.valid("query");
