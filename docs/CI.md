@@ -6,7 +6,9 @@ checks. Their tests still run on every selected check. Release candidates keep
 their existing build and immutable-artifact workflow; they do not consume PR
 artifacts or this cache.
 
-Consumers prepare their runners concurrently with `pwa`: browsers install their
+The producer uses the same change-selection code as the scope gate and starts
+alongside it, avoiding an extra serial dependency. Unselected scopes do not
+install dependencies or build/upload a PWA. Consumers prepare concurrently: browsers install their
 dependencies and Chromium before looking for the artifact. A bounded wait locates
 `ci-pwa` only within the current workflow run and downloads its immutable artifact
 ID. This avoids making runner setup wait for the build job to finish. The wait

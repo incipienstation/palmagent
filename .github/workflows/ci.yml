@@ -86,25 +86,36 @@ jobs:
         run: node scripts/verify-candidate.mjs . server-lane '${{ matrix.lane }}'
 
   pwa:
-    needs: scope
-    if: needs.scope.outputs.web == 'true' || (needs.scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+    # Select locally so the build overlaps scope validation as well as runner setup.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
+          fetch-depth: 0
       - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Select the PWA build from the complete change scope
+        id: pwa-scope
+        run: node scripts/ci-scope.mjs
+      - uses: pnpm/action-setup@v4
+        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+      - uses: actions/setup-node@v4
+        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - name: Install dependencies
+        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
         run: pnpm install --frozen-lockfile --side-effects-cache=false
       - name: Fingerprint PWA build inputs
+        if: steps.pwa-scope.outputs.web == 'true' || (steps.pwa-scope.outputs.package == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
         id: pwa-key
         run: node scripts/ci-web-cache.mjs key
       - name: Restore exact PWA build
+        if: steps.pwa-key.outputs.key != ''
         id: pwa-cache
         uses: actions/cache/restore@v4
         continue-on-error: true
@@ -117,6 +128,7 @@ jobs:
             build/ci-web-cache.json
           key: ${{ steps.pwa-key.outputs.key }}
       - name: Validate restored PWA or discard it
+        if: steps.pwa-key.outputs.key != ''
         id: pwa-restore
         env:
           PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
@@ -124,11 +136,12 @@ jobs:
         run: node scripts/ci-web-cache.mjs restore
       - name: Build PWA on a cache miss
         id: pwa-build
-        if: steps.pwa-restore.outputs.usable != 'true'
+        if: steps.pwa-key.outputs.key != '' && steps.pwa-restore.outputs.usable != 'true'
         env:
           PWA_CACHE_KEY: ${{ steps.pwa-key.outputs.key }}
         run: node scripts/ci-web-cache.mjs build
       - name: Share the PWA and its source/checksum receipt
+        if: steps.pwa-key.outputs.key != ''
         uses: actions/upload-artifact@v4
         with:
           name: ci-pwa
@@ -149,7 +162,7 @@ jobs:
             build/ci-web-cache.json
           key: ${{ steps.pwa-key.outputs.key }}
       - name: Report PWA cache outcome and build time
-        if: always()
+        if: always() && steps.pwa-key.outputs.key != ''
         env:
           CACHE_STATE: ${{ steps.pwa-restore.outputs.state }}
           RESTORE_OUTCOME: ${{ steps.pwa-cache.outcome }}
