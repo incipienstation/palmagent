@@ -24,8 +24,9 @@ export function checkoutBusy(root, { primary = false, excluded = [] } = {}) {
         && !excluded.some(excludedPath => inside(excludedPath, path));
       const cwd = readlinkSync(`/proc/${entry}/cwd`);
       const command = readFileSync(`/proc/${entry}/cmdline`, 'utf8').split('\0');
-      // A passive shell or agent cwd alone does not block primary checkout updates.
-      const passive = primary && /(?:^|\/)(?:bash|zsh|sh|fish|codex|claude)$/.test(command[0] ?? '');
+      // Passive shells, agents and the Codex tool host may keep the primary cwd
+      // between commands. File/argument/executable references still block updates.
+      const passive = primary && /(?:^|\/)(?:bash|zsh|sh|fish|codex|claude|codex-code-mode-host)$/.test(command[0] ?? '');
       if (uses(cwd) && !passive) return `process ${entry} uses checkout`;
       const referenced = command.some(arg => uses(arg.split('=').at(-1)))
         || uses(readlinkSync(`/proc/${entry}/exe`))

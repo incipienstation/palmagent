@@ -43,6 +43,10 @@ commit is in `origin/develop`. This covers squash merges without relying on bran
 same command can finish branch cleanup after the worktree is gone. Changed or checked-out branches
 are retained; the expected commit is checked atomically during deletion.
 
+A passive shell, agent, or Codex tool host holding only the primary checkout's cwd does not
+block its fast-forward. File, executable, and argument references still block it, as do other
+processes using that cwd. Any observable process use retains a task worktree slated for deletion.
+
 For Claude Code- or Codex app-managed worktrees, use the native lifecycle controls instead of
-external deletion. Unknown ignored files, private data, or active sessions require retention;
+external deletion. Unknown ignored files, private data, or active task sessions require retention;
 remove identified reproducible output only when safe. Report remaining cleanup without forcing it.
