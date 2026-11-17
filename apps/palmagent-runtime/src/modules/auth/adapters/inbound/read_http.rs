@@ -5,6 +5,7 @@ use crate::platform::{
     read_http::{decode_path, error, headers},
 };
 use axum::{
+    body::{Body, to_bytes},
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
@@ -122,7 +123,15 @@ async fn admit(client: &Client, request: Request) -> Result<Request, Response> {
             None,
         ));
     }
-    Ok(request)
+    let (parts, body) = request.into_parts();
+    to_bytes(body, 1024 * 1024).await.map_err(|_| {
+        error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "request body too large",
+            None,
+        )
+    })?;
+    Ok(Request::from_parts(parts, Body::empty()))
 }
 pub async fn authenticate(State(client): State<Client>, request: Request, next: Next) -> Response {
     let mut response = match admit(&client, request).await {

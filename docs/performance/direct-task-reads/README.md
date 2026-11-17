@@ -21,7 +21,7 @@ A direct read that encounters a dirty or incompatible projection fails closed in
 stale data or calling Node to repair it. Invalid-session cleanup remains with Node.
 
 The native reader algorithms, page budgets, mutexes and two-request admission limits are unchanged.
-The public boundary preserves request validation, task existence checks, JSON value semantics,
+The public boundary preserves request and response validation, task existence checks, JSON value semantics,
 error codes and security/cache headers. Transport serialization can change key order or number
 spelling; response JSON values remain equivalent. Operation details, content chunks, raw history,
 SSE, WebSockets, writes, login, health and static files retain their Node routes.

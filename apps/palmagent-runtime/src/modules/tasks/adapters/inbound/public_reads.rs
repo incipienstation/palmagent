@@ -1,5 +1,9 @@
 //! Only the migrated GET routes. Other APIs are routed directly to Node by the ingress.
-use super::{activity_http, http, transcript_http};
+use super::{
+    activity_http, http,
+    public_contract::{self, Contract},
+    transcript_http,
+};
 use crate::modules::tasks::api::{MAX_CURSOR, TaskReadAccess, TranscriptQuery};
 use crate::platform::{
     json_wire::normalize_numbers,
@@ -140,9 +144,12 @@ impl Query {
 }
 type EncodedRead =
     Result<([(header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>;
-fn response(result: EncodedRead, message: &str) -> Response {
+fn response(result: EncodedRead, contract: Contract, message: &str) -> Response {
     match result {
-        Ok((headers, body)) => (headers, normalize_numbers(body)).into_response(),
+        Ok((headers, body)) if public_contract::valid(&body, contract) => {
+            (headers, normalize_numbers(body)).into_response()
+        }
+        Ok(_) => unavailable(message),
         Err((StatusCode::NOT_FOUND, _)) => error(
             StatusCode::NOT_FOUND,
             "Conversation item is no longer available.",
@@ -209,6 +216,7 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
                     }),
                 )
                 .await,
+                Contract::Changes,
                 "Task transcript is temporarily unavailable",
             ));
         }
@@ -230,6 +238,7 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
             }
             return Ok(response(
                 activity_http::read(client.activity, task_id, from, through).await,
+                Contract::Activity,
                 "Task activity is temporarily unavailable",
             ));
         }
@@ -238,6 +247,11 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
     client.task(&task_id).await?;
     Ok(response(
         transcript_http::read(client.transcript, task_id, request).await,
+        if operation == "steps" {
+            Contract::Steps
+        } else {
+            Contract::Page
+        },
         "Task transcript is temporarily unavailable",
     ))
 }

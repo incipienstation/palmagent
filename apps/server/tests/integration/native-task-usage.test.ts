@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { request } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -243,6 +244,17 @@ test("native private and public Task reads preserve auth, accounting, pagination
   assert.equal((await publicRead(`/api/tasks/${encodeURIComponent(transcriptTask)}/history?format=transcript`)).status, 503,
     "a dirty projection must never be silently served by the direct reader");
   const initialPage = await page(transcriptTask);
+  const originalRow = writer.prepare("SELECT seq, wire_json FROM conversation_rows WHERE task_id = ? ORDER BY seq DESC LIMIT 1").get(transcriptTask) as { seq: number; wire_json: string };
+  writer.prepare("UPDATE conversation_rows SET wire_json = '{}' WHERE task_id = ? AND seq = ?").run(transcriptTask, originalRow.seq);
+  await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
+  await assert.rejects(transcript.conversationChanges(transcriptTask, initialPage.cursor, undefined, 30), unavailable);
+  assert.equal((await publicRead(`/api/tasks/${encodeURIComponent(transcriptTask)}/history?format=transcript`)).status, 503);
+  assert.equal((await publicRead(`/api/tasks/${encodeURIComponent(transcriptTask)}/history/changes?format=transcript&after=${initialPage.cursor}&afterKey=30`)).status, 503);
+  writer.prepare("UPDATE conversation_rows SET wire_json = ? WHERE task_id = ? AND seq = ?").run(originalRow.wire_json, transcriptTask, originalRow.seq);
+  writer.prepare("UPDATE conversation_state SET activity = 'invalid' WHERE task_id = ?").run(transcriptTask);
+  await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
+  assert.equal((await publicRead(`/api/tasks/${encodeURIComponent(transcriptTask)}/history?format=transcript`)).status, 503);
+  writer.prepare("UPDATE conversation_state SET activity = ? WHERE task_id = ?").run(initialPage.activity, transcriptTask);
   assert.equal(initialPage.transcript!.length, 30);
   const earlier = await page(transcriptTask, initialPage.before!);
   assert.equal(earlier.transcript!.length, 15); assert.equal(earlier.before, null);
@@ -344,6 +356,9 @@ test("native private and public Task reads preserve auth, accounting, pagination
   setBody(JSON.stringify({ ...body, operations: null })); await steps(stepsTask, parent);
   setBody(null); await assert.rejects(transcript.conversationSteps(stepsTask, parent), missing);
   setBody("{"); await assert.rejects(transcript.conversationSteps(stepsTask, parent), unavailable);
+  setBody(JSON.stringify({ ...body, operations: body.operations.map((operation: Record<string, unknown>) => ({ ...operation, title: 42 })) }));
+  await assert.rejects(transcript.conversationSteps(stepsTask, parent), unavailable);
+  assert.equal((await publicRead(`/api/tasks/${encodeURIComponent(stepsTask)}/history/steps?key=${parent}`)).status, 503);
   setBody(stored.body_json);
   db.insertEvent(stepsTask, "tool_result", { tool_use_id: "call-52", output: "private detail", exit_code: 0 }, 100);
   assert.equal((await steps(stepsTask, parent, firstSteps.nextAfter!)).steps.at(-1)!.state, "completed");
@@ -360,6 +375,15 @@ test("native private and public Task reads preserve auth, accounting, pagination
   await page(transcriptTask);
   assert.equal((await applicationRequest(root, "/v1/tasks/transcript/changes?taskId=x&after=2&through=1")).status, 400);
   assert.equal((await applicationRequest(root, "/v1/tasks/transcript/page?taskId=x&before=0")).status, 400);
+  // A streamed GET must obey the same body limit even without Content-Length.
+  const oversized = await new Promise<number | undefined>((resolve, reject) => {
+    const req = request({ hostname: [127, 0, 0, 1].join("."), port: publicPort, path: "/api/usage", method: "GET",
+      headers: { cookie: "palmagent_session=read-session", "transfer-encoding": "chunked" } }, response => {
+      response.resume(); response.on("end", () => resolve(response.statusCode));
+    });
+    req.on("error", reject); req.end(Buffer.alloc(1024 * 1024 + 1));
+  });
+  assert.equal(oversized, 413);
   const retained = await applicationRequest(root, "/v1/task-reads/http", "POST", directSettings);
   assert.deepEqual(retained.value, { enabled: true, port: publicPort }, "identical owner configuration retains the listener");
   assert.equal((await applicationRequest(root, "/v1/task-reads/http", "POST", { ...directSettings, authOrigin: "http://localhost" })).status, 503);
