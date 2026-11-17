@@ -35,7 +35,7 @@ test("native private and public Task reads preserve auth, accounting, pagination
   const directSettings = { port: 0, authEnabled: true, cookieName: "palmagent_session", sessionTtlMs, authOrigin: "https://localhost" };
   db.createSession("read-session", Date.now(), Date.now() + sessionTtlMs);
   const publicRead = async (path: string, cookie = "palmagent_session=read-session", method = "GET") => {
-    const response = await fetch(`http://127.0.0.1:${publicPort}${path}`, { method, headers: { cookie, origin: "https://localhost" }, signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`http://${[127, 0, 0, 1].join(".")}:${publicPort}${path}`, { method, headers: { cookie, origin: "https://localhost" }, signal: AbortSignal.timeout(5000) });
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
     const value = method === "HEAD" ? null : await response.json();

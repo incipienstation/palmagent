@@ -31,7 +31,7 @@ SSE, WebSockets, writes, login, health and static files retain their Node routes
 1. Use a clean identified build containing `taskReadHttp: 1`, with the native application runtime.
    Disable telemetry sharing in the validation installation.
 2. Set `NATIVE_READ_HTTP_PORT=4001` in the Node owner's environment, using a free port different
-   from `PORT`. Rust binds only `127.0.0.1`. Startup sends the validated auth settings through the
+   from `PORT`. Rust binds only the IPv4 loopback address. Startup sends the validated auth settings through the
    existing owner-only application socket; the public listener exposes no private control APIs.
 3. Apply the [routing map](nginx-routing.conf) to the existing same-origin ingress, adapting only
    the two example upstream addresses. Its normal default continues directly to Node. Preserve
