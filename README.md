@@ -43,8 +43,9 @@ flowchart LR
 
 ## Quick start
 
-The host needs Linux with systemd 254+, Node.js 22+, Git, and at least one authenticated
-Claude Code or Codex CLI. Installation also checks the [user-service requirements](docs/DAEMON.md#ownership-and-platform-boundary),
+The host needs Linux x64 or arm64 with systemd 254+, Git, and at least one authenticated
+Claude Code or Codex CLI. New installations bundle Node; see the full
+[standalone prerequisites](docs/STANDALONE.md). Installation also checks the [user-service requirements](docs/DAEMON.md#ownership-and-platform-boundary),
 including account lingering and delegated cgroup v2. Prepare a domain pointing to the host
 for [HTTPS access](docs/HOST-INGRESS.md).
 

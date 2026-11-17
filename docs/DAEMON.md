@@ -5,6 +5,10 @@ New Linux package installations use the bundled Rust `palmagentd` and
 provider adapters, execution journals, terminal hosts and update policy remain in
 TypeScript. Nx runs the Rust build and checks alongside the existing projects.
 
+The daemon's historical `web` host now owns the API and starts a separate PWA file-serving
+child. See [Task owner and web view](TASK_RUNTIME.md) for view-only restart behavior;
+web activation below replaces the API owner and its child together.
+
 ## Ownership and platform boundary
 
 `palmagentd` owns host reservations, process identity, launch, inspection, cleanup,
@@ -68,9 +72,9 @@ A running process alone is not proof that its service is ready.
 The existing `state`/`alive` fields remain compatible. Additive `lifecycle` metadata
 reports `starting`, `ready`, `running` (legacy readiness unknown), `stopping`, `exited`
 or `unknown`, together with supervision state, timestamps and a failure reason.
-Launch requests wait up to 15 seconds for readiness when supported; a timeout does
-not replay or cancel user work. An automatically recovering web host that has not
-become ready within 30 seconds is stopped. Explicit web transitions finish their
+Launch requests wait up to 60 seconds for web readiness and 15 seconds for other hosts
+when supported; a timeout does not replay or cancel user work. An automatically recovering
+web host that has not become ready within 60 seconds is stopped. Explicit web transitions finish their
 bounded lifecycle operation before automatic recovery resumes.
 
 Web failures back off for 2, 4, 8, 16, 32, then at most 60 seconds. Failure count and
@@ -178,7 +182,8 @@ retained releases referenced by live hosts. Stopping the bootstrap alone stops
 the control plane; use the CLI uninstall flow for verified idle shutdown.
 
 Maintainers need rustup and the pinned `rust-toolchain.toml` toolchain. End users
-receive Linux x64 and arm64 static native binaries in the existing npm package.
+receive Linux x64 or arm64 native binaries in the standalone bundle; Stable also provides
+the npm package. See [standalone distribution](STANDALONE.md) for prerequisites.
 `pnpm daemon:check` runs formatting, Clippy and real-process lifecycle tests.
 `pnpm daemon:build` builds both executables for Linux x64 and arm64 and their integrity
 manifest. Bundled SQLite is cross-compiled with SHA-256-verified Zig 0.15.2, cached
@@ -201,7 +206,8 @@ sudo/systemctl calls. It removes only its own service and confirmed-empty fixtur
 
 The first application migration moves script-routine definitions, scheduling, admission,
 worktree preparation and completion persistence into `palmagent-runtime` (Tokio and Axum).
-The retained Node script host still runs each command and writes its durable result.
+Each invocation's retained host runs its command and writes its durable result. Host selection
+uses the release capability described under [Updates and migration](#updates-and-migration).
 Agent routines, Task/message orchestration and provider integrations remain in the Node
 application. Source and legacy installations keep their existing local scheduler.
 

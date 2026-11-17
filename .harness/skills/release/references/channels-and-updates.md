@@ -1,5 +1,7 @@
 # Channels and updates
 
+<a id="npm-channels"></a>
+
 ## Release channels and distributions
 
 Preview publishes only signed standalone archives. Stable publishes standalone and npm
@@ -87,6 +89,8 @@ A moving `main`/`develop` marketplace can include unpublished changes and is int
 maintainer source testing. Plugin managers control refresh/caching separately, so a CLI
 update is not evidence of a plugin update. The coordinated update skill uses native
 manager operations and verifies installed manifests separately from runtime health.
+
+<a id="changing-the-cli-plugin-contract"></a>
 
 ### Changing the CLI/plugin contract
 
@@ -190,7 +194,9 @@ and follow-ups and defers routine dispatch. The server acknowledges the window;
 independent installations then verify the execution protocol and retained release
 contracts, including application API and product storage compatibility. Each
 invocation retains its package tree, pinned Node runtime, provider adapter, and
-service cgroup. Activation restarts only the web service. Active, queued, and
+service cgroup. Native activation replaces the control daemon and web host while retained
+invocation hosts continue; older independent systemd installations restart their web service.
+See [runtime update boundaries](../../../../docs/DAEMON.md#updates-and-migration). Active, queued, and
 waiting independent invocations do not block application updates.
 
 Legacy installations instead check SQLite and the runner for active work before
