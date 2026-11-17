@@ -14,6 +14,7 @@ use std::{path::Path, time::Duration};
 
 pub struct SqliteTranscript {
     connection: Connection,
+    require_clean: bool,
 }
 impl SqliteTranscript {
     pub fn open(path: &Path) -> Result<Self> {
@@ -25,7 +26,15 @@ impl SqliteTranscript {
         connection.prepare("SELECT cursor, activity FROM conversation_state LIMIT 0")?;
         connection.prepare("SELECT seq, revision, wire_json FROM conversation_rows LIMIT 0")?;
         check_version(&connection)?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            require_clean: false,
+        })
+    }
+    /// Public reads have no callback to the projection writer. Dirty snapshots fail closed.
+    pub fn require_clean(mut self) -> Self {
+        self.require_clean = true;
+        self
     }
 }
 fn check_version(connection: &Connection) -> Result<()> {
@@ -61,6 +70,14 @@ impl TranscriptRepository for SqliteTranscript {
     fn steps(&mut self, task_id: &str, key: i64) -> Result<Option<StepsSnapshot>> {
         let tx = self.connection.transaction()?;
         check_version(&tx)?;
+        if self.require_clean {
+            let dirty: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversation_dirty WHERE task_id = ?)",
+                [task_id],
+                |row| row.get(0),
+            )?;
+            ensure!(!dirty, "Conversation projection is not committed");
+        }
         let record = tx.query_row("SELECT revision, body_json FROM conversation_rows WHERE task_id = ? AND seq = ? AND body_json IS NOT NULL",
             params![task_id, key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))).optional()?;
         let snapshot = record
@@ -73,6 +90,14 @@ impl TranscriptRepository for SqliteTranscript {
     fn read(&mut self, task_id: &str, query: TranscriptQuery) -> Result<TranscriptSnapshot> {
         let tx = self.connection.transaction()?;
         check_version(&tx)?;
+        if self.require_clean {
+            let dirty: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversation_dirty WHERE task_id = ?)",
+                [task_id],
+                |row| row.get(0),
+            )?;
+            ensure!(!dirty, "Conversation projection is not committed");
+        }
         let (cursor, activity) = tx
             .query_row(
                 "SELECT cursor, activity FROM conversation_state WHERE task_id = ?",

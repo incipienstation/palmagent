@@ -70,6 +70,7 @@ async fn serve(args: &[String]) -> Result<()> {
         data.join("dispatcher.db")
     };
     let db = db.canonicalize()?;
+    let public_reads = composition::read_http::Listener::new(db.clone());
     let hosts = Hosts {
         data: data.clone(),
         release,
@@ -164,13 +165,15 @@ async fn serve(args: &[String]) -> Result<()> {
         http::router(client)
             .merge(task_http::router(usage))
             .merge(activity_http::router(activity))
-            .merge(transcript_http::router(transcript)),
+            .merge(transcript_http::router(transcript))
+            .merge(public_reads.control()),
     )
     .with_graceful_shutdown(async move {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
         let _ = sender.send(Message::Shutdown).await;
     })
     .await;
+    public_reads.close().await;
     timer.abort();
     let _ = closing.send(Message::Shutdown).await;
     tokio::task::spawn_blocking(move || owner.join())

@@ -17,7 +17,7 @@ import { ApplicationError } from "../../src/kernel/errors.js";
 
 // One real runtime and the actual product schema exercise the cross-language read boundary.
 // The same fixture covers usage accounting, activity expansion and transcript pagination without a provider or browser.
-test("native Task reads preserve accounting, activity, transcript pagination and committed snapshots", { timeout: 30_000 }, async t => {
+test("native private and public Task reads preserve auth, accounting, pagination and committed snapshots", { timeout: 30_000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), "native-task-usage-"));
   const release = join(root, "releases/fixture"), node = join(root, "runtimes/node"), ready = join(root, "ready");
   mkdirSync(release, { recursive: true }); mkdirSync(dirname(node), { recursive: true });
@@ -30,6 +30,26 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   const hosts: ChildProcess[] = [];
   let socketDirectory: string | undefined;
   let host: ChildProcess;
+  let publicPort = 0;
+  const sessionTtlMs = 60_000;
+  const directSettings = { port: 0, authEnabled: true, cookieName: "palmagent_session", sessionTtlMs, authOrigin: "https://localhost" };
+  db.createSession("read-session", Date.now(), Date.now() + sessionTtlMs);
+  const publicRead = async (path: string, cookie = "palmagent_session=read-session", method = "GET") => {
+    const response = await fetch(`http://127.0.0.1:${publicPort}${path}`, { method, headers: { cookie, origin: "https://localhost" }, signal: AbortSignal.timeout(5000) });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    const value = method === "HEAD" ? null : await response.json();
+    return { status: response.status, value };
+  };
+  const publicSame = async (path: string, value: unknown) => {
+    const response = await publicRead(path);
+    assert.equal(response.status, 200, JSON.stringify(response.value));
+    assert.deepEqual(response.value, wire(value));
+  };
+  const publicTaskSame = async (id: string, path: string, value: unknown) => {
+    if (db.getTask(id)) await publicSame(path, value);
+    else assert.deepEqual(await publicRead(path), { status: 404, value: { error: `no such task: ${id}`, code: "not_found" } });
+  };
   const stop = async (child: ChildProcess, signal: NodeJS.Signals = "SIGTERM") => {
     if (child.exitCode !== null || child.signalCode !== null) return;
     const exited = once(child, "exit"); child.kill(signal); await exited;
@@ -62,12 +82,17 @@ test("native Task reads preserve accounting, activity, transcript pagination and
     assert.equal((health.value as { taskActivityDetails: number }).taskActivityDetails, 1);
     assert.equal((health.value as { taskTranscript: number }).taskTranscript, 1);
     assert.equal((health.value as { taskTranscriptSteps: number }).taskTranscriptSteps, 1);
+    assert.equal((health.value as { taskReadHttp: number }).taskReadHttp, 1);
+    const configured = await applicationRequest(root, "/v1/task-reads/http", "POST", directSettings);
+    assert.equal(configured.status, 200);
+    publicPort = (configured.value as { port: number }).port;
   };
   const wire = (value: unknown) => JSON.parse(JSON.stringify(value));
   const same = async () => {
     const expected = wire(db.usageByAgent());
     assert.deepEqual(wire(await client.usageByAgent()), expected);
     assert.deepEqual((await applicationRequest(root, "/v1/tasks/usage")).value, { usage: expected });
+    await publicSame("/api/usage", { usage: expected });
     return expected;
   };
   db.insertRepo({ id: "space", name: "Fixture", path: root, vcs: "none", defaultBaseRef: "", createdAt: 1 });
@@ -89,6 +114,29 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   ]) raw("codex", payload);
   await start();
   const initial = await same();
+  for (const path of ["/api/usage", "/api/tasks/claude/history?format=transcript", "/api/tasks/claude/history/changes?format=transcript&after=0", "/api/tasks/claude/history/steps?key=1", "/api/tasks/claude/history/details?from=1&through=1"]) {
+    assert.deepEqual(await publicRead(path, ""), { status: 401, value: { error: "unauthorized" } });
+  }
+  for (const path of ["/api/health", "/api/tasks", "/api/tasks/claude/history", "/api/tasks/claude/history/step-details?key=1&step=1", "/api/stream", "/v1/tasks/usage", "/v1/routines"]) {
+    assert.equal((await publicRead(path)).status, 404, "unmigrated/control routes must not be exposed by the public read listener");
+  }
+  assert.equal((await publicRead("/api/usage", undefined, "HEAD")).status, 404);
+  assert.equal((await publicRead("/v1/task-reads/http", undefined, "POST")).status, 404);
+  db.createSession("expired", Date.now(), Date.now() - 1);
+  db.createSession("old-login", Date.now() - sessionTtlMs, Date.now() + sessionTtlMs);
+  for (const cookie of ["palmagent_session=expired", "palmagent_session=old-login", "palmagent_session=missing"]) assert.equal((await publicRead("/api/usage", cookie)).status, 401);
+  db.createSession("revocable", Date.now(), Date.now() + sessionTtlMs);
+  assert.equal((await publicRead("/api/usage", "palmagent_session=revocable")).status, 200);
+  db.deleteSession("revocable");
+  assert.equal((await publicRead("/api/usage", "palmagent_session=revocable")).status, 401);
+  for (const cookie of ['palmagent_session=read%2Dsession', 'palmagent_session="read-session"', 'palmagent_session=read-session; palmagent_session=missing']) {
+    assert.equal((await publicRead("/api/usage", cookie)).status, 200);
+  }
+  assert.equal((await publicRead("/api/usage", "palmagent_session=missing; palmagent_session=read-session")).status, 401);
+  assert.deepEqual(await publicRead("/api/tasks/missing/history?format=transcript"), { status: 404, value: { error: "no such task: missing", code: "not_found" } });
+  for (const [query, field, code] of [["before=0", "before", "custom"], ["before=-1", "before", "invalid_format"], ["before=9007199254740992", "before", "custom"], ["details=no", "details", "invalid_value"]]) {
+    assert.deepEqual(await publicRead(`/api/tasks/claude/history?format=transcript&${query}`), { status: 400, value: { error: `invalid request: ${field} (${code})`, code: "bad_request" } });
+  }
   assert.equal(initial[0].inputTokens, 60); assert.equal(initial[0].cachedInputTokens, 20);
   assert(initial[0].reported.includes("totalCostUsd")); assert(!initial[0].reported.includes("durationMs"));
   assert.equal(initial[1].inputTokens, 106); assert.equal(initial[1].durationMs, 6);
@@ -119,6 +167,7 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   const details = async (id: string, from: number, through: number) => {
     const expected = wire(db.activityDetails(id, from, through));
     assert.deepEqual(wire(await activity.activityDetails(id, from, through)), expected);
+    await publicTaskSame(id, `/api/tasks/${encodeURIComponent(id)}/history/details?from=${from}&through=${through}`, expected);
     return expected;
   };
   const activityTask = "activity &/?한글"; task(activityTask, "codex");
@@ -144,6 +193,7 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   writer.prepare("UPDATE tasks SET session_id = ?, agent = 'claude' WHERE id = ?").run("resumed-session", activityTask);
   for (const payload of [
     'null', '[]', '42', '"text"',
+    '{"negativeZero":-0,"underflow":-1e-400,"largeInteger":9007199254740993}',
     '{"key":1,"key":2,"overflow":1e400,"surrogate":"\\ud800","text":"한글 😀"}',
     '['.repeat(200) + '0' + ']'.repeat(200),
   ]) {
@@ -170,12 +220,17 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   const page = async (id: string, before?: number) => {
     const expected = db.conversationPage(id, before); // the retained writer refreshes before reading
     assert.deepEqual(await transcript.conversationPage(id, before), expected);
+    await publicTaskSame(id, `/api/tasks/${encodeURIComponent(id)}/history?format=transcript${before === undefined ? "" : `&before=${before}`}`, expected);
     assert(Buffer.byteLength(JSON.stringify(expected)) <= CONVERSATION_PAGE_BYTES);
     return expected;
   };
   const changes = async (id: string, after: number, through?: number, afterKey?: number) => {
     const expected = db.conversationChanges(id, after, through, afterKey);
     assert.deepEqual(await transcript.conversationChanges(id, after, through, afterKey), expected);
+    const query = new URLSearchParams({ format: "transcript", after: String(after) });
+    if (through !== undefined) query.set("through", String(through));
+    if (afterKey !== undefined) query.set("afterKey", String(afterKey));
+    await publicTaskSame(id, `/api/tasks/${encodeURIComponent(id)}/history/changes?${query}`, expected);
     assert(Buffer.byteLength(JSON.stringify(expected)) <= CONVERSATION_PAGE_BYTES);
     return expected;
   };
@@ -185,6 +240,8 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   for (let i = 0; i < 45; i++) db.insertEvent(transcriptTask, "assistant_text", {
     text: `Message ${i} 한글 😀 \ud800`, messageId: `message-${i}`, phase: "final",
   }, i);
+  assert.equal((await publicRead(`/api/tasks/${encodeURIComponent(transcriptTask)}/history?format=transcript`)).status, 503,
+    "a dirty projection must never be silently served by the direct reader");
   const initialPage = await page(transcriptTask);
   assert.equal(initialPage.transcript!.length, 30);
   const earlier = await page(transcriptTask, initialPage.before!);
@@ -218,6 +275,12 @@ test("native Task reads preserve accounting, activity, transcript pagination and
 
   // Six normal-sized canonical projection items exactly fill the byte budget. Change
   // envelopes take extra bytes, and one extra UTF-8 byte must move a page boundary.
+  task("atomic-projection", "codex");
+  db.appendAgentEvents("atomic-projection", [{ taskId: "atomic-projection", agent: "codex", kind: "assistant_text", payload: { text: "committed together", messageId: "atomic", phase: "final" }, ts: 1 }]);
+  const atomic = await publicRead("/api/tasks/atomic-projection/history?format=transcript");
+  assert.equal(atomic.status, 200);
+  assert.equal((atomic.value as { cursor: number }).cursor, 1);
+  await publicSame(`/api/tasks/${encodeURIComponent(transcriptTask)}/history?format=transcript&before=1&before=9999`, db.conversationPage(transcriptTask, 1));
   const budgetTask = "byte-budget"; task(budgetTask, "claude");
   for (let i = 0; i < 6; i++) db.insertEvent(budgetTask, "assistant_text", {
     text: "한".repeat(14_300), messageId: `budget-${i}`, phase: "final",
@@ -247,6 +310,7 @@ test("native Task reads preserve accounting, activity, transcript pagination and
     const expected = db.conversationSteps(id, key, after);
     const actual = await transcript.conversationSteps(id, key, after);
     assert.deepEqual(actual, expected);
+    await publicTaskSame(id, `/api/tasks/${encodeURIComponent(id)}/history/steps?key=${key}${after === undefined ? "" : `&after=${after}`}`, expected);
     assert(actual.steps.every(step => !("members" in step)), "member references stay in the projection");
     assert(!JSON.stringify(actual).includes("private detail"));
     return actual;
@@ -296,12 +360,27 @@ test("native Task reads preserve accounting, activity, transcript pagination and
   await page(transcriptTask);
   assert.equal((await applicationRequest(root, "/v1/tasks/transcript/changes?taskId=x&after=2&through=1")).status, 400);
   assert.equal((await applicationRequest(root, "/v1/tasks/transcript/page?taskId=x&before=0")).status, 400);
+  const retained = await applicationRequest(root, "/v1/task-reads/http", "POST", directSettings);
+  assert.deepEqual(retained.value, { enabled: true, port: publicPort }, "identical owner configuration retains the listener");
+  assert.equal((await applicationRequest(root, "/v1/task-reads/http", "POST", { ...directSettings, authOrigin: "http://localhost" })).status, 503);
+  assert.equal((await publicRead("/api/usage")).status, 200, "invalid configuration must not disable the active listener");
+  writer.exec("ALTER TABLE auth_sessions RENAME TO unavailable_sessions");
+  assert.equal((await publicRead("/api/usage")).status, 503, "session lookup failures fail closed");
+  writer.exec("ALTER TABLE unavailable_sessions RENAME TO auth_sessions");
   db.deleteRepo("space"); assert.deepEqual(await client.usageByAgent(), []);
   await page(transcriptTask); await changes(transcriptTask, 0);
   await assert.rejects(transcript.conversationSteps(stepsTask, parent), missing);
   await details(activityTask, 1, 9999);
 
+  const disabled = await applicationRequest(root, "/v1/task-reads/http", "POST", null);
+  assert.deepEqual(disabled.value, { enabled: false, port: null });
+  await assert.rejects(publicRead("/api/usage"));
+  assert.deepEqual(await client.usageByAgent(), [], "disabling direct reads leaves the mediated path usable");
+  const enabled = await applicationRequest(root, "/v1/task-reads/http", "POST", directSettings);
+  publicPort = (enabled.value as { port: number }).port;
+  await publicSame("/api/usage", { usage: [] });
   await stop(host!);
+  await assert.rejects(publicRead("/api/usage"));
   await assert.rejects(client.usageByAgent(), error => error instanceof ApplicationError && error.code === "service_unavailable");
   await assert.rejects(activity.activityDetails(activityTask, 1, 1), error => error instanceof ApplicationError && error.code === "service_unavailable");
   await assert.rejects(transcript.conversationPage(transcriptTask), unavailable);
