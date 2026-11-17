@@ -110,7 +110,9 @@ still stops before mutation. An explicit draft, PR-only request, or merge hold t
 ### Preview
 
 `preview-release.yml` compares the latest `develop` with the last **successfully published**
-Preview, verified against GitHub Release metadata, the annotated tag, and npm package bytes.
+Preview, verified against the signed channel and release manifest, public GitHub Release,
+and annotated tag. The first standalone publication can use a verified legacy GitHub
+receipt and archive as its cutover baseline; npm discovery is not part of this path.
 Runtime source, shipped operator plugins/skills, product dependencies, and packaging inputs
 qualify. Development docs, `.harness`, tests alone, and version/changelog preparation do not.
 The release classifier is independent of CI test selection. A repository-scoped release GitHub
@@ -125,7 +127,7 @@ coalesced into the latest pending run. Failed changes remain eligible until publ
 retained preparation and candidate evidence are resumed before selecting another version.
 
 Keep the root's declared base and stage (`alpha`, `beta`, or `rc`), allocating the next unused
-sequence across npm versions and remote tags. Advancing the base or stage is a deliberate
+sequence across public GitHub Release versions and remote tags. Advancing the base or stage is a deliberate
 release-scope change, not inferred from commit messages. While an unpublished Stable version
 is prepared on `develop`, Preview pauses. After Stable is published, the next product change
 starts the next patch's `alpha.1` lane. Respect the CLI/plugin compatibility line when choosing

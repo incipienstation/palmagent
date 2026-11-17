@@ -153,10 +153,15 @@ routine removes its history but leaves those files on disk.
 
 Scripts have a configurable timeout (default five minutes, maximum one hour), capture
 up to 64 KiB of combined output, and record their exit status. Each routine can have
-one running script; the server runs up to four scripts at once. Busy scheduled runs
-are recorded as skipped. Use **Stop script** in the app or ask the plugin to stop a run. Scripts stop when the server stops or updates, and are not
-retried automatically. Missed schedules do not catch up after a restart. All schedules
-use the server timezone; the plugin checks it when interpreting natural-language times.
+one running script; the installation runs up to four scripts at once. Busy scheduled runs
+are recorded as skipped. Use **Stop script** in the app or ask the plugin to stop a run.
+On native daemon installations, running scripts survive web restarts and application updates.
+The independent application service also keeps script scheduling and result recording active
+while the web is down. Source and legacy local runners stop scripts with the server;
+updates wait for those scripts to finish. Scripts are not automatically rerun, and missed
+schedules during scheduler downtime do not catch up. See the
+[runtime lifecycle](DAEMON.md#updates-and-migration) for backend and migration details.
+All schedules use the server timezone; the plugin checks it when interpreting natural-language times.
 
 ## Plugin skills
 
