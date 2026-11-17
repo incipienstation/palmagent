@@ -104,29 +104,39 @@ pub fn router(client: Client) -> Router {
                             Json(json!({"error":"Invalid activity range"})),
                         ));
                     }
-                    let permit = client
-                        .slots
-                        .clone()
-                        .try_acquire_owned()
-                        .map_err(|_| unavailable())?;
-                    let body = tokio::task::spawn_blocking(move || {
-                        let _permit = permit;
-                        let details = client
-                            .reader
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("Activity reader failed"))?
-                            .details(&request.task_id, request.from, request.through)?;
-                        encode(&details)
-                    })
-                    .await
-                    .map_err(|_| unavailable())?
-                    .map_err(|_| unavailable())?;
-                    Ok::<_, (StatusCode, Json<Value>)>((
-                        [(axum::http::header::CONTENT_TYPE, "application/json")],
-                        body,
-                    ))
+                    read(client, request.task_id, request.from, request.through).await
                 },
             ),
         )
         .with_state(client)
+}
+
+pub(super) async fn read(
+    client: Client,
+    task_id: String,
+    from: i64,
+    through: i64,
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
+{
+    let permit = client
+        .slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| unavailable())?;
+    let body = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let details = client
+            .reader
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Activity reader failed"))?
+            .details(&task_id, from, through)?;
+        encode(&details)
+    })
+    .await
+    .map_err(|_| unavailable())?
+    .map_err(|_| unavailable())?;
+    Ok::<_, (StatusCode, Json<Value>)>((
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body,
+    ))
 }

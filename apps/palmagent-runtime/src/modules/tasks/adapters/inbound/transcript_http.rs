@@ -65,7 +65,7 @@ fn encode_steps(page: &StepsPage) -> anyhow::Result<String> {
         cursor: page.cursor,
     })?)
 }
-enum Read {
+pub(super) enum Read {
     Transcript(TranscriptQuery),
     Steps { key: i64, after: i64 },
 }
@@ -150,7 +150,7 @@ fn invalid() -> Failure {
 fn cursor(value: i64) -> bool {
     (0..=MAX_CURSOR).contains(&value)
 }
-async fn read(
+pub(super) async fn read(
     client: Client,
     task_id: String,
     query: Read,

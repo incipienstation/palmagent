@@ -1,4 +1,6 @@
 //! Linux adapters for private state, daemon control and the installation's local calendar.
+pub mod json_wire;
+pub mod read_http;
 pub mod script_process;
 pub mod telemetry;
 use anyhow::{Context, Result, ensure};

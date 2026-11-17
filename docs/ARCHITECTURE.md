@@ -216,3 +216,13 @@ operation summaries from the versioned parent projection and removes internal me
 the domain orders and pages those summaries. The application distinguishes a missing parent from
 an unavailable read, and HTTP adapters preserve the public 404/503 mapping. TypeScript still commits
 projection refresh before invoking the reader and owns operation details, content and execution.
+
+The opt-in direct-read experiment adds a Rust auth read use case with a read-only session adapter.
+Its public HTTP middleware checks the same expiry and revocation state as the Node login owner.
+The Tasks public adapter validates existing request contracts, checks task existence through a
+read port, and uses the existing native readers without a Node callback. Composition owns the
+separate loopback listener and its private configuration endpoint. The public listener never
+mounts private application control routes. A strict projection repository rejects dirty snapshots;
+Node repairs retained dirtiness before enabling it and continues publishing event batches and
+projections in one transaction. The ingress sends all unselected routes directly to Node, preserving
+the comparison boundary. See [direct-read experiment](performance/direct-task-reads/README.md).

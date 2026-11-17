@@ -376,8 +376,10 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "axum",
+ "form_urlencoded",
  "libc",
  "palmagent-telemetry",
+ "percent-encoding",
  "proc-macro2",
  "rusqlite",
  "serde",

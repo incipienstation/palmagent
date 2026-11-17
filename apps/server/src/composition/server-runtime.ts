@@ -1,3 +1,4 @@
+import { NativeReadHttp } from "../modules/installation/adapters/outbound/native-read-http.js";
 import { NativeTaskTranscript } from "../modules/tasks/adapters/outbound/native-task-transcript.js";
 import { NativeTaskActivity } from "../modules/tasks/adapters/outbound/native-task-activity.js";
 import { NativeTaskUsage } from "../modules/tasks/adapters/outbound/native-task-usage.js";
@@ -86,6 +87,7 @@ export async function createRuntime() {
     resources.defer(() => accountLimits.close());
     const nativeScripts = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
       ? new NativeScriptRuntime(config.dataDir) : undefined;
+    if (config.nativeReadHttpPort !== undefined && !nativeScripts) throw new Error("Direct read HTTP requires a native application runtime");
     const service = createTaskService(db, hub, supervisor, backend, worktrees, attachments,
       new LocalRepositoryPaths(), new LocalNativeSessionAdapter(config.dbPath), new NodeIdentifierGenerator(),
       push, () => isUpdateMaintenance(config.dbPath), {
@@ -121,6 +123,19 @@ export async function createRuntime() {
       if (status.taskTranscript !== 1) throw new Error("This release requires native Task transcript support");
       if (status.taskActivityDetails !== 1) throw new Error("This release requires native Task activity support");
       if (status.taskUsage !== 1) throw new Error("This release requires native Task usage support");
+      const readHttp = new NativeReadHttp(config.dataDir);
+      if (config.nativeReadHttpPort !== undefined) {
+        if (status.taskReadHttp !== 1) throw new Error("This release requires native read HTTP support");
+        // Production event batches already refresh their projection before commit. Repair
+        // retained dirty rows once at startup, before the direct listener admits reads.
+        for (const task of db.listTasks()) db.prepareConversation(task.taskId);
+        resources.onStop(() => readHttp.configure(null));
+        await readHttp.configure({ port: config.nativeReadHttpPort, authEnabled: config.authEnabled,
+          cookieName: config.cookieName, sessionTtlMs: config.sessionTtlMs, authOrigin: config.authOrigin });
+      } else if (status.taskReadHttp === 1) {
+        // A retained application may have been enabled by the previous API owner.
+        await readHttp.configure(null);
+      }
     }
     const localRoutines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub, Boolean(nativeScripts));
     const routines = nativeScripts ? new IndependentRoutines(localRoutines, nativeScripts, hub) : localRoutines;

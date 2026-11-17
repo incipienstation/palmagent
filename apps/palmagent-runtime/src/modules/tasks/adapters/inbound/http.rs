@@ -28,26 +28,28 @@ pub fn router(client: Client) -> Router {
     Router::new()
         .route(
             "/v1/tasks/usage",
-            get(|State(client): State<Client>| async move {
-                let permit = client
-                    .slots
-                    .clone()
-                    .try_acquire_owned()
-                    .map_err(|_| unavailable())?;
-                let usage = tokio::task::spawn_blocking(move || {
-                    // Keep admission until work ends even if its HTTP caller disconnects.
-                    let _permit = permit;
-                    client
-                        .reader
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("Usage reader failed"))
-                        .and_then(|mut reader| reader.usage())
-                })
-                .await
-                .map_err(|_| unavailable())?
-                .map_err(|_| unavailable())?;
-                Ok::<_, (StatusCode, Json<Value>)>(Json(json!({"usage":usage})))
-            }),
+            get(|State(client): State<Client>| async move { read(client).await }),
         )
         .with_state(client)
+}
+
+pub(super) async fn read(client: Client) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let permit = client
+        .slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| unavailable())?;
+    let usage = tokio::task::spawn_blocking(move || {
+        // Keep admission until work ends even if its HTTP caller disconnects.
+        let _permit = permit;
+        client
+            .reader
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Usage reader failed"))
+            .and_then(|mut reader| reader.usage())
+    })
+    .await
+    .map_err(|_| unavailable())?
+    .map_err(|_| unavailable())?;
+    Ok::<_, (StatusCode, Json<Value>)>(Json(json!({"usage":usage})))
 }

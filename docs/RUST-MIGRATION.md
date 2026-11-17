@@ -74,6 +74,22 @@ existing 404 error. Incompatible projections, corrupt records and unavailable na
 closed with 503. Startup requires `taskTranscriptSteps: 1`; no schema or writer changes are involved.
 Operation-detail expansion, content chunks and execution-record reads remain in TypeScript.
 
+## Direct public read experiment
+
+An opt-in same-origin ingress split sends the five migrated GET routes directly to a separate
+Rust loopback listener. Rust owns cookie-session verification, public validation, task existence
+checks and final response encoding for those requests. Node still serves all other routes and
+remains the sole authentication-ceremony, event, projection and schema writer. Production event
+batches already publish events and projection updates atomically; startup repairs retained dirty
+projections before enabling the direct listener. Direct reads reject dirty projections and never
+call back to Node. Reader algorithms and admission limits are retained for controlled comparisons.
+
+This listener advertises `taskReadHttp: 1` on the private runtime health boundary and is configured
+through the private `/v1/task-reads/http` endpoint. `NATIVE_READ_HTTP_PORT` is disabled by default;
+ingress routing is a separate explicit step. See the [experiment and rollback instructions](performance/direct-task-reads/README.md).
+This adds a session-validation reader, not a second session or Task writer. An API-owner crash
+can leave direct committed reads available; ordinary owner shutdown disables the listener.
+
 ## Gates for every slice
 
 1. **Name the behavior and authority.** Identify the existing use case, observable contract,
