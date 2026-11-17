@@ -63,7 +63,8 @@ Palmagent updates do not change them. Operator changes to those CLI installation
 are outside this update guarantee.
 
 The first package activation snapshots its complete installed package. Later
-updates use a new npm prefix under the installation's releases directory. They
+updates retain a verified standalone bundle or Stable npm prefix under the installation's
+releases directory; see [distribution and migration](STANDALONE.md#updates). They
 never overwrite a tree referenced by an execution. The global CLI forwards to
 the active retained release. Completed journals, releases, and runtimes are
 currently retained; no automatic garbage collection is implemented. Operators
@@ -143,7 +144,9 @@ retain their original release and gain these changes only in a new invocation.
    and provider input channels remain active.
 4. Record previous and target configuration atomically. For daemon installations,
    replace the control daemon and web process through private IPC; legacy installs
-   update application units. Routine scripts finish before web activation.
+   update application units. Native daemon routine hosts retain their processes;
+   source and legacy web-owned scripts must finish before activation. See
+   [routine update boundaries](DAEMON.md#updates-and-migration).
 5. Verify the exact running version and health. Update the one-shot executor's
    release reference and record success. The PWA prepares its service worker,
    checkpoints per-tab state, and switches at a quiet moment automatically.

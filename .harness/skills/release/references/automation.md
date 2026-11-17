@@ -47,10 +47,13 @@ the combined local server command still runs the complete gate.
 The required `validate` job aggregates their results and rejects any failure or cancellation.
 Static and version-only changes skip the runtime jobs. PWA tests use four shards on separate
 runners, preserving the sequential stateful test group. Service-worker checks run on a fifth
-runner concurrently with all shards. Each runner builds once. Selected package checks run
+runner concurrently with all shards. A separate `pwa` job selects its scope alongside the
+scope gate and shares one verified build with browser, service-worker, package, and standalone
+checks. Consumers prepare concurrently and wait for the immutable artifact from the same run;
+see [CI PWA builds](../../../../docs/CI.md) for cache and rerun behavior. Selected package checks run
 in an independent Ubuntu 24.04 job alongside the browser matrix, preserving the systemd smoke
 runner. Packaging-only scope starts no browser or service-worker jobs. All selected lanes,
-including package verification, all four browser shards, and the service-worker runner, must
+including the shared PWA build, package verification, all four browser shards, and the service-worker runner, must
 succeed; an unexpectedly skipped lane fails validation.
 Native x64/arm64 jobs build Rust binaries once on Ubuntu 22.04. Package and standalone jobs
 import artifacts from those successful jobs in the same run, checking source/version identity,
@@ -184,17 +187,19 @@ GitHub reads retry transient connection failures and HTTP 429/500/502/503/504 up
 with one-, two-, and four-second delays and a 60-second timeout per read. Writes, permission
 failures, malformed responses, and integrity mismatches are not retried by this transport layer.
 
-After the preparation merge, the controller creates the annotated Preview tag and dispatches
-`npm-publish.yml` with the exact commit. This builds the candidate, publishes through `npm-next`,
-and exposes the GitHub prerelease only after npm bytes and `next` are verified. A pending run
-checks newer product changes after the current publication completes. The controller resumes
+After the preparation merge, the controller dispatches `npm-publish.yml` with the exact commit.
+The workflow verifies the candidate and publishes through `standalone-preview`, including tag,
+GitHub assets and signed channel activation under the
+[standalone publication flow](#standalone-publication-transition). A pending run checks newer
+product changes after the current publication completes. The controller resumes
 its own merged preparations and tags before allocating another version, preventing metadata
 pushes from causing a release loop. A retained draft or open preparation PR remains inspectable.
 
 Concurrency keeps the active Preview and coalesces later pushes into one pending comparison.
-Publication jobs also serialize per npm channel and retain pending approvals using `queue: max`.
-A candidate older than its current npm channel fails before tag/publication writes; it never
-moves a dist-tag backward. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+Standalone publication and Pages recovery serialize through `release-pages-publication` and
+retain queued runs using `queue: max`. Legacy npm publication retains its per-channel queue
+and refuses to move a dist-tag backward. See
+[GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 For an approval-held preparation, inspect the PR's exact source, head, and metadata-only diff.
 A maintainer with write access can select **Approve workflows to run** on the PR. In an authorized
