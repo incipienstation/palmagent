@@ -98,6 +98,13 @@ async function publicServer(t: TestContext, behavior: string) {
       if (behavior === "invalid-json") { res.end("fixture-private-response"); return; }
       return send({ required: behavior !== "disabled", authenticated: behavior !== "auth" && req.headers.cookie === "session=valid" });
     }
+    if (req.url === "/api/usage" || req.url?.startsWith("/api/tasks/palmagent-diagnostic-")) {
+      if (behavior !== "direct-node") res.setHeader("x-palmagent-read-runtime", "rust");
+      res.setHeader("x-palmagent-version", "fixture");
+      const usage = req.url === "/api/usage";
+      res.statusCode = behavior === "direct-auth" ? 401 : usage ? 200 : 404;
+      return send(usage ? { usage: [] } : { code: "not_found" });
+    }
     if (req.url === "/api/stream?snapshots=1") {
       res.setHeader("Content-Type", behavior === "mime" ? "application/json" : "text/event-stream");
       res.flushHeaders();
@@ -114,7 +121,7 @@ async function publicServer(t: TestContext, behavior: string) {
   });
   await new Promise<void>(resolve => server.listen(0, "localhost", resolve));
   t.after(async () => { for (const timer of timers) clearInterval(timer); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  return { origin: `http://localhost:${(server.address() as { port: number }).port}`, requests };
+  return { origin: `http://localhost:${(server.address() as { port: number }).port}`, requests, setBehavior: (next: string) => { behavior = next; } };
 }
 
 test("public probe authenticates the real routes and receives a fragmented complete SSE frame", async t => {
@@ -123,6 +130,19 @@ test("public probe authenticates the real routes and receives a fragmented compl
   assert.deepEqual(f.requests.map(r => r.path), ["/api/health", "/", "/api/auth/me", "/api/stream?snapshots=1"]);
   assert(f.requests.slice(0, 2).every(r => r.cookie === undefined));
   assert(f.requests.slice(2).every(r => r.cookie === "session=valid"));
+});
+
+test("configured direct reads prove Rust routing and authentication for all five routes", async t => {
+  const f = await publicServer(t, "direct");
+  const probe = () => probePublicConnection(f.origin, "session=valid", "fixture", new AbortController().signal, 1000, true);
+  await probe();
+  const reads = f.requests.filter(r => r.path === "/api/usage" || r.path.startsWith("/api/tasks/palmagent-diagnostic-"));
+  assert.equal(reads.length, 5);
+  assert(reads.every(r => r.cookie === "session=valid"));
+  for (const behavior of ["direct-node", "direct-auth"]) {
+    f.setBehavior(behavior);
+    await assert.rejects(probe(), /native read routing, authentication or version/);
+  }
 });
 
 for (const behavior of ["version", "auth", "disabled", "invalid-json", "redirect", "mime", "partial", "comments", "stall"]) {

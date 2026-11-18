@@ -81,6 +81,7 @@ async function gatherConfig(
     domain: domainInput,
     host: options.host ?? base.host,
     port: portInput,
+    nativeReadHttpPort: base.nativeReadHttpPort,
     concurrency: concurrencyInput,
     pushSubject: options.pushSubject ?? base.pushSubject,
   });

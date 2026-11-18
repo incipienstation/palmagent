@@ -1,4 +1,5 @@
 //! Private activity read endpoint. Hold admission through database read and serialization.
+use super::public_contract::{self, Contract};
 use crate::modules::tasks::api::{ActivityDetails, ActivityReader, ActivityRecord};
 use crate::platform::read_pool::ReadPool;
 use axum::{
@@ -17,8 +18,11 @@ pub struct Client {
 }
 impl Client {
     pub fn new(reader: Box<dyn ActivityReader>) -> Self {
+        Self::pooled(vec![reader])
+    }
+    pub fn pooled(readers: Vec<Box<dyn ActivityReader>>) -> Self {
         Self {
-            readers: ReadPool::new(vec![reader], 16, Duration::from_millis(250)),
+            readers: ReadPool::new(readers, 16, Duration::from_millis(250)),
         }
     }
 }
@@ -116,11 +120,30 @@ pub(super) async fn read(
     through: i64,
 ) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
 {
+    read_encoded(client, task_id, from, through, None).await
+}
+pub(super) async fn read_public(
+    client: Client,
+    task_id: String,
+    from: i64,
+    through: i64,
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
+{
+    read_encoded(client, task_id, from, through, Some(Contract::Activity)).await
+}
+async fn read_encoded(
+    client: Client,
+    task_id: String,
+    from: i64,
+    through: i64,
+    contract: Option<Contract>,
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
+{
     let body = client
         .readers
         .run(move |reader| {
             let details = reader.details(&task_id, from, through)?;
-            encode(&details)
+            public_contract::finish(encode(&details)?, contract)
         })
         .await
         .map_err(|_| unavailable())?

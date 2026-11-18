@@ -130,3 +130,13 @@ pub fn valid(body: &str, contract: Contract) -> bool {
         }
     }
 }
+
+/// Public validation and JSON normalization run inside the same bounded blocking worker.
+pub fn finish(body: String, contract: Option<Contract>) -> anyhow::Result<String> {
+    if let Some(contract) = contract {
+        anyhow::ensure!(valid(&body, contract), "Invalid public read response");
+        Ok(crate::platform::json_wire::normalize_numbers(body))
+    } else {
+        Ok(body)
+    }
+}

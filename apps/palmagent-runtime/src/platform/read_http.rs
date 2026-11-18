@@ -33,6 +33,7 @@ pub fn headers(response: &mut Response, origin: &str) {
     let headers = response.headers_mut();
     for (key, value) in [
         ("cache-control", "no-store"),
+        ("x-palmagent-read-runtime", "rust"),
         ("x-content-type-options", "nosniff"),
         ("x-frame-options", "DENY"),
         ("referrer-policy", "no-referrer"),

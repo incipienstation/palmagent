@@ -37,6 +37,8 @@ export interface InstallConfig {
   domain: string;
   host: string;
   port: number;
+  /** Opt-in authenticated native read listener, distinct from the Node listener. */
+  nativeReadHttpPort?: number;
   concurrency: number;
   rpId: string;
   rpName: string;
