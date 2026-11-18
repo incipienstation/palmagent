@@ -1,5 +1,7 @@
 //! Only the migrated GET routes. Other APIs are routed directly to Node by the ingress.
-use super::{activity_http, http, public_contract::Contract, transcript_http};
+use super::{
+    activity_http, http, public_contract::Contract, read_metrics::ReadMeasurement, transcript_http,
+};
 use crate::modules::tasks::api::{MAX_CURSOR, TaskReadAccess, TranscriptQuery};
 use crate::platform::read_http::{decode_path, error};
 use axum::{
@@ -153,9 +155,11 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
     if request.method() != "GET" {
         return Err(not_found());
     }
+    let measurement = request.extensions().get::<ReadMeasurement>().cloned();
+    let queue = || measurement.as_ref().map(ReadMeasurement::queue);
     let path = request.uri().path();
     if path == "/api/usage" {
-        return Ok(match http::read(client.usage).await {
+        return Ok(match http::read_observed(client.usage, queue()).await {
             Ok(value) => value.into_response(),
             Err(_) => unavailable("Task usage is temporarily unavailable"),
         });
@@ -205,6 +209,7 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
                         after_key,
                     }),
                     Contract::Changes,
+                    queue(),
                 )
                 .await,
                 "Task transcript is temporarily unavailable",
@@ -227,7 +232,7 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
                 ));
             }
             return Ok(response(
-                activity_http::read_public(client.activity, task_id, from, through).await,
+                activity_http::read_public(client.activity, task_id, from, through, queue()).await,
                 "Task activity is temporarily unavailable",
             ));
         }
@@ -244,6 +249,7 @@ async fn read(client: Client, request: Request) -> Result<Response, Response> {
             } else {
                 Contract::Page
             },
+            queue(),
         )
         .await,
         "Task transcript is temporarily unavailable",

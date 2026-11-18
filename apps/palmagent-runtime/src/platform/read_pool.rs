@@ -1,4 +1,5 @@
 //! Bounded blocking reads. Waiting requests use async permits, never blocking threads.
+use super::telemetry::{Observation, Outcome};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -45,17 +46,34 @@ impl<T: Send + 'static> ReadPool<T> {
         &self,
         work: impl FnOnce(&mut T) -> R + Send + 'static,
     ) -> Result<R, ReadError> {
+        self.run_observed(None, work).await
+    }
+    pub async fn run_observed<R: Send + 'static>(
+        &self,
+        mut queue: Option<Observation>,
+        work: impl FnOnce(&mut T) -> R + Send + 'static,
+    ) -> Result<R, ReadError> {
         let admitted = self
             .state
             .admitted
             .clone()
             .try_acquire_owned()
-            .map_err(|_| ReadError::Full)?;
+            .map_err(|_| {
+                finish_queue(&mut queue, Outcome::Rejected);
+                ReadError::Full
+            })?;
         let worker =
             tokio::time::timeout(self.state.wait, self.state.workers.clone().acquire_owned())
                 .await
-                .map_err(|_| ReadError::Timeout)?
-                .map_err(|_| ReadError::Failed)?;
+                .map_err(|_| {
+                    finish_queue(&mut queue, Outcome::Timeout);
+                    ReadError::Timeout
+                })?
+                .map_err(|_| {
+                    finish_queue(&mut queue, Outcome::Error);
+                    ReadError::Failed
+                })?;
+        finish_queue(&mut queue, Outcome::Success);
         let reader = self
             .state
             .available
@@ -98,5 +116,11 @@ impl<T> Drop for Lease<T> {
         if let Some(permit) = self.worker.take() {
             permit.forget();
         }
+    }
+}
+
+fn finish_queue(queue: &mut Option<Observation>, outcome: Outcome) {
+    if let Some(queue) = queue.take() {
+        queue.finish(outcome);
     }
 }

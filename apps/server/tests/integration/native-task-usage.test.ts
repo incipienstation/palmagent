@@ -3,7 +3,7 @@ import test from "node:test";
 import { request } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,8 @@ import { NativeTaskTranscript } from "../../src/modules/tasks/adapters/outbound/
 import { NativeTaskActivity } from "../../src/modules/tasks/adapters/outbound/native-task-activity.js";
 import { NativeTaskUsage } from "../../src/modules/tasks/adapters/outbound/native-task-usage.js";
 import { applicationRequest, applicationSocket } from "../../src/platform/ipc/application-runtime.js";
+import type { TelemetryPoint } from "@palmagent/shared/telemetry";
+import { NativeMetricReader } from "../../src/modules/telemetry/adapters/outbound/native-metrics.js";
 import { ApplicationError } from "../../src/kernel/errors.js";
 
 // One real runtime and the actual product schema exercise the cross-language read boundary.
@@ -23,6 +25,23 @@ test("native private and public Task reads preserve auth, accounting, pagination
   const release = join(root, "releases/fixture"), node = join(root, "runtimes/node"), ready = join(root, "ready");
   mkdirSync(release, { recursive: true }); mkdirSync(dirname(node), { recursive: true });
   copyFileSync(process.execPath, node);
+  const telemetryPath = join(root, "telemetry.json");
+  const revision = "00000000-0000-4000-8000-000000000001";
+  writeFileSync(telemetryPath, JSON.stringify({ schemaVersion: 2, enabled: true, disclosed: true, revision }));
+  const collected: TelemetryPoint[] = [];
+  const collectMetrics = async () => {
+    const { value } = await applicationRequest(root, "/telemetry");
+    const snapshot = value as { version: string; instance: string; telemetry: { sampledAt: number; points: TelemetryPoint[] } };
+    assert(snapshot.telemetry, "the real runtime must share its public-read collector with the export boundary");
+    collected.push(...snapshot.telemetry.points);
+    // The retained Node reader must accept the new fixed labels and outcomes without replaying a baseline.
+    const reader = new NativeMetricReader();
+    const baseline = structuredClone(snapshot); baseline.telemetry.sampledAt--; baseline.telemetry.points = [];
+    assert.equal(reader.read(baseline, revision), undefined);
+    assert(reader.read(snapshot, revision), "native read labels must cross the Node export validator");
+    const serialized = JSON.stringify(snapshot);
+    for (const marker of [root, "read-session", "atomic-projection", "resumed-session"]) assert(!serialized.includes(marker), "metrics must not retain request or stored content");
+  };
   const db = new Db(join(root, "palmagent.db")), writer = new Database(db.path);
   const client = new NativeTaskUsage(root);
   const activity = new NativeTaskActivity(root);
@@ -124,6 +143,9 @@ test("native private and public Task reads preserve auth, accounting, pagination
   }
   assert.equal((await publicRead("/api/usage", undefined, "HEAD")).status, 404);
   assert.equal((await publicRead("/v1/task-reads/http", undefined, "POST")).status, 404);
+  const initialMetrics = ((await applicationRequest(root, "/telemetry")).value as { telemetry: { points: TelemetryPoint[] } }).telemetry.points;
+  assert.equal(initialMetrics.find(p => p.attributes.operation === "http.read.usage" && p.attributes.outcome === "success")?.count, 1, "private reads must not be counted as public requests");
+  assert.equal(initialMetrics.find(p => p.attributes.operation === "http.read.usage" && p.attributes.outcome === "client_error")?.count, 1, "unknown routes and HEAD must not enter the selected GET metrics");
   db.createSession("expired", Date.now(), Date.now() - 1);
   db.createSession("old-login", Date.now() - sessionTtlMs, Date.now() + sessionTtlMs);
   for (const cookie of ["palmagent_session=expired", "palmagent_session=old-login", "palmagent_session=missing"]) assert.equal((await publicRead("/api/usage", cookie)).status, 401);
@@ -149,7 +171,7 @@ test("native private and public Task reads preserve auth, accounting, pagination
   writer.exec("BEGIN IMMEDIATE");
   writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run('{"usage":{"input_tokens":999}}', first);
   assert.deepEqual(wire(await client.usageByAgent()), initial);
-  await stop(host!); await start(); // cold native cache still sees only committed data
+  await collectMetrics(); await stop(host!); await start(); // cold native cache still sees only committed data
   assert.deepEqual(wire(await client.usageByAgent()), initial);
   writer.exec("ROLLBACK");
   writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run('{"usage":{"input_tokens":12}}', first);
@@ -189,7 +211,7 @@ test("native private and public Task reads preserve auth, accounting, pagination
   writer.exec("BEGIN IMMEDIATE");
   writer.prepare("UPDATE events SET payload_json = ? WHERE id = ?").run('{"output":"uncommitted"}', firstTool.id);
   assert.deepEqual(wire(await activity.activityDetails(activityTask, 1, 9999)), activityBefore);
-  await stop(host!); await start();
+  await collectMetrics(); await stop(host!); await start();
   assert.deepEqual(wire(await activity.activityDetails(activityTask, 1, 9999)), activityBefore);
   writer.exec("ROLLBACK");
   writer.prepare("UPDATE tasks SET session_id = ?, agent = 'claude' WHERE id = ?").run("resumed-session", activityTask);
@@ -281,7 +303,7 @@ test("native private and public Task reads preserve auth, accounting, pagination
   writer.prepare("UPDATE conversation_state SET cursor = 999, activity = 'blocked' WHERE task_id = ?").run(transcriptTask);
   writer.prepare("UPDATE conversation_rows SET wire_json = NULL WHERE task_id = ?").run(transcriptTask);
   assert.deepEqual(await transcript.conversationPage(transcriptTask), committed);
-  await stop(host!); await start();
+  await collectMetrics(); await stop(host!); await start();
   assert.deepEqual(await transcript.conversationPage(transcriptTask), committed);
   writer.exec("ROLLBACK");
   await page(transcriptTask);
@@ -351,7 +373,7 @@ test("native private and public Task reads preserve auth, accounting, pagination
   writer.exec("BEGIN IMMEDIATE");
   writer.prepare("UPDATE conversation_rows SET revision = 999, body_json = NULL WHERE task_id = ? AND seq = ?").run(stepsTask, parent);
   assert.deepEqual(await transcript.conversationSteps(stepsTask, parent), committedSteps);
-  await stop(host!); await start();
+  await collectMetrics(); await stop(host!); await start();
   assert.deepEqual(await transcript.conversationSteps(stepsTask, parent), committedSteps);
   writer.exec("ROLLBACK");
   setBody(JSON.stringify({ ...body, operations: null })); await steps(stepsTask, parent);
@@ -396,6 +418,18 @@ test("native private and public Task reads preserve auth, accounting, pagination
   await page(transcriptTask); await changes(transcriptTask, 0);
   await assert.rejects(transcript.conversationSteps(stepsTask, parent), missing);
   await details(activityTask, 1, 9999);
+
+  await collectMetrics();
+  for (const route of ["usage", "transcript", "changes", "steps", "details"]) {
+    assert(collected.some(p => p.attributes.operation === `http.read.${route}` && p.attributes.outcome === "success"));
+    assert(collected.some(p => p.attributes.operation === `http.read.${route}` && p.attributes.outcome === "client_error"), "auth failures must be measured outside the auth middleware");
+    assert(collected.some(p => p.attributes.operation === `read.queue.${route}` && p.attributes.outcome === "success"));
+  }
+  assert(collected.some(p => p.attributes.operation === "http.read.usage" && p.attributes.outcome === "unavailable"), "auth storage failures must remain distinct from invalid sessions");
+  assert(collected.some(p => p.attributes.operation === "http.read.transcript" && p.attributes.outcome === "unavailable"));
+  writeFileSync(telemetryPath, JSON.stringify({ schemaVersion: 2, enabled: false, disclosed: true, revision }));
+  assert.equal((await publicRead("/api/usage")).status, 200);
+  assert.equal(((await applicationRequest(root, "/telemetry")).value as { telemetry: unknown }).telemetry, null, "opt-out must immediately close the export gate");
 
   const disabled = await applicationRequest(root, "/v1/task-reads/http", "POST", null);
   assert.deepEqual(disabled.value, { enabled: false, port: null });

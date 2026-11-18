@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TELEMETRY_ENDPOINT, concurrencyBucket, type TelemetryPoint, type TelemetryResource } from "@palmagent/shared/telemetry";
-import type { PerformanceMeasurements } from "../../../../kernel/performance.js";
+import type { MeasurementOutcome, PerformanceMeasurements } from "../../../../kernel/performance.js";
 import { MetricAggregate } from "../../domain/aggregate.js";
 import { readTelemetryChoice } from "./preference.js";
 import { metricPayload } from "./wire.js";
@@ -56,7 +56,7 @@ export class TelemetryProducer implements PerformanceMeasurements {
     }, 100);
     this.loopTimer.unref();
   }
-  beginOperation(name: string, concurrency: number): (outcome: "success" | "error" | "timeout") => void {
+  beginOperation(name: string, concurrency: number): (outcome: MeasurementOutcome) => void {
     if (!this.active) return () => {};
     const revision = this.revision, started = performance.now();
     let finished = false;
@@ -65,7 +65,7 @@ export class TelemetryProducer implements PerformanceMeasurements {
       if (revision && revision === this.revision) this.operation(name, (performance.now() - started) / 1000, outcome, concurrency);
     };
   }
-  operation(operation: string, seconds: number, outcome: "success" | "error" | "timeout", concurrency: number): void {
+  operation(operation: string, seconds: number, outcome: MeasurementOutcome, concurrency: number): void {
     if (this.active) this.aggregate.observe("palmagent.operation.duration", seconds, { operation, outcome, concurrency: concurrencyBucket(concurrency) });
   }
   busyRetries(count: number, concurrency: number): void {

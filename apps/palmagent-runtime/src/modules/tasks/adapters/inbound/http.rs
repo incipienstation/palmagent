@@ -1,6 +1,6 @@
 //! Private read endpoint. Admission is bounded and SQLite never blocks an async worker.
 use crate::modules::tasks::api::UsageReader;
-use crate::platform::read_pool::ReadPool;
+use crate::platform::{read_pool::ReadPool, telemetry::Observation};
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -32,9 +32,15 @@ pub fn router(client: Client) -> Router {
 }
 
 pub(super) async fn read(client: Client) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    read_observed(client, None).await
+}
+pub(super) async fn read_observed(
+    client: Client,
+    queue: Option<Observation>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let usage = client
         .readers
-        .run(move |reader| reader.usage())
+        .run_observed(queue, move |reader| reader.usage())
         .await
         .map_err(|_| unavailable())?
         .map_err(|_| unavailable())?;

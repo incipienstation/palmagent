@@ -1,4 +1,5 @@
 //! Optional aggregate observations. No identifiers or network work enter this boundary.
+pub use palmagent_telemetry::Outcome;
 use palmagent_telemetry::{Measurement, Telemetry};
 use serde_json::Value;
 use std::{
@@ -41,6 +42,17 @@ impl Measurements {
             .ok()?
             .begin(operation, self.active.load(Ordering::Relaxed))
     }
+    pub fn observe(&self, operation: &'static str, concurrency: usize) -> Observation {
+        let measurement = self
+            .aggregate
+            .try_lock()
+            .ok()
+            .and_then(|aggregate| aggregate.begin(operation, concurrency));
+        Observation {
+            measurements: self.clone(),
+            measurement,
+        }
+    }
     pub fn finish(&self, measurement: Option<Measurement>, success: bool) {
         if let Ok(mut aggregate) = self.aggregate.try_lock() {
             aggregate.finish(measurement, success);
@@ -57,5 +69,29 @@ impl Measurements {
         let result = action();
         self.finish(measurement, result.is_ok());
         result
+    }
+}
+
+/// A cancelled future contributes a terminal outcome without retaining request content.
+pub struct Observation {
+    measurements: Measurements,
+    measurement: Option<Measurement>,
+}
+impl Observation {
+    pub fn finish(mut self, outcome: Outcome) {
+        self.record(outcome);
+    }
+    fn record(&mut self, outcome: Outcome) {
+        let Some(measurement) = self.measurement.take() else {
+            return;
+        };
+        if let Ok(mut aggregate) = self.measurements.aggregate.try_lock() {
+            aggregate.finish_outcome(Some(measurement), outcome);
+        }
+    }
+}
+impl Drop for Observation {
+    fn drop(&mut self) {
+        self.record(Outcome::Cancelled);
     }
 }

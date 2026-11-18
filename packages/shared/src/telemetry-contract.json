@@ -80,7 +80,17 @@
     "routine.stop",
     "routine.queue",
     "routine.poll",
-    "routine.storage.write"
+    "routine.storage.write",
+    "http.read.usage",
+    "http.read.transcript",
+    "http.read.changes",
+    "http.read.steps",
+    "http.read.details",
+    "read.queue.usage",
+    "read.queue.transcript",
+    "read.queue.changes",
+    "read.queue.steps",
+    "read.queue.details"
   ],
   "concurrency": [
     "0",
@@ -93,7 +103,11 @@
   "outcomes": [
     "success",
     "error",
-    "timeout"
+    "timeout",
+    "client_error",
+    "unavailable",
+    "rejected",
+    "cancelled"
   ],
   "services": [
     "palmagent.web",

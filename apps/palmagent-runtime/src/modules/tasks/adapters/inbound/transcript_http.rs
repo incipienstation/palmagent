@@ -3,7 +3,7 @@ use super::public_contract::{self, Contract};
 use crate::modules::tasks::api::{
     MAX_CURSOR, StepsError, StepsPage, TranscriptQuery, TranscriptRead, TranscriptReader,
 };
-use crate::platform::read_pool::ReadPool;
+use crate::platform::{read_pool::ReadPool, telemetry::Observation};
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -157,28 +157,30 @@ pub(super) async fn read(
     task_id: String,
     query: Read,
 ) -> Result<([(header::HeaderName, &'static str); 1], String), Failure> {
-    read_encoded(client, task_id, query, None).await
+    read_encoded(client, task_id, query, None, None).await
 }
 pub(super) async fn read_public(
     client: Client,
     task_id: String,
     query: Read,
     contract: Contract,
+    queue: Option<Observation>,
 ) -> Result<([(header::HeaderName, &'static str); 1], String), Failure> {
-    read_encoded(client, task_id, query, Some(contract)).await
+    read_encoded(client, task_id, query, Some(contract), queue).await
 }
 async fn read_encoded(
     client: Client,
     task_id: String,
     query: Read,
     contract: Option<Contract>,
+    queue: Option<Observation>,
 ) -> Result<([(header::HeaderName, &'static str); 1], String), Failure> {
     if task_id.is_empty() {
         return Err(invalid());
     }
     let body = client
         .readers
-        .run(move |reader| {
+        .run_observed(queue, move |reader| {
             let body = match query {
                 Read::Transcript(query) => {
                     let result = reader.read(&task_id, query).map_err(|_| unavailable())?;
