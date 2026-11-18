@@ -329,6 +329,10 @@ test("terminal uses one header and grouped presets preserve input and fitted zoo
     await expect.poll(() => f.inputs.at(-1)).toBe(data);
     await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
   }
+  // Model a mobile keyboard opening while xterm has input focus.
+  await page.setViewportSize({ width: 400, height: 464 });
+  await expect(region).toHaveCSS("height", "464px");
+  await expect(screen.locator(".xterm-screen")).toBeInViewport({ ratio: 1 });
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await expect(page.getByRole("button", { name: "Reset terminal zoom" })).toHaveText("15px");
   await page.getByRole("button", { name: "Reset terminal zoom" }).click();

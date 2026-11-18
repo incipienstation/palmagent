@@ -207,7 +207,7 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     <div
       ref={container}
       data-testid="terminal-screen"
-      className="min-h-0 min-w-0 flex-1 touch-pan-y overflow-hidden overscroll-contain bg-background p-2 text-foreground"
+      className="m-2 min-h-0 min-w-0 flex-1 touch-pan-y overflow-hidden overscroll-contain bg-background text-foreground"
       onTouchStartCapture={handleTouchStart}
       onTouchMoveCapture={handleTouchMove}
       onTouchEndCapture={handleTouchEnd}
