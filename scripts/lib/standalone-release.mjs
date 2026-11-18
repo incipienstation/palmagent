@@ -65,7 +65,7 @@ export async function readChannel(channel, { fetcher = fetch, origin = DISTRIBUT
   // Publication decisions must not reuse a pre-deployment Pages/CDN response.
   const response = await fetcher(`${origin}/channels/${channel}.json?verification=${randomUUID()}`, { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error('Standalone channel is unavailable');
+  if (!response.ok) throw new Error(`Standalone ${channel} channel is unavailable (HTTP ${response.status})`);
   const bytes = Buffer.from(await response.arrayBuffer());
   return { value: verifyChannelDocument(bytes, channel, keys), bytes };
 }

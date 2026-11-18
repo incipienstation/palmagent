@@ -154,6 +154,10 @@ test('Pages readback waits for all exact files and does not report a failed depl
   await verifyReleasePages(site, { fetcher, attempts:2, sleep:async () => { iteration++; } });
   assert.equal(iteration, 1);
   await assert.rejects(verifyReleasePages(site, {
+    attempts:1, fetcher:async url => new URL(url).pathname === '/channels/stable.json'
+      ? new Response('provider error', { status:503 }) : fetcher(url),
+  }), /channels\/stable.json/);
+  await assert.rejects(verifyReleasePages(site, {
     attempts:1, fetcher:async () => new Response('wrong'),
   }), /Public Pages readback did not match/);
   await assert.rejects(verifyReleasePages(site, {
