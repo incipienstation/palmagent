@@ -137,6 +137,10 @@ export function buildReleasePages(directory, env, {
   writeFileSync(join(directory, 'index.html'), '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
     + '<title>Palmagent releases</title><h1>Palmagent releases</h1><p><a href="install.sh">Installation script</a></p>'
     + `<p><a href="${DISTRIBUTION.repositoryUrl}/releases">Downloads and release notes</a></p></html>\n`);
+  // Serve missing channels from the deployed artifact rather than the provider's
+  // generic error page. A missing channel must still have HTTP status 404.
+  writeFileSync(join(directory, '404.html'), '<!doctype html><html lang="en"><meta charset="utf-8">'
+    + '<title>Not found</title><h1>Not found</h1><p>This release resource is unavailable.</p></html>\n');
   mkdirSync(join(directory, 'channels'));
   for (const [channel, entry] of Object.entries(state.channels)) writeFileSync(join(directory, 'channels', `${channel}.json`), entry.bytes);
   return health;
@@ -154,7 +158,7 @@ export function assertPagesHead(directory, env, { api = apiFor(env), keys = RELE
 export async function verifyReleasePages(directory, {
   fetcher = fetch, sleep = delay, attempts = 60, intervalMs = 10_000, origin = DISTRIBUTION.releaseOrigin,
 } = {}) {
-  const expected = new Map(['health', 'install.sh'].map(path => [path, readFileSync(join(directory, path))]));
+  const expected = new Map(['health', 'install.sh', '404.html'].map(path => [path, readFileSync(join(directory, path))]));
   const present = new Set(readdirSync(join(directory, 'channels')));
   for (const channel of channels) {
     const path = `channels/${channel}.json`;
