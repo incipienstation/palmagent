@@ -1,20 +1,18 @@
 //! Private read endpoint. Admission is bounded and SQLite never blocks an async worker.
 use crate::modules::tasks::api::UsageReader;
+use crate::platform::read_pool::ReadPool;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
-use tokio::sync::Semaphore;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Client {
-    reader: Arc<Mutex<Box<dyn UsageReader>>>,
-    slots: Arc<Semaphore>,
+    readers: ReadPool<Box<dyn UsageReader>>,
 }
 impl Client {
     pub fn new(reader: Box<dyn UsageReader>) -> Self {
         Self {
-            reader: Arc::new(Mutex::new(reader)),
-            slots: Arc::new(Semaphore::new(2)),
+            readers: ReadPool::new(vec![reader], 16, Duration::from_millis(250)),
         }
     }
 }
@@ -34,22 +32,11 @@ pub fn router(client: Client) -> Router {
 }
 
 pub(super) async fn read(client: Client) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let permit = client
-        .slots
-        .clone()
-        .try_acquire_owned()
+    let usage = client
+        .readers
+        .run(move |reader| reader.usage())
+        .await
+        .map_err(|_| unavailable())?
         .map_err(|_| unavailable())?;
-    let usage = tokio::task::spawn_blocking(move || {
-        // Keep admission until work ends even if its HTTP caller disconnects.
-        let _permit = permit;
-        client
-            .reader
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Usage reader failed"))
-            .and_then(|mut reader| reader.usage())
-    })
-    .await
-    .map_err(|_| unavailable())?
-    .map_err(|_| unavailable())?;
     Ok::<_, (StatusCode, Json<Value>)>(Json(json!({"usage":usage})))
 }

@@ -72,6 +72,7 @@ const InstallEnv = z
     DOMAIN: PublicDomain.optional(),
     HOST: LoopbackHost.default(DEFAULTS.host),
     PORT: Port.default(DEFAULTS.port),
+    NATIVE_READ_HTTP_PORT: Port.optional(),
     DISPATCH_CONCURRENCY: Concurrency.default(DEFAULTS.concurrency),
     DATA_DIR: z.string().min(1).optional(),
     RUNNER_SOCKET: z.string().min(1).optional(),
@@ -104,18 +105,22 @@ const InstallEnv = z
       .positive()
       .default(DEFAULT_CAPS.tasksMaxWeb),
   })
-  .passthrough();
+  .passthrough()
+  .refine(value => value.NATIVE_READ_HTTP_PORT !== value.PORT, { message: "NATIVE_READ_HTTP_PORT must differ from PORT", path: ["NATIVE_READ_HTTP_PORT"] })
+  .refine(value => value.NATIVE_READ_HTTP_PORT === undefined || value.SUPERVISOR === "palmagentd", { message: "NATIVE_READ_HTTP_PORT requires the native supervisor", path: ["NATIVE_READ_HTTP_PORT"] });
 
 export function validateInstallInput(values: {
   domain: string;
   host: string;
   port: number;
+  nativeReadHttpPort?: number;
   concurrency: number;
   pushSubject: string;
 }): {
   domain: string;
   host: string;
   port: number;
+  nativeReadHttpPort?: number;
   concurrency: number;
   pushSubject: string;
 } {
@@ -124,9 +129,11 @@ export function validateInstallInput(values: {
       domain: PublicDomain,
       host: LoopbackHost,
       port: Port,
+      nativeReadHttpPort: Port.optional(),
       concurrency: Concurrency,
       pushSubject: z.union([z.literal(""), PushSubject]),
     })
+    .refine(value => value.nativeReadHttpPort !== value.port, { message: "NATIVE_READ_HTTP_PORT must differ from PORT", path: ["nativeReadHttpPort"] })
     .parse(values);
 }
 
@@ -271,6 +278,7 @@ export function loadConfig(
     domain,
     host: e.HOST,
     port: e.PORT,
+    nativeReadHttpPort: e.NATIVE_READ_HTTP_PORT,
     concurrency: e.DISPATCH_CONCURRENCY,
     pushSubject: e.PUSH_SUBJECT ?? "",
     repoRoots: e.REPO_ROOTS ?? "",
@@ -297,6 +305,7 @@ export function renderInstallConfig(cfg: InstallConfig): string {
     `DOMAIN=${cfg.domain}`,
     `HOST=${cfg.host}`,
     `PORT=${cfg.port}`,
+    cfg.nativeReadHttpPort !== undefined ? `NATIVE_READ_HTTP_PORT=${cfg.nativeReadHttpPort}` : "",
     `DISPATCH_CONCURRENCY=${cfg.concurrency}`,
     `DATA_DIR=${cfg.dataDir}`,
     `RUNNER_SOCKET=${cfg.runnerSocket}`,

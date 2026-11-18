@@ -1,5 +1,7 @@
 //! Private activity read endpoint. Hold admission through database read and serialization.
+use super::public_contract::{self, Contract};
 use crate::modules::tasks::api::{ActivityDetails, ActivityReader, ActivityRecord};
+use crate::platform::read_pool::ReadPool;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -8,19 +10,19 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json, value::RawValue};
-use std::sync::{Arc, Mutex};
-use tokio::sync::Semaphore;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Client {
-    reader: Arc<Mutex<Box<dyn ActivityReader>>>,
-    slots: Arc<Semaphore>,
+    readers: ReadPool<Box<dyn ActivityReader>>,
 }
 impl Client {
     pub fn new(reader: Box<dyn ActivityReader>) -> Self {
+        Self::pooled(vec![reader])
+    }
+    pub fn pooled(readers: Vec<Box<dyn ActivityReader>>) -> Self {
         Self {
-            reader: Arc::new(Mutex::new(reader)),
-            slots: Arc::new(Semaphore::new(2)),
+            readers: ReadPool::new(readers, 16, Duration::from_millis(250)),
         }
     }
 }
@@ -118,23 +120,34 @@ pub(super) async fn read(
     through: i64,
 ) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
 {
-    let permit = client
-        .slots
-        .clone()
-        .try_acquire_owned()
+    read_encoded(client, task_id, from, through, None).await
+}
+pub(super) async fn read_public(
+    client: Client,
+    task_id: String,
+    from: i64,
+    through: i64,
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
+{
+    read_encoded(client, task_id, from, through, Some(Contract::Activity)).await
+}
+async fn read_encoded(
+    client: Client,
+    task_id: String,
+    from: i64,
+    through: i64,
+    contract: Option<Contract>,
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
+{
+    let body = client
+        .readers
+        .run(move |reader| {
+            let details = reader.details(&task_id, from, through)?;
+            public_contract::finish(encode(&details)?, contract)
+        })
+        .await
+        .map_err(|_| unavailable())?
         .map_err(|_| unavailable())?;
-    let body = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        let details = client
-            .reader
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Activity reader failed"))?
-            .details(&task_id, from, through)?;
-        encode(&details)
-    })
-    .await
-    .map_err(|_| unavailable())?
-    .map_err(|_| unavailable())?;
     Ok::<_, (StatusCode, Json<Value>)>((
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         body,

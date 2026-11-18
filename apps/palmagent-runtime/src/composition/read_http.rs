@@ -13,6 +13,7 @@ use crate::modules::{
                 sqlite_transcript::SqliteTranscript, sqlite_usage::SqliteUsage,
             },
         },
+        api::{ActivityReader, TranscriptReader},
         application::{Service, activity::ActivityService, transcript::TranscriptService},
     },
 };
@@ -185,12 +186,18 @@ fn build(db: &Path, settings: &Settings) -> Result<Router> {
         Box::new(SessionService::new(Box::new(SqliteSessions::open(db)?))),
     );
     let usage = usage_http::Client::new(Box::new(Service::new(Box::new(SqliteUsage::open(db)?))));
-    let activity = activity_http::Client::new(Box::new(ActivityService::new(Box::new(
-        SqliteActivity::open(db)?,
-    ))));
-    let transcript = transcript_http::Client::new(Box::new(TranscriptService::new(Box::new(
-        SqliteTranscript::open(db)?.require_clean(),
-    ))));
+    let mut activities: Vec<Box<dyn ActivityReader>> = Vec::new();
+    let mut transcripts: Vec<Box<dyn TranscriptReader>> = Vec::new();
+    for _ in 0..4 {
+        activities.push(Box::new(ActivityService::new(Box::new(
+            SqliteActivity::open(db)?,
+        ))));
+        transcripts.push(Box::new(TranscriptService::new(Box::new(
+            SqliteTranscript::open(db)?.require_clean(),
+        ))));
+    }
+    let activity = activity_http::Client::pooled(activities);
+    let transcript = transcript_http::Client::pooled(transcripts);
     let client = public_reads::Client::new(
         usage,
         activity,

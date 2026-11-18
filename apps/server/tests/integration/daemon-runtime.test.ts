@@ -59,13 +59,24 @@ console.log(JSON.stringify(request.action === 'status' ? { protocol: 1, ...build
 
 test("daemon configuration pins native and Node artifacts and preserves the supervisor selection", t => {
   const f = fixture(t);
+  f.cfg.nativeReadHttpPort = 4101;
   configureDaemon(f.cfg); saveConfig(f.cfg);
   const config = DaemonConfigurationSchema.parse(JSON.parse(readFileSync(join(f.root, "daemon/config.json"), "utf8")));
   assert.equal(config.daemon, f.binary);
   assert.equal(config.node, f.cfg.executionNode);
   assert.equal(config.environment.EXECUTION_RELEASE, f.release);
   assert.equal(config.limits.memoryMax, 16 * 1024 ** 3);
-  assert.equal(loadConfig({ dataDir: f.root }).supervisor, "palmagentd");
+  const loaded = loadConfig({ dataDir: f.root });
+  assert.equal(loaded.supervisor, "palmagentd");
+  assert.equal(loaded.nativeReadHttpPort, 4101);
+  assert.equal(config.environment.NATIVE_READ_HTTP_PORT, "4101");
+  assert.equal(daemonConfiguration(loaded).environment.NATIVE_READ_HTTP_PORT, "4101", "updates retain the read listener");
+  saveConfig({ ...loaded, nativeReadHttpPort: undefined });
+  assert.equal(daemonConfiguration(loadConfig({ dataDir: f.root })).environment.NATIVE_READ_HTTP_PORT, undefined);
+  saveConfig({ ...loaded, nativeReadHttpPort: loaded.port });
+  assert.throws(() => loadConfig({ dataDir: f.root }), /must differ/);
+  saveConfig({ ...loaded, supervisor: undefined });
+  assert.throws(() => loadConfig({ dataDir: f.root }), /native supervisor/);
   assert(!existsSync(f.privileged));
 });
 

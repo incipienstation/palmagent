@@ -20,18 +20,26 @@ in the same transaction. Startup repairs retained dirty projections before enabl
 A direct read that encounters a dirty or incompatible projection fails closed instead of serving
 stale data or calling Node to repair it. Invalid-session cleanup remains with Node.
 
-The native reader algorithms, page budgets, mutexes and two-request admission limits are unchanged.
+The initial routing experiment kept reader algorithms, page budgets and two-request admission
+limits unchanged. The concurrency follow-up replaces immediate rejection with a bounded async
+queue: each read pool permits up to 16 waiting requests for at most 250 ms. Transcript and
+activity reads each use four independent read-only SQLite connections. Usage keeps one worker
+and its shared aggregation cache to avoid duplicate full scans. Database reads, response validation
+and JSON encoding run inside worker leases; cancelling an HTTP request does not release a worker
+still executing. Queue overflow or expiry returns 503. Page budgets and writer ownership are unchanged.
 The public boundary preserves request and response validation, task existence checks, JSON value semantics,
 error codes and security/cache headers. Transport serialization can change key order or number
 spelling; response JSON values remain equivalent. Operation details, content chunks, raw history,
 SSE, WebSockets, writes, login, health and static files retain their Node routes.
 
-## Enable in an isolated installation
+## Enable in a native installation
 
 1. Use a clean identified build containing `taskReadHttp: 1`, with the native application runtime.
    Disable telemetry sharing in the validation installation.
-2. Set `NATIVE_READ_HTTP_PORT=4001` in the Node owner's environment, using a free port different
-   from `PORT`. Rust binds only the IPv4 loopback address. Startup sends the validated auth settings through the
+2. Set `NATIVE_READ_HTTP_PORT=4001` in the installation `install.env`, using a free port different
+   from `PORT`. Run `palmagent setup --dry-run`, inspect the plan, then apply with `palmagent setup`.
+   Setup and updates preserve this setting for the native supervisor. Legacy installations reject it.
+   Rust binds only the IPv4 loopback address. Startup sends the validated auth settings through the
    existing owner-only application socket; the public listener exposes no private control APIs.
 3. Apply the [routing map](nginx-routing.conf) to the existing same-origin ingress, adapting only
    the two example upstream addresses. Its normal default continues directly to Node. Preserve
@@ -39,7 +47,10 @@ SSE, WebSockets, writes, login, health and static files retain their Node routes
    browser requests or fall back to Node when the Rust route fails.
 4. Check authenticated, unauthenticated, expired and revoked sessions; verify the selected routes
    hit Rust and an unchanged route such as `/api/health` still hits Node. The loopback listener is
-   independently authenticated even when bypassing the ingress.
+   independently authenticated even when bypassing the ingress. Run `palmagent connection diagnose`
+   after cutover: with the listener configured, it requires the Rust response marker and matching
+   version on all five routes using a temporary authenticated session, then checks Node SSE.
+   The probe uses nonexistent task IDs, so it does not retrieve conversation contents.
 
 The flag starts the listener; it does not rewrite host ingress configuration. Normal installations
 remain unchanged until both steps are applied. Browser-facing HTTP/SSE/WebSocket contracts and
@@ -48,7 +59,7 @@ an orderly shutdown. After a crash it can continue serving committed reads until
 the next startup reapplies configuration. Native process exit closes it as well.
 
 To roll back routing, point all ingress requests back to Node. Then unset `NATIVE_READ_HTTP_PORT`
-and restart the owner; startup disables any retained direct listener. No schema migration or data
+in `install.env` and apply `palmagent setup`; startup disables any retained direct listener. No schema migration or data
 conversion is required. Never expose the private application control socket through the ingress.
 
 ## Compare one change at a time
@@ -67,4 +78,10 @@ cannot accidentally depend on Node repairing a projection just before the measur
 The direct listener currently contributes to native process resource observations; the existing
 Node `http.request` metrics do not include its requests. Use the isolated end-to-end benchmark for
 this experiment rather than comparing incomplete production request cohorts. Do not interpret a
-transport-only result as evidence that the unchanged admission limit or read serialization is fixed.
+transport-only result as evidence that admission or read serialization is fixed.
+
+For the concurrency follow-up, keep the direct ingress, Node process and database fixed while
+alternating baseline, queue-only and parallel-reader optimized binaries, then reverse that order.
+Warm every variant outside timing and include 1, 4 and 16 concurrent requests. Record binary
+identities, response parity, all 503s, successful throughput and combined CPU separately. Queue-only
+uses one reader per pool; the parallel variant also moves validation and encoding into its workers.

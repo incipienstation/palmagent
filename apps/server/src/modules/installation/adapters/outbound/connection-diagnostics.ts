@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { InstallConfig } from "../../domain/installation.js";
@@ -35,7 +36,7 @@ async function receiveSse(response: Response): Promise<void> {
 
 /** Uses the browser's public routes with ordinary TLS verification and no redirects. */
 export async function probePublicConnection(origin: string, cookie: string, version: string | undefined,
-  signal: AbortSignal, timeoutMs = 10_000): Promise<void> {
+  signal: AbortSignal, timeoutMs = 10_000, directReads = false): Promise<void> {
   const request = (path: string, authenticated = false) => fetch(`${origin}${path}`, {
     headers: authenticated ? { cookie, origin } : {}, redirect: "error",
     signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
@@ -51,6 +52,21 @@ export async function probePublicConnection(origin: string, cookie: string, vers
   if (!auth.ok) { await auth.body?.cancel(); throw new Error("Public authentication request failed"); }
   const authenticated = await auth.json().catch(() => { throw new Error("Public authentication endpoint returned invalid JSON"); }) as { authenticated?: boolean; required?: boolean };
   if (authenticated.required !== true || authenticated.authenticated !== true) throw new Error("Public authentication is disabled or did not recognize the diagnostic session");
+  if (directReads) {
+    // Nonexistent targets prove authenticated route selection without reading conversations.
+    const task = `/api/tasks/palmagent-diagnostic-${randomUUID()}/history`;
+    for (const path of ["/api/usage", `${task}?format=transcript`, `${task}/changes?format=transcript&after=0`,
+      `${task}/steps?key=1`, `${task}/details?from=1&through=1`]) {
+      const response = await request(path, true);
+      const value = await response.json().catch(() => null) as { usage?: unknown; code?: string } | null;
+      const usage = path === "/api/usage";
+      if (response.status !== (usage ? 200 : 404) || response.headers.get("x-palmagent-read-runtime") !== "rust"
+        || (version !== undefined && response.headers.get("x-palmagent-version") !== version)
+        || !value || (usage ? !Array.isArray(value.usage) : value.code !== "not_found")) {
+        throw new Error("Public native read routing, authentication or version could not be verified");
+      }
+    }
+  }
   await receiveSse(await request("/api/stream?snapshots=1", true));
 }
 
@@ -58,8 +74,8 @@ export function createConnectionDiagnostics(sessions: DiagnosticSessions) {
   return async (cfg: InstallConfig, probe = probePublicConnection) => withDiagnosticSession(cfg, sessions, async (cookie, signal) => {
     const version = cfg.mode === "package" && cfg.pkgDir
       ? String(JSON.parse(readFileSync(join(cfg.pkgDir, "package.json"), "utf8")).version) : undefined;
-    await probe(cfg.authOrigin, cookie, version, signal);
+    await probe(cfg.authOrigin, cookie, version, signal, 10_000, cfg.nativeReadHttpPort !== undefined);
     return { status: "passed" as const, origin: cfg.authOrigin, vantage: "host" as const,
-      checks: [version === undefined ? "public HTTPS health" : "public HTTPS health/version", "app shell", "authenticated HTTP", "SSE delivery", "diagnostic cleanup"] };
+      checks: [version === undefined ? "public HTTPS health" : "public HTTPS health/version", "app shell", "authenticated HTTP", ...(cfg.nativeReadHttpPort === undefined ? [] : ["direct Rust read routing and authentication"]), "SSE delivery", "diagnostic cleanup"] };
   });
 }

@@ -46,5 +46,14 @@ Existing native system services migrate through this same idle setup path. The C
 manually restart services to bypass a refusal. Configure/adopt ingress through its actual
 owner, following the shared reference's ownership, validation and recovery procedure.
 If only application settings changed, an unchanged route requires no rewrite or reload.
+
+For an explicitly requested native direct-read cutover, use a release supporting the listener.
+Persist `NATIVE_READ_HTTP_PORT` in `install.env`, choosing a free loopback port distinct from
+`PORT`, then preview/apply setup. Setup and updates retain this setting; legacy supervisors
+reject it. The flag alone does not change ingress. Route only the five documented GET reads
+using the release's direct-read map, retaining the existing origin and ingress controls.
+After cutover run `<cli> connection diagnose`: when configured, it also requires authenticated
+Rust responses and the expected version for every selected route. For rollback, restore Node
+routing first, then remove the setting and apply setup.
 Verify runtime and public HTTPS separately. For a changed domain mint a fresh link with
 `<cli> passkey` only after HTTPS succeeds. Report any retained old routes or recovery work.
