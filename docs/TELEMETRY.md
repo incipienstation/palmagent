@@ -21,7 +21,7 @@ backend processes perform collection and HTTPS export. A local benchmark never u
 
 Only these resource dimensions are sent:
 
-- Component: web, daemon, execution host, or terminal host.
+- Component: web, daemon, application runtime, execution host, or terminal host.
 - The actual emitting component's release and implementation (`node` or `rust`).
 - OS, CPU architecture, and production/synthetic source.
 - Fixed operation and outcome names; a coarse concurrency bucket.
@@ -79,7 +79,9 @@ retry deduplication and is never exported into metrics.
 
 | Metric / operation | Measured boundary | Interpretation |
 | --- | --- | --- |
-| `http.*` | Hono request handling to response creation, including awaited work | API groups, not individual URLs; excludes SSE lifetimes and response network transfer |
+| Other `http.*` | Hono request handling to response creation, including awaited work | API groups, not individual URLs; excludes SSE lifetimes and response network transfer |
+| `http.read.usage/transcript/changes/steps/details` | Selected GET handling in Node or Rust, before auth through response creation | Includes auth, validation, reads and encoding; excludes socket transfer and browser rendering |
+| `read.queue.usage/transcript/changes/steps/details` | Direct Rust read-pool admission through acquisition of a worker | Records successful acquisition, immediate rejection, timeout, failure or cancellation; excludes auth/task lookup and worker execution |
 | `event.deliver` | Event callback enqueue through completion of its SSE write | Server queue/write latency, not browser render time; concurrency is queued frames |
 | `storage.queue` | Execution persistence submission to the serial write attempt | Local queue delay; one serial writer |
 | `storage.write` | Each execution SQLite write attempt | Successful and failed attempts remain separate; retry wait is not write execution time |
@@ -106,7 +108,7 @@ before releasing a producer with new names; a strict older receiver rejects unkn
 Older releases retain their original groups, so category counts are not directly comparable
 across the classification change.
 
-For HTTP and web resources, concurrency is in-flight non-streaming HTTP requests. For the Rust daemon it is
+For selected `http.read.*` operations, concurrency is the number of in-flight requests across those five GET routes in that listener. Direct `read.queue.*` observations retain the same arrival-time bucket. Other HTTP operations and web resources use all in-flight non-streaming HTTP requests. For the Rust daemon it is
 open control connections; for the application runtime it is active admitted script routines
 (sampled before a command/pass, with at most four slots). Execution and terminal hosts each represent one invocation.
 These load definitions differ by component: compare like components. Provider response time is
@@ -132,7 +134,7 @@ also use the separate legacy seven-day data source (`palmagent-prometheus-legacy
 History starts when each store first receives data; enabling longer retention does
 not create earlier observations. Narrow the component/release/time selection if a
 long-range query exceeds the collector's bounded query budget. Select one component, operation, outcome, OS, architecture, and load
-bucket. Then choose baseline/candidate releases and their actual implementations. Panels include
+bucket. Then choose baseline/candidate components, releases and their actual implementations. The two component selectors allow the same public read to be compared across Node web and Rust application, without mixing their resource totals. Panels include
 sample counts, p50/p95/p99, observed operation rate, errors, CPU, memory, and contention.
 Quantile comparison panels require 30/100/1000 observations respectively. Empty panels mean
 insufficient or unavailable observations, not zero latency.
@@ -222,13 +224,41 @@ service/operation entries so retained releases remain accepted. Update the gener
 component selector as well. Verify a synthetic native batch separately from production observations;
 receiver acceptance does not prove the new application version is installed or actively exporting.
 
-### Task usage read migration
+### Direct Task read measurements
 
-The existing `http.request` category includes `/api/usage` and its native round trip on
-daemon-backed installations. Application CPU and memory measurements include usage work
-alongside script routines; they do not isolate usage aggregation latency. This slice adds
-no producer operation names, so it remains compatible with the receiver's current allowlist.
+Both the retained Node HTTP path and the direct Rust listener emit the five fixed `http.read.*`
+operations above. Node exports them as `palmagent.web` / `node`; Rust exports them as
+`palmagent.application` / `rust` through the existing native snapshot reader. Each request is
+counted once at its public boundary. Private Node-to-Rust reads do not emit another public HTTP
+sample. Older releases grouped these reads under `http.request` or `http.tasks.read`, or did
+not observe the direct listener at all; those older totals are not a matching baseline.
 
-A future dedicated usage timing requires the receiver rollout described above. Compare the
-same event corpus and cache state, distinguishing a first read after a revision change from
-an unchanged cached read. This ownership transfer alone does not establish a speedup.
+HTTP outcomes are `success` (below 400), `client_error` (4xx, including rejected authentication),
+`unavailable` (503), and `error` (other 5xx). Dropping an unfinished Rust handler future records
+`cancelled`; it does not mean every browser disconnect cancels server work. Response-ready time
+excludes socket transfer. Select `success` when comparing successful-read latency, and include
+all outcomes when inspecting failure fractions. A 503 can have causes other than queue pressure.
+
+The histogram count of each `read.queue.*` operation is also its admission-attempt count.
+`success` means a worker was acquired, `rejected` means the bounded queue was full, `timeout`
+means its wait deadline expired, and `error` means the worker pool was unavailable. A cancelled
+wait records `cancelled`. Once admitted, a worker keeps its lease until completion even if the
+caller disappears; this does not add a second queue outcome. Request and queue totals can differ:
+authentication and validation failures never enter a read pool. These queue metrics exist only
+on the direct Rust path, not on private mediated reads.
+
+Deploy the additive operation and outcome allowlists from `telemetry-contract.json` to the
+receiver before deploying the new producers, preserving old names and the existing cardinality
+limits. Refresh the generated dashboard selectors. Verify both synthetic receiver admission and
+real production export separately; neither a passing local test nor a collector accepting a
+synthetic batch proves production collection.
+
+No URLs, query strings, task IDs, cookies or response bodies enter these observations. The same
+sharing preference, immediate export gate, bounded in-memory aggregates and non-blocking upload
+apply. Collection is best effort: contention, stream limits, restarts and export outages can drop
+samples. Resource samples still cover all work in their process and have the component-specific
+load definitions above, not an allocation to an individual read route.
+
+Compare the same event corpus and cache state, distinguishing a first read after a revision change
+from an unchanged cached read. Keep the five-route mix and concurrency comparable, use enough
+observations, and combine participating process CPU/memory when assessing resource savings.

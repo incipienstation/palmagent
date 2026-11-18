@@ -244,3 +244,27 @@ test("application exports carry native identity and never replay on attachment, 
   instance = "owner-two"; count = 7; await collector.poll(); await f.producer.send(); assert.equal(sent.length, 2);
   f.settings.change(false); count = 8; await collector.poll(); await f.producer.send(); assert.equal(sent.length, 2);
 });
+
+
+test("selected reads have matching fixed route and outcome groups on Node, without double-counting", async t => {
+  const sent: string[] = [];
+  const f = fixture(t, (async (_url, init) => { sent.push(String(init!.body)); return new Response(null); }) as typeof fetch);
+  f.settings.change(true);
+  const load = { active: 0 }, app = new Hono();
+  app.use("*", requestMeasurements(f.producer, load));
+  app.get("*", c => c.json({}, Number(c.req.query("status") ?? 200) as 200 | 401 | 503));
+  for (const path of ["/api/usage", "/api/tasks/private-id/history?format=transcript", "/api/tasks/private-id/history/changes?format=transcript", "/api/tasks/private-id/history/steps", "/api/tasks/private-id/history/details"]) {
+    for (const status of [200, 401, 503]) await app.request(`${path}${path.includes("?") ? "&" : "?"}status=${status}`);
+  }
+  await app.request("/api/tasks/private-id/history?format=raw&format=transcript");
+  assert.equal(load.active, 0);
+  f.producer.flush(); await f.producer.send();
+  assert.equal(sent.length, 1);
+  assert(!sent[0].includes("private-id"));
+  const labels = JSON.parse(sent[0]).resourceMetrics[0].scopeMetrics[0].metrics.flatMap((m: { histogram: { dataPoints: { count: number; attributes: { key: string; value: { stringValue: string } }[] }[] } }) => m.histogram.dataPoints.map(p => ({ count: p.count, ...Object.fromEntries(p.attributes.map(a => [a.key, a.value.stringValue])) })));
+  assert.equal(labels.length, 16);
+  for (const operation of ["usage", "transcript", "changes", "steps", "details"]) for (const outcome of ["success", "client_error", "unavailable"]) {
+    assert(labels.some((p: Record<string, unknown>) => p.operation === `http.read.${operation}` && p.outcome === outcome && p.concurrency === "1" && p.count === 1));
+  }
+  assert(labels.some((p: Record<string, unknown>) => p.operation === "http.tasks.read" && p.count === 1));
+});

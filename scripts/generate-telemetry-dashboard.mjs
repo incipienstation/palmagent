@@ -4,11 +4,11 @@ import contract from '../packages/shared/src/telemetry-contract.json' with { typ
 const datasource = { type: 'prometheus', uid: '$metricsStore' };
 const custom = (name, values, selected) => ({ name, label: name, type: 'custom', query: values.join(','), current: { text: selected, value: selected } });
 const release = name => ({ name, label: name, type: 'query', datasource,
-  query: 'label_values(palmagent_operation_duration_seconds_count{telemetry_source="$source",service_name="$service"}, service_version)',
+  query: `label_values(palmagent_operation_duration_seconds_count{telemetry_source="$source",service_name="$${name}Service"}, service_version)`,
   refresh: 1, sort: 1, current: { text: 'Choose a release', value: '' } });
 const cohort = 'telemetry_source="$source",service_name="$service",os_type="$os",host_arch="$arch",concurrency="$concurrency"';
 const operation = `${cohort},operation="$operation"`;
-const selection = side => `${operation},service_version="$${side}",runtime_implementation="$${side}Implementation"`;
+const selection = side => `${operation.replace('service_name="$service"', `service_name="$${side}Service"`)},service_version="$${side}",runtime_implementation="$${side}Implementation"`;
 const count = (side, outcome = true) => `sum(increase(palmagent_operation_duration_seconds_count{${selection(side)}${outcome ? ',outcome="$outcome"' : ''}}[$__range]))`;
 const quantile = (side, percentile, minimum) =>
   `histogram_quantile(${percentile}, sum by (le) (increase(palmagent_operation_duration_seconds_bucket{${selection(side)},outcome="$outcome"}[$__range]))) and (${count(side)} >= ${minimum})`;
@@ -29,7 +29,7 @@ panel('Selected operation: observations per second', 'ops', [['{{service_version
 panel('Baseline / candidate: sample counts', 'short', ['baseline', 'candidate'].map(side => [side, count(side)]),
   'Counts across the selected time range. A client or collector outage can drop optional samples.', 'stat');
 panel('Baseline / candidate: p50', 's', ['baseline', 'candidate'].map(side => [side, quantile(side, .5, 30)]),
-  'Requires 30 observations per cohort. Select the same logical service and operation for both implementations.', 'stat');
+  'Requires 30 observations per cohort. Select matching operation boundaries in the baseline and candidate components.', 'stat');
 panel('Baseline / candidate: p95', 's', ['baseline', 'candidate'].map(side => [side, quantile(side, .95, 100)]),
   'Requires 100 observations per cohort. Histogram estimates have 1 ms minimum boundary; use the local benchmark for sub-millisecond changes.', 'stat');
 panel('Baseline / candidate: p99', 's', ['baseline', 'candidate'].map(side => [side, quantile(side, .99, 1000)]),
@@ -57,11 +57,11 @@ export const dashboard = {
     custom('source', ['production', 'synthetic'], 'production'),
     custom('service', contract.services, 'palmagent.web'),
     custom('operation', contract.operations, 'http.tasks.read'),
-    custom('outcome', ['success', 'error', 'timeout'], 'success'),
+    custom('outcome', contract.outcomes, 'success'),
     custom('os', ['linux', 'darwin', 'windows'], 'linux'), custom('arch', ['amd64', 'arm64'], 'amd64'),
     custom('concurrency', ['0', '1', '2-4', '5-8', '9-16', '17+'], '1'),
-    release('baseline'), custom('baselineImplementation', ['node', 'rust'], 'node'),
-    release('candidate'), custom('candidateImplementation', ['node', 'rust'], 'node'),
+    custom('baselineService', contract.services, 'palmagent.web'), release('baseline'), custom('baselineImplementation', ['node', 'rust'], 'node'),
+    custom('candidateService', contract.services, 'palmagent.application'), release('candidate'), custom('candidateImplementation', ['node', 'rust'], 'rust'),
   ] }, panels,
 };
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) console.log(JSON.stringify(dashboard, null, 2));

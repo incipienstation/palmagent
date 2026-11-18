@@ -1,7 +1,7 @@
 //! Private activity read endpoint. Hold admission through database read and serialization.
 use super::public_contract::{self, Contract};
 use crate::modules::tasks::api::{ActivityDetails, ActivityReader, ActivityRecord};
-use crate::platform::read_pool::ReadPool;
+use crate::platform::{read_pool::ReadPool, telemetry::Observation};
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -120,16 +120,25 @@ pub(super) async fn read(
     through: i64,
 ) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
 {
-    read_encoded(client, task_id, from, through, None).await
+    read_encoded(client, task_id, from, through, None, None).await
 }
 pub(super) async fn read_public(
     client: Client,
     task_id: String,
     from: i64,
     through: i64,
+    queue: Option<Observation>,
 ) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
 {
-    read_encoded(client, task_id, from, through, Some(Contract::Activity)).await
+    read_encoded(
+        client,
+        task_id,
+        from,
+        through,
+        Some(Contract::Activity),
+        queue,
+    )
+    .await
 }
 async fn read_encoded(
     client: Client,
@@ -137,11 +146,12 @@ async fn read_encoded(
     from: i64,
     through: i64,
     contract: Option<Contract>,
+    queue: Option<Observation>,
 ) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), (StatusCode, Json<Value>)>
 {
     let body = client
         .readers
-        .run(move |reader| {
+        .run_observed(queue, move |reader| {
             let details = reader.details(&task_id, from, through)?;
             public_contract::finish(encode(&details)?, contract)
         })

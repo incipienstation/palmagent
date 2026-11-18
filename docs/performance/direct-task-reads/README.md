@@ -75,10 +75,16 @@ on Node as a control. Response values and fixture revision must remain stable. P
 write should also be checked without first visiting the Node history endpoint, so the experiment
 cannot accidentally depend on Node repairing a projection just before the measurement.
 
-The direct listener currently contributes to native process resource observations; the existing
-Node `http.request` metrics do not include its requests. Use the isolated end-to-end benchmark for
-this experiment rather than comparing incomplete production request cohorts. Do not interpret a
-transport-only result as evidence that admission or read serialization is fixed.
+The direct listener emits fixed `http.read.*` handler timings/outcomes and `read.queue.*`
+admission-wait timings/outcomes through the existing consent-gated native collector. The retained
+Node path uses the same five HTTP labels and response-ready boundary; only the direct Rust path
+has the new queue observations. See [measurement definitions](../../TELEMETRY.md#direct-task-read-measurements)
+for outcome meanings, cancellation, load buckets, receiver rollout and sampling limits.
+
+Earlier direct-listener releases have resource observations but no matching HTTP timing samples;
+Node metrics exclude requests routed around it. Do not compare those incomplete historical cohorts
+with the new labels. Production trends remain observational; use the isolated end-to-end benchmark
+for controlled comparisons and do not treat handler time as browser-perceived latency.
 
 For the concurrency follow-up, keep the direct ingress, Node process and database fixed while
 alternating baseline, queue-only and parallel-reader optimized binaries, then reverse that order.

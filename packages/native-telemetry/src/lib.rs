@@ -34,6 +34,30 @@ pub struct Point {
     sum: f64,
     buckets: Vec<u64>,
 }
+/// Closed outcome taxonomy shared with the collector. Never attach raw errors or statuses.
+#[derive(Clone, Copy)]
+pub enum Outcome {
+    Success,
+    Error,
+    Timeout,
+    ClientError,
+    Unavailable,
+    Rejected,
+    Cancelled,
+}
+impl Outcome {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Error => "error",
+            Self::Timeout => "timeout",
+            Self::ClientError => "client_error",
+            Self::Unavailable => "unavailable",
+            Self::Rejected => "rejected",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
 pub struct Measurement {
     start: Instant,
     operation: &'static str,
@@ -144,6 +168,16 @@ impl Telemetry {
         })
     }
     pub fn finish(&mut self, measurement: Option<Measurement>, success: bool) {
+        self.finish_outcome(
+            measurement,
+            if success {
+                Outcome::Success
+            } else {
+                Outcome::Error
+            },
+        );
+    }
+    pub fn finish_outcome(&mut self, measurement: Option<Measurement>, outcome: Outcome) {
         let Some(measurement) = measurement else {
             return;
         };
@@ -156,7 +190,7 @@ impl Telemetry {
             BTreeMap::from([
                 ("concurrency", bucket(measurement.concurrency)),
                 ("operation", measurement.operation),
-                ("outcome", if success { "success" } else { "error" }),
+                ("outcome", outcome.label()),
             ]),
             "duration",
         );
@@ -310,6 +344,33 @@ mod consent_tests {
         assert!(t.snapshot().is_null());
         f.choice(true, REV);
         refresh(&mut t);
+        for outcome in [
+            Outcome::Success,
+            Outcome::Error,
+            Outcome::Timeout,
+            Outcome::ClientError,
+            Outcome::Unavailable,
+            Outcome::Rejected,
+            Outcome::Cancelled,
+        ] {
+            let contract: Value = serde_json::from_str(CONTRACT).unwrap();
+            assert!(
+                contract["outcomes"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(outcome.label()))
+            );
+            let measured = t.begin("http.read.transcript", 4);
+            t.finish_outcome(measured, outcome);
+            assert!(
+                t.snapshot()["points"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|point| point["attributes"]["outcome"] == outcome.label())
+            );
+        }
+        t.points.clear();
         let pending = t.begin("routine.run", 1);
         let completed = t.begin("routine.create", 1);
         t.finish(completed, true);

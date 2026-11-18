@@ -27,6 +27,7 @@ for (const name of [
   "HOST",
   "NODE_ENV",
   "PORT",
+  "NATIVE_READ_HTTP_PORT",
   "PUSH_SUBJECT",
   "REPO_ROOTS",
   "RUNNER_SOCKET",

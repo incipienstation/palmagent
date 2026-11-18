@@ -7,7 +7,9 @@ use crate::modules::{
     },
     tasks::{
         adapters::{
-            inbound::{activity_http, http as usage_http, public_reads, transcript_http},
+            inbound::{
+                activity_http, http as usage_http, public_reads, read_metrics, transcript_http,
+            },
             outbound::{
                 sqlite_activity::SqliteActivity, sqlite_read_access::SqliteReadAccess,
                 sqlite_transcript::SqliteTranscript, sqlite_usage::SqliteUsage,
@@ -17,6 +19,7 @@ use crate::modules::{
         application::{Service, activity::ActivityService, transcript::TranscriptService},
     },
 };
+use crate::platform::telemetry::Measurements;
 use anyhow::{Result, ensure};
 use axum::{Json, Router, extract::State, http::StatusCode, middleware, routing::post};
 use serde::{Deserialize, Serialize};
@@ -91,12 +94,14 @@ struct Active {
 #[derive(Clone)]
 pub struct Listener {
     db: PathBuf,
+    measurements: Measurements,
     active: Arc<Mutex<Option<Active>>>,
 }
 impl Listener {
-    pub fn new(db: PathBuf) -> Self {
+    pub fn new(db: PathBuf, measurements: Measurements) -> Self {
         Self {
             db,
+            measurements,
             active: Arc::new(Mutex::new(None)),
         }
     }
@@ -117,7 +122,8 @@ impl Listener {
         let app = if let Some(settings) = &settings {
             let db = self.db.clone();
             let settings = settings.clone();
-            Some(tokio::task::spawn_blocking(move || build(&db, &settings)).await??)
+            let measurements = self.measurements.clone();
+            Some(tokio::task::spawn_blocking(move || build(&db, &settings, measurements)).await??)
         } else {
             None
         };
@@ -177,7 +183,7 @@ async fn stop(active: Active) {
         let _ = task.await;
     }
 }
-fn build(db: &Path, settings: &Settings) -> Result<Router> {
+fn build(db: &Path, settings: &Settings, measurements: Measurements) -> Result<Router> {
     let auth = auth_http::Client::new(
         settings.auth_enabled,
         settings.cookie_name.clone(),
@@ -204,10 +210,13 @@ fn build(db: &Path, settings: &Settings) -> Result<Router> {
         transcript,
         Box::new(SqliteReadAccess::open(db)?),
     );
-    Ok(
-        public_reads::router(client).layer(middleware::from_fn_with_state(
+    Ok(public_reads::router(client)
+        .layer(middleware::from_fn_with_state(
             auth,
             auth_http::authenticate,
-        )),
-    )
+        ))
+        .layer(middleware::from_fn_with_state(
+            read_metrics::Metrics::new(measurements),
+            read_metrics::measure,
+        )))
 }

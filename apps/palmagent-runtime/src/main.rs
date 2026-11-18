@@ -70,7 +70,6 @@ async fn serve(args: &[String]) -> Result<()> {
         data.join("dispatcher.db")
     };
     let db = db.canonicalize()?;
-    let public_reads = composition::read_http::Listener::new(db.clone());
     let hosts = Hosts {
         data: data.clone(),
         release,
@@ -84,6 +83,7 @@ async fn serve(args: &[String]) -> Result<()> {
             .join("telemetry.json"),
     );
     measurements.tick(0);
+    let public_reads = composition::read_http::Listener::new(db.clone(), measurements.clone());
     let usage = task_http::Client::new(Box::new(TaskUsageService::new(Box::new(
         SqliteUsage::open(&db)?,
     ))));
