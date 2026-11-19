@@ -82,6 +82,8 @@ const COMPONENTS = {
 // literal text and all URLs still pass through Palmagent's protocol policy.
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS: [] = [];
+// Static messages render as one document; streaming block segmentation is unused.
+const staticDocument = (markdown: string) => [markdown];
 
 export const Markdown = memo(function Markdown({ children, streaming = false, caret = false }: {
   children: string; streaming?: boolean; caret?: boolean;
@@ -90,6 +92,7 @@ export const Markdown = memo(function Markdown({ children, streaming = false, ca
     mode={streaming ? "streaming" : "static"}
     isAnimating={streaming}
     parseIncompleteMarkdown={streaming}
+    parseMarkdownIntoBlocksFn={streaming ? undefined : staticDocument}
     caret={caret && streaming ? "block" : undefined}
     remarkPlugins={REMARK_PLUGINS}
     rehypePlugins={REHYPE_PLUGINS}

@@ -50,6 +50,18 @@ test("large Markdown preserves cross-block references, tables, literal HTML and 
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("A draft while streaming");
   for (let seq = 3; seq <= 10; seq++) await event(page, "t-run", seq, `\n\nUpdate ${seq}`);
   await expect(page.getByText("Update 10", { exact: true })).toBeVisible();
+  // Completing the turn switches to whole-document rendering; references and
+  // formatting must survive that transition without disturbing the draft.
+  await send(page, "t-run", { type: "tasks", tasks: tasks.map(task =>
+    task.taskId === "t-run" ? { ...task, status: "idle" } : task) });
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Late reference" })).toHaveAttribute("href", "https://example.invalid/docs");
+  await expect(page.getByRole("link", { name: "Unsafe", exact: true })).toHaveAttribute("href", "");
+  await expect(viewport(page)).toContainText("<script>window.markdownExecuted=true</script>");
+  await expect(viewport(page).locator("script")).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "two", exact: true })).toBeVisible();
+  await expect(page.locator("pre code")).toHaveText("const sample = 1;\n");
+  await expect(page.getByText("Update 10", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("A draft while streaming");
 });
 
