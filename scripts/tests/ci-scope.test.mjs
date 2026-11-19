@@ -44,14 +44,16 @@ test('server, web, and shared changes select their runtime surfaces', () => {
   assert.deepEqual(classifyChanges(['README.md', 'apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
 });
 
-test('reviewed tooling tests select tooling without hiding other changed consumers', () => {
-  for (const path of ['scripts/tests/release-finalize.test.mjs', 'scripts/tests/package-fixture.mjs']) {
+test('reviewed maintenance tools and tests select tooling without hiding other changed consumers', () => {
+  for (const path of ['scripts/finish-task.mjs', 'scripts/tests/finish-task.test.mjs',
+    'scripts/tests/release-finalize.test.mjs', 'scripts/tests/package-fixture.mjs']) {
     assert.deepEqual(classifyChanges([path]), { ...none, tooling: true });
     assert.deepEqual(classifyChanges([path, 'apps/web/src/app.tsx']), { ...none, types: true, tooling: true, web: true });
     assert.deepEqual(classifyChanges(['apps/server/src/bootstrap/server.ts', path]), { ...none, types: true, tooling: true, server: true, package: true });
     assert.deepEqual(classifyChanges([path, 'scripts/release-finalize.mjs']), all);
   }
-  for (const path of ['scripts/tests/new.test.mjs', 'scripts/tests/new-fixture.mjs', '.nvmrc']) {
+  for (const path of ['scripts/tests/new.test.mjs', 'scripts/tests/new-fixture.mjs',
+    'scripts/finish-task-new.mjs', 'scripts/verify-local.mjs', 'scripts/lib/verification-evidence.mjs', '.nvmrc']) {
     assert.deepEqual(classifyChanges([path]), all);
   }
 });

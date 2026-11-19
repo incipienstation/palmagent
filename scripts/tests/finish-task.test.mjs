@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -130,32 +130,64 @@ test('detects a real process holding a task checkout', { skip: process.platform 
   child.kill(); await once(child, 'close');
 });
 
-test('Codex tool host cwd permits primary updates but file use and task deletion remain protected', { skip: process.platform !== 'linux' }, async t => {
-  const f = fixture(t);
-  const child = spawn(process.execPath, ['-e', `
-    process.stdin.once('data', path => {
-      require('node:fs').openSync(path.toString(), 'r');
-      console.log('opened');
-    });
-    console.log('ready');
-    setInterval(() => {}, 1000);
-  `], { argv0: '/opt/codex/bin/codex-code-mode-host', cwd: f.primary, stdio: ['pipe', 'pipe', 'ignore'] });
-  t.after(() => child.kill());
-  await once(child.stdout, 'data');
-  assert.equal(checkoutBusy(f.primary, { primary: true }), undefined);
-  assert.match(checkoutBusy(f.primary), /process \d+ uses checkout/);
-  assert(finishTask({ ...f.options, busy: checkoutBusy }).includes('READY develop: fast-forward'));
+for (const mode of ['Codex tool host', 'reviewed passive PID']) {
+  test(`${mode} cwd permits primary updates but file use and task deletion remain protected`, { skip: process.platform !== 'linux' }, async t => {
+    const f = fixture(t);
+    const child = spawn(process.execPath, ['-e', `
+      process.stdin.once('data', path => {
+        require('node:fs').openSync(path.toString(), 'r');
+        console.log('opened');
+      });
+      console.log('ready');
+      setInterval(() => {}, 1000);
+    `], { ...(mode === 'Codex tool host' ? { argv0: '/opt/codex/bin/codex-code-mode-host' } : {}),
+      cwd: f.primary, stdio: ['pipe', 'pipe', 'ignore'] });
+    t.after(() => child.kill());
+    await once(child.stdout, 'data');
+    const passivePrimaryPids = mode === 'reviewed passive PID' ? [child.pid] : [];
+    if (passivePrimaryPids.length) assert.match(checkoutBusy(f.primary, { primary: true }), /checkout cwd/);
+    assert.equal(checkoutBusy(f.primary, { primary: true, passivePrimaryPids }), undefined);
+    assert.match(checkoutBusy(f.primary, { passivePrimaryPids }), /process \d+ uses checkout/);
+    assert(finishTask({ ...f.options, busy: checkoutBusy, passivePrimaryPids }).includes('READY develop: fast-forward'));
 
-  const opened = once(child.stdout, 'data');
-  child.stdin.end(join(f.primary, '.gitignore'));
-  await opened;
-  const reports = finishTask({ ...f.options, apply: true, busy: checkoutBusy });
-  assert(reports.some(line => line.startsWith('RETAIN develop: process')));
-  assert.equal(f.git(f.primary, 'rev-parse', 'HEAD'), f.base);
-  assert(!existsSync(f.worktree));
-  child.kill(); await once(child, 'close');
+    const opened = once(child.stdout, 'data');
+    child.stdin.end(join(f.primary, '.gitignore'));
+    await opened;
+    const reports = finishTask({ ...f.options, apply: true, busy: checkoutBusy, passivePrimaryPids });
+    assert(reports.some(line => line.startsWith('RETAIN develop: process')));
+    assert.equal(f.git(f.primary, 'rev-parse', 'HEAD'), f.base);
+    assert(!existsSync(f.worktree));
+    child.kill(); await once(child, 'close');
+  });
+}
+
+test('reviewed passive PID retains repository argument references through relative paths and symlinks', { skip: process.platform !== 'linux' }, async t => {
+  const f = fixture(t);
+  const external = mkdtempSync(join(tmpdir(), 'palmagent-external-'));
+  t.after(() => rmSync(external, { recursive: true, force: true }));
+  const alias = join(external, 'source=alias');
+  symlinkSync(join(f.primary, '.gitignore'), alias);
+  for (const argument of ['.gitignore', `--input=${alias}`]) {
+    const child = spawn(process.execPath, ['-e', 'console.log("ready"); setInterval(() => {}, 1000)', '--', argument],
+      { cwd: f.primary, stdio: ['ignore', 'pipe', 'ignore'] });
+    t.after(() => child.kill());
+    await once(child.stdout, 'data');
+    assert.match(checkoutBusy(f.primary, { primary: true, passivePrimaryPids: [child.pid] }), /arguments/);
+    child.kill(); await once(child, 'close');
+  }
 });
 
+test('an unrelated process title containing a whole command line is not a repository reference', { skip: process.platform !== 'linux' }, async t => {
+  const root = mkdtempSync(join(tmpdir(), 'palmagent-process-title-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const child = spawn(process.execPath, ['-e', 'console.log("ready"); setInterval(() => {}, 1000)'], {
+    argv0: `/opt/example/bin/tool --argument=${'x'.repeat(512)}`, cwd: tmpdir(), stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  t.after(() => child.kill());
+  await once(child.stdout, 'data');
+  assert.equal(checkoutBusy(root), undefined);
+  child.kill(); await once(child, 'close');
+});
 
 test('detects a process holding a worktree file from another cwd', { skip: process.platform !== 'linux' }, async t => {
   const f = fixture(t);
