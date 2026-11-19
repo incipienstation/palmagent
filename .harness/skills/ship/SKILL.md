@@ -46,6 +46,10 @@ are retained; the expected commit is checked atomically during deletion.
 A passive shell, agent, or Codex tool host holding only the primary checkout's cwd does not
 block its fast-forward. File, executable, and argument references still block it, as do other
 processes using that cwd. Any observable process use retains a task worktree slated for deletion.
+For another process reported as using the cwd, inspect its command and role. If it is an unrelated
+passive tool, rerun with `--passive-primary-pid <pid>` (repeatable). This permits only that cwd
+reference during primary updates; file, executable and argument checks still apply. An external
+executable alone does not prove passivity. Keep servers, builds, tests and uncertain processes blocked.
 
 For Claude Code- or Codex app-managed worktrees, use the native lifecycle controls instead of
 external deletion. Unknown ignored files, private data, or active task sessions require retention;

@@ -5,17 +5,18 @@ import { versionPolicy } from './release-version.mjs';
 
 const full = () => ({ types: true, tooling: true, server: true, web: true, package: true });
 
-// pkg:check covers these tests and fixtures; none are runtime inputs. Keep
+// pkg:check covers these maintenance tools, tests and fixtures; none are runtime inputs. Keep
 // new/unknown tooling paths on the full gate until their consumers are reviewed.
-const toolingTests = new Set([
+const toolingOnly = new Set(['scripts/finish-task.mjs', ...[
   'ci-results.test.mjs', 'ci-scope.test.mjs',
+  'finish-task.test.mjs',
   'local-verification.test.mjs', 'package-artifact.test.mjs', 'package-fixture.mjs',
   'pkg-smoke.test.mjs', 'preview-release.test.mjs', 'release-candidate.test.mjs',
   'release-finalize.test.mjs', 'release-fixture.mjs', 'release-github.test.mjs',
   'release-publish.test.mjs', 'release-tag.test.mjs', 'release-timing.test.mjs',
   'release-version.test.mjs', 'repository-skills.test.mjs', 'stable-prepare.test.mjs',
   'sync-skills.test.mjs', 'verify-candidate.test.mjs',
-].map(name => `scripts/tests/${name}`));
+].map(name => `scripts/tests/${name}`)]);
 
 // Only known documentation and skill surfaces may bypass runtime checks.
 const isStatic = (path) => /^(?:AGENTS|CLAUDE|README|CHANGELOG)\.md$/.test(path)
@@ -33,7 +34,7 @@ export function classifyChanges(paths, eventName = 'pull_request') {
   for (const path of paths) {
     if (isStatic(path)) continue;
     if (/(?:^|\/)(?:package\.json|pnpm-lock\.yaml)$/.test(path)) return full();
-    if (toolingTests.has(path)) { scope.tooling = true; continue; }
+    if (toolingOnly.has(path)) { scope.tooling = true; continue; }
     // Browser cases/snapshots are outside the typecheck projects and are not
     // packaging/CLI inputs. Other source paths retain both checks conservatively.
     if (!path.startsWith('apps/web/tests/e2e/')) scope.types = scope.tooling = true;

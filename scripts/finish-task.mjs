@@ -15,7 +15,7 @@ function operationInProgress(cwd) {
 }
 
 // Linux inspection is conservative. On other hosts, retain resources for native/manual cleanup.
-export function checkoutBusy(root, { primary = false, excluded = [] } = {}) {
+export function checkoutBusy(root, { primary = false, excluded = [], passivePrimaryPids = [] } = {}) {
   if (process.platform !== 'linux') return 'process inspection unavailable';
   for (const entry of readdirSync('/proc').filter(name => /^\d+$/.test(name))) {
     if (Number(entry) === process.pid) continue;
@@ -26,18 +26,35 @@ export function checkoutBusy(root, { primary = false, excluded = [] } = {}) {
       const command = readFileSync(`/proc/${entry}/cmdline`, 'utf8').split('\0');
       // Passive shells, agents and the Codex tool host may keep the primary cwd
       // between commands. File/argument/executable references still block updates.
-      const passive = primary && /(?:^|\/)(?:bash|zsh|sh|fish|codex|claude|codex-code-mode-host)$/.test(command[0] ?? '');
-      if (uses(cwd) && !passive) return `process ${entry} uses checkout`;
-      const referenced = command.some(arg => uses(arg.split('=').at(-1)))
+      const passive = primary && (passivePrimaryPids.includes(Number(entry))
+        || /(?:^|\/)(?:bash|zsh|sh|fish|codex|claude|codex-code-mode-host)$/.test(command[0] ?? ''));
+      if (uses(cwd) && !passive) return `process ${entry} uses checkout cwd`;
+      const argumentUsesCheckout = arg => {
+        const value = arg.startsWith('-') && arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : arg;
+        if (!value || value.startsWith('-')) return false;
+        const path = resolve(cwd, value);
+        if (!isAbsolute(value) && !existsSync(path)) return false;
+        if (uses(path)) return true;
+        try { return uses(realpathSync(path)); }
+        catch (error) {
+          if (['ENOENT', 'ENOTDIR', 'ENAMETOOLONG'].includes(error.code)) return false;
+          if (['EACCES', 'EPERM'].includes(error.code)) return uses(cwd);
+          throw error;
+        }
+      };
+      const referenced = command.some(argumentUsesCheckout)
         || uses(readlinkSync(`/proc/${entry}/exe`))
         || readdirSync(`/proc/${entry}/fd`).some(fd => {
           try { return uses(readlinkSync(`/proc/${entry}/fd/${fd}`)); }
           catch (error) { if (error.code === 'ENOENT') return false; throw error; }
         });
-      if (referenced) return `process ${entry} uses checkout`;
+      if (referenced) return `process ${entry} uses checkout files, executable, or arguments`;
     } catch (error) {
       // Protected system processes are not observable; the caller must release task sessions
       // before applying cleanup. Never infer that an inaccessible process belongs to this task.
+      if (passivePrimaryPids.includes(Number(entry)) && ['EACCES', 'EPERM'].includes(error.code)) {
+        return `cannot inspect reviewed process ${entry}`;
+      }
       if (['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) continue;
       throw error;
     }
@@ -45,7 +62,7 @@ export function checkoutBusy(root, { primary = false, excluded = [] } = {}) {
   return undefined;
 }
 
-export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBusy }) {
+export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBusy, passivePrimaryPids = [] }) {
   const reports = [];
   const primary = realpathSync(git(cwd, 'worktree', 'list', '--porcelain').split('\n')[0].slice(9));
   const target = existsSync(worktree) ? realpathSync(worktree) : resolve(worktree);
@@ -74,7 +91,8 @@ export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBu
     if (git(primary, 'branch', '--show-current') !== 'develop') return 'primary is not on develop';
     if (git(primary, 'status', '--porcelain', '--untracked-files=normal')) return 'primary has uncommitted files';
     if (operationInProgress(primary)) return 'primary has a Git operation in progress';
-    const active = busy(primary, { primary: true, excluded: registry.filter(item => item.path !== primary).map(item => item.path) });
+    const active = busy(primary, { primary: true, passivePrimaryPids,
+      excluded: registry.filter(item => item.path !== primary).map(item => item.path) });
     if (active) return active;
     try { git(primary, 'merge-base', '--is-ancestor', 'HEAD', 'origin/develop'); }
     catch { return 'local develop has diverged'; }
@@ -128,16 +146,19 @@ export function finishTask({ cwd, worktree, pr, apply = false, busy = checkoutBu
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   let number, worktree, apply = false;
+  const passivePrimaryPids = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--pr' && /^\d+$/.test(args[i + 1] ?? '')) number = args[++i];
     else if (args[i] === '--worktree' && isAbsolute(args[i + 1] ?? '')) worktree = args[++i];
     else if (args[i] === '--apply') apply = true;
-    else { console.error('Usage: node scripts/finish-task.mjs --pr number --worktree absolute-path [--apply]'); process.exit(2); }
+    else if (args[i] === '--passive-primary-pid' && /^[1-9]\d*$/.test(args[i + 1] ?? '')
+        && Number.isSafeInteger(Number(args[i + 1]))) passivePrimaryPids.push(Number(args[++i]));
+    else { console.error('Usage: node scripts/finish-task.mjs --pr number --worktree absolute-path [--apply] [--passive-primary-pid pid]'); process.exit(2); }
   }
   if (!number || !worktree) { console.error('--pr and --worktree are required'); process.exit(2); }
   try {
     const cwd = process.cwd();
     const pr = JSON.parse(run(cwd, 'gh', ['pr', 'view', number, '--json', 'state,baseRefName,headRefName,headRefOid,mergeCommit,isCrossRepository']));
-    for (const report of finishTask({ cwd, worktree, pr, apply })) console.log(report);
+    for (const report of finishTask({ cwd, worktree, pr, apply, passivePrimaryPids })) console.log(report);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
