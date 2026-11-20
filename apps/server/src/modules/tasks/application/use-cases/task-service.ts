@@ -976,8 +976,10 @@ export class TaskService implements PrStatusSink {
   // Stop = interrupt the current turn but keep the task resumable. Unlike
   // cancel, the worktree and session survive: the task settles
   // idle(interrupted=true) and a follow-up resumes off the CLI transcript.
-  stop(id: string): TaskState | Promise<TaskState> {
+  stop(id: string, expectedRunId?: string | null): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
+    if (expectedRunId !== undefined && (task.messageQueue?.runId ?? null) !== expectedRunId)
+      throw conflict("The active turn changed. Review it before stopping.");
     this.assertSessionOwnership(task);
     if (task.sessionControl?.owner === "shared") return this.stopShared(task, false);
     if (isClosedTaskStatus(task.status)) {

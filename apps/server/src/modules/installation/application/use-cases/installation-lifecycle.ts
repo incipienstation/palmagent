@@ -351,7 +351,8 @@ export function createInstallationLifecycle(dependencies: InstallationDependenci
       const receipt = state.readUpdate(cfg.dataDir);
       if (receipt) feedback.info(`Last update: ${receipt.status} (${receipt.previousVersion} → ${receipt.targetVersion}; ${receipt.reason})`);
       updateFailure = receipt?.status === "failed" || receipt?.status === "applying";
-      if (updateFailure) feedback.warn("automatic retries are paused; inspect package/runtime identity and recover through the update plugin");
+      if (receipt?.status === "applying" && receipt.reason === "handoff-activation") feedback.warn("a recorded application handoff is in progress or awaiting recovery");
+      else if (updateFailure) feedback.warn("automatic retries are paused; inspect package/runtime identity and recover through the update plugin");
     } catch {
       updateFailure = true;
       feedback.warn("the last update result is unreadable; inspect it before retrying");

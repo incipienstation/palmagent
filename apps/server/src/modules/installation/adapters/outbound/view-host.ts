@@ -21,7 +21,7 @@ export class ViewHost implements ViewControl {
   private failures = 0;
   private generation = 0;
 
-  constructor(private readonly options: { entry: string; execArgv: string[]; staticDir: string }) {}
+  constructor(private readonly options: { entry: string; execArgv: string[]; staticDir: string; previousWeb?: string }) {}
 
   status(): ViewStatus {
     return { protocol: 1, ownerPid: process.pid, generation: this.generation,
@@ -61,7 +61,7 @@ export class ViewHost implements ViewControl {
     const directory = mkdtempSync(join(tmpdir(), "palmagent-view-"));
     const socket = join(directory, "http.sock");
     // No database paths, provider credentials or host-readiness capability cross this boundary.
-    const child = spawn(process.execPath, [...this.options.execArgv, this.options.entry, socket, this.options.staticDir], {
+    const child = spawn(process.execPath, [...this.options.execArgv, this.options.entry, socket, this.options.staticDir, ...(this.options.previousWeb ? [this.options.previousWeb] : [])], {
       env: { NODE_ENV: "production", ...(process.env.PATH ? { PATH: process.env.PATH } : {}) },
       stdio: ["ignore", "ignore", "inherit", "ipc"],
     });

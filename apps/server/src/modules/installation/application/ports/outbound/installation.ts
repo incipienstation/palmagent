@@ -16,7 +16,7 @@ export interface InstallationConfiguration {
 }
 export interface InstallationState {
   lock(): () => void;
-  beginMaintenance(config: InstallConfig): () => void;
+  beginMaintenance(config: InstallConfig, handoff?: boolean): () => void;
   parentOwnsMaintenance(config: InstallConfig): boolean;
   readUpdate(dataDir: string): UpdateReceipt | undefined;
   writeUpdate(dataDir: string, receipt: Omit<UpdateReceipt, "schemaVersion" | "checkedAt">): void;
@@ -26,6 +26,7 @@ export interface InstallationState {
   readMigration(config: InstallConfig): MigrationReceipt | undefined;
   writeMigration(config: InstallConfig, receipt: MigrationReceipt): void;
   clearMigration(config: InstallConfig): void;
+  readActivation(config: InstallConfig): ActivationReceipt | undefined;
   writeActivation(config: InstallConfig, receipt: ActivationReceipt): void;
 }
 /** Prepared host artifacts stay private to the adapter; only redacted changes are printable. */
@@ -49,6 +50,8 @@ export interface InstallationRuntime {
   installBootstrap(config: InstallConfig, activate?: boolean): void;
   start(config: InstallConfig): Promise<void>;
   restartRunner(config: InstallConfig): void;
+  handoffCompatibility(previous: InstallConfig, candidate: InstallConfig): { live: boolean; rollback: boolean };
+  openUpdateGateway(config: InstallConfig, candidate: InstallConfig): Promise<() => Promise<void>>;
   restartWeb(config: InstallConfig): Promise<void>;
   healthy(config: InstallConfig, version?: string): boolean;
   waitHealthy(config: InstallConfig, version?: string): Promise<boolean>;

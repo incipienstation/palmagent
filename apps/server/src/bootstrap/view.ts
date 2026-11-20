@@ -2,10 +2,10 @@ import { rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { startViewServer } from "../composition/view-server.js";
 
-const [socket, directory] = process.argv.slice(2);
+const [socket, directory, previousWeb] = process.argv.slice(2);
 if (!process.send || !process.connected || !socket || !directory) throw new Error("The API owner must launch the web view");
 let closing = false;
-const server = await startViewServer(socket, directory);
+const server = await startViewServer(socket, directory, previousWeb);
 const close = () => {
   if (closing) return;
   closing = true;

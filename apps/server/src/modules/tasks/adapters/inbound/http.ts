@@ -1,21 +1,37 @@
+import { admitDuringUpdate, readAdmission, type UpdateAdmission } from "./update-admission.js";
+import { ApplicationError } from "../../../../kernel/errors.js";
 import { attachmentBody } from "./attachment-body.js";
 import { ConversationStepDetailsQuerySchema, ExecutionRecordsQuerySchema, ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
 import { FILE_MEDIA_TYPE, AttachmentParamsSchema, SubmitMessageSchema, MessageActionSchema, CompactTaskSchema } from "@palmagent/shared";
 import { Hono } from "hono";
-import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, MoveTaskPinSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
+import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, StopTaskSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, MoveTaskPinSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../../../../platform/http/input.js";
 import type { HttpDependencies } from "./http-dependencies.js";
 import { TaskImageQuerySchema } from "@palmagent/shared/requests";
 import { SideChatSendSchema, SideChatSessionSchema } from "@palmagent/shared";
 
-export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
+export function taskRoutes({ service, admission }: Pick<HttpDependencies, "service"> & { admission?: UpdateAdmission }) {
   const app = new Hono();
   return app
     .get("/", query(TaskQuerySchema), (c) => c.json({ tasks: service.listTasks(c.req.valid("query").status) }, 200))
     .post("/", attachmentBody(CreateTaskSchema), async (c) => {
       const input = c.req.valid("json");
+      const receipt = admitDuringUpdate(c, admission, { kind: "create", input });
+      if (receipt) return receipt;
       const skills = await service.resolveSkills({ repoId: input.repoId, agent: input.agent }, input.skills);
       return c.json({ task: service.createTask({ ...input, skills }) }, 201);
+    })
+    .get("/creation-receipts/:id", params(IdParamsSchema), c => {
+      const { id } = c.req.valid("param");
+      return readAdmission(c, admission, "create", id) ?? c.json({ task: service.getTask("t_" + id) }, 200);
+    })
+    .get("/:id/messages/:messageId/receipt", params(MessageParamsSchema), c => {
+      const { id, messageId } = c.req.valid("param");
+      const pending = readAdmission(c, admission, "message:" + id, messageId);
+      if (pending) return pending;
+      const queue = service.getTask(id).messageQueue;
+      if (!queue) throw new ApplicationError("gone", "The original message queue is no longer available.");
+      return c.json(queue, 200);
     })
     .get("/:id", params(IdParamsSchema), (c) => c.json({ task: service.getTask(c.req.valid("param").id) }, 200))
     .get("/:id/side-chat", params(IdParamsSchema), c => {
@@ -136,6 +152,8 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
     .post("/:id/handoff", params(IdParamsSchema), (c) => c.json(service.handoff(c.req.valid("param").id), 200))
     .post("/:id/messages", params(IdParamsSchema), attachmentBody(SubmitMessageSchema), async (c) => {
       const id = c.req.valid("param").id, input = c.req.valid("json");
+      const receipt = admitDuringUpdate(c, admission, { kind: "message", taskId: id, input });
+      if (receipt) return receipt;
       const skills = await service.resolveMessageSkills(id, input);
       return c.json(service.submitMessage(id, { ...input, skills }), 202);
     })
@@ -160,6 +178,6 @@ export function taskRoutes({ service }: Pick<HttpDependencies, "service">) {
       return c.json({ task: await service.approve(c.req.valid("param").id, input.decision, input.scope) }, 200);
     })
     .post("/:id/answer", params(IdParamsSchema), jsonBody(AnswerSchema), async (c) => c.json({ task: await service.answer(c.req.valid("param").id, c.req.valid("json")) }, 200))
-    .post("/:id/stop", params(IdParamsSchema), jsonBody(EmptyBodySchema), async (c) => c.json({ task: await service.stop(c.req.valid("param").id) }, 200))
+    .post("/:id/stop", params(IdParamsSchema), jsonBody(StopTaskSchema), async (c) => c.json({ task: await service.stop(c.req.valid("param").id, c.req.valid("json").expectedRunId) }, 200))
     .post("/:id/cancel", params(IdParamsSchema), jsonBody(EmptyBodySchema), async (c) => c.json({ task: await service.cancel(c.req.valid("param").id) }, 200));
 }

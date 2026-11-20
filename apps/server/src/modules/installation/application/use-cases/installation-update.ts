@@ -1,3 +1,4 @@
+import type { ActivationReceipt } from "../../domain/installation-observations.js";
 import { BRANDING } from "@palmagent/shared";
 import type { InstallConfig } from "../../domain/installation.js";
 import { channelTag, compatiblePlugin, releaseChannel, validateUpdateTarget } from "../../domain/release-policy.js";
@@ -67,6 +68,36 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
     try {
       if (options.request && !state.validRequest(cfg, options.request)) return true;
       const previous = state.readUpdate(cfg.dataDir);
+      if (previous?.status === "applying" && previous.reason === "handoff-activation") {
+        keepRequestedUpdate = true;
+        const saved = state.readActivation(cfg);
+        const handoff = saved?.handoff;
+        if (!saved || !["applying", "succeeded"].includes(saved.status) || !handoff || !saved.verification || handoff.targetVersion !== previous.targetVersion ||
+            handoff.previousVersion !== previous.previousVersion || saved.verification.version !== handoff.targetVersion ||
+            ![saved.previous.pkgDir, saved.target.pkgDir].includes(cfg.pkgDir) ||
+            [saved.previous, saved.target].some(side => side.dataDir !== cfg.dataDir || side.dbPath !== cfg.dbPath || side.user !== cfg.user) ||
+            (options.channel && saved.target.releaseChannel !== options.channel) ||
+            (requestedVersion && requestedVersion !== handoff.targetVersion) ||
+            (options.request && options.request.id !== handoff.requestId)) {
+          throw new Error("Interrupted activation does not match this installation and request");
+        }
+        const restoreConfig = (side: InstallConfig): InstallConfig => {
+          if (!side.pkgDir || !side.executionNode) throw new Error("Retained activation artifact is missing");
+          return { ...runtime.retainedCandidate(cfg, side.pkgDir, side.executionNode),
+            distribution: side.distribution, artifactId: side.artifactId, releaseChannel: side.releaseChannel };
+        };
+        const old = restoreConfig(saved.previous), target = restoreConfig(saved.target);
+        const native = releases.discoverPlugins(cfg);
+        options = { ...options, pluginManifests: releases.participatingPlugins(native, pluginPaths).map(plugin => plugin.manifest) };
+        const resumed = await updateIndependentRelease(old, handoff.targetVersion, options, (status, reason) => {
+          if (status === "deferred") return; // Keep the pinned activation available on the next wake.
+          state.writeUpdate(cfg.dataDir, { previousVersion: previous.previousVersion, targetVersion: previous.targetVersion,
+            pluginsUpdated: previous.pluginsUpdated, pluginActivationPending: previous.pluginActivationPending, status, reason });
+          if (status === "succeeded") state.clearDiscovery(cfg.dataDir);
+        }, undefined, { ...saved, previous: old, target });
+        keepRequestedUpdate = state.readUpdate(cfg.dataDir)?.status === "applying";
+        return resumed;
+      }
       if ((options.automatic || options.request) && (previous?.status === "failed" || previous?.status === "applying")) {
         feedback.warn("automatic updates are paused after an unsuccessful attempt; use the update plugin to inspect and recover");
         return true;
@@ -198,15 +229,22 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
 
   async function updateIndependentRelease(cfg: InstallConfig, version: string, options: InstallationOptions,
     record: (status: "applying" | "succeeded" | "failed" | "deferred", reason: string) => void,
-    selection?: StandaloneSelection): Promise<boolean> {
+    selection?: StandaloneSelection, resume?: ActivationReceipt): Promise<boolean> {
     if (!cfg.supervisor && !runtime.canManageServices()) throw new Error("Updates require non-interactive service-management access");
-    record("applying", "candidate-preparation");
-    const candidate = releases.stage(cfg, version, selection);
+    if (!resume) record("applying", "candidate-preparation");
+    const candidate = resume?.target ?? releases.stage(cfg, version, selection);
     const identity = releases.identity(candidate.pkgDir!);
+    if (resume && (identity.version !== resume.verification?.version || identity.sourceCommit !== resume.verification.sourceCommit ||
+        Object.entries(resume.verification.files).some(([path, digest]) => identity.files[path] !== digest)))
+      throw new Error("Staged release identity changed after the interrupted activation");
     releases.verifyCli(candidate, version, true);
-    const endMaintenance = state.beginMaintenance(cfg);
+    const compatibility = runtime.handoffCompatibility(cfg, candidate);
+    if (resume && !compatibility.live) throw new Error("Interrupted release pair no longer supports handoff");
+    const closeGateway = compatibility.live ? await runtime.openUpdateGateway(cfg, candidate) : undefined;
+    let endWindow: (() => void) | undefined;
     let changed = false;
     try {
+      endWindow = state.beginMaintenance(cfg, Boolean(closeGateway));
       if (!(cfg.executionNode ? await verifyIndependentActivation(runtime, cfg) : await runtime.legacyIdle(cfg))) {
         record("deferred", cfg.executionNode ? "routine-scripts-active" : "tasks-active");
         return true;
@@ -217,25 +255,32 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
         record("deferred", "settings-changed"); return true;
       }
       runtime.verifyCompatibility(candidate);
-      record("applying", "application-activation");
-      // The previous immutable release remains available for recovery. Execution
-      // hosts retain their own references and are never restarted here.
-      state.writeActivation(cfg, { previous: cfg, target: candidate, status: "applying" });
+      const intent = (phase: "prepared" | "configured" | "verified"): ActivationReceipt => ({
+        previous: cfg, target: candidate, status: "applying",
+        ...(closeGateway ? { verification: identity, handoff: { phase, previousVersion: releases.installedVersion(cfg.pkgDir),
+          targetVersion: version, requestId: options.request?.id ?? resume?.handoff?.requestId } } : {}),
+      });
+      // Write the exact pair before provisioning can change daemon crash recovery.
+      state.writeActivation(cfg, intent("prepared"));
+      record("applying", closeGateway ? "handoff-activation" : "application-activation");
       changed = true;
-      provisionIndependentRuntime(candidate, options);
-      configuration.save(candidate);
-      await runtime.restartWeb(candidate);
+      if (!resume || configuration.load(cfg.dataDir).pkgDir !== candidate.pkgDir || !runtime.healthy(candidate, version)) {
+        provisionIndependentRuntime(candidate, options);
+        configuration.save(candidate);
+        if (closeGateway) state.writeActivation(cfg, intent("configured"));
+        await runtime.restartWeb(candidate);
+      }
       if (!await runtime.waitHealthy(candidate, version)) throw new Error("Candidate application health check failed");
       await releases.verifyApplication(identity, candidate);
       if (settings.autoUpdate) await runtime.configureAutoUpdate(candidate);
       const pluginPaths = options.pluginManifests;
       if (releases.readPlugins(pluginPaths).some((plugin) => !compatiblePlugin(version, plugin.version))) throw new Error("An operator plugin changed during activation");
       configuration.persistChannel(candidate, options.channel !== undefined);
+      state.writeActivation(cfg, { ...intent("verified"), status: "succeeded", verification: identity });
       record("succeeded", "application-and-executions-verified");
-      state.writeActivation(cfg, { previous: cfg, target: candidate, status: "succeeded", verification: identity });
       return true;
     } catch (error) {
-      if (changed) {
+      if (changed && compatibility.rollback) {
         let restored = false;
         try {
           provisionIndependentRuntime(cfg, options); configuration.save(cfg); await runtime.restartWeb(cfg);
@@ -244,10 +289,14 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
         } catch { /* Retain both releases for explicit recovery. */ }
         state.writeActivation(cfg, { previous: cfg, target: candidate, status: restored ? "restored" : "recovery-required" });
       }
+      if (changed && !compatibility.rollback) {
+        state.writeActivation(cfg, { previous: cfg, target: candidate, status: "recovery-required" });
+        feedback.err("Candidate storage may have changed. The previous release cannot safely reopen it.");
+      }
       record("failed", "application-activation-failed");
       feedback.err(error instanceof Error ? error.message : "Application activation failed");
       return false;
-    } finally { endMaintenance(); }
+    } finally { try { endWindow?.(); } finally { await closeGateway?.(); } }
   }
 
   return update;

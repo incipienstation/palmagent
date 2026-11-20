@@ -5,9 +5,9 @@ import { getRequestListener } from "@hono/node-server";
 import { staticFiles } from "../platform/http/static.js";
 
 /** PWA files only. No runtime composition, database, API, credentials or control routes. */
-export async function startViewServer(socket: string, directory: string) {
+export async function startViewServer(socket: string, directory: string, previousWeb?: string) {
   const app = new Hono();
-  app.get("*", staticFiles(directory));
+  app.get("*", staticFiles(directory, previousWeb));
   const server = createServer(getRequestListener(app.fetch));
   const mask = process.umask(0o077);
   try {

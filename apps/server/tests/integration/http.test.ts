@@ -1,3 +1,4 @@
+import { staticFiles } from "../../src/platform/http/static.js";
 import type { TaskTranscriptReader } from "../../src/modules/tasks/application/ports/outbound/transcript.js";
 import type { TaskActivityReader } from "../../src/modules/tasks/application/ports/outbound/activity.js";
 import type { TaskUsageReader } from "../../src/modules/tasks/application/ports/outbound/usage.js";
@@ -508,10 +509,19 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(f.dir, "web/index.html"), "<html>fixture</html>");
   writeFileSync(join(f.dir, "web/sw.js"), "// fixture");
   writeFileSync(join(f.dir, "web/assets/app-hash.js"), "// asset");
+  const retained = join(f.dir, "previous");
+  mkdirSync(join(retained, "assets"), { recursive: true });
+  writeFileSync(join(retained, "assets/old-hash.js"), "// previous asset");
+  writeFileSync(join(retained, "sw.js"), "// previous worker");
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
   const app = createApp({ hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
-    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), f.hub), modelCatalog: f.modelCatalog });
+    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), f.hub), modelCatalog: f.modelCatalog },
+    staticFiles(join(f.dir, "web"), retained));
+  const oldChunk = await app.request("/assets/old-hash.js");
+  assert.equal(await oldChunk.text(), "// previous asset");
+  assert.equal(oldChunk.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal(await (await app.request("/sw.js")).text(), "// fixture");
   for (const path of ["/", "/sw.js", "/deep/link", "/assets/missing.js"]) {
     const response = await app.request(path);
     assert.equal(response.status, 200);

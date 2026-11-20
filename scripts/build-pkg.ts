@@ -112,10 +112,10 @@ async function main(): Promise<void> {
     banner: { js: "#!/usr/bin/env node" },
   });
 
-  for (const entry of ["view", "execution-host", "execution-launcher", "terminal-host", "terminal-launcher", "routine-host"]) {
+  for (const entry of ["view", "update-gateway", "execution-host", "execution-launcher", "terminal-host", "terminal-launcher", "routine-host"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/bootstrap/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
-  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, viewControl: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
+  writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, viewControl: 1, updateAdmission: 1, taskStorage: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
   if (!existsSync(join(WEB_DIST, "index.html"))) {
@@ -173,6 +173,7 @@ async function main(): Promise<void> {
       "cli.js",
       "server.js",
       "view.js",
+      "update-gateway.js",
       "runner-daemon.js",
       "terminal-host.js",
       "routine-host.js",
