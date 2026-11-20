@@ -25,6 +25,10 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
     PALMAGENT_HOME: join(root, "home/.palmagent"), STATIC_DIR: join(release, "web"),
     EXECUTION_RELEASE: release, EXECUTION_NODE: node, REPO_ROOTS: join(root, "repo"),
     PROBE_CONTROL: join(root, "control"), DISPATCH_CONCURRENCY: "2", PALMAGENT_EXECUTION_CONCURRENCY: "2" };
+  delete env.AUTH_DISABLED;
+  Object.assign(env, { AUTH_ENABLED: "1", AUTH_RP_ID: "fixture.example", AUTH_ORIGIN: "https://fixture.example" });
+  const session = crypto.randomUUID();
+  const authenticated = { cookie: `palmagent_session=${session}`, origin: env.AUTH_ORIGIN };
   const fixture = resolve(dirname(fileURLToPath(import.meta.url)), "../../apps/server/tests/support/lifecycle-cli.cjs");
   for (const agent of ["codex", "claude"]) writeFileSync(join(root, "bin", agent),
     `#!${node}\nprocess.argv.splice(1, 1, ${JSON.stringify(fixture)}, ${JSON.stringify(agent)}); require(${JSON.stringify(fixture)});\n`, { mode: 0o700 });
@@ -54,15 +58,35 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
   const base = `http://localhost:${port}`;
   const api = async (path, body) => {
     const response = await fetch(base + "/api/" + path, { method: body === undefined ? "GET" : "POST",
-      headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(3000) });
+      headers: { "content-type": "application/json", ...authenticated }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(3000) });
     const result = await response.json(); assert(response.ok, JSON.stringify(result)); return result;
   };
+  // A pooled connection can belong to the retired owner or gateway. Reconnect
+  // for transition reads, while leaving every mutation a single attempt.
+  const afterSwitch = (label, path) => until(label, async () => {
+    let response;
+    try {
+      response = await fetch(base + "/api/" + path, { headers: authenticated, signal: AbortSignal.timeout(3000) });
+      if (response.status === 503 || response.status === 202) { await response.body?.cancel(); return false; }
+      const result = await response.json();
+      assert(response.ok, JSON.stringify(result));
+      return result;
+    } catch (error) {
+      if (["UND_ERR_SOCKET", "ECONNRESET", "ECONNREFUSED", "EPIPE"].includes(error.cause?.code)) return false;
+      throw error;
+    }
+  });
   const mark = (key, suffix) => writeFileSync(join(root, "control", key + suffix), "");
-  let taskId, paused;
+  let taskId, paused, gateway;
   try {
     await until("packaged API readiness", async () => {
       try { return (await api("health")).ok; } catch { return false; }
     });
+    execFileSync(node, ["-e", `
+      const db = require("better-sqlite3")(process.env.DISPATCHER_DB);
+      db.prepare("INSERT INTO auth_sessions(token,created_at,expires_at) VALUES(?,?,?)").run(process.argv[1],Date.now(),Date.now()+600000);
+      db.close();
+    `, session], { cwd: release, env });
     const before = view("status");
     assert.equal(before.state, "ready");
     assert.equal(command({ action: "status" }).web.child.pid, before.ownerPid);
@@ -93,10 +117,57 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
       catch { return false; }
     });
     assert.equal(command({ action: "status" }).web.child.pid, recovered.ownerPid);
-    assert.equal((await api(`tasks/${taskId}`)).task.status, "idle");
+    assert.equal((await afterSwitch("recovered owner serves Task", `tasks/${taskId}`)).task.status, "idle");
     assert.equal(await (await fetch(base)).text(), shell);
+    const configPath = join(data, "daemon/config.json");
+    const nextRelease = join(data, "releases/candidate");
+    cpSync(pkgDir, nextRelease, { recursive: true });
+    symlinkSync(join(scratch, "node_modules"), join(nextRelease, "node_modules"));
+    const active = (await api("tasks", { repoId: repo.id, agent: "codex",
+      prompt: JSON.stringify({ key: "packed-handoff-active", mode: "hold" }) })).task;
+    taskId = active.taskId;
+    const readyPath = key => join(root, "control", key + ".ready");
+    await until("retained execution before activation", () => existsSync(readyPath("packed-handoff-active")));
+    const oldSession = (await api("tasks/" + taskId)).task.sessionId;
+    gateway = spawn(node, [join(release, "update-gateway.js")], { cwd: release, env, stdio: ["ignore", "ignore", "inherit", "ipc"] });
+    await new Promise((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error("Packaged gateway readiness timeout")), 10000);
+      gateway.once("message", value => { clearTimeout(deadline); if (value?.ready === 1) resolve(); else reject(new Error("Invalid gateway readiness")); });
+      gateway.once("exit", () => { clearTimeout(deadline); reject(new Error("Packaged gateway stopped")); });
+    });
+    const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
+    const identity = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() + ":" + stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+    const marker = join(data, "update-maintenance.json");
+    writeFileSync(marker, JSON.stringify({ schemaVersion: 1, pid: process.pid, identity, token: crypto.randomUUID(), handoff: 1 }), { mode: 0o600 });
+    const id = crypto.randomUUID();
+    const admitted = await fetch(base + `/api/tasks/${taskId}/messages`, { method: "POST",
+      headers: { ...authenticated, "content-type": "application/json", prefer: "respond-async" },
+      body: JSON.stringify({ clientMessageId: id, mode: "queue", expectedRunId: null, text: JSON.stringify({key: "packed-handoff-next", mode: "auto"}) }) });
+    assert.equal(admitted.status, 202);
+    assert.deepEqual(await admitted.json(), { state: "accepted", requestId: id });
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    const priorDaemon = command({ action: "status" }).instance;
+    config.release = nextRelease;
+    config.daemon = join(nextRelease, "daemon", `${process.platform}-${process.arch}`, "palmagentd");
+    Object.assign(config.environment, { EXECUTION_RELEASE: nextRelease, STATIC_DIR: join(nextRelease, "web") });
+    writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
+    command({ action: "replace" });
+    await until("replacement daemon", () => { try { return command({ action: "status" }).instance !== priorDaemon; } catch { return false; } });
+    command({ action: "restart-web" });
+    assert.notEqual(view("status").ownerPid, recovered.ownerPid);
+    assert.equal((await afterSwitch("replacement serves original session", "tasks/" + taskId)).task.sessionId, oldSession);
+    rmSync(marker);
+    const gatewayClosed = new Promise(resolve => gateway.once("exit", resolve));
+    gateway.disconnect();
+    await gatewayClosed;
+    await afterSwitch("installed owner applies durable receipt", `tasks/${taskId}/messages/${id}/receipt`);
+    mark("packed-handoff-active", ".release");
+    await until("queued message on replacement", () => existsSync(readyPath("packed-handoff-next")));
+    await until("replacement execution completes", async () => (await api("tasks/" + taskId)).task.status === "idle");
+    console.log("[smoke] installed daemon and Task owner replaced across retained releases with active execution and durable admission");
     console.log("[smoke] packaged retained API: stalled-view queue/admission, view restart, daemon owner recovery passed");
   } finally {
+    if (gateway && gateway.exitCode === null && gateway.signalCode === null) gateway.kill("SIGKILL");
     if (paused) { try { process.kill(paused, "SIGCONT"); } catch {} }
     if (taskId) { try { await api(`tasks/${taskId}/stop`, {}); } catch {} }
     // Stop any owned active provider hosts before the supervisor can shut down.
@@ -123,10 +194,12 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
           }
         } catch (error) { if (!["ENOENT", "ESRCH"].includes(error.code)) throw error; }
       };
-      for (const name of existsSync(hosts) ? readdirSync(hosts).filter(name => name.endsWith(".json")) : []) {
-        const path = join(hosts, name);
-        signalOwned(JSON.parse(readFileSync(path, "utf8")).guard, false);
-        signalOwned(JSON.parse(readFileSync(path, "utf8")).child, true);
+      for (const directory of [hosts, join(data, "daemon/services")]) {
+        for (const name of existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith(".json")) : []) {
+          const record = JSON.parse(readFileSync(join(directory, name), "utf8"));
+          signalOwned(record.guard, false);
+          signalOwned(record.child, true);
+        }
       }
       const socketRoot = join("/tmp", `palmagentd-${process.getuid()}-${createHash("sha256").update(data).digest("hex").slice(0, 20)}`);
       rmSync(socketRoot, { recursive: true, force: true });

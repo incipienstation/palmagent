@@ -13,13 +13,20 @@ pub enum Action {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
+    pub expected: Option<ExpectedRun>,
     pub action: Action,
     pub handle: bool,
     pub connected: bool,
     pub now: i64,
 }
 
+#[derive(Deserialize)]
+pub struct ExpectedRun {
+    pub id: Option<String>,
+}
+
 pub struct State {
+    pub run_id: Option<String>,
     pub status: String,
     pub interrupted: bool,
     pub owner: Option<String>,
@@ -44,6 +51,10 @@ pub enum Effect {
 impl State {
     pub fn decide(&self, r: &Request) -> Result<Effect, String> {
         use Effect::*;
+        if r.action == Action::Stop && r.expected.as_ref().is_some_and(|run| run.id != self.run_id)
+        {
+            return Err("The active turn changed. Review it before stopping.".into());
+        }
         let shared = self.owner.as_deref() == Some("shared");
         let idle = matches!(self.status.as_str(), "idle" | "failed");
         let closed = matches!(self.status.as_str(), "archived" | "cancelled");

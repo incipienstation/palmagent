@@ -101,6 +101,7 @@ test("native queue commits before dispatch, rolls back with completion and prese
   }), /Task disappeared/);
   assert.equal(db.getTask("task")?.title, "Current");
   assert.equal(db.getTask("task")?.status, "running");
+  assert.throws(() => native.taskAction("task", {action: "stop", expected: {id: null}, handle: true, connected: false, now: 7}), /active turn changed/);
   assert.equal(db.readMessageState("task")?.executionId, runId!);
   assert.equal(db.readMessageState("task")?.runtimeStarted, true);
   assert(!("fingerprint" in first.messages[0]));

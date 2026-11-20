@@ -127,8 +127,11 @@ process-lifetime lock before opening the database, owns API/SSE/WebSocket listen
 control, and launches `view.js` for PWA files only. The private view socket is never an API route;
 static requests are streamed through the owner. View restart or recovery cannot instantiate a
 second TaskService or stop admission. The child's IPC lease ends it when the owner exits.
-Full application restart still closes the owner and view together, preserving existing recovery
-and update-maintenance contracts. See [Task owner and web view](TASK_RUNTIME.md) for lifecycle,
+During compatible full updates a temporary gateway can accept authenticated, idempotent Task
+submissions into a separate SQLite inbox while the owner and view restart. The gateway has
+read-only access to login sessions. Only the locked Task owner drains commands through existing
+Task use cases and commits delivery decisions. Selected Rust read routes keep their read-only
+boundary. See [Task owner and web view](TASK_RUNTIME.md) for lifecycle,
 compatibility, verification and limits, and the [boundary experiment](performance/task-runtime/README.md)
 for the original measurements.
 

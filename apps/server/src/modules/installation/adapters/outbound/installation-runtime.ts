@@ -1,3 +1,4 @@
+import { handoffCompatibility, openUpdateGateway } from "./update-handoff.js";
 import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join, sep } from "node:path";
 import type { InstallConfig } from "../../domain/installation.js";
@@ -173,11 +174,11 @@ export function createInstallationRuntime(releases: RetainedReleaseOperations): 
     assertBootstrapSupported: assertDaemonBootstrapSupported, canManageServices: canSudoNonInteractive,
     preflight, prepareUserService, verifyUserIsolation, retainRelease: retainInstalledRelease, prepareSetup: prepareNativeSetup,
     configure: applyUnits, artifactChanged: runnerArtifactChanged, installBootstrap: installDaemonBootstrap,
-    start: startServices, restartRunner, restartWeb, healthy: runtimeIsHealthy, waitHealthy: healthcheck,
+    start: startServices, restartRunner, restartWeb, handoffCompatibility, openUpdateGateway, healthy: runtimeIsHealthy, waitHealthy: healthcheck,
     async activity(config) {
       const response = await fetch(`${connectionInfo(config).upstream}/api/health`, { signal: AbortSignal.timeout(5000) });
-      const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number };
-      return { verified: response.ok, healthy: health.ok, maintenance: health.updateMaintenance,
+      const health = await response.json() as { pendingUpdateAdmissions?: boolean; ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number };
+      return { pendingUpdateAdmissions: health.pendingUpdateAdmissions, verified: response.ok, healthy: health.ok, maintenance: health.updateMaintenance,
         executionProtocol: health.executionProtocol, activeRoutineScripts: health.activeRoutineScripts,
         updateBlockingRoutineScripts: health.updateBlockingRoutineScripts };
     },

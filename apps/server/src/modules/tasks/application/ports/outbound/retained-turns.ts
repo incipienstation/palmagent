@@ -45,7 +45,7 @@ export interface SharedObservation {
 }
 
 export type TaskAction = "stop" | "cancel" | "archive" | "handoff" | "followup";
-export interface ActionRequest { action: TaskAction; handle: boolean; connected: boolean; now: number }
+export interface ActionRequest { action: TaskAction; expected?: { id: string | null }; handle: boolean; connected: boolean; now: number }
 export type ActionEffect = "shared" | "resumeCommand" | "checkpoint" | "followup" | "noop" | "pause" | "interrupt" | "dequeue" | "cancel" | "archive";
 export interface RetainedTurns {
   creation(id: string, repo: string, agent: string, prompt: string): boolean | null;

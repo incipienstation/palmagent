@@ -6,30 +6,36 @@ import { assertViewportLocked, captureForReview } from "./_helpers";
 test.use({ serviceWorkers: "block" });
 const message = { clientMessageId: "", text: "", mode: "send", expectedRunId: "run-1" };
 
-test("a send waits through maintenance and reconnects with the same message, then clears its waiting control", async ({ page }) => {
+test("a durable update receipt waits without resubmitting the message", async ({ page }) => {
   await installScopedStream(page);
   let available = false;
   const requests: typeof message[] = [];
   await page.route("**/api/tasks/t-run/messages", route => {
     requests.push(route.request().postDataJSON());
     expect(route.request().headers()["x-palmagent-message-protocol"]).toBe("2");
+    expect(route.request().headers().prefer).toBe("respond-async");
+    return route.fulfill({ status: 202, headers: { "preference-applied": "respond-async" },
+      json: { state: "accepted", requestId: requests[0]!.clientMessageId } });
+  });
+  await page.route("**/api/tasks/t-run/messages/*/receipt", route => {
+    expect(route.request().method()).toBe("GET");
+    expect(route.request().url()).toContain(requests[0]!.clientMessageId);
     return available ? route.fulfill({ json: { revision: 2, paused: false, runId: "run-1", messages: [] } })
-      : route.fulfill({ status: 503, json: { error: "Updating", code: "update_in_progress" } });
+      : route.fulfill({ status: 202, headers: { "preference-applied": "respond-async" }, json: { state: "accepted" } });
   });
   await open(page, "t-run");
   await send(page, "t-run", { type: "tasks", tasks: [{ ...tasks.find(t => t.taskId === "t-run")!, messageQueue: { revision: 1, paused: false, runId: "run-1", messages: [] } }], historyThrough: 0 });
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Continue after update");
   await page.getByRole("button", { name: "Send now", exact: true }).click();
-  await expect(page.getByText("Waiting for update…", { exact: true })).toBeVisible();
+  await expect(page.getByText("Received. Waiting for the update to finish…", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Stop retrying", exact: true })).toBeEnabled();
   await expect(page.getByRole("group", { name: "Your message" }).filter({ hasText: "Continue after update" })).toHaveCount(1);
   await expect(page.getByTestId("toast")).toHaveCount(0);
   await assertViewportLocked(page);
   await captureForReview(page, "update-message-waiting.png");
   available = true;
-  await expect.poll(() => requests.length).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole("button", { name: "Stop retrying", exact: true })).toHaveCount(0);
-  expect(new Set(requests.map(request => JSON.stringify(request))).size).toBe(1);
+  expect(requests).toHaveLength(1);
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("");
   await expect(page.getByTestId("toast")).toHaveCount(0);
 });

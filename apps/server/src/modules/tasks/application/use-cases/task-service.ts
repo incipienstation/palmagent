@@ -1022,15 +1022,15 @@ export class TaskService implements PrStatusSink {
     return true;
   }
 
-  private nativeAction(task: TaskState, action: TaskAction) {
-    return this.retainedTurns?.taskAction(task.taskId, {action, connected: this.sharedConnected(task),
+  private nativeAction(task: TaskState, action: TaskAction, expectedRunId?: string | null) {
+    return this.retainedTurns?.taskAction(task.taskId, {action, expected: expectedRunId === undefined ? undefined : { id: expectedRunId }, connected: this.sharedConnected(task),
       handle: this.supervisor.has(task.taskId), now: this.timing.now()});
   }
 
-  private applyNativeControl(task: TaskState, action: "stop" | "cancel" | "archive") {
+  private applyNativeControl(task: TaskState, action: "stop" | "cancel" | "archive", expectedRunId?: string | null) {
     const id = task.taskId;
     const apply = () => {
-      const effect = this.nativeAction(task, action)!;
+      const effect = this.nativeAction(task, action, expectedRunId)!;
       const note = effect === "interrupt" ? "turn interrupt requested" : effect === "dequeue" ? "dequeued before start" : undefined;
       return {effect, rows: note ? this.syntheticRows(task, {subtype: "stop", note}) : []};
     };
@@ -1061,9 +1061,11 @@ export class TaskService implements PrStatusSink {
   // Stop = interrupt the current turn but keep the task resumable. Unlike
   // cancel, the worktree and session survive: the task settles
   // idle(interrupted=true) and a follow-up resumes off the CLI transcript.
-  stop(id: string): TaskState | Promise<TaskState> {
+  stop(id: string, expectedRunId?: string | null): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
-    if (this.retainedTurns) return this.applyNativeControl(task, "stop");
+    if (this.retainedTurns) return this.applyNativeControl(task, "stop", expectedRunId);
+    if (expectedRunId !== undefined && (task.messageQueue?.runId ?? null) !== expectedRunId)
+      throw conflict("The active turn changed. Review it before stopping.");
     this.assertSessionOwnership(task);
     if (task.sessionControl?.owner === "shared") return this.stopShared(task, false);
     if (isClosedTaskStatus(task.status)) {

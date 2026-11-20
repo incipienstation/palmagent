@@ -1,4 +1,7 @@
+import { openHandoffSocket } from "../platform/http/handoff-socket.js";
+import { startTaskAdmission } from "./task-admission.js";
 import { config } from "./config.js";
+import { retainedWebDirectory } from "../modules/installation/adapters/outbound/retained-assets.js";
 import { ViewHost } from "../modules/installation/adapters/outbound/view-host.js";
 import { collectNativeMetrics } from "../modules/telemetry/adapters/outbound/native-metrics.js";
 import { createTelemetry } from "./telemetry.js";
@@ -65,7 +68,8 @@ try {
   telemetry.producer.start();
   resources.defer(() => telemetry.producer.close());
   if (process.env.PALMAGENT_DAEMON_DATA) resources.defer(collectNativeMetrics(runtime.config.dataDir, telemetry.preferencePath, telemetry.producer));
-  const view = options.view ? new ViewHost({ ...options.view, staticDir: runtime.config.staticDir }) : undefined;
+  const view = options.view ? new ViewHost({ ...options.view, staticDir: runtime.config.staticDir,
+    previousWeb: options.packageDir && retainedWebDirectory(runtime.config.dataDir, options.packageDir) }) : undefined;
   if (view) { resources.defer(() => view.close()); await view.restart(); }
   const viewControl = view ? {
     status: () => view.status(),
@@ -74,7 +78,13 @@ try {
       return view.restart();
     },
   } : undefined;
-  const app = createApp({ ...runtime, settings, build, updates, agentInstallations, shutdown: shutdown.signal,
+  const admission = process.platform === "linux" && runtime.config.executionRelease
+    ? startTaskAdmission(runtime.config.dataDir, runtime.config.dbPath, runtime.service) : undefined;
+  if (admission) {
+    resources.onStop(() => admission.stop());
+    resources.defer(() => admission.close());
+  }
+  const app = createApp({ ...runtime, admission, settings, build, updates, agentInstallations, shutdown: shutdown.signal,
     telemetry: telemetry.settings, measurements: telemetry.producer, requestLoad, view: viewControl }, view?.proxy());
   const server = createServer(getRequestListener(app.fetch));
   resources.defer(() => closeServer(server));
@@ -86,9 +96,10 @@ try {
   runtime.start();
   const local = await startSessionControl(dirname(runtime.config.dbPath), runtime.service, runtime.terminals, runtime.routines, viewControl);
   resources.defer(() => closeServer(local));
+  if (admission) resources.defer(await openHandoffSocket(runtime.config.dataDir, server));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(runtime.config.port, runtime.config.host, () => { server.off("error", reject); resolve(); });
+    server.listen({ port: runtime.config.port, host: runtime.config.host, reusePort: Boolean(admission) }, () => { server.off("error", reject); resolve(); });
   });
   void updateActivity.wake();
   console.log(`${BRANDING.productName} internal listener on ${runtime.config.host}:${runtime.config.port}  ·  TLS required at the public edge  ·  db=${runtime.config.dbPath}  ·  cap=${runtime.config.concurrency}`);

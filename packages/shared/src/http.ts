@@ -8,6 +8,10 @@ export type ApiErrorResponse = { error: string; code?: string };
 export const MESSAGE_PROTOCOL_VERSION = "2";
 export const MESSAGE_PROTOCOL_HEADER = "x-palmagent-message-protocol";
 
+// Negotiated Stop and answer requests carry the identity observed by the client.
+export const TURN_CONTROL_HEADER = "x-palmagent-turn-protocol";
+export const TURN_CONTROL_VERSION = "1";
+
 // Multipart file uploads carry the same request metadata and indexed binary parts.
 export const ATTACHMENT_METADATA_FIELD = "request";
 export const attachmentPartName = (index: number): string => `attachment-${index}`;

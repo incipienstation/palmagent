@@ -24,8 +24,8 @@ pub fn creation(
 pub fn apply(db: &mut Connection, id: &str, request: &Request) -> Result<Result<Effect, String>> {
     let tx = super::sqlite_write::Write::begin(db)?;
     let before=tx.query_row("SELECT status,interrupted,json_extract(session_control,'$.owner'),coalesce(length(session_id)>0,0),
-        coalesce(json_extract(q.state,'$.compaction.status')='running',0) FROM tasks t LEFT JOIN task_message_state q ON q.task_id=t.id WHERE t.id=?",[id],
-        |r| Ok(State {status:r.get(0)?,interrupted:r.get(1)?,owner:r.get(2)?,session:r.get(3)?,compacting:r.get(4)?}))?;
+        coalesce(json_extract(q.state,'$.compaction.status')='running',0),json_extract(q.state,'$.runId') FROM tasks t LEFT JOIN task_message_state q ON q.task_id=t.id WHERE t.id=?",[id],
+        |r| Ok(State {status:r.get(0)?,interrupted:r.get(1)?,owner:r.get(2)?,session:r.get(3)?,compacting:r.get(4)?, run_id:r.get(5)?}))?;
     let effect = match before.decide(request) {
         Ok(effect) => effect,
         Err(reason) => return Ok(Err(reason)),

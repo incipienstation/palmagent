@@ -57,6 +57,7 @@ function fixture() {
       readMigration: () => migration,
       writeMigration: (_config, receipt) => { migration = receipt; remember("migration:write"); },
       clearMigration: () => { migration = undefined; remember("migration:clear"); },
+      readActivation: () => activations.at(-1),
       writeActivation: (_config, receipt) => { activations.push(receipt); remember(`activation:${receipt.status}`); },
     },
     runtime: {
@@ -68,6 +69,8 @@ function fixture() {
       configure: (_config, dryRun) => { remember(dryRun ? "runtime:preview" : "runtime:configure"); return { runnerChanged: false }; },
       artifactChanged: () => false, installBootstrap: () => remember("bootstrap:install"),
       start: async () => remember("runtime:start"), restartRunner: () => remember("runner:restart"),
+      handoffCompatibility: () => ({ live: false, rollback: true }),
+      openUpdateGateway: async () => { remember("gateway:open"); return async () => remember("gateway:close"); },
       restartWeb: async config => remember(`web:restart:${config.pkgDir}`), healthy: () => true,
       waitHealthy: async config => { remember(`health:${config.pkgDir}`); return true; },
       activity: async () => ({ verified: true, healthy: true, maintenance: true, executionProtocol: 1, activeRoutineScripts: 0, updateBlockingRoutineScripts: 0 }),
@@ -319,4 +322,34 @@ test("a stale standalone plan stops before any side effects", async () => {
   await assert.rejects(f.service.update({ ...options, plannedTarget: { currentVersion:"0.0.0", targetVersion:"0.1.0-alpha.2", channel:"preview",
     selection: {} as import("@palmagent/shared/standalone").StandaloneSelection } }), /plan no longer matches/);
   assert(!f.calls.includes("lock")); assert.equal(f.receipts.length, 0);
+});
+
+test("interrupted handoff resumes the recorded release without resolving or staging a different build", async () => {
+  const f = fixture();
+  f.deps.runtime.handoffCompatibility = () => ({ live: true, rollback: true });
+  f.deps.runtime.retainedCandidate = (config, pkgDir, executionNode) => ({ ...config, pkgDir, workingDir: pkgDir, executionNode });
+  f.deps.state.writeActivation(f.current, { previous: f.current, target: f.candidate, status: "applying",
+    verification: f.deps.releases.identity(f.candidate.pkgDir!), handoff: { phase: "configured",
+      previousVersion: request.currentVersion, targetVersion: request.targetVersion, requestId: request.id } });
+  f.deps.state.writeUpdate(f.current.dataDir, { previousVersion: request.currentVersion, targetVersion: request.targetVersion,
+    status: "applying", reason: "handoff-activation" });
+  f.deps.configuration.load = () => ({ ...f.candidate });
+  f.deps.releases.resolvePlan = () => fail("an interrupted handoff must stay pinned");
+  assert(await f.service.update({ ...options, request }));
+  assert(!f.calls.includes("release:stage"));
+  assert(!f.calls.some(call => call.startsWith("web:restart:")));
+  before(f.calls, "gateway:open", "maintenance:begin");
+  before(f.calls, "application:verify", "activation:succeeded");
+  before(f.calls, "maintenance:end", "gateway:close");
+  assert.equal(f.receipts.at(-1)?.status, "succeeded");
+});
+
+test("a failed candidate with incompatible Task storage keeps its recovery evidence", async () => {
+  const f = fixture();
+  f.deps.runtime.handoffCompatibility = () => ({ live: false, rollback: false });
+  f.deps.releases.verifyApplication = async () => fail("served build mismatch");
+  assert.equal(await f.service.update(options), false);
+  assert(!f.calls.includes("gateway:open"));
+  assert(!f.calls.includes(`web:restart:${f.current.pkgDir}`));
+  assert.equal(f.activations.at(-1)?.status, "recovery-required");
 });

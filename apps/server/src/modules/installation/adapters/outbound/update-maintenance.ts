@@ -34,14 +34,21 @@ export function updateMaintenanceOwnedBy(dbPath: string, pid: number): boolean {
   } catch { return false; }
 }
 
+export function isHandoffWindow(dbPath: string): boolean {
+  try {
+    const marker = JSON.parse(readFileSync(maintenancePath(dbPath), "utf8"));
+    return marker.handoff === 1 && updateMaintenanceOwnedBy(dbPath, marker.pid);
+  } catch { return false; }
+}
+
 /** The caller holds the installation lock throughout this maintenance window. */
-export function beginUpdateMaintenance(dbPath: string): () => void {
+export function beginUpdateMaintenance(dbPath: string, handoff = false): () => void {
   if (isUpdateMaintenance(dbPath)) throw new Error("an update maintenance window is already active");
   const path = maintenancePath(dbPath);
   const token = randomUUID();
   const temporary = `${path}.${token}.tmp`;
   try {
-    writeFileSync(temporary, JSON.stringify({ schemaVersion: 1, pid: process.pid, identity: processIdentity(process.pid), token }) + "\n", { flag: "wx", mode: 0o600 });
+    writeFileSync(temporary, JSON.stringify({ schemaVersion: 1, pid: process.pid, identity: processIdentity(process.pid), token, ...(handoff ? { handoff: 1 } : {}) }) + "\n", { flag: "wx", mode: 0o600 });
     renameSync(temporary, path);
   } finally { try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; } }
   return () => {
