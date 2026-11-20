@@ -1,3 +1,4 @@
+import { claudeMetadataArgs } from "./claude-metadata.js";
 import { ReadObserver } from "../../../../kernel/read-observer.js";
 import { readNdjsonQuery } from "../../../../platform/process/ndjson-query.js";
 import type { AccountLimits, AgentKind, ClaudeAccountLimits, CodexAccountLimits, CodexLimitBucket, LimitWindow } from "@palmagent/shared";
@@ -73,11 +74,7 @@ export function parseAccountLimits(agent: AgentKind, value: unknown, checkedAt: 
 // Claude's get_usage is experimental; unsupported versions fail closed. Its
 // skip_behaviors flag avoids scanning native transcripts for usage attribution.
 export async function readCliAccountLimits(agent: AgentKind, home: string, timeoutMs = 15_000): Promise<unknown> {
-  const args = agent === "codex" ? ["app-server"] : [
-    "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-    "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-    "--settings", '{"disableAllHooks":true}', "--tools", "", "--disable-slash-commands", "--no-chrome",
-  ];
+  const args = agent === "codex" ? ["app-server"] : claudeMetadataArgs;
   return readNdjsonQuery({
     command: agent, args, env: { [agent === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"]: home },
     directoryPrefix: "palmagent-limits-", timeoutMs,

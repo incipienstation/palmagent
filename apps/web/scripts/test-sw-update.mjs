@@ -169,7 +169,7 @@ async function run() {
     console.log("[test] storage failures preserve work and event-driven recovery completes automatically");
 
     await page.getByRole("button", { name: "Configure task settings" }).click();
-    await page.getByRole("radio", { name: "opus", exact: true }).click();
+    await page.getByRole("radio", { name: "Claude Fixture", exact: true }).click();
     await page.getByRole("switch", { name: "Isolated worktree", exact: true }).click();
     const configurationReload = page.waitForEvent("load", { timeout: 20_000 });
     await appendFile(SW_PATH, "\n// automatic-update-configuration\n");
@@ -177,7 +177,7 @@ async function run() {
     await configurationReload;
     await page.getByRole("heading", { name: "Configure", exact: true }).waitFor();
     assert.equal(await page.getByRole("switch", { name: "Isolated worktree", exact: true }).isChecked(), false);
-    assert.equal(await page.getByRole("radio", { name: "opus", exact: true }).getAttribute("aria-checked"), "true");
+    assert.equal(await page.getByRole("radio", { name: "Claude Fixture", exact: true }).getAttribute("aria-checked"), "true");
     await page.getByRole("button", { name: "Done", exact: true }).click();
     assert.equal(await page.getByLabel("Prompt").inputValue(), "Keep this unsent draft");
     console.log("[test] open composer configuration survives an automatic update");

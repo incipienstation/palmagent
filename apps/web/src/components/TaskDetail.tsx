@@ -90,7 +90,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     lastAttention.current = attention;
   }, [attention, taskId]);
   const {
-    activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills,
+    catalog, activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills,
     edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue,
     queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status,
     running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel,
@@ -238,7 +238,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
               : primaryAction === "send" ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={submit} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
             description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
-            settings={{ agent: task?.agent ?? "claude", model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
+            settings={{ catalog, agent: task?.agent ?? "claude", model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
               permission, onPermissionChange: setPermission }} />)}
         </div>
       </div>

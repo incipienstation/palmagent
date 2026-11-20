@@ -28,6 +28,14 @@ export const modelCatalog = {
   ],
 };
 
+export const claudeModelCatalog = {
+  agent: "claude", source: "runtime", fetchedAt: T,
+  models: [
+    { value: "default", label: "default", efforts: ["default", "high"].map(value => ({ value, label: value })) },
+    { value: "fixture-claude", label: "Claude Fixture", efforts: ["default", "medium"].map(value => ({ value, label: value })) },
+  ],
+};
+
 // A deliberately long, space-free token used to stress overflow-wrap / the Radix
 // ScrollArea horizontal-overflow guard for long, unbroken content.
 const LONG_URL =

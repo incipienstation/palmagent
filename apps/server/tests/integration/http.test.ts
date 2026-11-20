@@ -18,7 +18,7 @@ import { AuthService } from "../../src/modules/auth/application/use-cases/auth-s
 import { AccountLimitReader } from "../../src/modules/agents/adapters/outbound/account-limits.js";
 import { SkillDiscovery } from "../../src/modules/agents/adapters/outbound/skills.js";
 import { VoiceSessions } from "../../src/modules/agents/adapters/outbound/voice.js";
-import { defaultCodexModelCatalog } from "../../src/modules/agents/adapters/outbound/model-catalog.js";
+import { defaultModelCatalog } from "../../src/modules/agents/adapters/outbound/model-catalog.js";
 import { nativeHome } from "../../src/modules/tasks/adapters/outbound/native-session.js";
 import { config } from "../../src/composition/config.js";
 import { Db } from "../../src/composition/database.js";
@@ -41,7 +41,7 @@ import { createSpaceSettings } from "../../src/modules/spaces/composition.js";
 import { sessionSocket } from "../../src/modules/tasks/adapters/inbound/session-control.js";
 import { startSessionControl } from "../../src/composition/session-control.js";
 import type { HttpDependencies } from "../../src/composition/http-dependencies.js";
-import type { UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
+import type { AgentKind, UpdateSettingsState, UpdateSettingsStatus } from "@palmagent/shared";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
 
 function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<HttpDependencies, "updates" | "build" | "modelCatalog" | "agentInstallations" | "telemetry">> = {}, backend: RunnerBackend = new InProcessBackend(), usageReader?: TaskUsageReader, activityReader?: TaskActivityReader, transcriptReader?: TaskTranscriptReader) {
@@ -55,7 +55,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
   const repoSettings = createSpaceSettings(join(dir, "state"), settings.repoRoots);
-  const modelCatalog = extra.modelCatalog ?? { get: async () => defaultCodexModelCatalog() };
+  const modelCatalog = extra.modelCatalog ?? { get: async (agent: AgentKind) => defaultModelCatalog(agent) };
   const app = createApp({ hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
     push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), hub), ...extra, modelCatalog });
   // Ordinary fixture writes represent browser requests from the configured origin.
@@ -192,9 +192,9 @@ test("voice routes require authentication, reject non-Codex contexts and resolve
   assert.equal((await f.app.request("/api/voice/not-an-id", { method: "DELETE", headers })).status, 400);
 });
 
-test("runtime model catalog is authenticated, scoped to the native Codex home, and not browser-cacheable", async t => {
+test("runtime model catalog is authenticated, scoped to the selected provider home, and not browser-cacheable", async t => {
   const calls: string[] = [];
-  const f = fixture(t, true, { modelCatalog: { get: async (home) => { calls.push(home); return defaultCodexModelCatalog(); } } });
+  const f = fixture(t, true, { modelCatalog: { get: async (agent, home) => { calls.push(home); return defaultModelCatalog(agent); } } });
   const now = Date.now();
   f.db.createSession("catalog-session", now, now + 60_000);
   const headers = { cookie: `${f.settings.cookieName}=catalog-session` };
@@ -202,8 +202,18 @@ test("runtime model catalog is authenticated, scoped to the native Codex home, a
   const response = await f.app.request("/api/model-catalog", { headers });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await response.json(), defaultCodexModelCatalog());
-  assert.deepEqual(calls, [nativeHome("codex")]);
+  assert.deepEqual(await response.json(), defaultModelCatalog("codex"));
+  const home = join(f.dir, "pinned-profile");
+  f.db.insertRepo({ id: "r", name: "repo", path: f.dir, vcs: "none", defaultBaseRef: "", createdAt: now });
+  f.db.insertTask({ taskId: "pinned", repoId: "r", agent: "claude", prompt: "fixture", permission: "plan",
+    status: "idle", interrupted: false, createdAt: now, updatedAt: now, lastActivityAt: now,
+    sessionControl: { owner: "palmagent", home, transcript: "", cursor: 0, prefixHash: "" } });
+  await f.service.init();
+  for (const query of ["agent=claude", "taskId=pinned"]) {
+    const response = await f.app.request(`/api/model-catalog?${query}`, { headers });
+    assert.deepEqual(await response.json(), defaultModelCatalog("claude"));
+  }
+  assert.deepEqual(calls, [nativeHome("codex"), nativeHome("claude"), home]);
 });
 
 // Use the real Node adapter: cookies, streamed bodies and HEAD can differ from

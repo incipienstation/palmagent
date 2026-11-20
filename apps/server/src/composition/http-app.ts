@@ -8,7 +8,7 @@ import { terminalRoutes } from "../modules/terminals/adapters/inbound/http.js";
 import { Hono } from "hono";
 import { authBudget } from "../platform/http/auth-budget.js";
 import { bodyLimit } from "hono/body-limit";
-import { StreamQuerySchema } from "@palmagent/shared/requests";
+import { ModelCatalogQuerySchema, StreamQuerySchema } from "@palmagent/shared/requests";
 import { query } from "../platform/http/input.js";
 import { securityHeaders, versionHeader, authenticate, requireCurrentClient, requestAdmission } from "../platform/http/middleware.js";
 import { SkillContextSchema } from "@palmagent/shared";
@@ -51,9 +51,12 @@ export function createApp(deps: HttpDependencies, view?: import("hono").Middlewa
     .route("/api/auth", authRoutes(deps))
     .route("/api/agents", agentRoutes(deps))
     .get("/api/compatibility", (c) => c.json({ agents: AGENT_CLI_COMPATIBILITY }, 200))
-    .get("/api/model-catalog", async (c) => {
+    .get("/api/model-catalog", query(ModelCatalogQuerySchema), async (c) => {
+      const input = c.req.valid("query");
+      const task = input.taskId ? service.getTask(input.taskId) : undefined;
+      const agent = task?.agent ?? input.agent ?? "codex";
       c.header("Cache-Control", "no-store");
-      return c.json(await deps.modelCatalog.get(service.providerHome("codex")), 200);
+      return c.json(await deps.modelCatalog.get(agent, task?.sessionControl?.home ?? service.providerHome(agent)), 200);
     })
     .get("/api/usage", async (c) => c.json({ usage: await service.usage() }, 200))
     .get("/api/stream", query(StreamQuerySchema), (c) => sessionStream(c, deps, c.req.valid("query")))

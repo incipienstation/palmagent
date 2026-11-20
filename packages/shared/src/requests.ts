@@ -11,6 +11,7 @@ export { RepoRootsSchema, RepoSettingsChangeSchema } from "./settings.js";
 const agent = z.enum(["claude", "codex"]);
 const text = z.string();
 const required = text.min(1);
+export const ModelCatalogQuerySchema = z.object({ agent: agent.optional(), taskId: required.optional() });
 const settings = { permission: text.optional(), model: text.optional(), effort: text.optional() };
 const imageDimension = ImageDimensionSchema;
 export const ImageAttachmentSchema = z.object({ mediaType: text, data: text,

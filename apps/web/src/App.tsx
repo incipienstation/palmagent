@@ -17,7 +17,6 @@ import { navigate } from "./router";
 import { RoutinesView } from "./components/Routines";
 import { UsageView } from "./components/Usage";
 import { TaskDetailView } from "./components/TaskDetail";
-import { ModelCatalogProvider } from "./model-catalog";
 
 function AppInner() {
   const route = useRoute();
@@ -76,7 +75,7 @@ export function App() {
   // stream) only mounts once authenticated.
   return (
     <NavigationGestureProvider><AuthGate>
-      <ModelCatalogProvider><AppInner /></ModelCatalogProvider>
+      <AppInner />
     </AuthGate></NavigationGestureProvider>
   );
 }
