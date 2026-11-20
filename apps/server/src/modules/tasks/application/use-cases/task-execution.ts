@@ -5,7 +5,25 @@ import type { TaskRepository } from "../ports/outbound/persistence.js";
 import type { TaskSupervisor } from "../ports/outbound/task-runtime.js";
 import type { MessageController } from "./message-controller.js";
 
+import type { RetainedTurns, TurnTicket, TurnObservation } from "../ports/outbound/retained-turns.js";
+
+function observation(event: RawEvent): TurnObservation {
+  if (event.kind === "error") {
+    const message = (event.payload as { message?: unknown } | null)?.message;
+    return { kind: "error", message: typeof message === "string" ? message : undefined };
+  }
+  if (event.kind === "result") return { kind: "result", failed: !!(event.payload as { is_error?: boolean } | null)?.is_error };
+  if (event.kind === "status") {
+    const status = event.payload as { subtype?: string; code?: number } | null;
+    if (status?.subtype === "process_exit") return { kind: "processExit", success: status.code === 0 };
+    if (status?.subtype === "reattach_failed") return { kind: "reattachFailed" };
+  }
+  return { kind: "output" };
+}
+
 interface TaskExecutionEffects {
+  restarting?(taskId: string): boolean;
+  startRetained?(task: TaskState, runId: string): void;
   transition(task: TaskState, status: TaskStatus, opts?: { interrupted?: boolean }): void;
   resolveSkills(taskId: string, skills: SkillSelection[]): Promise<SkillSelection[] | undefined>;
   error(task: TaskState, message: string): void;
@@ -22,6 +40,7 @@ interface ActiveTurn {
   sessionMismatch: boolean;
   reserved: boolean;
   handle?: RunHandle;
+  ticket?: TurnTicket;
 }
 
 /** Owns admission, handles and replay for one service lifetime. Task effects stay in TaskService. */
@@ -30,7 +49,7 @@ export class TaskExecution {
   private turns = new Map<string, ActiveTurn>();
   constructor(private readonly db: Pick<TaskRepository, "getTaskRawSeq" | "setTaskRawSeq">,
     private readonly supervisor: TaskSupervisor, private readonly backend: RunnerBackend,
-    private readonly messages: MessageController, private readonly effects: TaskExecutionEffects) {}
+    private readonly messages: MessageController, private readonly effects: TaskExecutionEffects, private readonly native?: RetainedTurns) {}
 
   close(): void {
     this.closed = true;
@@ -41,7 +60,7 @@ export class TaskExecution {
   async run(task: TaskState, prompt: string, resumeId?: string, images?: InputAttachment[], messageId?: string,
     skills?: SkillSelection[], compactionRequestId?: string): Promise<void> {
     if (this.closed) return;
-    const runId = this.messages.beginRun(task.taskId, messageId, compactionRequestId);
+    const runId = this.messages.beginRun(task.taskId, messageId, compactionRequestId, this.backend.independent);
     const turn = this.track(task, runId, 0);
     if (!this.backend.independent) {
       if (!this.supervisor.tryAcquire()) {
@@ -67,13 +86,17 @@ export class TaskExecution {
       if (!this.canStart(turn) || isClosedTaskStatus(task.status)) { this.abandon(turn); return; }
     }
     if (!this.canStart(turn)) { this.abandon(turn); return; }
-    this.db.setTaskRawSeq(task.taskId, 0);
-    this.effects.transition(task, "running", { interrupted: false });
-    this.messages.startingRuntime(task.taskId);
+    if (this.effects.startRetained) {
+      this.effects.startRetained(task, runId);
+    } else {
+      this.db.setTaskRawSeq(task.taskId, 0);
+      this.effects.transition(task, "running", { interrupted: false });
+      this.messages.startingRuntime(task.taskId);
+    }
     let handle: RunHandle;
     try {
       handle = this.backend.agentRunner(task.agent).start({
-        taskId: task.taskId, messageId, interactive: true,
+        taskId: task.taskId, executionId: this.backend.independent ? runId : undefined, messageId, interactive: true,
         operation: this.messages.state(task.taskId).compaction?.status === "running" ? "compact" : undefined,
         cwd: task.worktreePath!, prompt, skills, images, resumeId,
         providerHome: task.sessionControl?.home, permission: task.permission, model: task.model, effort: task.effort,
@@ -98,7 +121,7 @@ export class TaskExecution {
     let handle: RunHandle;
     try {
       handle = this.backend.agentRunner(task.agent).start({
-        taskId: task.taskId, cwd: task.worktreePath!, messageId: state.initialMessageId,
+        taskId: task.taskId, executionId: state.executionId === state.runId ? state.executionId : undefined, cwd: task.worktreePath!, messageId: state.initialMessageId,
         interactive: state.protocol === "interactive",
         operation: state.compaction?.status === "running" ? "compact" : undefined,
         prompt: "", resumeId: task.sessionId, permission: task.permission, model: task.model, effort: task.effort,
@@ -112,7 +135,7 @@ export class TaskExecution {
   }
 
   private track(task: TaskState, runId: string | null, baseline: number): ActiveTurn {
-    const turn = { task, runId, baseline, reserved: false, sessionMismatch: false,
+    const turn = { task, runId, baseline, ticket: this.native?.track(task.taskId, runId, baseline), reserved: false, sessionMismatch: false,
       evidence: { sawResult: false, lastResultError: false, errored: false } };
     this.turns.set(task.taskId, turn);
     return turn;
@@ -125,12 +148,16 @@ export class TaskExecution {
     // A cancelled reservation may outlive a newer turn for the same task.
     // Release only its capacity; never delete that newer turn's handle.
     if (turn.reserved) { turn.reserved = false; this.supervisor.releaseSlot(); }
+    if (!this.closed && turn.ticket) this.native!.end(turn.ticket);
     if (this.turns.get(turn.task.taskId) === turn) this.turns.delete(turn.task.taskId);
   }
   private onEvent(turn: ActiveTurn, event: RawEvent, rawSeq?: number): void {
     if (!this.current(turn) || turn.sessionMismatch) return;
     const task = turn.task;
-    if (task.sessionId && event.sessionId && task.sessionId !== event.sessionId) {
+    const disposition = turn.ticket && this.native!.observe(turn.ticket, observation(event), task.sessionId, event.sessionId, rawSeq);
+    if (disposition === "ignore") return;
+    const mismatch = disposition ? disposition === "stopForSessionMismatch" : task.sessionId && event.sessionId && task.sessionId !== event.sessionId;
+    if (mismatch) {
       turn.sessionMismatch = true;
       turn.evidence.errored = true; turn.evidence.abnormalExit = true;
       this.effects.sessionMismatch(task.taskId);
@@ -139,8 +166,9 @@ export class TaskExecution {
       } };
       queueMicrotask(() => { if (this.current(turn)) turn.handle?.cancel(); });
     }
-    observeTurn(turn.evidence, event);
-    this.effects.event(task, event, rawSeq, rawSeq !== undefined && rawSeq <= turn.baseline);
+    if (!disposition || mismatch) observeTurn(turn.evidence, event);
+    const replayed = disposition && !mismatch ? disposition === "replay" : rawSeq !== undefined && rawSeq <= turn.baseline;
+    this.effects.event(task, event, rawSeq, replayed);
   }
   private onDone(turn: ActiveTurn, handle: RunHandle): void {
     const finish = () => {
@@ -148,7 +176,10 @@ export class TaskExecution {
       this.turns.delete(turn.task.taskId);
       this.supervisor.release(turn.task.taskId);
       this.backend.release?.(turn.task.taskId);
-      this.effects.finished(turn.task, turn.evidence);
+      const evidence = turn.ticket ? this.native!.end(turn.ticket, this.messages.state(turn.task.taskId).compaction?.status === "running", this.effects.restarting?.(turn.task.taskId)) : turn.evidence;
+      if (!evidence) return;
+      if (turn.sessionMismatch) evidence.failureMessage = turn.evidence.failureMessage;
+      this.effects.finished(turn.task, evidence);
     };
     void handle.done.then(finish, finish);
   }

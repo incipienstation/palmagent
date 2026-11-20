@@ -3,6 +3,8 @@ import type { AgentEvent, InputAttachment, Permission, PermissionRequest, Questi
 export interface StartArgs {
   taskId: string;
   messageId?: string;
+  // Stable retained journal identity allocated by Tasks before the provider can start.
+  executionId?: string;
   interactive?: boolean;
   operation?: "compact";
   cwd: string; // the task's worktree path — stable for the task's whole life

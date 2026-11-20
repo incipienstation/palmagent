@@ -12,6 +12,7 @@ export class Db {
   readonly setRepoBaseRef: SqliteSpaces["setRepoBaseRef"];
   readonly getRepo: SqliteSpaces["getRepo"];
   readonly listRepos: SqliteSpaces["listRepos"];
+  private removeSpace?: (id: string) => void;
   readonly deleteRepo: SqliteSpaces["deleteRepo"];
   readonly insertRoutine: SqliteRoutines["insertRoutine"];
   readonly updateRoutine: SqliteRoutines["updateRoutine"];
@@ -58,6 +59,7 @@ export class Db {
   readonly setTaskPin: SqliteTasks["setTaskPin"];
   readonly setTaskPinOrder: SqliteTasks["setTaskPinOrder"];
   readonly setTaskTitle: SqliteTasks["setTaskTitle"];
+  readonly selectTaskOwner: (owner: Parameters<SqliteTasks["selectEventWriter"]>[0] & { removeSpace(id: string): void }) => void;
   readonly appendAgentEvents: SqliteTasks["appendAgentEvents"];
   readonly importSessionEvents: SqliteTasks["importSessionEvents"];
   readonly setTaskStatus: SqliteTasks["setTaskStatus"];
@@ -103,7 +105,7 @@ export class Db {
     this.setRepoBaseRef = spaces.setRepoBaseRef.bind(spaces);
     this.getRepo = spaces.getRepo.bind(spaces);
     this.listRepos = spaces.listRepos.bind(spaces);
-    this.deleteRepo = spaces.deleteRepo.bind(spaces);
+    this.deleteRepo = id => this.removeSpace ? this.removeSpace(id) : spaces.deleteRepo(id);
     const routines = new SqliteRoutines(this.connection);
     this.insertRoutine = routines.insertRoutine.bind(routines);
     this.updateRoutine = routines.updateRoutine.bind(routines);
@@ -152,6 +154,7 @@ export class Db {
     this.setTaskPin = tasks.setTaskPin.bind(tasks);
     this.setTaskPinOrder = tasks.setTaskPinOrder.bind(tasks);
     this.setTaskTitle = tasks.setTaskTitle.bind(tasks);
+    this.selectTaskOwner = owner => { tasks.selectEventWriter(owner); this.removeSpace = id => owner.removeSpace(id); };
     this.appendAgentEvents = tasks.appendAgentEvents.bind(tasks);
     this.importSessionEvents = tasks.importSessionEvents.bind(tasks);
     this.setTaskStatus = tasks.setTaskStatus.bind(tasks);
@@ -192,6 +195,7 @@ export class Db {
     } catch (error) { this.connection.close(); throw error; }
   }
   recoverInFlight(now: number, keep?: Set<string>): string[] { return recoverTasks(this, now, keep); }
+  get inTransaction() { return this.connection.inTransaction; }
   get isOpen() { return this.connection.open; }
   close() { this.connection.close(); }
 }

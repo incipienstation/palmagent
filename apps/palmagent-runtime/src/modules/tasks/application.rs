@@ -1,7 +1,12 @@
 //! Usage reads and cache policy, independent of SQLite and transport.
 pub mod activity;
+pub mod event_batches;
+pub mod lifecycle;
+pub mod message_queue;
 pub mod read_access;
+pub mod recovery;
 pub mod transcript;
+pub mod turns;
 
 use super::domain::{AgentUsage, Aggregate, UsageRecord};
 
@@ -46,3 +51,6 @@ impl UsageReader for Service {
             .ok_or_else(|| anyhow::anyhow!("Usage snapshot is missing"))
     }
 }
+
+pub mod shared_session;
+pub mod task_actions;

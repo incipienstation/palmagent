@@ -19,4 +19,5 @@ export interface MessageState extends Omit<MessageQueue, "messages"> {
   protocol?: "interactive";
   initialMessageId?: string;
   runtimeStarted?: boolean;
+  executionId?: string;
 }

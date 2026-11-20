@@ -187,6 +187,13 @@ async fn serve(args: &[String]) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "task-command") {
+        ensure!(
+            args.len() == 2,
+            "Task command requires the product database path"
+        );
+        return composition::task_command::run(std::path::Path::new(&args[1]));
+    }
     if args.first().is_some_and(|arg| arg == "routine-host") {
         ensure!(
             args.len() == 3,

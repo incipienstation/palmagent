@@ -25,8 +25,9 @@ export class MessagePolicy {
     return { revision: s.revision, paused: s.paused, runId: s.runId, ...(s.compaction ? { compaction: s.compaction } : {}),
       messages: s.messages.filter(m => !["delivered", "cancelled"].includes(m.status)).map(({ fingerprint: _, editToken: __, ...m }) => m) };
   }
-  beginRun(runId: string, initialMessageId?: string, compactionRequestId?: string) {
+  beginRun(runId: string, initialMessageId?: string, compactionRequestId?: string, retained = false) {
     const s = this.state;
+    if (retained) s.executionId = runId; else delete s.executionId;
     s.runId = runId; s.initialMessageId = initialMessageId; s.runtimeStarted = false;
     s.compaction = compactionRequestId ? { requestId: compactionRequestId, status: "running" } : undefined;
     for (const m of s.messages) if (m.status === "sending" && !m.runId) m.runId = s.runId;
@@ -40,7 +41,7 @@ export class MessagePolicy {
     s.runId = null; s.paused = true;
     return true;
   }
-  startingRuntime() { const s = this.state; s.runtimeStarted = true; }
+  startingRuntime() { this.state.runtimeStarted = true; }
   stopWaiting() {
     const s = this.state;
     const m = s.messages.find(m => m.id === s.initialMessageId);

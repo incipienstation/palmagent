@@ -10,6 +10,7 @@ const native = new Set([
   'tests/integration/native-routine-host.test.ts',
   'tests/integration/native-script-runtime.test.ts',
   'tests/integration/native-task-usage.test.ts',
+  'tests/integration/native-task-owner.test.ts',
   'tests/integration/routine-host.test.ts',
 ]);
 export function contractFiles(group, cwd) {

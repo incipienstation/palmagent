@@ -13,11 +13,11 @@ export function acquireUpdateLock(dataDir: string): () => void {
 }
 
 /** Held before database recovery, until all runtime resources have closed. */
-export function acquireRuntimeLock(dataDir: string): () => void {
+export function acquireRuntimeLock(dataDir: string) {
   return acquireLock(dataDir, "runtime.lock", () => new Error("A Task runtime already owns this state directory"));
 }
 
-function acquireLock(dataDir: string, name: string, busy: () => Error): () => void {
+function acquireLock(dataDir: string, name: string, busy: () => Error) {
   ensurePrivateParent(dataDir);
   const path = join(dataDir, name);
   try { if (!lstatSync(path).isFile()) throw new Error("update lock must be a regular file"); }
@@ -30,5 +30,5 @@ function acquireLock(dataDir: string, name: string, busy: () => Error): () => vo
     closeSync(fd);
     throw result.status === 75 ? busy() : new Error("cannot acquire the host lock; flock is required");
   }
-  return () => closeSync(fd);
+  return Object.assign(() => closeSync(fd), { fd });
 }
