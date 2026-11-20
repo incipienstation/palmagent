@@ -1,31 +1,21 @@
-import { createContext, useContext, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AgentKind, CodexModelCatalog, ModelCatalogChoice } from "@palmagent/shared";
+import type { AgentKind, AgentModelCatalog, ModelCatalogChoice } from "@palmagent/shared";
 import { modelCatalogQueryOptions } from "./client-queries";
 
-export type CatalogSource = CodexModelCatalog["source"] | "static";
-
 export interface AgentCatalog {
-  source: CatalogSource;
+  source: AgentModelCatalog["source"];
   models: ModelCatalogChoice[];
   effortsByModel: Record<string, ModelCatalogChoice[]>;
 }
 
 const DEFAULT_OPTION = { value: "default", label: "default" };
-const CLAUDE_EFFORTS = [DEFAULT_OPTION, ...["low", "medium", "high", "xhigh", "max"].map((value) => ({ value, label: value }))];
-const CLAUDE_MODELS = [DEFAULT_OPTION, ...["opus", "sonnet", "haiku"].map((value) => ({ value, label: value }))];
-const CLAUDE_CATALOG: AgentCatalog = {
-  source: "static",
-  models: CLAUDE_MODELS,
-  effortsByModel: Object.fromEntries(CLAUDE_MODELS.map((model) => [model.value, CLAUDE_EFFORTS])),
-};
-const DEFAULT_CODEX_CATALOG: AgentCatalog = {
+const DEFAULT_CATALOG: AgentCatalog = {
   source: "default",
   models: [DEFAULT_OPTION],
   effortsByModel: { default: [DEFAULT_OPTION] },
 };
 
-function runtimeCatalog(value: CodexModelCatalog): AgentCatalog {
+function runtimeCatalog(value: AgentModelCatalog): AgentCatalog {
   return {
     source: value.source,
     models: value.models.map(({ value: model, label }) => ({ value: model, label })),
@@ -52,24 +42,17 @@ export function selectableEffort(catalog: AgentCatalog, model: string, effort: s
   return effortChoices(catalog, model).some((option) => option.value === effort) ? effort : "default";
 }
 
-const CatalogContext = createContext<AgentCatalog | null>(null);
-
-export function ModelCatalogProvider({ children }: { children: ReactNode }) {
-  const query = useQuery(modelCatalogQueryOptions());
-  const codex = query.data ? runtimeCatalog(query.data) : DEFAULT_CODEX_CATALOG;
-  return <CatalogContext.Provider value={codex}>{children}</CatalogContext.Provider>;
-}
-
-export function useAgentCatalog(agent: AgentKind): AgentCatalog {
-  const codex = useContext(CatalogContext);
-  return agent === "codex" ? codex ?? DEFAULT_CODEX_CATALOG : CLAUDE_CATALOG;
+export function useAgentCatalog(agent: AgentKind, taskId?: string, enabled = true): AgentCatalog {
+  const { data } = useQuery({ ...modelCatalogQueryOptions(agent, taskId), enabled });
+  return data?.agent === agent ? runtimeCatalog(data) : DEFAULT_CATALOG;
 }
 
 /** Selection transitions are shared; each form owns its storage and reset semantics. */
 export function modelSelection(catalog: AgentCatalog, savedModel: string, savedEffort: string,
-  saveModel: (value: string) => void, saveEffort: (value: string) => void) {
-  const model = selectableModel(catalog, savedModel);
-  const effort = selectableEffort(catalog, model, savedEffort);
+  saveModel: (value: string) => void, saveEffort: (value: string) => void, current?: { model?: string; effort?: string }) {
+  const model = current?.model === savedModel ? savedModel : selectableModel(catalog, savedModel);
+  const effort = current && model === (current.model ?? "default") && current.effort === savedEffort
+    ? savedEffort : selectableEffort(catalog, model, savedEffort);
   return { model, effort, setModel(value: string) {
     saveModel(value);
     saveEffort(selectableEffort(catalog, value, effort));

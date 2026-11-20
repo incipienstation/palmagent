@@ -22,7 +22,7 @@ function errMsg(error: unknown) { return error instanceof Error ? error.message 
 /** Owns message retries, edit leases, optimistic previews and draft rollback. */
 export function useTaskComposer(taskId: string, task?: TaskState) {
   const taskOperations = useTaskOperations(taskId);
-  const catalog = useAgentCatalog(task?.agent ?? "codex");
+  const catalog = useAgentCatalog(task?.agent ?? "codex", taskId, !!task);
   // Per-task draft, persisted so a deploy refresh never drops an unsent steer/follow-up.
   const [compose, setCompose] = useDraft(`draft:compose:${taskId}`);
   const [skills, setSkills] = useSkillDraft(`draft:skills:${taskId}`);
@@ -36,7 +36,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
   const selectorVersion = useRef<string>(undefined);
   const [savedModel, saveModel] = useUpdateState(`task:${taskId}:model`, task?.model ?? DEFAULT_OPTION);
   const [savedEffort, setEffort] = useUpdateState(`task:${taskId}:effort`, task?.effort ?? DEFAULT_OPTION);
-  const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
+  const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort, task);
   // Permission has no DEFAULT_OPTION (always a concrete value); clamp the task's
   // stored value to a valid option for its agent (a legacy value shows the agent
   // default in the picker). A change applies to the next turn, like model/effort.
@@ -235,5 +235,5 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     ...request, answers: skip ? request.answers.map(a => ({ ...a, selected: [], notes: undefined })) : request.answers,
   }), () => toast({ title: "Answer sent", variant: "success" }));
   const approve = (decision: "approve" | "deny") => act(decision === "approve" ? "approve" : "deny", () => taskOperations.approve({ decision }));
-  return { activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission: shared ? "managed" : permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
+  return { catalog, activity, busy, compose, setCompose, skills, setSkills, editSkills, setEditSkills, edit, editText, setEditText, att, deliveryMode, setDeliveryMode, confirmedQueue, queue, pendingDeliveries, displayedQueue, resumeDisabled, localOwner, status, running, placeholder, awaiting, answering, composeMode, settingsReadOnly, displayedModel, displayedEffort, setModel, setEffort, permission: shared ? "managed" : permission, setPermission, primaryAction, canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve };
 }

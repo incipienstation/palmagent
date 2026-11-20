@@ -13,9 +13,9 @@ export const reposQueryOptions = () => queryOptions({
   retry: false,
 });
 
-export const modelCatalogQueryOptions = () => queryOptions({
-  queryKey: clientReadKeys.modelCatalog(),
-  queryFn: ({ signal }) => api.modelCatalog(signal),
+export const modelCatalogQueryOptions = (agent: AgentKind, taskId?: string) => queryOptions({
+  queryKey: [...clientReadKeys.modelCatalog(), agent, taskId ?? null],
+  queryFn: ({ signal }) => api.modelCatalog(agent, taskId, signal),
   staleTime: FIVE_MINUTES,
   gcTime: FIVE_MINUTES,
   retry: false,

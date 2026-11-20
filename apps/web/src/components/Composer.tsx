@@ -9,7 +9,7 @@ import { Popover, PopoverAnchor } from "./ui/popover";
 import type { SkillContext, SkillSelection } from "@palmagent/shared";
 import type { AgentKind } from "@palmagent/shared";
 import { DEFAULT_OPTION } from "../api";
-import { effortChoices, modelChoices, useAgentCatalog } from "../model-catalog";
+import { effortChoices, modelChoices, type AgentCatalog } from "../model-catalog";
 import { useUpdateState } from "../update-state";
 import { AttachmentMenu, AttachmentTray, type useImageAttachments } from "./Attachments";
 import { Button } from "./ui/button";
@@ -21,6 +21,7 @@ import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { PermissionPicker, permissionLabel } from "./PermissionPicker";
 
 export interface ComposerSettings {
+  catalog: AgentCatalog;
   agent: AgentKind;
   onAgentChange?: (agent: AgentKind) => void;
   model: string;
@@ -33,7 +34,7 @@ export interface ComposerSettings {
 }
 
 function Configuration({ settings: s, description }: { settings: ComposerSettings; description: string }) {
-  const catalog = useAgentCatalog(s.agent);
+  const catalog = s.catalog;
   const models = modelChoices(catalog, s.model);
   return <FieldGroup className="gap-6">
     {s.onAgentChange && <Field>
@@ -105,7 +106,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     if (focused && !textarea.current?.closest(".composer")?.contains(document.activeElement)) setFocused(false);
   });
   const composing = useRef(false);
-  const catalog = useAgentCatalog(settings.agent);
+  const catalog = settings.catalog;
   const picker = useSkillPicker({ value, onChange, context: skillContext, onSelect: onSkillsChange, textarea, disabled: disabled || busy || commandActive });
   const latest = useRef({ value, onChange }); latest.current = { value, onChange };
   const voice = useVoiceInput(settings.agent === "codex" ? skillContext : undefined, voiceScope, !!(disabled || busy), text => {

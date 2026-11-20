@@ -35,7 +35,7 @@ import { ProcessSupervisor } from "../modules/agents/adapters/outbound/superviso
 import type { RunnerBackend } from "../modules/agents/application/ports/inbound/execution.js";
 import { WorktreeManager } from "../modules/spaces/adapters/outbound/worktree.js";
 import { isUpdateMaintenance } from "../modules/installation/adapters/outbound/update-maintenance.js";
-import { CodexModelCatalogService } from "../modules/agents/adapters/outbound/model-catalog.js";
+import { ModelCatalogService } from "../modules/agents/adapters/outbound/model-catalog.js";
 import { NodeIdentifierGenerator } from "../platform/process/id-generator.js";
 import { LocalNativeSessionAdapter } from "../modules/tasks/adapters/outbound/native-session-adapter.js";
 import { LocalRepositoryPaths } from "../modules/spaces/adapters/outbound/repository-paths.js";
@@ -144,7 +144,7 @@ export async function createRuntime() {
     github = new GithubService(service, config.githubToken);
     resources.onStop(() => github?.stop());
     const auth = new AuthService(db, config, webauthn);
-    const modelCatalog = new CodexModelCatalogService();
+    const modelCatalog = new ModelCatalogService();
     return {
       db, hub, service, auth, push, routines, modelCatalog, config, terminals, terminalTickets: new TerminalTickets(),
       start() { routines.start(); github?.start(); terminals.start(); },
