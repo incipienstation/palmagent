@@ -1,3 +1,4 @@
+import type { BatchProjection, DisplayChange } from "../../application/ports/outbound/event-batches.js";
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import {
@@ -117,7 +118,8 @@ export class ConversationHistory {
     return item;
   }
 
-  private saveBlock(taskId: string, start: number, log: LogItem[], revision: number, previous: boolean): void {
+  private blockChanges(taskId: string, start: number, log: LogItem[], revision: number, previous: boolean): DisplayChange[] {
+    const changes: DisplayChange[] = [];
     const prior = new Map((this.db.prepare("SELECT seq, end_seq, revision, body_json, wire_json FROM conversation_rows WHERE task_id = ? AND block_start = ?")
       .all(taskId, start) as StoredRow[]).map(row => [row.seq, row]));
     const identities = new Map<number, number>();
@@ -127,9 +129,6 @@ export class ConversationHistory {
       if (row.type === "activity") for (const member of row.items) identities.set(member.key, row.disclosureKey ?? row.key);
     }
     const usedIdentities = new Set<number>();
-    const save = this.db.prepare(`INSERT INTO conversation_rows (task_id, seq, block_start, end_seq, revision, body_json, wire_json) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(task_id, seq) DO UPDATE SET block_start=excluded.block_start, end_seq=excluded.end_seq,
-        revision=excluded.revision, body_json=excluded.body_json, wire_json=excluded.wire_json`);
     for (const original of projectConversation(log, !previous)) {
       const row = original.type === "failure" && previous ? { ...original, previous: true } : original;
       if (row.type === "activity") {
@@ -140,10 +139,39 @@ export class ConversationHistory {
       const body = JSON.stringify(row), old = prior.get(row.key);
       prior.delete(row.key);
       if (old?.body_json === body) continue;
-      save.run(taskId, row.key, start, endOf(row), revision, body, JSON.stringify(this.wire(row, revision)));
+      changes.push({ key: row.key, start, end: endOf(row), revision, body, wire: JSON.stringify(this.wire(row, revision)) });
     }
-    const remove = this.db.prepare("UPDATE conversation_rows SET revision = ?, body_json = NULL, wire_json = NULL WHERE task_id = ? AND seq = ?");
-    for (const old of prior.values()) if (old.body_json !== null) remove.run(revision, taskId, old.seq);
+    for (const old of prior.values()) if (old.body_json !== null) changes.push({ key: old.seq, start, end: old.end_seq, revision, body: null, wire: null });
+    return changes;
+  }
+
+  private saveBlock(taskId: string, start: number, log: LogItem[], revision: number, previous: boolean): void {
+    const save = this.db.prepare(`INSERT INTO conversation_rows (task_id, seq, block_start, end_seq, revision, body_json, wire_json) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id, seq) DO UPDATE SET block_start=excluded.block_start, end_seq=excluded.end_seq,
+        revision=excluded.revision, body_json=excluded.body_json, wire_json=excluded.wire_json`);
+    for (const change of this.blockChanges(taskId, start, log, revision, previous)) {
+      save.run(taskId, change.key, start, change.end, revision, change.body, change.wire);
+    }
+  }
+
+  projectAppend(taskId: string, rows: { seq: number; event: AgentEvent }[]): BatchProjection {
+    const state = this.state(taskId);
+    let start = state.block_start, cursor = state.cursor, log: LogItem[] = JSON.parse(state.log_json);
+    const changes: DisplayChange[] = [];
+    for (const { seq, event } of rows) {
+      if (seq !== cursor + 1) throw new Error("Native append and conversation cursor disagree");
+      cursor = seq;
+      if (isNativeEnvironmentContext(event)) continue;
+      if (reset(event) && log.length) {
+        changes.push(...this.blockChanges(taskId, start, log, seq, true));
+        start = seq;
+        log = [];
+      }
+      const compact = deferActivityEventDetails(event);
+      appendHistoryEvent(log, compact.event, seq, compact.detailsDeferred);
+    }
+    changes.push(...this.blockChanges(taskId, start, log, cursor, false));
+    return { cursor, start, log: JSON.stringify(log), activity: transcriptActivity(log, { running: true }), changes };
   }
 
   update(taskId: string): void { this.refresh(taskId); }

@@ -16,7 +16,8 @@ alone does not establish a performance improvement.
 | Historical Task activity-detail expansion on daemon-backed installations | Rust Task activity read use case | TypeScript authentication, task/range validation and public response; legacy/source setups keep their local reader |
 | Transcript pages and incremental changes on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh and writes, authentication, task validation and public response |
 | Transcript activity operation lists on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh, authentication and public response; operation details and content remain local |
-| Task API, queue, agent execution coordination and recovery | TypeScript API owner | Separate PWA view process; retained execution hosts |
+| Task message transitions, retained dispatch and restart recovery on daemon installations | Rust Tasks worker under the API coordinator lease | TypeScript HTTP, provider adapters, source and legacy configurations |
+| Task creation, event persistence and conversation projection | TypeScript API owner | Retained execution hosts and native committed reads |
 | Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
 This is an ownership inventory, not a claim that the backend is fully migrated. The first
@@ -133,11 +134,22 @@ delivery are ports called by Tasks.
 | Events and records | Transfer event batches, replay cursors, projection writes and the remaining detailed and legacy reads. | A reader sees a committed event batch and its projection together. History stays compatible across pagination, large output, replay and rollback. |
 | Cross-domain routes | Route routine dispatch, Space removal, worktree cleanup, attachments, push and subscriptions through the selected owner. | Every write path uses that owner, including paths that do not originate from the browser. |
 
-The native queue and recovery code can run against the existing schema in an isolated
-fixture. It uses the API server's process-lifetime `runtime.lock`, retains submission
-receipts, and commits task interruption and queue recovery together. The startup
-composition still selects the TypeScript Tasks owner. The native composition does not
-yet drive the production execution hosts or serve the Tasks API.
+On daemon-backed installations the API coordinator passes its locked file description to
+a release-matched Rust worker. The worker validates the lock inode before opening the
+product database. Startup prepares the complete attachment list. The execution adapter
+installs those handles synchronously, then Rust commits recovery before callbacks run.
+Source and legacy configurations use their local implementation.
+
+New retained turns persist the journal UUID in the queue before reserving the execution.
+A journal from another turn fails attachment. Older queues use their existing retained
+lookup. The worker owns queue transitions, dispatch admission, callback fencing and
+metadata writes including shared-session control, pending input, approvals and pins.
+When completion also writes a conversation event, the API commits the Rust queue
+transition with that event in the existing SQLite transaction. Ordinary event batches, shared-session imports, display rows, raw cursors and activity
+timestamps commit in a single native transaction. The coordinator renders the display
+operations against the prior committed snapshot. Task insertion and the attachment index
+share a native transaction while the file adapter stages blobs. The coordinator still
+handles compound completion, projection repairs and detailed reads.
 
 The dispatch transition commits running status, the raw replay cursor reset and the
 queue's runtime-started marker together. The execution adapter can then start the

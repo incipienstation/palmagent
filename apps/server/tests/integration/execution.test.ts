@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { ChildProcHandle, InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
@@ -121,7 +122,7 @@ for (const agent of ["claude", "codex"] as const) {
     };
     const create = (release: string) => { const client = new ExecutionBackend(store.directory, release, process.execPath, 2, launch); clients.push(client); return client; };
     const first = create("/opt/releases/one");
-    const args = { taskId: "task", cwd: join(root, "repo"), prompt: JSON.stringify({ key: agent, mode: "answered-hold" }), interactive: true };
+    const args = { taskId: "task", executionId: randomUUID(), cwd: join(root, "repo"), prompt: JSON.stringify({ key: agent, mode: "answered-hold" }), interactive: true };
     const events: RawEvent[] = [];
     first.agentRunner(agent).start(args, (event) => events.push(event));
     const marker = (suffix: string) => join(root, "control", agent + suffix);
@@ -135,6 +136,9 @@ for (const agent of ["claude", "codex"] as const) {
     process.kill(original.pid, 0);
     const second = create("/opt/releases/two");
     const replay: RawEvent[] = [];
+    assert.equal(execution.id, args.executionId);
+    assert.throws(() => second.agentRunner(agent).start({ ...args, executionId: randomUUID(), reattach: true },
+      event => replay.push(event)), /does not match this turn/);
     const handle = second.agentRunner(agent).start({ ...args, reattach: true }, (event) => replay.push(event));
     await until(() => replay.some((event) => JSON.stringify(event).includes(`${agent}:ping`)), "replay catches up");
     assert.equal(store.latest("task")!.id, execution.id);

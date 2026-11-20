@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 /// Each retained attachment or new admission gets a new ticket. The persisted
 /// run ID alone is insufficient because older executions can have no run ID.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Ticket {
     task_id: String,
     generation: u64,
@@ -18,7 +19,8 @@ struct Turn {
     evidence: TurnEvidence,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Disposition {
     Ignore,
     Replay,

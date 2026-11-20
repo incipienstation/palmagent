@@ -33,8 +33,11 @@ export class ExecutionBackend implements RunnerBackend {
       resumeId: args.resumeId, providerHome: args.providerHome, permission: args.permission,
       model: args.model, effort: args.effort, messageId: args.messageId, interactive: args.interactive,
       operation: args.operation,
-    }), this.releaseDirectory, this.node, args.skills ?? []);
+    }), this.releaseDirectory, this.node, args.skills ?? [], args.executionId);
     if (!record) throw new Error("Execution identity is unavailable; it will not be resumed automatically");
+    if (record.taskId !== args.taskId || record.args.agent !== agent || (args.executionId && record.id !== args.executionId)) {
+      throw new Error("The retained execution does not match this turn; refusing to attach");
+    }
     const handle = new ExecutionHandle(this.store, record, emit);
     this.handles.set(args.taskId, handle);
     if (!args.reattach) admitExecutions(this.store, this.concurrency, this.launch);

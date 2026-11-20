@@ -58,6 +58,7 @@ export class Db {
   readonly setTaskPin: SqliteTasks["setTaskPin"];
   readonly setTaskPinOrder: SqliteTasks["setTaskPinOrder"];
   readonly setTaskTitle: SqliteTasks["setTaskTitle"];
+  readonly selectEventWriter: SqliteTasks["selectEventWriter"];
   readonly appendAgentEvents: SqliteTasks["appendAgentEvents"];
   readonly importSessionEvents: SqliteTasks["importSessionEvents"];
   readonly setTaskStatus: SqliteTasks["setTaskStatus"];
@@ -152,6 +153,7 @@ export class Db {
     this.setTaskPin = tasks.setTaskPin.bind(tasks);
     this.setTaskPinOrder = tasks.setTaskPinOrder.bind(tasks);
     this.setTaskTitle = tasks.setTaskTitle.bind(tasks);
+    this.selectEventWriter = tasks.selectEventWriter.bind(tasks);
     this.appendAgentEvents = tasks.appendAgentEvents.bind(tasks);
     this.importSessionEvents = tasks.importSessionEvents.bind(tasks);
     this.setTaskStatus = tasks.setTaskStatus.bind(tasks);
@@ -192,6 +194,7 @@ export class Db {
     } catch (error) { this.connection.close(); throw error; }
   }
   recoverInFlight(now: number, keep?: Set<string>): string[] { return recoverTasks(this, now, keep); }
+  get inTransaction() { return this.connection.inTransaction; }
   get isOpen() { return this.connection.open; }
   close() { this.connection.close(); }
 }

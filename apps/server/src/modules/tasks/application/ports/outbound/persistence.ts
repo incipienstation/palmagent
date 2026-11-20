@@ -28,6 +28,7 @@ export interface TaskRepository extends MessageStateRepository, TaskHistoryReade
 
 export interface MessageStateRepository {
   readonly isOpen: boolean;
+  readonly inTransaction?: boolean;
   readMessageState(id: string): MessageState | undefined;
   messageTaskIds(): string[];
   writeMessageState(id: string, state: MessageState): void;

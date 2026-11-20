@@ -1,6 +1,7 @@
 import { NativeReadHttp } from "../modules/installation/adapters/outbound/native-read-http.js";
 import { NativeTaskTranscript } from "../modules/tasks/adapters/outbound/native-task-transcript.js";
 import { NativeTaskActivity } from "../modules/tasks/adapters/outbound/native-task-activity.js";
+import { NativeRetainedTurns } from "../modules/tasks/adapters/outbound/native-retained-turns.js";
 import { NativeTaskUsage } from "../modules/tasks/adapters/outbound/native-task-usage.js";
 import { createTaskService } from "./task-service.js";
 import { CodexSharedSessions } from "../modules/agents/adapters/outbound/codex-shared-session.js";
@@ -62,7 +63,7 @@ async function selectBackend(): Promise<RunnerBackend> {
 
 // No module-level DB, timers, subprocesses or listeners. Tests can construct the
 // HTTP app with isolated dependencies without starting the operational runtime.
-export async function createRuntime() {
+export async function createRuntime(runtimeLease: number) {
   validateConfig();
   const resources = new ResourceScope();
   const db = new Db(config.dbPath);
@@ -79,8 +80,6 @@ export async function createRuntime() {
     backend = await selectBackend();
     const selectedBackend = backend;
     resources.defer(() => selectedBackend.close?.());
-    const attachments = createAttachmentStorage(db, config.attachmentStorage);
-    resources.defer(() => attachments.close());
     const voice = new VoiceSessions();
     resources.defer(() => voice.close());
     const accountLimits = new AccountLimitReader();
@@ -88,6 +87,15 @@ export async function createRuntime() {
     const nativeScripts = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
       ? new NativeScriptRuntime(config.dataDir) : undefined;
     if (config.nativeReadHttpPort !== undefined && !nativeScripts) throw new Error("Direct read HTTP requires a native application runtime");
+    const retainedTurns = nativeScripts ? new NativeRetainedTurns(
+      join(config.executionRelease!, "daemon", `linux-${process.arch}`, "palmagent-runtime"), config.dbPath, runtimeLease,
+    ) : undefined;
+    if (retainedTurns) {
+      resources.defer(() => retainedTurns.close());
+      db.selectEventWriter(retainedTurns);
+    }
+    const attachments = createAttachmentStorage(retainedTurns?.attachments ?? db, config.attachmentStorage);
+    resources.defer(() => attachments.close());
     const service = createTaskService(db, hub, supervisor, backend, worktrees, attachments,
       new LocalRepositoryPaths(), new LocalNativeSessionAdapter(config.dbPath), new NodeIdentifierGenerator(),
       push, () => isUpdateMaintenance(config.dbPath), {
@@ -98,7 +106,7 @@ export async function createRuntime() {
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
         : removeWorktree(),
-    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeScripts ? new NativeTaskUsage(config.dataDir) : db, nativeScripts ? new NativeTaskActivity(config.dataDir) : db, nativeScripts ? new NativeTaskTranscript(config.dataDir) : undefined);
+    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeScripts ? new NativeTaskUsage(config.dataDir) : db, nativeScripts ? new NativeTaskActivity(config.dataDir) : db, nativeScripts ? new NativeTaskTranscript(config.dataDir) : undefined, retainedTurns);
     resources.onStop(() => service.beginShutdown());
     service.sharedSessions = new CodexSharedSessions();
     const sideChats = new CodexSideChats();

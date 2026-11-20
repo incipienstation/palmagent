@@ -1,3 +1,4 @@
+import type { TaskEventBatches, BatchProjection, ImportChange, ImportMarker, SessionImport } from "../../application/ports/outbound/event-batches.js";
 import { createHash } from "node:crypto";
 import { ConversationHistory } from "./conversation-history.js";
 import { projectContextUsage } from "./context-usage.js";
@@ -71,7 +72,7 @@ function rowToTask(r: TaskRow): TaskState {
   };
 }
 
-function taskToRow(t: TaskState) {
+export function taskToRow(t: TaskState) {
   return {
     id: t.taskId,
     pinned_at: t.pinnedAt ?? null,
@@ -116,6 +117,8 @@ function rowToEvent(r: EventJoinRow): EventRow {
 
 export class SqliteTasks {
 private readonly conversation: ConversationHistory;
+private eventWriter?: TaskEventBatches;
+selectEventWriter(writer: TaskEventBatches) { this.eventWriter = writer; }
 private insertEventStmt: Database.Statement;
 private getSeqStmt: Database.Statement;
 private usageRevisionStmt: Database.Statement;
@@ -153,11 +156,11 @@ private writeContextUsage(taskId: string, usage: TaskState["contextUsage"]): voi
       .run(taskId, usage ? JSON.stringify(usage) : null);
   }
 
-private projectContextEvents(taskId: string, events: AgentEvent[]): void {
+private contextChange(taskId: string, events: AgentEvent[]): BatchProjection["context"] {
     if (!events.some(event => event.kind === "status")) return;
     const previous = this.getTask(taskId)?.contextUsage;
     const next = events.reduce(projectContextUsage, previous);
-    if (next !== previous) this.writeContextUsage(taskId, next);
+    if (next !== previous) return { body: next ? JSON.stringify(next) : null };
   }
 
 private initializePrEvidence(): void {
@@ -189,14 +192,25 @@ private writePrEvidence(taskId: string, tracker: PrEvidence, prs: PrRef[], now?:
       .run(JSON.stringify(prs), prs[0]?.url ?? null, now ?? null, taskId);
   }
 
-private projectPrEvents(taskId: string, events: AgentEvent[]): void {
+private prChange(taskId: string, events: AgentEvent[]): BatchProjection["prs"] {
     const row = this.db.prepare("SELECT state_json FROM task_pr_evidence WHERE task_id = ?").get(taskId) as { state_json: string } | undefined;
     const tracker = new PrEvidence(row ? JSON.parse(row.state_json) as PrEvidenceState : undefined);
-    const urls = events.flatMap((event) => tracker.accept(event));
-    if (row && !urls.length && row.state_json === JSON.stringify(tracker.snapshot())) return;
+    const urls = events.flatMap(event => tracker.accept(event));
+    const evidence = JSON.stringify(tracker.snapshot());
+    if (row && !urls.length && row.state_json === evidence) return;
     const previous = this.getTask(taskId)?.prs ?? [];
     const prs = projectConfirmedPrs(previous, urls);
-    this.writePrEvidence(taskId, tracker, prs, prs.length > previous.length ? Date.now() : undefined);
+    return { evidence, body: JSON.stringify(prs), first: prs[0]?.url, updatedAt: prs.length > previous.length ? Date.now() : undefined };
+  }
+
+private projectMetadata(taskId: string, events: AgentEvent[]) {
+    const prs = this.prChange(taskId, events);
+    if (prs) {
+      this.db.prepare("INSERT INTO task_pr_evidence VALUES (?,?) ON CONFLICT(task_id) DO UPDATE SET state_json=excluded.state_json").run(taskId, prs.evidence);
+      this.db.prepare("UPDATE tasks SET pr_urls=?,pr_url=?,updated_at=coalesce(?,updated_at) WHERE id=?").run(prs.body, prs.first ?? null, prs.updatedAt ?? null, taskId);
+    }
+    const context = this.contextChange(taskId, events);
+    if (context) this.db.prepare("INSERT INTO task_context_usage VALUES (?,?) ON CONFLICT(task_id) DO UPDATE SET context_usage_json=excluded.context_usage_json").run(taskId, context.body);
   }
 
 get isOpen() { return this.db.open; }
@@ -319,42 +333,74 @@ setTaskTitle(id: string, title: string, now: number) {
   }
 
 appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[] {
+    if (this.eventWriter && !this.db.inTransaction && events.length) return this.nativeBatch(this.eventWriter, taskId, events, rawSeq);
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));
       this.conversation.update(taskId);
-      this.projectPrEvents(taskId, events);
-      this.projectContextEvents(taskId, events);
+      this.projectMetadata(taskId, events);
       if (rawSeq !== undefined) this.setTaskRawSeq(taskId, rawSeq);
       this.touchTask(taskId, Date.now());
       return rows;
     })();
   }
 
-importSessionEvents(task: TaskState, events: AgentEvent[], sourceIds?: string[]): EventRow[] {
+private nativeBatch(writer: TaskEventBatches, taskId: string, events: AgentEvent[], rawSeq?: number, session?: SessionImport): EventRow[] {
+      this.conversation.update(taskId);
+      const task = this.getTask(taskId);
+      if (!task) throw new Error("Task disappeared before event batch");
+      return writer.append(taskId, events, rawSeq, assigned => {
+        const rows = assigned.map(({ seq, compact }, i) => {
+          const source = events[i];
+          const event = { taskId, agent: task.agent, kind: source.kind, payload: compact == null ? source.payload ?? null : JSON.parse(compact),
+            ts: source.ts, sessionId: task.sessionId } as AgentEvent;
+          return { seq, event };
+        });
+        return { ...this.conversation.projectAppend(taskId, rows), prs: this.prChange(taskId, events), context: this.contextChange(taskId, events) };
+      }, session);
+  }
+
+private planImports(taskId: string, events: AgentEvent[], sourceIds?: string[]) {
     if (sourceIds && sourceIds.length !== events.length) throw new Error("Session event identities must match the event batch");
+    const fresh: AgentEvent[] = [], changes: ImportChange[] = [];
+    const pending = new Map<string, ImportMarker>();
+    const lookup = this.db.prepare("SELECT text_length AS length, text_hash AS hash FROM session_imports WHERE task_id=? AND source_id=?");
+    const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+    for (const [index, event] of events.entries()) {
+      if (!sourceIds) { fresh.push(event); continue; }
+      const source = sourceIds[index];
+      const previous = pending.get(source) ?? lookup.get(taskId, source) as ImportMarker | undefined;
+      let next: ImportMarker;
+      if (event.kind !== "assistant_text") {
+        if (previous) continue;
+        next = { length: null, hash: null };
+        fresh.push(event);
+      } else {
+        const text = event.payload.text, length = previous?.length ?? 0;
+        if (previous && text.length < length) continue;
+        if (previous && hash(text.slice(0, length)) !== previous.hash) throw new Error("Shared session text changed before its imported prefix");
+        if (text.length === length) continue;
+        next = { length: text.length, hash: hash(text) };
+        fresh.push({ ...event, payload: { ...event.payload, text: text.slice(length) } });
+      }
+      changes.push({ source, previous, next });
+      pending.set(source, next);
+    }
+    return { fresh, changes };
+  }
+
+importSessionEvents(task: TaskState, events: AgentEvent[], sourceIds?: string[]): EventRow[] {
+    if (this.eventWriter && !this.db.inTransaction) {
+      const { fresh, changes } = this.planImports(task.taskId, events, sourceIds);
+      return this.nativeBatch(this.eventWriter, task.taskId, fresh, undefined, { control: JSON.stringify(task.sessionControl), changes });
+    }
     return this.db.transaction(() => {
-      const fresh = events.flatMap((event, index): AgentEvent[] => {
-        if (!sourceIds) return [event];
-        const source = sourceIds[index];
-        if (event.kind !== "assistant_text") return this.db.prepare("INSERT OR IGNORE INTO session_imports(task_id, source_id) VALUES (?, ?)").run(task.taskId, source).changes ? [event] : [];
-        // Provider snapshots are cumulative. Persist the imported prefix with
-        // the event so reconnecting at a different chunk boundary cannot repeat text.
-        const previous = this.db.prepare("SELECT text_length, text_hash FROM session_imports WHERE task_id = ? AND source_id = ?")
-          .get(task.taskId, source) as { text_length: number; text_hash: string } | undefined;
-        const text = event.payload.text, length = previous?.text_length ?? 0;
-        const hash = (value: string) => createHash("sha256").update(value).digest("hex");
-        if (previous && text.length < length) return []; // an earlier snapshot in the same batch
-        if (previous && hash(text.slice(0, length)) !== previous.text_hash) throw new Error("Shared session text changed before its imported prefix");
-        if (text.length === length) return [];
-        this.db.prepare(`INSERT INTO session_imports(task_id, source_id, text_length, text_hash) VALUES (?, ?, ?, ?)
-          ON CONFLICT(task_id, source_id) DO UPDATE SET text_length = excluded.text_length, text_hash = excluded.text_hash`)
-          .run(task.taskId, source, text.length, hash(text));
-        return [{ ...event, payload: { ...event.payload, text: text.slice(length) } }];
-      });
+      const { fresh, changes } = this.planImports(task.taskId, events, sourceIds);
+      const save = this.db.prepare(`INSERT INTO session_imports(task_id, source_id, text_length, text_hash) VALUES (?, ?, ?, ?)
+        ON CONFLICT(task_id,source_id) DO UPDATE SET text_length=excluded.text_length,text_hash=excluded.text_hash`);
+      for (const change of changes) save.run(task.taskId, change.source, change.next.length, change.next.hash);
       const rows = fresh.map((event) => ({ ...this.insertEvent(task.taskId, event.kind, event.payload, event.ts), event }));
       this.conversation.update(task.taskId);
-      this.projectPrEvents(task.taskId, fresh);
-      this.projectContextEvents(task.taskId, fresh);
+      this.projectMetadata(task.taskId, fresh);
       this.setSessionControl(task.taskId, task.sessionControl);
       if (fresh.length) this.touchTask(task.taskId, Date.now());
       return rows;

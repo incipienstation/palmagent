@@ -34,16 +34,24 @@ impl From<QueueConflict> for QueueError {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Command<'a> {
     Submit {
         message: Message,
         expected_run_id: Option<&'a str>,
         can_start: bool,
         has_settings: bool,
+        #[serde(skip, default = "admitted")]
         admission: Result<(), QueueConflict>,
     },
     Act {
         id: &'a str,
+        #[serde(borrow)]
         action: Action<'a>,
         now: i64,
         can_start: bool,
@@ -60,6 +68,8 @@ pub enum Command<'a> {
         id: String,
         initial_message: Option<String>,
         compaction: Option<String>,
+        #[serde(default)]
+        retained: bool,
     },
     StartingRuntime {
         run_id: &'a str,
@@ -72,6 +82,7 @@ pub enum Command<'a> {
         id: &'a str,
         error: String,
     },
+    SharedRuntimeStarted,
     StopWaiting,
     Pause,
     Resume,
@@ -95,6 +106,10 @@ pub enum Command<'a> {
     },
 }
 
+fn admitted() -> Result<(), QueueConflict> {
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct Transition {
     /// Includes private fingerprints and edit tokens. Never use as a public API response.
@@ -108,107 +123,111 @@ pub fn apply(
     task_id: &str,
     command: Command<'_>,
 ) -> Result<Transition, QueueError> {
-    repository.update(task_id, |queue| {
-        queue.normalize();
-        let mut claimed = None;
-        let mut dispatch_started_at = None;
-        let changed = match command {
-            Command::Submit {
-                mut message,
-                expected_run_id,
-                can_start,
-                has_settings,
-                admission,
-            } => {
-                if queue.has_submission(&message.id, &message.fingerprint)? {
-                    false
-                } else {
-                    // A retransmitted receipt remains readable during maintenance.
-                    admission?;
-                    queue.assert_submission(
-                        message.mode,
-                        expected_run_id,
-                        can_start,
-                        has_settings,
-                    )?;
-                    message.status = Status::Queued;
-                    queue.messages.push(message);
-                    true
-                }
-            }
-            Command::Act {
-                id,
-                action,
-                now,
-                can_start,
-            } => {
-                claimed = queue.act(id, action, now, can_start)?;
+    repository.update(task_id, |queue| transition(queue, command))
+}
+
+pub fn transition(
+    queue: &mut Queue,
+    command: Command<'_>,
+) -> Result<Mutation<Transition>, QueueError> {
+    queue.normalize();
+    let mut claimed = None;
+    let mut dispatch_started_at = None;
+    let changed = match command {
+        Command::Submit {
+            mut message,
+            expected_run_id,
+            can_start,
+            has_settings,
+            admission,
+        } => {
+            if queue.has_submission(&message.id, &message.fingerprint)? {
+                false
+            } else {
+                // A retransmitted receipt remains readable during maintenance.
+                admission?;
+                queue.assert_submission(message.mode, expected_run_id, can_start, has_settings)?;
+                message.status = Status::Queued;
+                queue.messages.push(message);
                 true
             }
-            Command::ClaimSend { id, can_start } => {
-                claimed = Some(queue.claim_send(id, can_start)?);
-                true
-            }
-            Command::ClaimNext { can_start, now } => {
-                claimed = queue.claim_next(can_start, now);
-                claimed.is_some()
-            }
-            Command::BeginRun {
-                id,
-                initial_message,
-                compaction,
-            } => {
-                queue.begin_run(id, initial_message, compaction);
-                true
-            }
-            Command::StartingRuntime { run_id, now } => {
-                queue.starting_runtime(run_id)?;
-                dispatch_started_at = Some(now);
-                true
-            }
-            Command::RejectBeforeStart { error } => queue.reject_before_start(error),
-            Command::RejectStart { id, error } => queue.reject_start(id, error),
-            Command::StopWaiting => {
-                queue.stop_waiting();
-                true
-            }
-            Command::Pause => {
-                queue.paused = true;
-                true
-            }
-            Command::Resume => {
-                queue.resume()?;
-                true
-            }
-            Command::Recover { live } => {
-                queue.recover(live);
-                true
-            }
-            Command::Finish { failed, error } => {
-                queue.finish(failed, error);
-                true
-            }
-            Command::Delivered { id } => queue.delivered(id),
-            Command::SharedDeliveryFailed { id, unknown } => {
-                queue.shared_delivery_failed(id, unknown)
-            }
-            Command::SettleSteer { id, delivery } => queue.settle_steer(id, delivery),
-        };
-        if changed {
-            queue.normalize();
-            queue.revision = queue
-                .revision
-                .checked_add(1)
-                .ok_or_else(|| QueueError::Storage(anyhow::anyhow!("Queue revision overflow")))?;
         }
-        Ok(Mutation {
-            result: Transition {
-                queue: queue.clone(),
-                claimed,
-                changed,
-            },
+        Command::Act {
+            id,
+            action,
+            now,
+            can_start,
+        } => {
+            claimed = queue.act(id, action, now, can_start)?;
+            true
+        }
+        Command::ClaimSend { id, can_start } => {
+            claimed = Some(queue.claim_send(id, can_start)?);
+            true
+        }
+        Command::ClaimNext { can_start, now } => {
+            claimed = queue.claim_next(can_start, now);
+            claimed.is_some()
+        }
+        Command::BeginRun {
+            id,
+            initial_message,
+            compaction,
+            retained,
+        } => {
+            queue.execution_id = retained.then(|| id.clone());
+            queue.begin_run(id, initial_message, compaction);
+            true
+        }
+        Command::StartingRuntime { run_id, now } => {
+            queue.starting_runtime(run_id)?;
+            dispatch_started_at = Some(now);
+            true
+        }
+        Command::RejectBeforeStart { error } => queue.reject_before_start(error),
+        Command::RejectStart { id, error } => queue.reject_start(id, error),
+        Command::SharedRuntimeStarted => {
+            queue.runtime_started = Some(true);
+            true
+        }
+        Command::StopWaiting => {
+            queue.stop_waiting();
+            true
+        }
+        Command::Pause => {
+            queue.paused = true;
+            true
+        }
+        Command::Resume => {
+            queue.resume()?;
+            true
+        }
+        Command::Recover { live } => {
+            queue.recover(live);
+            true
+        }
+        Command::Finish { failed, error } => {
+            queue.finish(failed, error);
+            true
+        }
+        Command::Delivered { id } => queue.delivered(id),
+        Command::SharedDeliveryFailed { id, unknown } => queue.shared_delivery_failed(id, unknown),
+        Command::SettleSteer { id, delivery } => queue.settle_steer(id, delivery),
+    };
+    if changed {
+        queue.normalize();
+        queue.revision = queue
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| QueueError::Storage(anyhow::anyhow!("Queue revision overflow")))?;
+    }
+    Ok(Mutation {
+        result: Transition {
+            queue: queue.clone(),
+            claimed,
             changed,
-            dispatch_started_at,
-        })
+        },
+        changed,
+        dispatch_started_at,
     })
 }

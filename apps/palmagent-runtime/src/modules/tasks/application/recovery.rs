@@ -67,6 +67,15 @@ pub fn recover(
     now: i64,
 ) -> anyhow::Result<Recovery> {
     let tasks = repository.tasks()?;
+    let (recovery, retained) = prepare(&tasks, executions)?;
+    repository.recover(&recovery.interrupted, &retained, now)?;
+    Ok(recovery)
+}
+
+pub fn prepare(
+    tasks: &[RecoveryTask],
+    executions: &mut impl ExecutionRecovery,
+) -> anyhow::Result<(Recovery, BTreeSet<String>)> {
     let independent = executions.independent();
     let in_flight = tasks
         .iter()
@@ -92,7 +101,7 @@ pub fn recover(
     let mut retained = BTreeSet::new();
     let mut reattached = Vec::new();
     let mut interrupted = Vec::new();
-    for task in &tasks {
+    for task in tasks {
         if task.shared {
             retained.insert(task.id.clone());
             continue;
@@ -112,9 +121,11 @@ pub fn recover(
         }
     }
 
-    repository.recover(&interrupted, &retained, now)?;
-    Ok(Recovery {
-        reattached,
-        interrupted,
-    })
+    Ok((
+        Recovery {
+            reattached,
+            interrupted,
+        },
+        retained,
+    ))
 }

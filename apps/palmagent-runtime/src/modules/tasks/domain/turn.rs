@@ -36,6 +36,16 @@ impl TurnEvidence {
         self.abnormal_exit = true;
     }
 
+    pub fn result_error(&self) -> Option<bool> {
+        self.result_error
+    }
+    pub fn errored(&self) -> bool {
+        self.errored
+    }
+    pub fn abnormal_exit(&self) -> bool {
+        self.abnormal_exit
+    }
+
     pub fn failed(&self, compacting: bool, steer_restart: bool) -> bool {
         compacting && self.result_error.is_none()
             || !steer_restart && (self.abnormal_exit || self.result_error.unwrap_or(self.errored))

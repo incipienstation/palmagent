@@ -101,6 +101,8 @@ pub struct Queue {
     pub initial_message_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_started: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_id: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -114,6 +116,12 @@ impl std::fmt::Display for QueueConflict {
 }
 impl std::error::Error for QueueConflict {}
 
+#[derive(Deserialize)]
+#[serde(
+    tag = "action",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Action<'a> {
     Edit {
         version: i64,
@@ -141,7 +149,8 @@ pub enum Action<'a> {
     },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Delivery {
     Delivered,
     Rejected,

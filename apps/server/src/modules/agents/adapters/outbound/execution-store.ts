@@ -4,7 +4,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { join } from "node:path";
 import { ensurePrivateDirectory, ensurePrivateFile } from "../../../../platform/filesystem/private-files.js";
 import { processIdentity } from "../../../../platform/process/identity.js";
-import { ExecutionStartSchema, ExecutionCommandSchema, EXECUTION_PROTOCOL, type ExecutionStart, type ExecutionCommand, type ExecutionCommandResult } from "@palmagent/shared/executions";
+import { ExecutionStartSchema, ExecutionIdSchema, ExecutionCommandSchema, EXECUTION_PROTOCOL, type ExecutionStart, type ExecutionCommand, type ExecutionCommandResult } from "@palmagent/shared/executions";
 import type { RawEvent } from "../../domain/execution.js";
 import { notifyExecutionCommands } from "./execution-wake.js";
 
@@ -71,16 +71,16 @@ export class ExecutionStore {
     return (this.db.prepare("SELECT id FROM executions WHERE state='starting' AND pid IS NULL ORDER BY rowid").all() as { id: string }[])
       .map(({ id }) => this.get(id));
   }
-  reserve(input: ExecutionStart, release: string, node: string, skills?: SkillSelection[]): ExecutionRecord {
+  reserve(input: ExecutionStart, release: string, node: string, skills?: SkillSelection[], executionId?: string): ExecutionRecord {
     const args = ExecutionStartSchema.parse(input);
     const selected = SelectedSkillsSchema.parse(skills);
     return this.db.transaction(() => {
       const existing = this.latest(args.taskId);
       if (existing && ["queued", "starting", "running"].includes(existing.state)) {
-        if (args.messageId && existing.args.messageId === args.messageId && JSON.stringify(existing.args) === JSON.stringify(args) && JSON.stringify(existing.skills) === JSON.stringify(selected)) return existing;
+        if ((!executionId || existing.id === executionId) && args.messageId && existing.args.messageId === args.messageId && JSON.stringify(existing.args) === JSON.stringify(args) && JSON.stringify(existing.skills) === JSON.stringify(selected)) return existing;
         throw new Error("An execution already owns this task");
       }
-      const id = randomUUID();
+      const id = executionId === undefined ? randomUUID() : ExecutionIdSchema.parse(executionId);
       const ownerKey = createHash("sha256").update(JSON.stringify([args.agent, args.providerHome ?? "", args.resumeId ?? id])).digest("hex");
       this.db.prepare("INSERT INTO executions(id,taskId,protocol,release,node,args,state,ownerKey,createdAt) VALUES (?,?,?,?,?,?,'queued',?,?)")
         .run(id, args.taskId, EXECUTION_PROTOCOL, release, node, JSON.stringify(args), ownerKey, Date.now());

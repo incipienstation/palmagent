@@ -33,8 +33,9 @@ export async function startServer(options: { build?: { version: string; sourceCo
 const { build } = options;
 const resources = new ResourceScope();
 try {
-  resources.defer(acquireRuntimeLock(dirname(config.dbPath)));
-  const runtime = await createRuntime();
+  const lease = acquireRuntimeLock(dirname(config.dbPath));
+  resources.defer(lease);
+  const runtime = await createRuntime(lease.fd);
   resources.defer(() => runtime.close());
   const shutdown = new AbortController();
   resources.onStop(() => shutdown.abort());

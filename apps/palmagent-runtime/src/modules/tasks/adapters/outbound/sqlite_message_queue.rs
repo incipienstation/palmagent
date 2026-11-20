@@ -4,6 +4,7 @@ use super::super::super::{
     application::message_queue::{Mutation, QueueError, QueueRepository},
     domain::message_queue::{Queue, QueueConflict},
 };
+use crate::platform::json_wire::{protect_utf16, restore_utf16};
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
@@ -38,7 +39,7 @@ impl QueueRepository for SqliteMessageQueue<'_> {
             |row| row.get(0),
         ).optional().map_err(storage)?;
         let mut queue = match state {
-            Some(Some(state)) => serde_json::from_str(&state)
+            Some(Some(state)) => serde_json::from_str(&protect_utf16(&state))
                 .context("Invalid persisted queue state")
                 .map_err(storage)?,
             Some(None) => Queue::default(),
@@ -62,7 +63,7 @@ impl QueueRepository for SqliteMessageQueue<'_> {
             tx.execute(
                 "INSERT INTO task_message_state (task_id, state) VALUES (?1, ?2)
                  ON CONFLICT(task_id) DO UPDATE SET state = excluded.state",
-                params![task_id, state],
+                params![task_id, restore_utf16(state)],
             )
             .map_err(storage)?;
         }

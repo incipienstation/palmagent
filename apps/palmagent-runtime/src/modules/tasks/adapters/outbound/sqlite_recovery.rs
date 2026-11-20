@@ -3,6 +3,7 @@ use super::super::super::{
     application::recovery::{RecoveryRepository, RecoveryTask, TaskStatus},
     domain::message_queue::Queue,
 };
+use crate::platform::json_wire::{protect_utf16, restore_utf16};
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Deserialize;
@@ -111,8 +112,8 @@ impl RecoveryRepository for SqliteRecovery<'_> {
                 |row: &rusqlite::Row<'_>| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?));
             let mut row = first.query_row([], read_row).optional()?;
             while let Some((task_id, state)) = row {
-                let mut queue: Queue =
-                    serde_json::from_str(&state).context("Invalid persisted queue state")?;
+                let mut queue: Queue = serde_json::from_str(&protect_utf16(&state))
+                    .context("Invalid persisted queue state")?;
                 queue.normalize();
                 queue.recover(retained.contains(&task_id));
                 queue.normalize();
@@ -120,7 +121,10 @@ impl RecoveryRepository for SqliteRecovery<'_> {
                     .revision
                     .checked_add(1)
                     .context("Queue revision overflow")?;
-                save.execute(params![serde_json::to_string(&queue)?, task_id])?;
+                save.execute(params![
+                    restore_utf16(serde_json::to_string(&queue)?),
+                    task_id
+                ])?;
                 row = next.query_row([task_id], read_row).optional()?;
             }
         }
