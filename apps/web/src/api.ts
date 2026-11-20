@@ -34,6 +34,5 @@ export async function probeAuth(): Promise<void> {
 export { PERMISSIONS, DEFAULT_PERMISSION, PERMISSION_CLI_FLAG } from "@palmagent/shared";
 export type { PermissionOption } from "@palmagent/shared";
 
-// Default delegates to the server/CLI. The Codex model catalog is loaded from the
-// installed App Server at runtime; see model-catalog.tsx.
+// Default delegates to the server/CLI for both providers.
 export const DEFAULT_OPTION = "default";

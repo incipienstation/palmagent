@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { tasks } from "../fixtures.mjs";
+import { modelCatalog, tasks } from "../fixtures.mjs";
 import { assertViewportLocked, openSessionDetails } from "./_helpers";
 
 // Route-based session fixtures must not be bypassed by the installed SW.
@@ -186,6 +186,7 @@ test("Send now remains available while a dispatched session is running locally",
 
 
 for (const running of [false, true]) test(`shared sessions can select next-turn model and effort while ${running ? "queueing" : "idle"}`, async ({ page }) => {
+  await page.route("**/api/model-catalog?taskId=t-idle-rich", route => route.fulfill({ json: modelCatalog }));
   const queue = { revision: 1, paused: false, runId: running ? "native-turn" : null, messages: [] };
   const task = { ...source, agent: "codex", status: running ? "running" : "idle", model: "gpt-6-astra", effort: "high", permission: "managed", messageQueue: queue,
     sessionControl: { owner: "shared", connection: "connected", home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } };

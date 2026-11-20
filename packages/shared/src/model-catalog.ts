@@ -1,3 +1,5 @@
+import type { AgentKind } from "./events.js";
+
 export type ModelCatalogSource = "runtime" | "stale" | "default";
 
 export interface ModelCatalogChoice {
@@ -5,13 +7,13 @@ export interface ModelCatalogChoice {
   label: string;
 }
 
-export interface CodexModelCatalogModel extends ModelCatalogChoice {
+export interface ModelCatalogEntry extends ModelCatalogChoice {
   efforts: ModelCatalogChoice[];
 }
 
-export interface CodexModelCatalog {
-  agent: "codex";
+export interface AgentModelCatalog {
+  agent: AgentKind;
   source: ModelCatalogSource;
   fetchedAt: number | null;
-  models: CodexModelCatalogModel[];
+  models: ModelCatalogEntry[];
 }

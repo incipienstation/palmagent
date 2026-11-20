@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { CodexModelCatalogService, defaultCodexModelCatalog, parseCodexModelCatalog, readCodexModelCatalog } from "../../src/modules/agents/adapters/outbound/model-catalog.js";
+import { ModelCatalogService, defaultModelCatalog, readClaudeModelCatalog, parseClaudeModelCatalog, parseCodexModelCatalog, readCodexModelCatalog } from "../../src/modules/agents/adapters/outbound/model-catalog.js";
 
 const runtimeResponse = {
   data: [
@@ -30,25 +30,25 @@ test("catalog reads coalesce, serve stale data while refreshing, and retain the 
   let now = 1;
   let reads = 0;
   let rejectRefresh: ((error: Error) => void) | undefined;
-  const reader = new CodexModelCatalogService(async () => {
+  const reader = new ModelCatalogService(async () => {
     reads++;
     if (reads === 1) return runtimeResponse;
     return new Promise((_, reject) => { rejectRefresh = reject; });
   }, () => now);
-  const first = reader.get("/fixture/account");
-  const second = reader.get("/fixture/account");
+  const first = reader.get("codex", "/fixture/account");
+  const second = reader.get("codex", "/fixture/account");
   const [firstResult, secondResult] = await Promise.all([first, second]);
   assert.deepEqual(firstResult, secondResult);
   assert.equal(reads, 1);
   now += 300_001;
-  const stale = await reader.get("/fixture/account");
+  const stale = await reader.get("codex", "/fixture/account");
   assert.equal(stale.source, "stale");
   assert.equal(stale.models[1]?.value, "gpt-6-astra");
   assert.equal(reads, 2);
   rejectRefresh?.(new Error("temporary CLI failure"));
   await new Promise<void>(resolve => setImmediate(resolve));
   now += 30_001;
-  const staleAgain = await reader.get("/fixture/account");
+  const staleAgain = await reader.get("codex", "/fixture/account");
   assert.equal(staleAgain.source, "stale");
   assert.equal(staleAgain.models[1]?.value, "gpt-6-astra");
   assert.equal(reads, 3);
@@ -57,14 +57,14 @@ test("catalog reads coalesce, serve stale data while refreshing, and retain the 
 test("a first discovery failure returns a default-only catalog and is retried after a short interval", async () => {
   let now = 1;
   let reads = 0;
-  const reader = new CodexModelCatalogService(async () => { reads++; throw new Error("CLI unavailable"); }, () => now);
-  const first = await reader.get("/fixture/account");
-  assert.deepEqual(first, defaultCodexModelCatalog());
+  const reader = new ModelCatalogService(async () => { reads++; throw new Error("CLI unavailable"); }, () => now);
+  const first = await reader.get("codex", "/fixture/account");
+  assert.deepEqual(first, defaultModelCatalog("codex"));
   assert.equal(reads, 1);
-  assert.deepEqual(await reader.get("/fixture/account"), first);
+  assert.deepEqual(await reader.get("codex", "/fixture/account"), first);
   assert.equal(reads, 1);
   now += 30_001;
-  assert.deepEqual(await reader.get("/fixture/account"), first);
+  assert.deepEqual(await reader.get("codex", "/fixture/account"), first);
   assert.equal(reads, 2);
 });
 
@@ -96,4 +96,35 @@ readline.createInterface({ input: process.stdin }).on("line", line => {
   assert.deepEqual(requests.map(request => request.method), ["initialize", "initialized", "model/list"]);
   assert.equal(requests[2].params.includeHidden, false);
   assert.deepEqual(catalog.models.map(model => model.value), ["default", "fixture-model"]);
+});
+
+test("Claude initialization projects model labels and only each model's advertised efforts", async t => {
+  const dir = mkdtempSync(join(tmpdir(), "palmagent-claude-catalog-test-"));
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${dir}:${previousPath ?? ""}`;
+  t.after(() => { process.env.PATH = previousPath; rmSync(dir, { recursive: true, force: true }); });
+  writeFileSync(join(dir, "claude"), `#!/usr/bin/env node
+const fs = require("node:fs"), path = require("node:path");
+require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+  fs.appendFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, "requests"), line + "\\n");
+  const request = JSON.parse(line);
+  const models = [
+    { value: "default", supportedEffortLevels: ["medium"] },
+    { value: "runtime-alias", displayName: "Runtime Model", supportedEffortLevels: ["low", "high"] },
+    { value: "no-effort" },
+  ];
+  console.log(JSON.stringify({ type: "control_response", response: { request_id: request.request_id,
+    subtype: "success", response: { models, account: "private-metadata" } } }));
+});
+`, { mode: 0o755 });
+  const catalog = parseClaudeModelCatalog(await readClaudeModelCatalog(dir));
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "requests"), "utf8")), {
+    type: "control_request", request_id: "catalog", request: { subtype: "initialize" },
+  });
+  assert.deepEqual(catalog.models.map(m => [m.value, m.label, m.efforts.map(e => e.value)]), [
+    ["default", "default", ["default", "medium"]],
+    ["runtime-alias", "Runtime Model", ["default", "low", "high"]],
+    ["no-effort", "no-effort", ["default"]],
+  ]);
+  assert.doesNotMatch(JSON.stringify(catalog), /private-metadata/);
 });

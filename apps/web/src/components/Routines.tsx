@@ -290,7 +290,7 @@ export function RoutinesView() {
   const permission = selectablePermission(agent, savedPermission);
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:routine-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:routine-effort", agent, DEFAULT_OPTION);
-  const catalog = useAgentCatalog(agent);
+  const catalog = useAgentCatalog(agent, undefined, showForm && kind === "agent");
   const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
   const [preset, setPreset] = useActionState<RoutinePreset>(`routine:preset`, "daily");
   const [hour, setHour] = useActionState<number>(`routine:hour`, ROUTINE_POLICY.defaultHour);

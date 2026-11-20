@@ -52,7 +52,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const permission = selectablePermission(agent, savedPermission);
   const [savedModel, saveModel] = usePersistedMapEntry<string>("pref:dispatch-model", agent, DEFAULT_OPTION);
   const [savedEffort, setEffort] = usePersistedMapEntry<string>("pref:dispatch-effort", agent, DEFAULT_OPTION);
-  const catalog = useAgentCatalog(agent);
+  const catalog = useAgentCatalog(agent, undefined, enabled);
   const { model, effort, setModel } = modelSelection(catalog, savedModel, savedEffort, saveModel, setEffort);
   const [isolate, setIsolate] = usePersistedMapEntry<boolean>("pref:dispatch-isolate", repoId, false);
   const [legacyPrompt, setLegacyPrompt] = useDraft("draft:dispatch-prompt");
@@ -197,7 +197,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     skills: locked ? [] : skills, onSkillsChange: setSkills, skillContext: repoId ? { repoId, agent } : undefined,
     onStop: busy ? () => { setSubmission(current => current ? { ...current, stop: true } : current); void stopTaskTurn("dispatch"); } : undefined, stopping: !!activity.stopping,
     description: "Your choices are remembered for this agent.",
-    settings: { agent, onAgentChange: setAgent, model,
+    settings: { agent, catalog, onAgentChange: setAgent, model,
       onModelChange: setModel,
       effort, onEffortChange: setEffort, permission, onPermissionChange: setPermission,
       children: isGit && <Field orientation="horizontal">

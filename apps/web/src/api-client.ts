@@ -145,7 +145,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       change: (json: UpdateSettingsChange) => write(() => client.settings.updates.$patch({ json })),
     },
     listRepos: (signal?: AbortSignal) => request(() => client.repos.$get({}, requestOptions(signal))).then((r) => r.repos),
-    modelCatalog: (signal?: AbortSignal) => request(() => client["model-catalog"].$get({}, requestOptions(signal))),
+    modelCatalog: (agent: AgentKind, taskId?: string, signal?: AbortSignal) => request(() => client["model-catalog"].$get({ query: taskId ? { taskId } : { agent } }, requestOptions(signal))),
     createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json }), false, false, ["repos"]).then((r) => r.repo),
     updateRepo: (id: string, json: UpdateRepoRequest) => write(() => client.repos[":id"].$patch({ param: idParam(id), json }), false, false, ["repos"]).then(r => r.repo),
     deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) }), false, false, ["repos"]).then((r) => r.repo),
