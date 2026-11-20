@@ -1,10 +1,11 @@
+import { updateBinary } from "./native-update.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BRANDING } from "@palmagent/shared";
 import { compatiblePlugin, channelTag, productVersion, validateUpdateTarget, type ReleaseChannel } from "../../domain/release-policy.js";
 import { run } from "./sh.js";
 import { discoveryCommandFailure, discoveryStep, UpdateDiscoveryError } from "./update-discovery-error.js";
-import { installedDistribution, selectStandaloneRelease, verifyStandaloneSelection } from "./standalone-release.js";
+import { installedDistribution, nativeCatalog, selectStandaloneRelease, verifyStandaloneSelection } from "./standalone-release.js";
 import type { ReleaseResolution } from "../../application/ports/outbound/installation.js";
 
 import { planUpdate } from "../../domain/update-plan.js";
@@ -35,8 +36,10 @@ export function resolveUpdatePlan(current: string, channel: ReleaseChannel, plug
   if (currentDistribution === "standalone" && distribution === "npm") throw new Error("Converting standalone to npm is not an update operation");
   if (distribution === "standalone") {
     try {
-      const selection = options.selection ?? selectStandaloneRelease(channel, requested);
-      if (options.selection) verifyStandaloneSelection(selection);
+      const binary = updateBinary(options.installation?.pkgDir);
+      const selection = binary ? nativeCatalog(binary, channel, requested, options.selection).selection
+        : options.selection ?? selectStandaloneRelease(channel, requested);
+      if (!binary && options.selection) verifyStandaloneSelection(selection);
       if (requested && selection.version !== requested) throw new Error("Pinned artifact differs from requested version");
       return planUpdate(current, selection.version, channel, plugins, currentDistribution, "standalone", selection);
     } catch (error) {

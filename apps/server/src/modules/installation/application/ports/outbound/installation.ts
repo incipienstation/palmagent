@@ -83,6 +83,7 @@ export interface ReleaseResolution {
   selection?: import("@palmagent/shared/standalone").StandaloneSelection;
 }
 export interface InstallationReleases {
+  standaloneExecutor?(directory?: string): import("./standalone-update.js").StandaloneUpdate | undefined;
   installedVersion(packageDirectory?: string): string;
   stage(config: InstallConfig, version: string, selection?: import("@palmagent/shared/standalone").StandaloneSelection): InstallConfig;
   identity(packageDirectory: string): ApplicationIdentity;
