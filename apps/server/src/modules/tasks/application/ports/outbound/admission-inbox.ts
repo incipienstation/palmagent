@@ -7,6 +7,7 @@ export interface AdmissionInbox {
   /** Returns undefined when a new request can go directly to the active owner. */
   receive(command: AdmissionCommand, defer: boolean): AdmissionStatus | undefined;
   status(scope: string, id: string): AdmissionStatus | undefined;
+  hasPending(): boolean;
   assertOwner(): void;
   next(): { sequence: number; command: AdmissionCommand } | undefined;
   finish(sequence: number, status: AdmissionStatus): void;

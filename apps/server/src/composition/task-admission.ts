@@ -18,7 +18,7 @@ export function startTaskAdmission(dataDir: string, dbPath: string, service: Tas
   const timer = setInterval(drain, 500);
   timer.unref();
   drain();
-  return { inbox, deferring: () => isHandoffWindow(dbPath), stop() { stopped = true; }, async close() {
+  return { inbox, hasPending: () => inbox.hasPending(), deferring: () => isHandoffWindow(dbPath), stop() { stopped = true; }, async close() {
     stopped = true;
     clearInterval(timer);
     await processing;

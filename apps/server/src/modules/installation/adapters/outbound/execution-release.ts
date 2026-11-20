@@ -23,7 +23,7 @@ export function releaseContract(directory: string): ReleaseContract {
   if (contract.hostSetup !== undefined && contract.hostSetup !== 1) throw new Error("Candidate host setup protocol is incompatible");
   if (contract.routineProtocol !== undefined && (contract.routineProtocol !== 1 || !existsSync(join(directory, "routine-host.js")))) throw new Error("Candidate routine host contract is incompatible or incomplete");
   if (contract.taskStorage !== undefined && (!Number.isSafeInteger(contract.taskStorage) || contract.taskStorage < 1)) throw new Error("Invalid Task storage contract");
-  if (contract.updateAdmission !== undefined && (contract.updateAdmission !== 1 || contract.taskStorage === undefined || !existsSync(join(directory, "update-gateway.js"))))
+  if (contract.updateAdmission !== undefined && ((!Number.isSafeInteger(contract.updateAdmission) || contract.updateAdmission < 1) || contract.taskStorage === undefined || (contract.updateAdmission === 1 && !existsSync(join(directory, "update-gateway.js")))))
     throw new Error("Update admission capability is incompatible or incomplete");
   if (contract.viewControl !== undefined && (contract.viewControl !== 1 || !existsSync(join(directory, "view.js")))) throw new Error("Candidate view control contract is incompatible or incomplete");
   if (contract.daemonProtocol !== undefined) {

@@ -1,3 +1,4 @@
+import { TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
 import { staticFiles } from "../../src/platform/http/static.js";
 import type { TaskTranscriptReader } from "../../src/modules/tasks/application/ports/outbound/transcript.js";
 import type { TaskActivityReader } from "../../src/modules/tasks/application/ports/outbound/activity.js";
@@ -158,6 +159,13 @@ test("compatible message submissions cross build versions without opening other 
   for (const path of ["/api/tasks/t/stop", "/api/tasks/t/messages/m", "/api/settings/updates"]) {
     assert.equal((await f.app.request(path, { method: "POST", headers, body: "{}" })).status, 409, path);
   }
+  const stop = t.mock.method(f.service, "stop", () => task);
+  const pinned = (body: object) => f.app.request("/api/tasks/t/stop", {
+    method: "POST", headers: { ...headers, [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION }, body: JSON.stringify(body),
+  });
+  assert.equal((await pinned({})).status, 400);
+  assert.equal((await pinned({ expectedRunId: "observed-turn" })).status, 200);
+  assert.deepEqual(stop.mock.calls[0]?.arguments, ["t", "observed-turn"]);
   f.shutdown.abort();
   const restarting = await f.app.request("/api/tasks", { method: "POST", headers, body: JSON.stringify(first) });
   assert.equal(restarting.status, 503);

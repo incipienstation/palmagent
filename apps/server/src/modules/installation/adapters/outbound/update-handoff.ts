@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DaemonConfigurationSchema } from "@palmagent/shared/daemon";
+import { connectionInfo } from "./connection.js";
 import { releaseContract } from "./execution-release.js";
 import type { InstallConfig } from "../../domain/installation.js";
 
@@ -20,6 +21,12 @@ export async function openUpdateGateway(cfg: InstallConfig, candidate: InstallCo
       daemon.environment.HOST !== cfg.host || daemon.environment.DISPATCHER_DATA_DIR !== cfg.dataDir ||
       daemon.environment.PORT !== String(cfg.port) || daemon.environment.AUTH_ORIGIN !== cfg.authOrigin)
     throw new Error("Running installation differs from the update gateway configuration");
+  const response = await fetch(connectionInfo(cfg).upstream + "/api/health", { headers: { connection: "close" }, signal: AbortSignal.timeout(5000), redirect: "error" });
+  const health = await response.json() as { ok?: boolean; updateAdmission?: number; build?: { sourceCommit?: string; version?: string } };
+  const retainedBuild = (directory: string) => JSON.parse(readFileSync(join(directory, "build-info.json"), "utf8"));
+  if (!response.ok || !health.ok || health.updateAdmission !== 1 ||
+      ![cfg.pkgDir!, candidate.pkgDir!].map(retainedBuild).some(build => build.version === health.build?.version && build.sourceCommit === health.build?.sourceCommit))
+    throw new Error("Live Task owner does not match the handoff release pair");
   const child = spawn(cfg.executionNode!, [join(cfg.pkgDir!, "update-gateway.js")], {
     cwd: cfg.pkgDir, env: daemon.environment, stdio: ["ignore", "ignore", "inherit", "ipc"],
   });

@@ -4,13 +4,17 @@ import type { AdmissionCommand, AdmissionInbox, AdmissionStatus } from "../../ap
 
 export interface UpdateAdmission {
   inbox: Pick<AdmissionInbox, "receive" | "status">;
+  hasPending?(): boolean;
   deferring(): boolean;
 }
 
 export function admitDuringUpdate(c: Context, admission: UpdateAdmission | undefined, command: AdmissionCommand) {
   if (!admission || c.req.header("prefer") !== "respond-async") return;
   const result = admission.inbox.receive(command, admission.deferring());
-  return pendingReceipt(c, result, command.kind === "create" ? command.input.clientRequestId : command.input.clientMessageId);
+  const id = command.kind === "create" ? command.input.clientRequestId : command.input.clientMessageId;
+  if (result?.state === "pending" && id) c.header("Location", command.kind === "create"
+    ? "/api/tasks/creation-receipts/" + id : "/api/tasks/" + encodeURIComponent(command.taskId) + "/messages/" + id + "/receipt");
+  return pendingReceipt(c, result, id);
 }
 
 export function readAdmission(c: Context, admission: UpdateAdmission | undefined, scope: string, id: string) {

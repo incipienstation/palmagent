@@ -60,7 +60,7 @@ export async function startUpdateGateway(build: {version: string; sourceCommit: 
         client.resume();
       } else client.destroy();
     });
-    owner.once("close", () => { if (connected) client.destroy(); });
+    // pipe ends the client after the owner response has flushed. Errors above abort both sockets.
   });
   try {
     await new Promise<void>((resolve, reject) => {

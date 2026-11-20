@@ -5,9 +5,9 @@ import type { TaskUseCases } from "../ports/inbound/task-use-cases.js";
 /** Called serially by the process holding runtime.lock. A crash before finish
  * repeats only the original client request against the Task owner's durable receipt. */
 export async function drainAdmission(inbox: AdmissionInbox, service: TaskUseCases, stopped: () => boolean) {
-  while (!stopped()) {
+  while (!stopped() && inbox.hasPending() && !service.updating) {
     const next = inbox.next();
-    if (!next || service.updating) return;
+    if (!next) return;
     const { command } = next;
     try {
       if (command.kind === "create") {

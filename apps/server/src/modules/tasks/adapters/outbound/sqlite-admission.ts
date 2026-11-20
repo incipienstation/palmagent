@@ -30,8 +30,7 @@ export class SqliteAdmissionInbox implements AdmissionInbox {
     if (!id) return;
     const lookup = () => this.db.prepare("SELECT digest,result FROM admissions WHERE scope=? AND request_id=?")
       .get(scope, id) as { digest: string; result: string | null } | undefined;
-    const pending = () => this.db.prepare("SELECT 1 FROM admissions WHERE result IS NULL LIMIT 1").get();
-    if (!defer && !lookup() && !pending()) return;
+    if (!defer && !lookup() && !this.hasPending()) return;
     const json = JSON.stringify(command);
     const digest = createHash("sha256").update(json).digest("hex");
     return this.db.transaction((): AdmissionStatus | undefined => {
@@ -40,7 +39,7 @@ export class SqliteAdmissionInbox implements AdmissionInbox {
         if (prior.digest !== digest) throw new ApplicationError("conflict", "This request ID already has different content.");
         return prior.result ? JSON.parse(prior.result) : { state: "pending" };
       }
-      if (!defer && !pending()) return;
+      if (!defer && !this.hasPending()) return;
       this.db.prepare("DELETE FROM admissions WHERE completed_at < ?").run(Date.now() - 7 * 86_400_000);
       const load = this.db.prepare("SELECT COUNT(*) AS count, SUM(bytes) AS bytes FROM admissions WHERE result IS NULL")
         .get() as { count: number; bytes: number | null };
@@ -50,6 +49,9 @@ export class SqliteAdmissionInbox implements AdmissionInbox {
       this.db.prepare("INSERT INTO admissions(scope,request_id,digest,command,bytes) VALUES(?,?,?,?,?)").run(scope, id, digest, json, bytes);
       return { state: "pending" };
     }).immediate();
+  }
+  hasPending() {
+    return Boolean(this.db.prepare("SELECT 1 FROM admissions WHERE result IS NULL LIMIT 1").get());
   }
   status(scope: string, id: string): AdmissionStatus | undefined {
     const row = this.db.prepare("SELECT result FROM admissions WHERE scope=? AND request_id=?").get(scope, id) as { result: string | null } | undefined;

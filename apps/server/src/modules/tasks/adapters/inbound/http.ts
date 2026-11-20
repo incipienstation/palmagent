@@ -1,4 +1,5 @@
 import { admitDuringUpdate, readAdmission, type UpdateAdmission } from "./update-admission.js";
+import { TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import { attachmentBody } from "./attachment-body.js";
 import { ConversationStepDetailsQuerySchema, ExecutionRecordsQuerySchema, ConversationDetailsQuerySchema, ConversationContentQuerySchema } from "@palmagent/shared/requests";
@@ -178,6 +179,11 @@ export function taskRoutes({ service, admission }: Pick<HttpDependencies, "servi
       return c.json({ task: await service.approve(c.req.valid("param").id, input.decision, input.scope) }, 200);
     })
     .post("/:id/answer", params(IdParamsSchema), jsonBody(AnswerSchema), async (c) => c.json({ task: await service.answer(c.req.valid("param").id, c.req.valid("json")) }, 200))
-    .post("/:id/stop", params(IdParamsSchema), jsonBody(StopTaskSchema), async (c) => c.json({ task: await service.stop(c.req.valid("param").id, c.req.valid("json").expectedRunId) }, 200))
+    .post("/:id/stop", params(IdParamsSchema), jsonBody(StopTaskSchema), async c => {
+      const { expectedRunId } = c.req.valid("json");
+      if (c.req.header(TURN_CONTROL_HEADER) === TURN_CONTROL_VERSION && expectedRunId === undefined)
+        throw new ApplicationError("bad_request", "An expected run ID is required.");
+      return c.json({ task: await service.stop(c.req.valid("param").id, expectedRunId) }, 200);
+    })
     .post("/:id/cancel", params(IdParamsSchema), jsonBody(EmptyBodySchema), async (c) => c.json({ task: await service.cancel(c.req.valid("param").id) }, 200));
 }

@@ -61,6 +61,21 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
       headers: { "content-type": "application/json", ...authenticated }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(3000) });
     const result = await response.json(); assert(response.ok, JSON.stringify(result)); return result;
   };
+  // A pooled connection can belong to the retired owner or gateway. Reconnect
+  // for transition reads, while leaving every mutation a single attempt.
+  const afterSwitch = (label, path) => until(label, async () => {
+    let response;
+    try {
+      response = await fetch(base + "/api/" + path, { headers: authenticated, signal: AbortSignal.timeout(3000) });
+      if (response.status === 503 || response.status === 202) { await response.body?.cancel(); return false; }
+      const result = await response.json();
+      assert(response.ok, JSON.stringify(result));
+      return result;
+    } catch (error) {
+      if (["UND_ERR_SOCKET", "ECONNRESET", "ECONNREFUSED", "EPIPE"].includes(error.cause?.code)) return false;
+      throw error;
+    }
+  });
   const mark = (key, suffix) => writeFileSync(join(root, "control", key + suffix), "");
   let taskId, paused, gateway;
   try {
@@ -102,7 +117,7 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
       catch { return false; }
     });
     assert.equal(command({ action: "status" }).web.child.pid, recovered.ownerPid);
-    assert.equal((await api(`tasks/${taskId}`)).task.status, "idle");
+    assert.equal((await afterSwitch("recovered owner serves Task", `tasks/${taskId}`)).task.status, "idle");
     assert.equal(await (await fetch(base)).text(), shell);
     const configPath = join(data, "daemon/config.json");
     const nextRelease = join(data, "releases/candidate");
@@ -140,15 +155,12 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
     await until("replacement daemon", () => { try { return command({ action: "status" }).instance !== priorDaemon; } catch { return false; } });
     command({ action: "restart-web" });
     assert.notEqual(view("status").ownerPid, recovered.ownerPid);
-    assert.equal((await api("tasks/" + taskId)).task.sessionId, oldSession);
+    assert.equal((await afterSwitch("replacement serves original session", "tasks/" + taskId)).task.sessionId, oldSession);
     rmSync(marker);
     const gatewayClosed = new Promise(resolve => gateway.once("exit", resolve));
     gateway.disconnect();
     await gatewayClosed;
-    await until("installed owner applies durable receipt", async () => {
-      const response = await fetch(base + `/api/tasks/${taskId}/messages/${id}/receipt`, { headers: authenticated });
-      return response.status === 200;
-    });
+    await afterSwitch("installed owner applies durable receipt", `tasks/${taskId}/messages/${id}/receipt`);
     mark("packed-handoff-active", ".release");
     await until("queued message on replacement", () => existsSync(readyPath("packed-handoff-next")));
     await until("replacement execution completes", async () => (await api("tasks/" + taskId)).task.status === "idle");
@@ -182,10 +194,12 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
           }
         } catch (error) { if (!["ENOENT", "ESRCH"].includes(error.code)) throw error; }
       };
-      for (const name of existsSync(hosts) ? readdirSync(hosts).filter(name => name.endsWith(".json")) : []) {
-        const path = join(hosts, name);
-        signalOwned(JSON.parse(readFileSync(path, "utf8")).guard, false);
-        signalOwned(JSON.parse(readFileSync(path, "utf8")).child, true);
+      for (const directory of [hosts, join(data, "daemon/services")]) {
+        for (const name of existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith(".json")) : []) {
+          const record = JSON.parse(readFileSync(join(directory, name), "utf8"));
+          signalOwned(record.guard, false);
+          signalOwned(record.child, true);
+        }
       }
       const socketRoot = join("/tmp", `palmagentd-${process.getuid()}-${createHash("sha256").update(data).digest("hex").slice(0, 20)}`);
       rmSync(socketRoot, { recursive: true, force: true });

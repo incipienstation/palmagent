@@ -4,7 +4,7 @@ import type { InstallConfig } from "../../domain/installation.js";
 import { channelTag, compatiblePlugin, releaseChannel, validateUpdateTarget } from "../../domain/release-policy.js";
 import type { InstallationOptions, InstallationUseCases } from "../ports/inbound/installation-use-cases.js";
 import type { InstallationDependencies } from "../ports/outbound/installation.js";
-import { verifyIndependentActivation } from "./installation-activation.js";
+import { independentActivationBlock } from "./installation-activation.js";
 import type { StandaloneSelection } from "@palmagent/shared/standalone";
 
 export function createInstallationUpdate(dependencies: InstallationDependencies,
@@ -18,7 +18,9 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
       ? releaseChannel(options.channel!)
       : configuration.preferences(cfg.dataDir).channel;
     const currentVersion = cfg.mode === "package" && !options.dryRun ? releases.installedVersion(cfg.pkgDir) : "";
-    if (options.plannedTarget && (options.plannedTarget.currentVersion !== currentVersion || options.plannedTarget.channel !== cfg.releaseChannel ||
+    const resumedPlan = options.plannedTarget && options.plannedTarget.currentVersion !== currentVersion &&
+      options.plannedTarget.targetVersion === currentVersion && state.readUpdate(cfg.dataDir)?.reason === "handoff-activation";
+    if (options.plannedTarget && ((!resumedPlan && options.plannedTarget.currentVersion !== currentVersion) || options.plannedTarget.channel !== cfg.releaseChannel ||
         options.plannedTarget.targetVersion !== options.plannedTarget.selection.version ||
         (options.targetVersion && options.targetVersion !== options.plannedTarget.targetVersion) || options.distribution === "npm" || !options.pull))
       throw new Error("Update plan no longer matches this installation or request; plan again");
@@ -77,6 +79,7 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
             ![saved.previous.pkgDir, saved.target.pkgDir].includes(cfg.pkgDir) ||
             [saved.previous, saved.target].some(side => side.dataDir !== cfg.dataDir || side.dbPath !== cfg.dbPath || side.user !== cfg.user) ||
             (options.channel && saved.target.releaseChannel !== options.channel) ||
+            (options.plannedTarget && (handoff.previousVersion !== options.plannedTarget.currentVersion || handoff.manifestSha256 !== options.plannedTarget.selection.manifestSha256)) ||
             (requestedVersion && requestedVersion !== handoff.targetVersion) ||
             (options.request && options.request.id !== handoff.requestId)) {
           throw new Error("Interrupted activation does not match this installation and request");
@@ -88,7 +91,8 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
         };
         const old = restoreConfig(saved.previous), target = restoreConfig(saved.target);
         const native = releases.discoverPlugins(cfg);
-        options = { ...options, pluginManifests: releases.participatingPlugins(native, pluginPaths).map(plugin => plugin.manifest) };
+        const manifests = [...new Set([...(handoff.pluginManifests ?? []), ...pluginPaths])];
+        options = { ...options, pluginManifests: releases.participatingPlugins(native, manifests).map(plugin => plugin.manifest) };
         const resumed = await updateIndependentRelease(old, handoff.targetVersion, options, (status, reason) => {
           if (status === "deferred") return; // Keep the pinned activation available on the next wake.
           state.writeUpdate(cfg.dataDir, { previousVersion: previous.previousVersion, targetVersion: previous.targetVersion,
@@ -98,6 +102,7 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
         keepRequestedUpdate = state.readUpdate(cfg.dataDir)?.status === "applying";
         return resumed;
       }
+      if (resumedPlan) throw new Error("The pinned activation is no longer pending; plan again");
       if ((options.automatic || options.request) && (previous?.status === "failed" || previous?.status === "applying")) {
         feedback.warn("automatic updates are paused after an unsuccessful attempt; use the update plugin to inspect and recover");
         return true;
@@ -153,7 +158,7 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
       if (cfg.executionNode || plan.targetDistribution === "standalone") {
         try {
           const result = await updateIndependentRelease(cfg, plan.targetVersion, options, record, plan.selection);
-          keepRequestedUpdate = ["routine-scripts-active", "tasks-active"].includes(state.readUpdate(cfg.dataDir)?.reason ?? "");
+          keepRequestedUpdate = ["routine-scripts-active", "tasks-active", "admissions-pending"].includes(state.readUpdate(cfg.dataDir)?.reason ?? "");
           return result;
         }
         catch (error) {
@@ -245,10 +250,9 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
     let changed = false;
     try {
       endWindow = state.beginMaintenance(cfg, Boolean(closeGateway));
-      if (!(cfg.executionNode ? await verifyIndependentActivation(runtime, cfg) : await runtime.legacyIdle(cfg))) {
-        record("deferred", cfg.executionNode ? "routine-scripts-active" : "tasks-active");
-        return true;
-      }
+      const block = cfg.executionNode ? await independentActivationBlock(runtime, cfg, Boolean(closeGateway))
+        : await runtime.legacyIdle(cfg) ? undefined : "tasks-active";
+      if (block) { record("deferred", block); return true; }
       configuration.initializePreferences(cfg.dataDir);
       const settings = configuration.preferences(cfg.dataDir);
       if ((options.automatic && !settings.autoUpdate) || ((options.automatic || options.request) && settings.channel !== candidate.releaseChannel)) {
@@ -258,7 +262,8 @@ export function createInstallationUpdate(dependencies: InstallationDependencies,
       const intent = (phase: "prepared" | "configured" | "verified"): ActivationReceipt => ({
         previous: cfg, target: candidate, status: "applying",
         ...(closeGateway ? { verification: identity, handoff: { phase, previousVersion: releases.installedVersion(cfg.pkgDir),
-          targetVersion: version, requestId: options.request?.id ?? resume?.handoff?.requestId } } : {}),
+          targetVersion: version, manifestSha256: selection?.manifestSha256 ?? resume?.handoff?.manifestSha256,
+          pluginManifests: options.pluginManifests, requestId: options.request?.id ?? resume?.handoff?.requestId } } : {}),
       });
       // Write the exact pair before provisioning can change daemon crash recovery.
       state.writeActivation(cfg, intent("prepared"));

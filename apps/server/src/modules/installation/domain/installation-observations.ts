@@ -24,5 +24,5 @@ export interface Check {
 
 export interface MigrationReceipt { previous: InstallConfig; target: InstallConfig; previousDaemonConfig?: string }
 export interface ActivationReceipt { previous: InstallConfig; target: InstallConfig; status: "applying" | "succeeded" | "restored" | "recovery-required"; verification?: ApplicationIdentity;
-  handoff?: { phase: "prepared" | "configured" | "verified"; requestId?: string; previousVersion: string; targetVersion: string } }
-export interface RuntimeActivity { verified: boolean; healthy?: boolean; maintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number }
+  handoff?: { phase: "prepared" | "configured" | "verified"; requestId?: string; previousVersion: string; targetVersion: string; manifestSha256?: string; pluginManifests?: string[] } }
+export interface RuntimeActivity { pendingUpdateAdmissions?: boolean; verified: boolean; healthy?: boolean; maintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number }

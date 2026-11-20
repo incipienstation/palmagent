@@ -177,8 +177,8 @@ export function createInstallationRuntime(releases: RetainedReleaseOperations): 
     start: startServices, restartRunner, restartWeb, handoffCompatibility, openUpdateGateway, healthy: runtimeIsHealthy, waitHealthy: healthcheck,
     async activity(config) {
       const response = await fetch(`${connectionInfo(config).upstream}/api/health`, { signal: AbortSignal.timeout(5000) });
-      const health = await response.json() as { ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number };
-      return { verified: response.ok, healthy: health.ok, maintenance: health.updateMaintenance,
+      const health = await response.json() as { pendingUpdateAdmissions?: boolean; ok?: boolean; updateMaintenance?: boolean; executionProtocol?: number; activeRoutineScripts?: number; updateBlockingRoutineScripts?: number };
+      return { pendingUpdateAdmissions: health.pendingUpdateAdmissions, verified: response.ok, healthy: health.ok, maintenance: health.updateMaintenance,
         executionProtocol: health.executionProtocol, activeRoutineScripts: health.activeRoutineScripts,
         updateBlockingRoutineScripts: health.updateBlockingRoutineScripts };
     },

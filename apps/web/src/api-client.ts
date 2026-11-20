@@ -4,7 +4,7 @@ import { cacheSession, invalidateClientReads, type ClientReadScope } from "./que
 import { hc } from "hono/client";
 import type { AppType } from "@palmagent/server/http-api";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
-import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION, TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
 import { retryMessage } from "./message-retry";
 import type {
   AgentKind, AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
@@ -221,9 +221,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json }, attachmentOptions(json))).then((r) => r.task),
     steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json }, attachmentOptions(json))),
     approve: (id: string, json: ApproveRequest) => write(() => tasks.approve.$post({ param: idParam(id), json })).then((r) => r.task),
-    answer: (id: string, json: AnswerRequest) => write(() => tasks.answer.$post({ param: idParam(id), json })).then((r) => r.task),
+    answer: (id: string, json: AnswerRequest) => write(() => tasks.answer.$post({ param: idParam(id), json }, { headers: { [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION } })).then((r) => r.task),
     handoff: (id: string) => write(() => tasks.handoff.$post({ param: idParam(id) })),
-    stop: (id: string, expectedRunId?: string | null) => write(() => tasks.stop.$post({ param: idParam(id), json: { expectedRunId } })).then((r) => r.task),
+    stop: (id: string, expectedRunId?: string | null) => write(() => tasks.stop.$post({ param: idParam(id), json: { expectedRunId } },
+      expectedRunId === undefined ? {} : { headers: { [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION } })).then((r) => r.task),
     cancel: (id: string) => write(() => tasks.cancel.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     archive: (id: string) => write(() => tasks.$delete({ param: idParam(id) })).then((r) => r.task),
     listRoutines: (signal?: AbortSignal) => request(() => client.routines.$get({}, requestOptions(signal))).then((r) => r.routines),

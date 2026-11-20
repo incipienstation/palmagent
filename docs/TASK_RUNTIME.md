@@ -76,8 +76,8 @@ The API takes its process-lifetime lock before database recovery, advances the i
 generation and drains pending commands in insertion order once maintenance ends. It checks
 the generation before applying a command and when committing its result. The Task service
 revalidates the target run and uses the original request IDs on recovery. Uncertain provider
-delivery stays visible as `unknown`. Stop can carry an expected run ID and answers retain the
-question request ID.
+delivery stays visible as `unknown`. An already-open tab can negotiate turn-control protocol 1 to send Stop with an expected
+run ID or answer a question with its request ID after the build changes.
 
 The updater records the selected immutable release pair, build identity and activation phase.
 Re-running the update resumes that pair. A pending UI request can resume through its usual
