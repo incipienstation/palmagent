@@ -9,7 +9,7 @@ import type { MessageTiming } from "../ports/outbound/message-timing.js";
 export { MessageConflict } from "../../domain/message-policy.js";
 
 interface Host {
-  assertWritable(id: string): void;
+  assertWritable(id: string, state?: MessageState): void;
   validateSubmission?(id: string, req: SubmitMessage): void;
   canStart(id: string): boolean;
   settings(id: string): MessageSettings;
@@ -96,8 +96,8 @@ export class MessageController {
     const policy = this.policy(id), fingerprint = this.ids.digest(JSON.stringify(req));
     // A lost HTTP receipt reads the accepted submission, even during maintenance
     // or after ownership changes. It never sends the provider command again.
-    if (policy.hasSubmission(req.clientMessageId, fingerprint)) return this.snapshot(id);
-    this.host.assertWritable(id);
+    if (policy.hasSubmission(req.clientMessageId, fingerprint)) return policy.snapshot();
+    this.host.assertWritable(id, policy.state);
     this.host.validateSubmission?.(id, req);
     const canStart = req.mode !== "send" || !!policy.state.runId || this.host.canStart(id);
     policy.assertSubmission(req, canStart);
@@ -108,7 +108,7 @@ export class MessageController {
       current => { current.enqueue(message); }, policy);
     if (!receipt.changed) return this.snapshot(id);
     if (req.mode === "send") this.sendNow(id, req.clientMessageId);
-    else this.pump(id);
+    else if (!receipt.runId) this.pump(id);
     return this.snapshot(id);
   }
   action(id: string, messageId: string, action: MessageAction) {

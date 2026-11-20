@@ -104,22 +104,71 @@ pub(super) fn persist(db: &Connection, changes: &[Change]) -> Result<Option<i64>
 
 /// The API maps its shared TaskState to the same nullable SQLite columns as
 /// the retained release. Creation can include staged files in this transaction.
-pub fn create(db: &Connection, task: &str) -> Result<()> {
-    ensure!(!db.is_autocommit(), "Task creation requires a transaction");
-    db.execute("INSERT INTO tasks(id,repo_id,agent,title,pinned_at,prompt,status,interrupted,session_id,
-        branch,worktree_path,permission,model,effort,pr_url,pr_urls,pending_input,pending_approval,session_control,skills_json,created_at,updated_at,last_activity_at)
-        VALUES (json_extract(?1,'$.id'),json_extract(?1,'$.repo_id'),json_extract(?1,'$.agent'),json_extract(?1,'$.title'),
-        json_extract(?1,'$.pinned_at'),json_extract(?1,'$.prompt'),json_extract(?1,'$.status'),json_extract(?1,'$.interrupted'),
-        json_extract(?1,'$.session_id'),json_extract(?1,'$.branch'),json_extract(?1,'$.worktree_path'),json_extract(?1,'$.permission'),
-        json_extract(?1,'$.model'),json_extract(?1,'$.effort'),json_extract(?1,'$.pr_url'),json_extract(?1,'$.pr_urls'),
-        json_extract(?1,'$.pending_input'),json_extract(?1,'$.pending_approval'),json_extract(?1,'$.session_control'),json_extract(?1,'$.skills_json'),
-        json_extract(?1,'$.created_at'),json_extract(?1,'$.updated_at'),json_extract(?1,'$.last_activity_at'))",[task])?;
-    db.execute(
-        r#"INSERT INTO task_message_state(task_id,state)
-        SELECT id,'{"revision":0,"paused":false,"runId":null,"messages":[],"creationReserved":true}'
-        FROM tasks WHERE id=json_extract(?1,'$.id') AND status='queued'"#,
-        [task],
+#[derive(serde::Deserialize)]
+struct NewTask {
+    id: String,
+    repo_id: String,
+    agent: String,
+    title: Option<String>,
+    pinned_at: Option<i64>,
+    prompt: String,
+    status: String,
+    interrupted: i64,
+    session_id: Option<String>,
+    branch: Option<String>,
+    worktree_path: Option<String>,
+    permission: String,
+    model: Option<String>,
+    effort: Option<String>,
+    pr_url: Option<String>,
+    pr_urls: Option<String>,
+    pending_input: Option<String>,
+    pending_approval: Option<String>,
+    session_control: Option<String>,
+    skills_json: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+    last_activity_at: i64,
+}
+pub fn create(db: &mut Connection, task: &str) -> Result<()> {
+    let row: NewTask = serde_json::from_str(task)?;
+    let tx = super::sqlite_write::Write::begin(db)?;
+    tx.execute(
+        "INSERT INTO tasks(id,repo_id,agent,title,pinned_at,prompt,status,
+        interrupted,session_id,branch,worktree_path,permission,model,effort,
+        pr_url,pr_urls,pending_input,pending_approval,session_control,skills_json,created_at,
+        updated_at,last_activity_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        params![
+            row.id,
+            row.repo_id,
+            row.agent,
+            row.title,
+            row.pinned_at,
+            row.prompt,
+            row.status,
+            row.interrupted,
+            row.session_id,
+            row.branch,
+            row.worktree_path,
+            row.permission,
+            row.model,
+            row.effort,
+            row.pr_url,
+            row.pr_urls,
+            row.pending_input,
+            row.pending_approval,
+            row.session_control,
+            row.skills_json,
+            row.created_at,
+            row.updated_at,
+            row.last_activity_at
+        ],
     )?;
+    if row.status == "queued" {
+        tx.execute(r#"INSERT INTO task_message_state(task_id,state) VALUES (?,'{"revision":0,"paused":false,"runId":null,"messages":[],"creationReserved":true}')"#, [&row.id])?;
+    }
+    tx.commit()?;
     Ok(())
 }
 

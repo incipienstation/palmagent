@@ -56,7 +56,10 @@ pub fn normalize_numbers(json: String) -> String {
 // so all private-use text retains its original meaning on the next write.
 const MARK: char = '\u{e000}';
 
-pub fn protect_utf16(json: &str) -> String {
+pub fn protect_utf16(json: &str) -> std::borrow::Cow<'_, str> {
+    if !json.contains(MARK) && !json.contains(r"\u") {
+        return std::borrow::Cow::Borrowed(json);
+    }
     let mut out = String::with_capacity(json.len());
     let mut chars = json.chars().peekable();
     while let Some(c) = chars.next() {
@@ -110,7 +113,7 @@ pub fn protect_utf16(json: &str) -> String {
         out.push_str("\\u");
         out.push_str(&digits);
     }
-    out
+    std::borrow::Cow::Owned(out)
 }
 
 pub fn restore_utf16(json: String) -> String {

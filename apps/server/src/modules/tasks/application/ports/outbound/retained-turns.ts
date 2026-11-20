@@ -54,7 +54,7 @@ export interface RetainedTurns {
   readonly metadata: TaskMetadata;
   readonly attachments: import("./attachments.js").AttachmentIndex;
   transaction<T>(work: () => T): T;
-  create<T>(task: TaskState, prepareFiles: () => T): T;
+  create<T>(task: TaskState, prepareFiles?: () => T): T | undefined;
   recover(live: string[], reattach: (taskId: string) => void, now: number): RecoveryResult;
   track(taskId: string, runId: string | null, baseline: number): TurnTicket;
   observe(ticket: TurnTicket, event: TurnObservation, expectedSession?: string, observedSession?: string, rawSeq?: number): TurnDisposition;

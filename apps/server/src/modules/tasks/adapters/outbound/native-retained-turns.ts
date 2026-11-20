@@ -1,3 +1,4 @@
+import { toUSVString } from "node:util";
 import { NativeTaskRecords } from "./native-task-records.js";
 import { NativeAttachmentIndex } from "./native-attachment-index.js";
 import { taskToRow } from "./sqlite-tasks.js";
@@ -13,12 +14,12 @@ import type { ActionEffect, ActionRequest, SharedObservation, QueueOperation, Qu
  * this handoff synchronous prevents provider callbacks from running before commit. */
 export class NativeRetainedTurns implements RetainedTurns, TaskEventBatches {
   readonly records = new NativeTaskRecords((taskId, query) => this.command({ kind: "records", taskId, query }),
-    work => this.attachments.transaction(work, true));
+    work => this.transaction(work, true));
   readonly attachments: NativeAttachmentIndex;
   readonly metadata = new NativeTaskMetadata(changes => this.command({ kind: "lifecycle", changes }) as number | null);
   private readonly channel: NativeCommandChannel;
   constructor(binary: string, database: string, lease: number, onFailure?: () => void) {
-    this.attachments = new NativeAttachmentIndex(database, body => this.command(body));
+    this.attachments = new NativeAttachmentIndex(database, body => this.command(body), work => this.transaction(work));
     this.channel = new NativeCommandChannel(binary, ["task-command", database], lease, onFailure);
   }
   creation(id: string, repo: string, agent: string, prompt: string) {
@@ -57,14 +58,25 @@ export class NativeRetainedTurns implements RetainedTurns, TaskEventBatches {
     return result;
   }
 
-  transaction<T>(work: () => T): T { return this.attachments.transaction(work); }
+  transaction<T>(work: () => T, readOnly = false): T {
+    this.command({ kind: "taskTransaction", action: readOnly ? "beginRead" : "begin" });
+    try {
+      const result = work();
+      this.command({ kind: "taskTransaction", action: "commit" });
+      return result;
+    } catch (error) {
+      this.command({ kind: "taskTransaction", action: "rollback" });
+      throw error;
+    }
+  }
 
-  create<T>(task: TaskState, prepareFiles: () => T): T {
-    return this.attachments.transaction(() => {
+  create<T>(task: TaskState, prepareFiles?: () => T): T | undefined {
+    const insert = () => {
       const row = taskToRow(task);
-      this.command({ kind: "create", row: JSON.stringify(row, (_key, value) => typeof value === "string" ? Buffer.from(value).toString("utf8") : value) });
-      return prepareFiles();
-    });
+      this.command({ kind: "create", row: JSON.stringify(row, (_key, value) => typeof value === "string" ? toUSVString(value) : value) });
+      return prepareFiles?.();
+    };
+    return prepareFiles ? this.transaction(insert) : insert();
   }
 
   append(taskId: string, events: AgentEvent[], rawSeq: number | undefined, project: (rows: AssignedEvent[]) => BatchProjection, session?: SessionImport, provider?: ProviderLine) {

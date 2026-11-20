@@ -71,6 +71,10 @@ impl EventRepository for SqliteEvents<'_> {
             )?;
         }
         if events.is_empty() {
+            if batch.session.is_none() {
+                db.execute("UPDATE tasks SET last_raw_seq=coalesce(?,last_raw_seq),last_activity_at=? WHERE id=?",
+                    params![raw_seq,now,id])?;
+            }
             db.commit()?;
             return Ok(Vec::new());
         }

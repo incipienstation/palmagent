@@ -112,8 +112,8 @@ fn admitted() -> Result<(), QueueConflict> {
 
 #[derive(Debug)]
 pub struct Transition {
-    /// Includes private fingerprints and edit tokens. Never use as a public API response.
-    pub queue: Queue,
+    pub run_id: Option<String>,
+    /// Dispatch needs the retained payload. The public queue omits private receipt and edit fields.
     pub claimed: Option<Message>,
     pub changed: bool,
 }
@@ -223,7 +223,7 @@ pub fn transition(
     }
     Ok(Mutation {
         result: Transition {
-            queue: queue.clone(),
+            run_id: queue.run_id.clone(),
             claimed,
             changed,
         },

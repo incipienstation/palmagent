@@ -4,19 +4,9 @@ import type { AttachmentRecord } from "../../domain/models.js";
 /** File access and collection use the same native index transaction as creation. */
 export class NativeAttachmentIndex implements AttachmentIndex {
   isOpen = true;
-  constructor(readonly path: string, private readonly command: (body: object) => unknown) {}
+  constructor(readonly path: string, private readonly command: (body: object) => unknown,
+    readonly transaction: AttachmentIndex["transaction"]) {}
 
-  transaction<T>(work: () => T, readOnly = false): T {
-    this.command({ kind: "taskTransaction", action: readOnly ? "beginRead" : "begin" });
-    try {
-      const result = work();
-      this.command({ kind: "taskTransaction", action: "commit" });
-      return result;
-    } catch (error) {
-      this.command({ kind: "taskTransaction", action: "rollback" });
-      throw error;
-    }
-  }
   private files(command: object) { return this.command({ kind: "files", command }); }
   attachment(taskId: string, id: string) {
     return this.files({ kind: "get", taskId, id }) as AttachmentRecord | null ?? undefined;

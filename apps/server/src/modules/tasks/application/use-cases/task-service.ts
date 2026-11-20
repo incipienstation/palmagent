@@ -261,15 +261,15 @@ export class TaskService implements PrStatusSink {
     this.voice = voice;
     this.skillCatalog = skillCatalog;
     this.messages = new MessageController(db, {
-      assertWritable: (id) => {
+      assertWritable: (id, state) => {
         this.assertTaskAdmission();
-        const task = this.getTask(id);
+        const task = this.cachedTask(id);
         this.assertSessionOwnership(task);
-        if (this.messages.state(id).compaction?.status === "running") throw conflict("Wait for context compaction to finish.");
+        if ((state ?? this.messages.state(id)).compaction?.status === "running") throw conflict("Wait for context compaction to finish.");
         if (isClosedTaskStatus(task.status)) throw conflict("This task is closed.");
       },
       validateSubmission: (id, req) => {
-        if (this.getTask(id).sessionControl?.owner === "shared" && req.settings?.permission !== undefined) throw conflict("Change the shared session permissions in the local CLI.");
+        if (this.cachedTask(id).sessionControl?.owner === "shared" && req.settings?.permission !== undefined) throw conflict("Change the shared session permissions in the local CLI.");
       },
       canStart: (id) => {
         const task = this.cache.get(id);
@@ -278,7 +278,7 @@ export class TaskService implements PrStatusSink {
           && ["idle", "failed"].includes(task.status) && !this.supervisor.has(id);
       },
       settings: (id) => {
-        const task = this.getTask(id);
+        const task = this.cachedTask(id);
         return { model: task.model ?? "", effort: task.effort ?? "", permission: task.permission };
       },
       start: (id, message) => {
@@ -442,11 +442,12 @@ export class TaskService implements PrStatusSink {
     const all = [...this.cache.values()].map(t => this.withMessageQueue(t)).sort((a, b) => a.createdAt - b.createdAt);
     return status ? all.filter((t) => t.status === status) : all;
   }
-  getTask(id: string): TaskState {
+  private cachedTask(id: string): TaskState {
     const t = this.cache.get(id);
     if (!t) throw notFound(`no such task: ${id}`);
-    return this.withMessageQueue(t);
+    return t;
   }
+  getTask(id: string): TaskState { return this.withMessageQueue(this.cachedTask(id)); }
   private withMessageQueue(t: TaskState): TaskState {
     const queue = this.messages.snapshot(t.taskId);
     if (queue.revision > 0) t.messageQueue = queue;
@@ -551,7 +552,7 @@ export class TaskService implements PrStatusSink {
       task = { taskId: this.ids.next("t"), repoId: repo.id, agent: req.agent, prompt: "Imported local session", title: "Local session", status: "idle", interrupted: false,
         sessionId: req.sessionId, worktreePath: cwd, permission: DEFAULT_PERMISSION[req.agent], createdAt: now, updatedAt: now, lastActivityAt: now,
         sessionControl: { owner: "local", home, transcript, cursor: 0, prefixHash: this.nativeSession.emptyTranscriptHash } };
-      this.insertTask(task, () => undefined);
+      this.insertTask(task);
       this.cache.set(task.taskId, task);
       this.hub.emitReadChange({ type: "read-change", usage: true });
     }
@@ -808,11 +809,11 @@ export class TaskService implements PrStatusSink {
     return this.usageReader.usageByAgent();
   }
 
-  private insertTask<T>(task: TaskState, prepareFiles: () => T): T {
+  private insertTask<T>(task: TaskState, prepareFiles?: () => T): T | undefined {
     if (this.retainedTurns) return this.retainedTurns.create(task, prepareFiles);
     return this.db.transaction(() => {
       this.db.insertTask(task);
-      return prepareFiles();
+      return prepareFiles?.();
     });
   }
 
@@ -872,7 +873,7 @@ export class TaskService implements PrStatusSink {
       updatedAt: now,
       lastActivityAt: now,
     };
-    const attachments = this.insertTask(task, () => this.attachments.save(taskId, images));
+    const attachments = this.insertTask(task, images?.length ? () => this.attachments.save(taskId, images) : undefined);
     this.cache.set(taskId, task);
     this.hub.emitReadChange({ type: "read-change", usage: true });
     this.broadcastTasks();
@@ -981,8 +982,7 @@ export class TaskService implements PrStatusSink {
       this.metadata.insertApproval(id, null, pending ? JSON.stringify({ request: pending, scope }) : scope ? JSON.stringify({ scope }) : null, decision, now);
       if (pending) this.metadata.setTaskPendingApproval(id, undefined, now);
       this.metadata.setTaskStatus(id, status, task.interrupted, now);
-    });
-    this.emitSynthetic(task, { subtype: "approval", decision, scope });
+    }, { subtype: "approval", decision, scope });
     return task;
   }
 
@@ -1005,20 +1005,20 @@ export class TaskService implements PrStatusSink {
     if (!await handle?.answer(req)) throw conflict("Answer delivery could not be confirmed. The question has been kept; check the conversation before trying again.");
     // The turn may finish, stop, or ask another question while delivery is pending.
     // Independent hosts also replay a durable answer event, including across restarts.
-    if (!this.shuttingDown && this.resolveInput(task, req.requestId)) {
-      this.emitSynthetic(task, { subtype: "answer", requestId: req.requestId, answers: req.answers, response: req.response });
-    }
+    if (!this.shuttingDown) this.resolveInput(task, req.requestId, {
+      subtype: "answer", requestId: req.requestId, answers: req.answers, response: req.response,
+    });
     return task;
   }
 
-  private resolveInput(task: TaskState, requestId: string): boolean {
+  private resolveInput(task: TaskState, requestId: string, response?: object): boolean {
     if (task.pendingInput?.requestId !== requestId) return false;
     const now = Date.now();
     const status = task.status === "awaiting_input" ? "running" : task.status;
     this.commitTask(task, { pendingInput: undefined, status, updatedAt: now }, () => {
       this.metadata.setTaskPendingInput(task.taskId, undefined, now);
       this.metadata.setTaskStatus(task.taskId, status, task.interrupted, now);
-    });
+    }, response);
     return true;
   }
 
@@ -1028,7 +1028,14 @@ export class TaskService implements PrStatusSink {
   }
 
   private applyNativeControl(task: TaskState, action: "stop" | "cancel" | "archive") {
-    const id = task.taskId, effect = this.nativeAction(task, action)!;
+    const id = task.taskId;
+    const apply = () => {
+      const effect = this.nativeAction(task, action)!;
+      const note = effect === "interrupt" ? "turn interrupt requested" : effect === "dequeue" ? "dequeued before start" : undefined;
+      return {effect, rows: note ? this.syntheticRows(task, {subtype: "stop", note}) : []};
+    };
+    if (action === "stop") this.db.prepareConversation(id);
+    const {effect, rows} = action === "stop" ? this.retainedTurns!.transaction(apply) : apply();
     if (effect === "shared") return this.stopShared(task, action === "cancel");
     if (effect === "noop") return task;
     Object.assign(task, this.db.getTask(id)!);
@@ -1042,12 +1049,9 @@ export class TaskService implements PrStatusSink {
       this.persistControl(id);
     }
     this.broadcastTasks();
+    for (const row of rows) this.hub.emitEvent(row);
     const handle = this.supervisor.get(id);
-    if (effect === "interrupt") {
-      this.emitSynthetic(task, { subtype: "stop", note: "turn interrupt requested" });
-      if (!handle?.interrupt()) handle?.cancel();
-    }
-    if (effect === "dequeue") this.emitSynthetic(task, { subtype: "stop", note: "dequeued before start" });
+    if (effect === "interrupt" && !handle?.interrupt()) handle?.cancel();
     if (effect === "cancel" && handle) handle.cancel();
     if (effect === "archive") { this.sharedConnections.get(id)?.close(); this.sharedConnections.delete(id); }
     if (effect === "archive" || effect === "cancel" && !handle) this.cleanupWorktree(task);
@@ -1310,10 +1314,17 @@ export class TaskService implements PrStatusSink {
   private get metadata(): TaskMetadata {
     return this.retainedTurns?.metadata ?? this.db;
   }
-  private commitTask(task: TaskState, patch: Partial<TaskState>, persist: () => void): void {
-    this.metadata.transaction(persist);
+  private commitTask(task: TaskState, patch: Partial<TaskState>, persist: () => void, event?: object): void {
+    const write = () => {
+      this.metadata.transaction(persist);
+      return event ? this.syntheticRows(task, event) : [];
+    };
+    if (event) this.db.prepareConversation(task.taskId);
+    const rows = event ? (this.retainedTurns ? this.retainedTurns.transaction(write) : this.db.transaction(write)) : write();
     Object.assign(task, patch);
+    if (rows.length) this.refreshContextUsage(task);
     this.broadcastTasks();
+    for (const row of rows) this.hub.emitEvent(row);
   }
 
   // Apply a model / effort / permission override onto the task (persisted; every
@@ -1347,11 +1358,14 @@ export class TaskService implements PrStatusSink {
     this.broadcastTasks();
   }
 
-  private emitSynthetic(task: TaskState, payload: unknown): void {
+  private syntheticRows(task: TaskState, payload: unknown) {
     const now = Date.now();
-    const rows = this.db.appendAgentEvents(task.taskId, [
+    return this.db.appendAgentEvents(task.taskId, [
       { taskId: task.taskId, agent: task.agent, kind: "status", sessionId: task.sessionId, payload, ts: now },
     ]);
+  }
+  private emitSynthetic(task: TaskState, payload: unknown): void {
+    const rows = this.syntheticRows(task, payload);
     this.refreshContextUsage(task);
     for (const row of rows) this.hub.emitEvent(row);
   }

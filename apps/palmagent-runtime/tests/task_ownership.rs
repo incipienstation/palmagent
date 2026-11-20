@@ -263,12 +263,12 @@ fn repeated_submission_reads_the_receipt_even_while_admission_is_closed() {
     .unwrap();
     assert!(!retry.changed);
     assert!(retry.claimed.is_none());
-    assert_eq!(retry.queue.revision, 7);
     input.fingerprint = "different".into();
     let changed = apply(&mut repository, "task", submit(input, Ok(())));
     assert!(
         matches!(changed, Err(QueueError::Conflict(error)) if error.0.contains("different content"))
     );
+    assert_eq!(read(&db, "task").revision, 7);
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn dispatch_start_keeps_status_and_replay_cursor_atomic_with_its_receipt() {
         },
     )
     .unwrap();
-    assert_eq!(started.queue.runtime_started, Some(true));
+    assert!(started.changed);
     let repeated = apply(
         &mut repository,
         "task",
@@ -346,6 +346,7 @@ fn dispatch_start_keeps_status_and_replay_cursor_atomic_with_its_receipt() {
         },
     );
     assert!(matches!(repeated, Err(QueueError::Conflict(_))));
+    assert_eq!(read(&db, "task").runtime_started, Some(true));
     assert_eq!(status(&db, "task"), ("running".into(), false));
     let cursor: i64 = db
         .query_row(
@@ -476,8 +477,9 @@ fn retained_and_interrupted_runs_recover_without_resending_unconfirmed_messages(
     )
     .unwrap();
     assert!(!late_failure.changed);
-    assert!(late_failure.queue.paused);
-    assert_eq!(late_failure.queue.messages[1].status, Status::Delivered);
+    let saved = read(&db, "orphan");
+    assert!(saved.paused);
+    assert_eq!(saved.messages[1].status, Status::Delivered);
 }
 
 #[test]

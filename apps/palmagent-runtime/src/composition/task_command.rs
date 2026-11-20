@@ -276,7 +276,7 @@ fn execute(
             let result = owner.update_queue(&task_id, command);
             match result {
                 Ok(result) => json!({"changed":result.changed, "claimed":result.claimed.map(|message| serde_json::to_string(&message).map(restore_utf16)).transpose()?,
-                    "runId":result.queue.run_id }),
+                    "runId":result.run_id }),
                 Err(QueueError::Conflict(error)) => json!({"conflict":error.0}),
                 Err(QueueError::MissingTask) => {
                     anyhow::bail!("Task disappeared during queue transition")

@@ -199,8 +199,8 @@ impl TaskOwner {
         crate::modules::tasks::adapters::outbound::sqlite_files::files(&self.db, command)
     }
 
-    pub fn create(&self, row: &str) -> Result<()> {
-        crate::modules::tasks::adapters::outbound::sqlite_lifecycle::create(&self.db, row)
+    pub fn create(&mut self, row: &str) -> Result<()> {
+        crate::modules::tasks::adapters::outbound::sqlite_lifecycle::create(&mut self.db, row)
     }
 
     pub fn append(

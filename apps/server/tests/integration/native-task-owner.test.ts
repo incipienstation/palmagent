@@ -57,6 +57,17 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.equal(db.importSessionEvents(mirror, [], []).length, 0);
   assert.equal(db.importSessionEvents(mirror, [terminal], ["turn/result"]).length, 0);
   assert.equal(db.conversationPage(mirror.taskId).cursor, 2);
+  const question = { requestId: "ask", questions: [] };
+  const questionEvent = { ...terminal, kind: "question" as const, payload: question };
+  native.metadata.setTaskStatus(mirror.taskId, "running", false, 4);
+  assert.throws(() => native.append(mirror.taskId, [questionEvent], 1, () => { throw new Error("provider render failed"); },
+    undefined, {independent: true, sessionId: "provider-session"}), /provider render failed/);
+  assert.equal(db.getTask(mirror.taskId)?.pendingInput, undefined);
+  assert.equal(db.getTask(mirror.taskId)?.sessionId, undefined);
+  db.appendAgentEvents(mirror.taskId, [questionEvent], 1, {independent: true, sessionId: "provider-session"});
+  assert.deepEqual(db.getTask(mirror.taskId)?.pendingInput, question);
+  assert.equal(db.getTask(mirror.taskId)?.status, "awaiting_input");
+  native.taskAction(mirror.taskId, {action: "cancel", handle: false, connected: false, now: 5});
   const shared = { ...task, taskId: "shared", sessionControl: {owner: "shared" as const, home: root, transcript: "", cursor: 0, prefixHash: ""} };
   native.create(shared, () => {});
   const observed = {running: true, sending: false, now: 3, runId: ids.uuid()};
