@@ -118,12 +118,44 @@ can leave direct committed reads available; ordinary owner shutdown disables the
 
 ## Following slices
 
-Select the next slice from observed ownership and coupling, not file count. Extend
-Task inbound and outbound contracts that can preserve the existing API owner's queue,
-transactions and recovery behavior. Migrate a complete bounded use case and validate it
-through the retained API boundary before transferring Task scheduling or execution authority.
-Agent routines depend on Task admission and must not gain an independent Task writer.
-Move other feature use cases only after their persistence and recovery contracts are explicit.
+The Tasks migration transfers the domain as a unit. Rust will own task state, message
+admission and queue progression, execution coordination, recovery, event writes, and the
+conversation projection. The public HTTP, SSE and local session contracts continue to use
+the shared TypeScript definitions. The API and CLI can adapt those requests to the new
+owner. Provider invocation, Space and worktree management, attachment files, and push
+delivery are ports called by Tasks.
+
+| Boundary | Before the ownership switch | Evidence required for the switch |
+| --- | --- | --- |
+| Task lifecycle and metadata | Port creation receipts, status transitions, task actions, settings and pin order. | Task creation retries return the same task. Status, activity timestamps and event order match across the existing HTTP and local session APIs. |
+| Queue and execution | Port queue state and effects for admission, delivery, editing, approval, answers, stop and completion. Reuse the retained execution protocol. | A committed claim precedes execution. Stale callbacks cannot affect a newer run. Lost provider receipts remain unconfirmed through restart. |
+| Session ownership | Port shared/local/native session transitions, import cursors and provider identity checks. | Shared and retained turns reconnect, and a missing or inconsistent identity fails closed. |
+| Events and records | Transfer event batches, replay cursors, projection writes and the remaining detailed and legacy reads. | A reader sees a committed event batch and its projection together. History stays compatible across pagination, large output, replay and rollback. |
+| Cross-domain routes | Route routine dispatch, Space removal, worktree cleanup, attachments, push and subscriptions through the selected owner. | Every write path uses that owner, including paths that do not originate from the browser. |
+
+The native queue and recovery code can run against the existing schema in an isolated
+fixture. It uses the API server's process-lifetime `runtime.lock`, retains submission
+receipts, and commits task interruption and queue recovery together. The startup
+composition still selects the TypeScript Tasks owner. The native composition does not
+yet drive the production execution hosts or serve the Tasks API.
+
+The dispatch transition commits running status, the raw replay cursor reset and the
+queue's runtime-started marker together. The execution adapter can then start the
+provider for that run. If the owner dies after the commit, recovery must use retained
+execution identity and receipt evidence to determine delivery. A missing receipt
+alone cannot authorize a second invocation.
+
+At cutover, close admission, stop the previous Tasks owner, acquire the same
+`runtime.lock`, reconnect retained execution identities, and commit recovery before
+opening admission. Keep provider callbacks buffered during recovery so replay cannot
+start another run or publish partial state. A failed recovery keeps admission closed.
+Do not configure native and TypeScript Tasks writers in the same installation.
+
+Exercise the full sequence in a packaged installation with a retained turn and queued
+messages, including process loss before and after dispatch, reconnect, and rollback to
+the retained release. Rollback must preserve committed queue receipts, event cursors and
+execution identities against a compatible SQLite schema. Agent routines depend on Task
+admission and must use the selected owner.
 
 Keep the Node implementation that is required for older retained releases or rollback until
 compatibility evidence permits its removal. Do not widen an exception in the architecture
