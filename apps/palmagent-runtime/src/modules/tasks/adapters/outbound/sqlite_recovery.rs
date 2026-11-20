@@ -53,16 +53,20 @@ impl RecoveryRepository for SqliteRecovery<'_> {
     fn tasks(&mut self) -> Result<Vec<RecoveryTask>> {
         let mut query = self
             .connection
-            .prepare("SELECT id, status, session_control FROM tasks ORDER BY id")?;
+            .prepare("SELECT t.id,t.status,t.session_control,coalesce(
+                (json_extract(q.state,'$.creationReserved')=1 AND json_extract(q.state,'$.revision')=0 AND json_extract(q.state,'$.runId') IS NULL)
+                OR (json_extract(q.state,'$.executionId')=json_extract(q.state,'$.runId') AND json_extract(q.state,'$.runtimeStarted')=0),0)
+                FROM tasks t LEFT JOIN task_message_state q ON q.task_id=t.id ORDER BY t.id")?;
         let rows = query.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, Option<String>>(2)?,
+                row.get::<_, bool>(3)?,
             ))
         })?;
         rows.map(|row| {
-            let (id, value, control) = row?;
+            let (id, value, control, before_dispatch) = row?;
             let shared = control
                 .as_deref()
                 .map(serde_json::from_str::<SessionControl>)
@@ -73,6 +77,7 @@ impl RecoveryRepository for SqliteRecovery<'_> {
                 id,
                 status: status(&value)?,
                 shared,
+                before_dispatch,
             })
         })
         .collect()

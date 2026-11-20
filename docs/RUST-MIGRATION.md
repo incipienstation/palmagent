@@ -12,12 +12,14 @@ alone does not establish a performance improvement.
 | Host supervision, retained processes and activation | Rust daemon | Existing installation and update protocols |
 | Script routine scheduling, admission and persistence | Rust application runtime | TypeScript API/read projection and product database bootstrap |
 | Retained script execution and completion | Rust routine host | Older releases may still use the packaged Node host |
-| Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication, HTTP response contract and event writes; legacy/source setups keep their local reader |
+| Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication and HTTP response |
 | Historical Task activity-detail expansion on daemon-backed installations | Rust Task activity read use case | TypeScript authentication, task/range validation and public response; legacy/source setups keep their local reader |
-| Transcript pages and incremental changes on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh and writes, authentication, task validation and public response |
-| Transcript activity operation lists on daemon-backed installations | Rust Task transcript read use case | TypeScript projection refresh, authentication and public response; operation details and content remain local |
+| Transcript pages and incremental changes on daemon-backed installations | Rust Task transcript read use case | TypeScript schema bootstrap, repair, authentication and public response |
+| Transcript activity operation lists on daemon-backed installations | Rust Task transcript read use case | TypeScript authentication, shared display contract and public response |
 | Task message transitions, retained dispatch and restart recovery on daemon installations | Rust Tasks worker under the API coordinator lease | TypeScript HTTP, provider adapters, source and legacy configurations |
-| Task creation, event persistence and conversation projection | TypeScript API owner | Retained execution hosts and native committed reads |
+| Task creation, control actions, provider events and projection writes on daemon installations | Rust Tasks worker | Provider handles, compatibility rendering and schema bootstrap in the API |
+| Legacy history, execution records and expanded conversation content on daemon installations | Rust Tasks SQLite reader | Shared display serialization, UTF-16 content boundaries and public response |
+| Space removal, attachment index and push subscriptions on daemon installations | Rust worker | Space preflight, file operations and network delivery in their existing adapters |
 | Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
 This is an ownership inventory, not a claim that the backend is fully migrated. The first
@@ -25,8 +27,7 @@ harness change strengthens native architecture checks, gives routine commands an
 application-owned inbound contract and public API, and moves HTTP error mapping out of
 the core contract. Task usage is the first migrated Task use case: the native runtime reads
 committed event totals through a read-only SQLite adapter, with snapshot-consistent revision
-caching. Task scheduling, execution and database write ownership remain in TypeScript;
-there is no schema change. Native startup requires the `taskUsage: 1` health capability,
+caching. The Tasks worker uses the existing product schema. Native startup requires the `taskUsage: 1` health capability,
 and native read failures return an unavailable response rather than changing readers.
 Rolling back to the prior release resumes its local reader against the unchanged schema.
 
@@ -44,13 +45,12 @@ which the local reader also rejects. The activity reader explicitly permits resp
 private control transport's default 16 MiB cap because this public endpoint already returns full
 activity payloads; other transport callers retain the cap. Two admitted native workers bound read
 and serialization concurrency. This slice introduces no writer, schema, queue or execution change;
-rollback resumes local reads. Step details and content-chunk APIs remain in TypeScript. Native
-read/serialization moves out of the API owner, but JSON parsing and public response encoding remain there; this is not a measured performance improvement.
+rollback resumes local reads. Expanded details and content use the Task record source and the shared display serializer.
 
 Transcript page and change reads now select the native reader after the API owner commits any
 pending projection refresh. That preparation remains a TypeScript write use case: it repairs
 `conversation_rows` and `conversation_state` from dirty events and retains sole authority over
-projection migrations. Rust never refreshes or writes the projection. Its read-only repository
+projection migrations. The Tasks worker commits ordinary projection writes. The read-only transcript repository
 captures projection version, head and candidate rows in one transaction; domain policy applies
 the existing 30-item/256 KiB budgets, ordering, exclusive page cursor, inclusive change horizon,
 tombstones and `(revision, key)` continuation. The repository supplies the byte costs of the
@@ -73,14 +73,14 @@ fields remain opaque JSON through the native boundary, including escaped Unicode
 projection fields. Non-activity records have no steps; absent or tombstoned parents preserve the
 existing 404 error. Incompatible projections, corrupt records and unavailable native reads fail
 closed with 503. Startup requires `taskTranscriptSteps: 1`; no schema or writer changes are involved.
-Operation-detail expansion, content chunks and execution-record reads remain in TypeScript.
+The Task record reader supplies operation details, content and execution records to the API serializer.
 
 ## Direct public read experiment
 
 An opt-in same-origin ingress split sends the five migrated GET routes directly to a separate
 Rust loopback listener. Rust owns cookie-session verification, public validation, task existence
 checks and final response encoding for those requests. Node still serves all other routes and
-remains the sole authentication-ceremony, event, projection and schema writer. Production event
+owns authentication ceremonies and schema migrations. Production event
 batches already publish events and projection updates atomically; startup repairs retained dirty
 projections before enabling the direct listener. Direct reads reject dirty projections and never
 call back to Node. Reader algorithms and admission limits are retained for controlled comparisons.
@@ -117,22 +117,13 @@ can leave direct committed reads available; ordinary owner shutdown disables the
    evidence, current-head CI, merge, publication and installed behavior. Compare performance
    only under matched workloads and settings using the existing telemetry dimensions.
 
-## Following slices
+## Tasks ownership
 
-The Tasks migration transfers the domain as a unit. Rust will own task state, message
-admission and queue progression, execution coordination, recovery, event writes, and the
-conversation projection. The public HTTP, SSE and local session contracts continue to use
+The installed Rust worker owns durable task state, message queue progression, retained
+execution coordination, recovery, event batches and conversation projection writes. The public HTTP, SSE and local session contracts continue to use
 the shared TypeScript definitions. The API and CLI can adapt those requests to the new
 owner. Provider invocation, Space and worktree management, attachment files, and push
 delivery are ports called by Tasks.
-
-| Boundary | Before the ownership switch | Evidence required for the switch |
-| --- | --- | --- |
-| Task lifecycle and metadata | Port creation receipts, status transitions, task actions, settings and pin order. | Task creation retries return the same task. Status, activity timestamps and event order match across the existing HTTP and local session APIs. |
-| Queue and execution | Port queue state and effects for admission, delivery, editing, approval, answers, stop and completion. Reuse the retained execution protocol. | A committed claim precedes execution. Stale callbacks cannot affect a newer run. Lost provider receipts remain unconfirmed through restart. |
-| Session ownership | Port shared/local/native session transitions, import cursors and provider identity checks. | Shared and retained turns reconnect, and a missing or inconsistent identity fails closed. |
-| Events and records | Transfer event batches, replay cursors, projection writes and the remaining detailed and legacy reads. | A reader sees a committed event batch and its projection together. History stays compatible across pagination, large output, replay and rollback. |
-| Cross-domain routes | Route routine dispatch, Space removal, worktree cleanup, attachments, push and subscriptions through the selected owner. | Every write path uses that owner, including paths that do not originate from the browser. |
 
 On daemon-backed installations the API coordinator passes its locked file description to
 a release-matched Rust worker. The worker validates the lock inode before opening the
@@ -144,12 +135,18 @@ New retained turns persist the journal UUID in the queue before reserving the ex
 A journal from another turn fails attachment. Older queues use their existing retained
 lookup. The worker owns queue transitions, dispatch admission, callback fencing and
 metadata writes including shared-session control, pending input, approvals and pins.
-When completion also writes a conversation event, the API commits the Rust queue
-transition with that event in the existing SQLite transaction. Ordinary event batches, shared-session imports, display rows, raw cursors and activity
-timestamps commit in a single native transaction. The coordinator renders the display
-operations against the prior committed snapshot. Task insertion and the attachment index
-share a native transaction while the file adapter stages blobs. The coordinator still
-handles compound completion, projection repairs and detailed reads.
+Task creation can stage attachment rows and files under one native transaction. Space
+removal deletes archived tasks, events, approvals and dependent routines atomically.
+A provider line commits its event, derived images, task and queue effects, projection and
+raw cursor together. Successful compaction commits the queue receipt and display event
+before notifying subscribers. Shared-session imports preserve source identities, prefix
+hashes and the intermediate display revision for supplemental results.
+
+The API owns provider and filesystem calls, maintenance preflight, in-memory UI state,
+push delivery and shared display rendering. It passes external observations to the worker
+and publishes committed state. Existing source and legacy deployments keep their local
+adapters. Opening or upgrading a database still runs the schema bootstrap and repairs
+historical dirty projections before the worker takes over.
 
 The dispatch transition commits running status, the raw replay cursor reset and the
 queue's runtime-started marker together. The execution adapter can then start the

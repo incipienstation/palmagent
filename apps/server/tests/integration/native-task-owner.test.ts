@@ -16,6 +16,8 @@ test("native queue commits before dispatch, rolls back with completion and prese
   const path = join(root, "database.sqlite"), binary = fileURLToPath(new URL("../../../../target/debug/palmagent-runtime", import.meta.url));
   const lease = acquireRuntimeLock(root);
   const db = new Db(path);
+  const retainedReader = new Db(path);
+  t.after(() => retainedReader.close());
   const ids = new NodeIdentifierGenerator();
   let native = new NativeRetainedTurns(binary, path, lease.fd);
   t.after(async () => { await native.close(); db.close(); lease(); rmSync(root, { recursive: true, force: true }); });
@@ -23,14 +25,14 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.deepEqual(native.recover([], () => assert.fail("unexpected attachment"), 1), { reattached: [], recovered: [] });
   const task = { taskId: "task", repoId: "space", agent: "codex", prompt: "Initial", status: "idle",
     permission: "read-only", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 } as const;
-  const file = { id: ids.uuid(), taskId: "task", mediaType: "image/png", size: 8, digest: "fixture" };
+  const file = { id: ids.uuid(), taskId: "task", mediaType: "image/png" as const, size: 8, digest: "fixture", unusedSince: null, expiredAt: null };
   const stage = () => native.attachments.transaction(() => native.attachments.insertAttachment(file));
   assert.throws(() => native.create(task, () => { stage(); throw new Error("staging failed"); }), /staging failed/);
   assert.equal(db.getTask("task"), undefined);
   assert.equal(db.attachment("task", file.id), undefined);
   native.create(task, stage);
   assert.deepEqual(native.attachments.attachmentByDigest("task", file.digest), db.attachment("task", file.id));
-  db.selectEventWriter(native);
+  db.selectTaskOwner(native);
   const events = [{ taskId: "task", agent: "codex" as const, kind: "assistant_text" as const, payload: { text: "stream" }, ts: 2 }];
   assert.equal(db.appendAgentEvents("task", events, 1)[0].seq, 1);
   assert.equal(db.conversationPage("task").cursor, 1);
@@ -39,6 +41,30 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.equal(db.conversationPage("task").cursor, 1);
   assert.equal(db.getTaskRawSeq("task"), 1);
   assert.equal(db.eventCursor("task"), 1);
+  assert.deepEqual(db.conversationDetails("task", 1), retainedReader.conversationDetails("task", 1));
+  assert.deepEqual(db.historyPage("task", 2), retainedReader.historyPage("task", 2));
+  assert.deepEqual(db.historyChanges("task", 0, 1, false), retainedReader.historyChanges("task", 0, 1, false));
+  const recordPage = db.executionRecords("task");
+  assert.deepEqual(recordPage, retainedReader.executionRecords("task"));
+  const version = recordPage.records[0].version;
+  assert.deepEqual(db.executionRecordContent("task", 1, version, 2), retainedReader.executionRecordContent("task", 1, version, 2));
+  // The two imported batches retain their intermediate revision and cursor
+  // even when a terminal result changes the prior transcript display block.
+  const mirror = { ...task, taskId: "imported" };
+  native.create(mirror, () => {});
+  const terminal = { taskId: mirror.taskId, agent: "codex" as const, kind: "result" as const, payload: {}, ts: 3 };
+  db.importSessionEvents(mirror, events, undefined, {events: [terminal], ids: ["turn/result"]});
+  assert.equal(db.importSessionEvents(mirror, [], []).length, 0);
+  assert.equal(db.importSessionEvents(mirror, [terminal], ["turn/result"]).length, 0);
+  assert.equal(db.conversationPage(mirror.taskId).cursor, 2);
+  const shared = { ...task, taskId: "shared", sessionControl: {owner: "shared" as const, home: root, transcript: "", cursor: 0, prefixHash: ""} };
+  native.create(shared, () => {});
+  const observed = {running: true, sending: false, now: 3, runId: ids.uuid()};
+  assert.equal(native.sharedSnapshot(shared.taskId, observed)?.status, "running");
+  assert.equal(db.readMessageState(shared.taskId)?.runId, observed.runId);
+  assert.equal(native.sharedSnapshot(shared.taskId, {...observed, running: false}), null);
+  assert.equal(native.sharedSnapshot(shared.taskId, {...observed, running: false, completed: true})?.status, "idle");
+  assert.equal(db.readMessageState(shared.taskId)?.runId, null);
   const attachments = createAttachmentStorage(native.attachments);
   let starts = 0, runId: string;
   const controller = new MessageController(db, {
@@ -67,19 +93,32 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.equal(db.readMessageState("task")?.executionId, runId!);
   assert.equal(db.readMessageState("task")?.runtimeStarted, true);
   assert(!("fingerprint" in first.messages[0]));
-  assert.throws(() => db.transaction(() => {
-    controller.finish("task", false, false);
-    assert.equal(db.readMessageState("task")?.runId, null);
-    throw new Error("event projection failed");
-  }), /event projection failed/);
+  assert.throws(() => db.transaction(() => controller.finish("task", false, false)), /native Task transaction/);
+  assert.throws(() => native.transaction(() => {
+    native.metadata.setTaskStatus("task", "idle", false, 7);
+    controller.finish("task", false, false, undefined, false);
+    native.append("task", events, 2, () => { throw new Error("render failed at completion"); });
+  }), /render failed at completion/);
   assert.equal(db.readMessageState("task")?.runId, runId!);
+  assert.equal(db.getTask("task")?.status, "running");
+  assert.equal(db.eventCursor("task"), 1);
+  native.create({ ...task, taskId: "reserved", status: "queued" }, () => {});
+  native.create({ ...task, taskId: "queued-again", status: "queued" }, () => {});
+  native.queue("queued-again", {kind: "beginRun", id: ids.uuid(), retained: true});
   await native.close();
   native = new NativeRetainedTurns(binary, path, lease.fd);
   assert.throws(() => native.recover([], () => assert.fail(), 8), /no execution identity/);
   assert.equal(db.readMessageState("task")?.messages[0].status, "sending");
   const attached: string[] = [];
-  assert.deepEqual(native.recover(["task"], id => attached.push(id), 9), { reattached: ["task"], recovered: [] });
+  assert.deepEqual(native.recover(["task", "queued-again"], id => attached.push(id), 9), { reattached: ["task"], recovered: ["queued-again", "reserved"] });
   assert.deepEqual(attached, ["task"]);
   assert.equal(db.readMessageState("task")?.messages[0].status, "unknown");
   assert.equal(db.readMessageState("task")?.paused, true);
+  assert.throws(() => native.removeSpace("space"), /active work/);
+  db.selectTaskOwner(native);
+  for (const task of db.listTasks()) native.metadata.setTaskStatus(task.taskId, "archived", false, 10);
+  db.deleteRepo("space");
+  assert.equal(db.getRepo("space"), undefined);
+  assert.equal(db.getTask("task"), undefined);
+  assert.equal(db.attachment("task", file.id), undefined);
 });

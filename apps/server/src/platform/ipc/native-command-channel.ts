@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { closeSync, constants, mkdtempSync, openSync, readSync, rmSync, writeSync } from "node:fs";
+import { toUSVString } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +15,7 @@ export class NativeCommandChannel {
   private busy = false;
   private readonly idle = new Int32Array(new SharedArrayBuffer(4));
 
-  constructor(binary: string, args: string[], lease: number) {
+  constructor(binary: string, args: string[], lease: number, private readonly onFailure?: () => void) {
     const directory = mkdtempSync(join(tmpdir(), "palmagent-ipc-"));
     const opened = new Set<number>();
     const open = (path: string, flags: number) => {
@@ -35,7 +36,8 @@ export class NativeCommandChannel {
       this.output = open(reply, constants.O_RDONLY | constants.O_NONBLOCK);
       this.child = spawn(binary, args, { stdio: [childInput, childOutput, "inherit", lease] });
       this.exited = new Promise(resolve => this.child.once("close", () => resolve()));
-      this.child.on("error", () => { void this.close(); });
+      this.child.once("close", () => this.fail());
+      this.child.on("error", () => this.fail());
       opened.delete(this.input);
       opened.delete(this.output);
     } finally {
@@ -51,7 +53,7 @@ export class NativeCommandChannel {
     let renderingFailed = false, renderingError: unknown;
     try {
       const deadline = performance.now() + 30_000;
-      const send = (message: object) => this.transfer(Buffer.from(JSON.stringify(message) + "\n"), deadline, true);
+      const send = (message: object) => this.transfer(Buffer.from(JSON.stringify(message, (_key, value) => typeof value === "string" ? toUSVString(value) : value) + "\n"), deadline, true);
       send(body);
       for (;;) {
         const header = Buffer.allocUnsafe(4);
@@ -76,14 +78,13 @@ export class NativeCommandChannel {
       }
     } catch (error) {
       if (renderingFailed && error === renderingError) throw error;
-      this.child.kill("SIGKILL");
-      void this.close();
+      this.fail();
       throw error;
     } finally { this.busy = false; }
   }
 
   private transfer(buffer: Buffer, deadline: number, writing: boolean): void {
-    let offset = 0, waitMs = 0.1;
+    let offset = 0, waitMs = 0.05;
     while (offset < buffer.length) {
       if (performance.now() >= deadline) throw new Error("Native Task owner timed out before its receipt");
       try {
@@ -92,13 +93,20 @@ export class NativeCommandChannel {
           : readSync(this.output, buffer, offset, buffer.length - offset, null);
         if (!count) throw new Error("Native Task owner closed before its receipt");
         offset += count;
-        waitMs = 0.1;
+        waitMs = 0.05;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
         Atomics.wait(this.idle, 0, 0, waitMs);
-        waitMs = Math.min(waitMs * 2, 5);
+        waitMs = Math.min(waitMs * 2, 1);
       }
     }
+  }
+
+  private fail(): void {
+    if (this.closed) return;
+    this.child.kill("SIGKILL");
+    void this.close();
+    this.onFailure?.();
   }
 
   close(): Promise<void> {

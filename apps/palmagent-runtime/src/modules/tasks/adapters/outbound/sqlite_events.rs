@@ -2,7 +2,7 @@ use super::super::super::application::event_batches::{
     Assigned, Batch, DisplayRenderer, EventRepository, ImportMarker,
 };
 use anyhow::{Result, ensure};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub struct SqliteEvents<'a>(pub &'a mut Connection);
 
@@ -14,9 +14,7 @@ impl EventRepository for SqliteEvents<'_> {
     ) -> Result<Vec<Assigned>> {
         let id = &batch.task_id;
         let (events, raw_seq, now) = (&batch.events, batch.raw_seq, batch.now);
-        let db = self
-            .0
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let db = super::sqlite_write::Write::begin(self.0)?;
         let version: i64 = db.query_row(
             "SELECT version FROM conversation_projection_version",
             [],
@@ -75,6 +73,40 @@ impl EventRepository for SqliteEvents<'_> {
         if events.is_empty() {
             db.commit()?;
             return Ok(Vec::new());
+        }
+        if let Some(line) = &batch.provider {
+            let event = &events[0];
+            let (status, interrupted, session, question) = db.query_row(
+                "SELECT status,interrupted,session_id,json_extract(pending_input,'$.requestId') FROM tasks WHERE id=?",
+                [id], |row| Ok((row.get::<_,String>(0)?,row.get::<_,bool>(1)?,row.get::<_,Option<String>>(2)?,row.get::<_,Option<String>>(3)?)))?;
+            let changes = line
+                .changes(
+                    event,
+                    &status,
+                    interrupted,
+                    session.as_deref(),
+                    question.as_deref(),
+                    now,
+                )
+                .into_iter()
+                .map(
+                    |action| super::super::super::application::lifecycle::Change {
+                        task_id: id.clone(),
+                        action,
+                    },
+                )
+                .collect::<Vec<_>>();
+            super::sqlite_lifecycle::persist(&db, &changes)?;
+            if event.kind == "status"
+                && line.subtype.as_deref() == Some("message_delivered")
+                && let Some(message) = &line.message_id
+            {
+                use super::super::super::application::message_queue::{Command, transition};
+                super::sqlite_message_queue::update(&db, id, |queue| {
+                    transition(queue, Command::Delivered { id: message })
+                })
+                .map_err(|err| anyhow::anyhow!("Could not commit provider receipt: {err:?}"))?;
+            }
         }
         let mut assigned = Vec::with_capacity(events.len());
         {

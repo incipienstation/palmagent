@@ -2,6 +2,7 @@ import type { AgentEvent } from "@palmagent/shared";
 
 /** Terminal evidence is rebuilt from replay, even when history effects are skipped. */
 export interface TurnEvidence {
+  failed?: boolean;
   failureMessage?: string;
   sawResult: boolean;
   lastResultError: boolean;

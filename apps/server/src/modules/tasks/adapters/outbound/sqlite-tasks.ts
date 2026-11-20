@@ -1,4 +1,5 @@
-import type { TaskEventBatches, BatchProjection, ImportChange, ImportMarker, SessionImport } from "../../application/ports/outbound/event-batches.js";
+import type { TaskRecordSource } from "../../application/ports/outbound/record-source.js";
+import type { TaskEventBatches, BatchProjection, ImportChange, ImportMarker, SessionImport, ProviderLine } from "../../application/ports/outbound/event-batches.js";
 import { createHash } from "node:crypto";
 import { ConversationHistory } from "./conversation-history.js";
 import { projectContextUsage } from "./context-usage.js";
@@ -118,7 +119,10 @@ function rowToEvent(r: EventJoinRow): EventRow {
 export class SqliteTasks {
 private readonly conversation: ConversationHistory;
 private eventWriter?: TaskEventBatches;
-selectEventWriter(writer: TaskEventBatches) { this.eventWriter = writer; }
+selectEventWriter(writer: TaskEventBatches & { records: TaskRecordSource }) {
+    this.eventWriter = writer;
+    this.conversation.recordSource = writer.records;
+  }
 private insertEventStmt: Database.Statement;
 private getSeqStmt: Database.Statement;
 private usageRevisionStmt: Database.Statement;
@@ -156,9 +160,9 @@ private writeContextUsage(taskId: string, usage: TaskState["contextUsage"]): voi
       .run(taskId, usage ? JSON.stringify(usage) : null);
   }
 
-private contextChange(taskId: string, events: AgentEvent[]): BatchProjection["context"] {
+private contextChange(taskId: string, events: AgentEvent[], reset = false): BatchProjection["context"] {
     if (!events.some(event => event.kind === "status")) return;
-    const previous = this.getTask(taskId)?.contextUsage;
+    const previous = reset ? undefined : this.getTask(taskId)?.contextUsage;
     const next = events.reduce(projectContextUsage, previous);
     if (next !== previous) return { body: next ? JSON.stringify(next) : null };
   }
@@ -332,8 +336,11 @@ setTaskTitle(id: string, title: string, now: number) {
     this.db.prepare("UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
   }
 
-appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventRow[] {
-    if (this.eventWriter && !this.db.inTransaction && events.length) return this.nativeBatch(this.eventWriter, taskId, events, rawSeq);
+appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number, provider?: ProviderLine): EventRow[] {
+    if (this.eventWriter) {
+      if (this.db.inTransaction) throw new Error("Event writes require the native Task transaction");
+      return this.nativeBatch(this.eventWriter, taskId, events, rawSeq, undefined, undefined, provider);
+    }
     return this.db.transaction(() => {
       const rows = events.map((event) => ({ ...this.insertEvent(taskId, event.kind, event.payload, event.ts), event }));
       this.conversation.update(taskId);
@@ -344,7 +351,7 @@ appendAgentEvents(taskId: string, events: AgentEvent[], rawSeq?: number): EventR
     })();
   }
 
-private nativeBatch(writer: TaskEventBatches, taskId: string, events: AgentEvent[], rawSeq?: number, session?: SessionImport): EventRow[] {
+private nativeBatch(writer: TaskEventBatches, taskId: string, events: AgentEvent[], rawSeq?: number, session?: SessionImport, boundary?: number, provider?: ProviderLine): EventRow[] {
       this.conversation.update(taskId);
       const task = this.getTask(taskId);
       if (!task) throw new Error("Task disappeared before event batch");
@@ -352,11 +359,11 @@ private nativeBatch(writer: TaskEventBatches, taskId: string, events: AgentEvent
         const rows = assigned.map(({ seq, compact }, i) => {
           const source = events[i];
           const event = { taskId, agent: task.agent, kind: source.kind, payload: compact == null ? source.payload ?? null : JSON.parse(compact),
-            ts: source.ts, sessionId: task.sessionId } as AgentEvent;
+            ts: source.ts, sessionId: provider?.sessionId ?? task.sessionId } as AgentEvent;
           return { seq, event };
         });
-        return { ...this.conversation.projectAppend(taskId, rows), prs: this.prChange(taskId, events), context: this.contextChange(taskId, events) };
-      }, session);
+        return { ...this.conversation.projectAppend(taskId, rows, boundary), prs: this.prChange(taskId, events), context: this.contextChange(taskId, events, !!provider?.sessionId && provider.sessionId !== task.sessionId) };
+      }, session, provider);
   }
 
 private planImports(taskId: string, events: AgentEvent[], sourceIds?: string[]) {
@@ -388,8 +395,21 @@ private planImports(taskId: string, events: AgentEvent[], sourceIds?: string[]) 
     return { fresh, changes };
   }
 
-importSessionEvents(task: TaskState, events: AgentEvent[], sourceIds?: string[]): EventRow[] {
-    if (this.eventWriter && !this.db.inTransaction) {
+importSessionEvents(task: TaskState, events: AgentEvent[], sourceIds?: string[], supplement?: { events: AgentEvent[]; ids: string[] }): EventRow[] {
+    if (this.eventWriter && this.db.inTransaction) throw new Error("Session imports require the native Task transaction");
+    if (supplement) {
+      // A transcript has its own durable cursor. Only the supplemental provider
+      // results carry source IDs. Preserve both projection revisions in one commit.
+      if (sourceIds) throw new Error("Transcript imports use the session cursor");
+      if (this.eventWriter) {
+        const { fresh, changes } = this.planImports(task.taskId, supplement.events, supplement.ids);
+        return this.nativeBatch(this.eventWriter, task.taskId, [...events, ...fresh], undefined,
+          { control: JSON.stringify(task.sessionControl), changes }, events.length);
+      }
+      return this.db.transaction(() => [...this.importSessionEvents(task, events),
+        ...this.importSessionEvents(task, supplement.events, supplement.ids)])();
+    }
+    if (this.eventWriter) {
       const { fresh, changes } = this.planImports(task.taskId, events, sourceIds);
       return this.nativeBatch(this.eventWriter, task.taskId, fresh, undefined, { control: JSON.stringify(task.sessionControl), changes });
     }
@@ -490,6 +510,7 @@ insertEvent(taskId: string, kind: string, payload: unknown, ts: number): { id: n
   }
 
 eventCursor(taskId?: string): number {
+    if (taskId && this.conversation.recordSource && !this.db.inTransaction) return this.conversation.recordSource.cursor(taskId);
     const row = taskId
       ? this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS cursor FROM events WHERE task_id = ?").get(taskId)
       : this.db.prepare("SELECT COALESCE(MAX(id), 0) AS cursor FROM events").get();
@@ -525,6 +546,7 @@ conversationDetails(taskId: string, key: number, after?: number) { return this.c
 conversationContent(taskId: string, key: number, version: string, offset: number, member?: number) { return this.conversation.content(taskId, key, version, offset, member); }
 
 historyStart(taskId: string, before: number, limit = HISTORY_PAGE_EVENTS): number {
+    if (this.conversation.recordSource) return this.conversation.recordSource.pageStart(taskId, before, limit);
     const edge = this.db.prepare(`SELECT seq, kind FROM events
       WHERE task_id = ? AND seq < ? ORDER BY seq DESC LIMIT 1 OFFSET ?`)
       .get(taskId, before, limit - 1) as { seq: number; kind: string } | undefined;
@@ -541,7 +563,8 @@ historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId), i
     // single collapsed Activity can span thousands of those events; paging it
     // would hide earlier messages and keep changing its count while reading.
     const start = includeActivityDetails ? this.historyStart(taskId, before) : 1;
-    const rows = this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind,
+    const source = this.conversation.recordSource;
+    const rows = source ? this.historyRows(source, taskId, start, before - 1, !includeActivityDetails) : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind,
       ${includeActivityDetails ? "e.payload_json" : "COALESCE(c.payload_json, e.payload_json)"} AS payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
       ${includeActivityDetails ? "" : "LEFT JOIN event_compact_payloads c ON c.event_id = e.id"}
@@ -557,10 +580,20 @@ historyPage(taskId: string, before: number, cursor = this.eventCursor(taskId), i
     return { events, before: start > 1 ? start : null, cursor };
   }
 
+private *historyRows(source: TaskRecordSource, taskId: string, from: number, through: number, compact: boolean) {
+    while (from <= through) {
+      const page = source.events(taskId, from, through, compact, HISTORY_PAGE_EVENTS);
+      yield* page;
+      if (page.length < HISTORY_PAGE_EVENTS) return;
+      from = page[page.length - 1].seq + 1;
+    }
+  }
+
 historyChanges(taskId: string, after: number, through?: number, includeActivityDetails = true): import("@palmagent/shared").TaskHistoryChangesResponse {
     const cursor = this.eventCursor(taskId);
     const end = Math.max(after, Math.min(through ?? cursor, cursor));
-    const rows = end <= after ? [] : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind,
+    const source = this.conversation.recordSource;
+    const rows = end <= after ? [] : source ? source.events(taskId, after + 1, end, !includeActivityDetails, HISTORY_PAGE_EVENTS + 1) : this.db.prepare(`SELECT e.id, e.seq, e.task_id, e.kind,
       ${includeActivityDetails ? "e.payload_json" : "COALESCE(c.payload_json, e.payload_json)"} AS payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id
       ${includeActivityDetails ? "" : "LEFT JOIN event_compact_payloads c ON c.event_id = e.id"}

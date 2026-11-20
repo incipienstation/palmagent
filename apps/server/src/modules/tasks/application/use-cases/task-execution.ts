@@ -22,6 +22,7 @@ function observation(event: RawEvent): TurnObservation {
 }
 
 interface TaskExecutionEffects {
+  restarting?(taskId: string): boolean;
   startRetained?(task: TaskState, runId: string): void;
   transition(task: TaskState, status: TaskStatus, opts?: { interrupted?: boolean }): void;
   resolveSkills(taskId: string, skills: SkillSelection[]): Promise<SkillSelection[] | undefined>;
@@ -175,7 +176,7 @@ export class TaskExecution {
       this.turns.delete(turn.task.taskId);
       this.supervisor.release(turn.task.taskId);
       this.backend.release?.(turn.task.taskId);
-      const evidence = turn.ticket ? this.native!.end(turn.ticket) : turn.evidence;
+      const evidence = turn.ticket ? this.native!.end(turn.ticket, this.messages.state(turn.task.taskId).compaction?.status === "running", this.effects.restarting?.(turn.task.taskId)) : turn.evidence;
       if (!evidence) return;
       if (turn.sessionMismatch) evidence.failureMessage = turn.evidence.failureMessage;
       this.effects.finished(turn.task, evidence);

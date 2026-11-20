@@ -176,6 +176,7 @@ impl Queue {
                 message.run_id = Some(run_id.clone());
             }
         }
+        self.extra.remove("creationReserved");
         self.run_id = Some(run_id);
         self.initial_message_id = initial_message_id;
         self.runtime_started = Some(false);

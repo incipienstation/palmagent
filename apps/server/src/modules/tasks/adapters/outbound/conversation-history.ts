@@ -1,3 +1,4 @@
+import type { TaskRecordSource } from "../../application/ports/outbound/record-source.js";
 import type { BatchProjection, DisplayChange } from "../../application/ports/outbound/event-batches.js";
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
@@ -24,6 +25,10 @@ const endOf = (row: TranscriptRow) => row.type === "message" ? row.item.endSeq ?
  * completed runs are indexed once. Text deltas are merged before storing that tail.
  */
 export class ConversationHistory {
+  recordSource?: TaskRecordSource;
+  private snapshot<T>(work: () => T): T {
+    return this.recordSource ? this.recordSource.snapshot(work) : this.db.transaction(work)();
+  }
   constructor(private readonly db: Database.Database) {
     db.transaction(() => {
       const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'conversation_rows'").get();
@@ -118,10 +123,14 @@ export class ConversationHistory {
     return item;
   }
 
-  private blockChanges(taskId: string, start: number, log: LogItem[], revision: number, previous: boolean): DisplayChange[] {
+  private blockChanges(taskId: string, start: number, log: LogItem[], revision: number, previous: boolean, staged?: DisplayChange[]): DisplayChange[] {
     const changes: DisplayChange[] = [];
     const prior = new Map((this.db.prepare("SELECT seq, end_seq, revision, body_json, wire_json FROM conversation_rows WHERE task_id = ? AND block_start = ?")
       .all(taskId, start) as StoredRow[]).map(row => [row.seq, row]));
+    for (const change of staged ?? []) {
+      if (change.start === start) prior.set(change.key, { seq: change.key, revision: change.revision,
+        body_json: change.body, wire_json: change.wire, end_seq: change.end });
+    }
     const identities = new Map<number, number>();
     for (const old of prior.values()) {
       if (!old.body_json) continue;
@@ -154,23 +163,27 @@ export class ConversationHistory {
     }
   }
 
-  projectAppend(taskId: string, rows: { seq: number; event: AgentEvent }[]): BatchProjection {
+  projectAppend(taskId: string, rows: { seq: number; event: AgentEvent }[], boundary?: number): BatchProjection {
     const state = this.state(taskId);
     let start = state.block_start, cursor = state.cursor, log: LogItem[] = JSON.parse(state.log_json);
     const changes: DisplayChange[] = [];
+    const base = cursor;
     for (const { seq, event } of rows) {
+      if (boundary && cursor === base + boundary) {
+        changes.push(...this.blockChanges(taskId, start, log, cursor, false));
+      }
       if (seq !== cursor + 1) throw new Error("Native append and conversation cursor disagree");
       cursor = seq;
       if (isNativeEnvironmentContext(event)) continue;
       if (reset(event) && log.length) {
-        changes.push(...this.blockChanges(taskId, start, log, seq, true));
+        changes.push(...this.blockChanges(taskId, start, log, seq, true, boundary ? changes : undefined));
         start = seq;
         log = [];
       }
       const compact = deferActivityEventDetails(event);
       appendHistoryEvent(log, compact.event, seq, compact.detailsDeferred);
     }
-    changes.push(...this.blockChanges(taskId, start, log, cursor, false));
+    changes.push(...this.blockChanges(taskId, start, log, cursor, false, boundary ? changes : undefined));
     return { cursor, start, log: JSON.stringify(log), activity: transcriptActivity(log, { running: true }), changes };
   }
 
@@ -267,8 +280,8 @@ export class ConversationHistory {
     })();
   }
 
-  private record(taskId: string, key: number): StoredRow & { body_json: string } {
-    const row = this.db.prepare("SELECT seq, end_seq, revision, body_json, wire_json FROM conversation_rows WHERE task_id = ? AND seq = ? AND body_json IS NOT NULL")
+  private record(taskId: string, key: number): Pick<StoredRow, "revision"> & { body_json: string } {
+    const row = this.recordSource ? this.recordSource.item(taskId, key) : this.db.prepare("SELECT seq, end_seq, revision, body_json, wire_json FROM conversation_rows WHERE task_id = ? AND seq = ? AND body_json IS NOT NULL")
       .get(taskId, key) as StoredRow & { body_json: string } | undefined;
     if (!row) throw new ApplicationError("not_found", "Conversation item is no longer available.");
     return row;
@@ -276,14 +289,14 @@ export class ConversationHistory {
 
   private detail(taskId: string, item: LogItem): TranscriptRow {
     if (item.kind === "assistant_text" || !item.detailsDeferred) return { type: "message", key: item.key, item };
-    const row = this.db.prepare("SELECT payload_json FROM events WHERE task_id = ? AND seq = ?").get(taskId, item.key) as { payload_json: string } | undefined;
+    const row = this.recordSource ? this.recordSource.events(taskId, item.key, item.key, false, 1)[0] : this.db.prepare("SELECT payload_json FROM events WHERE task_id = ? AND seq = ?").get(taskId, item.key) as { payload_json: string } | undefined;
     if (!row) throw new ApplicationError("not_found", "Activity detail is no longer available.");
     return { type: "message", key: item.key, item: { ...item, detailsDeferred: false, event: { ...item.event, payload: JSON.parse(row.payload_json) } } };
   }
 
   details(taskId: string, key: number, after = 0): ConversationDetails {
     this.refresh(taskId);
-    return this.db.transaction(() => {
+    return this.snapshot(() => {
       const record = this.record(taskId, key), row = JSON.parse(record.body_json) as TranscriptRow;
       const members = row.type === "message" ? [row.item] : row.items;
       const remaining = members.filter(item => item.key > after).sort((a, b) => a.key - b.key);
@@ -297,18 +310,18 @@ export class ConversationHistory {
         items.push(item); bytes += size;
       }
       return { items, nextAfter: remaining.length > items.length ? items.at(-1)!.key : null, cursor: record.revision };
-    })();
+    });
   }
 
   steps(taskId: string, key: number, after = 0): ConversationSteps {
     this.refresh(taskId);
-    return this.db.transaction(() => {
+    return this.snapshot(() => {
       const record = this.record(taskId, key), row = JSON.parse(record.body_json) as TranscriptRow;
       const operations = row.type === "activity" ? row.operations ?? [] : [];
       const remaining = operations.filter(step => step.key > after).sort((a, b) => a.key - b.key);
       const steps = remaining.slice(0, CONVERSATION_DETAIL_ITEMS).map(({ members: _members, ...step }) => step);
       return { steps, nextAfter: remaining.length > steps.length ? steps.at(-1)!.key : null, cursor: record.revision };
-    })();
+    });
   }
 
   private eventDetail(taskId: string, seq: number): TranscriptRow {
@@ -318,7 +331,7 @@ export class ConversationHistory {
   }
 
   private rawEvent(taskId: string, seq: number): AgentEvent {
-    const row = this.db.prepare(`SELECT e.seq, e.kind, e.payload_json, e.ts, t.agent, t.session_id
+    const row = this.recordSource ? this.recordSource.events(taskId, seq, seq, false, 1)[0] : this.db.prepare(`SELECT e.seq, e.kind, e.payload_json, e.ts, t.agent, t.session_id
       FROM events e JOIN tasks t ON t.id = e.task_id WHERE e.task_id = ? AND e.seq = ?`).get(taskId, seq) as EventRow | undefined;
     if (!row) throw new ApplicationError("not_found", "Execution record is no longer available.");
     return { taskId, agent: row.agent, kind: row.kind, payload: JSON.parse(row.payload_json), ts: row.ts,
@@ -327,7 +340,7 @@ export class ConversationHistory {
 
   stepDetails(taskId: string, key: number, stepKey: number, after = 0): ConversationDetails {
     this.refresh(taskId);
-    return this.db.transaction(() => {
+    return this.snapshot(() => {
       const record = this.record(taskId, key), row = JSON.parse(record.body_json) as TranscriptRow;
       const step = row.type === "activity" ? row.operations?.find(step => step.key === stepKey) : undefined;
       if (!step) throw new ApplicationError("not_found", "This operation changed. Reload its activity.");
@@ -343,13 +356,14 @@ export class ConversationHistory {
         items.push(item); bytes += size;
       }
       return { items, nextAfter: remaining.length > items.length ? items.at(-1)!.key : null, cursor: record.revision };
-    })();
+    });
   }
 
   records(taskId: string, before?: number): ExecutionRecords {
-    return this.db.transaction(() => {
-      const cursor = (this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events WHERE task_id = ?").get(taskId) as { seq: number }).seq;
-      const rows = this.db.prepare("SELECT seq FROM events WHERE task_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?")
+    return this.snapshot(() => {
+      const keys = this.recordSource?.sequenceKeys(taskId, before, CONVERSATION_DETAIL_ITEMS + 1);
+      const cursor = keys?.cursor ?? (this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events WHERE task_id = ?").get(taskId) as { seq: number }).seq;
+      const rows = keys ? keys.keys.map(seq => ({ seq })) : this.db.prepare("SELECT seq FROM events WHERE task_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?")
         .all(taskId, before ?? cursor + 1, CONVERSATION_DETAIL_ITEMS + 1) as { seq: number }[];
       const records: ExecutionRecords["records"] = [];
       let bytes = 1024;
@@ -362,7 +376,7 @@ export class ConversationHistory {
         records.push(record); bytes += size;
       }
       return { records: records.reverse(), before: rows.length > records.length ? records[0]!.key : null, cursor };
-    })();
+    });
   }
 
   recordContent(taskId: string, key: number, expectedVersion: string, offset: number): ConversationContent {
@@ -375,7 +389,7 @@ export class ConversationHistory {
 
   content(taskId: string, key: number, expectedVersion: string, offset: number, member?: number): ConversationContent {
     this.refresh(taskId);
-    return this.db.transaction(() => {
+    return this.snapshot(() => {
       const record = this.record(taskId, key);
       let body = record.body_json;
       if (member !== undefined) {
@@ -391,6 +405,6 @@ export class ConversationHistory {
       // exact string, including surrogate pairs, before parsing it on the client.
       const next = Math.min(body.length, offset + 16_384);
       return { chunk: body.slice(offset, next), nextOffset: next < body.length ? next : null, version: expectedVersion };
-    })();
+    });
   }
 }

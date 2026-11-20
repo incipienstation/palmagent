@@ -43,19 +43,11 @@ export class MessageController {
   private policy(id: string) { return new MessagePolicy(this.state(id)); }
   snapshot(id: string): MessageQueue { return this.policy(id).snapshot(); }
   private apply(id: string, operation: QueueOperation, local: (policy: MessagePolicy) => boolean | void | StoredMessage,
-    policy?: MessagePolicy): QueueReceipt {
+    policy?: MessagePolicy, notify = true): QueueReceipt {
     if (this.native) {
-      // Completion can also write a synthetic event and its projection. Join
-      // that outer transaction so its queue receipt rolls back with the event.
-      const snapshot = this.db.inTransaction ? this.state(id) : undefined;
-      const receipt = this.native.queue(id, operation, snapshot);
-      if (receipt.changed) {
-        if (snapshot) {
-          if (!receipt.state) throw new Error("Missing transactional queue state");
-          this.db.writeMessageState(id, receipt.state);
-        }
-        this.host.changed(id);
-      }
+      if (this.db.inTransaction) throw new Error("Queue writes require the native Task transaction");
+      const receipt = this.native.queue(id, operation);
+      if (receipt.changed && notify) this.host.changed(id);
       return receipt;
     }
     policy ??= this.policy(id);
@@ -64,7 +56,7 @@ export class MessageController {
       clearEmptyQueuePause(policy.state);
       policy.state.revision++;
       this.db.writeMessageState(id, policy.state);
-      this.host.changed(id);
+      if (notify) this.host.changed(id);
     }
     return { changed, runId: policy.state.runId, claimed: typeof result === "object" ? result : undefined };
   }
@@ -89,8 +81,8 @@ export class MessageController {
     this.pump(id);
     return this.snapshot(id);
   }
-  finish(id: string, failed: boolean, drain = true, error?: string) {
-    this.apply(id, { kind: "finish", failed, error }, policy => policy.finish(failed, error));
+  finish(id: string, failed: boolean, drain = true, error?: string, notify = true) {
+    this.apply(id, { kind: "finish", failed, error }, policy => policy.finish(failed, error), undefined, notify);
     if (!failed && drain) this.pump(id);
   }
   delivered(id: string, messageId: string) {

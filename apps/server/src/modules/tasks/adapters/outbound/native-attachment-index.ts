@@ -6,14 +6,14 @@ export class NativeAttachmentIndex implements AttachmentIndex {
   isOpen = true;
   constructor(readonly path: string, private readonly command: (body: object) => unknown) {}
 
-  transaction<T>(work: () => T): T {
-    this.command({ kind: "fileTransaction", action: "begin" });
+  transaction<T>(work: () => T, readOnly = false): T {
+    this.command({ kind: "taskTransaction", action: readOnly ? "beginRead" : "begin" });
     try {
       const result = work();
-      this.command({ kind: "fileTransaction", action: "commit" });
+      this.command({ kind: "taskTransaction", action: "commit" });
       return result;
     } catch (error) {
-      this.command({ kind: "fileTransaction", action: "rollback" });
+      this.command({ kind: "taskTransaction", action: "rollback" });
       throw error;
     }
   }

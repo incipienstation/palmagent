@@ -35,6 +35,7 @@ pub struct RecoveryTask {
     pub id: String,
     pub status: TaskStatus,
     pub shared: bool,
+    pub before_dispatch: bool,
 }
 
 pub trait ExecutionRecovery {
@@ -91,9 +92,12 @@ pub fn prepare(
     };
 
     if independent
-        && tasks
-            .iter()
-            .any(|task| !task.shared && task.status.in_flight() && !live.contains(&task.id))
+        && tasks.iter().any(|task| {
+            !task.shared
+                && !task.before_dispatch
+                && task.status.in_flight()
+                && !live.contains(&task.id)
+        })
     {
         anyhow::bail!("An in-flight task has no execution identity; refusing automatic recovery");
     }
@@ -106,7 +110,8 @@ pub fn prepare(
             retained.insert(task.id.clone());
             continue;
         }
-        if task.status.can_reattach(independent) && live.contains(&task.id) {
+        if !task.before_dispatch && task.status.can_reattach(independent) && live.contains(&task.id)
+        {
             match executions.reattach(task) {
                 Ok(()) => {
                     retained.insert(task.id.clone());

@@ -14,7 +14,11 @@ export interface ImportMarker { length: number | null; hash: string | null }
 export interface ImportChange { source: string; previous?: ImportMarker; next: ImportMarker }
 export interface SessionImport { control?: string; changes: ImportChange[] }
 
+export interface ProviderLine {
+  independent: boolean; sessionId?: string; subtype?: string; requestId?: string; messageId?: string;
+}
+
 export interface TaskEventBatches {
   append(taskId: string, events: AgentEvent[], rawSeq: number | undefined,
-    project: (assigned: AssignedEvent[]) => BatchProjection, session?: SessionImport): EventRow[];
+    project: (assigned: AssignedEvent[]) => BatchProjection, session?: SessionImport, provider?: ProviderLine): EventRow[];
 }

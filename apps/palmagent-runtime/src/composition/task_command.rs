@@ -5,7 +5,7 @@ use crate::modules::tasks::application::event_batches::{
     Assigned, Batch, DisplayRenderer, Projection,
 };
 use crate::modules::tasks::application::{
-    message_queue::{Command, QueueError, transition},
+    message_queue::{Command, QueueError},
     recovery::{ExecutionRecovery, Recovery, RecoveryTask},
 };
 use crate::modules::tasks::{
@@ -31,11 +31,35 @@ use std::{
     rename_all_fields = "camelCase"
 )]
 enum Request {
+    Creation {
+        id: String,
+        repo: String,
+        agent: String,
+        prompt: String,
+    },
+    TaskAction {
+        id: String,
+        request: crate::modules::tasks::application::task_actions::Request,
+    },
+    SharedSnapshot {
+        task_id: String,
+        observation: crate::modules::tasks::application::shared_session::SharedObservation,
+    },
+    RemoveSpace {
+        id: String,
+    },
+    Subscription {
+        operation: crate::modules::tasks::adapters::outbound::sqlite_subscriptions::Subscription,
+    },
+    Records {
+        task_id: String,
+        query: crate::modules::tasks::adapters::outbound::sqlite_records::RecordQuery,
+    },
     Files {
         command: crate::modules::tasks::adapters::outbound::sqlite_files::FileCommand,
     },
-    FileTransaction {
-        action: super::task_owner::FileTransaction,
+    TaskTransaction {
+        action: super::task_owner::TaskTransaction,
     },
     Create {
         row: String,
@@ -61,6 +85,10 @@ enum Request {
     },
     End {
         ticket: Ticket,
+        #[serde(default)]
+        compacting: bool,
+        #[serde(default)]
+        steer_restart: bool,
     },
     Plan {
         live: Vec<String>,
@@ -72,7 +100,6 @@ enum Request {
     Queue {
         task_id: String,
         operation: String,
-        snapshot: Option<String>,
     },
     Start {
         task_id: String,
@@ -214,15 +241,23 @@ fn execute(
             if let Startup::Planned(plan, _) = startup { ensure!(plan.reattached.contains(&task_id), "Unplanned execution attachment"); }
             json!(turns.track(task_id, run_id, baseline)?)
         }
-        Request::End {ticket} => {
+        Request::End {ticket,compacting,steer_restart} => {
             turns.finish(&ticket).map_or(Value::Null, |evidence| json!({
-                "sawResult":evidence.result_error().is_some(), "lastResultError":evidence.result_error().unwrap_or(false),
+                "failed":evidence.failed(compacting,steer_restart), "sawResult":evidence.result_error().is_some(), "lastResultError":evidence.result_error().unwrap_or(false),
                 "errored":evidence.errored(), "abnormalExit":evidence.abnormal_exit(), "failureMessage":evidence.failure_message,
             }))
         }
         _ if !matches!(startup, Startup::Ready) => anyhow::bail!("Task recovery has not committed"),
+        Request::Creation {id,repo,agent,prompt} => json!(owner.creation(&id,&repo,&agent,&prompt)?),
+        Request::TaskAction {id, request} => match owner.task_action(&id,&request)? {
+            Ok(effect) => json!({"effect":effect}), Err(reason)=>json!({"conflict":reason})
+        },
+        Request::SharedSnapshot {task_id,observation} => json!(owner.shared_snapshot(&task_id,observation)?),
+        Request::RemoveSpace {id} => { owner.remove_space(&id)?; Value::Null },
+        Request::Subscription {operation} => owner.subscription(operation)?,
+        Request::Records {task_id,query} => owner.records(&task_id,query)?,
         Request::Files {command} => owner.files(command)?,
-        Request::FileTransaction {action} => { owner.file_transaction(action)?; Value::Null }
+        Request::TaskTransaction {action} => { owner.transaction(action)?; Value::Null }
         Request::Create {row} => {owner.create(&row)?; Value::Null}
         Request::Append {batch} => {
             let rows = owner.append(&batch, renderer)?;
@@ -235,20 +270,13 @@ fn execute(
         Request::Queue {
             task_id,
             operation,
-            snapshot,
         } => {
-            let snapshot_supplied = snapshot.is_some();
             let operation: Value = serde_json::from_str(&protect_utf16(&operation))?;
             let command = Command::deserialize(&operation)?;
-            let result = if let Some(state) = snapshot {
-                let mut queue = serde_json::from_str(&protect_utf16(&state))?;
-                transition(&mut queue, command).map(|mutation| mutation.result)
-            } else {
-                owner.update_queue(&task_id, command)
-            };
+            let result = owner.update_queue(&task_id, command);
             match result {
                 Ok(result) => json!({"changed":result.changed, "claimed":result.claimed.map(|message| serde_json::to_string(&message).map(restore_utf16)).transpose()?,
-                    "runId":result.queue.run_id, "state": if snapshot_supplied { Some(restore_utf16(serde_json::to_string(&result.queue)?)) } else {None} }),
+                    "runId":result.queue.run_id }),
                 Err(QueueError::Conflict(error)) => json!({"conflict":error.0}),
                 Err(QueueError::MissingTask) => {
                     anyhow::bail!("Task disappeared during queue transition")

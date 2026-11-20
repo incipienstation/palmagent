@@ -75,8 +75,6 @@ export async function createRuntime(runtimeLease: number) {
   let terminalService: TerminalService | undefined;
   let github: GithubService | undefined;
   try {
-    const push = new PushService(db, config.vapidKeyPath ?? join(dirname(config.dbPath), "vapid.json"), config.pushSubject);
-    resources.defer(() => push.close());
     backend = await selectBackend();
     const selectedBackend = backend;
     resources.defer(() => selectedBackend.close?.());
@@ -89,11 +87,14 @@ export async function createRuntime(runtimeLease: number) {
     if (config.nativeReadHttpPort !== undefined && !nativeScripts) throw new Error("Direct read HTTP requires a native application runtime");
     const retainedTurns = nativeScripts ? new NativeRetainedTurns(
       join(config.executionRelease!, "daemon", `linux-${process.arch}`, "palmagent-runtime"), config.dbPath, runtimeLease,
+      () => { console.error("Task owner disconnected. Restarting the API to recover retained turns."); process.kill(process.pid, "SIGTERM"); },
     ) : undefined;
     if (retainedTurns) {
       resources.defer(() => retainedTurns.close());
-      db.selectEventWriter(retainedTurns);
+      db.selectTaskOwner(retainedTurns);
     }
+    const push = new PushService(retainedTurns ?? db, config.vapidKeyPath ?? join(dirname(config.dbPath), "vapid.json"), config.pushSubject);
+    resources.defer(() => push.close());
     const attachments = createAttachmentStorage(retainedTurns?.attachments ?? db, config.attachmentStorage);
     resources.defer(() => attachments.close());
     const service = createTaskService(db, hub, supervisor, backend, worktrees, attachments,

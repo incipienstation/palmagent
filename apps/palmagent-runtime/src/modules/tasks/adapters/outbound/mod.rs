@@ -7,3 +7,8 @@ pub mod sqlite_read_access;
 pub mod sqlite_recovery;
 pub mod sqlite_transcript;
 pub mod sqlite_usage;
+
+pub mod sqlite_actions;
+pub mod sqlite_records;
+pub mod sqlite_subscriptions;
+mod sqlite_write;

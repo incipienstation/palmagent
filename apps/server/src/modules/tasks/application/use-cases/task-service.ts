@@ -1,4 +1,4 @@
-import type { RetainedTurns, TaskMetadata } from "../ports/outbound/retained-turns.js";
+import type { RetainedTurns, TaskMetadata, TaskAction } from "../ports/outbound/retained-turns.js";
 import type { TaskTranscriptReader } from "../ports/outbound/transcript.js";
 import type { TaskActivityReader } from "../ports/outbound/activity.js";
 import type { TaskUsageReader } from "../ports/outbound/usage.js";
@@ -314,6 +314,7 @@ export class TaskService implements PrStatusSink {
       changed: () => this.broadcastTasks(),
     }, attachments, ids, timing, retainedTurns);
     this.execution = new TaskExecution(db, supervisor, backend, this.messages, {
+      restarting: id => this.steerRestart.has(id),
       startRetained: retainedTurns && ((task, runId) => {
         const now = this.timing.now();
         retainedTurns.start(task.taskId, runId, now);
@@ -509,15 +510,22 @@ export class TaskService implements PrStatusSink {
 
   handoff(id: string): SessionHandoffResponse {
     const task = this.getTask(id);
-    if (task.sessionControl?.owner === "shared") return { task, command: this.nativeSession.resumeCommand(task) };
-    if (task.sessionControl?.owner === "local") return { task, command: this.nativeSession.resumeCommand(task) };
-    this.assertSessionOwnership(task);
-    if (this.supervisor.has(id) || !["idle", "failed"].includes(task.status)) throw conflict("Stop the active turn and wait for it to finish before handing off");
-    if (!task.sessionId) throw conflict("This task has no native session yet");
+    if (this.retainedTurns) {
+      if (this.nativeAction(task, "handoff") === "resumeCommand") return {task, command: this.nativeSession.resumeCommand(task)};
+    } else {
+      if (task.sessionControl?.owner === "shared") return { task, command: this.nativeSession.resumeCommand(task) };
+      if (task.sessionControl?.owner === "local") return { task, command: this.nativeSession.resumeCommand(task) };
+      this.assertSessionOwnership(task);
+      if (this.supervisor.has(id) || !["idle", "failed"].includes(task.status)) throw conflict("Stop the active turn and wait for it to finish before handing off");
+      if (!task.sessionId) throw conflict("This task has no native session yet");
+    }
     let control: TaskState["sessionControl"];
     try { control = this.nativeSession.checkpoint(task); } catch (error) { throw conflict(error instanceof Error ? error.message : "Native session is unavailable"); }
-    this.messages.pause(id);
-    this.metadata.setSessionControl(id, control);
+    if (this.retainedTurns) this.retainedTurns.transaction(() => {
+      this.retainedTurns!.queue(id, {kind: "pause"});
+      this.metadata.setSessionControl(id, control);
+    });
+    else { this.messages.pause(id); this.metadata.setSessionControl(id, control); }
     task.sessionControl = control;
     this.broadcastTasks();
     return { task, command: this.nativeSession.resumeCommand(task) };
@@ -653,10 +661,8 @@ export class TaskService implements PrStatusSink {
         && JSON.stringify(task.pendingInput) === JSON.stringify(snapshot.question) && JSON.stringify(task.pendingApproval) === JSON.stringify(snapshot.approval)) return;
       const results = imported ? providerEvents.filter(({ event }) => event.kind === "result" ||
         event.kind === "error" && (event.payload as { code?: string } | null)?.code === AGENT_HOOK_STOPPED) : [];
-      const importHistory = () => this.db.importSessionEvents(update, events, imported ? undefined : providerEvents.map(event => event.key));
-      const rows = results.length ? this.db.transaction(() => [
-        ...importHistory(), ...this.db.importSessionEvents(update, results.map(({ event }) => event), results.map(({ key }) => key)),
-      ]) : importHistory();
+      const rows = this.db.importSessionEvents(update, events, imported ? undefined : providerEvents.map(event => event.key),
+        results.length ? { events: results.map(({ event }) => event), ids: results.map(({ key }) => key) } : undefined);
       task.sessionControl = update.sessionControl;
       this.sharedConnections.set(id, connection);
       this.sharedRetryAt.delete(id);
@@ -686,29 +692,40 @@ export class TaskService implements PrStatusSink {
 
   private applySharedSnapshot(task: TaskState, snapshot: SharedSessionSnapshot, completed: boolean | undefined) {
     const id = task.taskId, now = Date.now();
-    if (snapshot.status === "idle" && this.sharedSending.has(id)) return;
-    const wasActive = !["idle", "failed"].includes(task.status);
-    // A status read can race the completion notification. Keep the run open
-    // until its terminal result arrives; a following poll consumes it once.
-    if (snapshot.status === "idle" && wasActive && completed === undefined) return;
-    const status = snapshot.question ? "awaiting_input" : snapshot.approval ? "awaiting_approval" : snapshot.status;
-    const interrupted = snapshot.status === "running" || completed ? false : completed === false || task.interrupted;
+    const native = this.retainedTurns;
+    const plan = native ? native.sharedSnapshot(id, {
+      running: snapshot.status === "running", sending: this.sharedSending.has(id), completed, now, runId: this.ids.uuid(),
+      question: JSON.stringify(snapshot.question), approval: JSON.stringify(snapshot.approval), model: snapshot.model, effort: snapshot.effort,
+    }) : this.localSharedSnapshot(task, snapshot, completed);
+    if (!plan) return;
+    const { status, interrupted, wasActive } = plan;
     const newQuestion = snapshot.question && snapshot.question.requestId !== task.pendingInput?.requestId;
     const newApproval = snapshot.approval && snapshot.approval.requestId !== task.pendingApproval?.requestId;
-    this.metadata.transaction(() => {
+    if (!native) this.metadata.transaction(() => {
       this.metadata.setTaskPendingInput(id, snapshot.question, now);
       this.metadata.setTaskPendingApproval(id, snapshot.approval, now);
       this.metadata.setTaskStatus(id, status, interrupted, now);
       this.metadata.setTaskSettings(id, snapshot.model, snapshot.effort, "managed", now);
     });
     Object.assign(task, { status, interrupted, updatedAt: now, permission: "managed", pendingInput: snapshot.question, pendingApproval: snapshot.approval, model: snapshot.model, effort: snapshot.effort });
-    if (snapshot.status === "running" && !this.messages.state(id).runId) this.messages.beginRun(id);
-    if (snapshot.status === "idle" && (wasActive || this.messages.state(id).runId)) this.messages.finish(id, !completed, false);
+    if (!native && snapshot.status === "running" && !this.messages.state(id).runId) this.messages.beginRun(id);
+    if (!native && snapshot.status === "idle" && (wasActive || this.messages.state(id).runId)) this.messages.finish(id, !completed, false);
     if (newQuestion) this.notifyPush(task, "needs your input", firstQuestionText(snapshot.question!));
     if (newApproval) this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
     if (snapshot.status === "idle" && completed) this.messages.pump(id);
     if (wasActive && snapshot.status === "idle" && completed && !this.messages.state(id).runId) this.notifyPush(task, "finished", "Turn finished — task is idle.");
     if (snapshot.status === "idle") { this.sharedTerminal.delete(id); this.sharedTurns.delete(id); }
+  }
+
+  private localSharedSnapshot(task: TaskState, snapshot: SharedSessionSnapshot, completed?: boolean) {
+    if (snapshot.status === "idle" && this.sharedSending.has(task.taskId)) return;
+    const wasActive = !["idle", "failed"].includes(task.status);
+    // A status read can race the completion notification. Keep the run open
+    // until its terminal result arrives; a following poll consumes it once.
+    if (snapshot.status === "idle" && wasActive && completed === undefined) return;
+    const status = snapshot.question ? "awaiting_input" : snapshot.approval ? "awaiting_approval" : snapshot.status;
+    const interrupted = snapshot.status === "running" || completed ? false : completed === false || task.interrupted;
+    return { status: status as TaskStatus, interrupted, wasActive };
   }
 
   reconcileLocalSessions(): void {
@@ -804,13 +821,17 @@ export class TaskService implements PrStatusSink {
     // The first successful creation owns this ID durably. A retry after a lost
     // response (including after a restart) must never start another agent turn.
     const requestedId = req.clientRequestId ? `t_${req.clientRequestId}` : undefined;
-    const existing = requestedId ? this.db.getTask(requestedId) : undefined;
-    if (existing) {
-      if (existing.repoId !== req.repoId || existing.agent !== req.agent || existing.prompt !== req.prompt) {
+    if (requestedId) {
+      const native = this.retainedTurns;
+      const receipt = native?.creation(requestedId, req.repoId, req.agent, req.prompt);
+      const existing = (!native || receipt === true) ? this.db.getTask(requestedId) : undefined;
+      if (receipt === false || existing && !native && (existing.repoId !== req.repoId || existing.agent !== req.agent || existing.prompt !== req.prompt)) {
         throw badRequest("Creation request ID is already in use.");
       }
-      if (!this.cache.has(existing.taskId)) this.cache.set(existing.taskId, existing);
-      return this.getTask(existing.taskId);
+      if (existing) {
+        if (!this.cache.has(requestedId)) this.cache.set(requestedId, existing);
+        return this.getTask(requestedId);
+      }
     }
     this.assertTaskAdmission();
     if (req?.agent !== "claude" && req?.agent !== "codex") throw badRequest("agent must be 'claude' or 'codex'");
@@ -867,16 +888,17 @@ export class TaskService implements PrStatusSink {
   followup(id: string, prompt: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): TaskState {
     this.assertTaskAdmission();
     const task = this.getTask(id);
-    this.assertSessionOwnership(task);
-    if (task.sessionControl?.owner === "shared") {
+    const effect = this.nativeAction(task, "followup");
+    if (!effect) this.assertSessionOwnership(task);
+    if (effect === "shared" || !effect && task.sessionControl?.owner === "shared") {
       this.submitMessage(id, { clientMessageId: this.ids.uuid(), mode: "send", text: prompt, images: sanitizeImages(rawImages), expectedRunId: this.messages.state(id).runId,
         ...((model || effort || permission) ? { settings: { model, effort, permission } } : {}) });
       return task;
     }
     if (!prompt) throw badRequest("prompt is required");
     const images = sanitizeImages(rawImages);
-    if (this.supervisor.has(id)) throw conflict("a turn is already active");
-    if (task.status !== "idle" && task.status !== "failed") {
+    if (!effect && this.supervisor.has(id)) throw conflict("a turn is already active");
+    if (!effect && task.status !== "idle" && task.status !== "failed") {
       throw conflict(`cannot follow up a ${task.status} task`);
     }
     const attachments = this.attachments.save(id, images);
@@ -1000,11 +1022,44 @@ export class TaskService implements PrStatusSink {
     return true;
   }
 
+  private nativeAction(task: TaskState, action: TaskAction) {
+    return this.retainedTurns?.taskAction(task.taskId, {action, connected: this.sharedConnected(task),
+      handle: this.supervisor.has(task.taskId), now: this.timing.now()});
+  }
+
+  private applyNativeControl(task: TaskState, action: "stop" | "cancel" | "archive") {
+    const id = task.taskId, effect = this.nativeAction(task, action)!;
+    if (effect === "shared") return this.stopShared(task, action === "cancel");
+    if (effect === "noop") return task;
+    Object.assign(task, this.db.getTask(id)!);
+    if (effect === "cancel" || effect === "archive") {
+      const side = this.sideChats?.get(id);
+      if (side) this.sideChats?.end(id, side.id);
+    }
+    if (effect === "interrupt" || effect === "cancel") {
+      this.pendingSteer.delete(id);
+      if (effect === "interrupt") this.stopping.add(id);
+      this.persistControl(id);
+    }
+    this.broadcastTasks();
+    const handle = this.supervisor.get(id);
+    if (effect === "interrupt") {
+      this.emitSynthetic(task, { subtype: "stop", note: "turn interrupt requested" });
+      if (!handle?.interrupt()) handle?.cancel();
+    }
+    if (effect === "dequeue") this.emitSynthetic(task, { subtype: "stop", note: "dequeued before start" });
+    if (effect === "cancel" && handle) handle.cancel();
+    if (effect === "archive") { this.sharedConnections.get(id)?.close(); this.sharedConnections.delete(id); }
+    if (effect === "archive" || effect === "cancel" && !handle) this.cleanupWorktree(task);
+    return task;
+  }
+
   // Stop = interrupt the current turn but keep the task resumable. Unlike
   // cancel, the worktree and session survive: the task settles
   // idle(interrupted=true) and a follow-up resumes off the CLI transcript.
   stop(id: string): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
+    if (this.retainedTurns) return this.applyNativeControl(task, "stop");
     this.assertSessionOwnership(task);
     if (task.sessionControl?.owner === "shared") return this.stopShared(task, false);
     if (isClosedTaskStatus(task.status)) {
@@ -1033,6 +1088,7 @@ export class TaskService implements PrStatusSink {
 
   cancel(id: string): TaskState | Promise<TaskState> {
     const task = this.getTask(id);
+    if (this.retainedTurns) return this.applyNativeControl(task, "cancel");
     this.assertSessionOwnership(task);
     if (task.sessionControl?.owner === "shared") return this.stopShared(task, true);
     if (isClosedTaskStatus(task.status)) return task; // idempotent
@@ -1051,6 +1107,7 @@ export class TaskService implements PrStatusSink {
 
   archive(id: string): TaskState {
     const task = this.getTask(id);
+    if (this.retainedTurns) return this.applyNativeControl(task, "archive") as TaskState;
     this.assertSessionOwnership(task);
     if (task.sessionControl?.owner === "shared") {
       if (!["idle", "failed"].includes(task.status)) throw conflict("Stop the shared turn before archiving.");
@@ -1073,6 +1130,32 @@ export class TaskService implements PrStatusSink {
     const output = raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status" ? extractOutputImages(raw.payload) : { payload: raw.payload, images: [] };
     if (raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status") raw = { ...raw, payload: output.payload };
     const event = { ...raw, agent: task.agent, ts: now };
+
+    const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: toolImagePayload(image, event) }))];
+    if (this.retainedTurns && !replayed) {
+      const payload = event.kind === "status" ? event.payload as { subtype?: string; messageId?: string; requestId?: string } | null : undefined;
+      const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq, {
+        independent: !!this.backend.independent, sessionId: event.sessionId, subtype: typeof payload?.subtype === "string" ? payload.subtype : undefined,
+        messageId: typeof payload?.messageId === "string" ? payload.messageId : undefined,
+        requestId: typeof payload?.requestId === "string" ? payload.requestId : undefined,
+      });
+      if (!rows.length) return;
+      if (event.kind === "status" || event.kind === "approval_request" || event.kind === "question" || event.sessionId && event.sessionId !== task.sessionId) {
+        const previous = task.status, saved = this.db.getTask(task.taskId)!;
+        const changed = previous !== saved.status || saved.updatedAt !== task.updatedAt || task.sessionId !== saved.sessionId
+          || JSON.stringify(saved.contextUsage) !== JSON.stringify(task.contextUsage) || payload?.subtype === "message_delivered"
+          || event.kind === "question" || event.kind === "approval_request";
+        Object.assign(task, saved);
+        if (changed) this.broadcastTasks();
+        if (previous === "running" && event.kind === "question") this.notifyPush(task, "needs your input", firstQuestionText(event.payload));
+        if (previous === "running" && event.kind === "approval_request") this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
+      }
+      if (event.kind === "result") this.hub.emitReadChange({ type: "read-change", usage: true });
+      if (event.kind === "tool_result") this.refreshPrs(task);
+      task.lastActivityAt = now;
+      for (const row of rows) this.hub.emitEvent(row);
+      return;
+    }
 
     if (event.sessionId && task.sessionId !== event.sessionId) {
       this.metadata.setTaskSession(task.taskId, event.sessionId, now);
@@ -1118,7 +1201,6 @@ export class TaskService implements PrStatusSink {
 
     // Commit all images from this source line with the event and replay cursor.
     // A restart cannot preserve the cursor while dropping an image from that line.
-    const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: toolImagePayload(image, event) }))];
     const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq);
     if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
     if (event.kind === "tool_result") this.refreshPrs(task);
@@ -1179,12 +1261,22 @@ export class TaskService implements PrStatusSink {
       return;
     }
     const compacting = this.messages.state(task.taskId).compaction?.status === "running";
-    const failed = turnFailed(evidence, compacting, steerRestart);
-    this.db.transaction(() => {
-      this.transition(task, failed ? "failed" : "idle");
-      if (compacting && !failed) this.emitSynthetic(task, { subtype: "context_compacted" });
-      this.messages.finish(task.taskId, failed, false, evidence.failureMessage);
-    });
+    const failed = evidence.failed ?? turnFailed(evidence, compacting, steerRestart);
+    const now = Date.now(), status = failed ? "failed" : "idle";
+    if (compacting && !failed) this.db.prepareConversation(task.taskId);
+    const commit = () => {
+      this.metadata.setTaskStatus(task.taskId, status, task.interrupted, now);
+      this.messages.finish(task.taskId, failed, false, evidence.failureMessage, false);
+      return compacting && !failed ? this.db.appendAgentEvents(task.taskId, [{
+        taskId: task.taskId, agent: task.agent, kind: "status", sessionId: task.sessionId,
+        payload: { subtype: "context_compacted" }, ts: now,
+      }]) : [];
+    };
+    const rows = this.retainedTurns ? this.retainedTurns.transaction(commit) : this.db.transaction(commit);
+    Object.assign(task, { status, updatedAt: now });
+    if (rows.length) this.refreshContextUsage(task);
+    this.broadcastTasks();
+    for (const row of rows) this.hub.emitEvent(row);
 
     // Legacy-client compatibility: old steers drain separately from the explicit queue.
     const pending = this.pendingSteer.get(task.taskId);
@@ -1216,8 +1308,7 @@ export class TaskService implements PrStatusSink {
 
   // ---- helpers ----
   private get metadata(): TaskMetadata {
-    // A completion with a synthetic event already owns a product transaction.
-    return this.db.inTransaction ? this.db : this.retainedTurns?.metadata ?? this.db;
+    return this.retainedTurns?.metadata ?? this.db;
   }
   private commitTask(task: TaskState, patch: Partial<TaskState>, persist: () => void): void {
     this.metadata.transaction(persist);
