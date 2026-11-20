@@ -1,3 +1,5 @@
+import { TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
+import { staticFiles } from "../../src/platform/http/static.js";
 import type { TaskTranscriptReader } from "../../src/modules/tasks/application/ports/outbound/transcript.js";
 import type { TaskActivityReader } from "../../src/modules/tasks/application/ports/outbound/activity.js";
 import type { TaskUsageReader } from "../../src/modules/tasks/application/ports/outbound/usage.js";
@@ -157,6 +159,13 @@ test("compatible message submissions cross build versions without opening other 
   for (const path of ["/api/tasks/t/stop", "/api/tasks/t/messages/m", "/api/settings/updates"]) {
     assert.equal((await f.app.request(path, { method: "POST", headers, body: "{}" })).status, 409, path);
   }
+  const stop = t.mock.method(f.service, "stop", () => task);
+  const pinned = (body: object) => f.app.request("/api/tasks/t/stop", {
+    method: "POST", headers: { ...headers, [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION }, body: JSON.stringify(body),
+  });
+  assert.equal((await pinned({})).status, 400);
+  assert.equal((await pinned({ expectedRunId: "observed-turn" })).status, 200);
+  assert.deepEqual(stop.mock.calls[0]?.arguments, ["t", "observed-turn"]);
   f.shutdown.abort();
   const restarting = await f.app.request("/api/tasks", { method: "POST", headers, body: JSON.stringify(first) });
   assert.equal(restarting.status, 503);
@@ -508,10 +517,19 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(f.dir, "web/index.html"), "<html>fixture</html>");
   writeFileSync(join(f.dir, "web/sw.js"), "// fixture");
   writeFileSync(join(f.dir, "web/assets/app-hash.js"), "// asset");
+  const retained = join(f.dir, "previous");
+  mkdirSync(join(retained, "assets"), { recursive: true });
+  writeFileSync(join(retained, "assets/old-hash.js"), "// previous asset");
+  writeFileSync(join(retained, "sw.js"), "// previous worker");
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
   const app = createApp({ hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
-    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), f.hub), modelCatalog: f.modelCatalog });
+    push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), f.hub), modelCatalog: f.modelCatalog },
+    staticFiles(join(f.dir, "web"), retained));
+  const oldChunk = await app.request("/assets/old-hash.js");
+  assert.equal(await oldChunk.text(), "// previous asset");
+  assert.equal(oldChunk.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal(await (await app.request("/sw.js")).text(), "// fixture");
   for (const path of ["/", "/sw.js", "/deep/link", "/assets/missing.js"]) {
     const response = await app.request(path);
     assert.equal(response.status, 200);

@@ -12,7 +12,7 @@ export async function stopTaskTurn(taskId: string, runId?: string | null) {
     await stop.ready;
     if (generation !== cacheSession()) { stop.finish(); return; }
     if (stop.onStop) { await stop.onStop(); stop.finish(); return; }
-    const actual = await api.stop(taskId);
+    const actual = await api.stop(taskId, runId);
     if (generation !== cacheSession()) { stop.finish(); return; }
     if (isActiveTaskStatus(actual.status)) observeTaskActivity(actual);
     // Keep the local Stop pending until the live task snapshot catches up, even

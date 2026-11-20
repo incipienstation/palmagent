@@ -35,7 +35,7 @@ export function createUpdateAccess(store: UpdateAccessStore, host: UpdateDiscove
 
   function updatePaused(cfg: InstallConfig): boolean {
     const receipt = store.receipt(cfg.dataDir);
-    return receipt?.status === "failed" || receipt?.status === "applying";
+    return receipt?.status === "failed" || (receipt?.status === "applying" && receipt.reason !== "handoff-activation");
   }
 
   function requestUpdateAccess(cfg: InstallConfig, automatic: boolean, version?: string): void {
@@ -58,8 +58,12 @@ export function createUpdateAccess(store: UpdateAccessStore, host: UpdateDiscove
 
   function validUpdateRequest(cfg: InstallConfig, request: UpdateRequest): boolean {
     const preferences = host.preferences(cfg.dataDir);
+    const installed = host.version(cfg);
+    const receipt = installed === request.targetVersion ? store.receipt(cfg.dataDir) : undefined;
+    const recovering = receipt?.status === "applying" && receipt.reason === "handoff-activation" &&
+      receipt.previousVersion === request.currentVersion && receipt.targetVersion === installed;
     return store.read(cfg.dataDir).pending?.id === request.id && preferences.channel === request.channel &&
-      (!request.automatic || preferences.autoUpdate === true) && host.version(cfg) === request.currentVersion;
+      (!request.automatic || preferences.autoUpdate === true) && (installed === request.currentVersion || recovering);
   }
 
   function clearUpdateRequest(cfg: InstallConfig, id?: string): void {

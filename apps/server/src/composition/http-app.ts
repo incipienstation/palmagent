@@ -45,6 +45,7 @@ export function createApp(deps: HttpDependencies, view?: import("hono").Middlewa
     c.req.method === "POST" && IMAGE_BODY_PATH.test(c.req.path) ? imageBody : standardBody
   )(c, next));
   const api = app.get("/api/health", (c) => c.json({ ok: true, updateMaintenance: service.updating, executionProtocol: service.executionProtocol,
+    ...(deps.admission ? { updateAdmission: 1, pendingUpdateAdmissions: deps.admission.hasPending?.() ?? false } : {}),
     ...(deps.view ? { view: deps.view.status().state } : {}),
     activeRoutineScripts: deps.routines.activeScriptCount ?? 0,
     updateBlockingRoutineScripts: deps.routines.updateBlockingScriptCount ?? deps.routines.activeScriptCount ?? 0, ...(deps.build ? { build: deps.build } : {}) }, 200))

@@ -47,7 +47,8 @@ Candidates are verified before maintenance, then retained under the installation
 directory. Their bundled Node binary is copied by checksum into the retained runtimes directory,
 which both existing and new daemons accept; the host's Node is not substituted. Activation uses
 the existing maintenance lock, compatibility checks and health
-verification. Independent executions keep their original release and Node paths. Legacy
+verification. Compatible Linux daemon updates accept durable Task submissions during owner replacement
+as described in [Task runtime](TASK_RUNTIME.md#full-application-updates). Independent executions keep their original release and Node paths. Legacy
 installations must become idle before migration. Failed activation attempts restore the
 previous application when possible and otherwise retain a recovery receipt. Neither a
 failed update nor rollback restores a database. Old npm packages and retained artifacts are

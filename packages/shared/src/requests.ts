@@ -103,6 +103,7 @@ export const PathQuerySchema = z.object({ path: text.optional() });
 export const DiscoverQuerySchema = z.object({ refresh: z.enum(["0", "1"]).optional() });
 export const IdParamsSchema = z.object({ id: required });
 export const MessageParamsSchema = IdParamsSchema.extend({ messageId: required });
+export const StopTaskSchema = z.object({ expectedRunId: z.string().min(1).nullable().optional() });
 export const EmptyBodySchema = z.object({});
 export const AuthActionSchema = z.enum(["enroll", "revoke-sessions", "remove-passkey"]);
 export type AuthAction = z.infer<typeof AuthActionSchema>;

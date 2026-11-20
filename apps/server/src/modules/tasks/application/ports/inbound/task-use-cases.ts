@@ -66,7 +66,7 @@ export interface TaskUseCases {
   steer(id: string, text: string, rawImages?: unknown, model?: string, effort?: string, permission?: string): SteerResponse;
   approve(id: string, decision: string, scope?: string): TaskState | Promise<TaskState>;
   answer(id: string, req: AnswerRequest): Promise<TaskState>;
-  stop(id: string): TaskState | Promise<TaskState>;
+  stop(id: string, expectedRunId?: string | null): TaskState | Promise<TaskState>;
   cancel(id: string): TaskState | Promise<TaskState>;
   archive(id: string): TaskState;
 }

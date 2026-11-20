@@ -1,6 +1,6 @@
 import { guardSessionStream } from "./session-stream.js";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
-import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION, TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
 import type { MiddlewareHandler } from "hono";
 import { ApplicationError } from "../../kernel/errors.js";
 import { getCookie } from "hono/cookie";
@@ -52,8 +52,10 @@ export function requireCurrentClient({ build }: HttpRuntime): MiddlewareHandler 
     const compatibleMessage = c.req.method === "POST" &&
       (path === "/api/tasks" || /^\/api\/tasks\/[^/]+\/messages$/.test(path)) &&
       c.req.header(MESSAGE_PROTOCOL_HEADER) === MESSAGE_PROTOCOL_VERSION;
+    const compatibleControl = c.req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:stop|answer)$/.test(path) &&
+      c.req.header(TURN_CONTROL_HEADER) === TURN_CONTROL_VERSION;
     if (build && version && version !== build.version && path.startsWith("/api/") &&
-        !compatibleMessage && !path.startsWith("/api/auth/") && !["GET", "HEAD"].includes(c.req.method)) {
+        !compatibleMessage && !compatibleControl && !path.startsWith("/api/auth/") && !["GET", "HEAD"].includes(c.req.method)) {
       return c.json({ error: "Palmagent was updated. Refresh the app before making changes.", code: "update-required" } satisfies ApiErrorResponse, 409);
     }
     await next();

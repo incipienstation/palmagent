@@ -4,12 +4,12 @@ import { cacheSession, invalidateClientReads, type ClientReadScope } from "./que
 import { hc } from "hono/client";
 import type { AppType } from "@palmagent/server/http-api";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
-import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION } from "@palmagent/shared/http";
+import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION, TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
 import { retryMessage } from "./message-retry";
 import type {
   AgentKind, AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
   CreateTaskRequest, FollowupRequest, InputAttachment, MessageAction, PushSubscribeRequest,
-  RenameTaskRequest, RepoSettingsChange, SteerRequest, SubmitMessage, TaskStatus,
+  RenameTaskRequest, RepoSettingsChange, SteerRequest, SubmitMessage, TaskStatus, TaskState, MessageQueue,
   UpdateAction, UpdateRepoRequest, UpdateRoutineRequest, UpdateSettingsChange,
 } from "@palmagent/shared";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
@@ -41,10 +41,11 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
 
   // Hono owns paths, query encoding, bodies, and response types. Keep the product's
   // auth/update lifecycle around the typed call, including response consumption.
+  type AdmissionReceipt = { state: "accepted"; requestId?: string };
   async function request<T>(send: (signal?: AbortSignal) => Promise<JsonResponse<T>>, opts?: {
     write?: boolean; authProbe?: boolean; sessionChange?: boolean; invalidates?: readonly ClientReadScope[];
-    messageScope?: string; images?: readonly InputAttachment[];
-  }): Promise<T> {
+    messageScope?: string; onAccepted?(): void; images?: readonly InputAttachment[];
+  }): Promise<Exclude<T, AdmissionReceipt>> {
     const finish = opts?.write ? beginBrowserWork() : undefined;
     // Invalidate on both sides: reads racing a write cannot refill the cache,
     // including when a failed response leaves the write outcome uncertain.
@@ -69,14 +70,21 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         const code = json && typeof json === "object" && "code" in json && typeof json.code === "string" ? json.code : undefined;
         throw new ApiError(res.status, message ?? res.statusText, code);
       }
+      if (opts?.messageScope && res.status === 202 && res.headers.get("preference-applied") === "respond-async") {
+        await res.json();
+        opts.onAccepted?.();
+        throw new ApiError(202, "Received. Waiting for the update to finish…", "admission_pending");
+      }
       const value = await res.json();
       if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
-      return value;
+      // Deferred receipts take the retry branch above.
+      return value as Exclude<T, AdmissionReceipt>;
     };
     try {
       if (opts?.write && !opts.sessionChange) await invalidateClientReads(false, opts.invalidates);
       const value = opts?.messageScope ? await retryMessage(opts.messageScope, load, error => {
         if (error instanceof ApiError) {
+          if (error.code === "admission_pending") return error.message;
           if (error.status === 503 && error.code === "update_in_progress") return "Waiting for update…";
           if (error.status === 502 || error.status === 504) return "Reconnecting to send…";
         }
@@ -131,10 +139,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     },
     submitMessage: (id: string, input: SubmitMessage) => {
       const json = snapshotRequest(input);
-      return request(signal => tasks.messages.$post({ param: idParam(id), json }, {
-        headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
+      let accepted = false;
+      return request<MessageQueue | AdmissionReceipt>(signal => accepted
+        ? tasks.messages[":messageId"].receipt.$get({ param: { ...idParam(id), messageId: json.clientMessageId } }, requestOptions(signal))
+        : tasks.messages.$post({ param: idParam(id), json }, {
+        headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION, prefer: "respond-async" }, init: { signal },
         ...attachmentOptions(json),
-      }), { write: true, messageScope: id, images: json.images });
+      }), { write: true, messageScope: id, images: json.images, onAccepted: () => { accepted = true; } });
     },
     messageAction: (id: string, messageId: string, json: MessageAction) => write(() => tasks.messages[":messageId"].$post({ param: { ...idParam(id), messageId: encodeURIComponent(messageId) }, json }, attachmentOptions(json))),
     resumeQueue: (id: string) => write(() => tasks.queue.resume.$post({ param: idParam(id), json: {} })),
@@ -185,8 +196,9 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     createTask: (input: CreateTaskRequest) => {
       const json = snapshotRequest(input);
       // Legacy callers without an idempotency key must never be replayed.
-      let attempted = false;
-      return (json.clientRequestId ? request(async signal => {
+      let attempted = false, accepted = false;
+      return (json.clientRequestId ? request<{ task: TaskState } | AdmissionReceipt>(async signal => {
+        if (accepted) return client.tasks["creation-receipts"][":id"].$get({ param: idParam(json.clientRequestId!) }, requestOptions(signal));
         if (attempted) {
           const found = await tasks.$get({ param: idParam(`t_${json.clientRequestId}`) }, requestOptions(signal));
           if (found.status !== 404) return found;
@@ -194,10 +206,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
         signal?.throwIfAborted();
         attempted = true;
         return client.tasks.$post({ json }, {
-          headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION }, init: { signal },
+          headers: { [MESSAGE_PROTOCOL_HEADER]: MESSAGE_PROTOCOL_VERSION, prefer: "respond-async" }, init: { signal },
           ...attachmentOptions(json),
         });
-      }, { write: true, messageScope: "dispatch", images: json.images }) : write(() => client.tasks.$post({ json }, attachmentOptions(json)))).then(r => r.task);
+      }, { write: true, messageScope: "dispatch", images: json.images, onAccepted: () => { accepted = true; } }) : write<{ task: TaskState } | AdmissionReceipt>(() => client.tasks.$post({ json }, attachmentOptions(json)))).then(r => r.task);
     },
     moveTaskPin: (id: string, targetId: string, placement: "before" | "after") => write(() => tasks["pin-position"].$patch({ param: idParam(id), json: { targetId, placement } })).then((r) => r.tasks),
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
@@ -209,9 +221,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json }, attachmentOptions(json))).then((r) => r.task),
     steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json }, attachmentOptions(json))),
     approve: (id: string, json: ApproveRequest) => write(() => tasks.approve.$post({ param: idParam(id), json })).then((r) => r.task),
-    answer: (id: string, json: AnswerRequest) => write(() => tasks.answer.$post({ param: idParam(id), json })).then((r) => r.task),
+    answer: (id: string, json: AnswerRequest) => write(() => tasks.answer.$post({ param: idParam(id), json }, { headers: { [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION } })).then((r) => r.task),
     handoff: (id: string) => write(() => tasks.handoff.$post({ param: idParam(id) })),
-    stop: (id: string) => write(() => tasks.stop.$post({ param: idParam(id), json: {} })).then((r) => r.task),
+    stop: (id: string, expectedRunId?: string | null) => write(() => tasks.stop.$post({ param: idParam(id), json: { expectedRunId } },
+      expectedRunId === undefined ? {} : { headers: { [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION } })).then((r) => r.task),
     cancel: (id: string) => write(() => tasks.cancel.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     archive: (id: string) => write(() => tasks.$delete({ param: idParam(id) })).then((r) => r.task),
     listRoutines: (signal?: AbortSignal) => request(() => client.routines.$get({}, requestOptions(signal))).then((r) => r.routines),

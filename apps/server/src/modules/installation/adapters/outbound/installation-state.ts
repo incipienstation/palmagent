@@ -9,7 +9,7 @@ import { userConfigPath } from "./user-config.js";
 
 export const installationState: Omit<InstallationState, "validRequest" | "clearRequest"> = {
   lock: () => acquireUpdateLock(dirname(userConfigPath())),
-  beginMaintenance: config => beginUpdateMaintenance(config.dbPath),
+  beginMaintenance: (config, handoff) => beginUpdateMaintenance(config.dbPath, handoff),
   parentOwnsMaintenance: config => updateMaintenanceOwnedBy(config.dbPath, process.ppid),
   readUpdate: readUpdateReceipt, writeUpdate: writeUpdateReceipt,
   clearDiscovery: dataDir => writeUpdateAccess(dataDir, { ...readUpdateAccess(dataDir), discovery: null }),
@@ -19,5 +19,9 @@ export const installationState: Omit<InstallationState, "validRequest" | "clearR
   },
   writeMigration: (config, receipt) => writePrivateFileAtomic(join(config.dataDir, "daemon-migration.json"), JSON.stringify(receipt) + "\n"),
   clearMigration: config => rmSync(join(config.dataDir, "daemon-migration.json"), { force: true }),
+  readActivation(config) {
+    try { return JSON.parse(readFileSync(join(config.dataDir, "application-activation.json"), "utf8")); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+  },
   writeActivation: (config, receipt) => writePrivateFileAtomic(join(config.dataDir, "application-activation.json"), JSON.stringify(receipt) + "\n"),
 };

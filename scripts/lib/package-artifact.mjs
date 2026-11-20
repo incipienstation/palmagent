@@ -39,6 +39,7 @@ export function inspectPackage(path, { version, commit, publishable = false, all
   }
   if (unique.has('package/runtime-contract.json')) {
     const contract = JSON.parse(read('runtime-contract.json'));
+    if (contract.updateAdmission !== undefined && (contract.updateAdmission !== 1 || !Number.isSafeInteger(contract.taskStorage) || contract.taskStorage < 1 || !files['update-gateway.js'])) throw new Error('Package update gateway is incompatible or incomplete');
     if (contract.viewControl !== undefined && (contract.viewControl !== 1 || !files['view.js'])) throw new Error('Package view runtime is incompatible or incomplete');
   }
   if (unique.has('package/daemon/manifest.json')) {

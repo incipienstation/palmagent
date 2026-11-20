@@ -665,3 +665,50 @@ test("retained API owns queues, auth and SSE through a stalled view and its rest
     try { if (processIdentity(initial.pid)) process.kill(initial.pid, "SIGCONT"); } catch {}
   }
 });
+
+test("durable admission survives the Task owner and gateway exiting during a retained execution", { ...options, skip: process.platform !== "linux", timeout: 60000 }, async t => {
+  const c = await harness(t, "independent", true);
+  const task = await c.create("codex", "handoff-active");
+  const endWindow = beginUpdateMaintenance(c.env.DISPATCHER_DB, true);
+  t.after(() => { if (existsSync(c.env.DISPATCHER_DB)) { try { endWindow(); } catch {} } });
+  const gateway = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e",
+    'import {startUpdateGateway} from "./src/composition/update-gateway.ts"; await startUpdateGateway({version:"fixture",sourceCommit:"fixture",dirty:true}); process.send("ready")'], {
+    cwd: serverDir, env: c.env, detached: true, stdio: ["ignore", "ignore", "pipe", "ipc"],
+  });
+  t.after(() => kill(gateway));
+  await new Promise((resolve, reject) => {
+    gateway.once("message", resolve);
+    gateway.once("exit", code => reject(new Error("Gateway startup exited " + code)));
+  });
+  const route = c.base + "/api/tasks/" + task.taskId + "/messages";
+  const headers = { ...c.headers, "content-type": "application/json", prefer: "respond-async" };
+  const post = (input, override = {}) => fetch(route, { method: "POST", headers: { ...headers, ...override }, body: JSON.stringify(input) });
+  const queued = key => ({ clientMessageId: crypto.randomUUID(), mode: "queue", expectedRunId: null, text: JSON.stringify({ key, mode: "auto" }) });
+  const a = queued("handoff-first"), b = queued("handoff-second");
+  assert.equal((await post(a)).headers.get("preference-applied"), "respond-async");
+  await kill(c.web);
+  assert.equal((await post(b, { origin: "https://other.example" })).status, 403);
+  assert.equal((await post(b, { cookie: "" })).status, 401);
+  const response = await post(b);
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { state: "accepted", requestId: b.clientMessageId });
+  assert.equal((await post({ ...b, text: "different" })).status, 409);
+  assert.equal((await post(b)).status, 202);
+  await kill(gateway);
+  await c.webStart();
+  assert.equal((await c.task(task.taskId)).sessionId, task.sessionId);
+  endWindow();
+  const waiting = await c.waitTask(task.taskId, task => task.messageQueue?.messages.length === 2);
+  assert.deepEqual(waiting.messageQueue.messages.map(m => m.id), [a.clientMessageId, b.clientMessageId]);
+  const staleStop = await fetch(c.base + "/api/tasks/" + task.taskId + "/stop", {
+    method: "POST", headers, body: JSON.stringify({ expectedRunId: crypto.randomUUID() }),
+  });
+  assert.equal(staleStop.status, 409);
+  c.mark("handoff-active", ".release");
+  await c.ready("handoff-second");
+  await c.waitTask(task.taskId, task => task.status === "idle" && !task.messageQueue.messages.length);
+  assert.equal((await post(b)).headers.get("preference-applied"), null);
+  const starts = c.rows(task.taskId).filter(row => row.kind === "assistant_text")
+    .map(row => JSON.parse(row.payload_json).text).filter(text => /handoff-(first|second):before/.test(text));
+  assert.deepEqual(starts, ["handoff-first:before", "handoff-second:before"]);
+});

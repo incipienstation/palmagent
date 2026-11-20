@@ -139,7 +139,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     const generation = cacheSession();
     let created: TaskState | undefined;
     const finish = beginTaskAction("dispatch", "dispatch", undefined, async () => {
-      if (created) await stopTaskTurn(created.taskId);
+      if (created) await stopTaskTurn(created.taskId, created.messageQueue?.runId);
       else setSubmission(current => current ? { ...current, stop: true } : current);
     }, "");
     if (!finish) return;
@@ -161,7 +161,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
       if (generation !== cacheSession()) return;
       created ??= await operations.createTask(next.request);
       if (generation !== cacheSession()) return;
-      if (next.stop) await stopTaskTurn(created.taskId);
+      if (next.stop) await stopTaskTurn(created.taskId, created.messageQueue?.runId);
       gameDelivery({ id: next.request.clientRequestId, taskId: created.taskId, state: "sent" });
       setPrompt(current => current === next.draft ? "" : current);
       att.setImages(current => sameAttachments(current, next.request.images) ? [] : current);
