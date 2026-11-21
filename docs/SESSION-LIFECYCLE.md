@@ -141,7 +141,9 @@ retain their original release and gain these changes only in a new invocation.
    runtime files, and the execution, storage, and application API contracts.
 3. Enter the existing short admission barrier and require the live web server to
    acknowledge both maintenance and independent execution support. Existing runs
-   and provider input channels remain active.
+   and provider input channels remain active. For compatible Linux daemon release pairs, the
+   [update gateway](TASK_RUNTIME.md#full-application-updates) can persist new Task and message
+   submissions for processing after maintenance.
 4. Record previous and target configuration atomically. For daemon installations,
    replace the control daemon and web process through private IPC; legacy installs
    update application units. Native daemon routine hosts retain their processes;
@@ -162,8 +164,8 @@ API version 1. Future releases must maintain these compatibility contracts or ad
 an explicit migration path before advancing them. An incompatible candidate is
 rejected before activation. The execution database is not migrated by web startup.
 
-On activation failure, the updater attempts to restore the previous application
-units/configuration and checks their health. The activation receipt distinguishes
+After a failed switch, the updater attempts to restore the previous application units and configuration
+and check their health only when the Task storage generations match. The activation receipt distinguishes
 `restored` from `recovery-required`; the failed update pauses unattended retries.
 Both releases remain available. This is application restoration, not a database
 rollback. A killed updater may require receipt-guided manual recovery; it must not

@@ -136,8 +136,9 @@ required, say so rather than claiming its loaded skills changed already.
 An installation or activation failure records the previous/target versions and
 pauses automatic retries. Inspect `auto-update status` and use `doctor` for
 runtime/package identity and logs. Do not erase the failure record to resume automatic
-attempts. Independent activation attempts to restore the previous application release;
-verify the activation receipt and live health before claiming recovery. Legacy
+attempts. After a failed switch, independent activation can restore the previous application release
+when the Task storage generations match. A mismatch requires explicit recovery. Verify the
+activation receipt and live health before claiming recovery. Legacy
 package replacement has no automatic rollback. No database rollback occurs.
 Restore a prior plugin only after verifying which package is actually installed
 and running; a partial package failure is not evidence that the old pair remains

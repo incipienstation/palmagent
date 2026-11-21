@@ -40,9 +40,11 @@ replacement until it settles. If the wait expires, the input remains available f
 closing the browser is not a background delivery mechanism.
 
 Task creation and message submission carry a separate compatibility version defined in
-`packages/shared/src/http.ts`. Matching message contracts can cross application build versions;
-other writes still require the current screen. Incompatible changes to either submission's
-request, response or delivery semantics must advance that contract. Authentication, maintenance
+`packages/shared/src/http.ts`. Matching message contracts can cross application build versions.
+Stop and answer use their own turn-control version with the expected run ID and question
+request ID respectively. Other versioned non-authentication writes require the current screen.
+Incompatible changes to the request, response or delivery semantics of Task creation or message
+submission must advance the message contract. Authentication, maintenance
 admission and the original target run remain enforced. Retrying an accepted request only reads
 its stored result and never retries an uncertain provider delivery.
 

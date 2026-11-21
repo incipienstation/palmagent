@@ -6,7 +6,9 @@ The contract is defined in `packages/shared/src/messages.ts`.
 
 ## Ownership
 
-`MessageController` owns the persisted queue, message IDs, settings snapshots,
+On daemon installations the [Rust Tasks worker](RUST-MIGRATION.md#tasks-ownership) commits
+queue transitions and Task lifecycle changes under the API coordinator's lease. In the local
+TypeScript implementation, `MessageController` owns the persisted queue, message IDs, settings snapshots,
 edit holds and logical run IDs. `TaskService` owns admission, native-session
 ownership, execution slots and task lifecycle. The adapters own CLI protocols.
 `RunnerBackend` abstracts execution: package installations use independent execution
@@ -68,7 +70,9 @@ the original prompt. When a disconnected editor's lease expires, the original
 saved entry becomes eligible again. A late save fails instead of overwriting a
 prompt that has already started; the browser keeps the edit draft visible.
 
-A local CLI's ownership remains read-only. Queue dispatch checks ownership and
+A standalone local CLI session has a read-only preview until handoff. A connected
+[shared Codex session](SESSION-LIFECYCLE.md#shared-native-sessions) accepts input from
+both clients. Queue dispatch checks ownership and
 maintenance state again before starting. Ordinary chat input does not answer a
 pending question or approval; those retain their separate controls.
 

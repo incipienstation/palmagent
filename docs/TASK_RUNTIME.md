@@ -1,7 +1,9 @@
 # Task owner and web view
 
-The TypeScript API process owns Task state, message receipts, queue advancement and execution
-recovery. It keeps the existing SQLite connection, service caches, authentication and endpoints.
+The TypeScript API process holds the coordinator lock and keeps its SQLite connection, service
+caches, authentication and public endpoints. On daemon installations, the [Rust Tasks worker](RUST-MIGRATION.md#tasks-ownership)
+shares that lock and owns durable Task state, message receipts, queue advancement and recovery.
+Source and legacy configurations use the local TypeScript implementation.
 A separate child process serves PWA files. Restarting or losing that child leaves accepted
 messages advancing and new authenticated messages admissible through the same stable API route.
 
@@ -9,7 +11,7 @@ messages advancing and new authenticated messages admissible through the same st
 
 - The native daemon continues supervising `server.js` under its historical `web` host identity.
   Its guardian, readiness deadline, crash backoff, retained release and process-group/cgroup
-  ownership are unchanged. No second native service or database writer is introduced.
+  ownership continue to apply to that host.
 - Before database construction or recovery, the API acquires `runtime.lock` beside the database.
   The Linux `flock` lease lasts until resources close, or is released by process exit. It is
   separate from the installation's update lock. A duplicate owner cannot reset running Tasks.

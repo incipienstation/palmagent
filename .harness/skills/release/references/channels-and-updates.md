@@ -65,9 +65,9 @@ repeated argument for readability.
   a release catalog. A real pull resolves and validates one exact version before installing it.
 
 Catalog errors and missing releases fail without switching channels. An update's explicit
-channel override is saved only after health succeeds. Independent application
-activation attempts to restore its previous retained release after failure; legacy
-package replacement has no automatic rollback. No database rollback occurs.
+channel override is saved only after health succeeds. See
+[activation recovery](../../../../docs/SESSION-LIFECYCLE.md#update-activation) for
+independent installations. Legacy package replacement has no automatic rollback.
 
 ### CLI and operator plugin compatibility
 
@@ -165,8 +165,8 @@ package activation and update-setting changes.
 **Update** pins the displayed version in `update-access.json`. Automatic access
 checks can request eligible updates when enabled; changing channel only checks
 availability and cancels a request in the former channel. Active-task completion
-resumes a pending request. The one-shot systemd executor reads that durable request
-and rechecks authorization, channel, compatibility, and execution isolation under
+resumes a pending request. The daemon starts an update host. Older installations use a
+one-shot systemd service. The executor reads that durable request and rechecks authorization, channel, compatibility, and execution isolation under
 the host lock (legacy installations also require idle). It survives a web-server restart and never chooses a different release
 because the channel pointer moved. Native file events notify connected Settings screens
 of request/result changes without status polling.
@@ -188,10 +188,11 @@ install command enables them. Failed native updates pause automatic retries and
 retain `<data-dir>/plugin-update.json`; catalog restoration is not plugin rollback.
 They defer a new compatibility line, including any new Stable patch release, to
 the update skill. Unattended advancement therefore applies to prereleases within
-one version line under the current compatibility promise. Before package mutation,
-the updater opens a maintenance window that temporarily rejects new task starts
-and follow-ups and defers routine dispatch. The server acknowledges the window;
-independent installations then verify the execution protocol and retained release
+one version line under the current compatibility promise. Activation opens a maintenance
+window and defers routine dispatch. On compatible Linux daemon releases, clients can negotiate
+[durable Task and message admission](../../../../docs/TASK_RUNTIME.md#full-application-updates)
+for processing after maintenance. Without that handoff, maintenance rejects new submissions.
+After the server acknowledges the window, independent installations verify the execution protocol and retained release
 contracts, including application API and product storage compatibility. Each
 invocation retains its package tree, pinned Node runtime, provider adapter, and
 service cgroup. Native activation replaces the control daemon and web host while retained
@@ -213,9 +214,9 @@ installation data directory records the previous/target versions and result. An
 installation/activation failure or interrupted attempt pauses automatic retries;
 `doctor` and `auto-update status` expose the hold. A successful manual update or
 repair clears it. An exact same-version retry can repair a recorded failed attempt.
-Independent activation records its previous and target configuration and attempts
-to restore the previous application on failure. The activation receipt records
-whether health was restored or operator recovery is required. Execution hosts
+Independent activation records its previous and target configuration. After a failed
+switch, matching Task storage generations permit restoration of the previous application.
+The activation receipt records whether health was restored or operator recovery is required. Execution hosts
 are never restarted as rollback. Retain all artifacts and inspect live identity;
 legacy package replacement and databases are not automatically restored.
 

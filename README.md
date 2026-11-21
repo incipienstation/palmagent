@@ -101,6 +101,7 @@ desktop to register access, then choose a Space and start a task.
 | [Persistent shells](docs/terminals.md) | Task and Space shell access |
 | [Skills](docs/SKILLS.md) | Selecting skills for messages |
 | [Host ingress](docs/HOST-INGRESS.md) | HTTPS access, setup, and migration |
+| [Performance measurements](docs/TELEMETRY.md) | Performance sharing and Rust migration comparisons |
 | [Web app development](apps/web/README.md) | Frontend development and UI checks |
 
 ## Development
@@ -126,22 +127,18 @@ state, installed dependency contents, and environment variables still match. Bui
 Use a fresh run after external toolchain or service changes; resume does not replace current PR CI or release
 candidate acceptance.
 
-## License
-
-[MIT](LICENSE)
-
-Performance sharing and Rust migration comparisons are described in [Performance measurements](docs/TELEMETRY.md).
-
 ## Standalone distribution
 
-New installations use a Linux x64 or arm64 bundle containing Node and native dependencies.
-Preview releases are standalone-only; Stable releases also provide the npm package.
-The operator plugin handles bootstrap, service setup, and updates. Installation needs no
-system Node, npm, or native compiler. Runtime services still require systemd 254+, a user
-manager, lingering, and delegated cgroup v2.
+Preview releases use the standalone bundle. Stable releases also provide the npm package.
+The operator plugin handles bootstrap, service setup, and updates. The bundle includes Node
+and native dependencies, so installation needs no system Node, npm, or native compiler.
 
 The official bootstrap entry point is `https://releases.palmagent.dev/install.sh`. See
 [standalone installation and migration](docs/STANDALONE.md) for platform prerequisites,
 verification, and the 0.1.x to 0.2.x compatibility transition. See
 [release hosting setup](docs/RELEASE-HOSTING.md) for deployment prerequisites; source support
 does not mean the public channel has been configured or published.
+
+## License
+
+[MIT](LICENSE)
