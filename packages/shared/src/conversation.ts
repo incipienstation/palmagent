@@ -31,7 +31,7 @@ export function appendHistoryEvent(items: LogItem[], event: AgentEvent, seq: num
 }
 
 // Durable display projection version; native readers reject incompatible stored projections.
-export const CONVERSATION_PROJECTION_VERSION = 6;
+export const CONVERSATION_PROJECTION_VERSION = 7;
 export const CONVERSATION_PAGE_ITEMS = 30;
 export const CONVERSATION_PAGE_BYTES = 256 * 1024;
 export const CONVERSATION_ITEM_BYTES = 48 * 1024;
@@ -80,8 +80,8 @@ export function runInterrupted(failure: RunFailure): boolean {
 
 // This is a view over the retained stream, never a destructive filter. Explicit
 // provider phase markers can arrive after text deltas. Placement follows the
-// first classification available before text, so late metadata cannot hide prose
-// that the reader has already seen. The original markers remain in raw history.
+// first explicit classification, including metadata arriving after text. Until
+// a phase is known, retain the prose in the conversation rather than guessing.
 export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolean): TranscriptRow[] {
   if (mode === "verbose") return log.filter((item) => item.kind !== "status" || payload(item).subtype !== "context_compacted")
     .map((item) => ({ type: "message", key: item.key, item }));
@@ -96,7 +96,7 @@ export function presentTranscript(log: LogItem[], mode: OutputMode, live: boolea
     for (const item of turn) {
       if (item.kind === "assistant_text" && item.messageId && !phases.has(item.messageId)) phases.set(item.messageId, item.phase);
       const p = payload(item);
-      if (p.subtype === "assistant_message" && typeof p.messageId === "string" && !phases.has(p.messageId) && (p.phase === "progress" || p.phase === "partial" || p.phase === "final")) {
+      if (p.subtype === "assistant_message" && typeof p.messageId === "string" && phases.get(p.messageId) === undefined && (p.phase === "progress" || p.phase === "partial" || p.phase === "final")) {
         phases.set(p.messageId, p.phase);
       }
     }

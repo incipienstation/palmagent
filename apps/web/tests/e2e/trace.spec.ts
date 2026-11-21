@@ -97,7 +97,7 @@ test("individual Trace rows load only selected output across step pages", async 
 });
 
 test("late completion updates an open operation without changing its disclosure or draft", async ({ page, history }) => {
-  const progress = "Checking the current implementation and comparing its behavior with the reference. ".repeat(4) + "The final preview sentence stays readable.";
+  const progress = "Checking the current implementation and comparing its behavior with the reference. ".repeat(4) + "The full progress message stays available in the trace.";
   history.add([event("assistant_text", { text: progress, phase: "progress", messageId: "live-progress" }),
     event("tool_call", { id: "live", name: "bash", command: "check-live", status: "in_progress" })]);
   await routes(page, history);
@@ -105,14 +105,24 @@ test("late completion updates an open operation without changing its disclosure 
   await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
   await send(page, taskId, { type: "tasks", tasks: [{ ...history.task, status: "running", updatedAt: Date.now(), lastActivityAt: Date.now() }], historyThrough: history.tasks.eventCursor(taskId) });
   const activity = page.locator("[data-activity]").getByRole("button").first();
-  const preview = page.locator("[data-progress-preview]");
-  await expect(preview).toBeVisible();
   await expect(activity).toBeVisible();
-  await expect(preview).toContainText(progress);
-  expect((await preview.boundingBox())!.height).toBeGreaterThan(24);
+  await expect(page.getByText(progress, { exact: true })).toHaveCount(0);
   await expect(page.getByText("Working…", { exact: true })).toHaveCount(0);
   await captureForReview(page, "trace-live-progress.png");
+  await activity.focus(); await page.keyboard.press("Enter");
+  const progressStep = page.locator("[data-trace-step]").filter({ hasText: "Checking the current implementation" });
+  await expect(progressStep).toBeVisible();
+  await progressStep.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByText(progress, { exact: true })).toBeVisible();
+  await captureForReview(page, "trace-progress-expanded.png");
   await activity.click();
+  await expect(page.getByText(progress, { exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await assertViewportLocked(page);
+  await captureForReview(page, "trace-progress-collapsed-desktop.png");
+  await activity.click();
+  await expect(progressStep).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText(progress, { exact: true })).toBeVisible();
   const step = page.locator("[data-trace-step]").filter({ hasText: "check-live" });
   await expect(step).toHaveAccessibleName("Running: check-live");
   await step.click();
@@ -120,7 +130,6 @@ test("late completion updates an open operation without changing its disclosure 
   history.add([event("tool_result", { tool_use_id: "live", output: "Live operation completed", exit_code: 0 }), event("result", {})]);
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
   await expect(step).toHaveAccessibleName("Completed: check-live");
-  await expect(preview).toHaveCount(0);
   await expect(step).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Live operation completed", { exact: false })).toBeVisible();
   await expect(composer).toHaveValue("Keep this draft");
@@ -157,7 +166,7 @@ test("execution records preserve lifecycle events without replacing the chat or 
 });
 
 
-test("late classification preserves prose beside the open activity and operation", async ({ page, history }) => {
+test("late commentary joins the open activity without closing its operation", async ({ page, history }) => {
   history.add([event("assistant_text", { text: "Inspecting project", messageId: "progress" }), ...pair(0)]);
   await routes(page, history); await page.goto(`/#/task/${taskId}`);
   await page.getByRole("button", { name: "Activity · 1 tool", exact: true }).click();
@@ -165,12 +174,12 @@ test("late classification preserves prose beside the open activity and operation
   await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
   history.add([event("status", { subtype: "assistant_message", messageId: "progress", phase: "progress" })]);
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
-  await expect(page.getByText("Inspecting project", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Inspecting project", exact: true })).toBeVisible();
   await expect(step).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Output for step 0", { exact: false })).toBeVisible();
 });
 
-for (const phase of [undefined] as const) test(`streaming placement stays stable with initial phase ${phase ?? "unknown"}`, async ({ page, history }) => {
+test("unclassified streaming text moves into the trace when Codex identifies commentary", async ({ page, history }) => {
   history.add([event("status", { subtype: "turn_started" }), event("tool_call", { id: "stream-tool", name: "bash", command: "stream-check", status: "in_progress" })]);
   await routes(page, history);
   await page.goto(`/#/task/${taskId}`);
@@ -180,23 +189,26 @@ for (const phase of [undefined] as const) test(`streaming placement stays stable
   let text = "";
   for (const chunk of ["First streamed sentence. ", "Second streamed sentence."]) {
     text += chunk;
-    history.add([event("assistant_text", { text: chunk, messageId: "stream-message", ...(phase ? { phase } : {}) })]);
+    history.add([event("assistant_text", { text: chunk, messageId: "stream-message" })]);
     await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
     await expect(page.getByText(text.trim(), { exact: true })).toBeVisible();
-    await expect(page.locator("[data-progress-preview]")).toHaveCount(phase === "progress" ? 1 : 0);
     await expect(composer).toHaveValue("Keep the streaming draft");
   }
-  await captureForReview(page, `trace-phase-${phase ?? "unknown"}-streaming.png`);
-  history.add([event("status", { subtype: "assistant_message", messageId: "stream-message", phase: phase ?? "progress" }),
-    event("tool_result", { tool_use_id: "stream-tool", output: "Done", exit_code: 0 }), event("result", {})]);
+  await captureForReview(page, "trace-phase-unknown-streaming.png");
+  history.add([event("status", { subtype: "assistant_message", messageId: "stream-message", phase: "progress" }),
+    event("tool_result", { tool_use_id: "stream-tool", output: "Done", exit_code: 0 }),
+    event("assistant_text", { text: "Findings ready.", messageId: "answer", phase: "final" }), event("result", {})]);
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
-  await expect(page.locator("[data-progress-preview]")).toHaveCount(0);
-  if (phase !== "progress") await expect(page.getByText(text.trim(), { exact: true })).toBeVisible();
+  await expect(page.getByText(text.trim(), { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Findings ready.", { exact: true })).toBeVisible();
   await expect(composer).toHaveValue("Keep the streaming draft");
-  await captureForReview(page, `trace-phase-${phase ?? "unknown"}-completed.png`);
+  await expect(composer).toBeFocused();
+  await captureForReview(page, "trace-phase-commentary-completed.png");
   await page.reload();
-  if (phase !== "progress") await expect(page.getByText(text.trim(), { exact: true })).toBeVisible();
-  else await expect(page.getByText(text.trim(), { exact: true })).toHaveCount(0);
+  await expect(page.getByText(text.trim(), { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Findings ready.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Activity · 1 tool", exact: true }).click();
+  await expect(page.getByRole("button", { name: text.trim(), exact: true })).toBeVisible();
 });
 
 

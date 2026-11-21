@@ -6,6 +6,9 @@ import type { RunHandle } from "../../domain/run-handle.js";
 import type { ProcessBackend } from "../../application/ports/outbound/provider-process.js";
 import { codexHookStop } from "./codex-hooks.js";
 
+const messagePhase = (phase: unknown) => phase === "commentary" ? "progress"
+  : phase === "partial_answer" ? "partial" : phase === "final_answer" ? "final" : undefined;
+
 export const codexInput = (text: string, images?: InputAttachment[], skills?: StartArgs["skills"]) => {
   const input = sampledAgentInput(text, images);
   return [
@@ -105,13 +108,16 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
       case "item/started":
         if (p.item?.type === "contextCompaction") event("status", { subtype: "context_compaction_started" }, seq);
         if (p.item?.type === "commandExecution") event("tool_call", { id: p.item.id, name: "bash", command: p.item.command }, seq);
+        if (p.item?.type === "agentMessage" && messagePhase(p.item.phase)) event("status", {
+          subtype: "assistant_message", messageId: p.item.id, phase: messagePhase(p.item.phase),
+        }, seq);
         break;
       case "item/completed": {
         const item = p.item;
         if (item?.type === "contextCompaction") compactionCompleted = true;
         if (item?.type === "userMessage" && item.clientId) delivery(item.clientId, seq);
         else if (item?.type === "agentMessage") event("status", { subtype: "assistant_message", messageId: item.id,
-          phase: item.phase === "commentary" ? "progress" : item.phase === "partial_answer" ? "partial" : item.phase === "final_answer" ? "final" : undefined }, seq);
+          phase: messagePhase(item.phase) }, seq);
         else if (item?.type === "commandExecution") event("tool_result", { tool_use_id: item.id, output: item.aggregatedOutput, exit_code: item.exitCode }, seq);
         else if (item?.type === "fileChange") event("tool_call", { id: item.id, name: "file_change", changes: item.changes }, seq);
         else if (item?.type === "mcpToolCall" || item?.type === "webSearch") event("tool_result", { tool_use_id: item.id, content: item.result ?? item.action, name: item.tool ?? item.type }, seq);

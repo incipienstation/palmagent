@@ -12,19 +12,23 @@ test("growing work stays folded, preserves reading state and summarizes tool fai
   const emit = async (kind: string, payload: unknown) => send(page, "t-run", { type: "event", event: {
     taskId: "t-run", agent: "codex", ts: seq, kind, payload,
   } }, ++seq);
-  await emit("assistant_text", { text: "Checking project files. ".repeat(12), phase: "progress", messageId: "progress-1" });
+  const progress = "Checking project files. ".repeat(12).trim();
+  await emit("assistant_text", { text: progress, phase: "progress", messageId: "progress-1" });
   for (let i = 0; i < 20; i++) {
     await emit("tool_call", { id: `tool-${i}`, name: "bash", command: "echo checked" });
     await emit("tool_result", { tool_use_id: `tool-${i}`, output: `Full tool output ${i}`, exit_code: 0 });
   }
   await expect(page.locator("[data-activity]")).toHaveCount(1);
   await expect(page.getByText("Full tool output 0", { exact: false })).toHaveCount(0);
-  const preview = page.locator("[data-progress-preview]");
-  expect(await preview.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(24);
+  await expect(page.getByText(progress, { exact: true })).toHaveCount(0);
   const group = page.locator("[data-activity]").getByRole("button").first();
   await group.focus();
   await page.keyboard.press("Enter");
   await expect(group).toHaveAttribute("aria-expanded", "true");
+  const progressStep = page.locator("[data-trace-step]").filter({ hasText: "Checking project files." });
+  await progressStep.click();
+  await expect(page.getByText(progress, { exact: true })).toBeVisible();
+  await progressStep.click();
   await page.getByRole("button", { name: "Completed: echo checked", exact: true }).first().click();
   await expect(page.getByText("Full tool output 0", { exact: false })).toBeVisible();
   // The reader scrolls after expansion has finished changing row heights.
@@ -64,10 +68,12 @@ test("growing work stays folded, preserves reading state and summarizes tool fai
   await emit("question", { questions: [{ question: "Which target?", options: [{ label: "Preview" }] }] });
   await expect(page.getByText("Which target?", { exact: true })).toBeVisible();
   await emit("status", { subtype: "answer", answers: [{ selected: ["Preview"] }] });
+  await emit("assistant_text", { text: "The first check passed.", phase: "partial", messageId: "partial-1" });
+  await expect(page.getByText("The first check passed.", { exact: true })).toBeVisible();
   await emit("assistant_text", { text: "Finished checking.", phase: "final", messageId: "final-1" });
   await emit("result", { result: "Finished checking." });
   await expect(page.getByText("Finished checking.", { exact: true })).toHaveCount(1);
-  await expect(page.locator("[data-progress-preview]")).toHaveCount(0);
+  await expect(page.getByText(progress, { exact: true })).toHaveCount(0);
   await assertViewportLocked(page);
 });
 

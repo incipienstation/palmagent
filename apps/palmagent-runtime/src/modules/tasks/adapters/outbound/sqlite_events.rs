@@ -20,7 +20,7 @@ impl EventRepository for SqliteEvents<'_> {
             [],
             |r| r.get(0),
         )?;
-        ensure!(version == 6, "Incompatible conversation projection");
+        ensure!(version == 7, "Incompatible conversation projection");
         let previous = db.query_row("SELECT last_raw_seq FROM tasks WHERE id=?", [id], |r| {
             r.get::<_, i64>(0)
         })?;

@@ -271,13 +271,13 @@ Settings groups device preferences separately from installation settings. Appear
 output detail change directly in the overview; Spaces and Updates open their own screens.
 Back returns to the overview without losing a folder draft.
 
-Settings → Output detail controls the session transcript:
+The session transcript collects background work and progress commentary inside Activity.
+Expand Activity to inspect the steps and open a progress message to read it in full;
+collapsed Activity shows only the work summary, without a progress text preview.
+Commentary identified after streaming moves into Activity once its phase arrives.
+Partial and final answers stay in the conversation. Execution records exposes the original events.
 
-- **Compact** is the default. It collects background work per turn and previews the latest
-  progress while running.
-- **Verbose** shows all recorded events.
-
-Account allowance and reset countdowns stay visible in every mode. Usage details shows
+Account allowance and reset countdowns stay visible. Usage details shows
 the additional provider-specific quota windows.
 
 Compact Activity summaries load tool inputs and outputs from REST only when expanded. Live

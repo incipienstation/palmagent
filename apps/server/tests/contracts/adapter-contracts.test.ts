@@ -943,17 +943,21 @@ test("Codex forwards context capacity and invalidates the last reading when comp
   backend.proc.exit(0); await handle.done;
 });
 
-for (const reattach of [false, true]) test(`Codex partial answer metadata preserves an active turn (reattach=${reattach})`, async () => {
+for (const reattach of [false, true]) test(`Codex emits known phases before text and preserves an active turn (reattach=${reattach})`, async () => {
   const backend = new FakeBackend(), events: RawEvent[] = [];
   const handle = new CodexRunner().start(startArgs({ interactive: true, reattach }), e => events.push(e), backend);
   backend.proc.emit({ id: "initialize", result: {} });
   backend.proc.emit({ id: "session", result: { thread: { id: "thread-1" } } });
   backend.proc.emit({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1" } } });
-  for (const [id, phase] of [["partial", "partial_answer"], ["unknown", "future_phase"]]) {
+  for (const [id, phase] of [["progress", "commentary"], ["partial", "partial_answer"], ["unknown", "future_phase"]]) {
+    const start = events.length;
+    backend.proc.emit({ method: "item/started", params: { threadId: "thread-1", item: { type: "agentMessage", id, phase } } });
     backend.proc.emit({ method: "item/agentMessage/delta", params: { threadId: "thread-1", itemId: id, delta: "Readable answer" } });
+    if (id === "unknown") assert.equal(events[start].kind, "assistant_text");
+    else assert.deepEqual(events[start].payload, { subtype: "assistant_message", messageId: id, phase: id });
     backend.proc.emit({ method: "item/completed", params: { threadId: "thread-1", item: { type: "agentMessage", id, phase } } });
   }
-  assert.equal(events.filter(e => e.kind === "assistant_text").length, 2);
+  assert.equal(events.filter(e => e.kind === "assistant_text").length, 3);
   assert.ok(events.some(e => e.kind === "status" && (e.payload as any).phase === "partial"));
   assert.equal(events.filter(e => e.kind === "result").length, 0);
   assert.equal(handle.interrupt(), true, "a partial answer must leave the turn active and stoppable");
