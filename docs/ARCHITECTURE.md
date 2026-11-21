@@ -110,6 +110,8 @@ evidence that a boundary is respected.
 
 ## Task execution and recovery
 
+On daemon installations the API delegates durable transitions and recovery to the
+[Rust Tasks worker](RUST-MIGRATION.md#tasks-ownership). In the local TypeScript path,
 `MessagePolicy` owns queue and delivery decisions. `TaskExecution` owns execution admission,
 reserved capacity, active handles, replay baselines, and terminal evidence. `TaskService` applies
 persisted task effects and coordinates queue advancement after execution ownership is released.
@@ -195,8 +197,7 @@ SQLite adapter decodes provider payloads and streams a single committed snapshot
 read-only connection. The inbound adapter bounds admitted work before dispatching it to
 blocking workers. Authentication and the public `/api/usage` route remain in TypeScript,
 which selects the native reader during composition and awaits it through an outbound port.
-Source and legacy configurations retain their local reader. No native Task writer or second
-queue owner is introduced.
+Source and legacy configurations retain their local reader. These read adapters have no write authority.
 
 Historical activity expansion follows the same composition-selected read boundary. Its application
 contract describes an ordered tool-event snapshot and inclusive range; the SQLite adapter reads
@@ -210,15 +211,14 @@ Transcript page and incremental-change reads use a separate application port. Th
 refreshes the durable display projection through its existing persistence port, then invokes the
 composition-selected native reader. The Rust domain applies page/byte limits and continuation policy;
 its repository supplies one committed head-and-row snapshot, while adapters own SQL, canonical wire
-byte accounting, and serialization. Projection schema upgrades, dirty-event repair and all writes
-remain in TypeScript. Incompatible stored projection versions fail closed. Operation details, content reads
-and execution recovery keep their current ownership.
+byte accounting, and serialization. TypeScript handles projection schema upgrades and dirty-event repair.
+Incompatible stored projection versions fail closed.
 
 The same native transcript port serves operation-list reads. Its SQLite adapter decodes only
 operation summaries from the versioned parent projection and removes internal member references;
 the domain orders and pages those summaries. The application distinguishes a missing parent from
-an unavailable read, and HTTP adapters preserve the public 404/503 mapping. TypeScript still commits
-projection refresh before invoking the reader and owns operation details, content and execution.
+an unavailable read, and HTTP adapters preserve the public 404/503 mapping. The API refreshes dirty
+projections before invoking the reader. For expanded details and content, it uses the Task record reader and shared display serializer.
 
 The opt-in direct-read experiment adds a Rust auth read use case with a read-only session adapter.
 Its public HTTP middleware checks the same expiry and revocation state as the Node login owner.
@@ -226,6 +226,6 @@ The Tasks public adapter validates existing request contracts, checks task exist
 read port, and uses the existing native readers without a Node callback. Composition owns the
 separate loopback listener and its private configuration endpoint. The public listener never
 mounts private application control routes. A strict projection repository rejects dirty snapshots;
-Node repairs retained dirtiness before enabling it and continues publishing event batches and
-projections in one transaction. The ingress sends all unselected routes directly to Node, preserving
-the comparison boundary. See [direct-read experiment](performance/direct-task-reads/README.md).
+Node repairs retained dirtiness before enabling it. The Tasks worker commits subsequent event
+batches and projection changes in one transaction. The ingress sends all unselected routes directly to Node,
+preserving the comparison boundary. See [direct-read experiment](performance/direct-task-reads/README.md).

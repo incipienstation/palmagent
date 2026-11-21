@@ -2,8 +2,10 @@
 
 New Linux package installations use the bundled Rust `palmagentd` and
 `palmagent-runtime` application service. The web server,
-provider adapters, execution journals, terminal hosts and update policy remain in
-TypeScript. Nx runs the Rust build and checks alongside the existing projects.
+provider adapters, execution journals and terminal hosts remain in TypeScript. On capable
+standalone installations, the [Rust update worker](RUST-MIGRATION.md#standalone-updates)
+drives release selection and activation while the CLI holds the installation lock.
+Nx runs the Rust build and checks alongside the existing projects.
 
 The daemon's historical `web` host now owns the API and starts a separate PWA file-serving
 child. See [Task owner and web view](TASK_RUNTIME.md) for view-only restart behavior;
@@ -152,9 +154,9 @@ release supplies any compatibility commands, so an old copied command parser can
 block a new request. The startup command reads the authoritative configuration before
 executing the daemon, including during an interrupted executable-link update.
 
-Failed activation attempts restore the previous runtime configuration and executable selection and check
-its health. Both releases and the activation receipt remain available; database
-changes are not rolled back. An interrupted updater leaves its retry hold for
+After a failed switch, matching Task storage generations allow the updater to restore the previous
+configuration and executable and check runtime health. A storage mismatch requires explicit recovery.
+Both releases and the activation receipt remain available; database changes are not rolled back. An interrupted updater leaves its retry hold for
 explicit recovery. A full machine reboot ends active processes.
 
 Existing systemd execution installations and native system-service installations
@@ -208,8 +210,9 @@ The first application migration moves script-routine definitions, scheduling, ad
 worktree preparation and completion persistence into `palmagent-runtime` (Tokio and Axum).
 Each invocation's retained host runs its command and writes its durable result. Host selection
 uses the release capability described under [Updates and migration](#updates-and-migration).
-Agent routines, Task/message orchestration and provider integrations remain in the Node
-application. Source and legacy installations keep their existing local scheduler.
+The Node application retains agent routines and provider integrations. It delegates durable
+Task and message transitions to the [Tasks worker](RUST-MIGRATION.md#tasks-ownership).
+Source and legacy installations keep their existing local scheduler.
 
 The web initializes product migrations, then asks the daemon to start the application
 service for the selected release. A private Unix HTTP socket connects the web's routine

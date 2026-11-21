@@ -339,18 +339,19 @@ web app and through `palmagent terminal`. Shells have independent service lifeti
 restore their screen after reconnecting, and retain their starting worktree until
 they finish. See [shell access](terminals.md) for controls and installation requirements.
 
-The first upgrade from a legacy runner installation waits for active work to finish;
-source installations retain their idle guard. See [session lifecycle](SESSION-LIFECYCLE.md)
-for migration and activation requirements.
+The first upgrade from a legacy runner installation waits for active work to finish.
+Source installations retain their idle guard.
 
 After the server changes version, the app prepares the new screen and switches
 at a quiet moment automatically. Drafts, attachments, open forms, and conversation
 position are preserved per tab. An in-flight submission or text composition delays
 the switch. **Update** also completes without a second refresh click, even with
 automatic installation disabled. If saving the screen fails, the existing page
-stays open with a retry option. An outdated app cannot submit changes to a different
-server version. This protects the browser transition; it does not roll back package
-or database changes.
+stays open with a retry option. An older tab can still start a Task or send a message when the
+message protocol matches. With compatible turn controls it can also stop the expected run or
+answer a pending question.
+Refresh when the app asks before making other changes. Switching the browser version preserves
+the installed package and database.
 
 Channel and update preferences are shared by the CLI and both operator plugins.
 Changing them requires a signed-in session and a package installation whose owner
