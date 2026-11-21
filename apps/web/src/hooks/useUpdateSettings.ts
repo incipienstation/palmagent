@@ -27,7 +27,9 @@ function publish() {
     // another channel is selected or any preference write is unresolved.
     ...(settings.channel !== pref.value.channel ? { discovery: undefined, pending: undefined } : {}),
   } } : status;
-  const monitoring = Boolean(settings?.pending || settings?.lastUpdate?.status === "applying");
+  // During activation the previous web process can briefly see the replacement installation.
+  const monitoring = Boolean(settings?.pending || settings?.lastUpdate?.status === "applying" ||
+    (snapshot.monitoring && status?.availability === "installation-mismatch"));
   snapshot = { monitoring, status: stale || pref?.stale ? status ? { ...status, availability: "unavailable", settings: null } : null : projected, busy: Boolean(action) || Boolean(pref?.pending), saving: Boolean(pref?.pending), stale: stale || Boolean(pref?.stale), error, action };
   listeners.forEach(fn => fn());
   if (!snapshot.busy && refreshPending) { refreshPending = false; void request(); }
@@ -117,7 +119,7 @@ export function useUpdateSettings() {
       finally {
         reading = false;
         if (!stopped && !document.hidden) timer = setTimeout(refresh, delay);
-        delay = Math.min(delay * 2, 8000);
+        delay = Math.min(delay * 2, 4000);
       }
     }
     timer = setTimeout(refresh, delay);
