@@ -1,3 +1,4 @@
+import { standaloneExecutor } from "./native-update.js";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -52,7 +53,7 @@ export function postUpgradeArgs(
 
 export function createInstallationReleases(retained: RetainedReleaseOperations): InstallationReleases {
   return {
-    installedVersion, stage: retained.stageRelease, identity: applicationIdentity,
+    standaloneExecutor, installedVersion, stage: retained.stageRelease, identity: applicationIdentity,
     verifyCli(config, version, retained) {
       const result = run(retained ? config.executionNode! : process.execPath, [join(config.pkgDir!, "cli.js"), "--version"],
         retained ? { env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1" }, timeout: 10_000 } : {});

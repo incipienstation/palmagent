@@ -183,6 +183,16 @@ test("Settings checks the registry and requests the displayed update without ena
   await expect(page.getByText(/It will start after active tasks finish/)).toBeVisible();
   await expect(page.getByRole("switch", { name: "Automatic updates" })).not.toBeChecked();
   expect(actions).toContainEqual({ action: "install", version: "0.1.0-alpha.5" });
+  // The predecessor can see new installation metadata before the replacement starts.
+  const availableSettings = state.settings;
+  state.availability = "installation-mismatch"; state.settings = null;
+  await expect(page.getByText(/does not match the registered installation/)).toBeVisible();
+  state.availability = "available"; state.settings = availableSettings;
+  // The worker may finish after the last reconnect notification.
+  state.currentVersion = "0.1.0-alpha.5";
+  state.settings!.pending = undefined;
+  await expect(page.getByTestId("current-version")).toHaveText("0.1.0-alpha.5");
+  expect(actions.filter(action => (action as { action: string }).action === "install")).toHaveLength(1);
 });
 
 test("a changed server keeps the screen open when worker registration is blocked", async ({ page }) => {

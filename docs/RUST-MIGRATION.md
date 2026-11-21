@@ -20,7 +20,8 @@ alone does not establish a performance improvement.
 | Task creation, control actions, provider events and projection writes on daemon installations | Rust Tasks worker | Provider handles, compatibility rendering and schema bootstrap in the API |
 | Legacy history, execution records and expanded conversation content on daemon installations | Rust Tasks SQLite reader | Shared display serialization, UTF-16 content boundaries and public response |
 | Space removal, attachment index and push subscriptions on daemon installations | Rust worker | Space preflight, file operations and network delivery in their existing adapters |
-| Agent routines, spaces, auth, terminals and installation use cases | TypeScript backend | Feature-specific ports and adapters |
+| Standalone release selection, file preparation and activation on capable installations | Rust update worker | CLI admission and host lock, shared wire schemas, plugin managers, daemon operations and update gateway |
+| Agent routines, spaces, auth, terminals and remaining installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
 This is an ownership inventory, not a claim that the backend is fully migrated. The first
 harness change strengthens native architecture checks, gives routine commands an
@@ -170,3 +171,21 @@ Keep the Node implementation that is required for older retained releases or rol
 compatibility evidence permits its removal. Do not widen an exception in the architecture
 checker to make a migration pass; change the dependency direction or document a narrowly
 reviewed boundary instead.
+
+## Standalone updates
+
+An installed package advertising `standaloneUpdate: 1` uses its release-matched runtime
+to select the signed release, prepare its files and drive the update through activation
+and recovery. The CLI holds the installation lock and serves host operations to the
+worker, including plugin management, provisioning, gateway lifetime and receipt writes.
+The daemon retains the update host independently of the web process. Interrupted handoffs
+keep the pinned release pair and request identity in the existing activation receipt.
+A storage-incompatible target requires explicit recovery if activation fails.
+
+A fresh release retains its signed-manifest-verified compressed archive alongside the
+bundle. On retry the worker authenticates the archive again, compares files and modes
+and rejects extra entries before running any candidate code. An older retained release
+gains the archive after comparison with a fresh download. The cache belongs to the
+release directory and follows the same retention lifecycle. Stage timings are emitted
+in the update host log in milliseconds. Source, npm and previous releases retain their
+existing paths. The first update from a previous package runs that package’s updater.

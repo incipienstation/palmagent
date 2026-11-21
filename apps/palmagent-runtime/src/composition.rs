@@ -1,4 +1,5 @@
 pub mod read_http;
+pub mod standalone_update;
 pub mod task_command;
 pub mod task_owner;
 use crate::modules::routines::{

@@ -10,7 +10,7 @@ import { userConfigPath } from "./user-config.js";
 
 
 /** Native artifacts are bundled for every supported package architecture, with no install script. */
-export function daemonBinary(release: string, platform = process.platform, arch = process.arch): string {
+export function daemonBinary(release: string, platform = process.platform, arch = process.arch, requireApplication = false): string {
   const name = `${platform}-${arch}`;
   const manifest = JSON.parse(readFileSync(join(release, "daemon", "manifest.json"), "utf8"));
   if (manifest.routineHost !== undefined && (manifest.routineHost !== 1 || manifest.applicationRuntime !== 1)) {
@@ -20,7 +20,7 @@ export function daemonBinary(release: string, platform = process.platform, arch 
   const binary = join(release, "daemon", name, "palmagentd");
   const digest = createHash("sha256").update(readFileSync(binary)).digest("hex");
   if (digest !== manifest.artifacts[name]) throw new Error("Daemon artifact integrity mismatch");
-  if (manifest.applicationRuntime !== undefined) {
+  if (requireApplication || manifest.applicationRuntime !== undefined) {
     if (manifest.applicationRuntime !== 1 || typeof manifest.applicationArtifacts?.[name] !== "string") throw new Error("This package has no compatible application runtime for the host");
     const application = join(release, "daemon", name, "palmagent-runtime");
     if (createHash("sha256").update(readFileSync(application)).digest("hex") !== manifest.applicationArtifacts[name]) throw new Error("Application runtime artifact integrity mismatch");

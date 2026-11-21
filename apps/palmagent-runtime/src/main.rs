@@ -187,6 +187,29 @@ async fn serve(args: &[String]) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("standalone-catalog") => {
+            ensure!(
+                (3..=4).contains(&args.len()),
+                "Invalid release catalog arguments"
+            );
+            let result =
+                palmagent_runtime::modules::installation::adapters::outbound::catalog::select(
+                    &args[1],
+                    args.get(3).map(String::as_str),
+                    &args[2],
+                )?;
+            serde_json::to_writer(std::io::stdout().lock(), &result)?;
+            return Ok(());
+        }
+        Some("standalone-update") => return composition::standalone_update::run(),
+        Some("standalone-files") => {
+            return palmagent_runtime::modules::installation::adapters::outbound::archive::prepare(
+                &args[1..],
+            );
+        }
+        _ => {}
+    }
     if args.first().is_some_and(|arg| arg == "task-command") {
         ensure!(
             args.len() == 2,

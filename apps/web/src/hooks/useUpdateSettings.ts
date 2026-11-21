@@ -16,8 +16,8 @@ let epoch = 0;
 let refreshPending = false;
 let preference: ReturnType<typeof createOptimisticPreference<Preference>> | undefined;
 const listeners = new Set<() => void>();
-let snapshot = { status, busy: true, saving: false, stale, error, action } as {
-  status: UpdateSettingsStatus | null; busy: boolean; saving: boolean; stale: boolean; error: string | null; action: Action;
+let snapshot = { status, monitoring: false, busy: true, saving: false, stale, error, action } as {
+  status: UpdateSettingsStatus | null; monitoring: boolean; busy: boolean; saving: boolean; stale: boolean; error: string | null; action: Action;
 };
 function publish() {
   const pref = preference?.get();
@@ -27,7 +27,10 @@ function publish() {
     // another channel is selected or any preference write is unresolved.
     ...(settings.channel !== pref.value.channel ? { discovery: undefined, pending: undefined } : {}),
   } } : status;
-  snapshot = { status: stale || pref?.stale ? status ? { ...status, availability: "unavailable", settings: null } : null : projected, busy: Boolean(action) || Boolean(pref?.pending), saving: Boolean(pref?.pending), stale: stale || Boolean(pref?.stale), error, action };
+  // During activation the previous web process can briefly see the replacement installation.
+  const monitoring = Boolean(settings?.pending || settings?.lastUpdate?.status === "applying" ||
+    (snapshot.monitoring && status?.availability === "installation-mismatch"));
+  snapshot = { monitoring, status: stale || pref?.stale ? status ? { ...status, availability: "unavailable", settings: null } : null : projected, busy: Boolean(action) || Boolean(pref?.pending), saving: Boolean(pref?.pending), stale: stale || Boolean(pref?.stale), error, action };
   listeners.forEach(fn => fn());
   if (!snapshot.busy && refreshPending) { refreshPending = false; void request(); }
 }
@@ -92,6 +95,37 @@ const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listen
 export function useUpdateSettings() {
   const state = useSyncExternalStore(subscribe, () => snapshot);
   useEffect(() => { void request(); }, []);
+  useEffect(() => {
+    if (!state.monitoring) return;
+    // A reconnect may reach the replacement before it commits its final receipt.
+    // Follow that request with read-only status checks while this panel is visible.
+    let stopped = false;
+    let delay = 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    let reading = false;
+    async function refresh() {
+      clearTimeout(timer);
+      if (stopped || reading || document.hidden) return;
+      reading = true;
+      const generation = epoch, observed = status;
+      try {
+        if (!action && !preference?.get().pending) {
+          const next = await api.updateSettings.get();
+          if (!stopped && generation === epoch && status === observed && !action && !preference?.get().pending) {
+            accept(next); publish();
+          }
+        }
+      } catch { /* A gateway may briefly serve only admission requests. */ }
+      finally {
+        reading = false;
+        if (!stopped && !document.hidden) timer = setTimeout(refresh, delay);
+        delay = Math.min(delay * 2, 4000);
+      }
+    }
+    timer = setTimeout(refresh, delay);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", refresh); };
+  }, [state.monitoring]);
   return { ...state, migrate: () => request({ action: "migrate" }), reload: () => request({ action: "check" }), install: (version: string) => request({ action: "install", version }),
     change: (change: UpdateSettingsChange) => {
       if (action || !preference || status?.availability !== "available") return;
