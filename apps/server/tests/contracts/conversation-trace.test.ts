@@ -9,7 +9,7 @@ function log(events: Array<[AgentEvent["kind"], unknown, string?]>, agent: "clau
   return items;
 }
 
-test("initial phase chooses placement, while late phase metadata never hides existing prose", () => {
+test("the first explicit phase chooses placement, including commentary identified after streaming", () => {
   for (const phase of ["progress", "partial", "final", undefined]) {
     const items = log([["assistant_text", { text: "First", messageId: "stream", phase }]]);
     const before = projectConversation(items, true);
@@ -19,10 +19,10 @@ test("initial phase chooses placement, while late phase metadata never hides exi
     appendHistoryEvent(items, { taskId: "task", agent: "codex", kind: "status",
       payload: { subtype: "assistant_message", messageId: "stream", phase: "progress" }, ts: 3 }, 3);
     const after = projectConversation(items, true);
-    assert.equal(after[0].type, before[0].type);
+    assert.equal(after[0].type, phase === "progress" || phase === undefined ? "activity" : "message");
     assert.equal(after[0].key, before[0].key);
     assert.equal(items[0].kind === "assistant_text" && items[0].text, "First second");
-    assert.equal(after.filter(row => row.type === "message").length, phase === "progress" ? 0 : 1);
+    assert.equal(after.filter(row => row.type === "message").length, phase === "progress" || phase === undefined ? 0 : 1);
   }
 });
 

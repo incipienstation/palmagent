@@ -41,20 +41,22 @@ test("phase migration rebuilds completed and active history once without changin
   const imports = f.connection.prepare("SELECT * FROM session_imports").all();
   const cursor = f.tasks.eventCursor("task");
   const expected = f.tasks.conversationPage("task");
-  // Version 4 moved initially unclassified prose into Trace after a late marker.
-  const old = { type: "activity", key: 1, items: [], live: false, revision: cursor, endSeq: 3 };
+  // Version 6 kept initially unclassified commentary in the conversation after a late marker.
+  const old = { type: "message", key: 1, item: { key: 1, kind: "assistant_text", agent: "codex", text: "Previously visible", messageId: "legacy" }, revision: cursor, endSeq: 1 };
   f.connection.prepare("UPDATE conversation_rows SET body_json = ?, wire_json = ? WHERE task_id = 'task' AND seq = 1")
     .run(JSON.stringify(old), JSON.stringify(old));
-  f.connection.exec("UPDATE conversation_projection_version SET version = 4");
+  f.connection.exec("UPDATE conversation_projection_version SET version = 6");
   const upgraded = new SqliteTasks(f.connection);
   const page = upgraded.conversationPage("task");
   const content = (value: typeof page) => ({ ...value, transcript: value.transcript?.map(({ revision, ...row }) => row) });
   assert.deepEqual(content(page), content(expected));
+  assert.equal(page.transcript!.find(row => row.key === 1)?.type, "activity");
+  assert.ok(upgraded.conversationSteps("task", 1).steps.some(step => step.title === "Previously visible"));
   assert.deepEqual(upgraded.eventsAfterSeq("task", 0), raw);
   assert.deepEqual(f.connection.prepare("SELECT * FROM session_imports").all(), imports);
   assert.deepEqual(upgraded.getTask("task")?.sessionControl, control);
   assert.equal(upgraded.eventCursor("task"), cursor);
-  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 6 });
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 7 });
   f.connection.exec("CREATE TRIGGER no_phase_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
   assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
   f.connection.exec("DROP TRIGGER no_phase_rebuild");
@@ -70,12 +72,12 @@ test("phase migration rebuilds completed and active history once without changin
 test("a failed phase migration rolls back its display records and version before retry", t => {
   const f = fixture(t);
   f.add([message("Retained answer")]);
-  f.connection.exec("UPDATE conversation_projection_version SET version = 4");
+  f.connection.exec("UPDATE conversation_projection_version SET version = 6");
   const rows = f.connection.prepare("SELECT * FROM conversation_rows").all();
   f.connection.exec("CREATE TRIGGER fail_phase_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'fixture failure'); END");
   assert.throws(() => new SqliteTasks(f.connection), /fixture failure/);
   assert.deepEqual(f.connection.prepare("SELECT * FROM conversation_rows").all(), rows);
-  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 4 });
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 6 });
   f.connection.exec("DROP TRIGGER fail_phase_rebuild");
   assert.ok(JSON.stringify(new SqliteTasks(f.connection).conversationPage("task")).includes("Retained answer"));
 });
@@ -100,7 +102,7 @@ test("stop presentation rebuilds saved failures once and preserves execution rec
   assert.deepEqual(page.transcript!.map(row => row.key), expected.transcript!.map(row => row.key));
   assert.ok(page.transcript!.every(row => row.type !== "failure"));
   assert.deepEqual(upgraded.eventsAfterSeq("task", 0), raw);
-  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 6 });
+  assert.deepEqual(f.connection.prepare("SELECT version FROM conversation_projection_version").get(), { version: 7 });
   f.connection.exec("CREATE TRIGGER no_stop_rebuild BEFORE INSERT ON conversation_rows BEGIN SELECT RAISE(ABORT, 'already upgraded'); END");
   assert.deepEqual(new SqliteTasks(f.connection).conversationPage("task"), page);
 });
@@ -316,7 +318,7 @@ test("live progress stays multiline and oversized previews retain bounded access
   }
 });
 
-test("late phases preserve prose while tool completion patches page through a shared revision", t => {
+test("late commentary folds into Activity and pages removals through a shared revision", t => {
   const f = fixture(t);
   const initial = Array.from({ length: 45 }, (_, i) => [
     event("tool_call", { id: `tool-${i}`, name: "Read" }), event("assistant_text", { text: `Progress ${i}`, messageId: `m-${i}` }),
@@ -337,9 +339,13 @@ test("late phases preserve prose while tool completion patches page through a sh
   } while (true);
   assert.ok(pages > 1);
   assert.equal(new Set(keys).size, keys.length);
-  assert.equal(removed, 0);
+  assert.equal(removed, initial.length - 1);
   const current = f.tasks.conversationPage("task");
-  assert.ok(current.transcript!.some(row => row.type === "message" && row.item.kind === "assistant_text" && row.item.text === "Progress 44"));
+  assert.equal(current.transcript!.length, 1);
+  const activity = current.transcript![0];
+  assert.equal(activity.type, "activity");
+  const steps = f.tasks.conversationSteps("task", activity.key, 50).steps;
+  assert.ok(steps.some(step => step.title === "Progress 44"));
 });
 
 test("the projection preserves transcript semantics, recovery, imports and transactional rollback", t => {
@@ -453,7 +459,7 @@ test("Trace operation pagination, oversized output and raw execution records pre
 });
 
 
-test("late classification preserves both prose placement and the disclosure ordering key", t => {
+test("late commentary moves into Activity while preserving its disclosure identity", t => {
   const f = fixture(t);
   f.add([event("assistant_text", { text: "Inspecting files", messageId: "progress" }), event("tool_call", { id: "one", name: "Read" })]);
   const before = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
@@ -461,7 +467,8 @@ test("late classification preserves both prose placement and the disclosure orde
   const after = f.tasks.conversationPage("task").transcript!.find(row => row.type === "activity")!;
   assert.equal(before.type, "activity"); assert.equal(after.type, "activity");
   if (before.type !== "activity" || after.type !== "activity") return;
-  assert.equal(before.key, after.key);
+  assert.equal(after.key, 1);
+  assert.notEqual(before.key, after.key);
   assert.equal(before.disclosureKey, after.disclosureKey);
   assert.ok(f.tasks.conversationSteps("task", after.key).steps.some(step => step.key === 2));
 });

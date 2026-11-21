@@ -4,8 +4,6 @@ import { useUpdateState } from "../update-state";
 import { useTraceSteps, useTraceStepDetails, useLegacyTraceDetails } from "../hooks/useTraceDetails";
 import { activityLabel } from "../transcript";
 import { Button } from "./ui/button";
-import { ConversationContent } from "./ConversationDetails";
-import { Markdown } from "./Markdown";
 import { Trace, TraceLine, TraceIcon, TraceTitle, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent } from "./ui/trace";
 import type { ReactNode } from "react";
 
@@ -30,14 +28,6 @@ export function ActivityTrace({ activity, running: executing, sourceLog, revisio
         </TraceLine>
         {running && <span className="sr-only">{label}</span>}
       </TraceCollapsibleTrigger>
-      {!open && activity.preview && <div data-progress-preview className="text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
-        {activity.previewContent && taskId
-          ? <ConversationContent taskId={taskId} content={activity.previewContent}
-              preview={<Markdown streaming={activity.live}>{activity.preview}</Markdown>}
-              render={row => row.type === "message" && row.item.kind === "assistant_text"
-                ? <Markdown streaming={activity.live}>{row.item.text}</Markdown> : null} />
-          : <Markdown streaming={activity.live}>{activity.preview}</Markdown>}
-      </div>}
       <TraceCollapsibleContent>
         {open && <>
           {activity.details && query.isPending && <p role="status">Loading activity…</p>}

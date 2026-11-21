@@ -44,7 +44,7 @@ fn check_version(connection: &Connection) -> Result<()> {
         [],
         |row| row.get(0),
     )?;
-    ensure!(version == 6, "Unsupported conversation projection");
+    ensure!(version == 7, "Unsupported conversation projection");
     Ok(())
 }
 fn row(row: &rusqlite::Row<'_>, changes: bool) -> rusqlite::Result<ProjectionRow> {
