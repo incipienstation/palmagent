@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "56760e03cd97f773241cbae3e4d36a193b87b2bf",
+  "native": [
+    {
+      "mode": "dev",
+      "scenario": "cold",
+      "round": 0,
+      "wallMs": 45023.62302099937,
+      "cpuMs": 75989.26799999998,
+      "loadBefore": [
+        4.36669921875,
+        4.73486328125,
+        4.35107421875
+      ],
+      "loadAfter": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "no-change",
+      "round": 0,
+      "wallMs": 168.98658199352212,
+      "cpuMs": 105.78200000000493,
+      "loadBefore": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ],
+      "loadAfter": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "logic-edit",
+      "round": 0,
+      "wallMs": 2275.60020700912,
+      "cpuMs": 2236.7570000000114,
+      "loadBefore": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ],
+      "loadAfter": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "identity-only",
+      "round": 0,
+      "wallMs": 166.9013310020091,
+      "cpuMs": 102.29400000003608,
+      "loadBefore": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ],
+      "loadAfter": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "no-change",
+      "round": 1,
+      "wallMs": 114.54131899517961,
+      "cpuMs": 101.2229999999903,
+      "loadBefore": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ],
+      "loadAfter": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "logic-edit",
+      "round": 1,
+      "wallMs": 2181.894964989624,
+      "cpuMs": 2180.169999999997,
+      "loadBefore": [
+        3.8779296875,
+        4.5791015625,
+        4.318359375
+      ],
+      "loadAfter": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "identity-only",
+      "round": 1,
+      "wallMs": 117.69981699762866,
+      "cpuMs": 100.59900000000255,
+      "loadBefore": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ],
+      "loadAfter": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "no-change",
+      "round": 2,
+      "wallMs": 115.95392700110096,
+      "cpuMs": 99.75699999998255,
+      "loadBefore": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ],
+      "loadAfter": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "logic-edit",
+      "round": 2,
+      "wallMs": 2171.8182690092362,
+      "cpuMs": 2182.512000000024,
+      "loadBefore": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ],
+      "loadAfter": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ]
+    },
+    {
+      "mode": "dev",
+      "scenario": "identity-only",
+      "round": 2,
+      "wallMs": 114.68584000249393,
+      "cpuMs": 96.28799999997995,
+      "loadBefore": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ],
+      "loadAfter": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "cold",
+      "round": 0,
+      "wallMs": 103562.0866669924,
+      "cpuMs": 170315.52700000003,
+      "loadBefore": [
+        3.6474609375,
+        4.51953125,
+        4.30029296875
+      ],
+      "loadAfter": [
+        3.9677734375,
+        4.4853515625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "no-change",
+      "round": 0,
+      "wallMs": 317.66673100355547,
+      "cpuMs": 262.168999999993,
+      "loadBefore": [
+        3.9677734375,
+        4.4853515625,
+        4.318359375
+      ],
+      "loadAfter": [
+        3.9677734375,
+        4.4853515625,
+        4.318359375
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "logic-edit",
+      "round": 0,
+      "wallMs": 23584.154823009158,
+      "cpuMs": 41942.08200000003,
+      "loadBefore": [
+        3.9677734375,
+        4.4853515625,
+        4.318359375
+      ],
+      "loadAfter": [
+        4.59521484375,
+        4.578125,
+        4.3525390625
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "identity-only",
+      "round": 0,
+      "wallMs": 34106.53821799497,
+      "cpuMs": 63606.00099999996,
+      "loadBefore": [
+        4.59521484375,
+        4.578125,
+        4.3525390625
+      ],
+      "loadAfter": [
+        4.46826171875,
+        4.54541015625,
+        4.3505859375
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "no-change",
+      "round": 1,
+      "wallMs": 271.7252350121271,
+      "cpuMs": 263.61800000002233,
+      "loadBefore": [
+        4.46826171875,
+        4.54541015625,
+        4.3505859375
+      ],
+      "loadAfter": [
+        4.46826171875,
+        4.54541015625,
+        4.3505859375
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "logic-edit",
+      "round": 1,
+      "wallMs": 23355.723593005678,
+      "cpuMs": 41392.33200000005,
+      "loadBefore": [
+        4.46826171875,
+        4.54541015625,
+        4.3505859375
+      ],
+      "loadAfter": [
+        3.970703125,
+        4.42822265625,
+        4.31591796875
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "identity-only",
+      "round": 1,
+      "wallMs": 33985.108747001505,
+      "cpuMs": 63177.3,
+      "loadBefore": [
+        3.970703125,
+        4.42822265625,
+        4.31591796875
+      ],
+      "loadAfter": [
+        4.02783203125,
+        4.3828125,
+        4.3037109375
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "no-change",
+      "round": 2,
+      "wallMs": 265.80404200649355,
+      "cpuMs": 246.71300000002816,
+      "loadBefore": [
+        4.02783203125,
+        4.3828125,
+        4.3037109375
+      ],
+      "loadAfter": [
+        4.02783203125,
+        4.3828125,
+        4.3037109375
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "logic-edit",
+      "round": 2,
+      "wallMs": 23551.35244799021,
+      "cpuMs": 41594.983,
+      "loadBefore": [
+        4.02783203125,
+        4.3828125,
+        4.3037109375
+      ],
+      "loadAfter": [
+        4.23095703125,
+        4.38671875,
+        4.3056640625
+      ]
+    },
+    {
+      "mode": "package-release",
+      "scenario": "identity-only",
+      "round": 2,
+      "wallMs": 33959.16676799243,
+      "cpuMs": 63158.53300000002,
+      "loadBefore": [
+        4.23095703125,
+        4.38671875,
+        4.3056640625
+      ],
+      "loadAfter": [
+        4.689453125,
+        4.46044921875,
+        4.33154296875
+      ]
+    }
+  ],
+  "nativeArtifactHashes": {
+    "linux-arm64/palmagentd": "71f398e00852c78a4c3a60d209162e612d5bae69459a353049e738cef07ebef4",
+    "linux-arm64/palmagent-runtime": "d158222a5e2dc940a39a00f523d1fbda5e776cdcab63f968da7f970d314985ed"
+  },
+  "context": {
+    "os": "linux",
+    "arch": "aarch64",
+    "logicalCpus": 4,
+    "compilerJobs": 2,
+    "node": "v24.21.0",
+    "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+    "rounds": 3
+  },
+  "measurement": "Independent earlier serial run of the same native build procedure; parser IPC measurements from that run are excluded.",
+  "sourceHashes": {
+    "Cargo.toml": "adfdd2a9ec64e2d726fbc0c406da54fe4f9d196cafef39db9695bb671cf98672",
+    "Cargo.lock": "a77980bdb5395cf20575845ef41151ecb960d589550a5292018c03584a204286",
+    "rust-toolchain.toml": "18329b77af59c58637acaa60f51454c9a717cd3b13e823ab4a968e4e6393b3e0",
+    "scripts/build-daemon.mjs": "7c66610efe5dd2502be3080a36083bcb45c7a61271473025bf238249c0df4c6f",
+    "scripts/lib/native-toolchain.mjs": "6b7e00b114124bfbc36d13fd5a339a4f2fb446ca9534497e2674635adbaf47ea",
+    "apps/palmagent-runtime/src/modules/routines/application.rs": "ba562be14624911fc45cf6ffade808285637c21a9d1ca0aebcc58a17ebdb2cc5"
+  },
+  "complete": true
+}
