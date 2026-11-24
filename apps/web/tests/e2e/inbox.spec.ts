@@ -19,11 +19,8 @@ test.describe("inbox", () => {
     await expect(page.getByText("Wire the web QA harness")).toBeVisible();
   });
 
-  test("status filters work across Spaces, reveal folded matches, and restore on Back", async ({ page }) => {
+  test("status filters work across Spaces and restore on Back", async ({ page }) => {
     const group = page.getByRole("region", { name: "sample-app tasks", exact: true });
-    const fold = group.getByRole("button", { name: "sample-app tasks", exact: true });
-    await fold.click();
-    await expect(fold).toHaveAttribute("aria-expanded", "false");
     await filterStatus(page, "Needs answer");
     const attention = page.getByRole("region", { name: "Needs you", exact: true });
     await expect(attention.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
@@ -34,7 +31,7 @@ test.describe("inbox", () => {
     await filterStatus(page, "Needs approval");
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_approval").length);
     await page.getByRole("button", { name: "Clear status filter" }).click();
-    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(group.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
   });
 
   test("pull-to-refresh updates data while retaining the list and search", async ({ page }) => {
@@ -76,25 +73,20 @@ test.describe("inbox", () => {
 
 });
 
-test("response requests escape folded Spaces and return once when work resumes", async ({ page }) => {
+test("response requests move between Needs you and their Space once as work resumes", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
   const content = page.getByTestId("inbox-content");
   const attention = content.getByRole("region", { name: "Needs you", exact: true });
   const group = content.getByRole("region", { name: "notes tasks", exact: true });
-  const fold = group.getByRole("button", { name: "notes tasks", exact: true });
-  await fold.click();
   const request = { ...tasks[0], taskId: "new-request", repoId: "repo-notes", title: "Choose a release target" };
   await send(page, { type: "tasks", tasks: [...tasks, request] });
   const row = attention.locator("[data-swipe-surface]").filter({ hasText: request.title });
   await expect(row).toBeVisible();
   await expect(row.getByText("notes", { exact: true })).toBeVisible();
-  await expect(fold).toHaveAttribute("aria-expanded", "false");
   await expect(content.getByRole("button", { name: `Actions for ${request.title}`, exact: true })).toHaveCount(1);
   await send(page, { type: "tasks", tasks: [...tasks, { ...request, status: "running", pendingInput: undefined }] });
   await expect(row).toHaveCount(0);
-  await expect(fold).toHaveAttribute("aria-expanded", "false");
-  await fold.click();
   await expect(group.getByText(request.title, { exact: true })).toBeVisible();
   await expect(content.getByRole("button", { name: `Actions for ${request.title}`, exact: true })).toHaveCount(1);
   await send(page, { type: "tasks", tasks: tasks.filter(task => !["awaiting_input", "awaiting_approval"].includes(task.status)) });
@@ -163,7 +155,7 @@ for (const width of [320]) test(`attention rows keep Space context, search and n
 test("one filter entry keeps zero-result statuses keyboard reachable", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
-  const trigger = page.getByRole("button", { name: /^Filters(?:,|$)/ });
+  const trigger = page.locator("header").getByRole("button", { name: /^Filters(?:,|$)/ });
   await expect(trigger).toBeVisible();
   await expect(page.getByRole("combobox")).toHaveCount(0);
   await expect(page.getByRole("radiogroup", { name: "Quick task filters" })).toHaveCount(0);

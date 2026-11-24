@@ -5,8 +5,6 @@ import { Archive, Check, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Pl
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
@@ -18,7 +16,7 @@ import { useRepos } from "../hooks/useRepos";
 import { goBackTo, navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
 import { StatusBadge } from "./chips";
-import { SpaceDetails, TaskFilters, type TaskFilter } from "./SpaceTools";
+import { SpaceDetails, TaskFilterChips, TaskFilters, taskFilterDirectories, type TaskFilter } from "./SpaceTools";
 import { useActionState } from "../action-state";
 import { Alert } from "./ui/alert";
 import { EmptyState } from "./EmptyState";
@@ -35,7 +33,6 @@ const ReposContext = createContext<Map<string, Repo>>(new Map());
 // Attention-ordered grouping. Every status the backend can emit is represented
 // Empty groups stay out of the way; every non-empty state remains reachable.
 type InboxStatus = TaskStatus | "local";
-const collapsedGroups = new Set<InboxStatus>();
 const GROUP_ORDER: InboxStatus[] = [
   "awaiting_input",
   "awaiting_approval",
@@ -144,84 +141,41 @@ const TaskRow = memo(function TaskRow({ task, showSpace = false }: { task: TaskS
   );
 });
 
-// Keep response requests visible across Spaces, independent of folded groups.
-function NeedsYouGroup({ tasks }: { tasks: TaskState[] }) {
-  if (!tasks.length) return null;
-  return <section aria-label="Needs you" className="px-4 pt-3">
-    <div className="flex items-center gap-2 px-1 pb-3">
-      <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />
-      <h2 className="text-sm font-medium text-strong">Needs you</h2>
-      <Badge variant="secondary">{tasks.length}</Badge>
-    </div>
-    <div className="overflow-hidden rounded-2xl border bg-card divide-y divide-border/60">
-      {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace />)}
-    </div>
-  </section>;
-}
-
-// Foldable task-list sections share a disclosure. Search and filters reveal
-// matches temporarily without replacing the user's saved folding choices.
-function TaskGroup({ label, accessibleName = label, description, tasks, collapsed, onCollapsedChange, reveal, actions }: {
+function TaskGroup({ label, accessibleName = label, description, tasks, showSpace = false, actions }: {
   label: string;
   accessibleName?: string;
   description?: string;
   tasks: TaskState[];
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
-  reveal: boolean;
+  showSpace?: boolean;
   actions?: ReactNode;
 }) {
-  if (tasks.length === 0) return null;
-  return (
-    <section aria-label={accessibleName} className="px-4 pt-3">
-      <Accordion type="single" collapsible={!reveal} value={reveal || !collapsed ? "tasks" : ""}
-        onValueChange={value => { if (!reveal) onCollapsedChange(!value); }}>
-        <AccordionItem value="tasks">
-          <div className="flex min-w-0 items-center">
-            <div className="min-w-0 flex-1">
-              <AccordionTrigger headingLevel={2} aria-label={accessibleName} className="min-w-0">
-                <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate">{label}</span>
-                    <span aria-hidden="true" className="shrink-0 text-muted-foreground">· {tasks.length}</span>
-                  </span>
-                  {description && <span className="block truncate text-xs text-muted-foreground">{description}</span>}
-                </span>
-              </AccordionTrigger>
-            </div>
-            {actions && <div className="flex shrink-0 items-center gap-1 pr-2">{actions}</div>}
-          </div>
-          <AccordionContent role="group" className="-mx-4 pb-0">
-            <div className="divide-y divide-border/60">
-              {tasks.map(task => <TaskRow key={task.taskId} task={task} />)}
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </section>
-  );
+  if (!tasks.length) return null;
+  return <section aria-label={accessibleName} className="mx-4 mt-3 overflow-clip rounded-2xl border bg-card">
+    <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b bg-muted py-1 pr-2 pl-4">
+      {showSpace && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
+      <div className="min-w-0 flex-1">
+        <h2 className="flex items-center gap-1.5 text-sm font-medium text-strong">
+          <span className="truncate">{label}</span>
+          <span className="shrink-0 text-muted-foreground">· {tasks.length}</span>
+        </h2>
+        {description && <p className="truncate text-xs text-muted-foreground">{description}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+    </div>
+    <div className="divide-y divide-border/60">
+      {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} />)}
+    </div>
+  </section>;
 }
 
-function StatusGroup({ status, tasks, reveal }: { status: InboxStatus; tasks: TaskState[]; reveal: boolean }) {
-  const [collapsed, setCollapsed] = useState(() => collapsedGroups.has(status));
-  return <TaskGroup label={statusSection(status)} tasks={tasks} collapsed={collapsed} reveal={reveal}
-    onCollapsedChange={next => {
-      if (next) collapsedGroups.add(status); else collapsedGroups.delete(status);
-      setCollapsed(next);
-    }} />;
-}
-
-// Global task groups retain their folded state when visiting a session. A search
-// or status filter temporarily reveals every match without changing that state.
-function SpaceTaskGroup({ repoId, tasks, reveal }: { repoId: string; tasks: TaskState[]; reveal: boolean }) {
+function SpaceTaskGroup({ repoId, tasks }: { repoId: string; tasks: TaskState[] }) {
   const repos = useContext(ReposContext);
   const repo = repos.get(repoId);
   const name = repo?.name ?? "Unavailable Space";
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const label = qualifier ? `${name} · ${qualifier}` : name;
-  const [collapsed, setCollapsed] = useActionState(`inbox:space-group:${repoId}:collapsed`, false);
   return <TaskGroup label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks}
-    collapsed={collapsed} onCollapsedChange={setCollapsed} reveal={reveal} actions={repo && <>
+    actions={repo && <>
       <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
         onClick={() => navigate(spacePath(repoId))}><FolderOpen /></Button>
       <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} title={`New task in ${label}`}
@@ -298,6 +252,11 @@ export const InboxView = memo(function InboxView({
   const searchInput = useRef<HTMLInputElement>(null);
   const search = query.trim().toLocaleLowerCase();
   const scoped = repoId ? tasks.filter(task => task.repoId === repoId) : tasks;
+  const filterTrigger = useRef<HTMLButtonElement>(null);
+  const filters = {
+    trigger: filterTrigger, repo: space, directories: taskFilterDirectories(space, repos, scoped, directory),
+    directory, onDirectoryChange: setDirectory, status: statusFilter, onStatusChange: setStatusFilter,
+  };
   const filtered = scoped.filter(task =>
     (!repoId || directory === "all" || taskDirectoryFor(task, repos) === directory)
     && (statusFilter === "all" || (statusFilter === "local" ? task.sessionControl && (task.sessionControl.owner === "local" || task.sessionControl.owner === "returning") : task.status === statusFilter))
@@ -343,6 +302,7 @@ export const InboxView = memo(function InboxView({
     <ReposContext.Provider value={repos}>
       <AppShell wide>
         <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")} conn={conn}>
+          {!loading && <TaskFilters {...filters} />}
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
@@ -354,13 +314,13 @@ export const InboxView = memo(function InboxView({
               disabled={!!repoId && (!space || reposLoading)}><Plus /></Button>
           } />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
           <div data-testid="inbox-content" className="pb-4">
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
-            {!loading && <div className="flex flex-col gap-3 px-4 pt-2 pb-1">
-              <TaskFilters repo={space} repos={repos} tasks={scoped} directory={directory} onDirectoryChange={setDirectory} status={statusFilter} onStatusChange={setStatusFilter} />
-              {(search || statusFilter !== "all" || (repoId && directory !== "all")) && <p role="status" className="pt-2 text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>}
+            {!loading && (search || statusFilter !== "all" || (repoId && directory !== "all")) && <div className="flex flex-col gap-2 px-4 pt-2">
+              <TaskFilterChips {...filters} />
+              <p role="status" className="text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"} found</p>
             </div>}
             {loading ? (
               <LoadingRows />
@@ -373,12 +333,12 @@ export const InboxView = memo(function InboxView({
               />
             ) : !repoId ? (
               <>
-                <NeedsYouGroup tasks={attentionTasks} />
-                {spaceGroups.map(([id, group]) => <SpaceTaskGroup key={id} repoId={id} tasks={group} reveal={!!search || statusFilter !== "all"} />)}
+                <TaskGroup label="Needs you" tasks={attentionTasks} showSpace />
+                {spaceGroups.map(([id, group]) => <SpaceTaskGroup key={id} repoId={id} tasks={group} />)}
               </>
             ) : (
               GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
-                <StatusGroup key={status} status={status} tasks={byStatus.get(status) ?? []} reveal={!!search || statusFilter !== "all"} />
+                <TaskGroup key={status} label={statusSection(status)} tasks={byStatus.get(status) ?? []} />
               ))
             )}
           </div>
