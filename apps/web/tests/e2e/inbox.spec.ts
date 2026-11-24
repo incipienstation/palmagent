@@ -79,6 +79,7 @@ test("response requests move between Needs you and their Space once as work resu
   const content = page.getByTestId("inbox-content");
   const attention = content.getByRole("region", { name: "Needs you", exact: true });
   const group = content.getByRole("region", { name: "notes tasks", exact: true });
+  await expect(group).toBeVisible();
   const request = { ...tasks[0], taskId: "new-request", repoId: "repo-notes", title: "Choose a release target" };
   await send(page, { type: "tasks", tasks: [...tasks, request] });
   const row = attention.locator("[data-swipe-surface]").filter({ hasText: request.title });
