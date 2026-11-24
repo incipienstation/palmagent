@@ -224,6 +224,15 @@ readMessageState(id: string): MessageState | undefined {
     return row ? JSON.parse(row.state) : undefined;
   }
 
+*listMessageStates(): IterableIterator<[string, MessageState]> {
+    const rows = this.db.prepare("SELECT task_id, state FROM task_message_state").iterate() as Iterable<{ task_id: string; state: string }>;
+    for (const row of rows) yield [row.task_id, JSON.parse(row.state)];
+  }
+
+readyMessageTaskIds(): string[] {
+    return (this.db.prepare("SELECT task_id FROM ready_message_queues ORDER BY task_id").all() as { task_id: string }[]).map(r => r.task_id);
+  }
+
 messageTaskIds(): string[] {
     return (this.db.prepare("SELECT task_id FROM task_message_state").all() as { task_id: string }[]).map(r => r.task_id);
   }

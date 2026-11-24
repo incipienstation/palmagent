@@ -7,6 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { Db } from "../../src/composition/database.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
+import Database from "better-sqlite3";
+import { migrateSchema } from "../../src/platform/sqlite/migrations/schema.js";
 import { MessageController } from "../../src/modules/tasks/application/use-cases/message-controller.js";
 
 function fixture(t: test.TestContext) {
@@ -49,9 +51,12 @@ test("editing holds queue order; save checks version and retains position", t =>
   const m = f.c.snapshot("t").messages[0], token = randomUUID();
   f.c.action("t", m.id, { action: "edit", token, version: 1 });
   f.finish(); assert.deepEqual(f.starts, []);
+  assert.deepEqual(f.db.readyMessageTaskIds(), ["t"], "the edit lease remains eligible for a timed retry");
   assert.throws(() => f.c.action("t", m.id, { action: "save", token, version: 0, text: "stale" }), /changed/);
   f.c.action("t", m.id, { action: "save", token, version: 1, text: "edited", images: [{ mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" }] });
-  assert.deepEqual(f.starts, ["edited"]); f.finish(); assert.deepEqual(f.starts, ["edited", "second"]);
+  assert.deepEqual(f.starts, ["edited"]);
+  assert.deepEqual(f.db.readyMessageTaskIds(), []);
+  f.finish(); assert.deepEqual(f.starts, ["edited", "second"]);
 });
 test("Stop and failure preserve prompts and require explicit resume", t => {
   const f = fixture(t); f.submit("later"); f.c.pause("t"); f.finish();
@@ -192,4 +197,26 @@ test("lost submission receipts survive replacement without replaying delivery or
   f.c.delivered("t", request.clientMessageId);
   assert.deepEqual(f.c.submit("t", request).messages, []);
   assert.deepEqual(f.steers, ["One delivery"]);
+});
+
+test("legacy waiting queues are indexed on upgrade and remain consistent through rollback and deletion", t => {
+  const db = new Database(":memory:");
+  t.after(() => db.close());
+  db.exec("CREATE TABLE task_message_state(task_id TEXT PRIMARY KEY, state TEXT NOT NULL)");
+  const insert = db.prepare("INSERT INTO task_message_state VALUES (?, ?)");
+  const waiting = JSON.stringify({ revision: 2, paused: false, runId: null, messages: [{ status: "queued" }] });
+  insert.run("waiting", waiting);
+  insert.run("done", JSON.stringify({ revision: 3, paused: false, runId: null, messages: [{ status: "delivered" }] }));
+  migrateSchema(db);
+  const ready = db.prepare("SELECT task_id FROM ready_message_queues").pluck();
+  assert.deepEqual(ready.all(), ["waiting"]);
+  assert.throws(() => db.transaction(() => {
+    db.prepare("UPDATE task_message_state SET state=? WHERE task_id='done'").run(waiting);
+    assert.equal(ready.all().length, 2);
+    throw Error("rollback");
+  })(), /rollback/);
+  migrateSchema(db);
+  assert.deepEqual(ready.all(), ["waiting"]);
+  db.exec("DELETE FROM task_message_state WHERE task_id='waiting'");
+  assert.deepEqual(ready.all(), []);
 });

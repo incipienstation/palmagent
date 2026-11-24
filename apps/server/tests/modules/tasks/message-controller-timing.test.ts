@@ -9,7 +9,7 @@ function fixture(t: test.TestContext) {
   let persisted: MessageState | undefined;
   let now = 1000, tick = () => {}, cancellations = 0, nextId = 0, failWrite = false;
   const repo: MessageStateRepository = {
-    isOpen: true, messageTaskIds: () => ["task"],
+    isOpen: true, readyMessageTaskIds: () => ["task"],
     readMessageState: () => persisted && structuredClone(persisted),
     writeMessageState: (_id, state) => {
       if (failWrite) throw new Error("write failed");
@@ -66,7 +66,7 @@ test("the injected polling clock releases expired edits without bypassing FIFO o
 test("database shutdown cancels polling before reading queue state", t => {
   const f = fixture(t);
   Object.defineProperty(f.repo, "isOpen", { value: false });
-  f.repo.messageTaskIds = () => { throw new Error("closed database read"); };
+  f.repo.readyMessageTaskIds = () => { throw new Error("closed database read"); };
   f.tick(); f.tick();
   assert.equal(f.cancellations(), 1);
 });

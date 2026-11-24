@@ -2,7 +2,7 @@ import type { CreateTaskRequest, TaskState, CreateRoutineRequest, UpdateRoutineR
 import type { RoutineUseCases } from "../ports/inbound/routine-use-cases.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import type { RoutineTaskUseCases } from "../ports/outbound/routines.js";
-import type { AgentDispatch, RoutineRuntime } from "../ports/outbound/routine-runtime.js";
+import type { AgentDispatch, DispatchSettlement, RoutineRuntime, RoutineStatus } from "../ports/outbound/routine-runtime.js";
 import type { RoutineService } from "./routine-service.js";
 import type { TaskEventPublisher } from "../../../../kernel/events.js";
 
@@ -11,10 +11,10 @@ export class IndependentRoutines implements RoutineUseCases {
   private timer?: ReturnType<typeof setInterval>;
   private agentTimer?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
-  private deliveries = new Map<number, Promise<void>>();
+  private deliveries = new Map<number, Promise<DispatchSettlement>>();
   private refreshing?: Promise<void>;
   private closed = false;
-  private observed?: string;
+  private observed?: RoutineStatus;
   private scripts = 0;
   constructor(private readonly local: RoutineService, private readonly native: RoutineRuntime,
     private readonly events: Pick<TaskEventPublisher, "emitReadChange">, private readonly tasks: RoutineTaskUseCases & { createdTask(req: CreateTaskRequest): TaskState | undefined }) {}
@@ -48,18 +48,18 @@ export class IndependentRoutines implements RoutineUseCases {
   }
   private async drain(dispatch: AgentDispatch | null) {
     while (dispatch && !this.closed && !this.tasks.updating) {
-      await this.deliver(dispatch);
-      dispatch = await this.native.nextDispatch();
+      const settled = await this.deliver(dispatch, true);
+      dispatch = settled.next === undefined ? await this.native.nextDispatch() : settled.next;
     }
   }
-  private deliver(dispatch: AgentDispatch): Promise<void> {
+  private deliver(dispatch: AgentDispatch, includeNext: boolean): Promise<DispatchSettlement> {
     const current = this.deliveries.get(dispatch.id);
     if (current) return current;
-    const sending = this.send(dispatch).finally(() => this.deliveries.delete(dispatch.id));
+    const sending = this.send(dispatch, includeNext).finally(() => this.deliveries.delete(dispatch.id));
     this.deliveries.set(dispatch.id, sending);
     return sending;
   }
-  private async send(dispatch: AgentDispatch) {
+  private async send(dispatch: AgentDispatch, includeNext: boolean) {
     if (this.closed || this.tasks.updating) throw new ApplicationError("service_unavailable", "Task admission is paused");
     let receipt: { taskId?: string; note?: string };
     try {
@@ -71,7 +71,9 @@ export class IndependentRoutines implements RoutineUseCases {
       const committed = this.tasks.createdTask(dispatch.task);
       receipt = committed ? { taskId: committed.taskId } : { note: error instanceof Error ? error.message : String(error) };
     }
-    await this.native.settleDispatch(dispatch.id, receipt);
+    const settled = await this.native.settleDispatch(dispatch.id, receipt, includeNext);
+    if (settled.status && settled.status.instance === this.observed?.instance) this.observe(settled.status);
+    return settled;
   }
   private refresh(): Promise<void> {
     if (this.closed) return Promise.resolve();
@@ -79,12 +81,14 @@ export class IndependentRoutines implements RoutineUseCases {
     return this.refreshing;
   }
   private async readStatus() {
-    const status = await this.native.status();
+    this.observe(await this.native.status());
+  }
+  private observe(status: RoutineStatus) {
     if (this.closed) return;
+    if (this.observed?.instance === status.instance && this.observed.revision > status.revision) return;
     this.scripts = status.activeScripts;
-    const key = `${status.instance}:${status.revision}`;
-    if (key !== this.observed) {
-      this.observed = key;
+    if (this.observed?.instance !== status.instance || this.observed.revision !== status.revision) {
+      this.observed = status;
       this.events.emitReadChange({ type: "read-change", routines: true });
     }
   }
@@ -107,7 +111,10 @@ export class IndependentRoutines implements RoutineUseCases {
   async runNow(id: string) {
     const { routine, dispatch } = await this.native.run(id);
     // An admitted run survives a disconnected receipt and will be retried by the coordinator.
-    if (dispatch) await this.deliver(dispatch).catch(() => {});
+    if (dispatch) {
+      const settled = await this.deliver(dispatch, false).catch(() => undefined);
+      if (settled?.status && settled.status.instance === this.observed?.instance) return routine;
+    }
     return this.changed(Promise.resolve(routine));
   }
   stopRun(id: string) { return this.changed(this.native.stop(id)); }

@@ -2,6 +2,8 @@ import type { AgentEvent, AgentUsage, PermissionRequest, PrRef, QuestionRequest,
 import type { EventRow, MessageState } from "../../../domain/models.js";
 
 export interface TaskRepository extends MessageStateRepository, TaskHistoryReader {
+  listMessageStates(): Iterable<[string, MessageState]>;
+  messageTaskIds(): string[];
   getTask(id: string): TaskState | undefined;
   listTasks(status?: TaskStatus): TaskState[];
   insertTask(task: TaskState): void;
@@ -30,7 +32,7 @@ export interface MessageStateRepository {
   readonly isOpen: boolean;
   readonly inTransaction?: boolean;
   readMessageState(id: string): MessageState | undefined;
-  messageTaskIds(): string[];
+  readyMessageTaskIds(): string[];
   writeMessageState(id: string, state: MessageState): void;
 }
 

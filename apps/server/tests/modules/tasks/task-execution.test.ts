@@ -21,7 +21,7 @@ function fixture(t: test.TestContext, independent = false, capacity = 2) {
     interrupted: false, worktreePath: "/fixture/repo", createdAt: 1, updatedAt: 1, lastActivityAt: 1 };
   let saved: MessageState | undefined, rawSeq = 7, ids = 0;
   const messages = new MessageController({
-    isOpen: true, messageTaskIds: () => [task.taskId],
+    isOpen: true, readyMessageTaskIds: () => [task.taskId],
     readMessageState: () => saved && structuredClone(saved),
     writeMessageState: (_id, state) => { saved = structuredClone(state); },
   }, {

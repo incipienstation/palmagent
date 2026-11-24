@@ -28,7 +28,7 @@ export class MessageController {
     this.cancelPolling = timing.every(1000, () => {
       if (this.closed) return;
       if (!this.db.isOpen) { this.close(); return; }
-      for (const id of this.db.messageTaskIds()) this.pump(id);
+      for (const id of this.db.readyMessageTaskIds()) this.pump(id);
     });
   }
   close() {
@@ -36,12 +36,16 @@ export class MessageController {
     this.closed = true; this.cancelPolling();
   }
   state(id: string): MessageState {
-    const s = this.db.readMessageState(id) ?? { revision: 0, paused: false, runId: null, messages: [] };
+    return this.normalize(this.db.readMessageState(id));
+  }
+  private normalize(state?: MessageState): MessageState {
+    const s = state ?? { revision: 0, paused: false, runId: null, messages: [] };
     clearEmptyQueuePause(s); // Also normalize empty pauses saved by older versions.
     return s;
   }
   private policy(id: string) { return new MessagePolicy(this.state(id)); }
   snapshot(id: string): MessageQueue { return this.policy(id).snapshot(); }
+  storedSnapshot(state: MessageState): MessageQueue { return new MessagePolicy(this.normalize(state)).snapshot(); }
   private apply(id: string, operation: QueueOperation, local: (policy: MessagePolicy) => boolean | void | StoredMessage,
     policy?: MessagePolicy, notify = true): QueueReceipt {
     if (this.native) {

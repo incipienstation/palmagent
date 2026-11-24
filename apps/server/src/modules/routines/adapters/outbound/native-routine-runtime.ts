@@ -6,7 +6,7 @@ import { DaemonStatusSchema, DaemonHostStateSchema } from "@palmagent/shared/dae
 import { ApplicationError } from "../../../../kernel/errors.js";
 import { applicationRequest } from "../../../../platform/ipc/application-runtime.js";
 import { daemonRequest } from "../../../../platform/process/daemon-client.js";
-import type { AgentDispatch, RoutineAdmission, RoutineRuntime } from "../../application/ports/outbound/routine-runtime.js";
+import type { AgentDispatch, DispatchSettlement, RoutineAdmission, RoutineRuntime } from "../../application/ports/outbound/routine-runtime.js";
 
 const Status = z.object({ protocol: z.literal(1), version: z.string(), sourceCommit: z.string(), instance: z.string().min(1),
   revision: z.number().int().nonnegative(), agentRoutines: z.literal(1).optional(), taskUsage: z.literal(1).optional(), taskActivityDetails: z.literal(1).optional(), taskTranscript: z.literal(1).optional(), taskTranscriptSteps: z.literal(1).optional(), taskReadHttp: z.literal(1).optional(), activeScripts: z.number().int().nonnegative(), stopping: z.boolean() });
@@ -58,8 +58,8 @@ export class NativeRoutineRuntime implements RoutineRuntime {
   run(id: string) { return this.call<RoutineAdmission>(`${this.path(id)}/run`, "POST"); }
   agentTick(startup: boolean) { return this.call<AgentDispatch | null>("/v1/agent-dispatch", "POST", { startup }); }
   nextDispatch() { return this.call<AgentDispatch | null>("/v1/agent-dispatch"); }
-  async settleDispatch(id: number, receipt: { taskId?: string; note?: string }) {
-    await this.call(`/v1/agent-dispatch/${id}`, "POST", receipt);
+  settleDispatch(id: number, receipt: { taskId?: string; note?: string }, includeNext: boolean) {
+    return this.call<DispatchSettlement>(`/v1/agent-dispatch/${id}`, "POST", { ...receipt, includeNext });
   }
   async stop(id: string) { return (await this.call<{ routine: Routine }>(`${this.path(id)}/stop`, "POST")).routine; }
   async runs(id: string) { return (await this.call<{ runs: RoutineRun[] }>(`${this.path(id)}/runs`)).runs; }

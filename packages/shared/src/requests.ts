@@ -97,7 +97,7 @@ export const ActivityDetailsQuerySchema = z.object({ from: historyCursor, throug
 export const TaskImageQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
 export const StreamQuerySchema = z.object({
   format: z.literal("transcript").optional(),
-  task: text.optional(), snapshots: z.literal("1").optional(), details: z.enum(["summary", "full"]).optional(),
+  taskChanges: z.literal("1").optional(), task: text.optional(), snapshots: z.literal("1").optional(), details: z.enum(["summary", "full"]).optional(),
 });
 export const PathQuerySchema = z.object({ path: text.optional() });
 export const DiscoverQuerySchema = z.object({ refresh: z.enum(["0", "1"]).optional() });

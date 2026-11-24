@@ -1,4 +1,4 @@
-import type { SseReadChangeFrame, TaskState } from "@palmagent/shared";
+import { isActiveTaskStatus, type SseTaskChangesFrame, type SseTasksFrame, type SseReadChangeFrame, type TaskState } from "@palmagent/shared";
 import type { EventRow } from "../../kernel/events.js";
 import type { LiveEventStream } from "../../kernel/events.js";
 
@@ -7,7 +7,7 @@ import type { LiveEventStream } from "../../kernel/events.js";
 // here as an EventRow carrying both the global id and per-task seq so the SSE
 // handler can pick the right `id:` for its stream kind.
 type EventListener = (row: EventRow) => void;
-type TasksListener = (tasks: TaskState[]) => void;
+type TasksListener = (change: SseTasksFrame | SseTaskChangesFrame) => void;
 
 export class Hub implements LiveEventStream {
   private updateSubs = new Set<() => void>();
@@ -47,10 +47,24 @@ export class Hub implements LiveEventStream {
       }
     }
   }
+  private activeTasks = new Set<string>();
+  get tasksIdle() { return this.activeTasks.size === 0; }
   emitTasks(tasks: TaskState[]): void {
+    this.activeTasks.clear();
+    this.publishTasks({ type: "tasks", tasks });
+  }
+  emitTaskChanges(tasks: TaskState[], removed: string[]): void {
+    for (const id of removed) this.activeTasks.delete(id);
+    this.publishTasks({ type: "task-changes", tasks, removed });
+  }
+  private publishTasks(change: SseTasksFrame | SseTaskChangesFrame): void {
+    for (const task of change.tasks) {
+      if (isActiveTaskStatus(task.status)) this.activeTasks.add(task.taskId);
+      else this.activeTasks.delete(task.taskId);
+    }
     for (const l of this.tasksSubs) {
       try {
-        l(tasks);
+        l(change);
       } catch {
         /* isolate this subscriber */
       }
