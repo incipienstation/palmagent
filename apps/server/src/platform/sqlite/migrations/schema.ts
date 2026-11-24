@@ -178,6 +178,7 @@ export function migrateSchema(db: Database.Database) {
     if (!routineCols.includes("preset")) {
       db.exec(`ALTER TABLE routines ADD COLUMN preset TEXT NOT NULL DEFAULT 'custom'`);
     }
+    db.exec("CREATE INDEX IF NOT EXISTS idx_routine_due ON routines(kind, next_run_at) WHERE enabled=1 AND preset!='manual' AND schedule!=''");
     // Additive migration for plain-folder repos (every pre-existing row is git).
     const repoCols = (db.pragma("table_info(repos)") as { name: string }[]).map((c) => c.name);
     if (!repoCols.includes("vcs")) {

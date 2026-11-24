@@ -185,7 +185,7 @@ error to the routine owner. Restarting the API can retry an unacknowledged reque
 identity. A manual run preserves cadence. Users stop the resulting Task from its Task controls.
 
 Script scheduling continues without the web process. Agent scheduling advances on a heartbeat
-from the ready Tasks coordinator. When it starts, Rust records missed agent schedules as skipped
+from the ready Tasks coordinator. On the first heartbeat after either owner starts, Rust records missed agent schedules as skipped
 and resumes delivery of already admitted requests. Routine lists and history use the shared
 committed read projection. Source installations retain their local scheduler.
 

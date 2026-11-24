@@ -55,7 +55,8 @@ pub struct Repo {
 }
 
 pub trait Repository: Send {
-    fn list(&self, kind: Option<&str>) -> anyhow::Result<Vec<Routine>>;
+    fn list(&self) -> anyhow::Result<Vec<Routine>>;
+    fn due(&self, kind: &str, now: i64, startup: bool) -> anyhow::Result<Vec<Routine>>;
     fn has_dispatch(&self, id: &str) -> anyhow::Result<bool>;
     fn pending_dispatch(&self) -> anyhow::Result<Option<AgentDispatch>>;
     fn settle_dispatch(
@@ -224,6 +225,7 @@ pub struct Service {
     pending: BTreeMap<i64, Pending>,
     pub revision: u64,
     next_tick: i64,
+    agent_coordinator_ready: bool,
     pub stopping: bool,
 }
 
@@ -258,6 +260,7 @@ impl Service {
             pending,
             revision: 0,
             next_tick: 0,
+            agent_coordinator_ready: false,
             stopping: false,
         };
         let now = service.environment.now();
@@ -267,29 +270,24 @@ impl Service {
     }
 
     fn skip_missed(&mut self, kind: &str, now: i64) -> anyhow::Result<()> {
-        for mut routine in self.repository.list(Some(kind))? {
-            if !routine.enabled || routine.preset == "manual" || routine.schedule.is_empty() {
-                continue;
-            }
-            if routine.next_run_at.is_none_or(|next| next <= now) {
-                let skipped = routine.next_run_at.is_some_and(|next| next <= now);
-                routine.next_run_at = self
-                    .environment
-                    .next_run(&routine.schedule, now)
-                    .map_err(anyhow::Error::msg)?;
-                routine.updated_at = now;
-                if skipped {
-                    self.repository.admit(
-                        &routine,
-                        "skipped",
-                        "missed while the server was down",
-                        Some("missed_while_down"),
-                        None,
-                    )?;
-                    self.revision += 1;
-                } else {
-                    self.repository.update(&routine)?;
-                }
+        for mut routine in self.repository.due(kind, now, true)? {
+            let skipped = routine.next_run_at.is_some();
+            routine.next_run_at = self
+                .environment
+                .next_run(&routine.schedule, now)
+                .map_err(anyhow::Error::msg)?;
+            routine.updated_at = now;
+            if skipped {
+                self.repository.admit(
+                    &routine,
+                    "skipped",
+                    "missed while the server was down",
+                    Some("missed_while_down"),
+                    None,
+                )?;
+                self.revision += 1;
+            } else {
+                self.repository.update(&routine)?;
             }
         }
         Ok(())
@@ -305,7 +303,7 @@ impl Service {
         })
     }
     pub fn list(&self) -> Result<Value> {
-        Ok(json!({"routines":self.repository.list(None)?}))
+        Ok(json!({"routines":self.repository.list()?}))
     }
     pub fn runs(&self, id: &str) -> Result<Value> {
         self.get(id)?;
@@ -555,13 +553,12 @@ impl Service {
     /// schedules but still delivers previously admitted requests with their original IDs.
     pub fn agent_tick(&mut self, startup: bool) -> Result<()> {
         let now = self.environment.now();
-        if startup {
+        if startup || !self.agent_coordinator_ready {
             self.skip_missed("agent", now)?;
+            self.agent_coordinator_ready = true;
         } else if !self.stopping && !self.environment.updating() {
-            for routine in self.repository.list(Some("agent"))? {
-                if routine.enabled && routine.next_run_at.is_some_and(|next| next <= now) {
-                    self.admit_agent(routine, false)?;
-                }
+            for routine in self.repository.due("agent", now, false)? {
+                self.admit_agent(routine, false)?;
             }
         }
         Ok(())
@@ -740,12 +737,9 @@ impl Service {
         let now = self.environment.now();
         if now >= self.next_tick && !self.stopping && !self.environment.updating() {
             self.next_tick = now + 15_000;
-            if let Ok(routines) = self.repository.list(Some("script")) {
+            if let Ok(routines) = self.repository.due("script", now, false) {
                 for routine in routines {
-                    if routine.enabled
-                        && routine.next_run_at.is_some_and(|next| next <= now)
-                        && let Ok(admitted) = self.fire(routine, false)
-                    {
+                    if let Ok(admitted) = self.fire(routine, false) {
                         jobs.extend(admitted);
                     }
                 }

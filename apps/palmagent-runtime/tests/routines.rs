@@ -263,19 +263,20 @@ fn runtime_restart_skips_script_backlog_and_coordinator_restart_skips_agent_back
         )
         .unwrap();
     assert_eq!(agent_next, 1_860_000);
-    restarted.agent_tick(true).unwrap();
+    restarted.agent_tick(false).unwrap(); // Runtime replacement with a surviving API coordinator.
     assert_eq!(
         restarted.runs("agent-routine").unwrap()["runs"][0]["reason"],
         "missed_while_down"
     );
     assert!(restarted.pending_dispatch().unwrap().is_none());
-    assert_eq!(fixture.repository().list(None).unwrap().len(), 2);
+    assert_eq!(fixture.repository().list().unwrap().len(), 2);
 }
 
 #[test]
 fn agent_schedule_admits_one_immutable_task_request_across_restart_and_edit() {
     let fixture = Fixture::new();
     let mut service = fixture.service();
+    service.agent_tick(true).unwrap();
     let created = service.create(json!({"repoId":"space","agent":"codex","prompt":"first","preset":"hourly","title":"Report","model":"chosen","effort":"low"})).unwrap();
     let id = created["routine"]["id"].as_str().unwrap();
     assert_eq!(created["routine"]["permission"], "workspace-write");

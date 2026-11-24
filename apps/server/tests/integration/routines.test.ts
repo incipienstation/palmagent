@@ -56,7 +56,7 @@ test("legacy routine migration preserves templates and history", t => {
   original.insertRoutineRun({ routineId: routine.id, firedAt: 1, status: "manual", taskId: "task" });
   original.close();
   const old = new Database(path);
-  old.exec("ALTER TABLE routines DROP COLUMN kind; ALTER TABLE routines DROP COLUMN script_json; DROP INDEX idx_routine_dispatch; ALTER TABLE routine_runs DROP COLUMN dispatch_json; ALTER TABLE routine_runs DROP COLUMN result_json");
+  old.exec("DROP INDEX idx_routine_due; ALTER TABLE routines DROP COLUMN kind; ALTER TABLE routines DROP COLUMN script_json; DROP INDEX idx_routine_dispatch; ALTER TABLE routine_runs DROP COLUMN dispatch_json; ALTER TABLE routine_runs DROP COLUMN result_json");
   old.close();
   const migrated = new Db(path);
   t.after(() => { migrated.close(); rmSync(dir, { recursive: true, force: true }); });

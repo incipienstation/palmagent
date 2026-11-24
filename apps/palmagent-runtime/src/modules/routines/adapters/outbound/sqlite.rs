@@ -115,11 +115,27 @@ fn values(r: &Routine) -> Result<Vec<SqlValue>> {
 const UPDATE: &str = "UPDATE routines SET repo_id=?2,kind=?3,script_json=?4,agent=?5,title=?6,prompt=?7,permission=?8,model=?9,effort=?10,preset=?11,schedule=?12,enabled=?13,last_run_at=?14,next_run_at=?15,created_at=?16,updated_at=?17 WHERE id=?1 AND kind=?3";
 
 impl Repository for SqliteRepository {
-    fn list(&self, kind: Option<&str>) -> Result<Vec<Routine>> {
+    fn list(&self) -> Result<Vec<Routine>> {
         Ok(self
             .connection
-            .prepare("SELECT * FROM routines WHERE (?1 IS NULL OR kind=?1) ORDER BY created_at")?
-            .query_map([kind], routine)?
+            .prepare("SELECT * FROM routines ORDER BY created_at")?
+            .query_map([], routine)?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+    fn due(&self, kind: &str, now: i64, startup: bool) -> Result<Vec<Routine>> {
+        let condition = if startup {
+            "(next_run_at<=?2 OR next_run_at IS NULL)"
+        } else {
+            "next_run_at<=?2"
+        };
+        let sql = format!(
+            "SELECT * FROM routines WHERE enabled=1 AND preset!='manual' AND schedule!=''
+            AND kind=?1 AND {condition} ORDER BY created_at,rowid"
+        );
+        Ok(self
+            .connection
+            .prepare_cached(&sql)?
+            .query_map(params![kind, now], routine)?
             .collect::<rusqlite::Result<_>>()?)
     }
     fn get(&self, id: &str) -> Result<Option<Routine>> {
