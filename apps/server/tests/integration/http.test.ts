@@ -1181,6 +1181,8 @@ test("Space base branch updates validate refs, persist, and affect only subseque
   const saved = f.db.getRepo(repo.id)!;
   assert.equal(saved.defaultBaseRef, "develop");
   assert.equal((await f.service.createRepo({ path: f.dir, defaultBaseRef: "main" })).defaultBaseRef, "develop", "registration never overwrites a saved choice");
+  // A reserved Task can recover its prepared worktree after a stop before SQLite commit.
+  assert.deepEqual(worktrees.create(saved, "before", true), before);
   const after = worktrees.create(saved, "after");
   assert.equal(execFileSync("git", ["-C", before.path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), main);
   assert.equal(execFileSync("git", ["-C", after.path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), develop);

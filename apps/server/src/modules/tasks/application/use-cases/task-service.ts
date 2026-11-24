@@ -818,22 +818,25 @@ export class TaskService implements PrStatusSink {
   }
 
   // ---- task lifecycle ----
-  createTask(req: CreateTaskRequest): TaskState {
-    // The first successful creation owns this ID durably. A retry after a lost
-    // response (including after a restart) must never start another agent turn.
-    const requestedId = req.clientRequestId ? `t_${req.clientRequestId}` : undefined;
-    if (requestedId) {
-      const native = this.retainedTurns;
-      const receipt = native?.creation(requestedId, req.repoId, req.agent, req.prompt);
-      const existing = (!native || receipt === true) ? this.db.getTask(requestedId) : undefined;
-      if (receipt === false || existing && !native && (existing.repoId !== req.repoId || existing.agent !== req.agent || existing.prompt !== req.prompt)) {
-        throw badRequest("Creation request ID is already in use.");
-      }
-      if (existing) {
-        if (!this.cache.has(requestedId)) this.cache.set(requestedId, existing);
-        return this.getTask(requestedId);
-      }
+  // Both creation retries and routine acknowledgement recovery consult the durable receipt.
+  createdTask(req: CreateTaskRequest): TaskState | undefined {
+    if (!req.clientRequestId) return undefined;
+    const id = `t_${req.clientRequestId}`;
+    const native = this.retainedTurns;
+    const receipt = native?.creation(id, req.repoId, req.agent, req.prompt);
+    const existing = (!native || receipt === true) ? this.db.getTask(id) : undefined;
+    if (receipt === false || existing && !native && (existing.repoId !== req.repoId || existing.agent !== req.agent || existing.prompt !== req.prompt)) {
+      throw badRequest("Creation request ID is already in use.");
     }
+    if (!existing) return undefined;
+    if (!this.cache.has(id)) this.cache.set(id, existing);
+    return this.getTask(id);
+  }
+
+  createTask(req: CreateTaskRequest): TaskState {
+    const existing = this.createdTask(req);
+    if (existing) return existing;
+    const requestedId = req.clientRequestId ? `t_${req.clientRequestId}` : undefined;
     this.assertTaskAdmission();
     if (req?.agent !== "claude" && req?.agent !== "codex") throw badRequest("agent must be 'claude' or 'codex'");
     if (!req.prompt) throw badRequest("prompt is required");
@@ -849,7 +852,7 @@ export class TaskService implements PrStatusSink {
     // vcs "none") the task runs in place: the registered directory is its stable
     // cwd and there is no branch.
     const wt =
-      req.isolate && repo.vcs !== "none" ? this.worktrees.create(repo, taskId) : undefined;
+      req.isolate && repo.vcs !== "none" ? this.worktrees.create(repo, taskId, Boolean(requestedId)) : undefined;
     const skills = req.skills?.map(skill => {
       const path = wt && skill.path?.startsWith(repo.path + "/") ? wt.path + skill.path.slice(repo.path.length) : skill.path;
       return { ...skill, path, id: this.ids.digest(JSON.stringify([req.agent, this.nativeSession.home(req.agent), skill.name, path])) };

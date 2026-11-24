@@ -52,7 +52,7 @@ impl Fixture {
             CREATE TABLE routines (id TEXT PRIMARY KEY,repo_id TEXT NOT NULL REFERENCES repos(id),kind TEXT NOT NULL,script_json TEXT,
                 agent TEXT NOT NULL,title TEXT,prompt TEXT NOT NULL,permission TEXT NOT NULL,model TEXT,effort TEXT,preset TEXT NOT NULL,schedule TEXT NOT NULL,
                 enabled INTEGER NOT NULL,last_run_at INTEGER,next_run_at INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
-            CREATE TABLE routine_runs (id INTEGER PRIMARY KEY AUTOINCREMENT,routine_id TEXT NOT NULL,fired_at INTEGER NOT NULL,status TEXT NOT NULL,task_id TEXT,note TEXT,result_json TEXT);").unwrap();
+            CREATE TABLE routine_runs (id INTEGER PRIMARY KEY AUTOINCREMENT,routine_id TEXT NOT NULL,fired_at INTEGER NOT NULL,status TEXT NOT NULL,task_id TEXT,note TEXT,result_json TEXT,dispatch_json TEXT);").unwrap();
         Self {
             directory,
             clock: Arc::new(AtomicI64::new(1_800_000)),
@@ -240,7 +240,7 @@ fn scheduled_capacity_and_maintenance_preserve_admission_rules() {
 }
 
 #[test]
-fn runtime_restart_reconciles_retained_runs_and_skips_only_script_backlog() {
+fn runtime_restart_skips_script_backlog_and_coordinator_restart_skips_agent_backlog() {
     let fixture = Fixture::new();
     let mut service = fixture.service();
     let id = create(&mut service, "hourly");
@@ -263,7 +263,84 @@ fn runtime_restart_reconciles_retained_runs_and_skips_only_script_backlog() {
         )
         .unwrap();
     assert_eq!(agent_next, 1_860_000);
-    assert_eq!(fixture.repository().list().unwrap().len(), 1);
+    restarted.agent_tick(true).unwrap();
+    assert_eq!(
+        restarted.runs("agent-routine").unwrap()["runs"][0]["reason"],
+        "missed_while_down"
+    );
+    assert!(restarted.pending_dispatch().unwrap().is_none());
+    assert_eq!(fixture.repository().list(None).unwrap().len(), 2);
+}
+
+#[test]
+fn agent_schedule_admits_one_immutable_task_request_across_restart_and_edit() {
+    let fixture = Fixture::new();
+    let mut service = fixture.service();
+    let created = service.create(json!({"repoId":"space","agent":"codex","prompt":"first","preset":"hourly","title":"Report","model":"chosen","effort":"low"})).unwrap();
+    let id = created["routine"]["id"].as_str().unwrap();
+    assert_eq!(created["routine"]["permission"], "workspace-write");
+    assert!(created["routine"].get("script").is_none());
+    fixture.clock.store(1_860_000, Ordering::SeqCst);
+    fixture.updating.store(true, Ordering::SeqCst);
+    service.agent_tick(false).unwrap();
+    assert!(service.pending_dispatch().unwrap().is_none());
+    fixture.updating.store(false, Ordering::SeqCst);
+    fixture.connection().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON routine_runs BEGIN SELECT RAISE(ABORT,'unavailable'); END;").unwrap();
+    assert!(service.agent_tick(false).is_err());
+    assert_eq!(service.get(id).unwrap().next_run_at, Some(1_860_000));
+    fixture
+        .connection()
+        .execute_batch("DROP TRIGGER reject_run")
+        .unwrap();
+    service.agent_tick(false).unwrap();
+    service.agent_tick(false).unwrap();
+    let dispatch = service.pending_dispatch().unwrap().unwrap();
+    assert_eq!(dispatch.task.prompt, "first");
+    assert_eq!(dispatch.task.title, "⏱ Report");
+    assert!(dispatch.task.isolate);
+    assert_eq!(dispatch.task.model.as_deref(), Some("chosen"));
+    assert_eq!(dispatch.task.effort.as_deref(), Some("low"));
+    service
+        .update(id, json!({"prompt":"edited","enabled":false}))
+        .unwrap();
+    assert_eq!(service.remove(id).unwrap_err().kind, ErrorKind::Conflict);
+    assert_eq!(service.stop(id).unwrap_err().kind, ErrorKind::InvalidInput);
+    drop(service);
+    let mut service = fixture.service();
+    service.agent_tick(true).unwrap();
+    let recovered = service.pending_dispatch().unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(&dispatch).unwrap(),
+        serde_json::to_value(&recovered).unwrap()
+    );
+    let task_id = format!("t_{}", recovered.task.client_request_id);
+    service
+        .settle_dispatch(dispatch.id, Some(&task_id), None)
+        .unwrap();
+    service
+        .settle_dispatch(dispatch.id, None, Some("stale receipt"))
+        .unwrap();
+    assert!(service.pending_dispatch().unwrap().is_none());
+    let history = service.runs(id).unwrap();
+    assert_eq!(history["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(history["runs"][0]["taskId"], task_id);
+    assert_eq!(history["runs"][0]["status"], "fired");
+    assert!(history["runs"][0].get("note").is_none());
+    let (manual, _) = service.run(id).unwrap();
+    assert_eq!(manual["dispatch"]["task"]["prompt"], "edited");
+    assert!(manual["routine"].get("nextRunAt").is_none());
+    service
+        .settle_dispatch(
+            manual["dispatch"]["id"].as_i64().unwrap(),
+            None,
+            Some("could not create worktree"),
+        )
+        .unwrap();
+    assert_eq!(
+        service.runs(id).unwrap()["runs"][0]["note"],
+        "could not create worktree"
+    );
+    service.remove(id).unwrap();
 }
 
 #[test]

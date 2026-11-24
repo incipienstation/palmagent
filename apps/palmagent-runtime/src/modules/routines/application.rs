@@ -1,14 +1,48 @@
-//! Routine use cases and outbound contracts. One owner serializes all script admissions.
+//! Routine use cases and outbound contracts. One owner serializes routine admission.
 pub mod commands;
 pub mod retained;
 use crate::modules::routines::domain::{Routine, Run, SCRIPT_CAPACITY, Script, cadence};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+
+/// Immutable input to the Tasks creation port. A lost receipt reuses the same identity.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTask {
+    pub client_request_id: String,
+    pub repo_id: String,
+    pub agent: String,
+    pub prompt: String,
+    pub permission: String,
+    pub title: String,
+    pub isolate: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+#[derive(Debug, Serialize)]
+pub struct AgentDispatch {
+    pub id: i64,
+    pub task: AgentTask,
+}
 
 pub trait Environment: Send {
     fn now(&self) -> i64;
     fn id(&self) -> anyhow::Result<String>;
+    fn request_id(&self) -> anyhow::Result<String> {
+        let bits = u128::from_str_radix(&self.id()?, 16)?;
+        // RFC 9562 version 4 and variant 10, using the same random source as routine IDs.
+        Ok(format!(
+            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+            bits >> 96,
+            (bits >> 80) as u16,
+            (bits >> 64) as u16 & 0x0fff | 0x4000,
+            (bits >> 48) as u16 & 0x3fff | 0x8000,
+            bits & 0xffff_ffff_ffff
+        ))
+    }
     fn next_run(&self, schedule: &str, from: i64) -> std::result::Result<Option<i64>, String>;
     fn updating(&self) -> bool;
 }
@@ -21,7 +55,15 @@ pub struct Repo {
 }
 
 pub trait Repository: Send {
-    fn list(&self) -> anyhow::Result<Vec<Routine>>;
+    fn list(&self, kind: Option<&str>) -> anyhow::Result<Vec<Routine>>;
+    fn has_dispatch(&self, id: &str) -> anyhow::Result<bool>;
+    fn pending_dispatch(&self) -> anyhow::Result<Option<AgentDispatch>>;
+    fn settle_dispatch(
+        &mut self,
+        id: i64,
+        task_id: Option<&str>,
+        note: Option<&str>,
+    ) -> anyhow::Result<()>;
     fn get(&self, id: &str) -> anyhow::Result<Option<Routine>>;
     fn repo(&self, id: &str) -> anyhow::Result<Option<Repo>>;
     fn insert(&mut self, routine: &Routine) -> anyhow::Result<()>;
@@ -36,6 +78,7 @@ pub trait Repository: Send {
         status: &str,
         note: &str,
         reason: Option<&str>,
+        dispatch: Option<&AgentTask>,
     ) -> anyhow::Result<i64>;
     fn finish(&mut self, id: i64, result: &Value) -> anyhow::Result<()>;
 }
@@ -99,16 +142,20 @@ struct Input {
     effort: Option<String>,
 }
 impl Input {
-    fn parse(value: Value) -> Result<Self> {
-        let mut input: Self = serde_json::from_value(value)
-            .map_err(|_| Error::bad("Invalid script routine input"))?;
-        if input.agent.is_some()
-            || input.prompt.is_some()
-            || input.permission.is_some()
-            || input.model.is_some()
-            || input.effort.is_some()
+    fn parse(value: Value, kind: &str) -> Result<Self> {
+        let mut input: Self =
+            serde_json::from_value(value).map_err(|_| Error::bad("Invalid routine input"))?;
+        if kind == "script"
+            && (input.agent.is_some()
+                || input.prompt.is_some()
+                || input.permission.is_some()
+                || input.model.is_some()
+                || input.effort.is_some())
         {
             return Err(Error::bad("Script routines do not accept agent settings"));
+        }
+        if kind == "agent" && input.script.is_some() {
+            return Err(Error::bad("Only script routines accept script settings"));
         }
         if let Some(script) = &mut input.script {
             script.validate().map_err(Error::bad)?;
@@ -213,33 +260,39 @@ impl Service {
             next_tick: 0,
             stopping: false,
         };
-        // Only a runtime outage skips missed script fires. A web restart leaves this owner alive.
         let now = service.environment.now();
-        for mut routine in service.repository.list()? {
+        service.skip_missed("script", now)?;
+        service.next_tick = now + 15_000;
+        Ok(service)
+    }
+
+    fn skip_missed(&mut self, kind: &str, now: i64) -> anyhow::Result<()> {
+        for mut routine in self.repository.list(Some(kind))? {
             if !routine.enabled || routine.preset == "manual" || routine.schedule.is_empty() {
                 continue;
             }
             if routine.next_run_at.is_none_or(|next| next <= now) {
                 let skipped = routine.next_run_at.is_some_and(|next| next <= now);
-                routine.next_run_at = service
+                routine.next_run_at = self
                     .environment
                     .next_run(&routine.schedule, now)
                     .map_err(anyhow::Error::msg)?;
                 routine.updated_at = now;
                 if skipped {
-                    service.repository.admit(
+                    self.repository.admit(
                         &routine,
                         "skipped",
                         "missed while the server was down",
                         Some("missed_while_down"),
+                        None,
                     )?;
+                    self.revision += 1;
                 } else {
-                    service.repository.update(&routine)?;
+                    self.repository.update(&routine)?;
                 }
             }
         }
-        service.next_tick = now + 15_000;
-        Ok(service)
+        Ok(())
     }
 
     pub fn active(&self) -> usize {
@@ -248,20 +301,36 @@ impl Service {
     pub fn get(&self, id: &str) -> Result<Routine> {
         self.repository.get(id)?.ok_or(Error {
             kind: ErrorKind::NotFound,
-            message: "No such script routine".into(),
+            message: format!("no such routine: {id}"),
         })
     }
     pub fn list(&self) -> Result<Value> {
-        Ok(json!({"routines":self.repository.list()?}))
+        Ok(json!({"routines":self.repository.list(None)?}))
     }
     pub fn runs(&self, id: &str) -> Result<Value> {
         self.get(id)?;
         Ok(json!({"runs":self.repository.runs(id, 20)?}))
     }
     pub fn create(&mut self, value: Value) -> Result<Value> {
-        let input = Input::parse(value)?;
-        if input.kind.as_deref() != Some("script") {
-            return Err(Error::bad("This runtime accepts script routines"));
+        let kind = value
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("agent")
+            .to_owned();
+        let input = Input::parse(value, &kind)?;
+        match kind.as_str() {
+            "script" if input.script.is_none() => return Err(Error::bad("Script is required")),
+            "agent"
+                if !matches!(input.agent.as_deref(), Some("codex" | "claude"))
+                    || input
+                        .prompt
+                        .as_ref()
+                        .is_none_or(|prompt| prompt.trim().is_empty()) =>
+            {
+                return Err(Error::bad("Agent and prompt are required"));
+            }
+            "agent" | "script" => {}
+            _ => return Err(Error::bad("Unknown routine kind")),
         }
         let repo_id = input
             .repo_id
@@ -270,9 +339,15 @@ impl Service {
         if self.repository.repo(&repo_id)?.is_none() {
             return Err(Error::bad("No such space"));
         }
-        let script = input
-            .script
-            .ok_or_else(|| Error::bad("Script is required"))?;
+        let agent = input.agent.unwrap_or_else(|| "claude".into());
+        let permission = input.permission.unwrap_or_else(|| {
+            if agent == "codex" {
+                "workspace-write"
+            } else {
+                "acceptEdits"
+            }
+            .into()
+        });
         let now = self.environment.now();
         let preset = input.preset.unwrap_or_else(|| "custom".into());
         let schedule = cadence(
@@ -293,17 +368,17 @@ impl Service {
         let routine = Routine {
             id: format!("rt{}", self.environment.id()?),
             repo_id,
-            kind: "script".into(),
-            script,
-            agent: "claude".into(),
-            prompt: String::new(),
-            permission: "acceptEdits".into(),
+            kind,
+            script: input.script,
+            agent,
+            prompt: input.prompt.unwrap_or_default(),
+            permission,
             preset,
             schedule,
             enabled,
             title: input.title,
-            model: None,
-            effort: None,
+            model: input.model,
+            effort: input.effort,
             last_run_at: None,
             next_run_at,
             created_at: now,
@@ -318,15 +393,15 @@ impl Service {
         let preserve_timeout = value
             .get("script")
             .is_some_and(|script| script.get("timeoutSeconds").is_none());
-        let input = Input::parse(value)?;
-        if input.kind.is_some() || input.repo_id.is_some() {
+        let input = Input::parse(value, &routine.kind)?;
+        if input.kind.is_some() || input.repo_id.is_some() || input.agent.is_some() {
             return Err(Error::bad("Routine kind and space are fixed"));
         }
         if let Some(mut script) = input.script {
-            if preserve_timeout {
-                script.timeout_seconds = routine.script.timeout_seconds;
+            if preserve_timeout && let Some(previous) = &routine.script {
+                script.timeout_seconds = previous.timeout_seconds;
             }
-            routine.script = script;
+            routine.script = Some(script);
         }
         if input.preset.is_some()
             || input.schedule.is_some()
@@ -348,6 +423,21 @@ impl Service {
             )
             .map_err(Error::bad)?;
             routine.preset = preset;
+        }
+        if let Some(prompt) = input.prompt {
+            if prompt.is_empty() {
+                return Err(Error::bad("prompt cannot be empty"));
+            }
+            routine.prompt = prompt;
+        }
+        if let Some(permission) = input.permission {
+            routine.permission = permission;
+        }
+        if let Some(model) = input.model {
+            routine.model = (!model.is_empty()).then_some(model);
+        }
+        if let Some(effort) = input.effort {
+            routine.effort = (!effort.is_empty()).then_some(effort);
         }
         if let Some(title) = input.title {
             routine.title = if title.is_empty() { None } else { Some(title) };
@@ -375,17 +465,28 @@ impl Service {
                 "Wait for the running script before deleting this routine",
             ));
         }
+        if routine.kind == "agent" && self.repository.has_dispatch(id)? {
+            return Err(Error::conflict(
+                "Wait for Task dispatch before deleting this routine",
+            ));
+        }
         self.repository.remove(id)?;
         self.revision += 1;
         Ok(json!({"routine":routine}))
     }
     pub fn run(&mut self, id: &str) -> Result<(Value, Vec<Job>)> {
         let routine = self.get(id)?;
+        if routine.kind == "agent" {
+            let (routine, dispatch) = self.admit_agent(routine, true)?;
+            return Ok((json!({"routine":routine,"dispatch":dispatch}), Vec::new()));
+        }
         let jobs = self.fire(routine, true)?;
         Ok((json!({"routine":self.get(id)?}), jobs))
     }
     pub fn stop(&mut self, id: &str) -> Result<Vec<Job>> {
-        self.get(id)?;
+        if self.get(id)?.kind == "agent" {
+            return Err(Error::bad("Stop agent runs from their task"));
+        }
         Ok(self
             .pending
             .iter_mut()
@@ -398,6 +499,88 @@ impl Service {
     }
     pub fn has_pending(&self, id: &str) -> bool {
         self.pending.values().any(|p| p.routine_id == id)
+    }
+
+    fn advance(&self, routine: &mut Routine, manual: bool) -> Result<()> {
+        let now = self.environment.now();
+        routine.last_run_at = Some(now);
+        routine.updated_at = now;
+        if !manual {
+            routine.next_run_at = if routine.schedule.is_empty() {
+                None
+            } else {
+                self.environment
+                    .next_run(&routine.schedule, now)
+                    .map_err(Error::bad)?
+            };
+        }
+        Ok(())
+    }
+
+    fn admit_agent(
+        &mut self,
+        mut routine: Routine,
+        manual: bool,
+    ) -> Result<(Routine, AgentDispatch)> {
+        if self.stopping || self.environment.updating() {
+            return Err(Error::busy());
+        }
+        self.advance(&mut routine, manual)?;
+        let task = AgentTask {
+            client_request_id: self.environment.request_id()?,
+            repo_id: routine.repo_id.clone(),
+            agent: routine.agent.clone(),
+            prompt: routine.prompt.clone(),
+            permission: routine.permission.clone(),
+            model: routine.model.clone(),
+            effort: routine.effort.clone(),
+            isolate: true,
+            title: match routine.title.as_deref() {
+                Some(title) if !title.is_empty() => format!("⏱ {title}"),
+                _ => format!("⏱ routine {}", routine.id),
+            },
+        };
+        let id = self.repository.admit(
+            &routine,
+            if manual { "manual" } else { "fired" },
+            "Awaiting Task dispatch",
+            None,
+            Some(&task),
+        )?;
+        self.revision += 1;
+        Ok((routine, AgentDispatch { id, task }))
+    }
+
+    /// Agent admission requires an available Tasks coordinator. Its startup skips missed
+    /// schedules but still delivers previously admitted requests with their original IDs.
+    pub fn agent_tick(&mut self, startup: bool) -> Result<()> {
+        let now = self.environment.now();
+        if startup {
+            self.skip_missed("agent", now)?;
+        } else if !self.stopping && !self.environment.updating() {
+            for routine in self.repository.list(Some("agent"))? {
+                if routine.enabled && routine.next_run_at.is_some_and(|next| next <= now) {
+                    self.admit_agent(routine, false)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn pending_dispatch(&self) -> Result<Option<AgentDispatch>> {
+        Ok(self.repository.pending_dispatch()?)
+    }
+    pub fn settle_dispatch(
+        &mut self,
+        id: i64,
+        task_id: Option<&str>,
+        note: Option<&str>,
+    ) -> Result<()> {
+        if task_id.is_some() == note.is_some() {
+            return Err(Error::bad("Expected one Task dispatch outcome"));
+        }
+        self.repository.settle_dispatch(id, task_id, note)?;
+        self.revision += 1;
+        Ok(())
     }
 
     fn fire(&mut self, mut routine: Routine, manual: bool) -> Result<Vec<Job>> {
@@ -418,18 +601,7 @@ impl Service {
                 format!("routine-{}", self.environment.id()?),
             ))
         };
-        let now = self.environment.now();
-        routine.last_run_at = Some(now);
-        routine.updated_at = now;
-        if !manual {
-            routine.next_run_at = if routine.schedule.is_empty() {
-                None
-            } else {
-                self.environment
-                    .next_run(&routine.schedule, now)
-                    .map_err(Error::bad)?
-            };
-        }
+        self.advance(&mut routine, manual)?;
         let id = self.repository.admit(
             &routine,
             if full { "skipped" } else { "running" },
@@ -441,6 +613,7 @@ impl Service {
                 "scheduled"
             },
             None,
+            None,
         )?;
         self.revision += 1;
         if full {
@@ -451,7 +624,7 @@ impl Service {
             Pending {
                 routine_id: routine.id,
                 worktree: None,
-                script: Some(routine.script),
+                script: routine.script,
                 prepared: None,
                 result: None,
                 busy: true,
@@ -567,7 +740,7 @@ impl Service {
         let now = self.environment.now();
         if now >= self.next_tick && !self.stopping && !self.environment.updating() {
             self.next_tick = now + 15_000;
-            if let Ok(routines) = self.repository.list() {
+            if let Ok(routines) = self.repository.list(Some("script")) {
                 for routine in routines {
                     if routine.enabled
                         && routine.next_run_at.is_some_and(|next| next <= now)

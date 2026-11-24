@@ -64,7 +64,7 @@ pub fn apply(db: &mut Connection, mutation: CatalogMutation) -> Result<Option<Sp
 
 fn remove(db: &mut Connection, space: &str) -> Result<()> {
     let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM tasks WHERE repo_id=?1 AND status!='archived') OR EXISTS(SELECT 1 FROM routine_runs x JOIN routines r ON r.id=x.routine_id WHERE r.repo_id=?1 AND x.status='running')",[space],|r|r.get(0))?;
+    let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM tasks WHERE repo_id=?1 AND status!='archived') OR EXISTS(SELECT 1 FROM routine_runs x JOIN routines r ON r.id=x.routine_id WHERE r.repo_id=?1 AND (x.status='running' OR x.dispatch_json IS NOT NULL))",[space],|r|r.get(0))?;
     ensure!(!active, "Space has active work");
     for sql in [
         "DELETE FROM events WHERE task_id IN (SELECT id FROM tasks WHERE repo_id=?)",

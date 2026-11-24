@@ -165,6 +165,8 @@ export function migrateSchema(db: Database.Database) {
     }
     const routineRunCols = (db.pragma("table_info(routine_runs)") as { name: string }[]).map(c => c.name);
     if (!routineRunCols.includes("result_json")) db.exec("ALTER TABLE routine_runs ADD COLUMN result_json TEXT");
+    if (!routineRunCols.includes("dispatch_json")) db.exec("ALTER TABLE routine_runs ADD COLUMN dispatch_json TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_routine_dispatch ON routine_runs(id) WHERE dispatch_json IS NOT NULL");
     const routineCols = (db.pragma("table_info(routines)") as { name: string }[]).map((c) => c.name);
     if (!routineCols.includes("kind")) db.exec("ALTER TABLE routines ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'");
     if (!routineCols.includes("script_json")) db.exec("ALTER TABLE routines ADD COLUMN script_json TEXT");

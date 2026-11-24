@@ -10,7 +10,7 @@ alone does not establish a performance improvement.
 | Behavior | Authoritative owner | Boundary that remains |
 | --- | --- | --- |
 | Host supervision, retained processes and activation | Rust daemon | Existing installation and update protocols |
-| Script routine scheduling, admission and persistence | Rust application runtime | TypeScript API/read projection and product database bootstrap |
+| Agent and script routine definitions, cadence, admission and history on daemon installations | Rust application runtime | The ready API coordinator delivers agent runs through Tasks and serves the committed read projection |
 | Retained script execution and completion | Rust routine host | Older releases may still use the packaged Node host |
 | Task usage aggregation on daemon-backed installations | Rust Task read use case | TypeScript authentication and HTTP response |
 | Historical Task activity-detail expansion on daemon-backed installations | Rust Task activity read use case | TypeScript authentication, task/range validation and public response; legacy/source setups keep their local reader |
@@ -21,7 +21,7 @@ alone does not establish a performance improvement.
 | Legacy history, execution records and expanded conversation content on daemon installations | Rust Tasks SQLite reader | Shared display serialization, UTF-16 content boundaries and public response |
 | Space catalog writes and discovery matches, attachment index and push subscriptions on daemon installations | Rust worker | Space registration and removal preflight, catalog listing and path validation, file operations and network delivery in their existing adapters |
 | Standalone release selection, file preparation and activation on capable installations | Rust update worker | CLI admission and host lock, shared wire schemas, plugin managers, daemon operations and update gateway |
-| Agent routines, spaces, auth, terminals and remaining installation use cases | TypeScript backend | Feature-specific ports and adapters |
+| Remaining Space, authentication, terminal and installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
 This is an ownership inventory, not a claim that the backend is fully migrated. The first
 harness change strengthens native architecture checks, gives routine commands an
@@ -173,8 +173,25 @@ Do not configure native and TypeScript Tasks writers in the same installation.
 Exercise the full sequence in a packaged installation with a retained turn and queued
 messages, including process loss before and after dispatch, reconnect, and rollback to
 the retained release. Rollback must preserve committed queue receipts, event cursors and
-execution identities against a compatible SQLite schema. Agent routines depend on Task
-admission and must use the selected owner.
+execution identities against a compatible SQLite schema. Agent routines deliver through the selected Tasks owner.
+
+## Agent routines
+
+On daemon installations the application runtime stores agent definitions and admits manual and
+scheduled runs. Admission commits the next cadence, history row and immutable Task request in
+one SQLite transaction. The request carries an isolated-worktree flag and a stable Task creation
+ID. The API delivers it through ordinary Task admission and returns the Task ID or dispatch
+error to the routine owner. Restarting the API can retry an unacknowledged request with the same
+identity. A manual run preserves cadence. Users stop the resulting Task from its Task controls.
+
+Script scheduling continues without the web process. Agent scheduling advances on a heartbeat
+from the ready Tasks coordinator. When it starts, Rust records missed agent schedules as skipped
+and resumes delivery of already admitted requests. Routine lists and history use the shared
+committed read projection. Source installations retain their local scheduler.
+
+The additive nullable dispatch column is ignored by earlier releases. After rollback they can
+read the original cadence and history and schedule future runs. An unacknowledged admission
+keeps its pending note and resumes with its original identity if the native agent owner returns.
 
 Keep the Node implementation that is required for older retained releases or rollback until
 compatibility evidence permits its removal. Do not widen an exception in the architecture

@@ -126,7 +126,7 @@ finishRoutineRun(id: number, result: Pick<RoutineRun, "status" | "note" | "finis
   }
 
 hasRunningRoutine(repoId: string): boolean {
-    return !!this.db.prepare("SELECT 1 FROM routine_runs rr JOIN routines r ON r.id = rr.routine_id WHERE r.repo_id = ? AND rr.status = 'running' LIMIT 1").get(repoId);
+    return !!this.db.prepare("SELECT 1 FROM routine_runs rr JOIN routines r ON r.id = rr.routine_id WHERE r.repo_id = ? AND (rr.status = 'running' OR rr.dispatch_json IS NOT NULL) LIMIT 1").get(repoId);
   }
 
 runningRoutineRuns(): RoutineRun[] {

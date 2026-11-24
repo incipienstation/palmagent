@@ -3,6 +3,15 @@ use serde_json::Value;
 
 pub enum Action {
     Status,
+    AgentTick {
+        startup: bool,
+    },
+    NextDispatch,
+    SettleDispatch {
+        id: i64,
+        task_id: Option<String>,
+        note: Option<String>,
+    },
     Telemetry,
     List,
     Get(String),
@@ -17,7 +26,12 @@ pub enum Action {
 impl Action {
     pub fn operation(&self) -> Option<&'static str> {
         match self {
-            Self::Status | Self::Telemetry | Self::Pending(_) => None,
+            Self::Status
+            | Self::Telemetry
+            | Self::Pending(_)
+            | Self::AgentTick { .. }
+            | Self::NextDispatch
+            | Self::SettleDispatch { .. } => None,
             Self::List | Self::Get(_) | Self::Runs(_) => Some("routine.read"),
             Self::Create(_) => Some("routine.create"),
             Self::Update(_, _) => Some("routine.update"),
