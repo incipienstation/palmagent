@@ -72,8 +72,11 @@ export class ClaudeRunner implements AgentRunner {
     // the control channel; permission requests are surfaced through the same
     // approval lifecycle as questions. The launch matrix is centralized so
     // dispatch and resume cannot drift independently.
+    const compacting = args.operation === "compact";
+    if (compacting && !resumeId) throw new Error("An existing session is required to compact context.");
+    let manualBoundary = false;
     const argv = buildClaudeArgv({ permission, model, effort, resumeId });
-    if (args.interactive) argv.push("--replay-user-messages");
+    if (args.interactive && !compacting) argv.push("--replay-user-messages");
 
     let sessionId: string | undefined = resumeId;
 
@@ -149,8 +152,13 @@ export class ClaudeRunner implements AgentRunner {
       // turn). Do not cancel a live Stop's backstop while output is draining.
       if (restoringClose && ["stream_event", "assistant", "user", "control_request"].includes(ev.type)) cancelClose();
 
+      // Claude emits synthetic user messages after compaction. Keep the summary
+      // in the native session, outside the visible conversation and delivery queue.
+      if (compacting && ev.type !== "system" && ev.type !== "result") return;
+
       switch (ev.type) {
         case "system":
+          if (compacting && ev.subtype === "compact_boundary" && ev.compact_metadata?.trigger === "manual") manualBoundary = true;
           e({ taskId, kind: "status", sessionId,
             payload: { subtype: ev.subtype, model: ev.model, cwd: ev.cwd, tools: ev.tools?.length } });
           break;
@@ -196,10 +204,17 @@ export class ClaudeRunner implements AgentRunner {
           }
           break;
         }
-        case "result":
+        case "result": {
+          const compactFailed = compacting && (!manualBoundary || ev.is_error || ev.subtype !== "success");
+          if (compactFailed) {
+            const message = /not enough messages/i.test(ev.result) ? "Not enough messages to compact."
+              : ev.is_error && ev.result ? ev.result : "Claude did not confirm compaction.";
+            e({ taskId, kind: "error", sessionId, payload: { message } });
+          }
           e({ taskId, kind: "result", sessionId,
-            payload: { subtype: ev.subtype, is_error: ev.is_error, result: ev.result,
+            payload: { subtype: ev.subtype, is_error: compactFailed || ev.is_error, result: ev.result,
               num_turns: ev.num_turns, duration_ms: ev.duration_ms, total_cost_usd: ev.total_cost_usd } });
+          if (compacting) { proc.closeStdin(); break; }
           if (delivery && !delivery.sent) {
             delivery.sent = true;
             sendUser(delivery.text, delivery.images, delivery.id);
@@ -207,6 +222,7 @@ export class ClaudeRunner implements AgentRunner {
           // Turn finished. Let the process go idle unless a steer is mid-injection.
           if (!steerInFlight) scheduleClose(!!replayed);
           break;
+        }
         case "control_response":
           e({ taskId, kind: "status", sessionId, payload: { subtype: "control_response", response: ev.response } });
           break;
@@ -254,11 +270,14 @@ export class ClaudeRunner implements AgentRunner {
     });
 
     // Kick off the turn — unless reattaching, where the live turn already got it.
-    if (!reattach) sendUser(claudeSkillPrompt(prompt, args.skills), images, args.messageId);
+    if (!reattach) {
+      if (compacting) sendUser("/compact");
+      else sendUser(claudeSkillPrompt(prompt, args.skills), images, args.messageId);
+    }
 
     return {
       send: (text, images, id, skills) => {
-        if (!proc.stdinWritable() || delivery || closeTimer || !args.interactive) return Promise.resolve("rejected");
+        if (compacting || !proc.stdinWritable() || delivery || closeTimer || !args.interactive) return Promise.resolve("rejected");
         steerInFlight = true; cancelClose();
         return new Promise(resolve => {
           const timer = setTimeout(() => { settleDelivery("unknown"); scheduleClose(); }, 15_000); timer.unref();
@@ -268,7 +287,7 @@ export class ClaudeRunner implements AgentRunner {
       },
       // True mid-turn steer: interrupt the active turn, then send the new instruction.
       steer: (text: string, imgs?: InputAttachment[]) => {
-        if (!proc.stdinWritable()) return false;
+        if (compacting || !proc.stdinWritable()) return false;
         steerInFlight = true;
         cancelClose();
         writeLine({ type: "control_request", request_id: `int_${++intReq}`, request: { subtype: "interrupt" } });

@@ -53,7 +53,7 @@ async function fixture(t: test.TestContext, patch: Partial<TaskState> = {}) {
 }
 
 test("compaction preserves session and history, deduplicates requests, and excludes competing writes", async t => {
-  const f = await fixture(t), request = f.request();
+  const f = await fixture(t, { agent: "claude" }), request = f.request();
   f.service.compact("t", request);
   assert.equal(f.starts[0].operation, "compact");
   assert.equal(f.starts[0].prompt, "");
@@ -101,7 +101,7 @@ test("Stop during compaction leaves a resumable session and never reports succes
   assert.equal(f.service.getTask("t").sessionId, "session");
 });
 
-for (const patch of [{ agent: "claude" }, { sessionId: undefined }, { status: "running" }, { status: "archived" },
+for (const patch of [{ agent: "claude", sessionId: undefined }, { status: "running" }, { status: "archived" },
   { sessionControl: { owner: "local", home: "/tmp/provider", transcript: "/tmp/session.jsonl", cursor: 0, prefixHash: "" } }] as Partial<TaskState>[]) {
   test(`compaction rejects unavailable session: ${JSON.stringify(patch)}`, async t => {
     const f = await fixture(t, patch);

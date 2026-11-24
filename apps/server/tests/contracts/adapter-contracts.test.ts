@@ -891,6 +891,36 @@ test("headless Codex receives sampled frames as image files and cleans them afte
   assert(paths.every(path => !existsSync(path)));
 });
 
+test("Claude compacts the resumed session only after a manual boundary and successful result", async () => {
+  const args = startArgs({ operation: "compact", interactive: true, resumeId: "session", providerHome: "/fixture/profile" });
+  for (const outcome of ["completed", "too-short", "provider-error", "replay"] as const) {
+    const backend = new FakeBackend(), events: RawEvent[] = [];
+    const replay = outcome === "replay";
+    const handle = new ClaudeRunner().start({ ...args, reattach: replay, resumeFromSeq: replay ? 1 : undefined }, e => events.push(e), backend);
+    if (replay) {
+      assert.equal(backend.specs.length, 0);
+      assert.equal(backend.proc.writes.length, 0);
+    } else {
+      assert.deepEqual(backend.specs[0].argv.slice(-2), ["--resume", "session"]);
+      assert.equal(backend.specs[0].env?.CLAUDE_CONFIG_DIR, args.providerHome);
+      assert.deepEqual(writtenJson(backend.proc), [buildClaudeUserMessage("/compact")]);
+    }
+    assert.equal(await handle.send!("pending message", undefined, "m"), "rejected");
+    assert.equal(handle.steer("another message"), false);
+    backend.proc.emit({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: outcome === "too-short" ? "auto" : "manual" } });
+    backend.proc.emit({ type: "user", uuid: "summary", message: { role: "user", content: [{ type: "text", text: "Summary" }] } });
+    assert.equal(events.some(e => eventSubtype(e) === "message_delivered"), false);
+    backend.proc.emit({ type: "result", subtype: "success", is_error: outcome === "provider-error",
+      result: outcome === "too-short" ? "Not enough messages to compact." : outcome === "provider-error" ? "Provider unavailable" : "" });
+    const failed = outcome === "provider-error" || outcome === "too-short";
+    assert.equal((events.at(-1)?.payload as { is_error?: boolean }).is_error, failed);
+    if (failed) assert.deepEqual(events.find(e => e.kind === "error")?.payload,
+      { message: outcome === "too-short" ? "Not enough messages to compact." : "Provider unavailable" });
+    assert.equal(backend.proc.closeCount, 1);
+    backend.proc.exit(0); await handle.done;
+  }
+});
+
 for (const outcome of ["completed", "missing-item", "rejected", "interrupted"] as const) {
   test(`Codex context compaction: ${outcome}, acknowledgement is not completion`, async () => {
     const backend = new FakeBackend(), events: RawEvent[] = [];

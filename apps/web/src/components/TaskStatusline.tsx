@@ -6,7 +6,7 @@ import { AccountLimitDetails, duration, windowName, windowState } from "./Accoun
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
-import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 
 function AllowanceGauge({ remaining }: { remaining: number }) {
   return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
@@ -78,31 +78,30 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
           <ChevronDown data-icon="inline-end" className="text-muted-foreground" />
         </Button>
       </SheetTrigger>
-      <SheetContent onCloseAutoFocus={event => {
+      <SheetContent aria-describedby={undefined} onCloseAutoFocus={event => {
         if (compactAfterClose.current) { event.preventDefault(); compactAfterClose.current = false; triggerRef.current?.focus({ preventScroll: true }); onCompact(); }
       }}>
         <SheetHeader>
           <SheetTitle>Session usage</SheetTitle>
-          <SheetDescription>{task.agent === "codex" ? "Context capacity for this conversation and account limits shared across sessions." : "Account limits shared across sessions."}</SheetDescription>
         </SheetHeader>
         <SheetBody className="flex flex-col gap-4">
-          {task.agent === "codex" && <>
-            <section aria-label="Session context" className="flex flex-col gap-3 text-sm">
-              <h3 className="font-semibold">Session context</h3>
-              <p>{compacting ? "Compacting context…" : remaining !== null ? `${Number(remaining.toFixed(1))}% context remaining` : usage?.stale ? "Waiting for an updated context reading." : "Context capacity not reported yet."}</p>
+          <section aria-label="Session context" className="flex flex-col gap-3 text-sm">
+            <h3 className="font-semibold">Session context</h3>
+            {task.agent === "codex" && <>
+              <p>{compacting ? "Compacting context…" : remaining !== null ? `${Number(remaining.toFixed(1))}% context remaining` : usage?.stale ? "Waiting for an updated context reading." : "Context not reported yet."}</p>
               {usage && <>
                 <p className="tabular-nums">{usage.stale || compacting ? "Last reading: " : ""}{usage.usedTokens.toLocaleString()} / {usage.windowTokens?.toLocaleString() ?? "unknown"} tokens used</p>
-                <p className="text-muted-foreground">Last reported {new Date(usage.updatedAt).toLocaleTimeString()}. Updates when the agent reports usage.</p>
+                <p className="text-muted-foreground">Updated {new Date(usage.updatedAt).toLocaleTimeString()}</p>
               </>}
-              <Button variant="outline" disabled={!!compactReason} onClick={() => { compactAfterClose.current = true; setOpen(false); }}><Minimize2 data-icon="inline-start" />Compact context</Button>
-              {compactReason && <p className="text-muted-foreground">{compactReason}</p>}
-            </section>
-            <Separator />
-          </>}
+            </>}
+            <Button variant="outline" disabled={!!compactReason} onClick={() => { compactAfterClose.current = true; setOpen(false); }}><Minimize2 data-icon="inline-start" />Compact context</Button>
+            {compactReason && <p className="text-muted-foreground">{compactReason}</p>}
+          </section>
+          <Separator />
           <section aria-label="Account limits" className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold">{task.agent === "claude" ? "Claude" : "Codex"} account limits</h3>
             {report?.state === "ready" ? <>
-              <p className="text-sm text-muted-foreground">Shared across sessions using this account. Checked {new Date(report.checkedAt).toLocaleTimeString()}. Updates every five minutes.</p>
+              <p className="text-sm text-muted-foreground">Shared across sessions · Checked {new Date(report.checkedAt).toLocaleTimeString()}</p>
               <AccountLimitDetails report={report} now={now} />
             </> : <p className="text-sm text-muted-foreground">{accountLabel}</p>}
           </section>

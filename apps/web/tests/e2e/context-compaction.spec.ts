@@ -10,7 +10,7 @@ async function setup(page: Page, patch: Partial<TaskState> = {}) {
   const task: TaskState = { ...tasks.find(t => t.taskId === "t-idle-rich")!, agent: "codex", model: undefined,
     messageQueue: { revision: 1, paused: false, runId: null, messages: [] }, ...patch };
   const events: TaskHistoryEvent[] = Array.from({ length: 20 }, (_, index) => ({ seq: index + 1, event: {
-    taskId: task.taskId, agent: "codex", kind: "assistant_text", ts: index + 1,
+    taskId: task.taskId, agent: task.agent, kind: "assistant_text", ts: index + 1,
     payload: { text: `Earlier response ${index + 1}.\n\n${"Keep this conversation readable while managing the session. ".repeat(12)}` },
   } }));
   const requests: CompactTaskRequest[] = [];
@@ -43,7 +43,7 @@ async function setup(page: Page, patch: Partial<TaskState> = {}) {
       task.messageQueue = { ...task.messageQueue!, revision: task.messageQueue!.revision + 1, runId: null,
         compaction: { ...task.messageQueue!.compaction!, status: error ? "failed" : "completed", error } };
       if (!error) {
-        const event: TaskHistoryEvent = { seq: events.length + 1, event: { taskId: task.taskId, agent: "codex", ts: Date.now(), kind: "status", payload: { subtype: "context_compacted" } } };
+        const event: TaskHistoryEvent = { seq: events.length + 1, event: { taskId: task.taskId, agent: task.agent, ts: Date.now(), kind: "status", payload: { subtype: "context_compacted" } } };
         events.push(event);
         await send(page, task.taskId, { type: "event", event: event.event }, event.seq);
       }
@@ -68,7 +68,7 @@ for (const width of [360]) test(`compaction menu and lifecycle preserve draft an
   await expect(page.getByRole("menu").getByRole("separator")).toHaveCount(2);
   await page.getByRole("menuitem", { name: "Compact context", exact: true }).click();
   const intro = page.getByRole("alertdialog", { name: "Compact context?" });
-  await expect(intro).toContainText("Some details may be omitted");
+  await expect(intro).toContainText("summary may omit details");
   await intro.getByRole("button", { name: "Compact context", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toBeVisible();
   await expect(draft).toHaveValue("Keep my next question");
@@ -77,7 +77,7 @@ for (const width of [360]) test(`compaction menu and lifecycle preserve draft an
   await expect.poll(() => f.requests.length).toBe(1);
   await menu(page);
   await expect(page.getByRole("menuitem", { name: /Compact context/ })).toBeDisabled();
-  await expect(page.getByRole("menu")).toContainText("Context compaction is in progress.");
+  await expect(page.getByRole("menu")).toContainText("Compaction in progress.");
   await page.keyboard.press("Escape");
   await f.snapshot();
   await f.complete();
@@ -98,7 +98,7 @@ for (const width of [360]) test(`compaction menu and lifecycle preserve draft an
 
 test("slash command uses compaction and restores running state after reload", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pref:context-compaction-explained", "1"));
-  const f = await setup(page);
+  const f = await setup(page, { agent: "claude" });
   let messages = 0;
   await page.route("**/api/tasks/*/messages", async route => { messages++; await route.fulfill({ status: 500, json: { error: "Unexpected ordinary message" } }); });
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
@@ -146,7 +146,10 @@ for (const [name, patch, reason] of [
   expect(f.requests).toHaveLength(0);
 });
 
-test("unsupported agents omit compaction from the menu", async ({ page }) => {
+test("Claude offers compact in task actions and usage details", async ({ page }) => {
   await setup(page, { agent: "claude" }); await menu(page);
-  await expect(page.getByRole("menuitem", { name: /Compact context/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Compact context" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Usage details" }).click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Compact context" })).toBeEnabled();
 });
