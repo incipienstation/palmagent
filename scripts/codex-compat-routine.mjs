@@ -316,7 +316,10 @@ async function main() {
       assert(!existing.length, 'A compatibility PR already exists without matching local state; holding');
       state.worktree = join(stateRoot, 'work-' + version);
       assert(!existsSync(state.worktree), 'Existing compatibility worktree requires inspection');
-      await run('git', ['worktree', 'add', state.worktree, '-b', state.branch, source]);
+      assert(!git(cwd, 'branch', '--list', state.branch), 'Existing compatibility branch requires inspection');
+      // A failed checkout must not reserve the branch name for the next run.
+      await run('git', ['worktree', 'add', '--detach', state.worktree, source]);
+      await run('git', ['switch', '-c', state.branch], { directory: state.worktree });
       state.stage = 'checking'; save();
     }
     work = state.worktree;

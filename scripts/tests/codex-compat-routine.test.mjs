@@ -167,8 +167,18 @@ test('check-only exercises the two native CLIs but never mutates support or open
   assert.equal(f.git('status','--porcelain'),''); assert.equal(f.states().length,0);
   assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,0);
 });
-test('successful scheduled promotion creates one verified PR without model calls and resumes idempotently', async t=>{
-  const f=fixture(t), result=await f.run(['--apply','--allow-codex-repair']);
+test('scheduled promotion can retry a failed checkout and creates one verified PR without model calls', async t=>{
+  const f=fixture(t);
+  // Fail inside Git's checkout, after it has set up the worktree metadata.
+  const attributes=join(f.repo,'.git/info/attributes');
+  writeFileSync(attributes,'.nvmrc filter=checkout-failure\n');
+  f.git('config','filter.checkout-failure.required','true');
+  f.git('config','filter.checkout-failure.smudge','false');
+  const failed=await f.run(['--apply','--allow-codex-repair']);
+  assert.equal(failed.code,1,failed.output);
+  assert.equal(f.git('branch','--list','feature/codex-support-0.160.1'),'');
+  rmSync(attributes);
+  const result=await f.run(['--apply','--allow-codex-repair']);
   assert.equal(result.code,0,result.output); assert.equal(paid(f.calls()).length,0);
   assert.equal(f.states()[0].stage,'merged');
   assert.equal(JSON.parse(readFileSync(join(f.states()[0].worktree,'packages/shared/src/agent-compatibility.json'),'utf8')).codex.exclusiveMaximum,'0.160.2');
