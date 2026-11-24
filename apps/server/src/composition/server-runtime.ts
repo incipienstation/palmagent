@@ -136,11 +136,13 @@ export async function createRuntime(runtimeLease: number) {
       const readHttp = new NativeReadHttp(config.dataDir);
       if (config.nativeReadHttpPort !== undefined) {
         if (status.taskReadHttp !== 1) throw new Error("This release requires native read HTTP support");
+        if (config.nativeRoutineWrites && status.routineWriteHttp !== 1) throw new Error("This release requires native routine write HTTP support");
         // Production event batches already refresh their projection before commit. Repair
         // retained dirty rows once at startup, before the direct listener admits reads.
         for (const task of db.listTasks()) db.prepareConversation(task.taskId);
         resources.onStop(() => readHttp.configure(null));
         await readHttp.configure({ port: config.nativeReadHttpPort, authEnabled: config.authEnabled,
+          ...(config.nativeRoutineWrites && { routineWrites: true as const }),
           cookieName: config.cookieName, sessionTtlMs: config.sessionTtlMs, authOrigin: config.authOrigin });
       } else if (status.taskReadHttp === 1) {
         // A retained application may have been enabled by the previous API owner.

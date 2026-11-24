@@ -68,11 +68,12 @@ fn cookie(request: &Request, name: &str) -> Option<String> {
 async fn admit(client: &Client, request: Request) -> Result<Request, Response> {
     if client.enabled && request.uri().path().starts_with("/api/") {
         if !matches!(request.method().as_str(), "GET" | "HEAD" | "OPTIONS")
-            && request
+            && !request
                 .headers()
-                .get("origin")
-                .and_then(|v| v.to_str().ok())
-                != Some(client.origin.as_str())
+                .get_all("origin")
+                .iter()
+                .map(|v| v.as_bytes())
+                .eq([client.origin.as_bytes()])
         {
             return Err(error(
                 StatusCode::FORBIDDEN,
@@ -104,6 +105,24 @@ async fn admit(client: &Client, request: Request) -> Result<Request, Response> {
             }
         }
     }
+    // Only explicitly mounted mutation routes carry a matched path on this listener.
+    let mut versions = request.headers().get_all("x-palmagent-version").iter();
+    if request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .is_some()
+        && matches!(request.method().as_str(), "POST" | "PATCH" | "DELETE")
+        && versions.next().is_some_and(|v| {
+            versions.next().is_some()
+                || (!v.is_empty() && v.as_bytes() != env!("PALMAGENT_PRODUCT_VERSION").as_bytes())
+        })
+    {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "Palmagent was updated. Refresh the app before making changes.",
+            Some("update-required"),
+        ));
+    }
     if request.method() == "HEAD" {
         return Err(error(StatusCode::NOT_FOUND, "not found", None));
     }
@@ -124,14 +143,14 @@ async fn admit(client: &Client, request: Request) -> Result<Request, Response> {
         ));
     }
     let (parts, body) = request.into_parts();
-    to_bytes(body, 1024 * 1024).await.map_err(|_| {
+    let bytes = to_bytes(body, 1024 * 1024).await.map_err(|_| {
         error(
             StatusCode::PAYLOAD_TOO_LARGE,
             "request body too large",
             None,
         )
     })?;
-    Ok(Request::from_parts(parts, Body::empty()))
+    Ok(Request::from_parts(parts, Body::from(bytes)))
 }
 pub async fn authenticate(State(client): State<Client>, request: Request, next: Next) -> Response {
     let mut response = match admit(&client, request).await {

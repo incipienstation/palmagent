@@ -73,6 +73,7 @@ const InstallEnv = z
     HOST: LoopbackHost.default(DEFAULTS.host),
     PORT: Port.default(DEFAULTS.port),
     NATIVE_READ_HTTP_PORT: Port.optional(),
+    NATIVE_ROUTINE_WRITES: z.enum(["0", "1"]).optional(),
     DISPATCH_CONCURRENCY: Concurrency.default(DEFAULTS.concurrency),
     DATA_DIR: z.string().min(1).optional(),
     RUNNER_SOCKET: z.string().min(1).optional(),
@@ -106,6 +107,7 @@ const InstallEnv = z
       .default(DEFAULT_CAPS.tasksMaxWeb),
   })
   .passthrough()
+  .refine(value => value.NATIVE_ROUTINE_WRITES !== "1" || value.NATIVE_READ_HTTP_PORT !== undefined, { message: "NATIVE_ROUTINE_WRITES requires NATIVE_READ_HTTP_PORT", path: ["NATIVE_ROUTINE_WRITES"] })
   .refine(value => value.NATIVE_READ_HTTP_PORT !== value.PORT, { message: "NATIVE_READ_HTTP_PORT must differ from PORT", path: ["NATIVE_READ_HTTP_PORT"] })
   .refine(value => value.NATIVE_READ_HTTP_PORT === undefined || value.SUPERVISOR === "palmagentd", { message: "NATIVE_READ_HTTP_PORT requires the native supervisor", path: ["NATIVE_READ_HTTP_PORT"] });
 
@@ -279,6 +281,7 @@ export function loadConfig(
     host: e.HOST,
     port: e.PORT,
     nativeReadHttpPort: e.NATIVE_READ_HTTP_PORT,
+    nativeRoutineWrites: e.NATIVE_ROUTINE_WRITES === "1",
     concurrency: e.DISPATCH_CONCURRENCY,
     pushSubject: e.PUSH_SUBJECT ?? "",
     repoRoots: e.REPO_ROOTS ?? "",
@@ -306,6 +309,7 @@ export function renderInstallConfig(cfg: InstallConfig): string {
     `HOST=${cfg.host}`,
     `PORT=${cfg.port}`,
     cfg.nativeReadHttpPort !== undefined ? `NATIVE_READ_HTTP_PORT=${cfg.nativeReadHttpPort}` : "",
+    cfg.nativeRoutineWrites ? "NATIVE_ROUTINE_WRITES=1" : "",
     `DISPATCH_CONCURRENCY=${cfg.concurrency}`,
     `DATA_DIR=${cfg.dataDir}`,
     `RUNNER_SOCKET=${cfg.runnerSocket}`,

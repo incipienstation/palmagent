@@ -83,7 +83,9 @@ async fn serve(args: &[String]) -> Result<()> {
             .join("telemetry.json"),
     );
     measurements.tick(0);
-    let public_reads = composition::read_http::Listener::new(db.clone(), measurements.clone());
+    let client = Client::new(sender.clone(), measurements.clone());
+    let public_reads =
+        composition::read_http::Listener::new(db.clone(), measurements.clone(), client.clone());
     let usage = task_http::Client::new(Box::new(TaskUsageService::new(Box::new(
         SqliteUsage::open(&db)?,
     ))));
@@ -94,7 +96,6 @@ async fn serve(args: &[String]) -> Result<()> {
         SqliteTranscript::open(&db)?,
     ))));
     let sampler = measurements.clone();
-    let client = Client::new(sender.clone(), measurements.clone());
     let (ready_send, ready_receive) = tokio::sync::oneshot::channel();
     let handle = tokio::runtime::Handle::current();
     let owner_sender = sender.clone();

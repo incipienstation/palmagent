@@ -60,6 +60,7 @@ console.log(JSON.stringify(request.action === 'status' ? { protocol: 1, ...build
 test("daemon configuration pins native and Node artifacts and preserves the supervisor selection", t => {
   const f = fixture(t);
   f.cfg.nativeReadHttpPort = 4101;
+  f.cfg.nativeRoutineWrites = true;
   configureDaemon(f.cfg); saveConfig(f.cfg);
   const config = DaemonConfigurationSchema.parse(JSON.parse(readFileSync(join(f.root, "daemon/config.json"), "utf8")));
   assert.equal(config.daemon, f.binary);
@@ -71,7 +72,11 @@ test("daemon configuration pins native and Node artifacts and preserves the supe
   assert.equal(loaded.nativeReadHttpPort, 4101);
   assert.equal(config.environment.NATIVE_READ_HTTP_PORT, "4101");
   assert.equal(daemonConfiguration(loaded).environment.NATIVE_READ_HTTP_PORT, "4101", "updates retain the read listener");
+  assert.equal(daemonConfiguration(loaded).environment.NATIVE_ROUTINE_WRITES, "1");
   saveConfig({ ...loaded, nativeReadHttpPort: undefined });
+  assert.throws(() => loadConfig({ dataDir: f.root }), /requires NATIVE_READ_HTTP_PORT/);
+  saveConfig({ ...loaded, nativeReadHttpPort: undefined, nativeRoutineWrites: false });
+  assert.equal(daemonConfiguration(loadConfig({ dataDir: f.root })).environment.NATIVE_ROUTINE_WRITES, undefined);
   assert.equal(daemonConfiguration(loadConfig({ dataDir: f.root })).environment.NATIVE_READ_HTTP_PORT, undefined);
   saveConfig({ ...loaded, nativeReadHttpPort: loaded.port });
   assert.throws(() => loadConfig({ dataDir: f.root }), /must differ/);
