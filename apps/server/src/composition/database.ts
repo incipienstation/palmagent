@@ -1,5 +1,6 @@
 import { recoverTasks } from "../modules/tasks/application/use-cases/recover-tasks.js";
 import { openDatabase } from "../platform/sqlite/connection.js";
+import type { SpaceCatalogWriter } from "../modules/spaces/application/ports/outbound/spaces.js";
 import { SqliteSpaces } from "../modules/spaces/adapters/outbound/sqlite-spaces.js";
 import { SqliteRoutines } from "../modules/routines/adapters/outbound/sqlite-routines.js";
 import { SqliteAuth } from "../modules/auth/adapters/outbound/sqlite-auth.js";
@@ -12,7 +13,7 @@ export class Db {
   readonly setRepoBaseRef: SqliteSpaces["setRepoBaseRef"];
   readonly getRepo: SqliteSpaces["getRepo"];
   readonly listRepos: SqliteSpaces["listRepos"];
-  private removeSpace?: (id: string) => void;
+  private spaceWriter: SpaceCatalogWriter;
   readonly deleteRepo: SqliteSpaces["deleteRepo"];
   readonly insertRoutine: SqliteRoutines["insertRoutine"];
   readonly updateRoutine: SqliteRoutines["updateRoutine"];
@@ -59,7 +60,7 @@ export class Db {
   readonly setTaskPin: SqliteTasks["setTaskPin"];
   readonly setTaskPinOrder: SqliteTasks["setTaskPinOrder"];
   readonly setTaskTitle: SqliteTasks["setTaskTitle"];
-  readonly selectTaskOwner: (owner: Parameters<SqliteTasks["selectEventWriter"]>[0] & { removeSpace(id: string): void }) => void;
+  readonly selectTaskOwner: (owner: Parameters<SqliteTasks["selectEventWriter"]>[0] & { spaces: SpaceCatalogWriter }) => void;
   readonly appendAgentEvents: SqliteTasks["appendAgentEvents"];
   readonly importSessionEvents: SqliteTasks["importSessionEvents"];
   readonly setTaskStatus: SqliteTasks["setTaskStatus"];
@@ -101,11 +102,12 @@ export class Db {
     this.connection = openDatabase(path);
     try {
     const spaces = new SqliteSpaces(this.connection);
-    this.insertRepo = spaces.insertRepo.bind(spaces);
-    this.setRepoBaseRef = spaces.setRepoBaseRef.bind(spaces);
+    this.spaceWriter = spaces;
+    this.insertRepo = repo => this.spaceWriter.insertRepo(repo);
+    this.setRepoBaseRef = (id, baseRef) => this.spaceWriter.setRepoBaseRef(id, baseRef);
     this.getRepo = spaces.getRepo.bind(spaces);
     this.listRepos = spaces.listRepos.bind(spaces);
-    this.deleteRepo = id => this.removeSpace ? this.removeSpace(id) : spaces.deleteRepo(id);
+    this.deleteRepo = id => this.spaceWriter.deleteRepo(id);
     const routines = new SqliteRoutines(this.connection);
     this.insertRoutine = routines.insertRoutine.bind(routines);
     this.updateRoutine = routines.updateRoutine.bind(routines);
@@ -154,7 +156,7 @@ export class Db {
     this.setTaskPin = tasks.setTaskPin.bind(tasks);
     this.setTaskPinOrder = tasks.setTaskPinOrder.bind(tasks);
     this.setTaskTitle = tasks.setTaskTitle.bind(tasks);
-    this.selectTaskOwner = owner => { tasks.selectEventWriter(owner); this.removeSpace = id => owner.removeSpace(id); };
+    this.selectTaskOwner = owner => { tasks.selectEventWriter(owner); this.spaceWriter = owner.spaces; };
     this.appendAgentEvents = tasks.appendAgentEvents.bind(tasks);
     this.importSessionEvents = tasks.importSessionEvents.bind(tasks);
     this.setTaskStatus = tasks.setTaskStatus.bind(tasks);

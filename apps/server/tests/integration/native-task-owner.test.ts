@@ -21,8 +21,16 @@ test("native queue commits before dispatch, rolls back with completion and prese
   const ids = new NodeIdentifierGenerator();
   let native = new NativeRetainedTurns(binary, path, lease.fd);
   t.after(async () => { await native.close(); db.close(); lease(); rmSync(root, { recursive: true, force: true }); });
-  db.insertRepo({ id: "space", name: "Fixture", path: root, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  const space = { id: "space", name: "Fixture 🌱", path: root, vcs: "git" as const, defaultBaseRef: "main", createdAt: 1 };
+  db.selectTaskOwner(native);
+  assert.throws(() => db.insertRepo(space), /recovery has not committed/);
+  assert.equal(retainedReader.getRepo(space.id), undefined);
+  assert.throws(() => db.setRepoBaseRef(space.id, "develop"), /recovery has not committed/);
   assert.deepEqual(native.recover([], () => assert.fail("unexpected attachment"), 1), { reattached: [], recovered: [] });
+  db.insertRepo(space);
+  db.setRepoBaseRef(space.id, "develop");
+  assert.deepEqual(retainedReader.getRepo(space.id), { ...space, defaultBaseRef: "develop" });
+  assert.throws(() => db.insertRepo({ ...space, name: "duplicate" }), /UNIQUE/);
   const task = { taskId: "task", repoId: "space", agent: "codex", prompt: "Initial", status: "idle",
     permission: "read-only", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 } as const;
   const file = { id: ids.uuid(), taskId: "task", mediaType: "image/png" as const, size: 8, digest: "fixture", unusedSince: null, expiredAt: null };
@@ -32,7 +40,6 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.equal(db.attachment("task", file.id), undefined);
   native.create(task, stage);
   assert.deepEqual(native.attachments.attachmentByDigest("task", file.digest), db.attachment("task", file.id));
-  db.selectTaskOwner(native);
   const events = [{ taskId: "task", agent: "codex" as const, kind: "assistant_text" as const, payload: { text: "stream" }, ts: 2 }];
   assert.equal(db.appendAgentEvents("task", events, 1)[0].seq, 1);
   assert.equal(db.conversationPage("task").cursor, 1);
@@ -126,8 +133,9 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.deepEqual(attached, ["task"]);
   assert.equal(db.readMessageState("task")?.messages[0].status, "unknown");
   assert.equal(db.readMessageState("task")?.paused, true);
-  assert.throws(() => native.removeSpace("space"), /active work/);
   db.selectTaskOwner(native);
+  assert.equal(db.getRepo(space.id)?.defaultBaseRef, "develop");
+  assert.throws(() => db.deleteRepo(space.id), /active work/);
   for (const task of db.listTasks()) native.metadata.setTaskStatus(task.taskId, "archived", false, 10);
   db.deleteRepo("space");
   assert.equal(db.getRepo("space"), undefined);

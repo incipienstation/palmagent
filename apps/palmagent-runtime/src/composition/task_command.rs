@@ -45,8 +45,8 @@ enum Request {
         task_id: String,
         observation: crate::modules::tasks::application::shared_session::SharedObservation,
     },
-    RemoveSpace {
-        id: String,
+    SpaceCatalog {
+        mutation: crate::modules::spaces::application::CatalogMutation,
     },
     Subscription {
         operation: crate::modules::tasks::adapters::outbound::sqlite_subscriptions::Subscription,
@@ -253,7 +253,7 @@ fn execute(
             Ok(effect) => json!({"effect":effect}), Err(reason)=>json!({"conflict":reason})
         },
         Request::SharedSnapshot {task_id,observation} => json!(owner.shared_snapshot(&task_id,observation)?),
-        Request::RemoveSpace {id} => { owner.remove_space(&id)?; Value::Null },
+        Request::SpaceCatalog {mutation} => { owner.mutate_space(mutation)?; Value::Null },
         Request::Subscription {operation} => owner.subscription(operation)?,
         Request::Records {task_id,query} => owner.records(&task_id,query)?,
         Request::Files {command} => owner.files(command)?,
