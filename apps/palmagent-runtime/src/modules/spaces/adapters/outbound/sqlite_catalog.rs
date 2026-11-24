@@ -1,7 +1,22 @@
-//! Catalog writes use the worker connection and the existing product schema.
+//! Catalog operations use the worker connection and the existing product schema.
 use crate::modules::spaces::application::{CatalogMutation, SpaceRecord};
 use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
+
+/// Resolve one registration per requested path in a single committed snapshot.
+pub fn discovered_repo_ids(db: &Connection, paths: &[String]) -> Result<Vec<(String, String)>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT r.path, r.id FROM json_each(?1) AS wanted
+         JOIN repos AS r ON r.rowid = (
+           SELECT rowid FROM repos WHERE path = wanted.value
+           ORDER BY created_at DESC, rowid DESC LIMIT 1
+         )",
+    )?;
+    let rows = stmt.query_map([serde_json::to_string(paths)?], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
 
 fn insert(db: &Connection, space: &SpaceRecord) -> Result<()> {
     db.execute(

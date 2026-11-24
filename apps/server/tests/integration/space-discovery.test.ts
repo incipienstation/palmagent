@@ -4,25 +4,33 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { test } from "node:test";
+import { Db } from "../../src/composition/database.js";
 import { SpaceDiscoveryService } from "../../src/modules/spaces/application/use-cases/space-discovery.js";
 import { localSpaceDiscovery } from "../../src/modules/spaces/adapters/outbound/local-discovery.js";
 
 function fixture(t: test.TestContext) {
   const root = mkdtempSync(join(tmpdir(), "palmagent-discovery-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const db = new Db(join(root, "catalog.sqlite"));
+  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
   const repository = join(root, "project"), plain = join(root, "plain");
   mkdirSync(repository); mkdirSync(plain); mkdirSync(join(repository, "sub"));
   execFileSync("git", ["init", "--initial-branch=main", repository], { stdio: "ignore" });
   execFileSync("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--allow-empty", "-m", "fixture"], { stdio: "ignore" });
+  db.insertRepo({ id: "repository", name: "project", path: repository, vcs: "git", defaultBaseRef: "main", createdAt: 0 });
+  db.insertRepo({ id: "plain", name: "plain", path: plain, vcs: "none", defaultBaseRef: "", createdAt: 0 });
   const service = new SpaceDiscoveryService(localSpaceDiscovery,
-    { get: () => ({ repoRoots: [root], defaults: [], source: "saved" }) },
-    { listRepos: () => [{ id: "repository", name: "project", path: repository, vcs: "git", defaultBaseRef: "main", createdAt: 0 },
-      { id: "plain", name: "plain", path: plain, vcs: "none", defaultBaseRef: "", createdAt: 0 }] });
-  return { root, repository, plain, service };
+    { get: () => ({ repoRoots: [root], defaults: [], source: "saved" }) }, db);
+  return { root, repository, plain, service, db };
 }
 
 test("real filesystem and Git inspection preserve path normalization, registration, and suggestions", t => {
   const f = fixture(t), input = ` ${join(f.repository, "sub")} `;
+  const scan = f.service.discover(false);
+  f.db.insertRepo({ id: "legacy-copy", name: "project", path: f.repository, vcs: "git", defaultBaseRef: "main", createdAt: 0 });
+  const cached = f.service.discover(false);
+  assert.equal(cached.scannedAt, scan.scannedAt);
+  assert.equal(scan.repos[0].repoId, "repository");
+  assert.equal(cached.repos[0].repoId, "legacy-copy");
   const git = f.service.validate(input);
   assert.equal(git.input, input); assert.equal(git.resolved, join(f.repository, "sub"));
   assert.equal(git.root, f.repository); assert.equal(git.branch, "main"); assert.equal(git.repoId, "repository");

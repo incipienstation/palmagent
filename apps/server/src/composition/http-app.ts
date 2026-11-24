@@ -68,7 +68,7 @@ export function createApp(deps: HttpDependencies, view?: import("hono").Middlewa
     .route("/api/voice", voiceRoutes(deps))
     .route("/api/terminals", terminalRoutes(deps))
     .route("/api/tasks", taskRoutes(deps))
-    .route("/api", repoRoutes({ service, discovery: new SpaceDiscoveryService(localSpaceDiscovery, deps.settings, service) }))
+    .route("/api", repoRoutes({ service, discovery: new SpaceDiscoveryService(localSpaceDiscovery, deps.settings, deps.spaceCatalog) }))
     .route("/api/routines", routineRoutes(deps))
     .route("/api/push", pushRoutes(deps))
     .route("/api/settings/updates", updateSettingsRoutes(deps))

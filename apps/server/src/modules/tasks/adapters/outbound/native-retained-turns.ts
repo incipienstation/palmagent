@@ -34,6 +34,7 @@ export class NativeRetainedTurns implements RetainedTurns, TaskEventBatches {
     return this.command({kind: "sharedSnapshot", taskId, observation}) as ReturnType<RetainedTurns["sharedSnapshot"]>;
   }
   readonly spaces = {
+    discoveredRepoIds: (paths: string[]) => this.command({ kind: "discoveredRepoIds", paths }) as [string, string][],
     insertRepo: (repo: Repo) => { this.command({ kind: "spaceCatalog", mutation: { ...repo, kind: "register" } }); },
     registerRepo: (repo: Repo) => this.command({ kind: "spaceCatalog", mutation: { ...repo, kind: "registerIfAbsent" } }) as Repo | null,
     setRepoBaseRef: (id: string, baseRef: string) => { this.command({ kind: "spaceCatalog", mutation: { kind: "setBaseRef", id, baseRef } }); },

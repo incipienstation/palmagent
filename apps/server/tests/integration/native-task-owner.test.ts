@@ -32,6 +32,9 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.deepEqual(retainedReader.getRepo(space.id), { ...space, defaultBaseRef: "develop" });
   // Older catalogs may already have a second row with the same path and timestamp.
   db.insertRepo({ ...space, id: "legacy-copy" });
+  const paths = [root + "/unregistered", root];
+  assert.deepEqual(native.spaces.discoveredRepoIds(paths), [[root, "legacy-copy"]]);
+  assert.deepEqual(retainedReader.discoveredRepoIds(paths), native.spaces.discoveredRepoIds(paths));
   const retry = { ...space, id: "retry", name: "duplicate" };
   assert.deepEqual(db.registerRepo(retry), { ...space, defaultBaseRef: "develop" });
   assert.deepEqual(retainedReader.registerRepo(retry), db.getRepoByPath(root));

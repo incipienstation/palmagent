@@ -16,7 +16,10 @@ function fixture() {
     scan: (roots, refresh) => { calls.push(["scan", roots, refresh]); return { repos: scanned, scannedAt: 10 }; },
     browse: (path, roots) => { calls.push(["browse", path, roots]); return { path: path ?? roots[0], entries: [] }; },
   };
-  const service = new SpaceDiscoveryService(discovery, { get: () => ({ repoRoots: roots, defaults: [], source: "saved" }) }, { listRepos: () => registered });
+  const service = new SpaceDiscoveryService(discovery, { get: () => ({ repoRoots: roots, defaults: [], source: "saved" }) }, {
+    getRepoByPath: path => registered.find(repo => repo.path === path),
+    discoveredRepoIds: paths => registered.filter(repo => paths.includes(repo.path)).map(repo => [repo.path, repo.id]),
+  });
   return { service, calls, scanned, setInspection: (value: DiscoveryPathInspection) => { inspection = value; },
     roots: (value: string[]) => { roots = value; },
     register: (path: string) => registered.push({ id: "registered", name: "project", path, vcs: "git", defaultBaseRef: "main", createdAt: 0 }),

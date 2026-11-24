@@ -13,6 +13,7 @@ export class Db {
   readonly registerRepo: SqliteSpaces["registerRepo"];
   readonly setRepoBaseRef: SqliteSpaces["setRepoBaseRef"];
   readonly getRepo: SqliteSpaces["getRepo"];
+  readonly discoveredRepoIds: SqliteSpaces["discoveredRepoIds"];
   readonly getRepoByPath: SqliteSpaces["getRepoByPath"];
   readonly listRepos: SqliteSpaces["listRepos"];
   private spaceWriter: SpaceCatalogWriter;
@@ -109,6 +110,7 @@ export class Db {
     this.registerRepo = repo => this.spaceWriter.registerRepo(repo);
     this.setRepoBaseRef = (id, baseRef) => this.spaceWriter.setRepoBaseRef(id, baseRef);
     this.getRepo = spaces.getRepo.bind(spaces);
+    this.discoveredRepoIds = spaces.discoveredRepoIds.bind(spaces);
     this.getRepoByPath = spaces.getRepoByPath.bind(spaces);
     this.listRepos = spaces.listRepos.bind(spaces);
     this.deleteRepo = id => this.spaceWriter.deleteRepo(id);

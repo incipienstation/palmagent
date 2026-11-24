@@ -45,6 +45,9 @@ enum Request {
         task_id: String,
         observation: crate::modules::tasks::application::shared_session::SharedObservation,
     },
+    DiscoveredRepoIds {
+        paths: Vec<String>,
+    },
     SpaceCatalog {
         mutation: crate::modules::spaces::application::CatalogMutation,
     },
@@ -253,6 +256,7 @@ fn execute(
             Ok(effect) => json!({"effect":effect}), Err(reason)=>json!({"conflict":reason})
         },
         Request::SharedSnapshot {task_id,observation} => json!(owner.shared_snapshot(&task_id,observation)?),
+        Request::DiscoveredRepoIds {paths} => json!(owner.discovered_repo_ids(&paths)?),
         Request::SpaceCatalog {mutation} => json!(owner.mutate_space(mutation)?),
         Request::Subscription {operation} => owner.subscription(operation)?,
         Request::Records {task_id,query} => owner.records(&task_id,query)?,

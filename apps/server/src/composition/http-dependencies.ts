@@ -22,6 +22,7 @@ export type HttpDependencies = {
   agentInstallations?: Pick<AgentInstallations, "list" | "update" | "observe">;
   terminals?: Pick<TerminalUseCases, "list" | "capabilities" | "create" | "getPublic" | "rename" | "terminate">;
   terminalTickets?: Pick<TerminalTickets, "issue">;
+  spaceCatalog: import("../modules/spaces/application/ports/outbound/discovery.js").SpaceDiscoveryCatalog;
   settings: Pick<SpaceSettings, "get" | "change">;
   hub: LiveEventStream;
   service: HttpTaskUseCases & import("../modules/spaces/api.js").SpaceUseCases;

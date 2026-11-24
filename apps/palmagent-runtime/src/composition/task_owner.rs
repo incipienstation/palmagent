@@ -174,6 +174,12 @@ impl TaskOwner {
         }
     }
 
+    pub fn discovered_repo_ids(&self, paths: &[String]) -> Result<Vec<(String, String)>> {
+        crate::modules::spaces::adapters::outbound::sqlite_catalog::discovered_repo_ids(
+            &self.db, paths,
+        )
+    }
+
     pub fn mutate_space(
         &mut self,
         mutation: crate::modules::spaces::application::CatalogMutation,
