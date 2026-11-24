@@ -167,7 +167,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
         }}>
           <AlertDialogHeader>
             <AlertDialogTitle>Compact context?</AlertDialogTitle>
-            <AlertDialogDescription>Summarize earlier messages to free context space. Some details may be omitted from the model’s context. Your visible conversation and draft stay in place.</AlertDialogDescription>
+            <AlertDialogDescription>The agent’s summary may omit details. Your chat history stays visible.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Not now</AlertDialogCancel>
@@ -237,7 +237,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
               ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length)} onClick={() => void endEdit(true)}><Check /></Button>
               : primaryAction === "send" ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={submit} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
-            description={deliveryMode === "queue" ? "These settings are saved with the queued message." : "These settings apply to the next idle Send. Hold Send to choose Queue."}
+            description={deliveryMode === "queue" ? "Applies to this queued message." : "Applies to your next message while idle."}
             settings={{ catalog, agent: task?.agent ?? "claude", model: displayedModel, onModelChange: setModel, effort: displayedEffort, onEffortChange: setEffort,
               permission, onPermissionChange: setPermission }} />)}
         </div>
@@ -308,13 +308,13 @@ function TaskActionsMenu({
           <MessageCircle /><span>{sideChatActive ? "Resume side chat" : "Side chat"}</span>
           {sideChatUnread && <span className="ml-auto text-xs text-muted-foreground">New reply</span>}
         </DropdownMenuItem>}
-        {task.agent === "codex" && <DropdownMenuItem disabled={!!compactReason} onSelect={onCompact}>
+        <DropdownMenuItem disabled={!!compactReason} onSelect={onCompact}>
           <Minimize2 />
           <span className="flex min-w-0 flex-col">
             <span>Compact context</span>
             {compactReason && <span className="max-w-56 whitespace-normal text-xs text-muted-foreground">{compactReason}</span>}
           </span>
-        </DropdownMenuItem>}
+        </DropdownMenuItem>
         <DropdownMenuItem disabled={busy} onSelect={onTerminal}><Terminal />Open terminal</DropdownMenuItem>
         <DropdownMenuItem onSelect={onRecords}><ListTree />Execution records</DropdownMenuItem>
         <DropdownMenuItem onSelect={onDetails}><Info />Session details</DropdownMenuItem>

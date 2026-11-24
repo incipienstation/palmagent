@@ -15,10 +15,9 @@ export interface ContextCompaction {
 
 /** The same admission explanation is used by the menu and the server. */
 export function compactUnavailableReason(task: TaskState): string | undefined {
-  if (task.agent !== "codex") return "Context compaction is available only for Codex.";
   if (task.sessionControl?.owner === "shared") return "Compact context in the connected Codex client.";
   if (task.sessionControl && task.sessionControl.owner !== "palmagent") return "Continue this session in Palmagent first.";
-  if (task.messageQueue?.compaction?.status === "running") return "Context compaction is in progress.";
+  if (task.messageQueue?.compaction?.status === "running") return "Compaction in progress.";
   if (task.status === "archived" || task.status === "cancelled") return "This task is closed.";
   if (!task.sessionId) return "Available after the first response.";
   if (!task.worktreePath) return "The session directory is unavailable.";

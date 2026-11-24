@@ -78,20 +78,14 @@ pending question or approval; those retain their separate controls.
 
 ## Context compaction
 
-Context compaction is a dedicated Codex execution, not a user prompt. The task menu
-and `/compact` shortcut call `POST /api/tasks/:id/compact` with a UUID `requestId`
-and the latest message-control `expectedRevision`. Admission requires an existing,
-idle or failed Codex session owned by Palmagent with no unresolved messages.
-An accepted request occupies the ordinary execution slot and resumes the same
-native thread before calling `thread/compact/start`.
+Choose **Compact context** from the task menu or usage details, or enter `/compact`.
+Palmagent resumes the same Claude or Codex session with its saved profile. The session
+must be idle or failed, owned by Palmagent, and have no unresolved messages.
 
-The latest compaction receipt and state are persisted in the message-control
-aggregate. Matching retries return that receipt; stale revisions cannot start a
-second operation. New messages and legacy steers are rejected during compaction.
-Restart reattaches the existing execution without issuing another compaction.
-The API acknowledgement is not completion: success requires the native
-`contextCompaction` item and terminal turn result. Stop, missing completion, and
-provider failure remain visible and resumable. Visible transcript events are retained.
+The compact endpoint checks the queue revision and saves a receipt for each request ID.
+Retries and restarts reuse the existing operation. Completion requires a successful
+provider result and a manual `compact_boundary` from Claude or a completed
+`contextCompaction` item from Codex. The visible conversation and draft are preserved.
 
 ## Verification
 

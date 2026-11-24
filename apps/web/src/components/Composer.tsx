@@ -33,7 +33,7 @@ export interface ComposerSettings {
   children?: ReactNode;
 }
 
-function Configuration({ settings: s, description }: { settings: ComposerSettings; description: string }) {
+function Configuration({ settings: s }: { settings: ComposerSettings }) {
   const catalog = s.catalog;
   const models = modelChoices(catalog, s.model);
   return <FieldGroup className="gap-6">
@@ -50,7 +50,6 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
         {models.map((m) => <ToggleGroupItem key={m.value} value={m.value}
           variant="list">
           <span className="min-w-0 break-words">{m.value === DEFAULT_OPTION ? "Default" : m.label}
-            {m.value === DEFAULT_OPTION && <span className="block text-xs font-normal text-muted-foreground">Use the agent's default model</span>}
           </span>
           {s.model === m.value && <Check className="size-5 shrink-0" aria-hidden="true" />}
         </ToggleGroupItem>)}
@@ -65,7 +64,6 @@ function Configuration({ settings: s, description }: { settings: ComposerSetting
     </Field>
     <PermissionPicker agent={s.agent} value={s.permission} onChange={s.onPermissionChange} />
     {s.children}
-    <p className="text-xs text-muted-foreground">{description}</p>
   </FieldGroup>;
 }
 
@@ -184,10 +182,10 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
           }}>
           <SheetHeader>
             <SheetTitle>Configure</SheetTitle>
-            <SheetDescription>{settings.onAgentChange ? "Settings for this new task." : "Settings for the next message."}</SheetDescription>
+            <SheetDescription>{description}</SheetDescription>
           </SheetHeader>
           <SheetBody data-slot="settings-scroll" data-vaul-no-drag>
-            <Configuration settings={settings} description={description} />
+            <Configuration settings={settings} />
           </SheetBody>
           <SheetFooter>
             <Button type="button" onClick={() => setConfigure(false)}>Done</Button>
