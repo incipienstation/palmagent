@@ -150,7 +150,7 @@ function TaskGroup({ label, accessibleName = label, description, tasks, showSpac
   actions?: ReactNode;
 }) {
   if (!tasks.length) return null;
-  return <section aria-label={accessibleName} className="mx-4 mt-3 overflow-clip rounded-2xl border bg-card">
+  return <section aria-label={accessibleName} className="mt-3 overflow-clip border-y bg-card md:mx-4 md:rounded-2xl md:border-x">
     <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b bg-muted py-1 pr-2 pl-4">
       {showSpace && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
       <div className="min-w-0 flex-1">
