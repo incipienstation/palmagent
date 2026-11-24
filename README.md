@@ -5,7 +5,7 @@
   <p>Start coding tasks, follow their progress, and pick up from your phone or desktop.</p>
   <p>
     <a href="https://github.com/incipienstation/palmagent/releases">
-      <img src="https://img.shields.io/github/v/release/incipienstation/palmagent?include_prereleases=true&amp;label=latest%20release&amp;color=0f766e" alt="Latest release" />
+      <img src="https://img.shields.io/github/v/release/incipienstation/palmagent?include_prereleases=&amp;label=latest%20release&amp;color=0f766e" alt="Latest release" />
     </a>
     <a href="LICENSE">
       <img src="https://img.shields.io/github/license/incipienstation/palmagent?color=0f766e" alt="MIT license" />
