@@ -45,6 +45,8 @@ export class Db {
   readonly getEnrollToken: SqliteAuth["getEnrollToken"];
   readonly consumeEnrollToken: SqliteAuth["consumeEnrollToken"];
   readonly readMessageState: SqliteTasks["readMessageState"];
+  readonly readyMessageTaskIds: SqliteTasks["readyMessageTaskIds"];
+  readonly listMessageStates: SqliteTasks["listMessageStates"];
   readonly messageTaskIds: SqliteTasks["messageTaskIds"];
   readonly writeMessageState: SqliteTasks["writeMessageState"];
   readonly transaction: SqliteTasks["transaction"];
@@ -144,6 +146,8 @@ export class Db {
     this.consumeEnrollToken = auth.consumeEnrollToken.bind(auth);
     const tasks = new SqliteTasks(this.connection);
     this.readMessageState = tasks.readMessageState.bind(tasks);
+    this.readyMessageTaskIds = tasks.readyMessageTaskIds.bind(tasks);
+    this.listMessageStates = tasks.listMessageStates.bind(tasks);
     this.messageTaskIds = tasks.messageTaskIds.bind(tasks);
     this.writeMessageState = tasks.writeMessageState.bind(tasks);
     this.transaction = tasks.transaction.bind(tasks);

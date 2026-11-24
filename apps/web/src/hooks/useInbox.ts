@@ -5,7 +5,7 @@ import { observeTaskActivity } from "../task-activity";
 import { observeTaskMutation, projectTask, useTaskMutations } from "../task-mutations";
 import { clientReadKeys } from "../client-query-keys";
 import { refreshClientReads } from "../query-client";
-import { reconcileTasks } from "../task-snapshot";
+import { applyTaskChanges, reconcileTasks } from "../task-snapshot";
 import { updatesChanged } from "../update-events";
 import { observeServerVersion } from "../pwa";
 import { useEffect, useRef, useState } from "react";
@@ -44,7 +44,7 @@ export function useInbox(): Inbox {
       terminalsChanged();
     };
     const connection = connectSse(
-      "/api/stream?snapshots=1",
+      "/api/stream?snapshots=1&taskChanges=1",
       (e) => {
         let frame: SseFrame;
         try {
@@ -68,6 +68,12 @@ export function useInbox(): Inbox {
           }
           seenSnapshot = true;
           recoverReads = false;
+        }
+        if (frame.type === "task-changes") {
+          frame.tasks.forEach(task => { observeTaskMutation(task); observeTaskActivity(task); });
+          const next = applyTaskChanges(snapshot.current, frame);
+          snapshot.current = next;
+          setTasks(next);
         }
         if (frame.type === "read-change") {
           if (frame.terminals) terminalsChanged();

@@ -311,7 +311,7 @@ export class TaskService implements PrStatusSink {
           return handle.send(message.text, this.attachments.load(id, message.attachments) ?? message.images, message.id, skills);
         } catch { return "rejected"; }
       },
-      changed: () => this.broadcastTasks(),
+      changed: id => this.broadcastTask(id),
     }, attachments, ids, timing, retainedTurns);
     this.execution = new TaskExecution(db, supervisor, backend, this.messages, {
       restarting: id => this.steerRestart.has(id),
@@ -319,7 +319,7 @@ export class TaskService implements PrStatusSink {
         const now = this.timing.now();
         retainedTurns.start(task.taskId, runId, now);
         Object.assign(task, { status: "running", interrupted: false, updatedAt: now });
-        this.broadcastTasks();
+        this.broadcastTask(task.taskId);
       }),
       transition: (task, status, opts) => this.transition(task, status, opts),
       resolveSkills: (taskId, skills) => this.resolveSkills({ taskId }, skills),
@@ -401,7 +401,7 @@ export class TaskService implements PrStatusSink {
       console.log(`[recovery] reset ${recovered.length} in-flight task(s) to idle(interrupted)`);
     }
     for (const task of shared) void this.refreshShared(task);
-    this.broadcastTasks();
+    this.hub.emitTasks(this.listTasks());
   }
 
   private async recoverExecutions() {
@@ -434,13 +434,18 @@ export class TaskService implements PrStatusSink {
   getRepo(id: string): Repo { return this.spaces.getRepo(id); }
   spaceRemoved(id: string): void {
     this.attachments.prune();
-    for (const task of this.cache.values()) if (task.repoId === id) this.cache.delete(task.taskId);
+    const removed = [...this.cache.values()].filter(task => task.repoId === id).map(task => task.taskId);
+    for (const taskId of removed) this.cache.delete(taskId);
+    if (removed.length) this.hub.emitTaskChanges([], removed);
   }
 
   // ---- tasks (read) ----
   listTasks(status?: TaskStatus): TaskState[] {
-    const all = [...this.cache.values()].map(t => this.withMessageQueue(t)).sort((a, b) => a.createdAt - b.createdAt);
-    return status ? all.filter((t) => t.status === status) : all;
+    for (const [id, state] of this.db.listMessageStates()) {
+      const task = this.cache.get(id);
+      if (task && (!status || task.status === status) && state.revision > 0) task.messageQueue = this.messages.storedSnapshot(state);
+    }
+    return [...this.cache.values()].filter(task => !status || task.status === status).sort((a, b) => a.createdAt - b.createdAt);
   }
   private cachedTask(id: string): TaskState {
     const t = this.cache.get(id);
@@ -471,7 +476,7 @@ export class TaskService implements PrStatusSink {
     const now = Date.now();
     task.pinnedAt = this.metadata.setTaskPin(id, pinned, now);
     task.updatedAt = now;
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     return task;
   }
 
@@ -492,8 +497,8 @@ export class TaskService implements PrStatusSink {
     // Reuse existing slots atomically. New pins still append, and activity is untouched.
     const now = Math.max(Date.now(), ...pins.map(t => t.updatedAt + 1));
     this.metadata.setTaskPinOrder(changed, now);
-    for (const pin of changed) Object.assign(this.getTask(pin.taskId), { pinnedAt: pin.pinnedAt, updatedAt: now });
-    this.broadcastTasks();
+    const reordered = changed.map(pin => Object.assign(this.getTask(pin.taskId), { pinnedAt: pin.pinnedAt, updatedAt: now }));
+    this.hub.emitTaskChanges(reordered, []);
     return ordered;
   }
 
@@ -505,7 +510,7 @@ export class TaskService implements PrStatusSink {
     this.metadata.setTaskTitle(id, title, now);
     task.title = title;
     task.updatedAt = now;
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     return task;
   }
 
@@ -528,7 +533,7 @@ export class TaskService implements PrStatusSink {
     });
     else { this.messages.pause(id); this.metadata.setSessionControl(id, control); }
     task.sessionControl = control;
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     return { task, command: this.nativeSession.resumeCommand(task) };
   }
 
@@ -564,7 +569,7 @@ export class TaskService implements PrStatusSink {
     this.metadata.setSessionControl(task.taskId, control);
     task.sessionControl = control;
     if (this.sharedSessions && req.agent === "codex") await this.refreshShared(task);
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     return task;
   }
 
@@ -678,7 +683,7 @@ export class TaskService implements PrStatusSink {
       const result = providerEvents.filter(({ event }) => event.kind === "result").at(-1)?.event.payload as { turnId?: string; is_error?: boolean } | undefined;
       if (result && (!result.turnId || !this.sharedTurns.has(id) || result.turnId === this.sharedTurns.get(id))) this.sharedTerminal.set(id, !result.is_error);
       this.applySharedSnapshot(task, snapshot, this.sharedTerminal.get(id));
-      this.broadcastTasks();
+      this.broadcastTask(task.taskId);
     } catch (error) {
       connection?.close(); this.sharedConnections.delete(id);
       this.sharedRetryAt.set(id, Date.now() + 5000);
@@ -686,7 +691,7 @@ export class TaskService implements PrStatusSink {
         task.sessionControl = { ...task.sessionControl, ...(task.sessionControl.owner === "shared" ? { connection: "reconnecting" as const } : {}),
           error: error instanceof Error ? error.message : "The shared session connection failed." };
         this.metadata.setSessionControl(id, task.sessionControl);
-        this.broadcastTasks();
+        this.broadcastTask(task.taskId);
       }
     } finally { this.sharedRefreshing.delete(id); }
   }
@@ -754,14 +759,14 @@ export class TaskService implements PrStatusSink {
         task.sessionControl = synced.control;
         if (rows.length) task.lastActivityAt = Date.now();
         for (const row of rows) this.hub.emitEvent(row);
-        this.broadcastTasks();
+        this.broadcastTask(task.taskId);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Session synchronization failed";
         if (control.error === message) continue;
         const failed = { ...control, error: message };
         this.metadata.setSessionControl(task.taskId, failed);
         task.sessionControl = failed;
-        this.broadcastTasks();
+        this.broadcastTask(task.taskId);
       }
     }
   }
@@ -800,7 +805,7 @@ export class TaskService implements PrStatusSink {
     const now = Date.now();
     this.metadata.setTaskPrs(taskId, prs, now);
     Object.assign(task, { prs, prUrl: prs[0]?.url, updatedAt: now });
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
   }
 
   // ---- usage ----
@@ -879,7 +884,7 @@ export class TaskService implements PrStatusSink {
     const attachments = this.insertTask(task, images?.length ? () => this.attachments.save(taskId, images) : undefined);
     this.cache.set(taskId, task);
     this.hub.emitReadChange({ type: "read-change", usage: true });
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     // Emit the dispatch prompt into the event log (like followup/steer) so the
     // task view renders it from the live stream, not just the inbox snapshot —
     // otherwise opening a fresh task before its snapshot lands shows no prompt.
@@ -1051,7 +1056,7 @@ export class TaskService implements PrStatusSink {
       if (effect === "interrupt") this.stopping.add(id);
       this.persistControl(id);
     }
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     for (const row of rows) this.hub.emitEvent(row);
     const handle = this.supervisor.get(id);
     if (effect === "interrupt" && !handle?.interrupt()) handle?.cancel();
@@ -1155,7 +1160,7 @@ export class TaskService implements PrStatusSink {
           || JSON.stringify(saved.contextUsage) !== JSON.stringify(task.contextUsage) || payload?.subtype === "message_delivered"
           || event.kind === "question" || event.kind === "approval_request";
         Object.assign(task, saved);
-        if (changed) this.broadcastTasks();
+        if (changed) this.broadcastTask(task.taskId);
         if (previous === "running" && event.kind === "question") this.notifyPush(task, "needs your input", firstQuestionText(event.payload));
         if (previous === "running" && event.kind === "approval_request") this.notifyPush(task, "needs approval", "The agent is waiting for your decision.");
       }
@@ -1170,7 +1175,7 @@ export class TaskService implements PrStatusSink {
       this.metadata.setTaskSession(task.taskId, event.sessionId, now);
       task.contextUsage = undefined;
       task.sessionId = event.sessionId; // capture claude session_id / codex thread_id
-      this.broadcastTasks();
+      this.broadcastTask(task.taskId);
     }
 
     if (replayed) return;
@@ -1222,7 +1227,7 @@ export class TaskService implements PrStatusSink {
     const usage = this.db.getTask(task.taskId)?.contextUsage;
     if (JSON.stringify(usage) === JSON.stringify(task.contextUsage)) return;
     task.contextUsage = usage;
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
   }
 
   private refreshPrs(task: TaskState): void {
@@ -1232,7 +1237,7 @@ export class TaskService implements PrStatusSink {
     task.prs = prs;
     task.updatedAt = saved?.updatedAt ?? task.updatedAt;
     task.prUrl = prs?.[0]?.url;
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     this.requestPrRefresh?.(task.taskId);
   }
 
@@ -1258,7 +1263,7 @@ export class TaskService implements PrStatusSink {
     if (task.status === "cancelled") {
       if (this.messages.state(task.taskId).compaction?.status === "running") this.messages.finish(task.taskId, true, false, "Context compaction was cancelled.");
       this.cleanupWorktree(task);
-      this.broadcastTasks();
+      this.broadcastTask(task.taskId);
       return;
     }
     if (stopped) {
@@ -1284,7 +1289,7 @@ export class TaskService implements PrStatusSink {
     const rows = this.retainedTurns ? this.retainedTurns.transaction(commit) : this.db.transaction(commit);
     Object.assign(task, { status, updatedAt: now });
     if (rows.length) this.refreshContextUsage(task);
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     for (const row of rows) this.hub.emitEvent(row);
 
     // Legacy-client compatibility: old steers drain separately from the explicit queue.
@@ -1328,7 +1333,7 @@ export class TaskService implements PrStatusSink {
     const rows = event ? (this.retainedTurns ? this.retainedTurns.transaction(write) : this.db.transaction(write)) : write();
     Object.assign(task, patch);
     if (rows.length) this.refreshContextUsage(task);
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     for (const row of rows) this.hub.emitEvent(row);
   }
 
@@ -1346,7 +1351,7 @@ export class TaskService implements PrStatusSink {
     this.metadata.setTaskSettings(task.taskId, nextModel, nextEffort, nextPermission, now);
     Object.assign(task, { model: nextModel, effort: nextEffort, permission: nextPermission, updatedAt: now });
     this.refreshContextUsage(task);
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
     return true;
   }
 
@@ -1360,7 +1365,7 @@ export class TaskService implements PrStatusSink {
       if (side) this.sideChats?.end(task.taskId, side.id);
     }
     if (status === "archived") task.pinnedAt = undefined;
-    this.broadcastTasks();
+    this.broadcastTask(task.taskId);
   }
 
   private syntheticRows(task: TaskState, payload: unknown) {
@@ -1387,8 +1392,9 @@ export class TaskService implements PrStatusSink {
     }
   }
 
-  private broadcastTasks(): void {
-    this.hub.emitTasks(this.listTasks());
+  private broadcastTask(id: string): void {
+    const task = this.cache.get(id);
+    if (task) this.hub.emitTaskChanges([this.withMessageQueue(task)], []);
   }
 
   private notifyPush(task: TaskState, what: string, body: string): void {

@@ -159,6 +159,25 @@ export function migrateSchema(db: Database.Database) {
     if (!taskCols.includes("pr_urls")) {
       db.exec(`ALTER TABLE tasks ADD COLUMN pr_urls TEXT`);
     }
+    // Both Task writers update the same JSON. Maintain the retry candidates in their transaction,
+    // including writes from an older binary after rollback. Backfill existing queues only once.
+    db.transaction(() => {
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ready_message_queues'").get()) return;
+      const eligible = (state: string) => `coalesce(json_extract(${state}, '$.paused'), 0) = 0
+        AND json_extract(${state}, '$.runId') IS NULL
+        AND EXISTS (SELECT 1 FROM json_each(${state}, '$.messages') WHERE json_extract(value, '$.status') = 'queued')`;
+      db.exec(`
+        CREATE TABLE ready_message_queues (task_id TEXT PRIMARY KEY REFERENCES task_message_state(task_id) ON DELETE CASCADE);
+        INSERT INTO ready_message_queues SELECT task_id FROM task_message_state WHERE ${eligible("state")};
+        CREATE TRIGGER ready_message_insert AFTER INSERT ON task_message_state BEGIN
+          INSERT OR IGNORE INTO ready_message_queues SELECT NEW.task_id WHERE ${eligible("NEW.state")};
+        END;
+        CREATE TRIGGER ready_message_update AFTER UPDATE OF state ON task_message_state BEGIN
+          DELETE FROM ready_message_queues WHERE task_id=NEW.task_id;
+          INSERT INTO ready_message_queues SELECT NEW.task_id WHERE ${eligible("NEW.state")};
+        END;
+      `);
+    }).immediate();
     const attachmentCols = (db.pragma("table_info(attachments)") as { name: string }[]).map(c => c.name);
     for (const column of ["unused_since", "expired_at"]) {
       if (!attachmentCols.includes(column)) db.exec(`ALTER TABLE attachments ADD COLUMN ${column} INTEGER`);

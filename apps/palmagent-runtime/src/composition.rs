@@ -72,9 +72,16 @@ pub fn run_owner(
                     Action::NextDispatch => {
                         service.pending_dispatch().map(|dispatch| json!(dispatch))
                     }
-                    Action::SettleDispatch { id, task_id, note } => service
+                    Action::SettleDispatch { id, task_id, note, include_next } => service
                         .settle_dispatch(id, task_id.as_deref(), note.as_deref())
-                        .map(|()| json!({})),
+                        .map(|()| {
+                            let mut result = json!({"status": {"instance":instance, "revision":service.revision,"activeScripts":service.active()}});
+                            // A failed lookahead cannot invalidate a committed receipt.
+                            if include_next && let Ok(next) = service.pending_dispatch() {
+                                result["next"] = json!(next);
+                            }
+                            result
+                        }),
                     Action::List => service.list(),
                     Action::Get(id) => service.get(&id).map(|routine| json!({"routine":routine})),
                     Action::Create(value) => service.create(value),

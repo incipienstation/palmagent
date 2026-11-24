@@ -299,6 +299,7 @@ test("startup timeout retains uncertain processes, fences late readiness and nev
     assert.equal(f.store.get(id)?.startErrorCode, "startup_timeout");
     assert.equal(f.store.cleanup(f.cwd, "task", () => {}), true);
     await service.reconcile();
+    assert.deepEqual(f.store.activeRecords(), []);
     assert.equal(stops, 3);
     assert.equal(launches, 0);
   } finally { f.close(); }

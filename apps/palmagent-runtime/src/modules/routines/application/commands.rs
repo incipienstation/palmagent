@@ -11,6 +11,7 @@ pub enum Action {
         id: i64,
         task_id: Option<String>,
         note: Option<String>,
+        include_next: bool,
     },
     Telemetry,
     List,

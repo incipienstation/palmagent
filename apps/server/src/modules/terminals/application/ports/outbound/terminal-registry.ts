@@ -3,6 +3,9 @@ import type { TerminalStartError } from "@palmagent/shared/terminals";
 
 export interface TerminalRegistry {
   readonly directory: string;
+  revision(): number;
+  byRequest(requestId: string): TerminalRecord | undefined;
+  activeRecords(): TerminalRecord[];
   list(): TerminalRecord[];
   watch(changed: () => void): () => void;
   get(id: string): TerminalRecord | undefined;

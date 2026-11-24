@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Routine } from "@palmagent/shared";
+import type { CreateTaskRequest, Routine } from "@palmagent/shared";
 import { IndependentRoutines } from "../../../src/modules/routines/application/use-cases/independent-routines.js";
 import type { RoutineService } from "../../../src/modules/routines/application/use-cases/routine-service.js";
 import type { RoutineTaskUseCases } from "../../../src/modules/routines/application/ports/outbound/routines.js";
@@ -63,4 +63,37 @@ test("script reads reuse the persisted projection without a native round trip", 
   assert.equal(service.get(routine.id), routine);
   assert.equal(service.runs(routine.id, 7), runs);
   assert.equal(limit, 7);
+});
+
+test("scheduled acknowledgements drain in order and an older poll cannot replace receipt health", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let reads = 0;
+  const status = (revision: number) => ({ instance: "fixture", revision, activeScripts: revision });
+  let release!: (value: ReturnType<typeof status>) => void;
+  const stale = new Promise<ReturnType<typeof status>>(resolve => { release = resolve; });
+  const dispatch = (id: number) => ({ id, task: { clientRequestId: String(id) } as CreateTaskRequest });
+  const native = {
+    status: async () => ++reads === 1 ? status(0) : stale,
+    agentTick: async () => dispatch(1),
+    run: async () => ({ routine, dispatch: dispatch(3) }),
+    async settleDispatch(id: number, receipt: {taskId?: string}, includeNext: boolean) {
+      assert.equal(receipt.taskId, String(id));
+      assert.equal(includeNext, id !== 3);
+      return { status: status(id), next: id === 1 ? dispatch(2) : null };
+    },
+  } as unknown as RoutineRuntime;
+  const created: string[] = [];
+  const service = new IndependentRoutines({} as RoutineService, native, { emitReadChange() {} }, {
+    ...tasks, createTask(req) { created.push(req.clientRequestId!); return { taskId: req.clientRequestId } as ReturnType<typeof tasks.createTask>; },
+  });
+  t.after(() => service.stop());
+  await service.initialize();
+  service.start();
+  t.mock.timers.tick(1000);
+  await service.runNow("routine");
+  release(status(2));
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(created, ["1", "2", "3"]);
+  assert.equal(reads, 2);
+  assert.equal(service.activeScriptCount, 3);
 });

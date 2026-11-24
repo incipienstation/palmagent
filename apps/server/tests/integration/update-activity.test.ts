@@ -22,6 +22,8 @@ test("only idle transitions resume pending updates, including one arriving durin
   pending = true;
   for (const status of ["running", "queued", "awaiting_input", "awaiting_approval"] as const) hub.emitTasks(task(status));
   assert.equal(calls, 0);
+  hub.emitTaskChanges([{ ...task("idle")[0], taskId: "unrelated" }], []);
+  assert.equal(calls, 0, "an unrelated change cannot hide a running task");
   hub.emitTasks(task("idle"));
   assert.equal(calls, 1);
   hub.emitTasks(task("running"));

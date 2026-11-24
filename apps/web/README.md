@@ -300,7 +300,8 @@ guess which text is safe to fold.
   from bounded REST history pages, then applies only events produced after the
   stream subscribed. The per-task `seq` in each SSE `id:` orders live deltas;
   persisted events and Activity details stay on REST. The inbox requests
-  `snapshots=1` to omit event bodies.
+  `snapshots=1` to omit event bodies. The inbox also requests `taskChanges=1` to receive
+  changed and removed Tasks after its initial snapshot. Reconnecting restores the full list.
 - **Transcript rendering:** `GET /api/tasks/:id/history` returns the latest page;
   `?before=:seq` loads earlier pages. Pages target 200 events and include whole
   assistant messages so Markdown is never split at a page boundary. Compact pages

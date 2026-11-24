@@ -82,6 +82,8 @@ struct Tick {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DispatchReceipt {
+    #[serde(default)]
+    include_next: bool,
     task_id: Option<String>,
     note: Option<String>,
 }
@@ -95,7 +97,7 @@ pub fn router(client: Client) -> Router {
             client.request(Action::AgentTick { startup: tick.startup }).await.map(Json)
         }))
         .route("/v1/agent-dispatch/{id}", post(|State(client): State<Client>, Path(id): Path<i64>, Json(receipt): Json<DispatchReceipt>| async move {
-            client.request(Action::SettleDispatch { id, task_id: receipt.task_id, note: receipt.note }).await.map(Json)
+            client.request(Action::SettleDispatch { id, task_id: receipt.task_id, note: receipt.note, include_next: receipt.include_next }).await.map(Json)
         }))
         .route("/v1/routines", get(|State(client): State<Client>| async move { client.request(Action::List).await.map(Json) })
             .post(|State(client): State<Client>, input: Result<Json<Value>, JsonRejection>| async move {

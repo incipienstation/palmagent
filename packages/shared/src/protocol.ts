@@ -138,6 +138,12 @@ export interface SseEventFrame {
   event: AgentEvent;
   detailsDeferred?: boolean;
 }
+export interface SseTaskChangesFrame {
+  type: "task-changes";
+  tasks: TaskState[];
+  removed: string[];
+}
+
 export interface SseTasksFrame {
   type: "tasks";
   tasks: TaskState[];
@@ -191,7 +197,7 @@ export interface TaskActivityDetailsResponse {
   cursor: number;
 }
 export const HISTORY_PAGE_EVENTS = 200;
-export type SseFrame = { type: "history-change"; taskId: string; through: number } | SseEventFrame | SseTasksFrame | SseReadChangeFrame | { type: "updates" };
+export type SseFrame = { type: "history-change"; taskId: string; through: number } | SseEventFrame | SseTasksFrame | SseTaskChangesFrame | SseReadChangeFrame | { type: "updates" };
 
 // ---- auth (in-app WebAuthn / passkeys) ----
 // GET /api/auth/me. The WebAuthn options/response payloads (login/register) are

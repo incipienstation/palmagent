@@ -8,6 +8,8 @@ import { ensurePrivateDirectory, ensurePrivateFile } from "../../../../platform/
 import { active, type TerminalRecord } from "../../domain/terminal.js";
 export { publicTerminal, type TerminalRecord } from "../../domain/terminal.js";
 
+const activePredicate = "json_extract(record, '$.state') IN ('starting','running','closing')";
+
 /** Stable registry shared by CLI, web, and pinned terminal hosts. No terminal bytes or input are persisted. */
 export class TerminalStore {
   private db: Database.Database;
@@ -19,6 +21,26 @@ export class TerminalStore {
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("journal_mode = WAL");
     this.db.exec("CREATE TABLE IF NOT EXISTS terminals (id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL); CREATE TABLE IF NOT EXISTS cleanup (cwd TEXT PRIMARY KEY, task_id TEXT NOT NULL);");
+    // Watch the public projection across all registry connections, including retained hosts.
+    const visible = (row: string) => `(NOT coalesce(json_extract(${row}.record, '$.diagnostic'), 0)
+      OR coalesce(json_extract(${row}.record, '$.diagnosticCleanupFailed'), 0))`;
+    const publicFields = "'$.id','$.taskId','$.repoId','$.title','$.initialCwd','$.state','$.createdAt','$.exitCode','$.protocol','$.startError','$.startErrorCode'";
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS terminals_active ON terminals(id) WHERE ${activePredicate};
+      CREATE TABLE IF NOT EXISTS terminal_revision (singleton INTEGER PRIMARY KEY, revision INTEGER NOT NULL);
+      INSERT OR IGNORE INTO terminal_revision VALUES (1, 0);
+      CREATE TRIGGER IF NOT EXISTS terminal_insert AFTER INSERT ON terminals WHEN ${visible("NEW")} BEGIN
+        UPDATE terminal_revision SET revision = revision + 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS terminal_delete AFTER DELETE ON terminals WHEN ${visible("OLD")} BEGIN
+        UPDATE terminal_revision SET revision = revision + 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS terminal_update AFTER UPDATE OF record ON terminals
+      WHEN ${visible("OLD")} != ${visible("NEW")} OR
+        (${visible("NEW")} AND json_extract(OLD.record, ${publicFields}) != json_extract(NEW.record, ${publicFields})) BEGIN
+        UPDATE terminal_revision SET revision = revision + 1;
+      END;
+    `);
   }
   watch(changed: () => void): () => void {
     let scheduled: NodeJS.Immediate | undefined;
@@ -33,18 +55,29 @@ export class TerminalStore {
   list(): TerminalRecord[] {
     return (this.db.prepare("SELECT record FROM terminals ORDER BY rowid DESC").all() as { record: string }[]).map(row => JSON.parse(row.record));
   }
+  revision(): number {
+    return this.db.prepare("SELECT revision FROM terminal_revision WHERE singleton = 1").pluck().get() as number;
+  }
+  activeRecords(): TerminalRecord[] {
+    const rows = this.db.prepare(`SELECT record FROM terminals INDEXED BY terminals_active WHERE ${activePredicate} ORDER BY rowid DESC`).pluck().all() as string[];
+    return rows.map(record => JSON.parse(record));
+  }
+  byRequest(requestId: string): TerminalRecord | undefined {
+    const record = this.db.prepare("SELECT record FROM terminals WHERE request_id = ?").pluck().get(requestId) as string | undefined;
+    return record === undefined ? undefined : JSON.parse(record);
+  }
   get(id: string): TerminalRecord | undefined {
     const row = this.db.prepare("SELECT record FROM terminals WHERE id = ?").get(id) as { record: string } | undefined;
     return row && JSON.parse(row.record);
   }
   reserve(input: Omit<TerminalRecord, "id" | "createdAt" | "state" | "protocol">): { record: TerminalRecord; created: boolean } {
     return this.db.transaction(() => {
-      const existing = this.list().find(record => record.requestId === input.requestId);
+      const existing = this.byRequest(input.requestId);
       if (existing) {
         if (existing.taskId !== input.taskId || existing.repoId !== input.repoId) throw new Error("Creation request already belongs to another target");
         return { record: existing, created: false };
       }
-      const occupied = this.list().filter(record => active(record) && Boolean(record.diagnostic) === Boolean(input.diagnostic));
+      const occupied = this.activeRecords().filter(record => Boolean(record.diagnostic) === Boolean(input.diagnostic));
       if (input.diagnostic && occupied.length) throw new Error("A terminal diagnostic is already active");
       if (!input.diagnostic && occupied.length >= 16) throw new Error("Close an existing terminal before opening another (limit: 16)");
       const cwd = realpathSync(input.initialCwd);
@@ -110,7 +143,7 @@ export class TerminalStore {
   cleanup(cwd: string, taskId: string, remove: () => void): boolean {
     if (existsSync(cwd)) cwd = realpathSync(cwd);
     return this.db.transaction(() => {
-      if (this.list().some(record => active(record) && record.initialCwd === cwd)) {
+      if (this.activeRecords().some(record => record.initialCwd === cwd)) {
         this.db.prepare("INSERT OR REPLACE INTO cleanup VALUES (?, ?)").run(cwd, taskId);
         return false;
       }

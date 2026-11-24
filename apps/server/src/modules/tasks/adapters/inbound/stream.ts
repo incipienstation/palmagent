@@ -1,4 +1,4 @@
-import { deferActivityEventDetails, type TaskState } from "@palmagent/shared";
+import { deferActivityEventDetails, type SseTaskChangesFrame, type TaskState } from "@palmagent/shared";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StreamQuerySchema } from "@palmagent/shared/requests";
@@ -10,6 +10,10 @@ import type { HttpDependencies } from "./http-dependencies.js";
 // Disconnecting is recoverable: the client catches up through REST on reconnect.
 const MAX_PENDING_BYTES = 64 * 1024 * 1024;
 const MAX_PENDING_FRAMES = 1024;
+
+// Concurrent clients share the serialization of each global publication.
+const changeFrames = new WeakMap<SseTaskChangesFrame, string>();
+const legacyFrames = new WeakMap<SseTaskChangesFrame, string>();
 
 export function sessionStream(c: Context, { hub, service, config, shutdown, build, measurements }: HttpDependencies, query: z.output<typeof StreamQuerySchema>) {
   const taskId = query.task || undefined;
@@ -29,7 +33,8 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
     // only events produced after subscription are published on this stream.
     const boundary = service.eventCursor(taskId);
     const initialTasks = taskId ? [service.getTask(taskId)] : service.listTasks();
-    let lastTaskSnapshot = taskId ? JSON.stringify(initialTasks) : undefined;
+    const legacyTasks = !taskId && !query.taskChanges ? new Map(initialTasks.map(task => [task.taskId, task])) : undefined;
+    let lastTaskSnapshot = taskId ? snapshot(initialTasks) : undefined;
     const firstSnapshot = snapshot(initialTasks, taskId ? boundary : undefined);
     let pendingBytes = 0;
     const queue: { value: string; finish?: (outcome: "success" | "error") => void }[] = [];
@@ -53,11 +58,13 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
       limitsPending = true;
       enqueue(limitsFrame);
     };
-    let account = taskId ? JSON.stringify([service.getTask(taskId).agent, service.getTask(taskId).sessionControl?.home]) : undefined;
+    let account = taskId ? JSON.stringify([initialTasks[0].agent, initialTasks[0].sessionControl?.home]) : undefined;
     let offLimits = taskId ? service.observeAccountLimits(taskId, limitsChanged) : () => {};
-    const offTasks = hub.onTasks(tasks => {
+    const offTasks = hub.onTasks(change => {
+      const { tasks } = change;
       if (taskId) {
         const task = tasks.find(task => task.taskId === taskId);
+        if (!task && change.type === "task-changes" && !change.removed.includes(taskId)) return;
         const next = task ? JSON.stringify([task.agent, task.sessionControl?.home]) : "removed";
         if (next !== account) {
           account = next; offLimits();
@@ -65,12 +72,29 @@ export function sessionStream(c: Context, { hub, service, config, shutdown, buil
           limitsChanged();
         }
         const selected = task ? [task] : [];
-        const serialized = JSON.stringify(selected);
+        const serialized = snapshot(selected);
         if (serialized === lastTaskSnapshot) return;
         lastTaskSnapshot = serialized;
-        enqueue(snapshot(selected));
+        enqueue(serialized);
+      } else if (change.type === "task-changes") {
+        if (legacyTasks) {
+          for (const id of change.removed) legacyTasks.delete(id);
+          for (const task of tasks) legacyTasks.set(task.taskId, task);
+        }
+        const cache = legacyTasks ? legacyFrames : changeFrames;
+        let value = cache.get(change);
+        if (value === undefined) {
+          value = legacyTasks
+            ? snapshot([...legacyTasks.values()].sort((a, b) => a.createdAt - b.createdAt))
+            : `data: ${JSON.stringify(change)}\n\n`;
+          cache.set(change, value);
+        }
+        enqueue(value);
       } else {
-        // The publisher already built this snapshot once for every subscriber.
+        if (legacyTasks) {
+          legacyTasks.clear();
+          for (const task of tasks) legacyTasks.set(task.taskId, task);
+        }
         enqueue(snapshot(tasks));
       }
     });

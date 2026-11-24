@@ -14,7 +14,7 @@ export class TerminalService implements TerminalUseCases {
   private launches = new Map<string, Promise<void>>();
   private snapshot = "";
   private publishChanges() {
-    const next = JSON.stringify({ terminals: this.list(), capabilities: this.capabilities() });
+    const next = JSON.stringify({ revision: this.store.revision(), capabilities: this.capabilities() });
     if (next === this.snapshot) return false;
     this.snapshot = next; this.changed();
     return true;
@@ -24,7 +24,7 @@ export class TerminalService implements TerminalUseCases {
     private release: string, private node: string, private files: TerminalFiles, private changed: () => void = () => {}) {}
   capabilities() { return this.supervisor.capabilities; }
   start() {
-    this.snapshot = JSON.stringify({ terminals: this.list(), capabilities: this.capabilities() });
+    this.snapshot = JSON.stringify({ revision: this.store.revision(), capabilities: this.capabilities() });
     this.unwatch = this.store.watch(() => { if (this.publishChanges()) void this.reconcile(); });
     void this.reconcile();
     // Recovery for ungraceful process deaths or missed filesystem notifications.
@@ -42,7 +42,7 @@ export class TerminalService implements TerminalUseCases {
   async create(input: CreateTerminalRequest) {
     if (!this.capabilities().available) throw new ApplicationError("service_unavailable", this.capabilities().reason ?? "Terminals are unavailable on this platform");
     if (this.targets.updating()) throw new ApplicationError("conflict", "Installation maintenance is in progress");
-    const existing = this.store.list().find(r => r.requestId === input.requestId);
+    const existing = this.store.byRequest(input.requestId);
     if (existing) {
       if ("taskId" in input.target ? existing.taskId !== input.target.taskId : existing.repoId !== input.target.repoId || existing.taskId) throw new ApplicationError("conflict", "Request belongs to another target");
       return publicTerminal(existing);
@@ -95,9 +95,9 @@ export class TerminalService implements TerminalUseCases {
     return this.reconciliation ??= this.reconcileOnce().finally(() => { this.reconciliation = undefined; this.publishChanges(); });
   }
   private async reconcileOnce() {
-    for (const record of this.store.list()) {
+    for (const record of this.store.activeRecords()) {
       try {
-        if (this.store.expireStartup(record.id)) {
+        if (record.state !== "running" && this.store.expireStartup(record.id)) {
           // Only a confirmed stop releases retention. Never relaunch an expired ID.
           await this.supervisor.terminate(record);
           this.store.update(record.id, { state: "lost", startErrorCode: "startup_timeout", startError: "Shell startup timed out and was stopped. Check the installation with palmagent doctor before trying again." });
