@@ -196,7 +196,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     disabled: !!submission && !busy, attachments: locked ? { ...att, images: [] } : att,
     skills: locked ? [] : skills, onSkillsChange: setSkills, skillContext: repoId ? { repoId, agent } : undefined,
     onStop: busy ? () => { setSubmission(current => current ? { ...current, stop: true } : current); void stopTaskTurn("dispatch"); } : undefined, stopping: !!activity.stopping,
-    description: "Your choices are remembered for this agent.",
+    description: "Saved for this agent.",
     settings: { agent, catalog, onAgentChange: setAgent, model,
       onModelChange: setModel,
       effort, onEffortChange: setEffort, permission, onPermissionChange: setPermission,
