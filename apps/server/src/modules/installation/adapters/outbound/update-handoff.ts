@@ -30,7 +30,12 @@ export async function openUpdateGateway(cfg: InstallConfig, candidate: InstallCo
   const child = spawn(cfg.executionNode!, [join(cfg.pkgDir!, "update-gateway.js")], {
     cwd: cfg.pkgDir, env: daemon.environment, stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
-  const ended = new Promise<void>(resolve => child.once("close", () => resolve()));
+  // Disconnecting IPC can emit exit without close. No output pipes need draining.
+  // A failed spawn has no process to wait for and is reported by the readiness check.
+  const ended = new Promise<void>(resolve => {
+    if (child.pid === undefined) resolve();
+    else child.once("exit", () => resolve());
+  });
   const stop = async () => {
     if (child.connected) child.disconnect();
     const kill = setTimeout(() => child.kill("SIGKILL"), 3000);

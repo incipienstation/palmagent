@@ -8,6 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { openUpdateGateway } from "../../src/modules/installation/adapters/outbound/update-handoff.js";
 import { writeUpdateAccess, readUpdateAccess } from "../../src/modules/installation/adapters/outbound/update-access.js";
 import { checkUpdateAccess, requestUpdateAccess, validUpdateRequest, clearUpdateRequest } from "../../src/composition/update-settings.js";
 import { planUpdate, readPluginVersions, resolveUpdatePlan } from "../../src/modules/installation/adapters/outbound/update-plan.js";
@@ -107,6 +108,29 @@ async function idleFixture(t: TestContext, f: ReturnType<typeof fixture>, turns:
   t.after(() => new Promise<void>((resolve) => runner.close(() => resolve())));
   return { db, turns, messages };
 }
+
+test("the updater resumes cleanup after its disconnected gateway exits", { timeout: 8000 }, async t => {
+  const { cfg } = fixture(t);
+  const release = cfg.pkgDir!;
+  cfg.executionNode = process.execPath;
+  const build = { version: "0.1.0-alpha.2", sourceCommit: "a".repeat(40) };
+  writeFileSync(join(release, "build-info.json"), JSON.stringify(build));
+  mkdirSync(join(cfg.dataDir, "daemon"));
+  writeFileSync(join(cfg.dataDir, "daemon/config.json"), JSON.stringify({
+    protocol: 1, daemon: process.execPath, release, node: process.execPath, isolation: "process-group",
+    environment: { DISPATCHER_DATA_DIR: cfg.dataDir, DISPATCHER_DB: cfg.dbPath, HOST: cfg.host, PORT: String(cfg.port), AUTH_ORIGIN: cfg.authOrigin },
+    limits: { memoryHigh: 1024, memoryMax: 2048, tasks: 64, webTasks: 64, cpuPercent: 100, nofile: 1024 },
+  }));
+  t.mock.method(globalThis, "fetch", async () => Response.json({ ok: true, updateAdmission: 1, build }));
+  writeFileSync(join(release, "update-gateway.js"), `
+    process.once("disconnect", () => require("node:fs").writeFileSync("gateway-stopped", "yes"));
+    process.send({ ready: 1 });
+  `);
+  const close = await openUpdateGateway(cfg, cfg);
+  await close();
+  assert.equal(readFileSync(join(release, "gateway-stopped"), "utf8"), "yes");
+  await assert.rejects(openUpdateGateway({ ...cfg, executionNode: join(release, "missing-node") }, cfg), /ENOENT/);
+});
 
 test("one planner refreshes compatible plugins and identifies a required version-line transition", () => {
   const plugin = { manifest: "/opt/plugins/palmagent/plugin.json", version: "0.1.0-alpha.1" };
