@@ -23,14 +23,20 @@ test("native queue commits before dispatch, rolls back with completion and prese
   t.after(async () => { await native.close(); db.close(); lease(); rmSync(root, { recursive: true, force: true }); });
   const space = { id: "space", name: "Fixture 🌱", path: root, vcs: "git" as const, defaultBaseRef: "main", createdAt: 1 };
   db.selectTaskOwner(native);
-  assert.throws(() => db.insertRepo(space), /recovery has not committed/);
+  assert.throws(() => db.registerRepo(space), /recovery has not committed/);
   assert.equal(retainedReader.getRepo(space.id), undefined);
   assert.throws(() => db.setRepoBaseRef(space.id, "develop"), /recovery has not committed/);
   assert.deepEqual(native.recover([], () => assert.fail("unexpected attachment"), 1), { reattached: [], recovered: [] });
-  db.insertRepo(space);
+  assert.equal(db.registerRepo(space), null);
   db.setRepoBaseRef(space.id, "develop");
   assert.deepEqual(retainedReader.getRepo(space.id), { ...space, defaultBaseRef: "develop" });
-  assert.throws(() => db.insertRepo({ ...space, name: "duplicate" }), /UNIQUE/);
+  // Older catalogs may already have a second row with the same path and timestamp.
+  db.insertRepo({ ...space, id: "legacy-copy" });
+  const retry = { ...space, id: "retry", name: "duplicate" };
+  assert.deepEqual(db.registerRepo(retry), { ...space, defaultBaseRef: "develop" });
+  assert.deepEqual(retainedReader.registerRepo(retry), db.getRepoByPath(root));
+  assert.equal(retainedReader.getRepo(retry.id), undefined);
+  assert.throws(() => db.registerRepo({ ...space, path: root + "/other" }), /UNIQUE/);
   const task = { taskId: "task", repoId: "space", agent: "codex", prompt: "Initial", status: "idle",
     permission: "read-only", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 } as const;
   const file = { id: ids.uuid(), taskId: "task", mediaType: "image/png" as const, size: 8, digest: "fixture", unusedSince: null, expiredAt: null };
@@ -134,7 +140,7 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.equal(db.readMessageState("task")?.messages[0].status, "unknown");
   assert.equal(db.readMessageState("task")?.paused, true);
   db.selectTaskOwner(native);
-  assert.equal(db.getRepo(space.id)?.defaultBaseRef, "develop");
+  assert.deepEqual(db.registerRepo(retry), { ...space, defaultBaseRef: "develop" });
   assert.throws(() => db.deleteRepo(space.id), /active work/);
   for (const task of db.listTasks()) native.metadata.setTaskStatus(task.taskId, "archived", false, 10);
   db.deleteRepo("space");

@@ -1,21 +1,41 @@
 //! Catalog writes use the worker connection and the existing product schema.
-use crate::modules::spaces::application::CatalogMutation;
+use crate::modules::spaces::application::{CatalogMutation, SpaceRecord};
 use anyhow::{Result, ensure};
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-pub fn apply(db: &mut Connection, mutation: CatalogMutation) -> Result<()> {
+fn insert(db: &Connection, space: &SpaceRecord) -> Result<()> {
+    db.execute(
+        "INSERT INTO repos (id, name, path, vcs, default_base_ref, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![space.id, space.name, space.path, space.vcs, space.default_base_ref, space.created_at],
+    )?;
+    Ok(())
+}
+
+fn register(db: &mut Connection, space: &SpaceRecord) -> Result<Option<SpaceRecord>> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let existing = tx.query_row(
+        "SELECT id, name, path, vcs, default_base_ref, created_at FROM repos WHERE path = ?1 ORDER BY created_at, rowid LIMIT 1",
+        [&space.path],
+        |row| Ok(SpaceRecord {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            path: row.get(2)?,
+            vcs: if row.get::<_, String>(3)? == "none" { "none" } else { "git" }.into(),
+            default_base_ref: row.get(4)?,
+            created_at: row.get(5)?,
+        }),
+    ).optional()?;
+    if existing.is_none() {
+        insert(&tx, space)?;
+    }
+    tx.commit()?;
+    Ok(existing)
+}
+
+pub fn apply(db: &mut Connection, mutation: CatalogMutation) -> Result<Option<SpaceRecord>> {
     match mutation {
-        CatalogMutation::Register {
-            id,
-            name,
-            path,
-            vcs,
-            default_base_ref,
-            created_at,
-        } => {
-            db.execute("INSERT INTO repos (id, name, path, vcs, default_base_ref, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![id, name, path, vcs, default_base_ref, created_at])?;
-        }
+        CatalogMutation::RegisterIfAbsent(space) => return register(db, &space),
+        CatalogMutation::Register(space) => insert(db, &space)?,
         CatalogMutation::SetBaseRef { id, base_ref } => {
             db.execute(
                 "UPDATE repos SET default_base_ref = ?1 WHERE id = ?2",
@@ -24,7 +44,7 @@ pub fn apply(db: &mut Connection, mutation: CatalogMutation) -> Result<()> {
         }
         CatalogMutation::Remove { id } => remove(db, &id)?,
     }
-    Ok(())
+    Ok(None)
 }
 
 fn remove(db: &mut Connection, space: &str) -> Result<()> {

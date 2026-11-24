@@ -253,7 +253,7 @@ fn execute(
             Ok(effect) => json!({"effect":effect}), Err(reason)=>json!({"conflict":reason})
         },
         Request::SharedSnapshot {task_id,observation} => json!(owner.shared_snapshot(&task_id,observation)?),
-        Request::SpaceCatalog {mutation} => { owner.mutate_space(mutation)?; Value::Null },
+        Request::SpaceCatalog {mutation} => json!(owner.mutate_space(mutation)?),
         Request::Subscription {operation} => owner.subscription(operation)?,
         Request::Records {task_id,query} => owner.records(&task_id,query)?,
         Request::Files {command} => owner.files(command)?,

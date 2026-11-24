@@ -22,16 +22,13 @@ export class SpaceService implements SpaceUseCases {
     // git registers as-is (vcs "none" — tasks run in place, no worktree).
     // Dedupe by path — re-adding returns the existing entry.
     const path = inspected.path;
-    const existing = this.db.listRepos().find((r) => r.path === path);
+    const existing = this.db.getRepoByPath(path);
     if (existing) return existing;
     const baseRef = inspected.isGit
       ? req.defaultBaseRef?.trim() || await this.repositoryPaths.defaultBaseRef(path) : "";
     if (inspected.isGit && req.defaultBaseRef && !this.repositoryPaths.validBaseRef(path, baseRef)) {
       throw badRequest("Base branch must resolve to an existing local Git commit. Fetch the branch first if needed.");
     }
-    // Remote discovery yields: another request may have registered the same path.
-    const registered = this.db.listRepos().find((r) => r.path === path);
-    if (registered) return registered;
     const repo: Repo = {
       id: this.ids.next("r"),
       name: req.name || inspected.name,
@@ -40,7 +37,8 @@ export class SpaceService implements SpaceUseCases {
       defaultBaseRef: baseRef,
       createdAt: Date.now(),
     };
-    this.db.insertRepo(repo);
+    const registered = this.db.registerRepo(repo);
+    if (registered) return registered;
     this.hub.emitReadChange({ type: "read-change", repos: true });
     return repo;
   }

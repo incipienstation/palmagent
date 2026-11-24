@@ -1194,9 +1194,13 @@ test("concurrent automatic registrations deduplicate after asynchronous Git disc
   const f = fixture(t, false);
   const { execFileSync } = await import("node:child_process");
   execFileSync("git", ["-C", f.dir, "init", "-b", "main"], { stdio: "ignore" });
+  const changes: import("@palmagent/shared").SseReadChangeFrame[] = [];
+  f.hub.onReadChange(change => changes.push(change));
   const [first, second] = await Promise.all([f.service.createRepo({ path: f.dir }), f.service.createRepo({ path: f.dir })]);
-  assert.equal(first.id, second.id);
+  assert.deepEqual(first, second);
   assert.equal(f.db.listRepos().length, 1);
+  assert.deepEqual(await f.service.createRepo({ path: f.dir, defaultBaseRef: "missing" }), first);
+  assert.deepEqual(changes, [{ type: "read-change", repos: true }]);
 });
 
 

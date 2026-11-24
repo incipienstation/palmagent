@@ -8,6 +8,7 @@ export function migrateSchema(db: Database.Database) {
         default_base_ref TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS idx_repos_path_created ON repos(path, created_at);
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
         repo_id TEXT NOT NULL REFERENCES repos(id),
