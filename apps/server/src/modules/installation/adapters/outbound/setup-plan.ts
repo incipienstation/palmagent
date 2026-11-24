@@ -47,7 +47,7 @@ export function prepareNativeSetup(cfg: InstallConfig): PreparedSetup {
   const afterFields = parseEnvFile(installText);
   const changed = [...new Set([...Object.keys(beforeFields), ...Object.keys(afterFields)])].filter(key => beforeFields[key] !== afterFields[key]);
   if (changed.length) summary.push(`Installation fields: ${changed.join(", ")}`);
-  for (const key of ["HOST", "PORT", "NATIVE_READ_HTTP_PORT", "DISPATCH_CONCURRENCY", "SUPERVISOR", "DAEMON_SCOPE"]) {
+  for (const key of ["HOST", "PORT", "NATIVE_READ_HTTP_PORT", "NATIVE_ROUTINE_WRITES", "DISPATCH_CONCURRENCY", "SUPERVISOR", "DAEMON_SCOPE"]) {
     if (changed.includes(key)) summary.push(`${key}: ${JSON.stringify(beforeFields[key] ?? null)} -> ${JSON.stringify(afterFields[key] ?? null)}`);
   }
   const previous = previousDaemon ? JSON.parse(previousDaemon) as ReturnType<typeof daemonConfiguration> : undefined;

@@ -1,8 +1,8 @@
 # Direct Rust read experiment
 
 This opt-in experiment changes the public request boundary for five existing GET routes.
-The same browser origin routes these requests to Rust; all other requests still go directly
-to the existing Node listener. There is no Node authentication callback or response parsing
+The same browser origin routes these requests to Rust. A separate option routes routine definition writes to the same listener.
+The ingress sends other requests to Node. There is no Node authentication callback or response parsing
 on the selected path, and no Rust proxy in front of the remaining Node APIs.
 
 | Route | Selection |
@@ -30,7 +30,7 @@ still executing. Queue overflow or expiry returns 503. Page budgets and writer o
 The public boundary preserves request and response validation, task existence checks, JSON value semantics,
 error codes and security/cache headers. Transport serialization can change key order or number
 spelling; response JSON values remain equivalent. Operation details, content chunks, raw history,
-SSE, WebSockets, writes, login, health and static files retain their Node routes.
+SSE, WebSockets, login, health and static files retain their Node routes.
 
 ## Enable in a native installation
 
@@ -58,7 +58,22 @@ operator CLI/plugin compatibility are unchanged. The listener closes with the No
 an orderly shutdown. After a crash it can continue serving committed reads until owner recovery;
 the next startup reapplies configuration. Native process exit closes it as well.
 
-To roll back routing, point all ingress requests back to Node. Then unset `NATIVE_READ_HTTP_PORT`
+### Route routine definition writes
+
+With a build advertising `routineWriteHttp: 1`, set `NATIVE_ROUTINE_WRITES=1` alongside
+`NATIVE_READ_HTTP_PORT` and apply setup. Enable the two commented lines in the routing map
+and reload the ingress. They select `POST /api/routines` and `PATCH` or `DELETE /api/routines/:id`.
+The listener applies the configured session and origin checks, client version guard and 1 MiB
+body limit. Successful responses contain the committed routine from the same serialized writer
+that serves the private application socket. Avoid automatic retries on writes after a lost response.
+
+Manual run and stop still reach the Node Tasks coordinator. Node delivers routine SSE invalidations
+on its next successful revision poll (normally within one second). After an API crash the retained
+Rust process can still accept definition requests until the next owner reconfigures the listener.
+To roll back just the writes, restore the two ingress rules to their commented state, reload ingress,
+remove `NATIVE_ROUTINE_WRITES` and apply setup. Both paths use the same committed definitions.
+
+To roll back routing, point all ingress requests back to Node. Then unset `NATIVE_ROUTINE_WRITES` and `NATIVE_READ_HTTP_PORT`
 in `install.env` and apply `palmagent setup`; startup disables any retained direct listener. No schema migration or data
 conversion is required. Never expose the private application control socket through the ingress.
 

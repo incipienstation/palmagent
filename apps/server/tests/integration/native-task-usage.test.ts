@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { CreateRoutineSchema, UpdateRoutineSchema } from "@palmagent/shared/requests";
 import { Db } from "../../src/composition/database.js";
 import { CONVERSATION_PAGE_BYTES, CONVERSATION_ITEM_BYTES, CONVERSATION_PROJECTION_VERSION } from "@palmagent/shared";
 import { NativeTaskTranscript } from "../../src/modules/tasks/adapters/outbound/native-task-transcript.js";
@@ -134,6 +135,71 @@ test("native private and public Task reads preserve auth, accounting, pagination
     '{"result":"\\ud800","usage":{"input_tokens":1}}',
   ]) raw("codex", payload);
   await start();
+  const configureRoutineWrites = async (enabled: boolean) => {
+    const configured = await applicationRequest(root, "/v1/task-reads/http", "POST",
+      { ...directSettings, ...(enabled && { routineWrites: true }) });
+    assert.equal(configured.status, 200);
+    publicPort = (configured.value as { port: number }).port;
+  };
+  const definitions = "/api/routines";
+  const write = async (method: string, path: string, body?: string, headers?: Record<string, string>) => {
+    const response = await fetch(`http://${[127, 0, 0, 1].join(".")}:${publicPort}${path}`, { method, body,
+      headers: { cookie: "palmagent_session=read-session", origin: directSettings.authOrigin, ...headers } });
+    return { status: response.status, value: await response.json() };
+  };
+  const definition = JSON.stringify({ repoId: "space", kind: "script", script: { command: "  echo fixture  ", unknown: true }, preset: "manual", enabled: false });
+  assert.equal((await write("POST", definitions, definition)).status, 404);
+  await configureRoutineWrites(true);
+  assert.equal((await write("POST", definitions, definition, { origin: "", cookie: "" })).status, 403);
+  assert.equal((await write("POST", definitions, definition, { cookie: "" })).status, 401);
+  assert.equal((await write("POST", definitions, definition, { "x-palmagent-version": "older" })).value.code, "update-required");
+  assert.equal((await write("POST", definitions, "x".repeat(1024 * 1024 + 1))).status, 413);
+  for (const [body, error] of [["{", "invalid JSON body"], ["[]", "body must be a JSON object"],
+    ["", "invalid request: repoId (invalid_type)"], ['{"repoId":"space","kind":"script"}', "invalid request: script (custom)"]]) {
+    assert.deepEqual(await write("POST", definitions, body), { status: 400, value: { error, code: "bad_request" } });
+  }
+  assert.equal(db.listRoutines().length, 0);
+  const created = await write("POST", definitions, definition);
+  assert.equal(created.status, 201);
+  const { id } = created.value.routine;
+  assert.deepEqual(created.value.routine, wire(db.getRoutine(id)));
+  assert.equal(created.value.routine.script.command, "echo fixture");
+  const path = `${definitions}/${id}`;
+  assert.deepEqual(await write("PATCH", path, '{"enabled":null}'), { status: 400,
+    value: { error: "invalid request: enabled (invalid_type)", code: "bad_request" } });
+  for (const [method, endpoint, schema, inputs] of [
+    ["POST", definitions, CreateRoutineSchema, [
+      { repoId: "", agent: "codex" }, { repoId: "space", agent: null }, { repoId: "space", agent: "codex", prompt: " " },
+      { repoId: "space", kind: "script", script: { command: "  " } }, { repoId: "space", kind: "script", script: { command: "echo" }, permission: "" },
+    ]],
+    ["PATCH", path, UpdateRoutineSchema, [
+      { prompt: "" }, { title: null }, { preset: "other" }, { hour: 1.5 }, { dayOfWeek: 7 },
+      { script: { command: "echo", timeoutSeconds: 0 } }, { script: { command: "🚀".repeat(16001) } },
+    ]],
+  ] as const) {
+    for (const input of inputs) {
+      const parsed = schema.safeParse(input);
+      assert(!parsed.success);
+      const issue = parsed.error.issues[0];
+      assert.deepEqual(await write(method, endpoint, JSON.stringify(input)), { status: 400, value: {
+        error: `invalid request: ${issue.path.join(".") || "body"} (${issue.code})`, code: "bad_request" } });
+    }
+  }
+  assert.deepEqual(await write("PATCH", path, JSON.stringify({ script: { command: "🚀".repeat(8001) } })),
+    { status: 400, value: { error: "Script command must contain 1-16000 characters", code: "bad_request" } });
+  const updated = await write("PATCH", path, '{"kind":"agent","id":"other","title":"updated","script":{"command":"echo updated","timeoutSeconds":1.0}}');
+  assert.equal(updated.status, 200);
+  assert.equal(updated.value.routine.kind, "script");
+  assert.equal(updated.value.routine.script.timeoutSeconds, 1);
+  assert.equal(db.getRoutine(id)?.title, "updated");
+  for (const route of [`${path}/run`, `${path}/stop`, "/v1/agent-dispatch"]) {
+    assert.equal((await write("POST", route)).status, 404);
+  }
+  assert.deepEqual(await write("DELETE", path), updated);
+  assert.equal(db.getRoutine(id), undefined);
+  assert.deepEqual(await write("DELETE", path), { status: 404, value: { error: `no such routine: ${id}`, code: "not_found" } });
+  await configureRoutineWrites(false);
+  assert.equal((await write("POST", definitions, definition)).status, 404);
   const initial = await same();
   for (const path of ["/api/usage", "/api/tasks/claude/history?format=transcript", "/api/tasks/claude/history/changes?format=transcript&after=0", "/api/tasks/claude/history/steps?key=1", "/api/tasks/claude/history/details?from=1&through=1"]) {
     assert.deepEqual(await publicRead(path, ""), { status: 401, value: { error: "unauthorized" } });

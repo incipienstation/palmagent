@@ -5,6 +5,7 @@ use crate::modules::{
         adapters::{inbound::read_http as auth_http, outbound::sqlite_sessions::SqliteSessions},
         application::SessionService,
     },
+    routines::adapters::inbound::{http::Client as RoutineClient, public_http as routines},
     tasks::{
         adapters::{
             inbound::{
@@ -38,6 +39,8 @@ use tokio::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
     port: u16,
+    #[serde(default)]
+    routine_writes: bool,
     auth_enabled: bool,
     cookie_name: String,
     session_ttl_ms: i64,
@@ -95,13 +98,15 @@ struct Active {
 pub struct Listener {
     db: PathBuf,
     measurements: Measurements,
+    routines: RoutineClient,
     active: Arc<Mutex<Option<Active>>>,
 }
 impl Listener {
-    pub fn new(db: PathBuf, measurements: Measurements) -> Self {
+    pub fn new(db: PathBuf, measurements: Measurements, routines: RoutineClient) -> Self {
         Self {
             db,
             measurements,
+            routines,
             active: Arc::new(Mutex::new(None)),
         }
     }
@@ -123,7 +128,11 @@ impl Listener {
             let db = self.db.clone();
             let settings = settings.clone();
             let measurements = self.measurements.clone();
-            Some(tokio::task::spawn_blocking(move || build(&db, &settings, measurements)).await??)
+            let routines = self.routines.clone();
+            Some(
+                tokio::task::spawn_blocking(move || build(&db, &settings, measurements, routines))
+                    .await??,
+            )
         } else {
             None
         };
@@ -183,7 +192,12 @@ async fn stop(active: Active) {
         let _ = task.await;
     }
 }
-fn build(db: &Path, settings: &Settings, measurements: Measurements) -> Result<Router> {
+fn build(
+    db: &Path,
+    settings: &Settings,
+    measurements: Measurements,
+    routines: RoutineClient,
+) -> Result<Router> {
     let auth = auth_http::Client::new(
         settings.auth_enabled,
         settings.cookie_name.clone(),
@@ -210,7 +224,11 @@ fn build(db: &Path, settings: &Settings, measurements: Measurements) -> Result<R
         transcript,
         Box::new(SqliteReadAccess::open(db)?),
     );
-    Ok(public_reads::router(client)
+    let mut app = public_reads::router(client);
+    if settings.routine_writes {
+        app = app.merge(routines::router(routines));
+    }
+    Ok(app
         .layer(middleware::from_fn_with_state(
             auth,
             auth_http::authenticate,

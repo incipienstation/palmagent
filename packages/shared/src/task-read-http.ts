@@ -1,12 +1,13 @@
 import { z } from "zod";
 
-/** Owner-only configuration; the public listener contains only selected authenticated reads. */
+/** Owner-only configuration; the public listener contains selected public routes. */
 export const TaskReadHttpSettingsSchema = z.object({
   port: z.number().int().min(0).max(65535),
   authEnabled: z.boolean(),
   cookieName: z.string().min(1).max(256).regex(/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/),
   sessionTtlMs: z.number().int().positive().safe(),
   authOrigin: z.string(),
+  routineWrites: z.literal(true).optional(),
 }).strict();
 export type TaskReadHttpSettings = z.infer<typeof TaskReadHttpSettingsSchema>;
 export const TaskReadHttpStatusSchema = z.object({ enabled: z.boolean(), port: z.number().int().min(1).max(65535).nullable() });

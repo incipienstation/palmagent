@@ -28,6 +28,7 @@ for (const name of [
   "NODE_ENV",
   "PORT",
   "NATIVE_READ_HTTP_PORT",
+  "NATIVE_ROUTINE_WRITES",
   "PUSH_SUBJECT",
   "REPO_ROOTS",
   "RUNNER_SOCKET",

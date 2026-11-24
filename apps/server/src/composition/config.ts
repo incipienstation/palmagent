@@ -22,6 +22,7 @@ const Env = z
   .object({
     PORT: Port.default(4000),
     NATIVE_READ_HTTP_PORT: Port.optional(),
+    NATIVE_ROUTINE_WRITES: z.enum(["0", "1"]).optional(),
     HOST: LoopbackHost.default("localhost"),
     ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().safe().default(ATTACHMENT_DEFAULTS.maxBytes),
     ATTACHMENT_MIN_FREE_BYTES: z.coerce.number().int().nonnegative().safe().default(ATTACHMENT_DEFAULTS.minFreeBytes),
@@ -105,6 +106,7 @@ const dbPath = env.DISPATCHER_DB
 export const config = {
   port: env.PORT,
   nativeReadHttpPort: env.NATIVE_READ_HTTP_PORT,
+  nativeRoutineWrites: env.NATIVE_ROUTINE_WRITES === "1",
   host: env.HOST,
   concurrency: env.DISPATCH_CONCURRENCY,
   attachmentStorage: {
@@ -159,6 +161,7 @@ export const config = {
 // refuse to start rather than silently fall back to any host/person literal.
 export function validateConfig(): void {
   const missing: string[] = [];
+  if (config.nativeRoutineWrites && config.nativeReadHttpPort === undefined) throw new Error("NATIVE_ROUTINE_WRITES requires NATIVE_READ_HTTP_PORT");
   if (config.nativeReadHttpPort === config.port) throw new Error("NATIVE_READ_HTTP_PORT must differ from PORT");
   if (config.authEnabled && !env.AUTH_RP_ID) {
     missing.push(

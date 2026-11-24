@@ -80,7 +80,7 @@ The Task record reader supplies operation details, content and execution records
 
 An opt-in same-origin ingress split sends the five migrated GET routes directly to a separate
 Rust loopback listener. Rust owns cookie-session verification, public validation, task existence
-checks and final response encoding for those requests. Node still serves all other routes and
+checks and final response encoding for those requests. Node serves the default route and
 owns authentication ceremonies and schema migrations. Production event
 batches already publish events and projection updates atomically; startup repairs retained dirty
 projections before enabling the direct listener. Direct reads reject dirty projections and never
@@ -91,6 +91,12 @@ through the private `/v1/task-reads/http` endpoint. `NATIVE_READ_HTTP_PORT` is d
 ingress routing is a separate explicit step. See the [experiment and rollback instructions](performance/direct-task-reads/README.md).
 This adds a session-validation reader, not a second session or Task writer. An API-owner crash
 can leave direct committed reads available; ordinary owner shutdown disables the listener.
+
+The same listener can admit routine definition creation, updates and deletion with the separate
+`NATIVE_ROUTINE_WRITES=1` opt-in and `routineWriteHttp: 1` capability. Ingress selects by method
+and path. The public adapter sends the validated command directly to the existing Rust routine
+owner. The API revision poll publishes changes to SSE clients. Manual run/stop and agent Task
+delivery continue through Node. Reverting ingress selects the mediated path against the same owner.
 
 ## Gates for every slice
 

@@ -61,6 +61,7 @@ export function daemonConfiguration(cfg: InstallConfig) {
     EXECUTION_RELEASE: cfg.pkgDir, EXECUTION_NODE: cfg.executionNode, STATIC_DIR: join(cfg.pkgDir, "web"),
     AUTH_RP_ID: cfg.rpId, AUTH_RP_NAME: cfg.rpName, AUTH_ORIGIN: cfg.authOrigin,
   };
+  if (cfg.nativeRoutineWrites) environment.NATIVE_ROUTINE_WRITES = "1";
   if (cfg.nativeReadHttpPort !== undefined) environment.NATIVE_READ_HTTP_PORT = String(cfg.nativeReadHttpPort);
   const retained = retainedEnvironment(cfg.dataDir);
   for (const key of ["LANG", "LC_ALL", "CODEX_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]) {

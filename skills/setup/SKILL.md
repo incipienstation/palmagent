@@ -55,5 +55,13 @@ using the release's direct-read map, retaining the existing origin and ingress c
 After cutover run `<cli> connection diagnose`: when configured, it also requires authenticated
 Rust responses and the expected version for every selected route. For rollback, restore Node
 routing first, then remove the setting and apply setup.
+
+For a routine-definition cutover, require a release advertising `routineWriteHttp: 1`. Set
+`NATIVE_ROUTINE_WRITES=1` alongside the listener port, apply setup, then enable the two
+optional method/path rules in the same map. Manual run and stop continue through Node.
+Connection diagnosis covers the five reads. Verify write routing with an authenticated,
+same-origin malformed create request and check the Rust marker and 400 response.
+Restore the ingress rules before removing the write setting during rollback.
+
 Verify runtime and public HTTPS separately. For a changed domain mint a fresh link with
 `<cli> passkey` only after HTTPS succeeds. Report any retained old routes or recovery work.
