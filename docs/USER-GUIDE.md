@@ -30,10 +30,10 @@ A missing Stable release never falls back to Preview.
 
 ## Spaces
 
-**Tasks** is the home screen, with tasks grouped by Space. Use **Answer** or
-**Approval** to find tasks waiting for you, or **Filters** for another status.
-Each group can be collapsed and has controls to open its Space or start a task
-there. Search and filters reveal matching tasks even in collapsed groups. Open **Spaces** to search
+**Tasks** groups tasks by Space. **Needs you** gathers tasks waiting for an answer or approval.
+Use **Filters** in the top bar to select a status. As you scroll, the current Space's heading
+stays at the top of the list until the next one takes its place. Use the folder or plus button
+in that heading to open the Space or start a task there. Open **Spaces** to search
 by name or folder, enter a Space, or connect another folder with **Add Space**.
 Spaces with the same name show a short folder qualifier. Full folder paths and
 **Terminals** are available in each Space's details.
@@ -41,7 +41,7 @@ Spaces with the same name show a short folder qualifier. Full folder paths and
 A Space includes all of its Worktree tasks. Use **Filters** inside the Space to
 narrow the list to a Worktree or status. Filtering changes the list, not the
 execution folder for a new task. Back restores the previous list's search and
-reading position. Tasks also remembers which Space groups you collapsed.
+reading position.
 
 Pull down on Tasks or Spaces to refresh their data in place. Search, filters, and
 the current screen stay available; a failed refresh keeps the existing list.

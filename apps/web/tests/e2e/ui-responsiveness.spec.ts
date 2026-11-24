@@ -6,7 +6,7 @@ test.use({ serviceWorkers: "block" });
 
 const inboxViewport = (page: Page) => page.locator('[data-radix-scroll-area-viewport]:has([data-testid="inbox-content"])');
 
-test("Back restores the inbox search, Space-group state, and scroll position", async ({ page }) => {
+test("Back restores the inbox search and scroll position", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("the");
   await expect(page.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
@@ -21,11 +21,6 @@ test("Back restores the inbox search, Space-group state, and scroll position", a
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("the");
   await expect.poll(() => inboxViewport(page).evaluate(el => el.scrollTop)).toBeCloseTo(top, 0);
-  await page.getByRole("button", { name: "Clear task search" }).click();
-  await page.getByRole("button", { name: "sample-app tasks", exact: true }).click();
-  await page.getByRole("button", { name: "Dispatch new task" }).click();
-  await page.goBack();
-  await expect(page.getByRole("button", { name: "sample-app tasks", exact: true })).toHaveAttribute("aria-expanded", "false");
 });
 
 test("large Markdown preserves cross-block references, tables, literal HTML and streamed final text", async ({ page }) => {
@@ -77,14 +72,28 @@ test("long streaming replies stay formatted without Worker support", async ({ pa
   await expect(page.getByText(/Last delta/)).toBeVisible();
 });
 
-test("each Space retains its own inbox reading position", async ({ page }) => {
+test("Space headers hand off as the list scrolls and each Space retains its reading position", async ({ page }) => {
   const sample = tasks.find(task => task.taskId === "t-idle-rich")!;
   const list = Array.from({ length: 60 }, (_, index) => ({ ...sample, taskId: `reading-${index}`,
     title: `Reading position ${index}`, repoId: index % 2 ? "repo-app" : "repo-notes", prs: [], branch: undefined, worktreePath: undefined }));
   await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: list })}\n\n` }));
   await page.goto("/");
-  await page.getByRole("searchbox", { name: "Search tasks" }).waitFor();
-  await inboxViewport(page).evaluate(el => { el.scrollTop = 600; });
+  const pane = inboxViewport(page);
+  const groups = page.getByTestId("inbox-content").getByRole("region");
+  await expect(groups).toHaveCount(2);
+  const paneTop = (await pane.boundingBox())!.y;
+  const firstHeader = groups.first().getByRole("heading");
+  const secondHeader = groups.last().getByRole("heading");
+  await pane.evaluate(el => { el.scrollTop = 600; });
+  const pinnedTop = (await firstHeader.boundingBox())!.y;
+  expect(pinnedTop).toBeGreaterThanOrEqual(paneTop);
+  expect(pinnedTop).toBeLessThan(paneTop + 44);
+  const secondTop = (await groups.last().boundingBox())!.y;
+  await pane.evaluate((el, delta) => { el.scrollTop += delta; }, secondTop - paneTop + 100);
+  await expect(firstHeader).not.toBeInViewport();
+  await expect.poll(async () => (await secondHeader.boundingBox())!.y).toBeCloseTo(pinnedTop, 0);
+  await groups.last().getByRole("button", { name: /^New task in/ }).click({ trial: true });
+  await pane.evaluate(el => { el.scrollTop = 600; });
   await page.getByRole("button", { name: "Open Spaces" }).click();
   await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /sample-app/ }).click();
   await expect.poll(() => inboxViewport(page).evaluate(el => el.scrollTop)).toBe(0);
