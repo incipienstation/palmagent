@@ -138,7 +138,7 @@ lookup. The worker owns queue transitions, dispatch admission, callback fencing 
 metadata writes including shared-session control, pending input, approvals and pins.
 Task creation can stage attachment rows and files under one native transaction. The same recovered
 worker commits Space registration, base-branch changes and removal. The API resolves Git and
-filesystem paths and checks known Git roots before branch discovery. The selected writer reuses
+filesystem paths and looks up known paths before branch discovery or worker dispatch. The selected writer reuses
 the first matching path (creation time, then row ID) or inserts the candidate under one SQLite
 write transaction. Only an insertion publishes a registration change. The path index also
 supports older catalogs with duplicate paths. Reads and

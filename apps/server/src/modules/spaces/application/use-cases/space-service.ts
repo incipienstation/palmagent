@@ -22,11 +22,8 @@ export class SpaceService implements SpaceUseCases {
     // git registers as-is (vcs "none" — tasks run in place, no worktree).
     // Dedupe by path — re-adding returns the existing entry.
     const path = inspected.path;
-    if (inspected.isGit) {
-      // A registered Git root keeps its saved branch even if this request names an invalid one.
-      const existing = this.db.getRepoByPath(path);
-      if (existing) return existing;
-    }
+    const existing = this.db.getRepoByPath(path);
+    if (existing) return existing;
     const baseRef = inspected.isGit
       ? req.defaultBaseRef?.trim() || await this.repositoryPaths.defaultBaseRef(path) : "";
     if (inspected.isGit && req.defaultBaseRef && !this.repositoryPaths.validBaseRef(path, baseRef)) {
