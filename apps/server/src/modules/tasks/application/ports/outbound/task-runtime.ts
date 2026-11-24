@@ -29,6 +29,6 @@ export interface TaskSupervisor {
 }
 
 export interface TaskWorktreeManager {
-  create(repo: Repo, taskId: string): { branch: string; path: string };
+  create(repo: Repo, taskId: string, retryable?: boolean): { branch: string; path: string };
   remove(repo: Repo, worktree: { branch: string; path: string }): void;
 }

@@ -60,11 +60,21 @@ pub fn run_owner(
                 }
                 let result = match action {
                     Action::Status => Ok(
-                        json!({"protocol":1,"taskUsage":1,"taskActivityDetails":1,"taskTranscript":1,"taskTranscriptSteps":1,"taskReadHttp":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping}),
+                        json!({"protocol":1,"agentRoutines":1,"taskUsage":1,"taskActivityDetails":1,"taskTranscript":1,"taskTranscriptSteps":1,"taskReadHttp":1,"version":env!("PALMAGENT_PRODUCT_VERSION"),"sourceCommit":env!("PALMAGENT_SOURCE_COMMIT"),"instance":instance,"revision":service.revision,"activeScripts":service.active(),"stopping":service.stopping}),
                     ),
                     Action::Telemetry => Ok(
                         json!({"version":env!("PALMAGENT_PRODUCT_VERSION"),"instance":instance,"telemetry":measurements.snapshot()}),
                     ),
+                    Action::AgentTick { startup } => service
+                        .agent_tick(startup)
+                        .and_then(|()| service.pending_dispatch())
+                        .map(|dispatch| json!(dispatch)),
+                    Action::NextDispatch => {
+                        service.pending_dispatch().map(|dispatch| json!(dispatch))
+                    }
+                    Action::SettleDispatch { id, task_id, note } => service
+                        .settle_dispatch(id, task_id.as_deref(), note.as_deref())
+                        .map(|()| json!({})),
                     Action::List => service.list(),
                     Action::Get(id) => service.get(&id).map(|routine| json!({"routine":routine})),
                     Action::Create(value) => service.create(value),

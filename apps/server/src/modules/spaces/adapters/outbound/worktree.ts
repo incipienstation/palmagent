@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, realpathSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Repo } from "@palmagent/shared";
 
@@ -15,9 +15,19 @@ export interface Worktree {
 
 export class WorktreeManager {
   // git worktree add <repo>/.palmagent/worktrees/<taskId> -b agent/<taskId> <base-ref>
-  create(repo: Repo, taskId: string): Worktree {
+  create(repo: Repo, taskId: string, retryable = false): Worktree {
     const branch = `agent/${taskId}`;
     const path = join(repo.path, ".palmagent", "worktrees", taskId);
+    if (retryable && existsSync(path)) {
+      // The API can stop after Git creates the worktree but before Tasks commits the ID.
+      // Reuse only this repository's registered checkout of the reserved branch and path.
+      const expected = join(realpathSync(repo.path), ".palmagent", "worktrees", taskId);
+      const entries = git(repo.path, ["worktree", "list", "--porcelain", "-z"]).split("\0\0");
+      if (realpathSync(path) === expected && entries.some(entry => {
+        const fields = entry.split("\0");
+        return fields[0] === `worktree ${expected}` && fields.includes(`branch refs/heads/${branch}`);
+      })) return { branch, path };
+    }
     ensureExcluded(repo.path);
     git(repo.path, ["worktree", "add", path, "-b", branch, repo.defaultBaseRef]);
     return { branch, path };

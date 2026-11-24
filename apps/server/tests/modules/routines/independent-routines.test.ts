@@ -3,25 +3,28 @@ import test from "node:test";
 import type { Routine } from "@palmagent/shared";
 import { IndependentRoutines } from "../../../src/modules/routines/application/use-cases/independent-routines.js";
 import type { RoutineService } from "../../../src/modules/routines/application/use-cases/routine-service.js";
-import type { ScriptRuntime } from "../../../src/modules/routines/application/ports/outbound/script-runtime.js";
+import type { RoutineTaskUseCases } from "../../../src/modules/routines/application/ports/outbound/routines.js";
+import type { RoutineRuntime } from "../../../src/modules/routines/application/ports/outbound/routine-runtime.js";
 
+const tasks: RoutineTaskUseCases & { createdTask(): undefined } = { createdTask() { return undefined; }, updating: false, createTask() { throw Error("unexpected task"); } };
 const routine = { id: "routine", kind: "script" } as Routine;
 function fixture() {
   let active = 0, starts = 0, reads = 0, changes = 0, failStatus = false;
   let release!: () => void;
   const stale = new Promise<void>(resolve => { release = resolve; });
   const native = {
+    async agentTick() { return null; },
     async status() {
       const before = active, revision = starts;
       if (++reads === 1) await stale;
       if (failStatus) throw Error("observation unavailable");
       return { instance: "fixture", revision, activeScripts: before };
     },
-    async run() { starts++; active++; return routine; },
+    async run() { starts++; active++; return { routine }; },
     async stop() { active = 0; return routine; },
-  } as unknown as ScriptRuntime;
+  } as unknown as RoutineRuntime;
   const local = { get() { return routine; }, async stop() {} } as unknown as RoutineService;
-  const service = new IndependentRoutines(local, native, { emitReadChange() { changes++; } });
+  const service = new IndependentRoutines(local, native, { emitReadChange() { changes++; } }, tasks);
   return { service, release, get starts() { return starts; }, get changes() { return changes; }, failStatus() { failStatus = true; } };
 }
 
@@ -54,8 +57,8 @@ test("script reads reuse the persisted projection without a native round trip", 
   const runs = [{ id: 1, status: "succeeded" }];
   let limit: number | undefined;
   const local = { get() { return routine; }, list() { return [routine]; }, runs(_id: string, value?: number) { limit = value; return runs; } } as unknown as RoutineService;
-  const native = new Proxy({}, { get() { throw Error("Reads must not depend on native availability"); } }) as ScriptRuntime;
-  const service = new IndependentRoutines(local, native, { emitReadChange() {} });
+  const native = new Proxy({}, { get() { throw Error("Reads must not depend on native availability"); } }) as RoutineRuntime;
+  const service = new IndependentRoutines(local, native, { emitReadChange() {} }, tasks);
   assert.deepEqual(service.list(), [routine]);
   assert.equal(service.get(routine.id), routine);
   assert.equal(service.runs(routine.id, 7), runs);

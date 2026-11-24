@@ -34,7 +34,8 @@ pub struct Routine {
     pub id: String,
     pub repo_id: String,
     pub kind: String,
-    pub script: Script,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script: Option<Script>,
     pub agent: String,
     pub prompt: String,
     pub permission: String,

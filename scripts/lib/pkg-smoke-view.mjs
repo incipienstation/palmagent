@@ -76,6 +76,9 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
       throw error;
     }
   });
+  const fixtureSql = sql => execFileSync(node, ["-e",
+    'const db = require("better-sqlite3")(process.env.DISPATCHER_DB); db.exec(process.argv[1]); db.close()', sql],
+    { cwd: release, env });
   const mark = (key, suffix) => writeFileSync(join(root, "control", key + suffix), "");
   let taskId, paused, gateway;
   try {
@@ -93,9 +96,17 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
     const shell = await (await fetch(base)).text();
     assert(shell.includes('<div id="root"'));
     const repo = (await api("repos", { path: join(root, "repo"), defaultBaseRef: "main" })).repo;
-    const task = (await api("tasks", { repoId: repo.id, agent: "codex", isolate: true,
-      prompt: JSON.stringify({ key: "packed-a", mode: "hold" }) })).task;
+    const prompt = JSON.stringify({ key: "packed-a", mode: "hold" });
+    const { routine } = await api("routines", { repoId: repo.id, agent: "codex", prompt, preset: "manual" });
+    // Force a lost acknowledgement after real Task creation; the replacement owner must
+    // attach the run history to the existing Task without starting a second execution.
+    fixtureSql("CREATE TRIGGER hold_dispatch BEFORE UPDATE OF dispatch_json ON routine_runs WHEN OLD.dispatch_json IS NOT NULL BEGIN SELECT RAISE(ABORT,'hold receipt'); END;");
+    await api(`routines/${routine.id}/run`, {});
+    const matchingTasks = async () => (await api("tasks")).tasks.filter(task => task.prompt === prompt);
+    const [task] = await matchingTasks();
     taskId = task.taskId;
+    assert.ok(task.worktreePath && task.worktreePath !== repo.path);
+    assert.equal((await api(`routines/${routine.id}/runs`)).runs[0].taskId, undefined);
     await until("packaged provider starts", () => existsSync(join(root, "control/packed-a.ready")));
     await api(`tasks/${taskId}/messages`, { clientMessageId: crypto.randomUUID(), mode: "queue", expectedRunId: null,
       text: JSON.stringify({ key: "packed-b", mode: "auto" }) });
@@ -111,6 +122,8 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
     assert.equal(await (await fetch(base)).text(), shell);
     await until("packaged Task becomes idle", async () => (await api(`tasks/${taskId}`)).task.status === "idle");
     if (inspect) await inspect({ base, view, taskId, api });
+    process.kill(next.ownerPid, "SIGSTOP");
+    fixtureSql("DROP TRIGGER hold_dispatch");
     process.kill(next.ownerPid, "SIGKILL");
     const recovered = await until("daemon recovers API owner", async () => {
       try { const state = view("status"); return state.state === "ready" && state.ownerPid !== next.ownerPid && state; }
@@ -119,6 +132,9 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
     assert.equal(command({ action: "status" }).web.child.pid, recovered.ownerPid);
     assert.equal((await afterSwitch("recovered owner serves Task", `tasks/${taskId}`)).task.status, "idle");
     assert.equal(await (await fetch(base)).text(), shell);
+    const { runs } = await api(`routines/${routine.id}/runs`);
+    assert.deepEqual(runs.map(run => [run.status, run.taskId]), [["manual", taskId]]);
+    assert.deepEqual((await matchingTasks()).map(task => task.taskId), [taskId]);
     const configPath = join(data, "daemon/config.json");
     const nextRelease = join(data, "releases/candidate");
     cpSync(pkgDir, nextRelease, { recursive: true });

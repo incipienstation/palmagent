@@ -29,7 +29,7 @@ import { Hub } from "../platform/events/hub.js";
 import { InProcessBackend } from "../modules/agents/adapters/outbound/inproc-backend.js";
 import { PushService } from "../modules/tasks/adapters/outbound/web-push.js";
 import { IndependentRoutines } from "../modules/routines/application/use-cases/independent-routines.js";
-import { NativeScriptRuntime } from "../modules/routines/adapters/outbound/native-script-runtime.js";
+import { NativeRoutineRuntime } from "../modules/routines/adapters/outbound/native-routine-runtime.js";
 import { RoutineService } from "../modules/routines/application/use-cases/routine-service.js";
 import { TaskService } from "../modules/tasks/application/use-cases/task-service.js";
 import { ProcessSupervisor } from "../modules/agents/adapters/outbound/supervisor.js";
@@ -82,10 +82,10 @@ export async function createRuntime(runtimeLease: number) {
     resources.defer(() => voice.close());
     const accountLimits = new AccountLimitReader();
     resources.defer(() => accountLimits.close());
-    const nativeScripts = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
-      ? new NativeScriptRuntime(config.dataDir) : undefined;
-    if (config.nativeReadHttpPort !== undefined && !nativeScripts) throw new Error("Direct read HTTP requires a native application runtime");
-    const retainedTurns = nativeScripts ? new NativeRetainedTurns(
+    const nativeRoutines = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
+      ? new NativeRoutineRuntime(config.dataDir) : undefined;
+    if (config.nativeReadHttpPort !== undefined && !nativeRoutines) throw new Error("Direct read HTTP requires a native application runtime");
+    const retainedTurns = nativeRoutines ? new NativeRetainedTurns(
       join(config.executionRelease!, "daemon", `linux-${process.arch}`, "palmagent-runtime"), config.dbPath, runtimeLease,
       () => { console.error("Task owner disconnected. Restarting the API to recover retained turns."); process.kill(process.pid, "SIGTERM"); },
     ) : undefined;
@@ -107,7 +107,7 @@ export async function createRuntime(runtimeLease: number) {
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)
         : removeWorktree(),
-    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeScripts ? new NativeTaskUsage(config.dataDir) : db, nativeScripts ? new NativeTaskActivity(config.dataDir) : db, nativeScripts ? new NativeTaskTranscript(config.dataDir) : undefined, retainedTurns);
+    }, taskId => github?.onNewPrs(taskId), voice, new SkillDiscovery(), accountLimits, nativeRoutines ? new NativeTaskUsage(config.dataDir) : db, nativeRoutines ? new NativeTaskActivity(config.dataDir) : db, nativeRoutines ? new NativeTaskTranscript(config.dataDir) : undefined, retainedTurns);
     resources.onStop(() => service.beginShutdown());
     service.sharedSessions = new CodexSharedSessions();
     const sideChats = new CodexSideChats();
@@ -126,8 +126,9 @@ export async function createRuntime(runtimeLease: number) {
     const scriptRunner = process.env.PALMAGENT_DAEMON_DATA && config.executionRelease && config.executionNode
       ? new DaemonRoutineScriptRunner(config.dataDir, config.executionRelease, config.executionNode, worktrees)
       : new LocalRoutineScriptRunner(worktrees);
-    if (nativeScripts) {
-      const status = await nativeScripts.connect(config.executionRelease!);
+    if (nativeRoutines) {
+      const status = await nativeRoutines.connect(config.executionRelease!);
+      if (status.agentRoutines !== 1) throw new Error("This release requires native agent routine support");
       if (status.taskTranscriptSteps !== 1) throw new Error("This release requires native Task transcript step support");
       if (status.taskTranscript !== 1) throw new Error("This release requires native Task transcript support");
       if (status.taskActivityDetails !== 1) throw new Error("This release requires native Task activity support");
@@ -146,8 +147,8 @@ export async function createRuntime(runtimeLease: number) {
         await readHttp.configure(null);
       }
     }
-    const localRoutines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub, Boolean(nativeScripts));
-    const routines = nativeScripts ? new IndependentRoutines(localRoutines, nativeScripts, hub) : localRoutines;
+    const localRoutines = new RoutineService(db, service, new NodeIdentifierGenerator(), scriptRunner, hub);
+    const routines = nativeRoutines ? new IndependentRoutines(localRoutines, nativeRoutines, hub, service) : localRoutines;
     if (routines instanceof IndependentRoutines) await routines.initialize();
     resources.defer(() => routines.stop());
     github = new GithubService(service, config.githubToken);

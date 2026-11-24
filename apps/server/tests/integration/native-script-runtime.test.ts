@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
 import { Db } from "../../src/composition/database.js";
-import { NativeScriptRuntime } from "../../src/modules/routines/adapters/outbound/native-script-runtime.js";
+import { NativeRoutineRuntime } from "../../src/modules/routines/adapters/outbound/native-routine-runtime.js";
 import { applicationRequest } from "../../src/platform/ipc/application-runtime.js";
 import { daemonRequest } from "../../src/platform/process/daemon-client.js";
 import { DaemonStatusSchema } from "@palmagent/shared/daemon";
@@ -35,10 +35,10 @@ test("native scripts schedule and persist without web, recover without replay, a
   writeFileSync(join(release, "daemon/manifest.json"), JSON.stringify({ ...version, applicationRuntime: 1, hostReadiness: 1, routineHost: 1 }));
   writeFileSync(join(release, "package.json"), '{"type":"module"}');
   buildSync({ stdin: { contents: `
-    import { NativeScriptRuntime } from ${JSON.stringify(join(repository, "apps/server/src/modules/routines/adapters/outbound/native-script-runtime.ts"))};
+    import { NativeRoutineRuntime } from ${JSON.stringify(join(repository, "apps/server/src/modules/routines/adapters/outbound/native-routine-runtime.ts"))};
     import { createHostReadiness } from ${JSON.stringify(join(repository, "apps/server/src/platform/process/host-readiness.ts"))};
     const ready = createHostReadiness();
-    await new NativeScriptRuntime(${JSON.stringify(root)}).connect(${JSON.stringify(release)});
+    await new NativeRoutineRuntime(${JSON.stringify(root)}).connect(${JSON.stringify(release)});
     ready(); setInterval(() => {}, 1000);
   `, resolveDir: repository, loader: "ts" }, outfile: join(release, "server.js"), bundle: true, platform: "node", format: "esm", target: "node24" });
   writeFileSync(join(release, "routine-host.js"), 'throw new Error("Native releases must not start the Node routine host");');
@@ -58,7 +58,7 @@ test("native scripts schedule and persist without web, recover without replay, a
     try { await daemonRequest(root, { action: "stop" }); } finally { daemon.kill(); db.close(); rmSync(root, { recursive: true, force: true }); }
   });
   await until(async () => { try { return await status(); } catch { return false; } }, "daemon startup");
-  const native = new NativeScriptRuntime(root);
+  const native = new NativeRoutineRuntime(root);
   try { await native.connect(release); } catch (error) {
     console.error(await status());
     for (const name of readdirSync(join(root, "daemon/logs"))) console.error(name, readFileSync(join(root, "daemon/logs", name), "utf8"));

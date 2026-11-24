@@ -75,10 +75,28 @@ fn body(value: Result<Json<Value>, JsonRejection>) -> Result<Value, Error> {
         .map(|Json(value)| value)
         .map_err(|_| Error::bad("Invalid JSON request"))
 }
+#[derive(serde::Deserialize)]
+struct Tick {
+    startup: bool,
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DispatchReceipt {
+    task_id: Option<String>,
+    note: Option<String>,
+}
 pub fn router(client: Client) -> Router {
     Router::new()
         .route("/health", get(|State(client): State<Client>| async move { client.request(Action::Status).await.map(Json) }))
         .route("/telemetry", get(|State(client): State<Client>| async move { client.request(Action::Telemetry).await.map(Json) }))
+        .route("/v1/agent-dispatch", get(|State(client): State<Client>| async move {
+            client.request(Action::NextDispatch).await.map(Json)
+        }).post(|State(client): State<Client>, Json(tick): Json<Tick>| async move {
+            client.request(Action::AgentTick { startup: tick.startup }).await.map(Json)
+        }))
+        .route("/v1/agent-dispatch/{id}", post(|State(client): State<Client>, Path(id): Path<i64>, Json(receipt): Json<DispatchReceipt>| async move {
+            client.request(Action::SettleDispatch { id, task_id: receipt.task_id, note: receipt.note }).await.map(Json)
+        }))
         .route("/v1/routines", get(|State(client): State<Client>| async move { client.request(Action::List).await.map(Json) })
             .post(|State(client): State<Client>, input: Result<Json<Value>, JsonRejection>| async move {
                 client.request(Action::Create(body(input)?)).await.map(|value| (StatusCode::CREATED, Json(value)))
