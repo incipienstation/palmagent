@@ -33,6 +33,16 @@ insertRepo(r: Repo) {
     }).immediate();
   }
 
+  discoveredRepoIds(paths: string[]): [string, string][] {
+    return this.db.prepare(
+      `SELECT r.path, r.id FROM json_each(?) AS wanted
+         JOIN repos AS r ON r.rowid = (
+           SELECT rowid FROM repos WHERE path = wanted.value
+           ORDER BY created_at DESC, rowid DESC LIMIT 1
+         )`,
+    ).raw().all(JSON.stringify(paths)) as [string, string][];
+  }
+
   getRepoByPath(path: string): Repo | undefined {
     const row = this.db.prepare("SELECT * FROM repos WHERE path = ? ORDER BY created_at, rowid LIMIT 1").get(path) as RepoRow | undefined;
     return row && rowToRepo(row);

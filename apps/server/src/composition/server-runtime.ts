@@ -156,6 +156,7 @@ export async function createRuntime(runtimeLease: number) {
     const modelCatalog = new ModelCatalogService();
     return {
       db, hub, service, auth, push, routines, modelCatalog, config, terminals, terminalTickets: new TerminalTickets(),
+      spaceCatalog: { getRepoByPath: db.getRepoByPath, discoveredRepoIds: retainedTurns?.spaces.discoveredRepoIds ?? db.discoveredRepoIds },
       start() { routines.start(); github?.start(); terminals.start(); },
       close: () => resources.close(),
     };

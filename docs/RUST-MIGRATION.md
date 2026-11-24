@@ -19,7 +19,7 @@ alone does not establish a performance improvement.
 | Task message transitions, retained dispatch and restart recovery on daemon installations | Rust Tasks worker under the API coordinator lease | TypeScript HTTP, provider adapters, source and legacy configurations |
 | Task creation, control actions, provider events and projection writes on daemon installations | Rust Tasks worker | Provider handles, compatibility rendering and schema bootstrap in the API |
 | Legacy history, execution records and expanded conversation content on daemon installations | Rust Tasks SQLite reader | Shared display serialization, UTF-16 content boundaries and public response |
-| Space catalog writes, attachment index and push subscriptions on daemon installations | Rust worker | Space registration and removal preflight, catalog reads, file operations and network delivery in their existing adapters |
+| Space catalog writes and discovery matches, attachment index and push subscriptions on daemon installations | Rust worker | Space registration and removal preflight, catalog listing and path validation, file operations and network delivery in their existing adapters |
 | Standalone release selection, file preparation and activation on capable installations | Rust update worker | CLI admission and host lock, shared wire schemas, plugin managers, daemon operations and update gateway |
 | Agent routines, spaces, auth, terminals and remaining installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
@@ -141,7 +141,10 @@ worker commits Space registration, base-branch changes and removal. The API reso
 filesystem paths and looks up known paths before branch discovery or worker dispatch. The selected writer reuses
 the first matching path (creation time, then row ID) or inserts the candidate under one SQLite
 write transaction. Only an insertion publishes a registration change. The path index also
-supports older catalogs with duplicate paths. Reads and
+supports older catalogs with duplicate paths. Space discovery sends the scanned paths to the
+worker in a single read, matching the last registration in creation order for each path. Manual
+validation uses the first registration at the resolved path. Filesystem facts are cached separately
+from those database reads, so catalog updates are visible even while a scan is cached. Reads and
 older releases use the existing catalog schema, so rollback requires no conversion. Space
 removal deletes archived tasks, events, approvals and dependent routines atomically.
 A provider line commits its event, derived images, task and queue effects, projection and

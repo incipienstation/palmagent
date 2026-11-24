@@ -58,7 +58,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const shutdown = new AbortController();
   const repoSettings = createSpaceSettings(join(dir, "state"), settings.repoRoots);
   const modelCatalog = extra.modelCatalog ?? { get: async (agent: AgentKind) => defaultModelCatalog(agent) };
-  const app = createApp({ hub, service, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
+  const app = createApp({ hub, service, spaceCatalog: db, auth, config: settings, settings: repoSettings, shutdown: shutdown.signal,
     push: new PushService(db, join(dir, "vapid.json"), undefined), routines: new RoutineService(db, service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), hub), ...extra, modelCatalog });
   // Ordinary fixture writes represent browser requests from the configured origin.
   // An explicit empty origin exercises clients which omit the header.
@@ -523,7 +523,7 @@ test("PWA serving preserves shell and asset caching and rejects paths outside th
   writeFileSync(join(retained, "sw.js"), "// previous worker");
   writeFileSync(join(f.dir, "private.txt"), "private fixture");
   symlinkSync(join(f.dir, "private.txt"), join(f.dir, "web/outside.txt"));
-  const app = createApp({ hub: f.hub, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
+  const app = createApp({ hub: f.hub, spaceCatalog: f.db, service: f.service, auth: f.auth, config: f.settings, settings: f.repoSettings,
     push: new PushService(f.db, join(f.dir, "vapid.json"), undefined), routines: new RoutineService(f.db, f.service, new NodeIdentifierGenerator(), new LocalRoutineScriptRunner(new WorktreeManager()), f.hub), modelCatalog: f.modelCatalog },
     staticFiles(join(f.dir, "web"), retained));
   const oldChunk = await app.request("/assets/old-hash.js");
