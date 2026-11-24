@@ -1,1 +1,1 @@
-pub mod sqlite_removal;
+pub mod sqlite_catalog;

@@ -19,7 +19,7 @@ alone does not establish a performance improvement.
 | Task message transitions, retained dispatch and restart recovery on daemon installations | Rust Tasks worker under the API coordinator lease | TypeScript HTTP, provider adapters, source and legacy configurations |
 | Task creation, control actions, provider events and projection writes on daemon installations | Rust Tasks worker | Provider handles, compatibility rendering and schema bootstrap in the API |
 | Legacy history, execution records and expanded conversation content on daemon installations | Rust Tasks SQLite reader | Shared display serialization, UTF-16 content boundaries and public response |
-| Space removal, attachment index and push subscriptions on daemon installations | Rust worker | Space preflight, file operations and network delivery in their existing adapters |
+| Space catalog writes, attachment index and push subscriptions on daemon installations | Rust worker | Space registration and removal preflight, catalog reads, file operations and network delivery in their existing adapters |
 | Standalone release selection, file preparation and activation on capable installations | Rust update worker | CLI admission and host lock, shared wire schemas, plugin managers, daemon operations and update gateway |
 | Agent routines, spaces, auth, terminals and remaining installation use cases | TypeScript backend | Feature-specific ports and adapters |
 
@@ -136,7 +136,10 @@ New retained turns persist the journal UUID in the queue before reserving the ex
 A journal from another turn fails attachment. Older queues use their existing retained
 lookup. The worker owns queue transitions, dispatch admission, callback fencing and
 metadata writes including shared-session control, pending input, approvals and pins.
-Task creation can stage attachment rows and files under one native transaction. Space
+Task creation can stage attachment rows and files under one native transaction. The same recovered
+worker commits Space registration, base-branch changes and removal. The API resolves Git and
+filesystem paths, checks for duplicate registrations and publishes committed changes. Reads and
+older releases use the existing catalog schema, so rollback requires no conversion. Space
 removal deletes archived tasks, events, approvals and dependent routines atomically.
 A provider line commits its event, derived images, task and queue effects, projection and
 raw cursor together. Successful compaction commits the queue receipt and display event

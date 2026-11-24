@@ -174,8 +174,11 @@ impl TaskOwner {
         }
     }
 
-    pub fn remove_space(&mut self, id: &str) -> Result<()> {
-        crate::modules::spaces::adapters::outbound::sqlite_removal::remove(&mut self.db, id)
+    pub fn mutate_space(
+        &mut self,
+        mutation: crate::modules::spaces::application::CatalogMutation,
+    ) -> Result<()> {
+        crate::modules::spaces::adapters::outbound::sqlite_catalog::apply(&mut self.db, mutation)
     }
     pub fn subscription(
         &self,

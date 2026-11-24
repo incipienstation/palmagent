@@ -1,11 +1,14 @@
 import type { Repo } from "@palmagent/shared";
 
-export interface RepoRepository {
+export interface SpaceCatalogWriter {
   insertRepo(repo: Repo): void;
   setRepoBaseRef(id: string, baseRef: string): void;
+  deleteRepo(id: string): void;
+}
+
+export interface RepoRepository extends SpaceCatalogWriter {
   getRepo(id: string): Repo | undefined;
   listRepos(): Repo[];
-  deleteRepo(id: string): void;
 }
 
 export interface RepositoryPathInspection {

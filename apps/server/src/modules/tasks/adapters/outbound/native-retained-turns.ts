@@ -2,7 +2,7 @@ import { toUSVString } from "node:util";
 import { NativeTaskRecords } from "./native-task-records.js";
 import { NativeAttachmentIndex } from "./native-attachment-index.js";
 import { taskToRow } from "./sqlite-tasks.js";
-import type { AgentEvent, PushSubscriptionJson, TaskState } from "@palmagent/shared";
+import type { AgentEvent, PushSubscriptionJson, Repo, TaskState } from "@palmagent/shared";
 import type { TaskEventBatches, AssignedEvent, BatchProjection, SessionImport, ProviderLine } from "../../application/ports/outbound/event-batches.js";
 import { NativeTaskMetadata } from "./native-task-metadata.js";
 import { NativeCommandChannel } from "../../../../platform/ipc/native-command-channel.js";
@@ -33,7 +33,11 @@ export class NativeRetainedTurns implements RetainedTurns, TaskEventBatches {
   sharedSnapshot(taskId: string, observation: SharedObservation) {
     return this.command({kind: "sharedSnapshot", taskId, observation}) as ReturnType<RetainedTurns["sharedSnapshot"]>;
   }
-  removeSpace(id: string): void { this.command({ kind: "removeSpace", id }); }
+  readonly spaces = {
+    insertRepo: (repo: Repo) => { this.command({ kind: "spaceCatalog", mutation: { ...repo, kind: "register" } }); },
+    setRepoBaseRef: (id: string, baseRef: string) => { this.command({ kind: "spaceCatalog", mutation: { kind: "setBaseRef", id, baseRef } }); },
+    deleteRepo: (id: string) => { this.command({ kind: "spaceCatalog", mutation: { kind: "remove", id } }); },
+  };
   upsertPushSub(sub: PushSubscriptionJson, now: number): void {
     this.command({kind: "subscription", operation: {kind: "save", endpoint: sub.endpoint, body: JSON.stringify(sub), now}});
   }
