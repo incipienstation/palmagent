@@ -24,6 +24,20 @@ insertRepo(r: Repo) {
     ).run(r.id, r.name, r.path, r.vcs, r.defaultBaseRef, r.createdAt);
   }
 
+  registerRepo(repo: Repo): Repo | null {
+    return this.db.transaction(() => {
+      const existing = this.getRepoByPath(repo.path);
+      if (existing) return existing;
+      this.insertRepo(repo);
+      return null;
+    }).immediate();
+  }
+
+  getRepoByPath(path: string): Repo | undefined {
+    const row = this.db.prepare("SELECT * FROM repos WHERE path = ? ORDER BY created_at, rowid LIMIT 1").get(path) as RepoRow | undefined;
+    return row && rowToRepo(row);
+  }
+
 setRepoBaseRef(id: string, baseRef: string) {
     this.db.prepare("UPDATE repos SET default_base_ref = ? WHERE id = ?").run(baseRef, id);
   }

@@ -2,12 +2,15 @@ import type { Repo } from "@palmagent/shared";
 
 export interface SpaceCatalogWriter {
   insertRepo(repo: Repo): void;
+  /** Returns the previously registered Space, or null after inserting the candidate. */
+  registerRepo(repo: Repo): Repo | null;
   setRepoBaseRef(id: string, baseRef: string): void;
   deleteRepo(id: string): void;
 }
 
 export interface RepoRepository extends SpaceCatalogWriter {
   getRepo(id: string): Repo | undefined;
+  getRepoByPath(path: string): Repo | undefined;
   listRepos(): Repo[];
 }
 

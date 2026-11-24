@@ -177,7 +177,7 @@ impl TaskOwner {
     pub fn mutate_space(
         &mut self,
         mutation: crate::modules::spaces::application::CatalogMutation,
-    ) -> Result<()> {
+    ) -> Result<Option<crate::modules::spaces::application::SpaceRecord>> {
         crate::modules::spaces::adapters::outbound::sqlite_catalog::apply(&mut self.db, mutation)
     }
     pub fn subscription(

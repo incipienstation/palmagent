@@ -10,8 +10,10 @@ import { SqliteTasks } from "../modules/tasks/adapters/outbound/sqlite-tasks.js"
 export class Db {
   private readonly connection;
   readonly insertRepo: SqliteSpaces["insertRepo"];
+  readonly registerRepo: SqliteSpaces["registerRepo"];
   readonly setRepoBaseRef: SqliteSpaces["setRepoBaseRef"];
   readonly getRepo: SqliteSpaces["getRepo"];
+  readonly getRepoByPath: SqliteSpaces["getRepoByPath"];
   readonly listRepos: SqliteSpaces["listRepos"];
   private spaceWriter: SpaceCatalogWriter;
   readonly deleteRepo: SqliteSpaces["deleteRepo"];
@@ -104,8 +106,10 @@ export class Db {
     const spaces = new SqliteSpaces(this.connection);
     this.spaceWriter = spaces;
     this.insertRepo = repo => this.spaceWriter.insertRepo(repo);
+    this.registerRepo = repo => this.spaceWriter.registerRepo(repo);
     this.setRepoBaseRef = (id, baseRef) => this.spaceWriter.setRepoBaseRef(id, baseRef);
     this.getRepo = spaces.getRepo.bind(spaces);
+    this.getRepoByPath = spaces.getRepoByPath.bind(spaces);
     this.listRepos = spaces.listRepos.bind(spaces);
     this.deleteRepo = id => this.spaceWriter.deleteRepo(id);
     const routines = new SqliteRoutines(this.connection);

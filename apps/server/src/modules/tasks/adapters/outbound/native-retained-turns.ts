@@ -35,6 +35,7 @@ export class NativeRetainedTurns implements RetainedTurns, TaskEventBatches {
   }
   readonly spaces = {
     insertRepo: (repo: Repo) => { this.command({ kind: "spaceCatalog", mutation: { ...repo, kind: "register" } }); },
+    registerRepo: (repo: Repo) => this.command({ kind: "spaceCatalog", mutation: { ...repo, kind: "registerIfAbsent" } }) as Repo | null,
     setRepoBaseRef: (id: string, baseRef: string) => { this.command({ kind: "spaceCatalog", mutation: { kind: "setBaseRef", id, baseRef } }); },
     deleteRepo: (id: string) => { this.command({ kind: "spaceCatalog", mutation: { kind: "remove", id } }); },
   };
