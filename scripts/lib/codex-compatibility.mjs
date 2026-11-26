@@ -31,6 +31,20 @@ export function pendingVersions(metadata, baseline) {
     .filter(version => compareVersions(version, baseline) > 0 && compareVersions(version, latest) <= 0)
     .sort(compareVersions);
 }
+// The PR check list can briefly describe the previous head after a push, or
+// the previous attempt after a rerun. Correlate its aggregate job with Actions.
+export function promotionCheckStatus(state, checks, info) {
+  const validate = checks?.find(check => check.name === 'validate');
+  const job = info?.jobs?.find(job => job.name === 'validate' && job.url === validate?.link);
+  if (!job || info.headSha !== state.head || info.headBranch !== state.branch || info.event !== 'pull_request'
+    || info.workflowName !== 'ci' || info.status !== 'completed' || job.status !== 'completed'
+    || checks.some(check => check.bucket === 'pending')) return 'pending';
+  if (state.ciRetryHead === state.head && state.ciRetryRun === info.databaseId
+    && state.ciRetryAttempt === info.attempt) return 'pending';
+  if (validate.state.toLowerCase() !== job.conclusion) return 'pending';
+  return info.conclusion === 'success' && checks.every(check => check.bucket === 'pass') ? 'passed' : 'failed';
+}
+
 export function saveState(path, state) {
   const temp = path + '.' + process.pid + '.tmp';
   writeFileSync(temp, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });

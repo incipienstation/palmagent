@@ -12,6 +12,39 @@ const hashes = {
   x64: '02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239',
 };
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+export async function downloadPinnedCompiler(platformArch, request = fetch) {
+  const arch = { x64: 'x86_64', arm64: 'aarch64' }[platformArch];
+  if (!arch) throw new Error('Unsupported native compiler architecture.');
+  const name = `zig-${arch}-linux-${version}.tar.xz`;
+  // This fallback is listed in ziglang.org/download/community-mirrors.txt.
+  const sources = [`https://ziglang.org/download/${version}/${name}`, `https://zig.squirl.dev/${name}`];
+  for (const source of sources) {
+    let chunks;
+    try {
+      const response = await request(source, { signal: AbortSignal.timeout(120_000), redirect: 'error' });
+      if (!response.ok) {
+        await response.body?.cancel();
+        if (source === sources[0] && (response.status >= 500 || response.status === 429)) continue;
+        throw new Error('Native compiler download returned HTTP ' + response.status);
+      }
+      chunks = [];
+      let bytes = 0;
+      for await (const chunk of response.body) {
+        bytes += chunk.length;
+        if (bytes > 64 * 1024 * 1024) throw new Error('Native compiler archive exceeds its size limit.');
+        chunks.push(chunk);
+      }
+    } catch (error) {
+      if (source === sources[0] && (error.name === 'TimeoutError' || error instanceof TypeError)) continue;
+      throw error;
+    }
+    const archive = Buffer.concat(chunks);
+    if (createHash('sha256').update(archive).digest('hex') !== hashes[platformArch]) throw new Error('Native compiler checksum mismatch.');
+    return archive;
+  }
+  throw new Error('Cannot download the pinned native compiler.');
+}
+
 export async function sqliteToolchain(root) {
   if (process.platform !== 'linux' || !hashes[process.arch]) throw new Error('Native package assembly requires a Linux x64 or arm64 builder.');
   const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
@@ -20,17 +53,7 @@ export async function sqliteToolchain(root) {
   if (!existsSync(executable) || !existsSync(receipt) || readFileSync(receipt, 'utf8') !== hashes[process.arch]) {
     const temporary = mkdtempSync(join(tmpdir(), 'palmagent-zig-'));
     try {
-      const response = await fetch(`https://ziglang.org/download/${version}/zig-${arch}-linux-${version}.tar.xz`, { signal: AbortSignal.timeout(120_000), redirect: 'error' });
-      if (!response.ok) throw new Error('Cannot download the pinned native compiler.');
-      const chunks = [];
-      let bytes = 0;
-      for await (const chunk of response.body) {
-        bytes += chunk.length;
-        if (bytes > 64 * 1024 * 1024) throw new Error('Native compiler archive exceeds its size limit.');
-        chunks.push(chunk);
-      }
-      const archive = Buffer.concat(chunks);
-      if (createHash('sha256').update(archive).digest('hex') !== hashes[process.arch]) throw new Error('Native compiler checksum mismatch.');
+      const archive = await downloadPinnedCompiler(process.arch);
       writeFileSync(join(temporary, 'zig.tar.xz'), archive);
       mkdirSync(join(temporary, 'unpacked'));
       execFileSync('tar', ['-xJf', join(temporary, 'zig.tar.xz'), '-C', join(temporary, 'unpacked'), '--strip-components=1']);

@@ -110,12 +110,14 @@ else if (args[0] === 'api') {
   else if (endpoint.endsWith('git/ref/heads/develop')) console.log(JSON.stringify({object:{sha:git('rev-parse','origin/develop')}}));
   else process.exit(96);
 } else if (args[0] === 'run') {
-  if (args[1] === 'rerun') process.exit(0);
+  if (args[1] === 'rerun') { fs.writeFileSync(file+'.retried',read().head.sha); process.exit(0); }
   if (args.includes('--log-failed')) console.log('DOMException [TimeoutError]: The operation was aborted due to timeout');
-  else console.log(JSON.stringify({headSha:read().head.sha,headBranch:read().head.ref,event:'pull_request',workflowName:'ci',
-    status:'completed',jobs:[{name:'native',databaseId:22,conclusion:'failure',steps:[{name:'Build the shared native binaries',conclusion:'failure'}]}]}));
+  else console.log(JSON.stringify({databaseId:12,attempt:fs.existsSync(file+'.retried') && fs.readFileSync(file+'.retried','utf8')===read().head.sha ? 2 : 1,headSha:read().head.sha,headBranch:read().head.ref,event:'pull_request',workflowName:'ci',
+    status:'completed',conclusion:process.env.TEST_CI_FAIL ? 'failure' : 'success',jobs:[
+      {name:'validate',status:'completed',url:'https://example.com/actions/runs/12/job/21',conclusion:process.env.TEST_CI_FAIL ? 'failure' : 'success'},
+      {name:'native',databaseId:22,conclusion:'failure',steps:[{name:process.env.TEST_TIMEOUT ? 'Build the shared native binaries' : 'Source checks',conclusion:'failure'}]}]}));
 } else if (args[1] === 'checks') {
-  if (args.includes('--json')) console.log(JSON.stringify([{name:'validate', link:process.env.TEST_TIMEOUT ? 'https://example.com/actions/runs/12/job/21' : '', state:process.env.TEST_CI_FAIL ? 'FAILURE' : 'SUCCESS', bucket:process.env.TEST_CI_FAIL ? 'fail' : 'pass'}]));
+  if (args.includes('--json')) console.log(JSON.stringify([{name:'validate', link:'https://example.com/actions/runs/12/job/21', state:process.env.TEST_CI_FAIL ? 'FAILURE' : 'SUCCESS', bucket:process.env.TEST_CI_FAIL ? 'fail' : 'pass'}]));
   if (process.env.TEST_CI_FAIL) process.exit(1);
 } else if (args[1] === 'merge') {
   const pr=read(); pr.merged=true; pr.merged_at='2026-01-01T00:00:00Z'; pr.merge_commit_sha=pr.head.sha; write(pr);
@@ -209,7 +211,8 @@ test('a blocked PR scans newer versions, promotes only the contiguous passes and
   assert.equal(blocked.code,1,blocked.output);
   const newer={TEST_CI_FAIL:'1',TEST_TIMEOUT:'1',TEST_LATEST:'0.163.0',TEST_FAIL_VERSION:'0.162.0'};
   const rerun=await f.run(args,newer);
-  assert.equal(rerun.code,0,rerun.output);
+  assert.equal(rerun.code,1,rerun.output);
+  assert.match(rerun.output,/Retried transient CI/);
   assert.match(rerun.output,/0.162.0: incompatible/);
   assert.match(rerun.output,/0.163.0: passed/);
   const state=f.states()[0];

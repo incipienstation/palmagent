@@ -121,7 +121,9 @@ packed-install checks. Automatic delivery
 uses the oldest candidate's feature PR into `develop`, requires successful exact-head
 CI, and respects review requirements and branch protection. On a matching CI
 workflow and head, a timed-out job or the recognized native build timeout
-allows one failed-job rerun. A later schedule resumes the same PR. Other
+allows one failed-job rerun. The script waits for the matching head and job
+attempt, including immediately after a push or retry. A later schedule can
+resume the same PR if the wait expires. Other
 failures report the check link for inspection. Closed/draft PRs,
 unexpected file changes, changed PR identity, and unresolved failures remain
 held. Stable publication remains a separate release operation.
