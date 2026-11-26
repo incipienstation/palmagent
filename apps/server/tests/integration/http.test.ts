@@ -25,7 +25,7 @@ import { nativeHome } from "../../src/modules/tasks/adapters/outbound/native-ses
 import { config } from "../../src/composition/config.js";
 import { Db } from "../../src/composition/database.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
-import { readTaskImage } from "../../src/modules/tasks/adapters/outbound/task-images.js";
+import { readTaskImage, readTaskVisualization } from "../../src/modules/tasks/adapters/outbound/task-previews.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import type { RunnerBackend } from "../../src/modules/agents/api.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
@@ -52,7 +52,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { read: readTaskImage }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
+    undefined, undefined, undefined, { readImage: readTaskImage, readVisualization: readTaskVisualization }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db, settings, webauthn);
   const shutdown = new AbortController();
@@ -889,7 +889,7 @@ test("display-only task edits leave reads alone; repo deletion signals persisted
   assert.deepEqual(await f.service.usage(), []);
 });
 
-test("task images require a session and serve only bounded raster files inside the task directory", async (t) => {
+test("task previews require a session and serve bounded raster images or isolated HTML inside the task directory", async (t) => {
   const f = fixture(t);
   const cwd = join(f.dir, "task");
   mkdirSync(cwd);
@@ -928,6 +928,25 @@ test("task images require a session and serve only bounded raster files inside t
     assert.equal((await f.app.request(`/api/tasks/images/image${query}`, { headers })).status, 400);
   }
   assert.equal((await f.app.request("/api/tasks/missing/image?path=preview.png", { headers })).status, 404);
+  const preview = (path: string) => `/api/tasks/images/visualization?${new URLSearchParams({ path })}`;
+  const html = "<button>Inspect</button>";
+  writeFileSync(join(cwd, "spec.html"), html);
+  writeFileSync(join(f.dir, "outside.html"), html);
+  symlinkSync(join(f.dir, "outside.html"), join(cwd, "escape.html"));
+  symlinkSync(join(cwd, "preview #1.png"), join(cwd, "alias.html"));
+  assert.equal((await f.app.request(preview("spec.html"))).status, 401);
+  const document = await f.app.request(preview(join(cwd, "spec.html")), { headers });
+  assert.equal(document.status, 200);
+  assert.equal(await document.text(), html);
+  assert.match(document.headers.get("content-type")!, /^text\/html/);
+  assert.equal(document.headers.get("cache-control"), "no-store");
+  assert.equal(document.headers.get("x-frame-options"), "SAMEORIGIN");
+  const policy = document.headers.get("content-security-policy")!.split("; ");
+  for (const directive of ["sandbox allow-scripts", "default-src 'none'", "script-src 'unsafe-inline'", "frame-ancestors 'self'"]) {
+    assert.ok(policy.includes(directive), directive);
+  }
+  assert.equal((await f.app.request(preview("escape.html"), { headers })).status, 404);
+  assert.equal((await f.app.request(preview("alias.html"), { headers })).status, 415);
   await f.app.request("/api/auth/logout", { method: "POST", headers });
   assert.equal((await f.app.request(url("preview #1.png"), { headers })).status, 401);
 });

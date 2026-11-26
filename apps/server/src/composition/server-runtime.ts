@@ -19,7 +19,7 @@ import { createAttachmentStorage } from "./attachments.js";
 import { SkillDiscovery } from "../modules/agents/adapters/outbound/skills.js";
 import { VoiceSessions } from "../modules/agents/adapters/outbound/voice.js";
 import { CodexSideChats } from "../modules/agents/adapters/outbound/side-chat.js";
-import { readTaskImage } from "../modules/tasks/adapters/outbound/task-images.js";
+import { readTaskImage, readTaskVisualization } from "../modules/tasks/adapters/outbound/task-previews.js";
 import { config, validateConfig } from "./config.js";
 import { Db } from "./database.js";
 import { ExecutionBackend } from "../modules/agents/adapters/outbound/execution-client.js";
@@ -102,7 +102,7 @@ export async function createRuntime(runtimeLease: number) {
       push, () => isUpdateMaintenance(config.dbPath), {
       model: { claude: config.claudeModel, codex: config.codexModel },
       effort: { claude: config.claudeEffort, codex: config.codexEffort },
-    }, { read: readTaskImage }, {
+    }, { readImage: readTaskImage, readVisualization: readTaskVisualization }, {
       list: query => terminalService?.list(query) ?? [],
       cleanup: (cwd, taskId, removeWorktree) => terminalService
         ? terminalService.store.cleanup(cwd, taskId, removeWorktree)

@@ -94,7 +94,7 @@ export const ConversationStepDetailsQuerySchema = ConversationDetailsQuerySchema
 export const ExecutionRecordsQuerySchema = z.object({ before: historyCursor.optional() });
 export const ConversationContentQuerySchema = z.object({ key: historyCursor, version: z.string().regex(/^[a-f0-9]{64}$/), offset: eventCursor, member: historyCursor.optional() });
 export const ActivityDetailsQuerySchema = z.object({ from: historyCursor, through: historyCursor });
-export const TaskImageQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
+export const TaskPreviewQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
 export const StreamQuerySchema = z.object({
   format: z.literal("transcript").optional(),
   taskChanges: z.literal("1").optional(), task: text.optional(), snapshots: z.literal("1").optional(), details: z.enum(["summary", "full"]).optional(),

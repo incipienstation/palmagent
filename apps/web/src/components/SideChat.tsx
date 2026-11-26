@@ -10,6 +10,7 @@ import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { InputGroupAddon } from "./ui/input-group";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { ImageTaskContext } from "./ImagePreview";
 import { AssistantMessage, UserBubble } from "./ChatMessage";
 import { ComposerAction, ComposerInput, ComposerSurface } from "./ComposerPrimitives";
 import { WorkingLabel } from "./WorkingLabel";
@@ -66,7 +67,7 @@ export function SideChat({ side, task, onClose, onAddToDraft, draftDisabled }: {
       },
     }}>
       {!snapshot?.messages.length && <p className="text-sm text-muted-foreground">Ask a side question using the current conversation as context.</p>}
-      {snapshot?.messages.map((message, index) => message.role === "user" ?
+      <ImageTaskContext.Provider value={task.taskId}>{snapshot?.messages.map((message, index) => message.role === "user" ?
         <UserBubble key={message.id} text={message.text} /> :
         <AssistantMessage key={message.id} text={message.text} streaming={running && index === snapshot.messages.length - 1}>
           {message.text && !running && <div className="flex items-center">
@@ -74,7 +75,7 @@ export function SideChat({ side, task, onClose, onAddToDraft, draftDisabled }: {
               title={draftDisabled ? "Finish editing the queued message first" : undefined}
               onClick={() => onAddToDraft(message.text)}><Plus data-icon="inline-start" />Add to draft</Button>
           </div>}
-        </AssistantMessage>)}
+        </AssistantMessage>)}</ImageTaskContext.Provider>
       {running && <WorkingLabel />}
     </ScrollArea>
     <footer className="flex shrink-0 flex-col gap-2 border-t p-3 pb-[calc(12px+var(--safe-bottom))]">

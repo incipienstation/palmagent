@@ -5,6 +5,8 @@ import remarkGfm from "remark-gfm";
 import { isLocalImageLink, markdownUrlTransform, previewSource } from "../image-source";
 import { ImageLinkContext, ImagePreview, ImageTaskContext } from "./ImagePreview";
 import { MermaidBlock } from "./MermaidBlock";
+import { visualizeMarkers } from "../visualize-markers";
+import { VisualizationPreview } from "./VisualizationPreview";
 import { CodeBlock } from "./CodeBlock";
 
 function MarkdownLink({ href, children }: { href?: string; children?: ReactNode } & ExtraProps) {
@@ -31,7 +33,9 @@ const COMPONENTS = {
   h4: ({ children }) => <h4 className="mt-2.5 mb-1 text-[14px] font-semibold text-strong">{children}</h4>,
   h5: ({ children }) => <h5 className="mt-2 mb-1 text-[13px] font-semibold text-strong">{children}</h5>,
   h6: ({ children }) => <h6 className="mt-2 mb-1 text-[13px] font-semibold text-faint">{children}</h6>,
-  p: ({ children }) => <p className="my-2 leading-[22px]">{children}</p>,
+  p: ({ children, node }) => typeof node?.properties.visualizePath === "string"
+    ? <VisualizationPreview path={node.properties.visualizePath} />
+    : <p className="my-2 leading-[22px]">{children}</p>,
   strong: ({ children }) => <strong className="font-semibold text-strong">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   a: MarkdownLink,
@@ -81,7 +85,7 @@ const COMPONENTS = {
 // Stable plugin lists keep completed streaming blocks memoized. Raw HTML remains
 // literal text and all URLs still pass through Palmagent's protocol policy.
 const REMARK_PLUGINS = [remarkGfm];
-const REHYPE_PLUGINS: [] = [];
+const REHYPE_PLUGINS = [visualizeMarkers];
 // Static messages render as one document; streaming block segmentation is unused.
 const staticDocument = (markdown: string) => [markdown];
 

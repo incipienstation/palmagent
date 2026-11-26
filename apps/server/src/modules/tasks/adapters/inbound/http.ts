@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { ActivityDetailsQuerySchema, AnswerSchema, ApproveSchema, StopTaskSchema, CreateTaskSchema, EmptyBodySchema, FollowupSchema, HistoryChangesQuerySchema, HistoryQuerySchema, IdParamsSchema, MessageParamsSchema, MoveTaskPinSchema, PinTaskSchema, RenameTaskSchema, SteerSchema, TaskQuerySchema } from "@palmagent/shared/requests";
 import { jsonBody, query, params } from "../../../../platform/http/input.js";
 import type { HttpDependencies } from "./http-dependencies.js";
-import { TaskImageQuerySchema } from "@palmagent/shared/requests";
+import { TaskPreviewQuerySchema } from "@palmagent/shared/requests";
 import { SideChatSendSchema, SideChatSessionSchema } from "@palmagent/shared";
 
 export function taskRoutes({ service, admission }: Pick<HttpDependencies, "service"> & { admission?: UpdateAdmission }) {
@@ -74,7 +74,15 @@ export function taskRoutes({ service, admission }: Pick<HttpDependencies, "servi
       c.header("Content-Length", String(size));
       return c.body(new Uint8Array(attachment.bytes), 200);
     })
-    .get("/:id/image", params(IdParamsSchema), query(TaskImageQuerySchema), async (c) => {
+    .get("/:id/visualization", params(IdParamsSchema), query(TaskPreviewQuerySchema), async (c) => {
+      // The document must keep its opaque origin even when opened outside our iframe.
+      c.header("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+      c.header("X-Frame-Options", "SAMEORIGIN");
+      c.header("Cross-Origin-Resource-Policy", "same-origin");
+      const bytes = await service.readTaskVisualization(c.req.valid("param").id, c.req.valid("query").path);
+      return c.body(new Uint8Array(bytes), 200, { "Content-Type": "text/html; charset=utf-8" });
+    })
+    .get("/:id/image", params(IdParamsSchema), query(TaskPreviewQuerySchema), async (c) => {
       c.header("Cache-Control", "no-store");
       c.header("X-Content-Type-Options", "nosniff");
       c.header("Cross-Origin-Resource-Policy", "same-origin");
