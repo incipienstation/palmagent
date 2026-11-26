@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compareProtocolContracts, readProtocolContract } from './lib/codex-schema-contract.mjs';
-import { allowedChanges, gateVersion, lastSupported, pendingVersions, saveState, updateCompatibility } from './lib/codex-compatibility.mjs';
+import { allowedChanges, gateVersion, lastSupported, pendingVersions, promotionCheckStatus, saveState, updateCompatibility } from './lib/codex-compatibility.mjs';
 
 const script = fileURLToPath(import.meta.url);
 const cwd = process.cwd();
@@ -244,13 +244,9 @@ async function scanBacklog(source, baseline, versions) {
   return results;
 }
 
-async function retryTransientCI(repository, state, save, check) {
-  const runId = check?.link?.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1];
-  if (!runId || state.ciRetryHead === state.head) return false;
-  const info = JSON.parse(await run('gh', ['run', 'view', runId, '--repo', repository, '--json',
-    'headSha,headBranch,event,workflowName,status,jobs']));
-  if (info.headSha !== state.head || info.headBranch !== state.branch || info.event !== 'pull_request'
-    || info.status !== 'completed' || info.workflowName !== 'ci') return false;
+async function retryTransientCI(repository, state, save, check, info) {
+  if (state.ciRetryHead === state.head) return false;
+  const runId = String(info.databaseId);
   const failed = info.jobs.filter(job => !['success', 'skipped', 'neutral'].includes(job.conclusion) && job.name !== 'validate');
   if (!failed.length) return false;
   for (const job of failed) {
@@ -260,10 +256,41 @@ async function retryTransientCI(repository, state, save, check) {
     if (!log.includes('DOMException [TimeoutError]: The operation was aborted due to timeout')) return false;
   }
   state.ciRetryHead = state.head;
+  state.ciRetryRun = info.databaseId; state.ciRetryAttempt = info.attempt;
   await save();
   await run('gh', ['run', 'rerun', runId, '--repo', repository, '--failed'], { label: 'Retry failed CI jobs' });
   console.log('Retried transient CI failure on ' + check.link);
   return true;
+}
+
+async function awaitRequiredCI(repository, state, save, pr) {
+  const deadline = Date.now() + 30 * 60_000;
+  while (Date.now() < deadline) {
+    let output;
+    try {
+      output = await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required',
+        '--json', 'name,state,bucket,link'], { timeout: 60_000, label: 'Read required checks' });
+    } catch (error) {
+      // gh also exits nonzero for pending, failed, and not-yet-registered checks.
+      if (!(error instanceof CommandFailure) || ![1, 8].includes(error.code)) throw error;
+      output = error.output;
+    }
+    const checks = output?.trim().startsWith('[') ? JSON.parse(output) : [];
+    const check = checks.find(item => item.name === 'validate');
+    const runId = check?.link?.match(/\/actions\/runs\/(\d+)\//)?.[1];
+    if (runId) {
+      const info = JSON.parse(await run('gh', ['run', 'view', runId, '--repo', repository, '--json',
+        'databaseId,attempt,headSha,headBranch,event,workflowName,status,conclusion,jobs']));
+      const status = promotionCheckStatus(state, checks, info);
+      if (status === 'passed') return;
+      if (status === 'failed') {
+        if (await retryTransientCI(repository, state, save, check, info)) continue;
+        throw new Error('Required CI failed on ' + state.head + '; inspect ' + check.link);
+      }
+    }
+    await new Promise(ok => setTimeout(ok, 30_000));
+  }
+  throw new Error('Waiting for required CI on ' + state.head + '; resume ' + pr.html_url);
 }
 
 async function shipJob(repository, state, save, source, scan) {
@@ -359,34 +386,7 @@ async function shipJob(repository, state, save, source, scan) {
   }
   state.pr = pr.html_url; state.stage = 'pr'; await save();
   console.log('Compatibility PR: ' + state.pr);
-  // The required aggregate job may not exist until all its dependencies finish.
-  // Wait for its registration, not just the first few seconds after PR creation.
-  // Never treat an empty required-check list as success.
-  let checks;
-  const checkDeadline = Date.now() + 20 * 60_000;
-  while (Date.now() < checkDeadline) {
-    try {
-      checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket,link'],
-        { timeout: 60_000, label: 'Read required checks' }));
-    } catch (error) {
-      try { checks = JSON.parse(error.output); } catch { checks = null; }
-    }
-    if (checks?.some(check => check.name === 'validate')) break;
-    await new Promise(ok => setTimeout(ok, 30_000));
-  }
-  assert(checks?.some(check => check.name === 'validate'), 'Required CI is not registered yet; resume this PR on the next run');
-  // gh returns a nonzero exit for pending checks, so wait via its standard
-  // watch command and verify the resulting list separately.
-  try {
-    await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--watch', '--fail-fast', '--interval', '30'],
-      { timeout: 1_200_000, label: 'Required PR CI' });
-  } catch (error) {
-    const aggregate = checks.find(check => check.name === 'validate');
-    if (await retryTransientCI(repository, state, save, aggregate)) return;
-    throw new Error(error.message + '; inspect ' + (aggregate.link || state.pr));
-  }
-  checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket,link']));
-  assert(checks.some(check => check.name === 'validate') && checks.every(check => check.bucket === 'pass'), 'Required CI did not pass');
+  await awaitRequiredCI(repository, state, save, pr);
   const current = await api(stem + '/pulls/' + pr.number);
   const remoteBase = (await api(stem + '/git/ref/heads/develop')).object.sha;
   assert(current.head.sha === state.head && current.base.ref === 'develop' && remoteBase === state.base && !current.draft,

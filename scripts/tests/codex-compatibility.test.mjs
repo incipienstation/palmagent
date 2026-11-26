@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowedChanges, gateVersion, lastSupported, metadataFiles, pendingVersions, nextPatch, saveState, updateCompatibility } from '../lib/codex-compatibility.mjs';
+import { allowedChanges, gateVersion, lastSupported, metadataFiles, pendingVersions, promotionCheckStatus, nextPatch, saveState, updateCompatibility } from '../lib/codex-compatibility.mjs';
 import { compareProtocolContracts, projectSchema, protocolContracts, schemaDifferences } from '../lib/codex-schema-contract.mjs';
 import { classifyChanges } from '../lib/ci-scope.mjs';
 
@@ -41,6 +41,21 @@ test('only explicitly open incoming enums tolerate new values while retaining ty
   const missing = clone(after); delete missing.properties.phase;
   assert.throws(() => project(missing), /Missing consumed property/);
   assert.notDeepEqual(projectSchema(before, mask), projectSchema(after, mask), 'outgoing enums retain their values');
+});
+
+test('a previous PR head or workflow attempt cannot finish delivery', () => {
+  const state = { head: 'new-head', branch: 'feature/support' };
+  const link = 'https://example.com/actions/runs/12/job/21';
+  const checks = [{ name: 'validate', bucket: 'pass', state: 'SUCCESS', link }];
+  const info = { headSha: state.head, headBranch: state.branch, event: 'pull_request', workflowName: 'ci',
+    databaseId: 12, attempt: 1, status: 'completed', conclusion: 'success',
+    jobs: [{name: 'validate', status: 'completed', conclusion: 'success', url: link}] };
+  assert.equal(promotionCheckStatus(state, checks, {...info, headSha:'old-head'}), 'pending');
+  assert.equal(promotionCheckStatus(state, [], info), 'pending');
+  assert.equal(promotionCheckStatus(state, checks, {...info, jobs:[{...info.jobs[0], url:link+'0'}]}), 'pending');
+  Object.assign(state, {ciRetryHead:state.head,ciRetryRun:12,ciRetryAttempt:1});
+  assert.equal(promotionCheckStatus(state, checks, info), 'pending');
+  assert.equal(promotionCheckStatus(state, checks, {...info, attempt:2}), 'passed');
 });
 
 test('stable discovery returns all pending published releases without accepting prereleases or rollback', () => {
