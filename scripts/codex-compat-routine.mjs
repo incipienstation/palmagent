@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compareProtocolContracts, readProtocolContract } from './lib/codex-schema-contract.mjs';
-import { allowedChanges, gateVersion, lastSupported, nextCandidate, saveState, updateCompatibility } from './lib/codex-compatibility.mjs';
+import { allowedChanges, gateVersion, lastSupported, pendingVersions, saveState, updateCompatibility } from './lib/codex-compatibility.mjs';
 
 const script = fileURLToPath(import.meta.url);
 const cwd = process.cwd();
@@ -92,8 +92,8 @@ function providerEnvironment(home, bin) {
   for (const key of ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID']) delete env[key];
   return env;
 }
-async function installCli(version) {
-  const prefix = privateDir(join(stateRoot, 'cli', version));
+async function installCli(version, prefix = join(stateRoot, 'cli', version)) {
+  privateDir(prefix);
   const bin = join(prefix, 'node_modules/.bin');
   const executable = join(bin, 'codex');
   if (!existsSync(executable)) {
@@ -135,8 +135,8 @@ async function handshake(cli, env, directory) {
       params: { clientInfo: { name: 'palmagent', version: '1.0.0' }, capabilities: {} } }) + '\n');
   });
 }
-async function inspectCli(cli, work, freshContract = false) {
-  const home = privateDir(mkdtempSync(join(stateRoot, 'offline-')));
+async function inspectCli(cli, work, freshContract = false, scratchRoot = stateRoot) {
+  const home = privateDir(mkdtempSync(join(scratchRoot, 'offline-')));
   const env = providerEnvironment(home, cli.bin);
   const schemas = privateDir(join(home, 'schema'));
   await run(cli.executable, ['app-server', 'generate-json-schema', '--out', schemas], { env, directory: home, timeout: 60_000 });
@@ -151,7 +151,11 @@ async function inspectCli(cli, work, freshContract = false) {
     for (const flag of flags) assert(help.includes(flag), 'CLI removed adapter flag: ' + flag);
   }
   await handshake(cli, env, home);
-  await run('pnpm', ['server:contracts'], { directory: work, env, label: 'Hermetic server contracts ' + cli.version });
+  // Run the adapter boundary per CLI. Full server/lifecycle contracts run
+  // during promotion; unrelated infrastructure failures cannot authorize repair.
+  await run('pnpm', ['--filter', '@palmagent/server', 'exec', 'node', '--import', 'tsx', '--test',
+    'tests/contracts/adapter-contracts.test.ts', 'tests/contracts/codex-shared-session.test.ts'],
+  { directory: work, env, label: 'Hermetic adapter contracts ' + cli.version });
   return { contracts, schemas, digest: hash(JSON.stringify(contracts)) };
 }
 function changedPaths(work, base) {
@@ -170,7 +174,99 @@ async function registry() {
     } catch (error) { if (attempt === 2) throw error; }
   }
 }
-async function shipJob(repository, state, save) {
+// Scan the clean scheduler checkout before touching any delivery state. Results
+// survive an interrupted batch. Only passes on this exact source and runtime
+// may be reused; failures are probed again without spending on a model.
+async function scanBacklog(source, baseline, versions) {
+  assert(git(cwd, 'rev-parse', 'HEAD') === source && !git(cwd, 'status', '--porcelain'),
+    'Compatibility discovery requires a clean checkout of origin/develop');
+  const cache = join(stateRoot, 'scans', source, process.platform + '-' + process.arch + '-' + process.version);
+  const results = new Map();
+  let before;
+  let work = cwd;
+  for (const version of versions) {
+    const record = join(cache, version + '.json');
+    if (apply && existsSync(record)) {
+      const saved = readJson(record);
+      if (saved.status === 'passed' && saved.receipt.source === source && saved.receipt.baseline === baseline) {
+        results.set(version, saved);
+        continue;
+      }
+    }
+    if (!before) {
+      if (apply) {
+        // The scheduler retains failed run worktrees. Share one dependency
+        // installation across scans without touching the delivery branch.
+        work = join(stateRoot, 'scan-worktree');
+        if (!existsSync(work)) await run('git', ['worktree', 'add', '--detach', work, source]);
+        assert(git(work, 'rev-parse', '--path-format=absolute', '--git-common-dir') === common
+          && !git(work, 'branch', '--show-current') && !git(work, 'status', '--porcelain'), 'Scan worktree was modified; holding');
+        await run('git', ['checkout', '--detach', source], { directory: work });
+      }
+      await run('pnpm', ['install', '--frozen-lockfile'], { directory: work, label: 'Install scan dependencies' });
+      before = await inspectCli(await installCli(baseline), work);
+      rmSync(dirname(before.schemas), { recursive: true, force: true });
+    }
+    const scratch = mkdtempSync(join(stateRoot, 'candidate-'));
+    let result;
+    try {
+      const cli = await installCli(version, scratch);
+      let after;
+      try { after = await inspectCli(cli, work, false, scratch); }
+      catch (error) {
+        if (infrastructureFailure(error)) throw error;
+        // A one-off contract test or process failure must not trigger repair.
+        try { after = await inspectCli(cli, work, false, scratch); }
+        catch (retryError) {
+          if (infrastructureFailure(retryError)) throw retryError;
+          result = { status: 'incompatible', issues: [retryError.message] };
+        }
+      }
+      if (after) {
+        const issues = compareProtocolContracts(before.contracts, after.contracts);
+        result = issues.length ? { status: 'incompatible', issues } : { status: 'passed', receipt: {
+          baseline, source, mode: 'schema-contract', checkedAt: new Date().toISOString(),
+          platform: process.platform, arch: process.arch, node: process.version,
+          baselineSchemaSha256: before.digest, candidateSchemaSha256: after.digest,
+        } };
+      }
+    } catch (error) {
+      result = { status: 'error', reason: error.message };
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+    results.set(version, result);
+    if (apply) { privateDir(cache); saveState(record, result); }
+    console.log('Codex ' + version + ': ' + result.status + (result.reason ? ' — ' + result.reason : ''));
+  }
+  console.log('Codex registry target ' + versions.at(-1) + ', last inspected ' + [...results.keys()].at(-1)
+    + ', supported on develop ' + baseline);
+  return results;
+}
+
+async function retryTransientCI(repository, state, save, check) {
+  const runId = check?.link?.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1];
+  if (!runId || state.ciRetryHead === state.head) return false;
+  const info = JSON.parse(await run('gh', ['run', 'view', runId, '--repo', repository, '--json',
+    'headSha,headBranch,event,workflowName,status,jobs']));
+  if (info.headSha !== state.head || info.headBranch !== state.branch || info.event !== 'pull_request'
+    || info.status !== 'completed' || info.workflowName !== 'ci') return false;
+  const failed = info.jobs.filter(job => !['success', 'skipped', 'neutral'].includes(job.conclusion) && job.name !== 'validate');
+  if (!failed.length) return false;
+  for (const job of failed) {
+    if (job.conclusion === 'timed_out') continue;
+    if (job.conclusion !== 'failure' || !job.steps.some(step => step.name === 'Build the shared native binaries' && step.conclusion === 'failure')) return false;
+    const log = await run('gh', ['run', 'view', runId, '--repo', repository, '--job', String(job.databaseId), '--log-failed']);
+    if (!log.includes('DOMException [TimeoutError]: The operation was aborted due to timeout')) return false;
+  }
+  state.ciRetryHead = state.head;
+  await save();
+  await run('gh', ['run', 'rerun', runId, '--repo', repository, '--failed'], { label: 'Retry failed CI jobs' });
+  console.log('Retried transient CI failure on ' + check.link);
+  return true;
+}
+
+async function shipJob(repository, state, save, source, scan) {
   const work = state.worktree;
   assert(git(work, 'rev-parse', 'HEAD') === state.head && !git(work, 'status', '--porcelain'), 'Owned compatibility branch was modified; holding');
   const stem = 'repos/' + repository;
@@ -184,6 +280,7 @@ async function shipJob(repository, state, save) {
   }
   await run('git', ['fetch', 'origin', 'develop'], { directory: work });
   const base = git(work, 'rev-parse', 'origin/develop');
+  assert(base === source, 'Base advanced during scan; resume on the new source');
   if (base !== state.base) {
     // Rebase only the recorded, clean branch. All selected checks must rerun;
     // never reuse live evidence after a source change or spend again implicitly.
@@ -194,30 +291,43 @@ async function shipJob(repository, state, save) {
     state.base = base; state.head = git(work, 'rev-parse', 'HEAD');
     state.previousHead ??= oldHead; state.validated = false; state.needsCompatibilityCheck = true; await save();
   }
-  if (state.needsCompatibilityCheck) {
-    // A new base can change the adapter itself. Recheck the exact candidate.
-    const oldCli = await installCli(state.baseline);
-    const newCli = await installCli(state.version);
-    await run('pnpm', ['install', '--frozen-lockfile'], { directory: work, label: 'Refresh verification dependencies' });
-    const before = await inspectCli(oldCli, work);
-    const after = await inspectCli(newCli, work);
-    assert(!compareProtocolContracts(before.contracts, after.contracts).length, 'Compatibility changed after rebase; holding without paid escalation');
-    const evidencePath = join(work, 'docs/codex-compatibility-runs.json');
-    const evidence = readJson(evidencePath);
-    const receipt = evidence.findLast(entry => entry.version === state.version);
-    assert(receipt, 'Missing compatibility evidence after rebase');
-    Object.assign(receipt, { source: state.base, checkedAt: new Date().toISOString(),
-      baselineSchemaSha256: before.digest, candidateSchemaSha256: after.digest });
-    writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n');
-    await run('git', ['add', '--', 'docs/codex-compatibility-runs.json'], { directory: work });
-    await run('git', ['commit', '--amend', '--no-edit'], { directory: work });
-    state.head = git(work, 'rev-parse', 'HEAD'); state.needsCompatibilityCheck = false; await save();
+  let through = state.through || state.version;
+  if (state.mode === 'schema-contract') {
+    const passing = [];
+    for (const [version, result] of scan) {
+      if (result.status !== 'passed') break;
+      passing.push(version);
+    }
+    assert(passing.includes(through), 'Published PR range has an unverified version on this base; holding');
+    if (state.needsCompatibilityCheck || passing.at(-1) !== through) {
+      const path = join(work, 'docs/codex-compatibility-runs.json');
+      const evidence = readJson(path);
+      for (const version of passing.slice(0, passing.indexOf(through) + 1)) {
+        const receipt = evidence.findLast(entry => entry.version === version);
+        assert(receipt, 'Missing compatibility evidence for ' + version);
+        Object.assign(receipt, scan.get(version).receipt);
+      }
+      writeFileSync(path, JSON.stringify(evidence, null, 2) + '\n');
+      for (const version of passing.slice(passing.indexOf(through) + 1)) {
+        updateCompatibility(work, version, scan.get(version).receipt);
+      }
+      through = passing.at(-1);
+      await run(process.execPath, ['scripts/sync-skills.mjs'], { directory: work });
+      const paths = changedPaths(work, base);
+      assert(allowedChanges(paths), 'Unexpected batch update files');
+      await run('git', ['add', '--', ...paths], { directory: work });
+      await run('git', ['commit', '--amend', '-m', 'chore: support Codex CLI through ' + through], { directory: work });
+      state.previousHead ??= state.head;
+      state.head = git(work, 'rev-parse', 'HEAD'); state.through = through;
+      state.needsCompatibilityCheck = false; state.validated = false; await save();
+    }
   }
   assert(allowedChanges(changedPaths(work, state.base), state.mode === 'repaired-live'), 'Compatibility PR contains unexpected files');
   if (!state.validated) {
-    // Compatibility changes select the full CI gate. Keep local source/backend
-    // checks, but let that required gate own browser and packed-install checks
-    // instead of duplicating them inside the live installation's scheduled job.
+    // Metadata-only changes already exercised both adapter probes. Their full
+    // server, browser and package suites run on the required CI head. Adapter
+    // repairs also exercise server integration in the repair worktree.
+    await run('pnpm', ['install', '--frozen-lockfile'], { directory: work, label: 'Install promotion dependencies' });
     for (const [command, argv] of [
       [process.execPath, ['scripts/sync-skills.mjs', '--check']],
       [process.execPath, ['scripts/validate.mjs']],
@@ -225,8 +335,7 @@ async function shipJob(repository, state, save) {
       ['git', ['diff', '--check', state.base + '...' + state.head]],
       ['pnpm', ['typecheck']],
       ['pnpm', ['pkg:check']],
-      ['pnpm', ['server:contracts']],
-      ['pnpm', ['server:smoke']],
+      ...(state.mode === 'repaired-live' ? [['pnpm', ['server:contracts']], ['pnpm', ['server:smoke']]] : []),
     ]) await run(command, argv, { directory: work, label: 'Promotion check: ' + argv.join(' ') });
     state.validated = true; await save();
   }
@@ -238,13 +347,15 @@ async function shipJob(repository, state, save) {
   const push = ['push', 'origin', 'HEAD:' + remoteRef, '--force-with-lease=' + remoteRef + ':' + remoteHead];
   await run('git', push, { directory: work });
   delete state.previousHead; await save();
-  if (!pr) {
-    const body = state.marker + '\n\nExtends Codex CLI support through ' + state.version + '.\n\n' +
+  const title = 'chore: support Codex CLI ' + through;
+  if (!pr || (state.through && pr.title !== title)) {
+    const body = state.marker + '\n\nExtends Codex CLI support through ' + through + '.\n\n' +
       (state.mode === 'schema-contract'
         ? 'Validated generated schemas for consumed protocol fields, CLI flags, App Server initialize, and hermetic adapter contracts. No inference or authenticated live matrix was run.'
         : 'A schema/contract failure triggered one bounded Codex repair. Adapter contracts and the authenticated exec/app-server matrix passed after repair.') +
       '\n\nRequired CI and repository review rules must pass on this exact head. Verification records are in docs/codex-compatibility-runs.json.';
-    pr = await api(stem + '/pulls', 'POST', { title: 'chore: support Codex CLI ' + state.version, head: state.branch, base: 'develop', body });
+    pr = pr ? await api(stem + '/pulls/' + pr.number, 'PATCH', { title, body })
+      : await api(stem + '/pulls', 'POST', { title, head: state.branch, base: 'develop', body });
   }
   state.pr = pr.html_url; state.stage = 'pr'; await save();
   console.log('Compatibility PR: ' + state.pr);
@@ -255,7 +366,7 @@ async function shipJob(repository, state, save) {
   const checkDeadline = Date.now() + 20 * 60_000;
   while (Date.now() < checkDeadline) {
     try {
-      checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket'],
+      checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket,link'],
         { timeout: 60_000, label: 'Read required checks' }));
     } catch (error) {
       try { checks = JSON.parse(error.output); } catch { checks = null; }
@@ -266,9 +377,15 @@ async function shipJob(repository, state, save) {
   assert(checks?.some(check => check.name === 'validate'), 'Required CI is not registered yet; resume this PR on the next run');
   // gh returns a nonzero exit for pending checks, so wait via its standard
   // watch command and verify the resulting list separately.
-  await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--watch', '--fail-fast', '--interval', '30'],
-    { timeout: 1_200_000, label: 'Required PR CI' });
-  checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket']));
+  try {
+    await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--watch', '--fail-fast', '--interval', '30'],
+      { timeout: 1_200_000, label: 'Required PR CI' });
+  } catch (error) {
+    const aggregate = checks.find(check => check.name === 'validate');
+    if (await retryTransientCI(repository, state, save, aggregate)) return;
+    throw new Error(error.message + '; inspect ' + (aggregate.link || state.pr));
+  }
+  checks = JSON.parse(await run('gh', ['pr', 'checks', String(pr.number), '--repo', repository, '--required', '--json', 'name,state,bucket,link']));
   assert(checks.some(check => check.name === 'validate') && checks.every(check => check.bucket === 'pass'), 'Required CI did not pass');
   const current = await api(stem + '/pulls/' + pr.number);
   const remoteBase = (await api(stem + '/git/ref/heads/develop')).object.sha;
@@ -279,7 +396,7 @@ async function shipJob(repository, state, save) {
   const merged = await api(stem + '/pulls/' + pr.number);
   assert(merged.merged && merged.head.sha === state.head, 'Compatibility merge was not confirmed');
   state.stage = 'merged'; state.mergeCommit = merged.merge_commit_sha; await save();
-  console.log('Merged Codex support through ' + state.version);
+  console.log('Merged Codex support through ' + through);
 }
 
 async function main() {
@@ -291,61 +408,60 @@ async function main() {
   const source = git(cwd, 'rev-parse', 'origin/develop');
   const metadata = JSON.parse(git(cwd, 'show', source + ':packages/shared/src/agent-compatibility.json'));
   const baseline = lastSupported(metadata.codex);
-  const version = nextCandidate(await registry(), baseline);
+  const versions = pendingVersions(await registry(), baseline);
+  const [version] = versions;
   if (!version) { console.log('No new stable Codex release. No model calls.'); return; }
   console.log('Checking Codex ' + baseline + ' -> ' + version + ' without inference.');
+  const scan = await scanBacklog(source, baseline, versions);
+  const first = scan.get(version);
+  if (!apply) {
+    console.log('Read-only schema-contract scan complete.');
+    if ([...scan.values()].some(result => result.status !== 'passed')) process.exitCode = 1;
+    return;
+  }
   const stateFile = join(stateRoot, version + '.json');
-  let state = existsSync(stateFile) && apply ? readJson(stateFile) : {
+  const state = existsSync(stateFile) ? readJson(stateFile) : {
     version, baseline, base: source, branch: 'feature/codex-support-' + version, stage: 'new', repairAttempts: 0,
     marker: '<!-- palmagent-codex-compatibility:' + version + ' -->',
   };
   assert(state.version === version && state.baseline === baseline, 'Stored compatibility job differs from the current support baseline');
-  const save = () => { if (apply) saveState(stateFile, state); };
+  const save = () => saveState(stateFile, state);
   const repository = JSON.parse(await run('gh', ['repo', 'view', '--json', 'nameWithOwner'])).nameWithOwner;
   assert(/^[\w.-]+\/[\w.-]+$/.test(repository), 'Invalid repository identity');
-  if (['committed', 'pr'].includes(state.stage)) { await shipJob(repository, state, save); return; }
+  if (['committed', 'pr'].includes(state.stage)) { await shipJob(repository, state, save, source, scan); return; }
   if (state.stage === 'merged') { console.log('This version was already merged. No model calls.'); return; }
-  if (state.repairAttempts || state.stage === 'held') {
+  if (state.repairAttempts || (state.stage === 'held' && first.status !== 'passed' && !allowRepair)) {
     console.log('Version retained for review; no further paid attempts. ' + (state.pr || state.stage));
     process.exitCode = 1; return;
   }
-  let work = cwd;
-  if (apply) {
-    if (state.stage === 'new') {
-      const existing = await api('repos/' + repository + '/pulls?state=all&head=' + repository.split('/')[0] + ':' + state.branch);
-      assert(!existing.length, 'A compatibility PR already exists without matching local state; holding');
-      state.worktree = join(stateRoot, 'work-' + version);
-      assert(!existsSync(state.worktree), 'Existing compatibility worktree requires inspection');
-      assert(!git(cwd, 'branch', '--list', state.branch), 'Existing compatibility branch requires inspection');
-      // A failed checkout must not reserve the branch name for the next run.
-      await run('git', ['worktree', 'add', '--detach', state.worktree, source]);
-      await run('git', ['switch', '-c', state.branch], { directory: state.worktree });
-      state.stage = 'checking'; save();
-    }
-    work = state.worktree;
-    assert(git(work, 'rev-parse', 'HEAD') === state.base && !git(work, 'status', '--porcelain'), 'Interrupted compatibility edits require inspection');
+  assert(first.status !== 'error', first.reason);
+  if (state.stage === 'new') {
+    const existing = await api('repos/' + repository + '/pulls?state=all&head=' + repository.split('/')[0] + ':' + state.branch);
+    assert(!existing.length, 'A compatibility PR already exists without matching local state; holding');
+    state.worktree = join(stateRoot, 'work-' + version);
+    assert(!existsSync(state.worktree), 'Existing compatibility worktree requires inspection');
+    assert(!git(cwd, 'branch', '--list', state.branch), 'Existing compatibility branch requires inspection');
+    // A failed checkout must not reserve the branch name for the next run.
+    await run('git', ['worktree', 'add', '--detach', state.worktree, source]);
+    await run('git', ['switch', '-c', state.branch], { directory: state.worktree });
+    state.stage = 'checking'; save();
   }
-  const oldCli = await installCli(baseline);
-  const newCli = await installCli(version);
-  await run('pnpm', ['install', '--frozen-lockfile'], { directory: work, label: 'Install verification dependencies' });
-  let before, after;
-  const result = await gateVersion({
+  const work = state.worktree;
+  assert(git(work, 'rev-parse', 'HEAD') === state.base && !git(work, 'status', '--porcelain'), 'Interrupted compatibility edits require inspection');
+  if (state.base !== source) {
+    await run('git', ['rebase', source], { directory: work });
+    state.base = source; save();
+  }
+  let before, after, newCli;
+  const result = first.status === 'passed' ? { status: 'passed', mode: 'schema-contract' } : await gateVersion({
     save,
-    inspectBaseline: async () => (before = await inspectCli(oldCli, work)),
-    inspectCandidate: async reference => {
-      try {
-        after = await inspectCli(newCli, work);
-        return compareProtocolContracts(reference.contracts, after.contracts);
-      } catch (error) {
-        if (infrastructureFailure(error)) throw error;
-        // Retry a candidate check once before spending on a reproducible failure.
-        try { after = await inspectCli(newCli, work); return compareProtocolContracts(reference.contracts, after.contracts); }
-        catch (retryError) {
-          if (infrastructureFailure(retryError)) throw retryError;
-          return ['Candidate CLI/contract check failed: ' + retryError.message];
-        }
-      }
+    inspectBaseline: async () => {
+      await run('pnpm', ['install', '--frozen-lockfile'], { directory: work });
+      before = await inspectCli(await installCli(baseline), work);
+      newCli = await installCli(version);
+      return before;
     },
+    inspectCandidate: async () => first.issues,
     repair: async issues => {
       const realHome = process.env.CODEX_HOME || join(homedir(), '.codex');
       const env = providerEnvironment(realHome);
@@ -380,12 +496,11 @@ async function main() {
   }, state, allowRepair);
   console.log(JSON.stringify(result));
   if (result.status !== 'passed') {
-    if (apply) { state.stage = 'held'; state.reason = result.reason; save(); }
+    state.stage = 'held'; state.reason = result.reason; save();
     process.exitCode = 1; return;
   }
-  if (!apply) { console.log('Read-only compatibility check complete. No PR, support update, or model call.'); return; }
   state.mode = result.mode;
-  updateCompatibility(work, version, { source: state.base, checkedAt: new Date().toISOString(),
+  updateCompatibility(work, version, first.receipt || { source: state.base, checkedAt: new Date().toISOString(),
     mode: result.mode, platform: process.platform, arch: process.arch, node: process.version,
     baselineSchemaSha256: before.digest, candidateSchemaSha256: after?.digest ?? null });
   await run(process.execPath, ['scripts/sync-skills.mjs'], { directory: work });
@@ -393,7 +508,7 @@ async function main() {
   await run('git', ['add', '--', ...changedPaths(work, state.base)], { directory: work });
   await run('git', ['commit', '-m', 'chore: support Codex CLI ' + version], { directory: work });
   state.head = git(work, 'rev-parse', 'HEAD'); state.stage = 'committed'; save();
-  await shipJob(repository, state, save);
+  await shipJob(repository, state, save, source, scan);
 }
 
 if (!args.has('--locked')) {

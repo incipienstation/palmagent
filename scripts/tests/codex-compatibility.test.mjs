@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowedChanges, gateVersion, lastSupported, metadataFiles, nextCandidate, nextPatch, saveState, updateCompatibility } from '../lib/codex-compatibility.mjs';
+import { allowedChanges, gateVersion, lastSupported, metadataFiles, pendingVersions, nextPatch, saveState, updateCompatibility } from '../lib/codex-compatibility.mjs';
 import { compareProtocolContracts, projectSchema, protocolContracts, schemaDifferences } from '../lib/codex-schema-contract.mjs';
 import { classifyChanges } from '../lib/ci-scope.mjs';
 
@@ -43,14 +43,14 @@ test('only explicitly open incoming enums tolerate new values while retaining ty
   assert.notDeepEqual(projectSchema(before, mask), projectSchema(after, mask), 'outgoing enums retain their values');
 });
 
-test('stable discovery advances one published release at a time without accepting prereleases or rollback', () => {
+test('stable discovery returns all pending published releases without accepting prereleases or rollback', () => {
   const registry = { versions: ['0.160.0', '0.160.1', '0.161.0-alpha.1', '0.161.0', '0.162.0'],
     'dist-tags': { latest: '0.161.0' } };
-  assert.equal(nextCandidate(registry, '0.160.0'), '0.160.1');
-  assert.equal(nextCandidate(registry, '0.160.1'), '0.161.0');
-  assert.equal(nextCandidate(registry, '0.161.0'), null);
-  assert.equal(nextCandidate(registry, '0.162.0'), null);
-  assert.throws(() => nextCandidate({ ...registry, 'dist-tags': { latest: '0.162.0-alpha.1' } }, '0.161.0'));
+  assert.deepEqual(pendingVersions(registry, '0.160.0'), ['0.160.1', '0.161.0']);
+  assert.deepEqual(pendingVersions(registry, '0.160.1'), ['0.161.0']);
+  assert.deepEqual(pendingVersions(registry, '0.161.0'), []);
+  assert.deepEqual(pendingVersions(registry, '0.162.0'), []);
+  assert.throws(() => pendingVersions({ ...registry, 'dist-tags': { latest: '0.162.0-alpha.1' } }, '0.161.0'));
   assert.equal(nextPatch('0.160.9'), '0.160.10');
   assert.equal(lastSupported({ range: '>=0.154.0 <0.160.1', minimum: '0.154.0', exclusiveMaximum: '0.160.1' }), '0.160.0');
   assert.throws(() => lastSupported({ range: '>=0.154.0 <0.161.0', minimum: '0.154.0', exclusiveMaximum: '0.161.0' }));

@@ -24,12 +24,12 @@ export function lastSupported(lane) {
   parts[2]--;
   return parts.join('.');
 }
-export function nextCandidate(metadata, baseline) {
+export function pendingVersions(metadata, baseline) {
   const latest = metadata['dist-tags']?.latest;
   if (!stableVersion(latest) || !Array.isArray(metadata.versions)) throw new Error('Malformed Codex registry metadata');
   return metadata.versions.filter(stableVersion)
     .filter(version => compareVersions(version, baseline) > 0 && compareVersions(version, latest) <= 0)
-    .sort(compareVersions)[0] ?? null;
+    .sort(compareVersions);
 }
 export function saveState(path, state) {
   const temp = path + '.' + process.pid + '.tmp';
