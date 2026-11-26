@@ -151,7 +151,11 @@ async function inspectCli(cli, work, freshContract = false, scratchRoot = stateR
     for (const flag of flags) assert(help.includes(flag), 'CLI removed adapter flag: ' + flag);
   }
   await handshake(cli, env, home);
-  await run('pnpm', ['server:contracts'], { directory: work, env, label: 'Hermetic server contracts ' + cli.version });
+  // Run the adapter boundary per CLI. Full server/lifecycle contracts run
+  // during promotion; unrelated infrastructure failures cannot authorize repair.
+  await run('pnpm', ['--filter', '@palmagent/server', 'exec', 'node', '--import', 'tsx', '--test',
+    'tests/contracts/adapter-contracts.test.ts', 'tests/contracts/codex-shared-session.test.ts'],
+  { directory: work, env, label: 'Hermetic adapter contracts ' + cli.version });
   return { contracts, schemas, digest: hash(JSON.stringify(contracts)) };
 }
 function changedPaths(work, base) {

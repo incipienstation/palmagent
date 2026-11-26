@@ -86,8 +86,9 @@ repair and that matrix consume the signed-in account's usage.
 
 The token-free gate checks the actual downloaded executable: generated App
 Server schemas for fields Palmagent sends or consumes, supported `exec`/resume
-flags, and an isolated App Server `initialize` handshake. It also runs hermetic
-server contracts against a known supported baseline and the candidate. Additive
+flags, and an isolated App Server `initialize` handshake. It also runs the hermetic adapter and shared-session
+contracts for the supported baseline and each candidate. The full server suite
+runs during promotion. Additive
 optional fields and unrelated methods do not fail the schema check. Removed
 consumed fields, incompatible types, new required request fields, and unknown
 constraint changes do. Message phases explicitly allow additional enum values:
