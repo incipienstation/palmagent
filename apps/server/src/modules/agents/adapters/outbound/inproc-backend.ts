@@ -2,8 +2,11 @@ import { once } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { makeNdjsonSplitter } from "../../../../platform/process/ndjson.js";
 import type { ProcHandle, ProcessBackend, SpawnSpec } from "../../application/ports/outbound/provider-process.js";
-import type { RunnerBackend } from "../../application/ports/inbound/execution.js";
+import type { ExecutionRunner, RunnerBackend } from "../../application/ports/inbound/execution.js";
 import type { AgentKind } from "@palmagent/shared";
+import { claudeSdkRunner } from "./claude-sdk.js";
+import { startWithInputFiles } from "./input-files.js";
+import type { RunHandle } from "../../domain/run-handle.js";
 import { bindRunner } from "./runner.js";
 
 // The default backend: spawn the CLI as a direct child of THIS process, exactly
@@ -14,9 +17,22 @@ import { bindRunner } from "./runner.js";
 export class InProcessBackend implements RunnerBackend, ProcessBackend {
   private children = new Set<ChildProcessWithoutNullStreams>();
 
-  agentRunner(agent: AgentKind) { return bindRunner(agent, this); }
+  private sdkRuns = new Set<RunHandle>();
+
+  agentRunner(agent: AgentKind): ExecutionRunner {
+    if (agent !== "claude") return bindRunner(agent, this);
+    return { agent, start: (args, emit) => {
+      const handle = startWithInputFiles(claudeSdkRunner, args, emit, this);
+      this.sdkRuns.add(handle);
+      const release = () => this.sdkRuns.delete(handle);
+      void handle.done.then(release, release);
+      return handle;
+    } };
+  }
 
   async close(): Promise<void> {
+    const sdkRuns = [...this.sdkRuns];
+    for (const handle of sdkRuns) handle.cancel();
     await Promise.all([...this.children].map(async (child) => {
       if (child.exitCode !== null || child.signalCode !== null) return;
       const exited = once(child, "exit");
@@ -28,6 +44,7 @@ export class InProcessBackend implements RunnerBackend, ProcessBackend {
         child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
       }
     }));
+    await Promise.allSettled(sdkRuns.map(handle => handle.done));
   }
   start(spec: SpawnSpec): ProcHandle {
     const child: ChildProcessWithoutNullStreams = spawn(spec.command, spec.argv, {

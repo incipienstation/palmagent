@@ -9,7 +9,7 @@ import test from "node:test";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
 import { sanitizeImages } from "../../src/modules/tasks/application/attachments/image-input.js";
-import { buildClaudeUserMessage } from "../../src/modules/agents/adapters/outbound/claude.js";
+import { buildClaudeUserMessage } from "../../src/modules/agents/adapters/outbound/claude-messages.js";
 import { codexInput } from "../../src/modules/agents/adapters/outbound/codex-interactive.js";
 import { Db } from "../../src/composition/database.js";
 import { MessageController } from "../../src/modules/tasks/application/use-cases/message-controller.js";

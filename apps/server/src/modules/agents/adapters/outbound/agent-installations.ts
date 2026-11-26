@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { access, realpath } from "node:fs/promises";
-import { constants, readFileSync } from "node:fs";
+import { realpath } from "node:fs/promises";
+import { accessSync, constants, readFileSync } from "node:fs";
 import { z } from "zod";
 import { homedir } from "node:os";
 import { delimiter, join, resolve, sep } from "node:path";
@@ -39,12 +39,16 @@ function environment(agent: AgentKind, home: string): NodeJS.ProcessEnv {
   return { ...process.env, NO_COLOR: "1", DISABLE_AUTOUPDATER: "1", [agent === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"]: home };
 }
 
-export async function inspectAgentInstallation(agent: AgentKind, home: string): Promise<Installed> {
-  let file: string | undefined;
+export function findAgentExecutable(agent: AgentKind): string | undefined {
   for (const directory of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
     const candidate = resolve(directory, agent);
-    try { await access(candidate, constants.X_OK); file = candidate; break; } catch { /* next PATH entry */ }
+    try { accessSync(candidate, constants.X_OK); return candidate; } catch { /* next PATH entry */ }
   }
+  return undefined;
+}
+
+export async function inspectAgentInstallation(agent: AgentKind, home: string): Promise<Installed> {
+  const file = findAgentExecutable(agent);
   if (!file) return { version: null, installation: "missing" };
   try {
     const output = await command(file, ["--version"], environment(agent, home), 10_000);

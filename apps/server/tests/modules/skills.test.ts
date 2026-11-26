@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseNativeSkills, SkillDiscovery, skillId } from "../../src/modules/agents/adapters/outbound/skills.js";
 import { codexInput } from "../../src/modules/agents/adapters/outbound/codex-interactive.js";
-import { claudeSkillPrompt } from "../../src/modules/agents/adapters/outbound/claude.js";
+import { claudeSkillPrompt } from "../../src/modules/agents/adapters/outbound/claude-messages.js";
 import { ExecutionStartSchema, ExecutionCommandSchema } from "@palmagent/shared/executions";
 import { SelectedSkillsSchema } from "@palmagent/shared";
 
