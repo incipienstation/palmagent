@@ -40,8 +40,9 @@ export interface TaskAttachmentReader {
   load(taskId: string, attachments?: readonly Attachment[]): InputAttachment[] | undefined;
 }
 
-export interface TaskImageReader {
-  read(worktreePath: string | undefined, requestedPath: string | string[], nativeSession?: {
+export interface TaskPreviewReader {
+  readVisualization(worktreePath: string | undefined, requestedPath: string): Promise<Uint8Array>;
+  readImage(worktreePath: string | undefined, requestedPath: string, nativeSession?: {
     agent: AgentKind; home: string; sessionId: string;
   }): Promise<{ bytes: Uint8Array; mediaType: string }>;
 }

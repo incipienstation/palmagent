@@ -17,7 +17,7 @@ import type {
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { extractOutputImages, toolImagePayload } from "../attachments/output-images.js";
-import type { AttachmentStorage, TaskImageReader } from "../ports/outbound/attachments.js";
+import type { AttachmentStorage, TaskPreviewReader } from "../ports/outbound/attachments.js";
 import type { PrStatusSink, TaskDefaults, TaskSupervisor, TaskWorktreeManager, TerminalTaskLifecycle } from "../ports/outbound/task-runtime.js";
 import type { TaskAccountLimitReader, TaskSkillCatalog, TaskSkillEnvironment, TaskVoiceOperations } from "../../../agents/api.js";
 import type { TaskEventPublisher } from "../../../../kernel/events.js";
@@ -72,12 +72,18 @@ export class TaskService implements PrStatusSink {
     return this.attachments.read(taskId, attachmentId);
   }
 
-  async readTaskImage(taskId: string, requestedPath: string | string[]) {
+  async readTaskVisualization(taskId: string, requestedPath: string) {
     const task = this.getTask(taskId);
-    if (!this.taskImages) throw new ApplicationError("service_unavailable", "Task image reading is unavailable");
+    if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "Visualization preview unavailable");
+    return this.taskPreviews.readVisualization(task.worktreePath, requestedPath);
+  }
+
+  async readTaskImage(taskId: string, requestedPath: string) {
+    const task = this.getTask(taskId);
+    if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "Task image reading is unavailable");
     const nativeSession = task.sessionControl && task.sessionId
       ? { agent: task.agent, home: task.sessionControl.home, sessionId: task.sessionId } : undefined;
-    return this.taskImages.read(task.worktreePath, requestedPath, nativeSession);
+    return this.taskPreviews.readImage(task.worktreePath, requestedPath, nativeSession);
   }
 
   conversationSteps(taskId: string, key: number, after?: number) {
@@ -246,7 +252,7 @@ export class TaskService implements PrStatusSink {
     private readonly push?: TaskPushNotifier,
     private readonly maintenance: () => boolean = () => false,
     private readonly defaults: TaskDefaults = { model: {}, effort: {} },
-    private readonly taskImages?: TaskImageReader,
+    private readonly taskPreviews?: TaskPreviewReader,
     private readonly terminalLifecycle?: TerminalTaskLifecycle,
     private readonly requestPrRefresh?: (taskId: string) => void,
     voice?: TaskVoiceOperations,

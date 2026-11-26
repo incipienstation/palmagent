@@ -36,6 +36,29 @@ async function reply(page: Page, text: string, running = false) {
   return taskId;
 }
 
+test("a visualize marker renders in the conversation and opens an interactive viewer", async ({ page }) => {
+  const path = "/workspace/.palmagent/previews/task home.html";
+  const marker = `\ue200visualize\ue202${JSON.stringify({ path })}\ue201`;
+  await page.route("**/api/tasks/*/visualization?*", route => {
+    expect(new URL(route.request().url()).searchParams.get("path")).toBe(path);
+    return route.fulfill({ contentType: "text/html", body: '<button onclick="this.textContent=2">1</button>' });
+  });
+  await reply(page, [`Example: \`${marker}\``, marker, "After the preview."].join("\n\n"));
+  const frame = page.locator("iframe");
+  await expect(frame).toHaveCount(1);
+  await expect(frame.contentFrame().getByRole("button", { name: "1" })).toBeVisible();
+  await expect(page.getByText("After the preview.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open visualization: task home.html" }).click();
+  const dialog = page.getByRole("dialog", { name: "task home.html" });
+  const viewer = dialog.locator("iframe");
+  await expect(viewer).toHaveAttribute("sandbox", "allow-scripts");
+  await viewer.contentFrame().getByRole("button", { name: "1" }).click();
+  await expect(viewer.contentFrame().getByRole("button", { name: "2" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
+  await assertViewportLocked(page);
+});
+
 for (const parser of ["static", "streaming", "long"] as const) {
   if (parser === "streaming") test(`${parser} Markdown opens dispatched generated images through the authenticated task endpoint`, async ({ page }) => {
     const path = "/provider/generated_images/11111111-1111-4111-8111-111111111111/comparison #1.png";
