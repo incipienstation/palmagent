@@ -1,3 +1,4 @@
+import { buildClaudeUserMessage } from "../../src/modules/agents/adapters/outbound/claude-messages.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { AGENT_HOOK_STOPPED, PERMISSIONS, type AnswerRequest, type QuestionRequest } from "@palmagent/shared";
-import { buildClaudeArgv, buildClaudeUserMessage, ClaudeRunner } from "../../src/modules/agents/adapters/outbound/claude.js";
+import { buildClaudeArgv, ClaudeSocketRunner } from "../../src/modules/agents/adapters/outbound/claude-socket.js";
 import { buildCodexArgv, CodexRunner } from "../../src/modules/agents/adapters/outbound/codex.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
 import { getRunner } from "../../src/modules/agents/adapters/outbound/runner.js";
@@ -242,7 +243,7 @@ test("Codex launch contract keeps dispatch and resume flag forms distinct", () =
 test("Claude runner owns prompt, event normalization, questions, steer, and stop", async () => {
   const backend = new FakeBackend();
   const capture = captureEvents();
-  const handle = new ClaudeRunner().start(
+  const handle = new ClaudeSocketRunner().start(
     startArgs({ permission: "plan" }),
     capture.emit,
     backend,
@@ -367,7 +368,7 @@ test("Claude reattach restores a pending question without replaying the prompt",
       multiSelect: false,
     }],
   };
-  const handle = new ClaudeRunner().start(
+  const handle = new ClaudeSocketRunner().start(
     startArgs({ reattach: true, resumeFromSeq: 12, pendingInput }),
     capture.emit,
     backend,
@@ -397,7 +398,7 @@ test("Claude reattach restores a pending question without replaying the prompt",
 test("Claude replayed activity supersedes an earlier result's idle-close timer", async () => {
   const backend = new FakeBackend();
   const capture = captureEvents();
-  const handle = new ClaudeRunner().start(
+  const handle = new ClaudeSocketRunner().start(
     startArgs({ reattach: true, resumeFromSeq: 2 }),
     capture.emit,
     backend,
@@ -431,7 +432,7 @@ test("In-process missing executable reports a failed exit", async () => {
 
 test("Claude stop still closes stdin when output drains without a result", async () => {
   const backend = new FakeBackend();
-  const handle = new ClaudeRunner().start(
+  const handle = new ClaudeSocketRunner().start(
     startArgs({ reattach: true, resumeFromSeq: 0 }), () => {}, backend,
   );
   assert.equal(handle.interrupt(), true);
@@ -448,7 +449,7 @@ test("Claude stop still closes stdin when output drains without a result", async
 test("Claude result closes idle stdin so one process remains one turn", async () => {
   const backend = new FakeBackend();
   const capture = captureEvents();
-  const handle = new ClaudeRunner().start(startArgs(), capture.emit, backend);
+  const handle = new ClaudeSocketRunner().start(startArgs(), capture.emit, backend);
   backend.proc.emit({ type: "result", subtype: "success", result: "done" });
   await delay(1_600);
   assert.equal(backend.proc.closeCount, 1);
@@ -644,7 +645,7 @@ test("live smoke kills descendants holding pipes after their wrapper exits", {
 test("Claude preserves message identity and explicit progress/final boundaries", async () => {
   const backend = new FakeBackend();
   const capture = captureEvents();
-  const handle = new ClaudeRunner().start(startArgs(), capture.emit, backend);
+  const handle = new ClaudeSocketRunner().start(startArgs(), capture.emit, backend);
   for (const [id, reason, text] of [["m1", "tool_use", "Checking files"], ["m2", "end_turn", "Finished"]]) {
     backend.proc.emit({ type: "stream_event", event: { type: "message_start", message: { id } } });
     backend.proc.emit({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
@@ -693,7 +694,7 @@ test("Codex and Claude PR creation evidence follows their normalized call/result
     const backend = new FakeBackend();
     const tracker = new PrEvidence();
     const found: string[] = [];
-    const runner = agent === "codex" ? new CodexRunner() : new ClaudeRunner();
+    const runner = agent === "codex" ? new CodexRunner() : new ClaudeSocketRunner();
     const handle = runner.start(startArgs(), (raw) => found.push(...tracker.accept({ ...raw, agent })), backend);
     if (agent === "codex") {
       backend.proc.emit({ type: "item.started", item: { type: "command_execution", id: "create", command: "gh pr create", status: "in_progress", aggregated_output: "", exit_code: null } });
@@ -773,7 +774,7 @@ for (const status of ["stopped", "blocked", "failed", "completed"] as const) {
 
 test("Claude interactive Send waits for interruption and echoed input; Stop wins before delivery", async () => {
   const backend = new FakeBackend(), events: RawEvent[] = [];
-  const handle = new ClaudeRunner().start(startArgs({ interactive: true }), e => events.push(e), backend);
+  const handle = new ClaudeSocketRunner().start(startArgs({ interactive: true }), e => events.push(e), backend);
   const sent = handle.send!("new instruction", undefined, "message-1");
   assert.equal(writtenJson(backend.proc).at(-1).request.subtype, "interrupt");
   await delay(280);
@@ -852,7 +853,7 @@ test("explicit skills reach native initial and mid-turn inputs for both adapters
   const skills = [{ id: "fixture-skill", name: "palmagent:doctor", source: "palmagent", pluginId: "palmagent@palmagent", path: "/plugins/palmagent/skills/doctor/SKILL.md" }];
   for (const agent of ["codex", "claude"] as const) {
     const backend = new FakeBackend();
-    const runner = agent === "codex" ? new CodexRunner() : new ClaudeRunner();
+    const runner = agent === "codex" ? new CodexRunner() : new ClaudeSocketRunner();
     const handle = runner.start(startArgs({ interactive: true, skills }), () => {}, backend);
     if (agent === "codex") {
       backend.proc.emit({ id: "initialize", result: {} });
@@ -896,7 +897,7 @@ test("Claude compacts the resumed session only after a manual boundary and succe
   for (const outcome of ["completed", "too-short", "provider-error", "replay"] as const) {
     const backend = new FakeBackend(), events: RawEvent[] = [];
     const replay = outcome === "replay";
-    const handle = new ClaudeRunner().start({ ...args, reattach: replay, resumeFromSeq: replay ? 1 : undefined }, e => events.push(e), backend);
+    const handle = new ClaudeSocketRunner().start({ ...args, reattach: replay, resumeFromSeq: replay ? 1 : undefined }, e => events.push(e), backend);
     if (replay) {
       assert.equal(backend.specs.length, 0);
       assert.equal(backend.proc.writes.length, 0);

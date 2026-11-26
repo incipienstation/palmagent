@@ -1,20 +1,15 @@
+import { claudeOutput } from "./claude-output.js";
+import { buildClaudeUserMessage, claudeSkillPrompt, claudeAnswer } from "./claude-messages.js";
 import { resolve } from "node:path";
 import { expandHome } from "../../../../platform/filesystem/paths.js";
 import type { AnswerRequest, AskQuestion, InputAttachment, PermissionRequest } from "@palmagent/shared";
-import { normalizePermission, sampledAgentInput } from "@palmagent/shared";
+import { normalizePermission } from "@palmagent/shared";
 import type { AgentRunner, ProcHandle, ProcessBackend } from "../../application/ports/outbound/provider-process.js";
 import type { Emit, RawEvent, StartArgs } from "../../domain/execution.js";
 import type { RunHandle } from "../../domain/run-handle.js";
 
-// Claude's launch and stream protocol live here as executable integration code.
-// Keep the argument matrix and normalized-event behavior covered by the adapter
-// contract tests instead of duplicating them in a version-specific document.
-// Prompt is delivered as a stream-json user message on stdin (not the -p arg) so
-// the same channel can carry mid-turn steers. The process + stdio are owned by
-// the ProcessBackend (a separate daemon in production), so all of the below — argv,
-// the stdin steer/interrupt protocol, NDJSON parsing, and idle-stdin-close — lives
-// here in the web server and can be updated independently of the runner daemon.
-
+// Legacy runner sockets own the byte stream across server replacements. Keep their
+// replay and request-ID protocol compatible until those installations drain and upgrade.
 const IDLE_CLOSE_MS = 1500; // grace after `result` before we close stdin → process exits
 
 // Strategy: map the task's per-agent permission to Claude's `--permission-mode`
@@ -24,17 +19,6 @@ const IDLE_CLOSE_MS = 1500; // grace after `result` before we close stdin → pr
 const permissionMode = (permission?: string) => normalizePermission("claude", permission);
 
 type ClaudeLaunchArgs = Pick<StartArgs, "permission" | "model" | "effort" | "resumeId">;
-type ClaudeUserMessage = {
-  type: "user";
-  message: {
-    role: "user";
-    content: Array<
-      | { type: "image"; source: { type: "base64"; media_type: InputAttachment["mediaType"]; data: string } }
-      | { type: "text"; text: string }
-    >;
-  };
-};
-
 export function buildClaudeArgv({ permission, model, effort, resumeId }: ClaudeLaunchArgs): string[] {
   const mode = permissionMode(permission);
   const argv = [
@@ -53,17 +37,7 @@ export function buildClaudeArgv({ permission, model, effort, resumeId }: ClaudeL
   return argv;
 }
 
-export function buildClaudeUserMessage(text: string, images: readonly InputAttachment[] = []): ClaudeUserMessage {
-  const input = sampledAgentInput(text, images);
-  const content: ClaudeUserMessage["message"]["content"] = input.images.map((image) => ({
-    type: "image",
-    source: { type: "base64", media_type: image.mediaType, data: image.data },
-  }));
-  content.push({ type: "text", text: input.text });
-  return { type: "user", message: { role: "user", content } };
-}
-
-export class ClaudeRunner implements AgentRunner {
+export class ClaudeSocketRunner implements AgentRunner {
   readonly agent = "claude" as const;
 
   start(args: StartArgs, emit: Emit, backend: ProcessBackend): RunHandle {
@@ -74,7 +48,7 @@ export class ClaudeRunner implements AgentRunner {
     // dispatch and resume cannot drift independently.
     const compacting = args.operation === "compact";
     if (compacting && !resumeId) throw new Error("An existing session is required to compact context.");
-    let manualBoundary = false;
+    const projectOutput = claudeOutput(args);
     const argv = buildClaudeArgv({ permission, model, effort, resumeId });
     if (args.interactive && !compacting) argv.push("--replay-user-messages");
 
@@ -100,7 +74,6 @@ export class ClaudeRunner implements AgentRunner {
       if (!delivery) return;
       clearTimeout(delivery.timer); delivery.resolve(status); delivery = undefined; steerInFlight = false;
     };
-    let messageId: string | undefined;
     let steerInFlight = false;
     let steerTimer: NodeJS.Timeout | undefined;
     let closeTimer: NodeJS.Timeout | undefined;
@@ -156,64 +129,16 @@ export class ClaudeRunner implements AgentRunner {
       // in the native session, outside the visible conversation and delivery queue.
       if (compacting && ev.type !== "system" && ev.type !== "result") return;
 
+      projectOutput(ev, sessionId, e);
       switch (ev.type) {
-        case "system":
-          if (compacting && ev.subtype === "compact_boundary" && ev.compact_metadata?.trigger === "manual") manualBoundary = true;
-          e({ taskId, kind: "status", sessionId,
-            payload: { subtype: ev.subtype, model: ev.model, cwd: ev.cwd, tools: ev.tools?.length } });
-          break;
-        case "rate_limit_event":
-          e({ taskId, kind: "status", sessionId, payload: { subtype: "rate_limit", info: ev } });
-          break;
-        case "stream_event": {
-          const inner = ev.event;
-          if (inner?.type === "message_start") messageId = inner.message?.id;
-          if (inner?.type === "message_delta" && messageId) {
-            const reason = inner.delta?.stop_reason;
-            const phase = reason === "tool_use" ? "progress" : reason === "end_turn" ? "final" : undefined;
-            if (phase) e({ taskId, kind: "status", sessionId,
-              payload: { subtype: "assistant_message", messageId, phase } });
-          }
-          if (inner?.type === "message_stop") messageId = undefined;
-          if (inner?.type === "content_block_delta" && inner.delta?.type === "text_delta") {
-            e({ taskId, kind: "assistant_text", sessionId, payload: { text: inner.delta.text, ...(messageId ? { messageId } : {}) } });
-          }
-          break;
-        }
-        case "assistant": {
-          // Text already streamed via deltas; surface tool_use blocks as tool calls.
-          for (const block of ev.message?.content ?? []) {
-            if (block.type === "tool_use") {
-              e({ taskId, kind: "tool_call", sessionId,
-                payload: { id: block.id, name: block.name, input: block.input } });
-            }
-          }
-          break;
-        }
         case "user": {
           if (typeof ev.uuid === "string" && (ev.uuid === args.messageId || ev.uuid === delivery?.id || args.interactive && ev.message?.role === "user" && ev.message?.content?.some((b: any) => b.type === "text"))) {
             e({ taskId, kind: "status", sessionId, payload: { subtype: "message_delivered", messageId: ev.uuid } });
             if (delivery?.id === ev.uuid) settleDelivery("delivered");
           }
-          // tool results fed back into the conversation
-          for (const block of ev.message?.content ?? []) {
-            if (block.type === "tool_result") {
-              e({ taskId, kind: "tool_result", sessionId,
-                payload: { tool_use_id: block.tool_use_id, content: block.content, is_error: block.is_error } });
-            }
-          }
           break;
         }
         case "result": {
-          const compactFailed = compacting && (!manualBoundary || ev.is_error || ev.subtype !== "success");
-          if (compactFailed) {
-            const message = /not enough messages/i.test(ev.result) ? "Not enough messages to compact."
-              : ev.is_error && ev.result ? ev.result : "Claude did not confirm compaction.";
-            e({ taskId, kind: "error", sessionId, payload: { message } });
-          }
-          e({ taskId, kind: "result", sessionId,
-            payload: { subtype: ev.subtype, is_error: compactFailed || ev.is_error, result: ev.result,
-              num_turns: ev.num_turns, duration_ms: ev.duration_ms, total_cost_usd: ev.total_cost_usd } });
           if (compacting) { proc.closeStdin(); break; }
           if (delivery && !delivery.sent) {
             delivery.sent = true;
@@ -337,32 +262,9 @@ export class ClaudeRunner implements AgentRunner {
       answer: (req: AnswerRequest): boolean => {
         const pending = pendingQuestions.get(req.requestId);
         if (!pending || !proc.stdinWritable()) return false;
-        const byQuestion = new Map(pending.questions.map((q) => [q.question, q]));
-        const answers: Record<string, string | string[]> = {};
-        const annotations: Record<string, { notes: string }> = {};
-        for (const a of req.answers ?? []) {
-          if (a.selected?.length) {
-            answers[a.question] = byQuestion.get(a.question)?.multiSelect ? a.selected : a.selected[0];
-          }
-          if (a.notes?.trim()) annotations[a.question] = { notes: a.notes.trim() };
-        }
-        const response = req.response?.trim();
-        const picked = Object.keys(answers).length > 0 || Object.keys(annotations).length > 0 || !!response;
-        if (!picked) {
-          if (!writeLine({
-            type: "control_response",
-            response: { subtype: "success", request_id: req.requestId, response: { behavior: "deny", message: "User declined to answer." } },
-          })) return false;
-          pendingQuestions.delete(req.requestId);
-          return true;
-        }
-        const updatedInput: Record<string, unknown> = { questions: pending.questions, answers };
-        if (Object.keys(annotations).length) updatedInput.annotations = annotations;
-        if (response) updatedInput.response = response;
-        if (!writeLine({
-          type: "control_response",
-          response: { subtype: "success", request_id: req.requestId, response: { behavior: "allow", updatedInput } },
-        })) return false;
+        if (!writeLine({ type: "control_response", response: {
+          subtype: "success", request_id: req.requestId, response: claudeAnswer(pending.questions, req),
+        } })) return false;
         pendingQuestions.delete(req.requestId);
         return true;
       },
@@ -370,8 +272,4 @@ export class ClaudeRunner implements AgentRunner {
       done,
     };
   }
-}
-
-export function claudeSkillPrompt(text: string, skills?: StartArgs["skills"]): string {
-  return skills?.length ? `/${skills[0].name} ${text}` : text;
 }

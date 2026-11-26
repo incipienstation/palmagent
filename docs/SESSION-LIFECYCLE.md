@@ -13,6 +13,12 @@ child process, input channel, and normalized event journal until it finishes.
 Application updates do not restart these hosts. Existing invocations keep their
 original release; new invocations use the activated release.
 
+The Claude adapter runs the Agent SDK in the execution host, using the installed
+Claude Code executable and the task's provider configuration directory. Approvals,
+questions, streamed output and delivery receipts flow through the execution journal.
+Local in-process runs use the same adapter. Older runner-socket installations retain
+their stream protocol until the idle upgrade moves them to execution hosts.
+
 External sessions remain in their native process. Dispatch explicitly connects an
 eligible Codex session to that process; browser reconnects and application updates
 restore the connection without starting a replacement process. Sessions without a
