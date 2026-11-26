@@ -106,5 +106,101 @@
     "node": "v24.21.0",
     "baselineSchemaSha256": "fa18b0a74c2f1b00062eec2cc3c77ca158f6dc436cb90080e5bdcb638e181ab4",
     "candidateSchemaSha256": "fa18b0a74c2f1b00062eec2cc3c77ca158f6dc436cb90080e5bdcb638e181ab4"
+  },
+  {
+    "version": "0.167.1",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "checkedAt": "2026-11-26T13:04:35.689Z",
+    "mode": "schema-contract",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.167.2",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:04:53.987Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.168.0",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:05:15.116Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.169.0",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:05:36.775Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.169.1",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:05:58.017Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.170.0",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:06:15.832Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.171.0",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:06:34.443Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
+  },
+  {
+    "version": "0.172.0",
+    "baseline": "0.167.0",
+    "source": "47c92a545c7288b1b20a523260f1a19ef3c6f9c2",
+    "mode": "schema-contract",
+    "checkedAt": "2026-11-26T13:06:55.278Z",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.21.0",
+    "baselineSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107",
+    "candidateSchemaSha256": "25c6df472363bb038464ffa7a96664325da5fe6dddc97ade3de6613d6c14c107"
   }
 ]
