@@ -7,7 +7,7 @@ const agent = process.argv[2];
 const argv = process.argv.slice(3);
 const resumeIndex = argv.indexOf("--resume");
 const resume = agent === "claude"
-  ? (resumeIndex < 0 ? undefined : argv[resumeIndex + 1])
+  ? (resumeIndex < 0 ? argv.find(arg => arg.startsWith("--resume="))?.slice("--resume=".length) : argv[resumeIndex + 1])
   : (argv[1] === "resume" ? argv[2] : undefined);
 let session = resume || `session-${process.pid}`;
 const interactive = agent === "codex" && argv[0] === "app-server";
@@ -106,10 +106,15 @@ if (interactive) {
   const input = readline.createInterface({ input: process.stdin });
   input.on("line", (line) => {
     const msg = JSON.parse(line);
+    if (msg.type === "control_request" && msg.request?.subtype === "initialize") {
+      emit({ type: "control_response", response: { subtype: "success", request_id: msg.request_id,
+        response: { commands: [], models: [], agents: [] } } });
+    }
     if (msg.type === "user") { if (argv.includes("--replay-user-messages")) emit(msg); start(msg.message.content.find((c) => c.type === "text").text); }
     if (msg.type === "control_request" && msg.request?.subtype === "interrupt") {
       mark(".interrupted");
-      result();
+      emit({ type: "control_response", response: { subtype: "success", request_id: msg.request_id, response: {} } });
+      if (spec.mode !== "interrupt-hold") result();
     }
     if (msg.type === "control_response" && msg.response?.request_id === "q1") {
       mark(".answer", JSON.stringify(msg));

@@ -8,7 +8,6 @@ import { ExecutionPersistence } from "../modules/agents/adapters/outbound/execut
 import { ExecutionStore } from "../modules/agents/adapters/outbound/execution-store.js";
 import { admitExecutions } from "../modules/agents/adapters/outbound/execution-launch.js";
 import { watchExecutions } from "../modules/agents/adapters/outbound/execution-wake.js";
-import { getRunner } from "../modules/agents/adapters/outbound/runner.js";
 import { InProcessBackend } from "../modules/agents/adapters/outbound/inproc-backend.js";
 import type { RunHandle } from "../modules/agents/domain/run-handle.js";
 import type { RawEvent } from "../modules/agents/domain/execution.js";
@@ -66,7 +65,7 @@ function fatal(error: unknown) {
   // invent successful delivery or silently drop an event after storage failure.
   void backend.close().finally(() => process.exit(1));
 }
-const emit: Parameters<ReturnType<typeof getRunner>["start"]>[1] = (event) => {
+const emit: (event: RawEvent) => void = (event) => {
   if (stopping || identityMismatch) return;
   void persistence.run("event", () => {
     const mismatch = store.db.transaction(() => persistEvent(event)).immediate();
@@ -100,7 +99,7 @@ async function finish(lost = false) {
 try {
   emit({ taskId: record.taskId, kind: "status", payload: { subtype: "execution_started" } });
   const launchFinished = telemetry.producer.beginOperation("execution.start", 1);
-  handle = getRunner(record.args.agent).start({ ...record.args, skills: record.skills }, emit, backend);
+  handle = backend.agentRunner(record.args.agent).start({ ...record.args, skills: record.skills }, emit);
   dispose = watchExecutions(store.directory, () => { void drain().catch(fatal); }, id);
   launchFinished("success");
   telemetry.producer.flush();

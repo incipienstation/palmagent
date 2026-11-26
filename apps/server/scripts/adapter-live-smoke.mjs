@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildClaudeArgv, buildClaudeUserMessage } from "../src/modules/agents/adapters/outbound/claude.js";
 import { buildCodexArgv } from "../src/modules/agents/adapters/outbound/codex.js";
 
 const marker = "PALMAGENT_ADAPTER_CONTRACT_OK";
@@ -21,15 +20,25 @@ if (agent !== "claude" && agent !== "codex") {
 const cwd = mkdtempSync(join(tmpdir(), `palmagent-${agent}-contract-`));
 
 try {
-  const { events, assistantText } = await run(agent, cwd);
-  if (agent === "codex") {
+  if (agent === "claude") {
+    const { InProcessBackend } = await import("../src/modules/agents/adapters/outbound/inproc-backend.js");
+    const backend = new InProcessBackend();
+    const events = [];
+    const handle = backend.agentRunner(agent).start({ taskId: "smoke", cwd, prompt, permission: "plan" },
+      event => events.push(event));
+    const deadline = setTimeout(() => handle.cancel(), timeoutMs);
+    try { await handle.done; } finally { clearTimeout(deadline); await backend.close(); }
+    assert(events.some(event => event.kind === "status" && event.sessionId), "missing Claude session id");
+    assert(events.some(event => event.kind === "result" && !event.payload.is_error), "missing successful Claude result");
+    assert(events.filter(event => event.kind === "assistant_text").map(event => event.payload.text).join("").includes(marker),
+      "missing expected Claude text delta");
+    assert(events.some(event => event.kind === "status" && event.payload.subtype === "process_exit" && event.payload.code === 0),
+      "Claude SDK query did not finish cleanly");
+  } else {
+    const { events, assistantText } = await runCodex(cwd);
     assert(events.some((event) => event.type === "thread.started"), "missing thread.started");
     assert(events.some((event) => event.type === "turn.completed"), "missing turn.completed");
     assert(assistantText.includes(marker), "missing expected Codex agent message");
-  } else {
-    assert(events.some((event) => event.type === "system" && event.session_id), "missing Claude session id");
-    assert(events.some((event) => event.type === "result" && !event.is_error), "missing successful Claude result");
-    assert(assistantText.includes(marker), "missing expected Claude text delta");
   }
   console.log(`${agent} adapter live smoke passed`);
   if (agent === "codex" && process.argv.includes("--matrix")) {
@@ -40,12 +49,10 @@ try {
   rmSync(cwd, { recursive: true, force: true });
 }
 
-function run(selectedAgent, workingDirectory) {
+function runCodex(workingDirectory) {
   return new Promise((resolvePromise, reject) => {
-    const argv = selectedAgent === "codex"
-      ? buildCodexArgv({ prompt, permission: "read-only" })
-      : buildClaudeArgv({ permission: "plan" });
-    const child = spawn(selectedAgent, argv, {
+    const argv = buildCodexArgv({ prompt, permission: "read-only" });
+    const child = spawn("codex", argv, {
       cwd: workingDirectory,
       env: { ...process.env, NO_COLOR: "1" },
       stdio: ["pipe", "pipe", "pipe"],
@@ -70,7 +77,7 @@ function run(selectedAgent, workingDirectory) {
       else resolvePromise({ events, assistantText });
     };
     timeoutTimer = setTimeout(() => {
-      timeoutError = new Error(`${selectedAgent} adapter live smoke timed out`);
+      timeoutError = new Error(`codex adapter live smoke timed out`);
       signalTree("SIGINT");
       forceKillTimer = setTimeout(() => signalTree("SIGKILL"), forceKillGraceMs);
     }, timeoutMs);
@@ -89,7 +96,7 @@ function run(selectedAgent, workingDirectory) {
       }
     }
 
-    child.once("error", (error) => finish(new Error(`${selectedAgent} could not start: ${error.message}`)));
+    child.once("error", (error) => finish(new Error(`codex could not start: ${error.message}`)));
     child.stderr.resume();
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
@@ -107,9 +114,6 @@ function run(selectedAgent, workingDirectory) {
           continue;
         }
         recordEvent(event);
-        if (selectedAgent === "claude" && event.type === "result" && child.stdin.writable) {
-          child.stdin.end();
-        }
       }
     });
     child.once("close", (code, signal) => {
@@ -124,27 +128,15 @@ function run(selectedAgent, workingDirectory) {
       }
       if (timeoutError) finish(timeoutError);
       else if (code === 0) finish();
-      else finish(new Error(`${selectedAgent} adapter live smoke exited ${code ?? signal ?? "unknown"}`));
+      else finish(new Error(`codex adapter live smoke exited ${code ?? signal ?? "unknown"}`));
     });
 
-    if (selectedAgent === "claude") {
-      child.stdin.write(`${JSON.stringify(buildClaudeUserMessage(prompt))}\n`);
-    } else {
-      child.stdin.end();
-    }
+    child.stdin.end();
 
     function recordEvent(event) {
       events.push(event);
-      if (selectedAgent === "codex" && event.type === "item.completed" && event.item?.type === "agent_message") {
+      if (event.type === "item.completed" && event.item?.type === "agent_message") {
         assistantText += event.item.text ?? "";
-      }
-      if (
-        selectedAgent === "claude" &&
-        event.type === "stream_event" &&
-        event.event?.type === "content_block_delta" &&
-        event.event?.delta?.type === "text_delta"
-      ) {
-        assistantText += event.event.delta.text ?? "";
       }
     }
   });

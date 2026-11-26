@@ -1,12 +1,12 @@
 import { startWithInputFiles } from "./input-files.js";
-import { ClaudeRunner } from "./claude.js";
+import { ClaudeSocketRunner } from "./claude-socket.js";
 import { CodexRunner } from "./codex.js";
 import type { AgentKind } from "@palmagent/shared";
 import type { AgentRunner, ProcessBackend } from "../../application/ports/outbound/provider-process.js";
 import type { ExecutionRunner } from "../../application/ports/inbound/execution.js";
 
 const runners: Record<AgentKind, AgentRunner> = {
-  claude: new ClaudeRunner(),
+  claude: new ClaudeSocketRunner(),
   codex: new CodexRunner(),
 };
 
