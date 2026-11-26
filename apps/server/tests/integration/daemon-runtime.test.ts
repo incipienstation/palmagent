@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, lstatSync, realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readlinkSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, lstatSync, realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readlinkSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -60,23 +60,22 @@ console.log(JSON.stringify(request.action === 'status' ? { protocol: 1, ...build
 test("daemon configuration pins native and Node artifacts and preserves the supervisor selection", t => {
   const f = fixture(t);
   f.cfg.nativeReadHttpPort = 4101;
-  f.cfg.nativeRoutineWrites = true;
   configureDaemon(f.cfg); saveConfig(f.cfg);
   const config = DaemonConfigurationSchema.parse(JSON.parse(readFileSync(join(f.root, "daemon/config.json"), "utf8")));
   assert.equal(config.daemon, f.binary);
   assert.equal(config.node, f.cfg.executionNode);
   assert.equal(config.environment.EXECUTION_RELEASE, f.release);
   assert.equal(config.limits.memoryMax, 16 * 1024 ** 3);
+  const envFile = join(f.root, "install.env");
+  appendFileSync(envFile, "NATIVE_ROUTINE_WRITES=1\n"); // Saved by earlier releases.
   const loaded = loadConfig({ dataDir: f.root });
   assert.equal(loaded.supervisor, "palmagentd");
   assert.equal(loaded.nativeReadHttpPort, 4101);
   assert.equal(config.environment.NATIVE_READ_HTTP_PORT, "4101");
   assert.equal(daemonConfiguration(loaded).environment.NATIVE_READ_HTTP_PORT, "4101", "updates retain the read listener");
-  assert.equal(daemonConfiguration(loaded).environment.NATIVE_ROUTINE_WRITES, "1");
+  assert.equal(daemonConfiguration(loaded).environment.NATIVE_ROUTINE_WRITES, undefined);
   saveConfig({ ...loaded, nativeReadHttpPort: undefined });
-  assert.throws(() => loadConfig({ dataDir: f.root }), /requires NATIVE_READ_HTTP_PORT/);
-  saveConfig({ ...loaded, nativeReadHttpPort: undefined, nativeRoutineWrites: false });
-  assert.equal(daemonConfiguration(loadConfig({ dataDir: f.root })).environment.NATIVE_ROUTINE_WRITES, undefined);
+  assert(!readFileSync(envFile, "utf8").includes("NATIVE_ROUTINE_WRITES"));
   assert.equal(daemonConfiguration(loadConfig({ dataDir: f.root })).environment.NATIVE_READ_HTTP_PORT, undefined);
   saveConfig({ ...loaded, nativeReadHttpPort: loaded.port });
   assert.throws(() => loadConfig({ dataDir: f.root }), /must differ/);

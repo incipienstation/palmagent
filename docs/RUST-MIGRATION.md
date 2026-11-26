@@ -92,8 +92,8 @@ ingress routing is a separate explicit step. See the [experiment and rollback in
 This adds a session-validation reader, not a second session or Task writer. An API-owner crash
 can leave direct committed reads available; ordinary owner shutdown disables the listener.
 
-The same listener can admit routine definition creation, updates and deletion with the separate
-`NATIVE_ROUTINE_WRITES=1` opt-in and `routineWriteHttp: 1` capability. Ingress selects by method
+The listener also provides routine definition creation, updates and deletion on startup.
+The API checks the `routineWriteHttp: 1` capability. Ingress selects by method
 and path. The public adapter sends the validated command directly to the existing Rust routine
 owner. The API revision poll publishes changes to SSE clients. Manual run/stop and agent Task
 delivery continue through Node. Reverting ingress selects the mediated path against the same owner.
