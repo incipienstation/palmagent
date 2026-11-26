@@ -39,8 +39,6 @@ use tokio::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
     port: u16,
-    #[serde(default)]
-    routine_writes: bool,
     auth_enabled: bool,
     cookie_name: String,
     session_ttl_ms: i64,
@@ -224,11 +222,8 @@ fn build(
         transcript,
         Box::new(SqliteReadAccess::open(db)?),
     );
-    let mut app = public_reads::router(client);
-    if settings.routine_writes {
-        app = app.merge(routines::router(routines));
-    }
-    Ok(app
+    Ok(public_reads::router(client)
+        .merge(routines::router(routines))
         .layer(middleware::from_fn_with_state(
             auth,
             auth_http::authenticate,

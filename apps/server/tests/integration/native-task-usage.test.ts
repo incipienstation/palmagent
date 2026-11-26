@@ -135,12 +135,6 @@ test("native private and public Task reads preserve auth, accounting, pagination
     '{"result":"\\ud800","usage":{"input_tokens":1}}',
   ]) raw("codex", payload);
   await start();
-  const configureRoutineWrites = async (enabled: boolean) => {
-    const configured = await applicationRequest(root, "/v1/task-reads/http", "POST",
-      { ...directSettings, ...(enabled && { routineWrites: true }) });
-    assert.equal(configured.status, 200);
-    publicPort = (configured.value as { port: number }).port;
-  };
   const definitions = "/api/routines";
   const write = async (method: string, path: string, body?: string, headers?: Record<string, string>) => {
     const response = await fetch(`http://${[127, 0, 0, 1].join(".")}:${publicPort}${path}`, { method, body,
@@ -148,8 +142,6 @@ test("native private and public Task reads preserve auth, accounting, pagination
     return { status: response.status, value: await response.json() };
   };
   const definition = JSON.stringify({ repoId: "space", kind: "script", script: { command: "  echo fixture  ", unknown: true }, preset: "manual", enabled: false });
-  assert.equal((await write("POST", definitions, definition)).status, 404);
-  await configureRoutineWrites(true);
   assert.equal((await write("POST", definitions, definition, { origin: "", cookie: "" })).status, 403);
   assert.equal((await write("POST", definitions, definition, { cookie: "" })).status, 401);
   assert.equal((await write("POST", definitions, definition, { "x-palmagent-version": "older" })).value.code, "update-required");
@@ -198,8 +190,6 @@ test("native private and public Task reads preserve auth, accounting, pagination
   assert.deepEqual(await write("DELETE", path), updated);
   assert.equal(db.getRoutine(id), undefined);
   assert.deepEqual(await write("DELETE", path), { status: 404, value: { error: `no such routine: ${id}`, code: "not_found" } });
-  await configureRoutineWrites(false);
-  assert.equal((await write("POST", definitions, definition)).status, 404);
   const initial = await same();
   for (const path of ["/api/usage", "/api/tasks/claude/history?format=transcript", "/api/tasks/claude/history/changes?format=transcript&after=0", "/api/tasks/claude/history/steps?key=1", "/api/tasks/claude/history/details?from=1&through=1"]) {
     assert.deepEqual(await publicRead(path, ""), { status: 401, value: { error: "unauthorized" } });

@@ -50,18 +50,17 @@ If only application settings changed, an unchanged route requires no rewrite or 
 For an explicitly requested native direct-read cutover, use a release supporting the listener.
 Persist `NATIVE_READ_HTTP_PORT` in `install.env`, choosing a free loopback port distinct from
 `PORT`, then preview/apply setup. Setup and updates retain this setting; legacy supervisors
-reject it. The flag alone does not change ingress. Route only the five documented GET reads
-using the release's direct-read map, retaining the existing origin and ingress controls.
+reject it. The flag alone does not change ingress. For a reads-only cutover, use the five GET rules from the release's routing
+map, retaining the existing origin and ingress controls.
 After cutover run `<cli> connection diagnose`: when configured, it also requires authenticated
 Rust responses and the expected version for every selected route. For rollback, restore Node
 routing first, then remove the setting and apply setup.
 
-For a routine-definition cutover, require a release advertising `routineWriteHttp: 1`. Set
-`NATIVE_ROUTINE_WRITES=1` alongside the listener port, apply setup, then enable the two
-optional method/path rules in the same map. Manual run and stop continue through Node.
-Connection diagnosis covers the five reads. Verify write routing with an authenticated,
-same-origin malformed create request and check the Rust marker and 400 response.
-Restore the ingress rules before removing the write setting during rollback.
+For a routine-definition cutover, use the matching release's listener and routing instructions.
+Probe the loopback listener with an authenticated, same-origin malformed create request and check
+for HTTP 400 and the Rust response marker. Apply the two routine method/path rules and repeat
+the probe through ingress. Manual run and stop continue through Node. To roll back just the
+writes, remove the two routine rules and reload ingress. Connection diagnosis covers the five reads.
 
 Verify runtime and public HTTPS separately. For a changed domain mint a fresh link with
 `<cli> passkey` only after HTTPS succeeds. Report any retained old routes or recovery work.
