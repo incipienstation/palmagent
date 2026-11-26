@@ -39,7 +39,7 @@ else if (args.includes('--help')) console.log('--json --sandbox --image --config
 else if (args[0] === 'login') console.error('Logged in using ChatGPT');
 else if (args.includes('generate-json-schema')) {
   const out = args[args.indexOf('--out') + 1], schemas = JSON.parse(fs.readFileSync(process.env.TEST_SCHEMAS));
-  if (process.env.TEST_FAIL && version === '0.160.1') schemas.ClientRequest.oneOf[0].properties.params.properties.clientInfo.properties.version.type = 'integer';
+  if (version === (process.env.TEST_FAIL_VERSION || (process.env.TEST_FAIL && '0.160.1'))) schemas.ClientRequest.oneOf[0].properties.params.properties.clientInfo.properties.version.type = 'integer';
   if (process.env.TEST_RENAME && version === '0.160.1') {
     for (const name of ['v2/ThreadStartResponse', 'v2/ThreadResumeResponse']) {
       schemas[name].properties.thread.properties.key=schemas[name].properties.thread.properties.id;
@@ -75,7 +75,7 @@ else process.exit(98);
 const npmStub = `#!/usr/bin/env node
 const fs = require('node:fs'), path = require('node:path');
 const args = process.argv.slice(2);
-if (args[0] === 'view') console.log(JSON.stringify({versions: ['0.160.0', '0.160.1'], 'dist-tags': {latest: process.env.TEST_NO_NEW ? '0.160.0' : '0.160.1'}}));
+if (args[0] === 'view') console.log(JSON.stringify({versions: ['0.160.0', '0.160.1', '0.161.0', '0.162.0', '0.163.0'], 'dist-tags': {latest: process.env.TEST_NO_NEW ? '0.160.0' : process.env.TEST_LATEST || '0.160.1'}}));
 else if (args[0] === 'install') {
   const prefix = args[args.indexOf('--prefix') + 1], version = args.at(-1).split('@').at(-1), bin = path.join(prefix, 'node_modules/.bin');
   fs.mkdirSync(bin, {recursive: true});
@@ -97,8 +97,11 @@ fs.appendFileSync(process.env.TEST_CALLS, JSON.stringify(['gh', args]) + '\\n');
 if (args[0] === 'repo') console.log(JSON.stringify({nameWithOwner:'example/palmagent'}));
 else if (args[0] === 'api') {
   const endpoint = args[1], method = args[args.indexOf('--method') + 1];
-  if (method === 'POST') { let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => {
-    const body = JSON.parse(data), pr = {number:1, state:'open', draft:false, html_url:'https://example.com/pull/1', body:body.body,
+  if (method === 'PATCH') { let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => {
+    const pr = {...read(), ...JSON.parse(data)}; write(pr); console.log(JSON.stringify(pr));
+  }); }
+  else if (method === 'POST') { let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => {
+    const body = JSON.parse(data), pr = {number:1, state:'open', draft:false, html_url:'https://example.com/pull/1', body:body.body, title:body.title,
       base:{ref:'develop'}, head:{ref:body.head, sha:git('rev-parse',body.head), repo:{full_name:'example/palmagent'}}};
     write(pr); console.log(JSON.stringify(pr));
   }); }
@@ -106,8 +109,13 @@ else if (args[0] === 'api') {
   else if (endpoint.includes('/pulls/')) console.log(JSON.stringify(read()));
   else if (endpoint.endsWith('git/ref/heads/develop')) console.log(JSON.stringify({object:{sha:git('rev-parse','origin/develop')}}));
   else process.exit(96);
+} else if (args[0] === 'run') {
+  if (args[1] === 'rerun') process.exit(0);
+  if (args.includes('--log-failed')) console.log('DOMException [TimeoutError]: The operation was aborted due to timeout');
+  else console.log(JSON.stringify({headSha:read().head.sha,headBranch:read().head.ref,event:'pull_request',workflowName:'ci',
+    status:'completed',jobs:[{name:'native',databaseId:22,conclusion:'failure',steps:[{name:'Build the shared native binaries',conclusion:'failure'}]}]}));
 } else if (args[1] === 'checks') {
-  if (args.includes('--json')) console.log(JSON.stringify([{name:'validate', state:process.env.TEST_CI_FAIL ? 'FAILURE' : 'SUCCESS', bucket:process.env.TEST_CI_FAIL ? 'fail' : 'pass'}]));
+  if (args.includes('--json')) console.log(JSON.stringify([{name:'validate', link:process.env.TEST_TIMEOUT ? 'https://example.com/actions/runs/12/job/21' : '', state:process.env.TEST_CI_FAIL ? 'FAILURE' : 'SUCCESS', bucket:process.env.TEST_CI_FAIL ? 'fail' : 'pass'}]));
   if (process.env.TEST_CI_FAIL) process.exit(1);
 } else if (args[1] === 'merge') {
   const pr=read(); pr.merged=true; pr.merged_at='2026-01-01T00:00:00Z'; pr.merge_commit_sha=pr.head.sha; write(pr);
@@ -195,12 +203,29 @@ test('a real schema mismatch starts one mocked repair; a failed process is never
   await new Promise(ok=>setTimeout(ok,1200));
   assert.ok(!readdirSync(f.root).includes('orphan'), 'Repair descendants must not outlive the bounded command');
 });
-test('CI failure retains the same PR and a later successful run resumes without model calls', async t=>{
-  const f=fixture(t), first=await f.run(['--apply','--allow-codex-repair'],{TEST_CI_FAIL:'1'});
-  assert.equal(first.code,1,first.output); assert.equal(f.states()[0].stage,'pr');
+test('a blocked PR scans newer versions, promotes only the contiguous passes and retries transient CI once per head', async t=>{
+  const f=fixture(t), args=['--apply','--allow-codex-repair'];
+  const blocked=await f.run(args,{TEST_CI_FAIL:'1'});
+  assert.equal(blocked.code,1,blocked.output);
+  const newer={TEST_CI_FAIL:'1',TEST_TIMEOUT:'1',TEST_LATEST:'0.163.0',TEST_FAIL_VERSION:'0.162.0'};
+  const rerun=await f.run(args,newer);
+  assert.equal(rerun.code,0,rerun.output);
+  assert.match(rerun.output,/0.162.0: incompatible/);
+  assert.match(rerun.output,/0.163.0: passed/);
+  const state=f.states()[0];
+  const receipts=JSON.parse(readFileSync(join(state.worktree,'docs/codex-compatibility-runs.json')));
+  assert.deepEqual(receipts.map(row=>[row.version,row.baseline]),[['0.160.1','0.160.0'],['0.161.0','0.160.0']]);
+  assert.equal(JSON.parse(readFileSync(join(state.worktree,'packages/shared/src/agent-compatibility.json'))).codex.exclusiveMaximum,'0.161.1');
+  const inspected=()=>f.calls().filter(call=>call[0]==='codex' && call[1]==='0.163.0' && call[2].includes('generate-json-schema')).length;
+  assert.equal(inspected(),1);
+  const repeated=await f.run(args,newer);
+  assert.equal(repeated.code,1,repeated.output);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1][1]==='rerun').length,1);
   assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1][1]==='merge').length,0);
-  const second=await f.run(['--apply','--allow-codex-repair']);
-  assert.equal(second.code,0,second.output); assert.equal(f.states()[0].stage,'merged');
+  assert.equal(inspected(),1,'resume should reuse later passing evidence');
+  const recovered=await f.run(args,{...newer,TEST_CI_FAIL:''});
+  assert.equal(recovered.code,0,recovered.output);
+  assert.equal(f.states()[0].stage,'merged');
   assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,1);
   assert.equal(paid(f.calls()).length,0);
 });

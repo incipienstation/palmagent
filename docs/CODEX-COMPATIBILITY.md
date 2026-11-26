@@ -54,8 +54,9 @@ Full source verification and packed-install smoke are separate gates.
 
 Maintainers can run the committed maintenance script from a Palmagent **script**
 routine. The routine scheduler itself does not invoke an agent. The script checks
-npm for new stable Codex releases and processes the oldest unsupported release
-through the current `latest` tag, one version per run. It never replaces the
+npm for every pending stable Codex release through the current `latest` tag. It
+inspects each release against the supported baseline before resuming delivery,
+including when an earlier candidate or its PR is held. It never replaces the
 machine's installed Codex CLI.
 
 Use the repository's `.nvmrc` Node version and a working `pnpm`, `npm`, `git`,
@@ -69,7 +70,7 @@ frozen dependencies and isolates downloaded CLIs.
 The script has two explicit modes:
 
 ```bash
-# Inspect the next release without changing support, opening a PR, or calling a model.
+# Inspect pending releases in a clean checkout of origin/develop without changing support, opening a PR, or calling a model.
 node scripts/codex-compat-routine.mjs --check-only
 
 # Scheduled operation, including one bounded repair only after a confirmed failure.
@@ -104,12 +105,23 @@ A repair may change only the Codex adapters, their contract tests, and the
 declarative consumed-protocol specification. It cannot change the comparison
 engine, maintenance gate, or workflows. The controller rereads the repaired
 specification and verifies the candidate before running the authenticated matrix.
+Offline passes are checkpointed by exact source commit, baseline, CLI version,
+platform, architecture, and Node version. On an unchanged base, the next schedule
+reuses passing results and retries failed probes. The log reports the registry
+target, last inspected version, and current support on `develop`. The oldest
+pending version owns one PR covering all consecutive passes. A gap stops that
+PR's range. Later passing probes remain available in private state. A repaired
+adapter is promoted separately so later versions can be checked against it.
+
 Local promotion checks cover metadata, source safety, types, tooling, server
 contracts, and runtime smoke. Browser and packed-install checks run in the full
 required CI gate; the scheduled job does not duplicate them on the installation
 host. Automatic delivery
-uses a version-specific feature PR into `develop`, requires successful exact-head
-CI, and respects review requirements and branch protection. Closed/draft PRs,
+uses the oldest candidate's feature PR into `develop`, requires successful exact-head
+CI, and respects review requirements and branch protection. On a matching CI
+workflow and head, a timed-out job or the recognized native build timeout
+allows one failed-job rerun. A later schedule resumes the same PR. Other
+failures report the check link for inspection. Closed/draft PRs,
 unexpected file changes, changed PR identity, and unresolved failures remain
 held. Stable publication remains a separate release operation.
 
