@@ -324,9 +324,9 @@ async function shipJob(repository, state, save, source, scan) {
   }
   assert(allowedChanges(changedPaths(work, state.base), state.mode === 'repaired-live'), 'Compatibility PR contains unexpected files');
   if (!state.validated) {
-    // Compatibility changes select the full CI gate. Keep local source/backend
-    // checks, but let that required gate own browser and packed-install checks
-    // instead of duplicating them inside the live installation's scheduled job.
+    // Metadata-only changes already exercised both adapter probes. Their full
+    // server, browser and package suites run on the required CI head. Adapter
+    // repairs also exercise server integration in the repair worktree.
     await run('pnpm', ['install', '--frozen-lockfile'], { directory: work, label: 'Install promotion dependencies' });
     for (const [command, argv] of [
       [process.execPath, ['scripts/sync-skills.mjs', '--check']],
@@ -335,8 +335,7 @@ async function shipJob(repository, state, save, source, scan) {
       ['git', ['diff', '--check', state.base + '...' + state.head]],
       ['pnpm', ['typecheck']],
       ['pnpm', ['pkg:check']],
-      ['pnpm', ['server:contracts']],
-      ['pnpm', ['server:smoke']],
+      ...(state.mode === 'repaired-live' ? [['pnpm', ['server:contracts']], ['pnpm', ['server:smoke']]] : []),
     ]) await run(command, argv, { directory: work, label: 'Promotion check: ' + argv.join(' ') });
     state.validated = true; await save();
   }

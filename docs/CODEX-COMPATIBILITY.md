@@ -114,10 +114,10 @@ pending version owns one PR covering all consecutive passes. A gap stops that
 PR's range. Later passing probes remain available in private state. A repaired
 adapter is promoted separately so later versions can be checked against it.
 
-Local promotion checks cover metadata, source safety, types, tooling, server
-contracts, and runtime smoke. Browser and packed-install checks run in the full
-required CI gate; the scheduled job does not duplicate them on the installation
-host. Automatic delivery
+Local promotion checks cover metadata, source safety, types, and tooling.
+Adapter repairs also run full server contracts and runtime smoke locally. For
+every promotion the required CI gate owns the full server, browser, and
+packed-install checks. Automatic delivery
 uses the oldest candidate's feature PR into `develop`, requires successful exact-head
 CI, and respects review requirements and branch protection. On a matching CI
 workflow and head, a timed-out job or the recognized native build timeout
