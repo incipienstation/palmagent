@@ -114,12 +114,10 @@ Focused screens retain Back; the task title opens session details.
    Focusing it reveals the model/effort summary; tap it to configure the agent,
    model, effort, permission, worktree isolation, and optional title. The + menu
    offers Camera and Photos. Send creates the task via `POST /api/tasks`.
-2. **Inbox** (`#/`) — ONE `GET /api/stream`; every task rendered live from the
-   `tasks` snapshot frames, grouped by status. Use a row's **⋮ → Rename** to
-   change its session name without opening it. Use **Spaces** to filter by a single
-   project, folder, or worktree, or choose **All spaces**. The mobile sheet and
-   desktop sidebar search names and full paths; worktrees expand separately and
-   appear automatically in search results. The selected filter survives reloads.
+2. **Tasks** (`#/`) — a shared SSE stream supplies live task snapshots and changes.
+   On a phone, switch between **Status** and **Space** to regroup the current results.
+   On desktop, response requests appear above the Space groups. Use a row's **⋮ → Rename**
+   to change its session name. Open **Spaces** to search connected folders or add a Space.
 3. **Task detail + steer** (`#/task/:id`) — scoped `GET /api/stream?task=:id`;
    virtualized event log (coalesced assistant deltas, tool calls/results, and turn results),
    composer Send/Stop controls, and an editable persistent queue.

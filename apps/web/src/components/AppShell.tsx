@@ -44,6 +44,7 @@ export function AppBar({
   conversation,
   transparent,
   compactHeader,
+  className,
   children,
 }: {
   title: string;
@@ -58,6 +59,7 @@ export function AppBar({
   transparent?: boolean;
   /** Let the header action replace the visible title on narrow views. */
   compactHeader?: boolean;
+  className?: string;
   children?: ReactNode;
 }) {
   const navigation = useAppNavigation();
@@ -65,7 +67,7 @@ export function AppBar({
   const menu = navigation && <Button variant="ghost" size="icon-lg" className={cn("shrink-0 rounded-full", navigation.desktopSidebar && "hidden", floating && "pointer-events-auto touch-pan-y border border-border bg-card/85 backdrop-blur-md relative z-10")} aria-label="Open navigation" onClick={(event) => navigation.openNavigation(event.currentTarget)}><Menu className="size-5" /></Button>;
   return (
     <header
-      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5", floating ? "isolate justify-between pointer-events-none" : "bg-background/95 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']")}
+      className={cn("sticky top-0 z-10 flex items-center gap-2 px-3 pt-[calc(10px+var(--safe-top))] pb-2.5", floating ? "isolate justify-between pointer-events-none" : "bg-background/95 backdrop-blur-md before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[var(--safe-top)] before:bg-background before:content-['']", className)}
       style={floating ? { marginBottom: "calc(-64px - var(--safe-top))" } : undefined}
     >
       {floating && <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[calc(96px+var(--safe-top))] bg-linear-to-b from-background/70 via-background/35 to-transparent" />}

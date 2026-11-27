@@ -30,11 +30,15 @@ A missing Stable release never falls back to Preview.
 
 ## Spaces
 
-**Tasks** groups tasks by Space. **Needs you** gathers tasks waiting for an answer or approval.
-Use **Filters** in the top bar to select a status. As you scroll, the current Space's heading
-stays at the top of the list until the next one takes its place. Use the folder or plus button
-in that heading to open the Space or start a task there. Open **Spaces** to search
-by name or folder, enter a Space, or connect another folder with **Add Space**.
+On a phone, open **Tasks** and choose **Status** or **Space** in the top bar.
+Status starts with **Needs you**, where you can preview a pending question or approval.
+Space groups the same tasks by folder, with requests you can answer first in each group.
+Switching views keeps your search and filters. The app remembers your last view.
+
+On desktop, **Needs you** appears above the Space groups. Each Space heading stays in
+view as you scroll its tasks. Use its folder or plus button to open the Space or start a
+task there. Open **Spaces** to search by name or folder, enter a Space, or connect
+another folder with **Add Space**.
 Spaces with the same name show a short folder qualifier. Full folder paths and
 **Terminals** are available in each Space's details.
 
