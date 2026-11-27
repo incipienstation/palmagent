@@ -44,7 +44,7 @@ export function UserBubble({ text, imageOnly, meta, skills, attachments, images,
         )}
         {photosOnly && <div className={cn("self-end", tiled
           ? "grid w-full max-w-lg grid-cols-2 gap-1.5"
-          : "flex max-w-[min(88%,32rem)]", landscapePair && "*:data-[slot=button]:aspect-video")}>
+          : "flex max-w-[min(88%,32rem)]", landscapePair && "[&>button]:aspect-video")}>
           {previews}
         </div>}
         {(caption || skills?.length || (!photosOnly && items.length > 0)) ? (
