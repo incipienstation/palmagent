@@ -1,4 +1,4 @@
-import { sameAttachments } from "../images";
+import { composePrompt, sameAttachments } from "../images";
 import { gameDelivery } from "../games/play-events";
 import { isActiveTaskStatus } from "@palmagent/shared";
 import { useEffect, useRef } from "react";
@@ -86,13 +86,13 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
     await act("acquireEdit", async () => {
       const q = await taskOperations.messageAction(message.id, { action: "edit", version: message.version, token });
       setQueueOverride(q); setEdit({ id: message.id, version: message.version, token });
-      setEditText(message.text); setEditSkills(message.skills ?? []); editAtt.setImages(q.messages.find(m => m.id === message.id)?.images ?? []);
+      setEditText(message.imageOnly ? "" : message.text); setEditSkills(message.skills ?? []); editAtt.setImages(q.messages.find(m => m.id === message.id)?.images ?? []);
     });
   }
   async function endEdit(save: boolean) {
-    if (!edit || busy || (save && (edit.expired || (!editText.trim() && !editSkills.length)))) return;
+    if (!edit || busy || (save && (edit.expired || (!editText.trim() && !editSkills.length && !editAtt.images.length)))) return;
     const draft = edit;
-    const text = editText || (editSkills.length ? "Use the selected skill." : "");
+    const { text, imageOnly } = composePrompt(editText, editAtt.images, !!editSkills.length);
     const selectedSkills = editSkills;
     const images = editAtt.images;
     await act(save ? "saveEdit" : "releaseEdit", async () => {
@@ -101,12 +101,12 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
       setEdit(null);
       try {
         if (save || !draft.expired) setQueueOverride(await taskOperations.messageAction(draft.id, save
-          ? { action: "save", token: draft.token, version: draft.version, text, images, skills: selectedSkills }
+          ? { action: "save", token: draft.token, version: draft.version, text, imageOnly, images, skills: selectedSkills }
           : { action: "release", token: draft.token }));
         editAtt.clear(); if (save) { setEditText(""); setEditSkills([]); }
       } catch (error) { setEdit({ ...draft, expired: true }); throw error; }
     }, undefined, { id: draft.id, label: save ? "Saving…" : "Releasing edit…", apply: q => ({ ...q, messages: q.messages.map(m => m.id === draft.id
-      ? { ...m, ...(save ? { text, images, skills: selectedSkills } : {}), editingUntil: undefined } : m) }) });
+      ? { ...m, ...(save ? { text, imageOnly, images, skills: selectedSkills } : {}), editingUntil: undefined } : m) }) });
   }
 
   const localOwner = task?.sessionControl?.owner === "local" || task?.sessionControl?.owner === "returning";
@@ -139,7 +139,7 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
 
   async function send() {
     if (edit) { await endEdit(true); return; }
-    const text = compose.trim() || (skills.length ? "Use the selected skill." : att.images.length ? att.images.some(image => image.file) ? "See the attached file(s)." : att.images.some(image => image.video) ? "See the attached media." : "See the attached image(s)." : "");
+    const { text, imageOnly } = composePrompt(compose, att.images, !!skills.length);
     if (!text || !composeMode) return;
     const images = att.images.length ? att.images : undefined;
     // Send an override only when it differs from the task's current setting.
@@ -156,13 +156,13 @@ export function useTaskComposer(taskId: string, task?: TaskState) {
       ...(effort !== curEffort ? { effort: effort === DEFAULT_OPTION ? "" : effort } : {}),
       ...(!shared && permission !== curPermission ? { permission } : {}),
     };
-    const request = { mode: deliveryMode, text, images, ...(skills.length ? { skills } : {}), expectedRunId: confirmedQueue?.runId ?? null,
+    const request = { mode: deliveryMode, text, imageOnly, images, ...(skills.length ? { skills } : {}), expectedRunId: confirmedQueue?.runId ?? null,
       ...(running && deliveryMode === "send" ? {} : { settings: override }) };
-    const fingerprint = JSON.stringify({ mode: deliveryMode, text, skills, model, effort, permission });
+    const fingerprint = JSON.stringify({ mode: deliveryMode, text, imageOnly, skills, model, effort, permission });
     const repeat = submitted?.fingerprint === fingerprint && sameAttachments(images, submitted.request.images);
     const id = repeat ? submitted.id : crypto.randomUUID();
     const submission = repeat ? submitted.request : request;
-    const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, images, skills, status: deliveryMode === "queue" ? "queued" : "sending" };
+    const preview: PendingMessage = { id, version: 0, mode: deliveryMode, text, imageOnly, images, skills, status: deliveryMode === "queue" ? "queued" : "sending" };
     const originalDraft = compose;
     await act(deliveryMode === "queue" ? "enqueue" : "send", async () => {
       if (deliveryMode === "send") gameDelivery({ id, taskId, state: "sending" });

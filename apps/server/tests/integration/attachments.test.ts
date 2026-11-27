@@ -80,8 +80,9 @@ test("queue stores references, preserves edits and retry identity, and hydrates 
   const c = new MessageController(f.db, { assertWritable() {}, canStart() { return false; }, settings() { return {}; },
     changed() {}, start() {}, async steer() { return "delivered"; } }, f.storage, new NodeIdentifierGenerator(), { now: Date.now, every: () => () => {} });
   t.after(() => c.close());
-  const req = { clientMessageId: randomUUID(), mode: "queue" as const, text: "Inspect", images: [image], expectedRunId: null };
+  const req = { clientMessageId: randomUUID(), mode: "queue" as const, text: "See the attached image(s).", imageOnly: true as const, images: [image], expectedRunId: null };
   const first = c.submit("one", req).messages[0];
+  assert.equal(first.imageOnly, true);
   assert.equal(first.images, undefined); assert.equal(first.attachments?.length, 1);
   assert(!JSON.stringify(f.db.readMessageState("one")).includes(image.data));
   assert.deepEqual(c.submit("one", req).messages[0], first);
@@ -90,9 +91,10 @@ test("queue stores references, preserves edits and retry identity, and hydrates 
   assert.deepEqual(edit.images, [image]);
   assert.equal(c.snapshot("one").messages[0].images, undefined);
   assert.throws(() => c.action("one", first.id, { action: "save", token, version: 1, text: "Bad", images: [{ ...image, data: "AAAA" }] }), /Invalid image/);
-  assert.equal(c.snapshot("one").messages[0].text, "Inspect");
+  assert.equal(c.snapshot("one").messages[0].text, req.text);
   c.action("one", first.id, { action: "save", token, version: 1, text: "No image", images: [] });
   assert.equal(c.snapshot("one").messages[0].attachments, undefined);
+  assert.equal(c.snapshot("one").messages[0].imageOnly, undefined);
   assert.throws(() => c.submit("one", { ...req, text: "Different" }), /different content/);
 });
 

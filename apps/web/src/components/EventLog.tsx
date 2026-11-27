@@ -197,7 +197,7 @@ const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageL
       const meta = p.queued === true ? "queued" : p.injected === true ? "injected" : undefined;
       const selected = SelectedSkillsSchema.safeParse(p.skills);
       const attachments = AttachmentSchema.array().safeParse(p.attachments);
-      return <UserBubble text={text} meta={meta} skills={selected.success ? selected.data : undefined}
+      return <UserBubble text={text} imageOnly={p.imageOnly === true} meta={meta} skills={selected.success ? selected.data : undefined}
         attachments={attachments.success ? attachments.data : undefined} onImageLoad={onImageLoad} />;
     }
     // The user's answer to an AskUserQuestion → render as a user bubble.
@@ -604,7 +604,7 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
       data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
       {row.type === "working" ? <div className="mb-3 py-2"><WorkingLabel /></div> : row.type === "delivery" ?
         <div role="status" aria-label="Pending message">
-          <UserBubble text={row.message.text} skills={row.message.skills} attachments={row.message.attachments} images={row.message.images} onImageLoad={followBottom} />
+          <UserBubble text={row.message.text} imageOnly={row.message.imageOnly} skills={row.message.skills} attachments={row.message.attachments} images={row.message.images} onImageLoad={followBottom} />
           {delivery && <MessageDelivery {...delivery} message={row.message} />}
         </div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)}>

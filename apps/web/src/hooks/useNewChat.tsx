@@ -1,4 +1,4 @@
-import { sameAttachments } from "../images";
+import { composePrompt, sameAttachments } from "../images";
 import { gameDelivery } from "../games/play-events";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import type { AgentKind, InputAttachment, PendingMessage, Permission, TaskState } from "@palmagent/shared";
@@ -128,10 +128,10 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     if (busy) return;
     setError("");
     if (!saved && !repos.some(repo => repo.id === repoId)) { setError("Choose a Space first."); return; }
-    const text = prompt.trim() || (skills.length ? "Use the selected skill." : att.images.length ? att.images.some(image => image.file) ? "See the attached file(s)." : att.images.some(image => image.video) ? "See the attached media." : "See the attached image(s)." : "");
+    const { text, imageOnly } = composePrompt(prompt, att.images, !!skills.length);
     if (!saved && !text) return;
     const next: Submission = saved ?? { draft: prompt, status: "sending", request: {
-      clientRequestId: crypto.randomUUID(), repoId, agent, prompt: text, permission,
+      clientRequestId: crypto.randomUUID(), repoId, agent, prompt: text, imageOnly, permission,
       ...(skills.length ? { skills } : {}), ...(att.images.length ? { images: att.images } : {}),
       ...(model !== DEFAULT_OPTION ? { model } : {}), ...(effort !== DEFAULT_OPTION ? { effort } : {}),
       ...(isGit && isolate ? { isolate: true } : {}),
@@ -179,7 +179,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
 
   const preview = submission ?? accepted;
   const message: PendingMessage | undefined = preview ? { id: preview.request.clientRequestId, version: 0, mode: "send",
-    text: preview.request.prompt, images: preview.request.images, skills: preview.request.skills,
+    text: preview.request.prompt, imageOnly: preview.request.imageOnly, images: preview.request.images, skills: preview.request.skills,
     status: preview.status, error: preview.error } : undefined;
   const delivery: DeliveryControls = { messages: message ? [message] : [], paused: false, disabled: busy, resumeDisabled: true,
     onDelete: () => {

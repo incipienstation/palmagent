@@ -145,7 +145,7 @@ export class MessagePolicy {
     } else if (action.action === "renew") entry.editingUntil = now + EDIT_MS;
     else {
       if (action.action === "save") {
-        entry.text = action.text; entry.attachments = attachments; delete entry.images;
+        entry.text = action.text; entry.imageOnly = action.imageOnly; entry.attachments = attachments; delete entry.images;
         entry.skills = action.skills; entry.version++;
       }
       delete entry.editToken; delete entry.editingUntil;

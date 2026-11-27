@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 import { previewSource, attachmentExpired } from "../image-source";
 import { Maximize } from "lucide-react";
 import { ImageViewerContent } from "./ImageViewerContent";
@@ -16,18 +17,20 @@ function rememberDimensions(src: string, width: number, height: number) {
   if (dimensionCache.size > 256) dimensionCache.delete(dimensionCache.keys().next().value!);
 }
 
-export function ImagePreview({ src = "", alt = "", title, width, height, onLoad }: {
-  src?: string; alt?: string; title?: string; width?: number; height?: number; onLoad?: () => void;
+type PreviewLayout = "inline" | "single" | "tile";
+
+export function ImagePreview({ src = "", alt = "", title, width, height, onLoad, layout = "inline" }: {
+  layout?: PreviewLayout; src?: string; alt?: string; title?: string; width?: number; height?: number; onLoad?: () => void;
 }) {
   const taskId = useContext(ImageTaskContext);
   const linked = useContext(ImageLinkContext);
   const resolved = previewSource(src, taskId);
   const dimensions = width && height ? { width, height } : dimensionCache.get(resolved);
-  return <Preview key={resolved} src={resolved} alt={alt} title={title} dimensions={dimensions} onLoad={onLoad} linked={linked} />;
+  return <Preview key={resolved} src={resolved} alt={alt} title={title} dimensions={dimensions} onLoad={onLoad} linked={linked} layout={layout} />;
 }
 
-function Preview({ src, alt, title, dimensions, onLoad, linked }: {
-  src: string; alt: string; title?: string; dimensions?: { width: number; height: number }; onLoad?: () => void; linked: boolean;
+function Preview({ src, alt, title, dimensions, onLoad, linked, layout }: {
+  src: string; alt: string; title?: string; dimensions?: { width: number; height: number }; onLoad?: () => void; linked: boolean; layout: PreviewLayout;
 }) {
   const [failed, setFailed] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -54,12 +57,15 @@ function Preview({ src, alt, title, dimensions, onLoad, linked }: {
       rememberDimensions(src, img.naturalWidth, img.naturalHeight);
       onLoad?.();
     }} onError={() => { setFailed(true); onLoad?.(); }}
-    className="max-h-96 max-w-full rounded-lg object-contain" />;
+    className={cn("rounded-lg", layout === "tile" ? "size-full object-cover" : "max-h-96 max-w-full object-contain", layout !== "inline" && "rounded-2xl")} />;
   // A linked Markdown image keeps its existing link without nesting buttons.
   if (linked) return image;
   return <Dialog>
     <DialogTrigger asChild>
-      <Button type="button" variant="ghost" className="relative my-2 h-auto max-w-full cursor-zoom-in p-0" aria-label={`Enlarge image: ${label}`}>
+      <Button type="button" variant="ghost" className={cn("relative h-auto max-w-full cursor-zoom-in p-0",
+        layout === "inline" ? "my-2" : "border-0",
+        layout === "tile" && "aspect-square w-full",
+      )} aria-label={`Enlarge image: ${label}`}>
         {image}
         <span aria-hidden="true" className="pointer-events-none absolute top-1 right-1 rounded-md bg-muted p-1.5"><Maximize /></span>
       </Button>

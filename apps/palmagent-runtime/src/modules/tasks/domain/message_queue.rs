@@ -134,6 +134,7 @@ pub enum Action<'a> {
         version: i64,
         token: &'a str,
         text: String,
+        image_only: Option<bool>,
         attachments: Option<Value>,
         skills: Option<Value>,
     },
@@ -541,6 +542,7 @@ impl Queue {
             }
             Action::Save {
                 text,
+                image_only,
                 attachments,
                 skills,
                 ..
@@ -548,7 +550,11 @@ impl Queue {
                 message.text = text;
                 message.version += 1;
                 message.payload.remove("images");
-                for (key, value) in [("attachments", attachments), ("skills", skills)] {
+                for (key, value) in [
+                    ("attachments", attachments),
+                    ("skills", skills),
+                    ("imageOnly", image_only.map(Value::Bool)),
+                ] {
                     if let Some(value) = value {
                         message.payload.insert(key.into(), value);
                     } else {

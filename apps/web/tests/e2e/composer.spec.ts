@@ -198,6 +198,7 @@ for (const route of ["new"]) test(`image-only submission and failed-send draft r
   await action.click();
   const payload = (await request).postDataJSON();
   expect(payload.images).toHaveLength(1);
+  expect(payload.imageOnly).toBe(true);
   if (route === "new") await page.getByRole("button", { name: "Edit message", exact: true }).click();
   await expect(action).toBeEnabled();
   await expect(page.getByAltText("attachment 1")).toBeVisible();

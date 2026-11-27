@@ -303,14 +303,14 @@ export class TaskService implements PrStatusSink {
           return;
         }
         this.applySettings(task, message.settings?.model, message.settings?.effort, message.settings?.permission);
-        this.emitSynthetic(task, { subtype: "followup", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
+        this.emitSynthetic(task, { subtype: "followup", text: message.text, imageOnly: message.imageOnly, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
         void this.execution.run(task, message.text, task.sessionId, images, message.id, message.skills);
       },
       steer: async (id, message) => {
         const task = this.getTask(id), handle = this.supervisor.get(id);
         if (task.sessionControl?.owner === "shared") return this.sendShared(task, message.text, this.attachments.load(id, message.attachments) ?? message.images, message.id, message.skills);
         if (task.status !== "running" || this.stopping.has(id) || !handle?.send) return "rejected";
-        this.emitSynthetic(task, { subtype: "steer", text: message.text, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
+        this.emitSynthetic(task, { subtype: "steer", text: message.text, imageOnly: message.imageOnly, messageId: message.id, images: message.attachments?.length ?? message.images?.length, attachments: message.attachments, skills: message.skills });
         try {
           const skills = await this.resolveSkills({ taskId: id }, message.skills);
           if (this.supervisor.get(id) !== handle || task.status !== "running") return "rejected";
@@ -660,9 +660,9 @@ export class TaskService implements PrStatusSink {
             error: { message: control.stoppedHook.message } };
         }
         if (event.kind === "status") {
-          const payload = normalized.payload as { messageId?: string; attachments?: unknown; images?: number };
+          const payload = normalized.payload as { messageId?: string; attachments?: unknown; images?: number; imageOnly?: true };
           const message = payload.messageId && this.messages.state(id).messages.find(message => message.id === payload.messageId);
-          if (message && message.attachments?.length) { payload.attachments = message.attachments; payload.images = message.attachments.length; }
+          if (message && message.attachments?.length) { payload.attachments = message.attachments; payload.images = message.attachments.length; payload.imageOnly = message.imageOnly; }
         }
         return [{ key, event: normalized }, ...output.images.map((image, index) => ({ key: `${key}/image/${index}`, event: { ...normalized, kind: "output_image" as const, payload: toolImagePayload(image, event) } }))];
       });
@@ -895,7 +895,7 @@ export class TaskService implements PrStatusSink {
     // task view renders it from the live stream, not just the inbox snapshot —
     // otherwise opening a fresh task before its snapshot lands shows no prompt.
     const nImages = images?.length ?? 0;
-    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, skills, attachments, images: nImages || undefined, ...(req.clientRequestId ? { messageId: req.clientRequestId } : {}) });
+    this.emitSynthetic(task, { subtype: "dispatch", text: req.prompt, imageOnly: req.imageOnly, skills, attachments, images: nImages || undefined, ...(req.clientRequestId ? { messageId: req.clientRequestId } : {}) });
     void this.execution.run(task, req.prompt, undefined, images, undefined, skills); // new session
     return task;
   }

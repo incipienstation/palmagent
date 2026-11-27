@@ -234,7 +234,7 @@ test.describe("image caching with the real service worker", () => {
 
 
 for (const viewport of [{ width: 360, height: 780 }]) {
-  test(`sent attachments remain viewable after replay at ${viewport.width}px`, async ({ page }) => {
+  test(`a four-photo message keeps its grid and opens the selected image after replay at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const taskId = "t-idle-rich", id = "93db3f15-c90f-40b4-a28c-b0fd573a6d9f";
     const path = `/api/tasks/${taskId}/attachments/${id}`;
@@ -244,16 +244,26 @@ for (const viewport of [{ width: 360, height: 780 }]) {
     const replay = async () => {
       await send(page, taskId, { type: "tasks", tasks: [], historyThrough: 0 });
       await send(page, taskId, { type: "event", event: { taskId, agent: "codex", ts: 1, kind: "status",
-        payload: { subtype: "followup", text: "Please inspect this image", images: 1,
-          attachments: [{ id, mediaType: "image/png", size: png.length }] } } }, 1);
+        payload: { subtype: "followup", text: "See the attached image(s).", imageOnly: true, images: 4,
+          attachments: Array.from({ length: 4 }, () => ({ id, mediaType: "image/png", size: png.length })) } } }, 1);
     };
     await replay();
-    const preview = page.getByRole("button", { name: "Enlarge image: Attached image 1" });
+    const message = page.getByRole("group", { name: "Your message" }).filter({ has: page.getByAltText("Attached image 4") });
+    const tiles = message.getByRole("button", { name: /Enlarge image/ });
+    await expect(tiles).toHaveCount(4);
+    await expect(message).not.toContainText("See the attached image(s).");
+    const [first, second, third, fourth] = await tiles.evaluateAll(nodes => nodes.map(el => {
+      const { x, y } = el.getBoundingClientRect(); return { x, y };
+    }));
+    expect(first.y).toBe(second.y); expect(third.y).toBe(fourth.y);
+    expect(first.x).toBe(third.x); expect(second.x).toBe(fourth.x);
+    expect(second.x).toBeGreaterThan(first.x); expect(third.y).toBeGreaterThan(first.y);
+    const preview = tiles.nth(3);
     await expect(preview).toBeVisible();
     await expect(preview.locator("img")).toHaveAttribute("src", path);
     await expect.poll(() => preview.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(512);
     await preview.click();
-    await expectImageDownload(page, page.getByRole("dialog", { name: "Attached image 1", exact: true }), "image.png");
+    await expectImageDownload(page, page.getByRole("dialog", { name: "Attached image 4", exact: true }), "image.png");
     await page.keyboard.press("Escape");
     await page.reload();
     await expect.poll(() => page.evaluate(id => (window as unknown as { hasScopedStream(id: string): boolean }).hasScopedStream(id), taskId)).toBe(true);
