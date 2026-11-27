@@ -98,7 +98,7 @@ test("terminal REST rejects cross-origin and arbitrary cwd requests, and retries
     config: { cookieName: "session", repoRoots: [], staticDir: "", keepAliveMs: 15_000 },
   }));
   const headers = { origin: "https://app.example.com", "content-type": "application/json", cookie: "session=valid" };
-  const body = { target: { repoId: "repo" }, requestId: randomUUID(), cols: 80, rows: 24 };
+  const body = { target: { repoId: "repo" }, agent: "claude", requestId: randomUUID(), cols: 80, rows: 24 };
   try {
     assert.equal((await app.request("/api/terminals", { method: "POST", body: JSON.stringify(body), headers: { ...headers, origin: "https://other.example.com" } })).status, 403);
     assert.equal((await app.request("/api/terminals", { method: "POST", body: JSON.stringify({ ...body, cwd: f.directory }), headers })).status, 400);
@@ -112,6 +112,10 @@ test("terminal REST rejects cross-origin and arbitrary cwd requests, and retries
       assert.equal(value.terminal.initialCwd, f.cwd);
       assert.equal(value.terminal.release, undefined);
     }
+    assert.equal(f.store.get(id)?.agent, "claude");
+    assert.equal(terminals.getPublic(id).title, "Claude Code");
+    const shellRetry = await app.request("/api/terminals", { method: "POST", body: JSON.stringify({ ...body, agent: undefined }), headers });
+    assert.equal(shellRetry.status, 409);
     assert.equal(launches, 1);
     assert.equal((await app.request("/api/terminals/" + id + "/attach-ticket", { method: "POST", headers })).status, 200);
     assert.equal((await app.request("/api/terminals/" + id + "/terminate", { method: "POST", headers })).status, 200);

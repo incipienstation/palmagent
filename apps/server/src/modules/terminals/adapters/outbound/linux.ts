@@ -16,13 +16,13 @@ export const linuxShell: ShellResolver = {
     if (!/^[A-Za-z0-9_]+$/.test(marker)) throw new Error("Invalid diagnostic marker");
     return `command printf '\\n%s%s\\n' '${marker.slice(0, 15)}' '${marker.slice(15)}'\r`;
   },
-  resolve() {
+  resolve(agent) {
     const user = userInfo();
     const executable = user.shell && existsSync(user.shell) ? user.shell : "/bin/sh";
     // Service-only credentials are not copied into interactive shell environments.
     const env: Record<string, string> = { HOME: user.homedir, USER: user.username, LOGNAME: user.username,
       PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin", TERM: "xterm-256color", LANG: process.env.LANG ?? "C.UTF-8" };
-    return { executable, args: ["-l"], env };
+    return { executable, args: agent === "claude" ? ["-l", "-c", "exec claude"] : ["-l"], env };
   },
 };
 export const ptyDriver: TerminalDriver = {

@@ -21,6 +21,7 @@ export const terminalHelp = `Usage: palmagent terminal <command> [options]
 Options:
   --data-dir <path>   Installation state directory
   --request-id <id>   Idempotent creation request UUID
+  --agent claude      Start interactive Claude Code in a new terminal
   --title <name>     Terminal title
   --help            Show this help
 
@@ -31,11 +32,12 @@ export async function terminalCommand(args: string[], environment: { resolveData
   const { resolveDataDir, loadConfig } = environment;
   const { values, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
     "data-dir": { type: "string" }, task: { type: "string" }, repo: { type: "string" }, title: { type: "string" },
-    "request-id": { type: "string" }, help: { type: "boolean", short: "h" },
+    agent: { type: "string" }, "request-id": { type: "string" }, help: { type: "boolean", short: "h" },
   } });
   if (values.help) { console.log(terminalHelp); return; }
   const [action, id] = positionals;
   if (positionals.length > 2 || !["diagnose", "list", "create", "attach", "rename", "terminate"].includes(action)) throw new Error(terminalHelp);
+  if (values.agent !== undefined && (action !== "create" || values.agent !== "claude")) throw new Error(terminalHelp);
   const directory = resolveDataDir(values["data-dir"]);
   // Respect a custom application database's local control socket location.
   const cfg = loadConfig({ dataDir: directory, requireInstalled: true });
@@ -90,7 +92,7 @@ export async function terminalCommand(args: string[], environment: { resolveData
   if (action === "create") {
     if (id || Boolean(values.task) === Boolean(values.repo)) throw new Error(terminalHelp);
     method = "POST"; body = { target: values.task ? { taskId: values.task } : { repoId: values.repo },
-      requestId: values["request-id"] ?? randomUUID(), title: values.title, cols: 80, rows: 24 };
+      requestId: values["request-id"] ?? randomUUID(), title: values.title, agent: values.agent, cols: 80, rows: 24 };
   } else if (action === "rename" || action === "terminate") {
     TerminalId.parse(id); route += "/" + id + (action === "terminate" ? "/terminate" : "");
     method = action === "rename" ? "PATCH" : "POST"; body = action === "rename" ? { title: values.title } : {};

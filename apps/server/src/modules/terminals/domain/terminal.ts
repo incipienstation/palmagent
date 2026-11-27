@@ -1,6 +1,7 @@
 import type { TerminalSession } from "@palmagent/shared/terminals";
 
 export interface TerminalRecord extends TerminalSession {
+  agent?: "claude";
   diagnostic?: boolean; diagnosticCleanupFailed?: boolean;
   requestId: string; release: string; node: string; directory: string;
   cols: number; rows: number; pid?: number; identity?: string;

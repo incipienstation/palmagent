@@ -17,12 +17,20 @@ the identified session. Do not end or kill the current CLI automatically.
    ranges; shared-server capabilities are negotiated by dispatch itself.
    This skill needs an existing instance; do not install, update, or reconfigure one
    merely to make dispatch available.
-2. Identify the current provider, exact native session ID, and original working
+2. If the current Claude Code shell exposes `PALMAGENT_TERMINAL_ID`, look up that
+   exact ID with `palmagent terminal list` for the bound installation. When it is
+   running, direct the user to **Terminals** and its listed title in the matching
+   Space or Task. **Type here** controls the same Claude run. Report the terminal
+   ID and stop here for live continuation. If the ID cannot be verified, continue
+   with native session identification. For future sessions, installations whose
+   `palmagent terminal create --help` lists `--agent claude` can start Claude from
+   **Terminal actions → Start Claude Code**.
+3. Identify the current provider, exact native session ID, and original working
    directory. Codex exposes `CODEX_THREAD_ID`; Claude skill expansion supplies
    `${CLAUDE_SESSION_ID}`. Pass the ID explicitly when available. Never choose the
    newest transcript or another session by its title. If identity is unavailable,
    ask for the native session ID rather than guessing or scanning conversation text.
-3. Run the applicable command, preserving the session's provider-home environment:
+4. Run the applicable command, preserving the session's provider-home environment:
 
    ```bash
    palmagent session dispatch --agent codex --session-id "$CODEX_THREAD_ID" --cwd "<session-directory>"
@@ -33,7 +41,7 @@ the identified session. Do not end or kill the current CLI automatically.
    only when the exact active native CLI PID is known. For a non-default instance,
    pass `--data-dir "<instance-state-directory>"` using its known installation binding.
    Local and service provider homes must match; do not copy credentials to fix a mismatch.
-4. Report the returned task ID and connection result. When the command reports
+5. Report the returned task ID and connection result. When the command reports
    `Session connected`, follow-up is available in Palmagent without closing the terminal.
    Both clients share the existing session; Send now reaches its active turn.
    Closing either client does not transfer ownership. Do not tell the user to exit a connected CLI.
