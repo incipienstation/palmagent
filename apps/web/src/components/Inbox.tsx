@@ -5,6 +5,8 @@ import { Archive, Check, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Pl
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
+import { useStoredPreference } from "../hooks/useStoredPreference";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
 import { compareTasks } from "@/lib/task-order";
@@ -53,6 +55,23 @@ function needsResponse(task: TaskState): boolean {
   return needsTaskAttention(task.status) && (!control || control.owner === "palmagent"
     || control.owner === "shared" && control.connection === "connected");
 }
+type Grouping = "status" | "space";
+const groupingPreference = "pref:mobile-task-grouping";
+function readGrouping(): Grouping {
+  try { return localStorage.getItem(groupingPreference) === "space" ? "space" : "status"; }
+  catch { return "status"; }
+}
+
+const MOBILE_STATUS_ORDER = [
+  "Working", "Queued", "Local shell", "Live preview", "Reconnecting", "Sync issue",
+  "Failed", "Stopped", "Done", "Cancelled", "Archived",
+];
+
+function requestPreview(task: TaskState) {
+  if (!needsResponse(task)) return;
+  if (task.status === "awaiting_input") return task.pendingInput?.questions[0]?.question;
+  return task.pendingApproval?.reason?.trim() || task.pendingApproval?.tool;
+}
 // Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
 // a short date past a week so the dense list stays scannable.
 function relTime(ms: number): string {
@@ -68,19 +87,21 @@ function relTime(ms: number): string {
 }
 
 // A single quiet metadata line; provider and prompt remain in task details.
-function TaskMeta({ task, spaceLabel }: { task: TaskState; spaceLabel?: string }) {
+function TaskMeta({ task, spaceLabel, showState }: { task: TaskState; spaceLabel?: string; showState: boolean }) {
   const done = statusLabel(task.status, task.interrupted, task.sessionControl) === "Done";
   const state = done ? <span className="inline-flex shrink-0 items-center gap-1.5"><Check aria-hidden="true" className="size-3.5" />Done</span>
     : <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />;
+  const prs = task.prs?.length ? <PrChip prs={task.prs} subtle /> : null;
   const time = <time className="shrink-0" dateTime={new Date(task.lastActivityAt).toISOString()}>{relTime(task.lastActivityAt)}</time>;
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
       {spaceLabel ? <div className="flex w-full min-w-0 items-center gap-2">
-        {state}<span aria-hidden="true">·</span>
+        {showState && <>{state}<span aria-hidden="true">·</span></>}
         <span className="min-w-0 flex-1 truncate" title={spaceLabel}>{spaceLabel}</span>
+        {!showState && prs}
         {time}
       </div> : state}
-      {!!task.prs?.length && <>{!spaceLabel && <span aria-hidden="true">·</span>}<PrChip prs={task.prs} subtle /></>}
+      {showState && prs && <>{!spaceLabel && <span aria-hidden="true">·</span>}{prs}</>}
       {!spaceLabel && <><span aria-hidden="true">·</span>{time}</>}
     </div>
   );
@@ -109,11 +130,12 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
 }
 
 // One compact row treatment for every state; attention stays explicit in metadata.
-const TaskRow = memo(function TaskRow({ task, showSpace = false }: { task: TaskState; showSpace?: boolean }) {
+const TaskRow = memo(function TaskRow({ task, showSpace, hideState, preview }: { task: TaskState; showSpace: boolean; hideState: boolean; preview: boolean }) {
   const repos = useContext(ReposContext);
   const repo = showSpace ? repos.get(task.repoId) : undefined;
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const spaceLabel = showSpace ? [qualifier, repo?.name ?? "Unavailable Space"].filter(Boolean).join(" · ") : undefined;
+  const summary = preview ? requestPreview(task) : undefined;
   const pending = useTaskMutations().get(task.taskId)?.pending;
   const canArchive = !pending && !isActiveTaskStatus(task.status) && task.status !== "archived"
     && (!task.sessionControl || task.sessionControl.owner === "palmagent"
@@ -129,7 +151,8 @@ const TaskRow = memo(function TaskRow({ task, showSpace = false }: { task: TaskS
           onClick={(e) => navIfInRow(e, task.taskId)}
         >
           <CardHeadline task={task} />
-          <TaskMeta task={task} spaceLabel={spaceLabel} />
+          {summary && <div className="mt-0.5 line-clamp-2 break-words pr-8 text-sm">{summary}</div>}
+          <TaskMeta task={task} spaceLabel={spaceLabel} showState={!hideState} />
         </button>
         <div className="absolute top-2 right-1">
           <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} lifecycle={
@@ -141,18 +164,21 @@ const TaskRow = memo(function TaskRow({ task, showSpace = false }: { task: TaskS
   );
 });
 
-function TaskGroup({ label, accessibleName = label, description, tasks, showSpace = false, actions }: {
+function TaskGroup({ label, accessibleName = label, description, tasks, showSpace = false, attention = false, hideState = false, preview = false, actions }: {
   label: string;
   accessibleName?: string;
   description?: string;
   tasks: TaskState[];
   showSpace?: boolean;
+  attention?: boolean;
+  hideState?: boolean;
+  preview?: boolean;
   actions?: ReactNode;
 }) {
   if (!tasks.length) return null;
   return <section aria-label={accessibleName} className="mt-3 overflow-clip border-y bg-card md:mx-4 md:rounded-2xl md:border-x">
     <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b bg-muted py-1 pr-2 pl-4">
-      {showSpace && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
+      {attention && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
       <div className="min-w-0 flex-1">
         <h2 className="flex items-center gap-1.5 text-sm font-medium text-strong">
           <span className="truncate">{label}</span>
@@ -163,18 +189,18 @@ function TaskGroup({ label, accessibleName = label, description, tasks, showSpac
       {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
     </div>
     <div className="divide-y divide-border/60">
-      {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} />)}
+      {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} hideState={hideState} preview={preview} />)}
     </div>
   </section>;
 }
 
-function SpaceTaskGroup({ repoId, tasks }: { repoId: string; tasks: TaskState[] }) {
+function SpaceTaskGroup({ repoId, tasks, preview }: { repoId: string; tasks: TaskState[]; preview: boolean }) {
   const repos = useContext(ReposContext);
   const repo = repos.get(repoId);
   const name = repo?.name ?? "Unavailable Space";
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const label = qualifier ? `${name} · ${qualifier}` : name;
-  return <TaskGroup label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks}
+  return <TaskGroup label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks} preview={preview}
     actions={repo && <>
       <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
         onClick={() => navigate(spacePath(repoId))}><FolderOpen /></Button>
@@ -246,6 +272,9 @@ export const InboxView = memo(function InboxView({
 
   const space = repoId ? repos.get(repoId) : undefined;
   const scopeKey = repoId ?? "all";
+  const [grouping, setGrouping] = useStoredPreference(groupingPreference, readGrouping);
+  const mobileHome = !repoId && !desktop;
+  const mode = repoId ? "scoped" : desktop ? "desktop" : grouping;
   const [query, setQuery] = useActionState(`inbox:${scopeKey}:query`, "");
   const [directory, setDirectory] = useActionState(`inbox:${scopeKey}:directory`, "all");
   const [statusFilter, setStatusFilter] = useActionState<TaskFilter>(`inbox:${scopeKey}:status`, "all");
@@ -262,26 +291,32 @@ export const InboxView = memo(function InboxView({
     && (statusFilter === "all" || (statusFilter === "local" ? task.sessionControl && (task.sessionControl.owner === "local" || task.sessionControl.owner === "returning") : task.status === statusFilter))
     && (!search || `${taskTitle(task)} ${task.prompt} ${repos.get(task.repoId)?.name ?? ""}`.toLocaleLowerCase().includes(search)));
   const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
-  const byStatus = new Map<InboxStatus, TaskState[]>();
-  for (const t of filtered) {
-    const group = t.sessionControl && (t.sessionControl.owner === "local" || t.sessionControl.owner === "returning") ? "local" : t.status;
-    const arr = byStatus.get(group) ?? [];
-    arr.push(t);
-    byStatus.set(group, arr);
-  }
-  // Preserve status groups and filters, with stable pins first in each group.
-  for (const arr of byStatus.values()) arr.sort(compareTasks);
-
-  const attentionTasks = repoId ? [] : filtered.filter(needsResponse).sort(compareTasks);
-  const bySpace = new Map<string, TaskState[]>();
+  const groups = new Map<string, TaskState[]>();
+  const attentionTasks: TaskState[] = [];
   for (const task of filtered) {
-    if (!repoId && needsResponse(task)) continue;
-    const group = bySpace.get(task.repoId) ?? [];
+    if ((mode === "desktop" || mode === "status") && needsResponse(task)) {
+      attentionTasks.push(task);
+      continue;
+    }
+    let key = task.repoId;
+    if (mode === "status") key = statusLabel(task.status, task.interrupted, task.sessionControl);
+    if (mode === "scoped") key = GROUP_ORDER[taskPriority(task)];
+    const group = groups.get(key) ?? [];
     group.push(task);
-    bySpace.set(task.repoId, group);
+    groups.set(key, group);
   }
-  for (const group of bySpace.values()) group.sort((a, b) =>
-    a.pinnedAt !== undefined || b.pinnedAt !== undefined ? compareTasks(a, b) : taskPriority(a) - taskPriority(b) || compareTasks(a, b));
+  attentionTasks.sort(compareTasks);
+  for (const group of groups.values()) {
+    group.sort((a, b) => {
+      if (mode === "space") {
+        const priority = Number(needsResponse(b)) - Number(needsResponse(a));
+        if (priority) return priority;
+      }
+      if ((mode === "desktop" || mode === "space") && a.pinnedAt === undefined && b.pinnedAt === undefined)
+        return taskPriority(a) - taskPriority(b) || compareTasks(a, b);
+      return compareTasks(a, b);
+    });
+  }
   // Establish the order from the full snapshot, not search/filter results. Keep
   // live updates from moving a Space under a pointer; new Spaces append.
   const [spaceOrder, setSpaceOrder] = useActionState<string[]>("inbox:space-order", []);
@@ -291,7 +326,8 @@ export const InboxView = memo(function InboxView({
     const added = ids.filter(id => !spaceOrder.includes(id));
     if (added.length) setSpaceOrder([...spaceOrder, ...added]);
   }, [tasks, repoId, loading, spaceOrder, setSpaceOrder]);
-  const spaceGroups = [...bySpace].sort(([a], [b]) => spaceOrder.indexOf(a) - spaceOrder.indexOf(b));
+  const groupOrder: readonly string[] = mode === "status" ? MOBILE_STATUS_ORDER : mode === "scoped" ? GROUP_ORDER : spaceOrder;
+  const orderedGroups = [...groups].sort(([a], [b]) => groupOrder.indexOf(a) - groupOrder.indexOf(b));
 
   const isEmpty = !loading && filtered.length === 0;
   const selectedName = space?.name ?? "Space";
@@ -302,6 +338,11 @@ export const InboxView = memo(function InboxView({
     <ReposContext.Provider value={repos}>
       <AppShell wide>
         <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")} conn={conn}>
+          {mobileHome && <ToggleGroup type="single" aria-label="Group tasks by" className="w-auto shrink-0" value={grouping}
+            onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
+            <ToggleGroupItem value="status" className="min-w-11">Status</ToggleGroupItem>
+            <ToggleGroupItem value="space" className="min-w-11">Space</ToggleGroupItem>
+          </ToggleGroup>}
           {!loading && <TaskFilters {...filters} />}
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
@@ -314,7 +355,7 @@ export const InboxView = memo(function InboxView({
               disabled={!!repoId && (!space || reposLoading)}><Plus /></Button>
           } />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${mode}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
           <div data-testid="inbox-content" className="pb-4">
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
@@ -331,15 +372,16 @@ export const InboxView = memo(function InboxView({
                 subtitle={search ? "Try another title or part of a prompt in this scope." : "Start a task and track it here."}
                 action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : undefined}
               />
-            ) : !repoId ? (
-              <>
-                <TaskGroup label="Needs you" tasks={attentionTasks} showSpace />
-                {spaceGroups.map(([id, group]) => <SpaceTaskGroup key={id} repoId={id} tasks={group} />)}
-              </>
             ) : (
-              GROUP_ORDER.filter(status => byStatus.has(status)).map((status) => (
-                <TaskGroup key={status} label={statusSection(status)} tasks={byStatus.get(status) ?? []} />
-              ))
+              <>
+                <TaskGroup label="Needs you" tasks={attentionTasks} showSpace attention preview={mobileHome} />
+                {orderedGroups.map(([key, group]) => {
+                  if (mode === "space" || mode === "desktop")
+                    return <SpaceTaskGroup key={key} repoId={key} tasks={group} preview={mobileHome} />;
+                  return <TaskGroup key={key} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
+                    tasks={group} showSpace={mobileHome} hideState={mobileHome} />;
+                })}
+              </>
             )}
           </div>
         </PullToRefresh>

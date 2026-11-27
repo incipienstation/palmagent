@@ -260,6 +260,7 @@ test("desktop search stays above the list and resizing preserves the same query 
 test("Space groups separate same-name Spaces and retain tasks from disconnected Spaces", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await setup(page, "/", fixtureTasks.map(task => ({ ...task, status: "running" })));
+  await page.getByRole("radio", { name: "Space", exact: true }).click();
   for (const qualifier of ["customer-experience", "experiments"]) {
     const group = page.getByRole("region", { name: new RegExp(`Palmagent.*${qualifier}.*tasks`) });
     await expect(group).toBeVisible();

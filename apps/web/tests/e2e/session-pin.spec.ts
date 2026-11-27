@@ -68,9 +68,14 @@ test("pins keep creation order within their Space group and respect search and S
   await page.goto("/");
   await request.patch("/api/tasks/t-idle-interrupted/pin", { data: { pinned: true } });
   await request.patch(path, { data: { pinned: true } });
+  await page.getByRole("radio", { name: "Space", exact: true }).click();
   const done = page.getByRole("region", { name: "sample-app tasks", exact: true });
-  await expect(done.getByRole("button", { name: /^Actions for / }).nth(0)).toHaveAccessibleName("Actions for Interrupted across a deploy");
-  await expect(done.getByRole("button", { name: /^Actions for / }).nth(1)).toHaveAccessibleName(`Actions for ${title}`);
+  const rows = done.getByRole("button", { name: /^Actions for / });
+  await expect(rows.first()).toHaveAccessibleName("Actions for Scaffold a new settings screen");
+  const pinnedRows = done.locator("[data-swipe-surface]").filter({ has: page.getByRole("img", { name: "Pinned" }) });
+  await expect(pinnedRows).toHaveCount(2);
+  await expect(pinnedRows.nth(0)).toContainText(otherTitle);
+  await expect(pinnedRows.nth(1)).toContainText(title);
   await page.getByRole("button", { name: "Open navigation" }).click();
   const pinned = page.getByRole("region", { name: "Pinned", exact: true });
   await expect(pinned.locator("[data-pinned-task] > button[draggable]").nth(0)).toHaveText("Interrupted across a deploy");

@@ -78,6 +78,7 @@ test("Space headers hand off as the list scrolls and each Space retains its read
     title: `Reading position ${index}`, repoId: index % 2 ? "repo-app" : "repo-notes", prs: [], branch: undefined, worktreePath: undefined }));
   await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: list })}\n\n` }));
   await page.goto("/");
+  await page.getByRole("radio", { name: "Space", exact: true }).click();
   const pane = inboxViewport(page);
   const groups = page.getByTestId("inbox-content").getByRole("region");
   await expect(groups).toHaveCount(2);
@@ -94,6 +95,10 @@ test("Space headers hand off as the list scrolls and each Space retains its read
   await expect.poll(async () => (await secondHeader.boundingBox())!.y).toBeCloseTo(pinnedTop, 0);
   await groups.last().getByRole("button", { name: /^New task in/ }).click({ trial: true });
   await pane.evaluate(el => { el.scrollTop = 600; });
+  await page.getByRole("radio", { name: "Status", exact: true }).click();
+  await expect.poll(() => pane.evaluate(el => el.scrollTop)).toBe(0);
+  await page.getByRole("radio", { name: "Space", exact: true }).click();
+  await expect.poll(() => pane.evaluate(el => el.scrollTop)).toBe(600);
   await page.getByRole("button", { name: "Open Spaces" }).click();
   await page.getByRole("region", { name: "Spaces list" }).getByRole("button", { name: /sample-app/ }).click();
   await expect.poll(() => inboxViewport(page).evaluate(el => el.scrollTop)).toBe(0);

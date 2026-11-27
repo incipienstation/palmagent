@@ -31,6 +31,7 @@ test.describe("inbox", () => {
     await filterStatus(page, "Needs approval");
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_approval").length);
     await page.getByRole("button", { name: "Clear status filter" }).click();
+    await page.getByRole("radio", { name: "Space", exact: true }).click();
     await expect(group.getByText("Wire the web QA harness", { exact: true })).toBeVisible();
   });
 
@@ -73,12 +74,12 @@ test.describe("inbox", () => {
 
 });
 
-test("response requests move between Needs you and their Space once as work resumes", async ({ page }) => {
+test("response requests move between Needs you and Working once as work resumes", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
   const content = page.getByTestId("inbox-content");
   const attention = content.getByRole("region", { name: "Needs you", exact: true });
-  const group = content.getByRole("region", { name: "notes tasks", exact: true });
+  const group = content.getByRole("region", { name: "Working", exact: true });
   await expect(group).toBeVisible();
   const request = { ...tasks[0], taskId: "new-request", repoId: "repo-notes", title: "Choose a release target" };
   await send(page, { type: "tasks", tasks: [...tasks, request] });
@@ -105,9 +106,8 @@ test("local and disconnected requests keep their real control state outside Need
     { ...tasks[0], taskId: "disconnected-request", title: "Disconnected request", sessionControl: { ...control, owner: "shared", connection: "reconnecting" } },
   ] });
   await expect(page.getByRole("region", { name: "Needs you", exact: true })).toHaveCount(0);
-  const group = page.getByRole("region", { name: "sample-app tasks", exact: true });
-  await expect(group.getByText("Local shell", { exact: true })).toBeVisible();
-  await expect(group.getByText("Reconnecting", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Local shell", exact: true })).toContainText("Local request");
+  await expect(page.getByRole("region", { name: "Reconnecting", exact: true })).toContainText("Disconnected request");
   await send(page, { type: "tasks", tasks: [
     { ...tasks[0], taskId: "disconnected-request", title: "Reconnected request", sessionControl: { ...control, owner: "shared", connection: "connected" } },
   ] });
@@ -143,14 +143,21 @@ for (const width of [320]) test(`attention rows keep Space context, search and n
   const search = page.getByRole("searchbox", { name: "Search tasks" });
   await search.fill("Scaffold");
   await expect(attention.locator("[data-swipe-surface]")).toHaveCount(1);
-  const match = attention.locator("[data-swipe-surface]");
+  await expect(attention).toContainText(tasks[0].pendingInput!.questions[0].question);
+  await page.getByRole("radio", { name: "Space", exact: true }).click();
+  await expect(search).toHaveValue("Scaffold");
+  await expect(attention).toHaveCount(0);
+  const match = page.getByTestId("inbox-content").locator("[data-swipe-surface]");
+  await expect(match).toHaveCount(1);
+  await expect(match).toContainText("Needs answer");
   await match.focus();
   await expect(match).toBeFocused();
   await match.press("Enter");
   await expect(page).toHaveURL(/#\/task\/t-input$/);
   await page.goBack();
   await expect(search).toHaveValue("Scaffold");
-  await expect(attention.locator("[data-swipe-surface]")).toHaveCount(1);
+  await expect(page.getByRole("radio", { name: "Space", exact: true })).toBeChecked();
+  await expect(match).toHaveCount(1);
 });
 
 test("one filter entry keeps zero-result statuses keyboard reachable", async ({ page }) => {
