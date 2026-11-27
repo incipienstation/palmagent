@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useContextCompaction } from "../hooks/useContextCompaction";
 import { sideChatCommand, useSideChat } from "../hooks/useSideChat";
 import { SideChat } from "./SideChat";
@@ -98,6 +99,11 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     canCancel, canArchive, startEdit, endEdit, send, queueAction, cancel, resume, answer, approve,
   } = useTaskComposer(taskId, task);
   const compaction = useContextCompaction(task, confirmedQueue, busy || !!edit, () => setCompose(current => current.trim() === "/compact" ? "" : current));
+  const compactionLabel = compaction.running
+    ? activity.stopping ? "Stopping compaction" : status === "queued" ? "Waiting to compact context" : "Compacting context"
+    : activity.kind === "compact" ? activity.label : undefined;
+  const cardOwnsAction = awaiting && (activity.kind === "approve" || activity.kind === "deny")
+    || answering && (activity.kind === "answer" || activity.kind === "skipQuestion");
   const submit = () => {
     if (!edit && compose.trim() === "/compact") { compaction.request("command"); return; }
     const command = !edit && task?.agent === "codex" && sideChatCommand(compose);
@@ -179,7 +185,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
 
       <div className="flex min-h-0 flex-1 flex-col">
         {localOwner && <Alert className="mx-3 my-2 w-auto">{task?.sessionControl?.error ?? (task?.sessionControl?.owner === "returning" ? "Live preview of saved messages. Keep working in your local CLI, or close it to continue here." : "This session is controlled in a local shell. Use dispatch there to preview new messages here.")}</Alert>}
-        {task?.sessionControl?.owner === "shared" && task.sessionControl.connection !== "connected" && <Alert className="mx-3 my-2 w-auto">Reconnecting to your Codex session. Your draft is saved.{task.sessionControl.error && <p>{task.sessionControl.error}</p>}</Alert>}
+        {task?.sessionControl?.owner === "shared" && task.sessionControl.connection !== "connected" && <Alert className="mx-3 my-2 w-auto"><Pending>Reconnecting to your Codex session. Your draft is saved.</Pending>{task.sessionControl.error && <p>{task.sessionControl.error}</p>}</Alert>}
 
         <EventLog taskId={existingId} log={log} transcript={transcript} live={running && !compaction.running} blocked={status === "awaiting_input" || status === "awaiting_approval"} history={history}
           empty={creating ? <p className="text-center font-sans text-lg text-muted-foreground">What should we work on?</p> : undefined}
@@ -190,28 +196,26 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             keyboard-safe (interactive-widget=resizes-content). */}
         <div ref={toastObstacle} className="relative flex shrink-0 flex-col gap-2 bg-background/95 px-3 pt-2.5 pb-[calc(10px+var(--safe-bottom))] backdrop-blur-md">
           <MessageRetryStatus scope={creating ? "dispatch" : taskId} />
-          <div className="pointer-events-none absolute inset-x-3 top-0 h-4 overflow-hidden" aria-live="polite">
-            {(compaction.running || activity.label && !isSendingAction(activity.kind)) &&
-              <p role="status" className="truncate text-xs leading-4 text-muted-foreground">{activity.label ?? (status === "queued" ? "Waiting to compact context…" : "Compacting context…")}</p>}
-          </div>
+          {activity.label && !isSendingAction(activity.kind) && !compactionLabel && !cardOwnsAction &&
+            <p role="status" className="text-xs text-muted-foreground"><Pending>{activity.label}</Pending></p>}
           {compaction.error && !creating && <Alert className="flex items-center gap-2" role="alert">
             <span className="min-w-0 flex-1 break-words text-sm">{compaction.error}</span>
             <Button variant="ghost" size="sm" disabled={!!compaction.unavailable} onClick={compaction.retry}>Retry</Button>
           </Alert>}
           {creating && newChat.notices}
-          {creating ? newChat.workspace : task && <TaskStatusline key={taskId} task={task} triggerRef={statuslineTrigger} compacting={compaction.running} compactReason={compaction.unavailable} onCompact={() => compaction.request("statusline")} />}
+          {creating ? newChat.workspace : task && <TaskStatusline key={taskId} task={task} triggerRef={statuslineTrigger} compactionLabel={compactionLabel} compactReason={compaction.unavailable} onCompact={() => compaction.request("statusline")} />}
           {answering && task?.pendingInput && (
             <QuestionCard
               key={`${taskId}:${task.pendingInput.requestId}`}
               checkpointKey={`${taskId}:${task.pendingInput.requestId}`}
               questions={task.pendingInput.questions}
-              busy={busy}
+              busy={busy} action={activity.kind}
               onSubmit={(answers, skip) => answer({ requestId: task.pendingInput!.requestId, answers }, !!skip)}
             />
           )}
 
           {awaiting && (
-            <ApprovalCard request={task?.pendingApproval} busy={busy} onDecision={decision => void approve(decision)} />
+            <ApprovalCard request={task?.pendingApproval} busy={busy} action={activity.kind} onDecision={decision => void approve(decision)} />
           )}
 
           {displayedQueue && <QueuePanel queue={displayedQueue} pending={activity.preview} disabled={busy || localOwner || !!edit} resumeDisabled={resumeDisabled}
@@ -226,7 +230,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             onChange={edit ? setEditText : setCompose} busy={busy} disabled={!composeMode && !edit && !compaction.running} attachments={att}
             placeholder={placeholder}
             onStop={primaryAction === "stop" ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
-            action="Send now" settingsReadOnly={settingsReadOnly}
+            stopLabel={compaction.running ? "Stop compaction" : "Stop"} action="Send now" settingsReadOnly={settingsReadOnly}
             onSend={submit} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length && !att.images.length))}
             commandActive={!edit && (compose.trim() === "/compact" || task?.agent === "codex" && !!sideChatCommand(compose))}
             header={edit && <div className="flex w-full items-center gap-2">

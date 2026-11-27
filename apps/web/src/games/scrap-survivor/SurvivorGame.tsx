@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { Pause, Play, Wrench, Shield, Crosshair, Clock3, ArrowRight } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
@@ -42,7 +43,7 @@ export function SurvivorGame({ onExit, ...options }: GameSessionOptions & { onEx
         <MovementJoystick disabled={stopped} onMove={movePointer} />
         {(!ready || reason || restart || inspecting || hud.hangar || hud.choices.length > 0 || hud.rewards.length > 0 || hud.hull <= 0 || hud.won) && <div className="survivor-overlay absolute inset-0 flex overflow-y-auto p-3" data-vaul-no-drag>
           <div className="my-auto flex w-full flex-col gap-3 text-center">
-            {error ? <><div className="survivor-panel-art"><RobotArt /></div><strong>The game could not load.</strong><Button onClick={retry}>Retry game</Button></> : !ready ? <><div className="survivor-panel-art"><RobotArt /></div><p role="status">Loading the scrapyard…</p></>
+            {error ? <><div className="survivor-panel-art"><RobotArt /></div><strong>The game could not load.</strong><Button onClick={retry}>Retry game</Button></> : !ready ? <><div className="survivor-panel-art"><RobotArt /></div><p role="status"><Pending>Loading the scrapyard…</Pending></p></>
               : restart ? <><div className="survivor-panel-art"><RobotArt /></div><p className="survivor-eyebrow">NEW RUN</p><strong>End this expedition?</strong><p className="survivor-caption">Recover {hud.retreatReward.parts} parts and {hud.retreatReward.mastery} mastery. This loadout will end; permanent upgrades stay.</p><Button onClick={retreat}>Return to hangar</Button><Button variant="outline" onClick={() => setRestart(false)}>Keep this run</Button></>
               : reason ? <><div className="survivor-panel-art"><RobotArt /></div><p className="survivor-eyebrow">EXPEDITION ON HOLD</p><strong>{reason}</strong>{!blockedReason && <Button onClick={resume}><Play data-icon="inline-start" />Continue playing</Button>}<Button variant="outline" onClick={onExit}>Exit game</Button></>
               : hud.hangar ? <Hangar profile={hud.profile} settled={hud.settled} report={hud.report} onResume={() => hangar(false)} onRetreat={() => setRestart(true)} onLaunch={launch} onPurchase={purchase} onRobot={pickRobot} onSector={pickSector} onStarter={pickStarter} />

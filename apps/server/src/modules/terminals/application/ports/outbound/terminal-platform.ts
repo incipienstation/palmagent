@@ -21,7 +21,7 @@ export interface TerminalSupervisor {
   terminate(record: TerminalRecord): Promise<void>;
   alive(record: TerminalRecord): Promise<boolean>;
 }
-export interface ShellResolver { resolve(): ShellProfile; diagnosticCommand?(marker: string): string }
+export interface ShellResolver { resolve(agent?: TerminalRecord["agent"]): ShellProfile; diagnosticCommand?(marker: string): string }
 export interface LocalChannel {
   send(value: unknown): boolean;
   close(): void;

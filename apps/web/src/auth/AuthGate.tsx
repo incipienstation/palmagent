@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import { useUpdateBlocker } from "../update-state";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -47,7 +48,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       />
     );
   }
-  if (phase === "loading") return <div className="h-app bg-background" />; // brief, avoids a flash
+  if (phase === "loading") return <div role="status" aria-label="Opening Palmagent" className="grid h-app place-items-center bg-background text-muted-foreground"><Spinner className="size-5" /></div>;
   if (phase === "unauthed") return <Login onAuthenticated={() => setPhase("authed")} />;
   return <>{children}</>;
 }

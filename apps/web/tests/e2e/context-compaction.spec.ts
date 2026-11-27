@@ -70,7 +70,7 @@ for (const width of [360]) test(`compaction menu and lifecycle preserve draft an
   const intro = page.getByRole("alertdialog", { name: "Compact context?" });
   await expect(intro).toContainText("summary may omit details");
   await intro.getByRole("button", { name: "Compact context", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Compacting context" })).toBeVisible();
   await expect(draft).toHaveValue("Keep my next question");
   await expect(draft).toBeEnabled();
   await draft.fill("Keep my next question, edited during compaction");
@@ -81,7 +81,7 @@ for (const width of [360]) test(`compaction menu and lifecycle preserve draft an
   await page.keyboard.press("Escape");
   await f.snapshot();
   await f.complete();
-  await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Compacting context" })).toHaveCount(0);
   await expect(draft).toHaveValue("Keep my next question, edited during compaction");
   expect(Math.abs(await viewport.evaluate(el => el.scrollTop) - before)).toBeLessThan(8);
   await expect(page.getByTestId("toast")).toHaveText("Context compacted");
@@ -108,7 +108,7 @@ test("slash command uses compaction and restores running state after reload", as
   expect(messages).toBe(0);
   await draft.fill("Draft during compaction");
   await page.reload(); await f.snapshot();
-  await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Compacting context" })).toBeVisible();
   await expect(draft).toHaveValue("Draft during compaction");
   await f.complete("Provider unavailable");
   await expect(page.getByTestId("toast")).toHaveCount(0);

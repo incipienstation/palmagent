@@ -41,6 +41,25 @@ Use Ctrl+] to detach from the CLI. Attach requires a TTY and claims input contro
 Add `--data-dir <directory>` for a non-default installation. Creation accepts a
 `--request-id <uuid>` for retries that must return the same shell.
 
+## Share a Claude Code terminal
+
+Choose a Space and select **Terminal actions → Start Claude Code**. From a Task,
+the same action starts Claude in that Task’s worktree. To start on the host PC,
+run the following commands with the ID returned by the first command.
+
+```sh
+palmagent terminal create --repo <space-id> --agent claude
+palmagent terminal attach <terminal-id>
+```
+
+Open the same **Claude Code** terminal on the phone and choose **Type here** to
+send prompts, answer Claude’s permission requests, or interrupt with Ctrl+C.
+The PC can stay connected and watch. To take input back on the PC, detach with
+Ctrl+] and attach again. **Terminal details** shows the attach command.
+Claude runs with the installation owner’s login environment and must be available
+as `claude` there. An existing standalone CLI still uses the session dispatch
+handoff. Starting a Claude terminal creates a new conversation.
+
 ## Installation and scope
 
 The public npm package remains **palmagent**. Its package dependencies supply

@@ -32,7 +32,7 @@ async function show(page: Page, report: AccountLimits, id = report.agent === "cl
 test("missing percentages stay unknown and expired windows await a fresh report", async ({ page }) => {
   const line = await show(page, { ...claude, fiveHour: { usedPercent: null, resetsAt: reset }, sevenDay: { usedPercent: 90, resetsAt: now - 1000 } });
   await expect(line.getByText("Unknown")).toBeVisible();
-  await expect(line.getByText("Refreshing")).toBeVisible();
+  await expect(line.getByText("Awaiting refresh")).toBeVisible();
   await line.getByRole("button", { name: "Usage details" }).click();
   await expect(page.getByRole("dialog").getByText("Reset time passed")).toBeVisible();
   await expect(line.getByText(/%/)).toHaveCount(0);

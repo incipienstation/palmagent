@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { beginTaskAction, useTaskActivity } from "../task-activity";
 import { useEffect, useRef, useState } from "react";
 import type { TaskState } from "@palmagent/shared";
@@ -10,7 +11,9 @@ import { toast } from "./ui/toaster";
 export function SessionHandoff({ task }: { task: TaskState }) {
   const taskOperations = useTaskOperations(task.taskId);
   const [command, setCommand] = useState("");
-  const busy = Boolean(useTaskActivity(task.taskId).label);
+  const activity = useTaskActivity(task.taskId);
+  const busy = Boolean(activity.kind);
+  const preparing = activity.kind === "handoff";
   const commandRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (command) commandRef.current?.scrollIntoView({ block: "nearest" });
@@ -35,7 +38,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
   if (shared) return <section aria-label="Shared session" className="flex flex-col gap-3">
     <h3 className="text-sm font-semibold">Connected Codex session</h3>
     <p className="text-sm text-muted-foreground">Continue this conversation here or in your terminal. Both use the same running session.</p>
-    <Button disabled={busy} onClick={prepare}>Show terminal command</Button>
+    <Button disabled={busy} onClick={prepare}>{preparing ? <Pending>Preparing command</Pending> : "Show terminal command"}</Button>
     {command && <div ref={commandRef} className="flex flex-col gap-3"><pre className="rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-all"><code>{command}</code></pre><Button variant="outline" onClick={copy}><Copy data-icon="inline-start" />Copy terminal command</Button></div>}
   </section>;
   return <section aria-label="Shell handoff" className="flex flex-col gap-3">
@@ -44,7 +47,7 @@ export function SessionHandoff({ task }: { task: TaskState }) {
       <div className="flex flex-col gap-3">
         {returning ? <Alert>{task.sessionControl?.error ?? "You can keep the local CLI open for read-only viewing. To continue here, close it and wait for synchronization to finish."}</Alert> : <>
           <p className="text-sm text-muted-foreground">Release this session before opening it locally. Palmagent follow-up stays paused until you use the dispatch skill in that CLI and close it. Open only one local writer.</p>
-          <Button disabled={busy || !["idle", "failed"].includes(task.status)} onClick={prepare}>{busy ? "Preparing resume command…" : local ? "Show resume command" : "Release to shell"}</Button>
+          <Button disabled={busy || !["idle", "failed"].includes(task.status)} onClick={prepare}>{preparing ? <Pending>Preparing resume command…</Pending> : local ? "Show resume command" : "Release to shell"}</Button>
           {!["idle", "failed"].includes(task.status) && <p className="text-sm">Stop the active turn and wait for it to finish first.</p>}
           {command && <div ref={commandRef} className="flex flex-col gap-3"><pre className="rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-all"><code>{command}</code></pre><Button variant="outline" onClick={copy}><Copy data-icon="inline-start" />Copy resume command</Button></div>}
         </>}

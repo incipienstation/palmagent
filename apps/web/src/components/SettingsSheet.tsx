@@ -1,3 +1,4 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { SecuritySettings } from "./SecuritySettings";
 import { TelemetrySettings } from "./TelemetrySettings";
 import { useBackLayer } from "../hooks/useBackLayer";
@@ -164,7 +165,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
             <div className="flex items-center justify-between gap-3">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button disabled={signingOut} variant="ghost" className="justify-start px-1">{signingOut ? "Signing out…" : "Sign out"}</Button>
+                  <Button disabled={signingOut} variant="ghost" className="justify-start px-1">{signingOut ? <Pending>Signing out…</Pending> : "Sign out"}</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -209,7 +210,7 @@ function SettingsGroup({ label, children }: { label: string; children: ReactNode
 function ConnLabel({ conn }: { conn: ConnState }) {
   const label = conn === "open" ? "Live" : conn === "connecting" ? "Connecting…" : "Reconnecting…";
   return <span role="status" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-    <span aria-hidden="true" className={cn("size-1.5 rounded-full", conn === "open" ? "bg-live" : conn === "reconnecting" ? "animate-pulse bg-amber" : "bg-faint")} />
+    {conn === "connecting" ? <Spinner className="size-3" /> : <span aria-hidden="true" className={cn("size-1.5 rounded-full", conn === "open" ? "bg-live" : conn === "reconnecting" ? "motion-safe:animate-pulse bg-amber" : "bg-faint")} />}
     {label}
   </span>;
 }

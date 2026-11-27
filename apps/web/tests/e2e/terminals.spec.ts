@@ -64,9 +64,10 @@ test("empty global terminals asks for a concrete Space before creation", async (
   await page.getByRole("option", { name: "sample-app", exact: true }).click();
   await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toBeEnabled();
   await assertViewportLocked(page);
-  await page.getByRole("button", { name: "Open terminal", exact: true }).click();
+  await page.getByRole("button", { name: "Terminal actions" }).click();
+  await page.getByRole("menuitem", { name: "Start Claude Code" }).click();
   await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0].target).toEqual({ repoId: "repo-app" });
+  expect(requests[0]).toMatchObject({ agent: "claude", target: { repoId: "repo-app" } });
 });
 
 for (const available of [true, false]) {

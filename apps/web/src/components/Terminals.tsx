@@ -1,8 +1,9 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { onTerminalsChanged } from "../terminal-events";
 import { TERMINAL_POLICY } from "@palmagent/shared/terminals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
-import type { TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
+import type { CreateTerminalRequest, TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
 import { useTerminalOperations } from "../hooks/remote-operations";
 import { useRepos } from "../hooks/useRepos";
 import { Button } from "./ui/button";
@@ -28,6 +29,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const [capabilities, setCapabilities] = useState<TerminalCapabilities>();
   const [selected, setSelected] = useUpdateState(scope + ":selected", "");
   const [busy, setBusy] = useState(false);
+  const retryList = useRef<() => void>(() => {});
   const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const revision = useRef(0);
@@ -43,9 +45,8 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   });
   const [renaming, setRenaming] = useUpdateState(scope + ":renaming", false);
   const [title, setTitle] = useUpdateState(scope + ":title", "");
-  const requestId = useRef<string | undefined>(undefined);
+  const creationRequests = useRef(new Map<string, string>());
   const generation = useRef(0);
-  useEffect(() => { requestId.current = undefined; }, [space, taskId, selected]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
     const currentRevision = ++revision.current;
@@ -58,14 +59,16 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   useEffect(() => {
     let live = true;
     let pending = false, dirty = false;
-    setLoaded(false);
+    setLoaded(false); setError("");
     const load = () => {
       if (!live) return;
       if (pending || document.visibilityState === "hidden") { dirty = true; return; }
       dirty = false;
       pending = true;
+      setError("");
       void refresh().catch(e => { if (live) setError(e.message); }).finally(() => { pending = false; if (dirty) load(); });
     };
+    retryList.current = load;
     const off = onTerminalsChanged(load);
     const foreground = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", foreground);
@@ -85,20 +88,23 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     catch (e) { setError(e instanceof Error ? e.message : "Terminal action failed"); }
     finally { setBusy(false); }
   }
-  const create = async () => {
+  const create = async (agent?: CreateTerminalRequest["agent"]) => {
     if (!canCreate || !target) return;
     setCreating(true);
     try {
       await act(async () => {
-        requestId.current ??= crypto.randomUUID();
+        const key = JSON.stringify([target, agent]);
+        const requestId = creationRequests.current.get(key) ?? crypto.randomUUID();
+        creationRequests.current.set(key, requestId);
         const currentGeneration = generation.current;
-        const result = await terminalOperations.create({ target, requestId: requestId.current, cols: 80, rows: 24 });
+        const result = await terminalOperations.create({ target, requestId, agent, cols: 80, rows: 24 });
+        creationRequests.current.delete(key);
         if (generation.current !== currentGeneration) return;
         // Publish the returned session and its selection together. An older
         // read must not remove it while the post-create refresh is in flight.
         revision.current++;
         setTerminals(current => [...current.filter(t => t.id !== result.terminal.id), result.terminal]);
-        setSelected(result.terminal.id); requestId.current = undefined;
+        setSelected(result.terminal.id);
       });
     } finally { setCreating(false); }
   };
@@ -123,14 +129,15 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     >
 
         <Select value={selected} onValueChange={value => { setSelected(value); setRenaming(false); }} disabled={!terminals.length || busy}>
-          <SelectTrigger className="min-w-0 flex-1 border-0 bg-transparent shadow-none" aria-label="Select terminal"><SelectValue placeholder={loaded ? "No terminal yet" : "Loading terminals…"} /></SelectTrigger>
+          <SelectTrigger className="min-w-0 flex-1 border-0 bg-transparent shadow-none" aria-label="Select terminal"><SelectValue placeholder={loaded ? "No terminal yet" : "Select terminal"} /></SelectTrigger>
           <SelectContent><SelectGroup>{terminals.map(t => <SelectItem key={t.id} value={t.id}>{t.title}{t.state !== "running" ? ` · ${terminalStateLabels[t.state]}` : ""}</SelectItem>)}</SelectGroup></SelectContent>
         </Select>
-        <Button variant="ghost" size="icon" className="shrink-0" aria-label="New terminal" disabled={!canCreate} onClick={() => void create()}><Plus /></Button>
+        <Button variant="ghost" size="icon" className="shrink-0" aria-label="New terminal" disabled={!canCreate} onClick={() => void create()}>{creating && !showCreate ? <Spinner /> : <Plus />}</Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="shrink-0" aria-label="Terminal actions" disabled={busy}><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
+              <DropdownMenuItem disabled={!canCreate} onSelect={() => void create("claude")}><TerminalIcon />Start Claude Code</DropdownMenuItem>
               {active && <DropdownMenuItem onSelect={() => { setTitle(active.title); setRenaming(true); }}><Pencil />Rename terminal</DropdownMenuItem>}
               {active?.state === "running" && <DropdownMenuItem onSelect={() => setReadOnly(!readOnly)}>{readOnly ? <Keyboard /> : <Eye />}{readOnly ? "Enable input" : "View read-only"}</DropdownMenuItem>}
               <DropdownMenuItem onSelect={() => setDetails(true)}><Info />Terminal details</DropdownMenuItem>
@@ -147,7 +154,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         <Input aria-label="Terminal name" value={title} onChange={e => setTitle(e.target.value)} maxLength={TERMINAL_POLICY.maxTitleLength} autoFocus />
         <Button size="icon-lg" aria-label="Save terminal name" disabled={busy || !title.trim()}><Check /></Button>
       </form>}
-      {(busy || !loaded) && <p role="status" className="text-xs text-muted-foreground">{busy ? creating ? "Creating terminal…" : "Updating terminal…" : "Loading terminals…"}</p>}
+      {busy && !creating && <p role="status" className="text-xs text-muted-foreground"><Pending>Updating terminal…</Pending></p>}
       {error && <Alert variant="destructive">{error}</Alert>}
       {active?.state === "starting" && active.startError && capabilities?.available && <Alert variant="destructive">{active.startError}</Alert>}
       {capabilities && !capabilities.available && <Alert>{capabilities.reason ?? "Terminals are unavailable on this platform."}</Alert>}
@@ -156,7 +163,9 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
       : <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="my-auto">
           <EmptyState icon={TerminalIcon}
-            title={active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? "Shell stopped unexpectedly" : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : creating ? "Creating terminal…" : !loaded ? error ? "Could not load terminals." : "Loading terminals…" : "Open a terminal"}
+            pending={(!loaded && !error) || active?.state === "closing" || (active?.state === "starting" && !active.startError)}
+            action={!loaded && error ? { label: "Retry terminals", onClick: () => retryList.current() } : undefined}
+            title={active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? "Shell stopped unexpectedly" : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : !loaded ? error ? "Could not load terminals." : "Loading terminals…" : "Open a terminal"}
             subtitle={stopped ? active?.startError ?? "Open a new terminal to continue." : !active && loaded ? target ? "Terminals keep running when you leave this screen." : "Choose a Space to get started." : undefined}
           >
             {showCreate && <>
@@ -165,7 +174,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
                 <SelectContent><SelectGroup>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>}
               <Button disabled={!canCreate} onClick={() => void create()}>
-                <Plus data-icon="inline-start" />{creating ? "Opening terminal…" : stopped ? "Open new terminal" : "Open terminal"}
+                {creating ? <Pending>Opening terminal…</Pending> : <><Plus data-icon="inline-start" />{stopped ? "Open new terminal" : "Open terminal"}</>}
               </Button>
             </>}
           </EmptyState>
@@ -174,7 +183,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     <Dialog open={details} onOpenChange={setDetails}>
       <DialogContent><DialogHeader><DialogTitle>Terminal details</DialogTitle>
         <DialogDescription>Leaving this screen keeps the shell and its commands running.</DialogDescription></DialogHeader>
-        <DialogBody>{spacePicker}<dl className="flex flex-col gap-2 text-sm">{active && <><dt className="text-muted-foreground">Started in</dt><dd className="break-all select-text">{active.initialCwd}</dd></>}</dl></DialogBody>
+        <DialogBody>{spacePicker}<dl className="flex flex-col gap-2 text-sm">{active && <><dt className="text-muted-foreground">Started in</dt><dd className="break-all select-text">{active.initialCwd}</dd><dt className="text-muted-foreground">Attach from host</dt><dd className="break-all select-text font-mono">palmagent terminal attach {active.id}</dd></>}</dl></DialogBody>
       </DialogContent>
     </Dialog>
     <AlertDialog open={confirm} onOpenChange={setConfirm}>

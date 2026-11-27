@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { ROUTINE_POLICY, routineRunReason } from "@palmagent/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRepos } from "../hooks/useRepos";
@@ -46,7 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError, DEFAULT_OPTION, DEFAULT_PERMISSION } from "../api";
 import { routineRunsQueryOptions } from "../client-queries";
-import { effortChoices, modelSelection, useAgentCatalog } from "../model-catalog";
+import { effortChoices, modelChoices, modelSelection, useAgentCatalog } from "../model-catalog";
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
@@ -112,9 +113,9 @@ function fmtNext(ms?: number): string {
   return fmtTime(ms);
 }
 
-function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete }: {
+function RoutineCard({ r, action, saving, stale, onToggle, onRun, onStop, onDelete }: {
   r: Routine;
-  busy: boolean;
+  action?: "run" | "stop" | "delete";
   saving: boolean;
   stale: boolean;
   onToggle: () => void;
@@ -122,6 +123,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
   onStop: () => void;
   onDelete: () => void;
 }) {
+  const busy = !!action;
   const [showHistory, setShowHistory] = useState(false);
   const runKind = r.kind === "script" ? "script" : "agent";
   const historyQuery = useQuery({ ...routineRunsQueryOptions(r.id, runKind), enabled: showHistory });
@@ -160,7 +162,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
             <span className="text-[12.5px] text-faint">{scheduleLabel(r)}</span>
           )}
           {r.preset !== "manual" && (
-            <span className="text-[12.5px] text-faint">{saving ? "Saving schedule…" : stale ? "Refresh to check schedule" : `next ${fmtNext(r.nextRunAt)}`}</span>
+            <span className="text-[12.5px] text-faint">{saving ? <Pending>Saving schedule…</Pending> : stale ? "Refresh to check schedule" : `next ${fmtNext(r.nextRunAt)}`}</span>
           )}
           {r.lastRunAt && (
             <span className="text-[12.5px] text-faint">last {fmtTime(r.lastRunAt)}</span>
@@ -181,7 +183,7 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
               <p>Couldn't load history. {historyError}</p>
               <Button variant="outline" disabled={historyLoading} onClick={() => void loadHistory()}>Retry history</Button>
             </Alert>}
-            {historyLoading && <span role="status" className="text-[12.5px] text-faint">Loading history…</span>}
+            {historyLoading && <span role="status" className="text-[12.5px] text-faint"><Pending>Loading history…</Pending></span>}
             {history !== null && (history.length === 0 ? (
               <span className="text-[12.5px] text-faint">No runs yet.</span>
             ) : (
@@ -220,9 +222,9 @@ function RoutineCard({ r, busy, saving, stale, onToggle, onRun, onStop, onDelete
           disabled={busy || saving || stale}
           onClick={onRun}
         >
-          <Play className="size-4" /> {busy ? "Requesting run…" : "Run now"}
+          {action === "run" ? <Pending>Requesting run…</Pending> : <><Play className="size-4" />Run now</>}
         </Button>
-        {r.kind === "script" && <Button variant="secondary" disabled={busy || saving || stale} onClick={onStop}>Stop script</Button>}
+        {r.kind === "script" && <Button variant="secondary" disabled={busy || saving || stale} onClick={onStop}>{action === "stop" ? <Pending>Stopping script…</Pending> : "Stop script"}</Button>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="icon" className="size-11 text-faint" aria-label="More">
@@ -334,7 +336,7 @@ export function RoutinesView() {
     }
   }
 
-  const loading = routines === null;
+  const loading = routines === null && refreshing;
   const isEmpty = routines !== null && routines.length === 0;
 
   return (
@@ -344,7 +346,7 @@ export function RoutinesView() {
         {(error || mutationError) && <Alert variant="destructive">{error || mutationError}</Alert>}
         {readError && <Alert variant="destructive"><p>{readError}</p><Button variant="outline" disabled={refreshing} onClick={() => void refresh()}>Retry routines</Button></Alert>}
         {repoError && <Alert variant="destructive"><p>{repoError}</p><Button variant="outline" disabled={reposRefreshing} onClick={() => void refreshRepos().catch(() => {})}>Retry Spaces</Button></Alert>}
-        {[...actions].some(([, action]) => action === "delete") && <p role="status" className="text-sm text-muted-foreground">Deleting routine…</p>}
+        {[...actions].some(([, action]) => action === "delete") && <p role="status" className="text-sm text-muted-foreground"><Pending>Deleting routine…</Pending></p>}
 
         {loading && (
           <>
@@ -366,7 +368,7 @@ export function RoutinesView() {
           <RoutineCard
             key={r.id}
             r={r}
-            busy={actions.has(r.id)} saving={saving.has(r.id)} stale={stale.has(r.id)}
+            action={actions.get(r.id)} saving={saving.has(r.id)} stale={stale.has(r.id)}
             onToggle={() => toggle(r)}
             onRun={() => void run(r.id)}
             onStop={() => void stop(r.id)}
@@ -404,7 +406,7 @@ export function RoutinesView() {
                 >
                   <SelectTrigger>
                     <SelectValue
-                      placeholder={repoList.length === 0 ? "no repos registered" : "select a repo"}
+                      placeholder={reposLoading ? <Pending>Loading Spaces</Pending> : repoList.length === 0 ? "no repos registered" : "select a repo"}
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -456,7 +458,7 @@ export function RoutinesView() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {catalog.models.map((m) => (
+                      {modelChoices(catalog, model).map((m) => (
                         <SelectItem key={m.value} value={m.value}>
                           {m.label}
                         </SelectItem>
@@ -589,8 +591,8 @@ export function RoutinesView() {
                 />
               </div>}
 
-              <Button type="submit" className="w-full" disabled={busy}>
-                {busy ? "Creating routine…" : "Create routine"}
+              <Button type="submit" className="w-full" disabled={busy || !repoId}>
+                {busy ? <Pending>Creating routine…</Pending> : "Create routine"}
               </Button>
             </fieldset></form>
           </Card>
@@ -598,7 +600,7 @@ export function RoutinesView() {
           // Only the EmptyState CTA shows when there are no routines yet, so
           // gate this bottom toggle on a non-empty list to avoid two
           // simultaneous "New routine" buttons.
-          !loading && !isEmpty && (
+          routines !== null && !isEmpty && (
             <Button variant="secondary" onClick={() => setShowForm(true)}>
               <Plus /> New routine
             </Button>
