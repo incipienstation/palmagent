@@ -14,17 +14,23 @@ Use the exact Node version in `.nvmrc`:
 node scripts/verify-local.mjs
 ```
 
-The verifier selects checks from the complete task diff, shares the PWA build, and keeps full logs
-in a private temporary directory. Unknown scope or unavailable history selects the full gate.
-`--plan` previews checks; `--base <remote/branch|full-sha>` overrides `origin/develop`.
-Named refs refresh even with `--plan`. Install dependencies and Chromium when selected checks need them.
+For ordinary PRs the default checks public content, diff integrity, and applicable backend architecture
+across the complete task diff. Exercise the changed behavior before pushing. Use the nearest test or
+direct inspection: check layout at the affected viewport, reproduce the server failure, or exercise
+recovery with existing data. Record the result in the PR. Keep local-only device, host, migration,
+and contract evidence required for the change.
 
-After a failure or interruption, use `--resume <previous-log-directory>` to reuse successful source
-checks with unchanged inputs and environment. Changed inputs invalidate reuse; build and artifact
-checks always rerun. Run without `--resume` for fresh evidence or changed external tools/services.
-Checks time out after 10 minutes (15 for browsers); override with `--timeout-seconds <seconds>`.
+Required CI runs the selected regression suites on the current PR head. For offline work or to
+investigate a CI failure, `--extended` runs the previous scope-selected suites locally.
+`--plan` lists the checks. Named bases refresh even for plans; use `--base <full-sha>` for an
+available offline base. Unavailable history selects the full local gate. Install dependencies and
+Chromium as needed.
 
-Add behavioral checks where selected lanes leave a gap. Required CI must pass on the current PR head.
+`--resume <previous-log-directory>` selects extended mode and reuses successful source checks with
+matching inputs and environment. Build and artifact checks rerun. Use a fresh run after external
+tool or service changes. Logs are private temporary files. Checks time out after 10 minutes
+(15 for browsers); override with `--timeout-seconds <seconds>`.
+
 Release candidates require the full [candidate policy](../release/references/automation.md#candidate-automation).
 CLI breaking changes also require accepted and rejected CLI/plugin pair checks under the
 [contract-change workflow](../release/references/channels-and-updates.md#changing-the-cli-plugin-contract).

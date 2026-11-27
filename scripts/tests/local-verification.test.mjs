@@ -74,8 +74,26 @@ test('named bases refresh before selection and failed refresh never trusts stale
   assert.deepEqual(localScope(cwd, '0'.repeat(40)).scope, full);
 });
 
+test('CLI plans focus ordinary PRs, retain architecture and restore broad checks on demand', t => {
+  const { cwd, git, write } = fixture(t);
+  write('scripts/verify-local.mjs', readFileSync(resolve('scripts/verify-local.mjs'), 'utf8'));
+  symlinkSync(resolve('scripts/lib'), join(cwd, 'scripts/lib'), 'dir');
+  git('add', '.'); git('commit', '-m', 'verifier');
+  const base = git('rev-parse', 'HEAD');
+  const plan = (...args) => execFileSync(process.execPath,
+    ['scripts/verify-local.mjs', '--plan', '--base', base, ...args], { cwd, encoding: 'utf8' });
+  write('apps/web/src/Inbox.tsx', 'changed');
+  assert.match(plan(), /^Checks: source-leaks, working-diff, staged-diff, committed-diff$/m);
+  for (const option of [['--extended'], ['--resume', 'earlier-run']]) {
+    assert.match(plan(...option), /^Checks: .*web-build, web-tests$/m);
+  }
+  write('apps/server/old.ts', 'backend');
+  assert.match(plan(), /^Checks: .*committed-diff, architecture$/m);
+  assert.match(plan('--base', '0'.repeat(40)), /^Checks: .*package-smoke$/m);
+});
+
 test('check selection deduplicates metadata, scope tests, and shared PWA builds', () => {
-  const docs = verificationSteps({ scope: none });
+  const docs = verificationSteps({ scope: none, paths: ['README.md'] }, { extended: true });
   assert(docs.every(step => step.command !== 'pnpm'));
   assert(docs.some(step => step.id === 'scope-tests'));
   const steps = verificationSteps({ scope: full, base: 'a'.repeat(40), head: 'b'.repeat(40) });
@@ -92,7 +110,7 @@ test('check selection deduplicates metadata, scope tests, and shared PWA builds'
 
 test('type and tooling selection remain independent in local verification', () => {
   for (const [types, tooling] of [[true, false], [false, true], [false, false]]) {
-    const steps = verificationSteps({ scope: { ...none, types, tooling, web: true } });
+    const steps = verificationSteps({ scope: { ...none, types, tooling, web: true }, paths: ['apps/web/src/app.ts'] }, { extended: true });
     assert.equal(steps.some(step => step.id === 'types'), types);
     assert.equal(steps.some(step => step.id === 'tooling'), tooling);
     assert.equal(steps.some(step => step.id === 'scope-tests'), !tooling);

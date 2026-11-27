@@ -121,11 +121,14 @@ pnpm dev
 ```
 
 To run the web app, start `pnpm web:dev` in another terminal. Run
-`node scripts/verify-local.mjs` to select checks for the complete change. For an interrupted or
-failed run, `--resume <previous-log-directory>` reuses successful source checks when source, Git
-state, installed dependency contents, and environment variables still match. Build and artifact checks rerun.
-Use a fresh run after external toolchain or service changes; resume does not replace current PR CI or release
-candidate acceptance.
+`node scripts/verify-local.mjs` for public-content, diff, and applicable backend architecture
+checks. Check the changed behavior with the closest test or a direct inspection, and record
+what you verified in the PR. CI runs the regression suites selected for the complete change.
+
+Use `--extended` for local regression testing and `--plan` to preview the selected checks.
+For offline work, pass `--base <full-commit-sha>` from local history. After an interrupted
+extended run, `--resume <previous-log-directory>` reuses successful source checks when
+inputs and environment match. Build and artifact checks rerun.
 
 ## Standalone distribution
 
