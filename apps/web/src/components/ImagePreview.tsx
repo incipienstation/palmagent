@@ -49,6 +49,10 @@ function Preview({ src, alt, title, dimensions, onLoad, linked, layout }: {
     <span>{expired ? "Image expired" : "Image unavailable"}: {label}</span>
     {src && !expired && !linked && <Button type="button" variant="outline" size="sm" onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Retry image</Button>}
   </span>;
+  // Size the trigger before lazy loading, including the height limit for tall photos.
+  const singleWidth = layout === "single" && dimensions
+    ? `min(${dimensions.width}px, calc(24rem * ${dimensions.width / dimensions.height}))`
+    : undefined;
   const image = <img key={attempt} src={src} alt={label} title={title} width={dimensions?.width} height={dimensions?.height}
     loading="lazy" decoding="async" referrerPolicy="no-referrer"
     onLoad={(event) => {
@@ -56,7 +60,10 @@ function Preview({ src, alt, title, dimensions, onLoad, linked, layout }: {
       rememberDimensions(src, img.naturalWidth, img.naturalHeight);
       onLoad?.();
     }} onError={() => { setFailed(true); onLoad?.(); }}
-    className={cn("rounded-lg", layout === "tile" ? "size-full object-cover" : "max-h-96 max-w-full object-contain", layout !== "inline" && "rounded-2xl", layout === "single" && "h-auto w-auto")} />;
+    className={cn(layout === "inline" ? "rounded-lg" : "rounded-2xl",
+      layout === "tile" ? "size-full object-cover" : "max-h-96 max-w-full object-contain",
+      layout === "single" && ["h-auto", singleWidth ? "w-full" : "w-auto"],
+    )} />;
   // A linked Markdown image keeps its existing link without nesting buttons.
   if (linked) return image;
   return <Dialog>
@@ -65,7 +72,7 @@ function Preview({ src, alt, title, dimensions, onLoad, linked, layout }: {
         layout === "inline" ? "my-2" : "overflow-hidden rounded-2xl border-0",
         layout === "single" && "block w-fit",
         layout === "tile" && "aspect-square w-full",
-      )} aria-label={`Enlarge image: ${label}`}>
+      )} style={{ width: singleWidth }} aria-label={`Enlarge image: ${label}`}>
         {image}
       </Button>
     </DialogTrigger>

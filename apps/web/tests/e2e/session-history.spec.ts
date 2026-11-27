@@ -420,7 +420,13 @@ test("loading an older attachment keeps the reader's visible message in place", 
     await expect.poll(() => requested).toBe(1);
     const before = (await anchor.boundingBox())!.y;
     release();
-    await expect.poll(() => page.getByRole("img", { name: "Attached image 1" }).evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(360);
+    const row = page.getByRole("group", { name: "Your message" }).filter({ hasText: "Review this image" });
+    const photo = row.getByRole("img", { name: "Attached image 1" });
+    await expect.poll(() => photo.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(360);
+    const bounds = (await photo.boundingBox())!;
+    const message = (await row.boundingBox())!;
+    expect(bounds.width / bounds.height).toBeCloseTo(360 / 780, 2);
+    expect(bounds.x + bounds.width).toBeCloseTo(message.x + message.width, 0);
     const after = (await anchor.boundingBox())!.y;
     expect(Math.abs(after - before)).toBeLessThanOrEqual(2);
   } finally {
