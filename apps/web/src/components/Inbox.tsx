@@ -177,7 +177,7 @@ function TaskGroup({ label, accessibleName = label, description, tasks, showSpac
   actions?: ReactNode;
 }) {
   if (!tasks.length) return null;
-  return <section aria-label={accessibleName} className="mt-3 overflow-clip border-y bg-card max-md:first:mt-0 md:mx-4 md:rounded-2xl md:border-x">
+  return <section aria-label={accessibleName} className="overflow-clip border-t bg-card last:border-b md:mx-4 md:rounded-2xl md:border">
     <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b bg-muted py-1 pr-2 pl-4">
       {attention && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
       <div className="min-w-0 flex-1">
@@ -376,7 +376,7 @@ export const InboxView = memo(function InboxView({
                 action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : undefined}
               />
             ) : (
-              <>
+              <div className="mt-3 flex flex-col max-md:first:mt-0 md:gap-3">
                 <TaskGroup label="Needs you" tasks={attentionTasks} showSpace attention preview={mobileHome} />
                 {orderedGroups.map(([key, group]) => {
                   if (mode === "space" || mode === "desktop")
@@ -384,7 +384,7 @@ export const InboxView = memo(function InboxView({
                   return <TaskGroup key={key} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
                     tasks={group} showSpace={mobileHome} hideState={mobileHome} />;
                 })}
-              </>
+              </div>
             )}
           </div>
         </PullToRefresh>
