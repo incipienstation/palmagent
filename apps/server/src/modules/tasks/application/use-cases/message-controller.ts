@@ -105,7 +105,7 @@ export class MessageController {
     this.host.validateSubmission?.(id, req);
     const canStart = req.mode !== "send" || !!policy.state.runId || this.host.canStart(id);
     policy.assertSubmission(req, canStart);
-    const message: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text,
+    const message: StoredMessage = { id: req.clientMessageId, version: 1, mode: req.mode, text: req.text, imageOnly: req.imageOnly,
       attachments: this.attachments.save(id, req.images), skills: req.skills,
       settings: { ...this.host.settings(id), ...req.settings }, status: "queued", fingerprint };
     const receipt = this.apply(id, { kind: "submit", message, canStart, expectedRunId: req.expectedRunId, hasSettings: !!req.settings && Object.keys(req.settings).length > 0 },

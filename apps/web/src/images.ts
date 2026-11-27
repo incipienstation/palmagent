@@ -25,6 +25,17 @@ export function sameAttachments(left: readonly InputAttachment[] = [], right: re
 const LONG_EDGE = 1568; // Claude's documented optimal max long edge
 const PASSTHROUGH_BYTES = 350_000; // below this (and within LONG_EDGE) keep the original bytes
 const JPEG_QUALITY = 0.8;
+// Agent requests need text even when the user sends just an attachment.
+export function composePrompt(draft: string, images: readonly InputAttachment[], hasSkills: boolean): { text: string; imageOnly?: true } {
+  const text = draft.trim();
+  if (text) return { text };
+  if (hasSkills) return { text: "Use the selected skill." };
+  if (!images.length) return { text: "" };
+  if (images.some(image => image.file)) return { text: "See the attached file(s)." };
+  if (images.some(image => image.video)) return { text: "See the attached media." };
+  return { text: "See the attached image(s).", imageOnly: true };
+}
+
 export const MAX_ATTACHMENTS = INPUT_IMAGE_POLICY.maxCount;
 
 const ACCEPTED = new Set<string>(IMAGE_MEDIA_TYPES);

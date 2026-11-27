@@ -227,14 +227,14 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
             placeholder={placeholder}
             onStop={primaryAction === "stop" ? () => void stopTaskTurn(taskId, confirmedQueue?.runId) : undefined} stopping={!!activity.stopping}
             action="Send now" settingsReadOnly={settingsReadOnly}
-            onSend={submit} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length))}
+            onSend={submit} sendDisabled={!!edit && (edit.expired || (!editText.trim() && !editSkills.length && !att.images.length))}
             commandActive={!edit && (compose.trim() === "/compact" || task?.agent === "codex" && !!sideChatCommand(compose))}
             header={edit && <div className="flex w-full items-center gap-2">
               <span className="text-sm" role="status">{edit.expired ? "Edit expired — draft preserved" : "Editing queued message"}</span>
               <Button type="button" variant="ghost" size="icon-lg" className="ml-auto shrink-0" aria-label="Cancel editing" disabled={busy} onClick={() => void endEdit(false)}><X /></Button>
             </div>}
             controls={edit
-              ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length)} onClick={() => void endEdit(true)}><Check /></Button>
+              ? <Button type="button" size="icon-lg" aria-label="Save queued message" disabled={busy || edit.expired || att.preparing || (!editText.trim() && !editSkills.length && !att.images.length)} onClick={() => void endEdit(true)}><Check /></Button>
               : primaryAction === "send" ? <SendControl mode={deliveryMode} onMode={setDeliveryMode} onSend={submit} disabled={busy}
                   sendDisabled={!composeMode || att.preparing || (!compose.trim() && att.images.length === 0 && !skills.length)} /> : undefined}
             description={deliveryMode === "queue" ? "Applies to this queued message." : "Applies to your next message while idle."}

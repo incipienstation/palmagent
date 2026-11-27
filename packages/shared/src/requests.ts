@@ -28,7 +28,7 @@ const images = z.array(InputAttachmentSchema).optional(); // decoded limits rema
 export const CreateRepoSchema = z.object({ path: required, name: text.optional(), defaultBaseRef: text.optional() });
 export const UpdateRepoSchema = z.object({ defaultBaseRef: text.trim().min(1).max(255) });
 export const CreateTaskSchema = z.object({
-  repoId: required, agent, prompt: text, skills: SelectedSkillsSchema, ...settings, title: text.optional(), images,
+  repoId: required, agent, prompt: text, imageOnly: z.literal(true).optional(), skills: SelectedSkillsSchema, ...settings, title: text.optional(), images,
   clientRequestId: z.string().uuid().optional(), // stable across creation retries
   isolate: z.boolean().optional(), // false/omitted runs in place; ignored for plain folders
 });

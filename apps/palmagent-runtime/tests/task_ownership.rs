@@ -199,6 +199,7 @@ fn existing_queue_retains_fifo_edit_deadline_and_attachment_references() {
                 version: 1,
                 token: "editor",
                 text: "late".into(),
+                image_only: None,
                 attachments: None,
                 skills: None,
             },
