@@ -13,12 +13,12 @@ const reset = now + 100 * 60_000;
 const claude: AccountLimits = {
   agent: "claude", state: "ready", checkedAt: now,
   fiveHour: { usedPercent: 28, resetsAt: reset }, sevenDay: { usedPercent: 62, resetsAt: now + 3 * 86400000 },
-  modelLimits: [{ name: "Fable", window: { usedPercent: 95, resetsAt: now + 86400000 } }], extraUsage: { usedPercent: 12 },
+  modelLimits: [{ name: "Fixture model", window: { usedPercent: 95, resetsAt: now + 86400000 } }], extraUsage: { usedPercent: 12 },
 };
 const codex: AccountLimits = {
   agent: "codex", state: "ready", checkedAt: now, buckets: [
     { id: "codex", name: "Codex", primary: { usedPercent: 21, windowMinutes: 10080, resetsAt: reset } },
-    { id: "spark", name: "Spark", primary: { usedPercent: 0, windowMinutes: 300, resetsAt: reset }, secondary: { usedPercent: 100, windowMinutes: 10080, resetsAt: now + 86400000 }, credits: { unlimited: false, balance: "12.5" } },
+    { id: "fixture-bucket", name: "Fixture bucket", primary: { usedPercent: 0, windowMinutes: 300, resetsAt: reset }, secondary: { usedPercent: 100, windowMinutes: 10080, resetsAt: now + 86400000 }, credits: { unlimited: false, balance: "12.5" } },
   ],
 };
 async function show(page: Page, report: AccountLimits, id = report.agent === "claude" ? "t-idle-rich" : "t-run-charts") {

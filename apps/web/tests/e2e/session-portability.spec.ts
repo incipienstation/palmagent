@@ -188,7 +188,7 @@ test("Send now remains available while a dispatched session is running locally",
 for (const running of [false, true]) test(`shared sessions can select next-turn model and effort while ${running ? "queueing" : "idle"}`, async ({ page }) => {
   await page.route("**/api/model-catalog?taskId=t-idle-rich", route => route.fulfill({ json: modelCatalog }));
   const queue = { revision: 1, paused: false, runId: running ? "native-turn" : null, messages: [] };
-  const task = { ...source, agent: "codex", status: running ? "running" : "idle", model: "gpt-6-astra", effort: "high", permission: "managed", messageQueue: queue,
+  const task = { ...source, agent: "codex", status: running ? "running" : "idle", model: "fixture-model-a", effort: "high", permission: "managed", messageQueue: queue,
     sessionControl: { owner: "shared", connection: "connected", home: "/provider", transcript: "/provider/session.jsonl", cursor: 0, prefixHash: "fixture" } };
   await installHistory(page, "assistant_text", { text: "Connected conversation" });
   await page.route("**/api/stream*", route => route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "tasks", tasks: [task] })}\n\n` }));
@@ -207,16 +207,16 @@ for (const running of [false, true]) test(`shared sessions can select next-turn 
     await page.getByRole("radio", { name: "Queue", exact: true }).click();
   }
   await page.getByRole("button", { name: "Configure task settings" }).click();
-  await page.getByRole("radio", { name: "gpt-5.5", exact: true }).click();
+  await page.getByRole("radio", { name: "fixture-model-g", exact: true }).click();
   await page.getByRole("combobox", { name: "Effort", exact: true }).click();
   await page.getByRole("option", { name: "low", exact: true }).click();
   await expect(page.getByText("Managed by the connected Codex session.", { exact: true })).toBeVisible();
   await expect(page.getByRole("radiogroup", { name: "Permission" })).toHaveCount(0);
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(input).toHaveValue("Keep my draft while choosing settings");
-  await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText("gpt-5.5");
+  await expect(page.getByRole("button", { name: "Configure task settings" })).toContainText("fixture-model-g");
   await page.getByRole("button", { name: running ? "Add to queue" : "Send now", exact: true }).click();
-  await expect.poll(() => submitted?.settings).toEqual({ model: "gpt-5.5", effort: "low" });
+  await expect.poll(() => submitted?.settings).toEqual({ model: "fixture-model-g", effort: "low" });
   expect(submitted.mode).toBe(running ? "queue" : "send");
   await assertViewportLocked(page);
 });

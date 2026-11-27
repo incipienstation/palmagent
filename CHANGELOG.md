@@ -1810,7 +1810,7 @@ An entry does not mean a version has been published.
 
 ### Removed
 
-- Retired GPT-5.4 and GPT-5.4 mini options are removed from model selectors.
+- Removed retired model options from model selectors.
   Saved form selections for these models fall back to default; task history is preserved.
 
 ## 0.1.0-alpha.28
