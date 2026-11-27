@@ -111,7 +111,7 @@ when supported for a separate disposable-shell HTTPS/WebSocket check. Do not wea
 verification to pass a check.
 Host-local requests to the public hostname do not prove off-host reachability; distinguish
 that result from an external probe or the user's successful browser connection.
-Only after HTTPS succeeds, run `<cli> passkey` to mint the short-lived enrollment link.
+After HTTPS succeeds, complete the selected [login methods](login-methods.md).
 A domain change changes passkey RP identity: preserve the old route until the new route is
 verified, explain device re-enrollment, and prepare a fresh link for the new origin.
 

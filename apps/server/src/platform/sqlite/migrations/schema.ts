@@ -113,12 +113,28 @@ export function migrateSchema(db: Database.Database) {
         expires_at INTEGER NOT NULL,
         label TEXT
       );
+      CREATE TABLE IF NOT EXISTS auth_policy (id INTEGER PRIMARY KEY CHECK(id = 1), epoch INTEGER NOT NULL);
+      INSERT OR IGNORE INTO auth_policy VALUES (1, 0);
+      CREATE TABLE IF NOT EXISTS auth_policy (
+        id INTEGER PRIMARY KEY CHECK(id = 1), epoch INTEGER NOT NULL
+      );
+      INSERT OR IGNORE INTO auth_policy (id, epoch) VALUES (1, 0);
+      CREATE TABLE IF NOT EXISTS auth_github (
+        slot TEXT PRIMARY KEY CHECK(slot IN ('active','pending')), binding_key TEXT NOT NULL,
+        client_id TEXT NOT NULL, client_secret TEXT NOT NULL, owner_id TEXT, login TEXT, expires_at INTEGER
+      );
       CREATE TABLE IF NOT EXISTS enroll_tokens (
         token TEXT PRIMARY KEY,
         expires_at INTEGER NOT NULL,
         used_at INTEGER
       );
     `);
+    db.transaction(() => {
+      const sessionCols = db.pragma("table_info(auth_sessions)") as { name: string }[];
+      if (!sessionCols.some(column => column.name === "login_method")) {
+        db.exec("ALTER TABLE auth_sessions ADD COLUMN login_method TEXT NOT NULL DEFAULT 'passkey'");
+      }
+    }).immediate();
     const enrollCols = (db.pragma("table_info(enroll_tokens)") as { name: string }[]).map(c => c.name);
     if (!enrollCols.includes("session_token")) db.transaction(() => {
       db.exec("ALTER TABLE enroll_tokens ADD COLUMN session_token TEXT");

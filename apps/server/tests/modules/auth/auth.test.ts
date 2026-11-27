@@ -9,15 +9,16 @@ function fixture() {
   const credentials = new Map<string, StoredCredential>();
   const sessions = new Map<string, { token: string; createdAt: number; expiresAt: number }>();
   const enrollments = new Map<string, { expiresAt: number; sessionToken?: string }>();
-  let next = 0, verified = true;
+  let next = 0, epoch = 0, verified = true;
   const repository: AuthRepository = {
     transaction(work) { const before = [new Map(credentials), new Map(sessions), new Map(enrollments)] as const;
       try { return work(); } catch (error) { credentials.clear(); sessions.clear(); enrollments.clear(); for (const [k,v] of before[0]) credentials.set(k,v); for (const [k,v] of before[1]) sessions.set(k,v); for (const [k,v] of before[2]) enrollments.set(k,v); throw error; } },
+    authEpoch: () => epoch,
     countCredentials: () => credentials.size, listCredentials: () => [...credentials.values()], getCredential: id => { const credential = credentials.get(id); return credential && { ...credential }; },
     insertCredential: credential => { credentials.set(credential.credentialId, credential); },
     bumpCredentialCounter: (id, counter, lastUsedAt) => { Object.assign(credentials.get(id)!, { counter, lastUsedAt }); },
     getSession: id => sessions.get(id), deleteSession: id => { sessions.delete(id); },
-    revokeSessions: () => { sessions.clear(); enrollments.clear(); },
+    revokeSessions: () => { epoch++; sessions.clear(); enrollments.clear(); },
     deleteCredential: id => credentials.delete(id),
     createSession: (token, createdAt, expiresAt) => { sessions.set(token, { token, createdAt, expiresAt }); },
     getEnrollToken: (token, now) => { const grant = enrollments.get(token); return grant && grant.expiresAt > now ? { sessionToken: grant.sessionToken } : undefined; },

@@ -70,7 +70,7 @@ export function createInstallationLifecycle(dependencies: InstallationDependenci
       );
       if (!cfg.supervisor) runtime.retireAutoUpdateTimer();
       if (configuration.preferences(cfg.dataDir).autoUpdate) await runtime.configureAutoUpdate(cfg);
-      feedback.info(`After the operator plugin verifies public HTTPS, run ${BRANDING.cliName} passkey to enroll the first device.`);
+      feedback.info(`After the operator plugin verifies public HTTPS, configure sign-in with ${BRANDING.cliName} passkey or ${BRANDING.cliName} auth.`);
     }
 
     feedback.step("done");

@@ -2,12 +2,13 @@ import type { StoredCredential } from "../../../domain/credential.js";
 
 export interface AuthRepository {
   transaction<T>(work: () => T): T;
+  authEpoch(): number;
   countCredentials(): number;
   getSession(token: string): { token: string; createdAt: number; expiresAt: number } | undefined;
   deleteSession(token: string): void;
-  revokeSessions(): void;
+  revokeSessions(method?: "github" | "passkey"): void;
   deleteCredential(credentialId: string): boolean;
-  createSession(token: string, createdAt: number, expiresAt: number, label?: string): void;
+  createSession(token: string, createdAt: number, expiresAt: number, label?: string, method?: "github" | "passkey"): void;
   getEnrollToken(token: string, now: number): { sessionToken?: string } | undefined;
   listCredentials(): StoredCredential[];
   consumeEnrollToken(token: string, now: number): boolean;

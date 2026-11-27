@@ -1,6 +1,6 @@
 # Authentication and access
 
-Palmagent is a single-owner application. Every registered passkey grants the same
+Palmagent is a single-owner application. Each registered login method grants the same
 access to conversations, agents, routines, and terminals. The terminal runs with
 the installation owner's OS permissions. Keep the host and its backups private.
 
@@ -19,8 +19,39 @@ leaves the authenticator through this protocol.
 
 Sessions expire at most 30 days after sign-in by default. Requests do not extend
 that lifetime. `AUTH_SESSION_TTL_MS` sets the maximum lifetime, including for
-sessions created by older versions. Expired sessions require a new passkey login.
+sessions created by older versions. Expired sessions require a new login.
 A successful login replaces the current browser's old session token.
+
+## GitHub sign-in
+
+Choose passkeys, GitHub, or both during installation. Each enabled method grants the
+same owner access, including terminals. A GitHub-only installation can enroll its first
+passkey later using host access. GitHub sign-in connects your installation directly
+to GitHub and needs no Palmagent cloud service.
+
+1. Run `palmagent auth status` on the installation host and copy its callback URL to
+   a dedicated [GitHub OAuth App](https://github.com/settings/developers).
+   Use the installation HTTPS origin for the homepage.
+2. Save the client secret in a private file on the host. Run
+   `palmagent auth github-prepare --client-id <id> --secret-file <private-file>`.
+   Open the returned private setup link within 15 minutes and verify your account on GitHub.
+3. Run `palmagent auth status`. Check the verified account handle and confirm its numeric
+   ID with `palmagent auth github-confirm --owner-id <id>`. Sign in from a fresh browser.
+   Repeat this flow to change the linked account or rotate the app credentials.
+   Pass `--data-dir <directory>` for a custom installation.
+
+The host stores the app secret in its private database. Browser verification alone grants
+no access during setup. On login the server checks the browser-bound request, exchanges
+the code using PKCE, and reads the authenticated user's stable GitHub ID. It requests no
+additional scopes and discards provider tokens after checking identity. The browser gets
+a normal Palmagent session. Signing out of GitHub does not end this local session.
+
+Use `palmagent auth remove-github` to unlink GitHub, or `palmagent auth remove-passkeys`
+to delete all registered passkeys. First verify the method you plan to keep. Removing
+a method ends its sessions and invalidates pending authentication and enrollment links.
+The host refuses to remove the last method. Use `palmagent auth logout-all` to end
+all sessions on a GitHub-only installation. If GitHub is unavailable, use an enrolled
+passkey or run `palmagent passkey` on the host to register one.
 
 ## Managing access
 

@@ -77,8 +77,8 @@ prerelease plugin tag does not change that preference; an unavailable Stable rel
 fall back to Preview.
 
 Ask **“Install Palmagent for example.com”**, using your domain. The plugin installs the service,
-configures HTTPS, and provides a single-use passkey enrollment link. Open it on your phone or
-desktop to register access, then choose a Space and start a task.
+configures HTTPS, and helps you set up passkeys, GitHub sign-in, or both. Once signed in,
+choose a Space and start a task. See [login setup](docs/SECURITY.md#github-sign-in).
 
 ## Before you expose Palmagent
 

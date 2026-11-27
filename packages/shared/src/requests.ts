@@ -110,6 +110,10 @@ export type AuthAction = z.infer<typeof AuthActionSchema>;
 export const ReauthenticationOptionsSchema = z.object({ action: AuthActionSchema });
 export const AuthorizationSchema = z.object({ authorization: required });
 export const RemovePasskeySchema = AuthorizationSchema.extend({ credentialId: required });
+export const GitHubLoginStartSchema = z.object({
+  setupKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
+  returnHash: z.string().max(2048).regex(/^#\/[^\r\n]*$/).optional(),
+});
 export const RegisterOptionsSchema = z.object({ token: text.optional(), authorization: text.optional() });
 
 // WebAuthn owns cryptographic/semantic verification. These schemas only ensure

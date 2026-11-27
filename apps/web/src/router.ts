@@ -18,6 +18,8 @@ export type Route =
   | { name: "task"; id: string }
   | { name: "routines" }
   | { name: "usage" }
+  | { name: "github-setup"; token: string }
+  | { name: "github-verified" | "github-failed" }
   | { name: "enroll"; token: string };
 
 function parse(hash: string): Route {
@@ -35,6 +37,9 @@ function parse(hash: string): Route {
   if (path === "/new") return { name: "new" };
   if (path === "/routines") return { name: "routines" };
   if (path === "/usage" || path === "/agents") return { name: "usage" };
+  if (path === "/github-verified" || path === "/github-failed") return { name: path === "/github-verified" ? "github-verified" : "github-failed" };
+  const setup = /^\/github-setup\/([A-Za-z0-9_-]{43})$/.exec(path);
+  if (setup) return { name: "github-setup", token: setup[1] };
   const e = /^\/enroll\/(.+)$/.exec(path);
   if (e) return { name: "enroll", token: decodeURIComponent(e[1]) };
   const m = /^\/task\/(.+)$/.exec(path);

@@ -94,7 +94,10 @@ test("Compact first loads 30 display records and retains the reader during prepe
   await expect.poll(() => requests.changes.length).toBeGreaterThan(0);
   pending.release();
   await expect(page.getByText("Loading earlier messages…", { exact: true })).toHaveCount(0);
-  await expect.poll(async () => Math.abs((await anchor.boundingBox())!.y - top)).toBeLessThanOrEqual(2);
+  await expect.poll(async () => {
+    const box = await anchor.boundingBox();
+    return box ? Math.abs(box.y - top) : Number.POSITIVE_INFINITY;
+  }).toBeLessThanOrEqual(2);
   await page.getByRole("button", { name: "Scroll to bottom", exact: true }).click();
   await expect(page.getByText("Live replacement arrived", { exact: true })).toBeVisible();
   await expect(page.locator('[data-message-key="199"]')).toHaveCount(1);

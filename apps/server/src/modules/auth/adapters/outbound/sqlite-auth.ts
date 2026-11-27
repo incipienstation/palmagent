@@ -20,6 +20,9 @@ function rowToCredential(r: CredentialRow): StoredCredential {
 
 export class SqliteAuth {
 constructor(private readonly db: Database.Database) {}
+  authEpoch(): number {
+    return (this.db.prepare("SELECT epoch FROM auth_policy WHERE id = 1").get() as { epoch: number }).epoch;
+  }
   transaction<T>(work: () => T): T { return this.db.transaction(work).immediate(); }
 insertCredential(c: StoredCredential) {
     this.db.prepare(
@@ -59,7 +62,12 @@ deleteCredential(credentialId: string): boolean {
     return this.db.prepare(`DELETE FROM webauthn_credentials WHERE credential_id = ?`).run(credentialId).changes > 0;
   }
 
-createSession(token: string, createdAt: number, expiresAt: number, label?: string) {
+createSession(token: string, createdAt: number, expiresAt: number, label?: string, method?: "github" | "passkey") {
+    if (method === "github") {
+      this.db.prepare("INSERT INTO auth_sessions (token, created_at, expires_at, label, login_method) VALUES (?, ?, ?, ?, 'github')")
+        .run(token, createdAt, expiresAt, label ?? null);
+      return;
+    }
     this.db.prepare(
       `INSERT INTO auth_sessions (token, created_at, expires_at, label) VALUES (?, ?, ?, ?)`,
     ).run(token, createdAt, expiresAt, label ?? null);
@@ -93,8 +101,14 @@ getEnrollToken(token: string, now: number): { sessionToken?: string } | undefine
     return row ? { sessionToken: row.session_token ?? undefined } : undefined;
   }
 
-revokeSessions(): void {
-    this.db.transaction(() => { this.db.exec("DELETE FROM auth_sessions; DELETE FROM enroll_tokens;"); }).immediate();
+revokeSessions(method?: "github" | "passkey"): void {
+    this.db.transaction(() => {
+      if (method) this.db.prepare("DELETE FROM auth_sessions WHERE login_method = ?").run(method);
+      else this.db.exec("DELETE FROM auth_sessions");
+      this.db.exec(`DELETE FROM enroll_tokens;
+        DELETE FROM auth_github WHERE slot = 'pending';
+        UPDATE auth_policy SET epoch = epoch + 1 WHERE id = 1;`);
+    }).immediate();
   }
 
 consumeEnrollToken(token: string, now: number): boolean {

@@ -1,3 +1,4 @@
+import type { GitHubLogin } from "./github-login.js";
 import type { AuthUseCases } from "../ports/inbound/auth-use-cases.js";
 import type { AuthStatus, AuthCredentials, IssuedToken } from "../../domain/session.js";
 import type { AuthAction } from "@palmagent/shared";
@@ -13,6 +14,7 @@ interface ChallengeEntry {
   kind: "reg" | "auth" | "reauth" | "grant";
   enrollToken?: string;
   sessionToken?: string;
+  epoch?: number;
   action?: AuthAction;
   credentialId?: string;
 }
@@ -20,12 +22,24 @@ interface ChallengeEntry {
 /** One logical owner. Passkey ceremonies and action grants are bounded and single-use. */
 export class AuthService implements AuthUseCases {
   private challenges = new Map<string, ChallengeEntry>();
-  private generation = 0;
-  constructor(private readonly db: AuthRepository, private readonly settings: AuthSettings, private readonly passkeys: Passkeys) {}
+  private get generation(): number { return this.db.authEpoch(); }
+  constructor(private readonly db: AuthRepository, private readonly settings: AuthSettings, private readonly passkeys: Passkeys, private readonly github?: GitHubLogin) {}
   get enabled(): boolean { return this.settings.authEnabled; }
   get origin(): string { return this.settings.authOrigin; }
   status(credentials: AuthCredentials): AuthStatus {
-    return { authenticated: this.verifySession(credentials.sessionToken), required: this.enabled, credentialCount: this.db.countCredentials() };
+    return { authenticated: this.verifySession(credentials.sessionToken), required: this.enabled, credentialCount: this.db.countCredentials(), githubEnabled: this.enabled && Boolean(this.github?.available) };
+  }
+
+  beginGitHub(setupKey: string | undefined, returnHash: string) {
+    if (!this.enabled || !this.github) throw new ApplicationError("forbidden", "GitHub sign-in unavailable.");
+    return this.github.begin(setupKey, returnHash);
+  }
+  async finishGitHub(credentials: AuthCredentials, cookie: string, state: string, code: string) {
+    if (!this.enabled || !this.github) throw new ApplicationError("forbidden", "GitHub sign-in unavailable.");
+    return this.github.finish(cookie, state, code, () => {
+      this.logout(credentials);
+      return this.issueSession("GitHub", "github");
+    });
   }
 
   /** Neither requests nor live connections extend the original login lifetime. */
@@ -43,9 +57,9 @@ export class AuthService implements AuthUseCases {
     if (!credentials.sessionToken || !this.sessionValid(credentials.sessionToken)) throw new ApplicationError("unauthorized", "Sign in again to continue");
     return credentials.sessionToken;
   }
-  private issueSession(label?: string): IssuedToken {
+  private issueSession(label?: string, method?: "github"): IssuedToken {
     const token = this.passkeys.token(32), now = Date.now();
-    this.db.createSession(token, now, now + this.settings.sessionTtlMs, label);
+    this.db.createSession(token, now, now + this.settings.sessionTtlMs, label, method);
     return { value: token, maxAge: Math.floor(this.settings.sessionTtlMs / 1000) };
   }
   logout(credentials: AuthCredentials): void {
@@ -55,21 +69,22 @@ export class AuthService implements AuthUseCases {
   }
   private revokeSessions(): void {
     this.db.revokeSessions();
-    this.generation++;
     this.challenges.clear();
   }
   logoutAll(credentials: AuthCredentials, authorization: string): void {
-    this.takeAuthorization(credentials, authorization, "revoke-sessions");
-    this.revokeSessions();
+    this.db.transaction(() => {
+      this.takeAuthorization(credentials, authorization, "revoke-sessions");
+      this.revokeSessions();
+    });
   }
   listPasskeys(credentials: AuthCredentials) {
     this.requireSession(credentials);
     return this.db.listCredentials().map(({ credentialId, label, createdAt, lastUsedAt }) => ({ credentialId, label: label ?? null, createdAt, lastUsedAt: lastUsedAt ?? null }));
   }
   removePasskey(credentials: AuthCredentials, authorization: string, credentialId: string): void {
-    const grant = this.takeAuthorization(credentials, authorization, "remove-passkey");
-    if (grant.credentialId === credentialId) throw new ApplicationError("forbidden", "Use a different passkey to authorize removing this one");
     this.db.transaction(() => {
+      const grant = this.takeAuthorization(credentials, authorization, "remove-passkey");
+      if (grant.credentialId === credentialId) throw new ApplicationError("forbidden", "Use a different passkey to authorize removing this one");
       if (!this.db.deleteCredential(credentialId)) throw new ApplicationError("not_found", "Passkey not found");
       this.revokeSessions();
     });
@@ -80,13 +95,13 @@ export class AuthService implements AuthUseCases {
     for (const [id, value] of this.challenges) if (value.expiresAt <= now) this.challenges.delete(id);
     while (this.challenges.size >= MAX_CHALLENGES) this.challenges.delete(this.challenges.keys().next().value!);
     const id = this.passkeys.token(18);
-    this.challenges.set(id, entry);
+    this.challenges.set(id, { ...entry, epoch: entry.epoch ?? this.generation });
     return id;
   }
   private takeChallenge(credentials: AuthCredentials, kind: ChallengeEntry["kind"]): ChallengeEntry {
     const id = credentials.challengeId, entry = id ? this.challenges.get(id) : undefined;
     if (id) this.challenges.delete(id);
-    if (!entry || entry.kind !== kind || entry.expiresAt <= Date.now()) throw new ApplicationError("bad_request", "challenge expired — restart the passkey flow");
+    if (!entry || entry.kind !== kind || entry.epoch !== this.generation || entry.expiresAt <= Date.now()) throw new ApplicationError("bad_request", "challenge expired — restart the passkey flow");
     return entry;
   }
   private challengeToken(id: string): IssuedToken { return { value: id, maxAge: CHALLENGE_TTL_MS / 1000 }; }
@@ -130,7 +145,7 @@ export class AuthService implements AuthUseCases {
     return { options, challenge: this.challengeToken(id) };
   }
   async finishRegistration(credentials: AuthCredentials, response: RegistrationResponse, label?: string): Promise<{ session: IssuedToken }> {
-    const entry = this.takeChallenge(credentials, "reg"), generation = this.generation;
+    const entry = this.takeChallenge(credentials, "reg"), generation = entry.epoch;
     const authorized = () => {
       if (generation !== this.generation || (entry.sessionToken && (!this.sessionValid(entry.sessionToken) || (!entry.enrollToken && credentials.sessionToken !== entry.sessionToken)))) {
         throw new ApplicationError("forbidden", "Enrollment authorization has been revoked");
@@ -167,11 +182,13 @@ export class AuthService implements AuthUseCases {
     return cred;
   }
   async finishAuthentication(credentials: AuthCredentials, response: AuthenticationResponse): Promise<{ session: IssuedToken }> {
-    const entry = this.takeChallenge(credentials, "auth"), generation = this.generation;
+    const entry = this.takeChallenge(credentials, "auth"), generation = entry.epoch;
     const cred = await this.verifyAssertion(response, entry.challenge);
-    if (generation !== this.generation) throw new ApplicationError("unauthorized", "Sign in again to continue");
-    this.logout(credentials);
-    return { session: this.issueSession(cred.label ?? undefined) };
+    return this.db.transaction(() => {
+      if (generation !== this.generation) throw new ApplicationError("unauthorized", "Sign in again to continue");
+      this.logout(credentials);
+      return { session: this.issueSession(cred.label ?? undefined) };
+    });
   }
   /** Host-only recovery: no browser session can call this unguarded capability. */
   mintEnrollToken(): { token: string; expiresAt: number } { return this.createEnrollToken(); }
@@ -181,7 +198,9 @@ export class AuthService implements AuthUseCases {
     return { token, expiresAt };
   }
   authorizeEnrollment(credentials: AuthCredentials, authorization: string) {
-    this.takeAuthorization(credentials, authorization, "enroll");
-    return this.createEnrollToken(credentials.sessionToken);
+    return this.db.transaction(() => {
+      this.takeAuthorization(credentials, authorization, "enroll");
+      return this.createEnrollToken(credentials.sessionToken);
+    });
   }
 }

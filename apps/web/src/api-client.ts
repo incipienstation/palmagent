@@ -236,6 +236,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     routineRuns: (id: string, signal?: AbortSignal) => request(() => routines.runs.$get({ param: idParam(id) }, requestOptions(signal))).then((r) => r.runs),
     auth: {
       me: () => request(() => client.auth.me.$get(), { authProbe: true }),
+      githubStart: (json: { setupKey?: string; returnHash?: string }) => write(() => client.auth.github.start.$post({ json }), true),
       loginOptions: () => write(() => client.auth.login.options.$post(), true),
       loginVerify: (json: AuthenticationResponseJSON) => write(() => client.auth.login.verify.$post({ json: { ...json, clientExtensionResults: { ...json.clientExtensionResults } } }), true, true),
       registerOptions: (token?: string) => write(() => client.auth.register.options.$post({ json: { token } }), true),

@@ -13,6 +13,8 @@ import { TerminalService } from "../modules/terminals/application/use-cases/term
 import { terminalPlatform } from "../modules/terminals/adapters/outbound/terminal-platform.js";
 import { TerminalTickets } from "../modules/terminals/adapters/inbound/gateway.js";
 import { dirname, join } from "node:path";
+import { gitHubOAuth } from "../modules/auth/adapters/outbound/github-oauth.js";
+import { GitHubLogin } from "../modules/auth/application/use-cases/github-login.js";
 import { AuthService } from "../modules/auth/application/use-cases/auth-service.js";
 import { AccountLimitReader } from "../modules/agents/adapters/outbound/account-limits.js";
 import { createAttachmentStorage } from "./attachments.js";
@@ -154,7 +156,8 @@ export async function createRuntime(runtimeLease: number) {
     resources.defer(() => routines.stop());
     github = new GithubService(service, config.githubToken);
     resources.onStop(() => github?.stop());
-    const auth = new AuthService(db, config, webauthn);
+    const auth = new AuthService(db.auth, config, webauthn,
+      new GitHubLogin(db.auth, db.gitHubBindings, gitHubOAuth(), webauthn.token, config.authOrigin));
     const modelCatalog = new ModelCatalogService();
     return {
       db, hub, service, auth, push, routines, modelCatalog, config, terminals, terminalTickets: new TerminalTickets(),
