@@ -49,7 +49,7 @@ export function TelemetrySettings() {
       <FieldContent>
         <FieldLabel variant="setting" htmlFor={id}>Share performance metrics</FieldLabel>
         <FieldDescription id={`${id}-description`}>
-          {status?.pendingDisclosure ? "Accept 180-day retention to start sharing." : "Aggregate metrics are kept for up to 180 days. Applies to this installation."}
+          {status?.pendingDisclosure ? "Accept 180-day retention to start sharing." : "Kept for up to 180 days."}
         </FieldDescription>
       </FieldContent>
       <Switch id={id} checked={status?.enabled ?? true} disabled={busy || !status?.available}
