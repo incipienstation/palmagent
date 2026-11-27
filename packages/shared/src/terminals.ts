@@ -15,6 +15,7 @@ export const TerminalId = z.string().uuid();
 export const TerminalSize = z.object({ cols: z.number().int().min(TERMINAL_POLICY.minCols).max(TERMINAL_POLICY.maxCols), rows: z.number().int().min(TERMINAL_POLICY.minRows).max(TERMINAL_POLICY.maxRows) });
 export const CreateTerminal = TerminalSize.extend({
   requestId: z.string().uuid(),
+  agent: z.literal("claude").optional(),
   target: z.union([z.object({ taskId: z.string().min(1).max(200) }).strict(), z.object({ repoId: z.string().min(1).max(200) }).strict()]),
   title: z.string().trim().min(1).max(TERMINAL_POLICY.maxTitleLength).optional(),
 }).strict();

@@ -45,6 +45,7 @@ export class TerminalService implements TerminalUseCases {
     const existing = this.store.byRequest(input.requestId);
     if (existing) {
       if ("taskId" in input.target ? existing.taskId !== input.target.taskId : existing.repoId !== input.target.repoId || existing.taskId) throw new ApplicationError("conflict", "Request belongs to another target");
+      if (existing.agent !== input.agent) throw new ApplicationError("conflict", "Request belongs to another terminal launch");
       return publicTerminal(existing);
     }
     const task = "taskId" in input.target ? this.targets.task(input.target.taskId) : undefined;
@@ -55,7 +56,8 @@ export class TerminalService implements TerminalUseCases {
     let cwd: string;
     try { cwd = this.files.resolveDirectory(task?.worktreePath ?? repo.path); } catch { throw new ApplicationError("conflict", "Working directory is unavailable"); }
     let reserved;
-    try { reserved = this.store.reserve({ requestId: input.requestId, taskId: task?.taskId, repoId, title: input.title ?? "Shell",
+    try { reserved = this.store.reserve({ requestId: input.requestId, taskId: task?.taskId, repoId,
+      agent: input.agent, title: input.title ?? (input.agent === "claude" ? "Claude Code" : "Shell"),
       initialCwd: cwd, cols: input.cols, rows: input.rows, release: this.release, node: this.node, directory: this.store.directory }); }
     catch (error) { throw new ApplicationError("conflict", error instanceof Error ? error.message : "Terminal could not be reserved"); }
     this.publishChanges();
