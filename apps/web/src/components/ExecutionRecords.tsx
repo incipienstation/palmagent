@@ -1,3 +1,4 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { type RefObject } from "react";
 import { FileText } from "lucide-react";
 import type { ExecutionRecord } from "@palmagent/shared";
@@ -24,7 +25,7 @@ function Records({ taskId }: { taskId: string }) {
   const records = new Map(query.data?.pages.flatMap(page => page.records).map(record => [record.key, record]));
   return <div className="flex min-w-0 flex-col gap-3">
     <Button variant="outline" size="sm" className="self-start" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh records</Button>
-    {query.isPending && <p role="status">Loading execution records…</p>}
+    {query.isPending && <p role="status"><Pending>Loading execution records…</Pending></p>}
     {query.isError && <div role="alert"><p>Couldn’t load execution records.</p><Button variant="outline" size="sm" onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage({ cancelRefetch: false }) : query.refetch())}>Retry</Button></div>}
     {!query.isPending && !query.isError && !records.size && <p>No execution records yet.</p>}
     <Trace>{[...records.values()].sort((a, b) => b.key - a.key).map(record => <TraceCollapsible key={record.key} open={expanded.has(record.key)} onOpenChange={next => {
@@ -35,7 +36,7 @@ function Records({ taskId }: { taskId: string }) {
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>{expanded.has(record.key) && <RecordBody taskId={taskId} record={record} />}</TraceCollapsibleContent>
     </TraceCollapsible>)}</Trace>
-    {query.hasNextPage && <Button variant="outline" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>Load earlier records</Button>}
+    {query.hasNextPage && <Button variant="outline" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>{query.isFetchingNextPage && <Spinner />}Load earlier records</Button>}
   </div>;
 }
 
@@ -44,8 +45,8 @@ function RecordBody({ taskId, record }: { taskId: string; record: ExecutionRecor
   const body = record.body ?? query.data?.pages.map(page => page.chunk).join("");
   return <>
     {body !== undefined && <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs text-foreground [overflow-wrap:anywhere]">{body}</pre>}
-    {record.body === undefined && query.isPending && <p role="status">Loading record…</p>}
+    {record.body === undefined && query.isPending && <p role="status"><Pending>Loading record…</Pending></p>}
     {query.isError && <div role="alert"><p>Couldn’t load this record. Refresh records if it changed.</p><Button variant="outline" size="sm" onClick={() => void query.refetch()}>Retry</Button></div>}
-    {query.hasNextPage && <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>Load more record content</Button>}
+    {query.hasNextPage && <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>{query.isFetchingNextPage && <Spinner />}Load more record content</Button>}
   </>;
 }

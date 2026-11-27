@@ -86,7 +86,7 @@ export function ComposerAction({ stop, busy, ...props }: Omit<ComponentProps<typ
   return <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" {...props}>
     <span data-stop-visual={stop || undefined} data-send-visual={!stop || undefined} aria-hidden="true"
       className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
-      {stop ? <Square className="size-[18px]" fill="currentColor" /> : busy ? <Loader2 className="size-[18px] animate-spin" /> : <ArrowUp className="size-[18px]" />}
+      {stop ? <Square className="size-[18px]" fill="currentColor" /> : busy ? <Loader2 className="size-[18px] motion-safe:animate-spin" /> : <ArrowUp className="size-[18px]" />}
     </span>
   </Button>;
 }

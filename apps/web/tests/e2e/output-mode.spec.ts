@@ -63,8 +63,8 @@ test("growing work stays folded, preserves reading state and summarizes tool fai
   await group.click();
   await emit("tool_result", { tool_use_id: "next-tool", output: "Test command failed", exit_code: 1 });
   await expect(page.getByText("Tool failed — expand for details")).toHaveCount(0);
-  await expect(group).toHaveAccessibleName("Activity · 21 tools");
-  await expect(group.locator("[data-slot=trace-line]")).not.toHaveAttribute("data-status", "error");
+  await expect(group).toHaveAccessibleName("Activity · 21 tools · Working");
+  await expect(group.locator("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
   await emit("question", { questions: [{ question: "Which target?", options: [{ label: "Preview" }] }] });
   await expect(page.getByText("Which target?", { exact: true })).toBeVisible();
   await emit("status", { subtype: "answer", answers: [{ selected: ["Preview"] }] });

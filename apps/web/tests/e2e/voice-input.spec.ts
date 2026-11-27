@@ -190,6 +190,8 @@ test("cancelling while permission is pending releases a later microphone grant",
   await page.goto("/#/task/t-idle-interrupted");
   await page.getByRole("button", { name: "Start voice input" }).click();
   await expect.poll(() => page.evaluate(() => typeof (window as any).voiceTest.allow)).toBe("function");
+  await expect(page.getByRole("status").filter({ hasText: "Opening microphone" })).toBeVisible();
+  await expect(page.getByText("Recording…")).toHaveCount(0);
   await page.getByRole("button", { name: "Stop voice input" }).click();
   await page.evaluate(() => (window as any).voiceTest.allow());
   await expect.poll(() => page.evaluate(() => (window as any).voiceTest.stopped)).toBeGreaterThan(0);

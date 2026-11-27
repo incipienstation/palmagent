@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { VoiceWaveform } from "./VoiceWaveform";
 import { ComposerAction, ComposerInput, ComposerSurface } from "./ComposerPrimitives";
 import { useVoiceInput } from "../use-voice-input";
@@ -67,7 +68,7 @@ function Configuration({ settings: s }: { settings: ComposerSettings }) {
   </FieldGroup>;
 }
 
-export function Composer({ id, value, onChange, placeholder, label, action, onSend, onStop, stopping, busy, disabled, sendDisabled,
+export function Composer({ id, value, onChange, placeholder, label, action, onSend, onStop, stopping, stopLabel = "Stop", busy, disabled, sendDisabled,
   attachments, settings, description, controls, header, settingsReadOnly, skillContext, skills, onSkillsChange, commandActive, voiceScope = id }: {
   id: string;
   value: string;
@@ -78,6 +79,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
   onSend?: () => void;
   onStop?: () => void;
   stopping?: boolean;
+  stopLabel?: string;
   busy?: boolean;
   disabled?: boolean;
   sendDisabled?: boolean;
@@ -142,7 +144,7 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       aria-activedescendant={picker.open && picker.matches.length && !picker.loading ? `${picker.id}-${picker.selected}` : undefined}
       onKeyDown={event => { if (!event.defaultPrevented) picker.keyDown(event); }}
     />
-    {voice.active && <span role="status" className="sr-only">{voice.state === "stopping" ? "Finishing transcription…" : "Recording…"}</span>}
+    {(voice.state === "recording" || voice.state === "stopping") && <span role="status" className="sr-only">{voice.state === "stopping" ? "Finishing transcription…" : "Recording…"}</span>}
     {voice.error && <InputGroupAddon align="block-start" className="px-3">
       <Alert variant="destructive">{voice.error}</Alert>
     </InputGroupAddon>}
@@ -160,7 +162,8 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       </span>}
     </InputGroupAddon>
     <InputGroupAddon align="inline-end" className="composer-toolbar composer-actions min-w-0 flex-1 justify-end gap-1">
-      {voice.active && <VoiceWaveform levels={voice.meter} />}
+      {voice.state === "starting" && <span role="status" className="mr-auto text-xs text-muted-foreground"><Pending>Opening microphone</Pending></span>}
+      {(voice.state === "recording" || voice.state === "stopping") && <VoiceWaveform levels={voice.meter} />}
       <Sheet open={configure && !settingsReadOnly} onOpenChange={setConfigure} repositionInputs={false} autoFocus>
         {!voice.active && <span className="composer-settings min-w-0" inert={!expanded}><SheetTrigger asChild>
           <Button type="button" variant="ghost"
@@ -195,9 +198,9 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
       {settings.agent === "codex" && <Button type="button" variant={voice.active ? "secondary" : "ghost"} size="icon-lg"
         className="shrink-0" aria-label={voice.active ? "Stop voice input" : "Start voice input"} title={voice.active ? "Stop voice input" : "Start voice input"}
         aria-pressed={voice.active} disabled={disabled || busy || !skillContext || voice.state === "stopping"} onClick={() => { setMenuOpen(false); setConfigure(false); picker.close(); voice.toggle(); }}>
-        {voice.state === "stopping" ? <Loader2 className="animate-spin" /> : voice.active ? <Square /> : <Mic />}
+        {voice.state === "stopping" ? <Loader2 className="motion-safe:animate-spin" /> : voice.active ? <Square /> : <Mic />}
       </Button>}
-      {onStop && <ComposerAction stop aria-label="Stop" title={stopping ? "Stopping turn…" : "Stop"}
+      {onStop && <ComposerAction stop aria-label={stopLabel} title={stopping ? "Stopping…" : stopLabel}
         disabled={stopping} onClick={onStop} />}
       {controls ? <fieldset disabled={voice.active} className="min-w-0 shrink-0 disabled:opacity-40">{controls}</fieldset> : !onStop &&
         <ComposerAction type={onSend ? "button" : "submit"} onClick={onSend} aria-label={action} title={action}

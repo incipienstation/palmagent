@@ -1,3 +1,4 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { useEffect, useRef, useState } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import type { AuthAction } from "@palmagent/shared";
@@ -75,7 +76,7 @@ export function SecuritySettings() {
     <SettingsCard>
       <SettingsField orientation="vertical">
         <FieldLabel>Passkeys</FieldLabel>
-        {!passkeys && !error && <p role="status">Loading passkeys…</p>}
+        {!passkeys && !error && <p role="status"><Pending>Loading passkeys…</Pending></p>}
         {passkeys?.map(passkey => <div key={passkey.credentialId} className="flex items-center justify-between gap-3">
           <FieldContent>
             <span className="text-sm">{passkey.label || "Passkey"}</span>
@@ -97,7 +98,7 @@ export function SecuritySettings() {
       </SettingsField>
     </SettingsCard>
     <Button variant="destructive" disabled={busy} onClick={() => { setError(undefined); setConfirmation({ action: "revoke-sessions" }); }}>Sign out all devices</Button>
-    {busy && <p role="status" className="text-sm">Waiting for passkey verification…</p>}
+    {busy && !confirmation && <p role="status" className="text-sm"><Pending>Waiting for passkey verification…</Pending></p>}
     {error && !confirmation && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open && !busy) setConfirmation(undefined); }}>
       <AlertDialogContent>
@@ -111,7 +112,7 @@ export function SecuritySettings() {
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={busy} onClick={event => { event.preventDefault(); void run(confirm); }}>Verify and continue</AlertDialogAction>
+          <AlertDialogAction variant="destructive" disabled={busy} onClick={event => { event.preventDefault(); void run(confirm); }}>{busy && <Spinner />}Verify and continue</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

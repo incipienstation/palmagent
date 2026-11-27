@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useId } from "react";
 import type { RepoSettingsChange } from "@palmagent/shared";
 import { RefreshCw, X } from "lucide-react";
@@ -29,7 +30,7 @@ export function RepoSettings() {
         <div className="flex min-h-14 items-center justify-between gap-3 py-1">
           <h3 className="text-sm font-medium">{status?.source === "installation" ? "Default folders" : "Search folders"}</h3>
           <Button variant="ghost" size="icon-lg" disabled={busy} aria-label="Refresh paths" title="Refresh paths" onClick={() => void request()}>
-            <RefreshCw className={cn(busy && "animate-spin")} />
+            <RefreshCw className={cn(busy && !adding.length && "motion-safe:animate-spin")} />
           </Button>
         </div>
         {status && <>
@@ -45,7 +46,7 @@ export function RepoSettings() {
               </div>
             </li>)}
           </ul>}
-          {adding.map(root => <p key={root} role="status" className="break-all py-2 text-xs text-muted-foreground">{root} · Adding…</p>)}
+          {adding.map(root => <p key={root} role="status" className="break-all py-2 text-xs text-muted-foreground"><Pending>{root} · Adding…</Pending></p>)}
         </>}
       </SettingsCard>
       {status && <>
@@ -64,7 +65,7 @@ export function RepoSettings() {
         {status.source === "saved" && <Button variant="ghost" disabled={disabled} className="self-start"
           onClick={() => void request({ action: "reset" })}>Use installation defaults</Button>}
       </>}
-      {(busy && status || notice) && <p role="status" className="text-xs text-muted-foreground">{busy && status ? "Saving or refreshing…" : notice}</p>}
+      {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
       <SettingsHelp title="Search details">
         <p>Search folders apply to all devices. Removing them keeps registered Spaces.</p>
         <p>Use an absolute path or ~/ for the server user's home.</p>

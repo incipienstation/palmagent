@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import type { CSSProperties, ReactNode } from "react";
 import { ChevronLeft, Menu } from "lucide-react";
 
@@ -121,7 +122,7 @@ function LiveDot({ conn, compact = false, visuallyHidden = false }: { conn: Conn
   if (visuallyHidden) return <span role="status" title="Reconnecting…" className="sr-only">Reconnecting…</span>;
   return (
     <span role="status" title="Reconnecting…" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber">
-      <span aria-hidden className="size-2 shrink-0 animate-pulse rounded-full bg-amber" />
+      <span aria-hidden className="size-2 shrink-0 motion-safe:animate-pulse rounded-full bg-amber" />
       <span className={compact ? "sr-only" : undefined}>Reconnecting…</span>
     </span>
   );
@@ -131,16 +132,16 @@ function LiveDot({ conn, compact = false, visuallyHidden = false }: { conn: Conn
 // Connection row (and any screen that still wants the textual form).
 export function ConnPill({ conn, compact }: { conn: ConnState; compact?: boolean }) {
   const label =
-    conn === "open" ? "live" : conn === "connecting" ? (compact ? "…" : "connecting…") : "reconnecting…";
+    conn === "open" ? "live" : conn === "connecting" ? "connecting…" : "reconnecting…";
   return (
     <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
-      <span
+      {conn === "connecting" ? <Spinner className="size-3" /> : <span
         className={cn(
           "size-2 rounded-full",
-          conn === "open" ? "bg-live" : conn === "reconnecting" ? "animate-pulse bg-amber" : "bg-faint",
+          conn === "open" ? "bg-live" : conn === "reconnecting" ? "motion-safe:animate-pulse bg-amber" : "bg-faint",
         )}
-      />
-      {label}
+      />}
+      <span className={compact && conn === "connecting" ? "sr-only" : undefined}>{label}</span>
     </span>
   );
 }

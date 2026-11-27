@@ -28,13 +28,13 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
   const activities = useMemo(() => spaceActivities(tasks), [tasks]);
   const rows = useMemo(() => {
     const sorted = [...repos.values()].sort((a, b) => (activities.get(b.id)?.latest ?? 0) - (activities.get(a.id)?.latest ?? 0) || a.name.localeCompare(b.name));
-    if (!loading) for (const repo of sorted) if (!order.current.includes(repo.id)) order.current.push(repo.id);
+    for (const repo of sorted) if (!order.current.includes(repo.id)) order.current.push(repo.id);
     const positions = new Map(order.current.map((id, index) => [id, index]));
     return sorted.sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
-  }, [repos, activities, loading]);
+  }, [repos, activities]);
   const needle = query.trim().toLocaleLowerCase();
   const matches = rows.filter(repo => `${repo.name} ${repo.path}`.toLocaleLowerCase().includes(needle));
-  const pending = reposLoading || loading;
+  const pending = reposLoading;
   const clear = () => { setQuery(""); searchRef.current?.focus(); };
   return <AppShell wide>
     <AppBar title="Spaces" conn={conn}>
@@ -50,7 +50,7 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
         </div> : <>
           {matches.length > 0 && <section aria-label="Spaces list">
             <div className="flex justify-between px-2 pb-2 text-xs text-muted-foreground"><h2>Spaces</h2><span>Recent activity</span></div>
-            {matches.map(repo => <SpaceRow key={repo.id} repo={repo} repos={repos} summary={spaceActivitySummary(activities.get(repo.id))}
+            {matches.map(repo => <SpaceRow key={repo.id} repo={repo} repos={repos} summary={loading ? undefined : spaceActivitySummary(activities.get(repo.id))}
               matchedPath={!!needle && !repo.name.toLocaleLowerCase().includes(needle)} />)}
           </section>}
           {!matches.length && !error && <EmptyState icon={needle ? Search : Folder} title={needle ? "No Spaces found" : "Connect your first Space"}
@@ -65,12 +65,12 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
   </AppShell>;
 }
 
-function SpaceRow({ repo, repos, summary, matchedPath }: { repo: Repo; repos: Map<string, Repo>; summary: string; matchedPath: boolean }) {
+function SpaceRow({ repo, repos, summary, matchedPath }: { repo: Repo; repos: Map<string, Repo>; summary?: string; matchedPath: boolean }) {
   const qualifier = spaceQualifier(repo, repos) ?? (matchedPath ? repo.path : undefined);
   return <Button variant="ghost" className="h-auto min-h-18 w-full justify-start rounded-xl px-2 py-3" onClick={() => navigate(spacePath(repo.id))}>
     <span className="flex min-w-0 flex-1 flex-col gap-1 text-left">
       <span className="line-clamp-2 whitespace-normal break-words text-base">{repo.name}</span>
-      <span className="text-xs font-normal text-muted-foreground">{summary}</span>
+      {summary === undefined ? <Skeleton className="h-3 w-20" aria-label="Loading recent activity" /> : <span className="text-xs font-normal text-muted-foreground">{summary}</span>}
       {qualifier && <span className="truncate text-xs font-normal text-muted-foreground" title={repo.path}>{qualifier}</span>}
     </span>
   </Button>;

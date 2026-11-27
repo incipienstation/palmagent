@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { queueTaskArchive, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { isActiveTaskStatus, needsTaskAttention, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
@@ -344,7 +345,7 @@ export const InboxView = memo(function InboxView({
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
         {mobileHome && conn === "reconnecting" && <div role="status" className="px-4 pb-2"><ConnPill conn={conn} /></div>}
-        {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
+        {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground"><Pending>Archiving task…</Pending></p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
           placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} action={

@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction, type KeyboardEvent, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Square, X } from "lucide-react";
@@ -111,7 +112,7 @@ export function SkillMenu({ picker, textarea }: { picker: ReturnType<typeof useS
     onOpenAutoFocus={e => e.preventDefault()} onCloseAutoFocus={e => e.preventDefault()}
     onInteractOutside={e => { if (e.target === textarea.current) e.preventDefault(); }}>
     <div className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground"><span>Skills</span><span>Type / to search</span></div>
-    {picker.loading ? <p role="status" className="p-2 text-sm">Loading skills…</p>
+    {picker.loading ? <p role="status" className="p-2 text-sm"><Pending>Loading skills…</Pending></p>
       : picker.error ? <div className="p-2"><p role="alert" className="text-sm">{picker.error}</p><Button type="button" variant="ghost" onClick={picker.retry}>Try again</Button></div>
       : <ScrollArea className="max-h-[min(16rem,35dvh)]" viewportProps={{ ref: list, id: picker.id, role: "listbox", "aria-label": "Available skills" }}>
         {picker.matches.length === 0 && <p role="status" className="p-2 text-sm text-muted-foreground">No matching skills in this environment.</p>}

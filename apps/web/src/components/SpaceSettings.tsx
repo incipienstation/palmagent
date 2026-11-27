@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Repo } from "@palmagent/shared";
 import { useSpaceOperations } from "../hooks/remote-operations";
@@ -55,7 +56,7 @@ function BaseBranchForm({ repo }: { repo: Repo }) {
             onChange={event => { setValue(event.target.value); setError(""); setNotice(""); }}
             autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           <Button type="submit" variant="outline" disabled={busy || !value.trim() || value.trim() === repo.defaultBaseRef} aria-label="Save base branch">
-            {busy ? "Saving…" : "Save"}
+            {busy ? <Pending>Saving…</Pending> : "Save"}
           </Button>
         </div>
         {error && <Alert variant="destructive">{error}</Alert>}

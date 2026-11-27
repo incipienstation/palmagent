@@ -37,6 +37,8 @@ export function SideChat({ side, task, onClose, onAddToDraft, draftDisabled }: {
     if (side.open && stick.current && viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
   }, [side.open, snapshot?.revision]);
   const running = snapshot?.status === "running";
+  const lastMessage = snapshot?.messages.at(-1);
+  const streamingText = lastMessage?.role === "assistant" && !!lastMessage.text;
   const ended = snapshot?.status === "ended";
   const ready = snapshot?.status === "idle";
   const cannotSend = !ready || busy || !draft.trim() || task.status === "archived" || task.status === "cancelled";
@@ -76,7 +78,7 @@ export function SideChat({ side, task, onClose, onAddToDraft, draftDisabled }: {
               onClick={() => onAddToDraft(message.text)}><Plus data-icon="inline-start" />Add to draft</Button>
           </div>}
         </AssistantMessage>)}</ImageTaskContext.Provider>
-      {running && <WorkingLabel />}
+      {running && !streamingText && <WorkingLabel />}
     </ScrollArea>
     <footer className="flex shrink-0 flex-col gap-2 border-t p-3 pb-[calc(12px+var(--safe-bottom))]">
       {(side.error || snapshot?.error) && <Alert role="alert">{side.error ?? snapshot?.error}</Alert>}

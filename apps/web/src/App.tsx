@@ -67,7 +67,7 @@ function AppInner() {
     : route.name === "task" || route.name === "new" ? <TaskDetailView key={route.name === "new" || route.id === conversation.taskId ? `new-${conversation.key}` : route.id} taskId={route.name === "task" ? route.id : undefined} initialRepoId={route.name === "new" ? route.repoId : undefined} task={active} onCreated={onCreated} />
     : route.name === "spaces" ? <SpacesView tasks={tasks} conn={conn} loading={loading} onRefresh={refresh} />
     : <InboxView key={route.name === "space" ? route.repoId : "all"} repoId={route.name === "space" ? route.repoId : undefined} tasks={tasks} conn={conn} loading={loading} onRefresh={refresh} />;
-  return <AppNavigation tasks={tasks} conn={conn}>{view}<TelemetryDisclosure /></AppNavigation>;
+  return <AppNavigation loading={loading} tasks={tasks} conn={conn}>{view}<TelemetryDisclosure /></AppNavigation>;
 }
 
 export function App() {

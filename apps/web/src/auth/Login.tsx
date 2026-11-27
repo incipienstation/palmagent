@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useUpdateBlocker } from "../update-state";
 import { useRef, useState } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
@@ -43,7 +44,7 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
     >
       <Button size="lg" className="w-full" disabled={busy} onClick={signIn}>
         <Fingerprint className="size-5" />
-        {busy ? "Waiting for passkey…" : "Sign in with passkey"}
+        {busy ? <Pending>Waiting for passkey…</Pending> : "Sign in with passkey"}
       </Button>
       {error && <p role="alert" className="text-center text-sm text-destructive">{error}</p>}
     </AuthScreen>
