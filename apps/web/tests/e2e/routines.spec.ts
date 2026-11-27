@@ -27,9 +27,9 @@ test.describe("routines", () => {
     await page.getByRole("option", { name: "medium", exact: true }).click();
     await form.getByRole("radio", { name: "codex", exact: true }).click();
     await form.getByRole("combobox", { name: "Model", exact: true }).click();
-    await expect(page.getByRole("option", { name: "gpt-5.6-luna", exact: true })).toBeVisible();
-    await expect(page.getByRole("option", { name: /gpt-5\.4/ })).toHaveCount(0);
-    await page.getByRole("option", { name: "gpt-5.6-luna", exact: true }).click();
+    await expect(page.getByRole("option", { name: "fixture-model-f", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "fixture-retired", exact: true })).toHaveCount(0);
+    await page.getByRole("option", { name: "fixture-model-f", exact: true }).click();
     await form.getByRole("combobox", { name: "Effort", exact: true }).click();
     await expect(page.getByRole("option", { name: "ultra", exact: true })).toHaveCount(0);
     await page.getByRole("option", { name: "max", exact: true }).click();
@@ -37,13 +37,13 @@ test.describe("routines", () => {
     await form.locator("textarea").fill("Review the sample project on schedule.");
     const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/routines");
     await form.getByRole("button", { name: "Create routine", exact: true }).click();
-    expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "gpt-5.6-luna", effort: "max" });
+    expect((await request).postDataJSON()).toMatchObject({ agent: "codex", model: "fixture-model-f", effort: "max" });
   });
 });
 
 test("stale routine preferences cannot submit a retired model or unsupported effort", async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem("pref:routine-model", JSON.stringify({ codex: "gpt-5.4-mini" }));
+    localStorage.setItem("pref:routine-model", JSON.stringify({ codex: "fixture-retired" }));
     localStorage.setItem("pref:routine-effort", JSON.stringify({ codex: "minimal" }));
   });
   await page.goto("/#/routines");

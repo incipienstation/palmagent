@@ -107,14 +107,14 @@ try {
   assert.ok(shared);
   assert.equal((await shared.snapshot()).historyMode, 'paginated');
   assert.ok((await shared.history()).some(row => row.event.kind === 'assistant_text' && row.event.payload.text === 'Fixture reply 1'));
-  assert.equal(await shared.send('Second turn from browser', undefined, 'browser-message', undefined, { model: 'gpt-5.5', effort: 'high' }), 'delivered');
+  assert.equal(await shared.send('Second turn from browser', undefined, 'browser-message', undefined, { model: 'fixture-override', effort: 'high' }), 'delivered');
   await wait(() => completed().length === 2, 'the browser turn');
   assert.ok(completed().every(row => row.params.threadId === thread.id && row.params.turn.status === 'completed'));
   assert.equal(requests, 2);
-  assert.equal(modelRequests[1].model, 'gpt-5.5');
+  assert.equal(modelRequests[1].model, 'fixture-override');
   assert.equal(modelRequests[1].reasoning?.effort, 'high');
   const settings = await shared.snapshot();
-  assert.equal(settings.model, 'gpt-5.5');
+  assert.equal(settings.model, 'fixture-override');
   assert.equal(settings.effort, 'high');
   assert.ok((await shared.history()).some(row => row.event.kind === 'assistant_text' && row.event.payload.text === 'Fixture reply 2'));
   // Keep a real native turn active while the second client steers it.
@@ -134,7 +134,7 @@ try {
   await localTurn('Third local turn after browser disconnect');
   await wait(() => completed().length === 4, 'the next local turn');
   assert.ok(requests >= 4);
-  assert.equal(modelRequests.at(-1).model, 'gpt-5.5', 'native client inherits the selected model');
+  assert.equal(modelRequests.at(-1).model, 'fixture-override', 'native client inherits the selected model');
   assert.equal(modelRequests.at(-1).reasoning?.effort, 'high', 'native client inherits the selected effort');
   shared = await new CodexSharedSessions(socket).connect({ taskId: 'fixture-task', agent: 'codex', sessionId: thread.id, cwd: home, home }, () => {});
   assert.equal(await shared.send('Restore native defaults', undefined, 'browser-defaults', undefined, { model: '', effort: '' }), 'delivered');

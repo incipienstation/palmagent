@@ -14,7 +14,7 @@ test("Claude quotas preserve missing values, model windows and extra usage witho
       five_hour: { utilization: 0, resets_at: reset },
       seven_day: { utilization: null, resets_at: reset },
       seven_day_sonnet: { utilization: 50, resets_at: null },
-      model_scoped: [{ display_name: "Sonnet", utilization: 60, resets_at: reset }, { display_name: "Fable", utilization: 99, resets_at: reset }],
+      model_scoped: [{ display_name: "Sonnet", utilization: 60, resets_at: reset }, { display_name: "Fixture model", utilization: 99, resets_at: reset }],
       extra_usage: { is_enabled: true, utilization: 12 },
     },
   }, 123);
@@ -34,7 +34,7 @@ test("Claude quotas preserve missing values, model windows and extra usage witho
 
 test("Codex multi-bucket quotas use actual durations, retain credits, and do not double count the legacy view", () => {
   const report = parseAccountLimits("codex", { accountId: "fixture-private-id", rateLimits: { limitId: "codex", primary: { usedPercent: 90 } }, rateLimitsByLimitId: {
-    spark: { limitName: "Spark", primary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 1000 }, secondary: { usedPercent: 42, windowDurationMins: 10080, resetsAt: 2000 } },
+    "fixture-bucket": { limitName: "Fixture bucket", primary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 1000 }, secondary: { usedPercent: 42, windowDurationMins: 10080, resetsAt: 2000 } },
     codex: { primary: { usedPercent: 21, windowDurationMins: 10080, resetsAt: 3000 }, secondary: null, credits: { hasCredits: true, unlimited: false, balance: "12.50" } },
   } }, 123);
   assert.equal(report.agent, "codex");

@@ -61,7 +61,7 @@ for (const mode of ['before', 'automatic', 'fallback', 'repeated-loss', 'failure
       res.end();
     });
     server.listen(0, 'localhost'); await once(server, 'listening');
-    await writeFile(join(home, 'config.toml'), `model = "gpt-6.1-sol"
+    await writeFile(join(home, 'config.toml'), `model = "fixture-model"
 model_provider = "fixture"
 approval_policy = "never"
 model_context_window = 20000
@@ -128,7 +128,7 @@ requires_openai_auth = false
     await rpc('config/batchWrite', { reloadUserConfig: true, edits: hooks.map(hook => ({
       keyPath: `hooks.state.${JSON.stringify(hook.key)}.trusted_hash`, value: hook.currentHash, mergeStrategy: 'replace',
     })) });
-    const started = await rpc('thread/start', { cwd: home, model: 'gpt-6.1-sol', modelProvider: 'fixture',
+    const started = await rpc('thread/start', { cwd: home, model: 'fixture-model', modelProvider: 'fixture',
       approvalPolicy: 'never', sandbox: 'read-only', baseInstructions: 'Follow the user request.' });
     await rpc('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: 'ORIGINAL_REQUEST_42: finish the requested check.' }] });
     assert.equal((await completion).status, 'completed');

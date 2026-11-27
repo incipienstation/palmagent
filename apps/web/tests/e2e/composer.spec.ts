@@ -227,10 +227,10 @@ test("Codex follow-up sends supported effort overrides and resets after changing
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Continue with more reasoning");
   await page.getByRole("button", { name: "Configure task settings" }).click();
   const effort = page.getByRole("combobox", { name: "Effort", exact: true });
-  await page.getByRole("radio", { name: "gpt-6-astra", exact: true }).click();
+  await page.getByRole("radio", { name: "fixture-model-a", exact: true }).click();
   await effort.click();
   await page.getByRole("option", { name: "ultra", exact: true }).click();
-  await page.getByRole("radio", { name: "gpt-5.5", exact: true }).click();
+  await page.getByRole("radio", { name: "fixture-model-g", exact: true }).click();
   await expect(effort).toHaveText("default");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   const request = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith("/messages"));

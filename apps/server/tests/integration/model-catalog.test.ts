@@ -8,8 +8,8 @@ import { ModelCatalogService, defaultModelCatalog, readClaudeModelCatalog, parse
 const runtimeResponse = {
   data: [
     { id: "hidden", model: "hidden", hidden: true, supportedReasoningEfforts: [{ reasoningEffort: "max" }] },
-    { id: "astra", model: "gpt-6-astra", isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "ultra" }] },
-    { id: "luna", model: "gpt-6-luna", supportedReasoningEfforts: ["low", "max"] },
+    { id: "alias-a", model: "fixture-model-a", isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "ultra" }] },
+    { id: "alias-c", model: "fixture-model-c", supportedReasoningEfforts: ["low", "max"] },
   ],
   accountId: "private-account-must-not-leak",
 };
@@ -18,8 +18,8 @@ test("model catalog projects visible models and efforts without provider metadat
   const catalog = parseCodexModelCatalog(runtimeResponse, 123);
   assert.deepEqual(catalog.models, [
     { value: "default", label: "default", efforts: [{ value: "default", label: "default" }, { value: "low", label: "low" }, { value: "ultra", label: "ultra" }] },
-    { value: "gpt-6-astra", label: "gpt-6-astra", efforts: [{ value: "default", label: "default" }, { value: "low", label: "low" }, { value: "ultra", label: "ultra" }] },
-    { value: "gpt-6-luna", label: "gpt-6-luna", efforts: [{ value: "default", label: "default" }, { value: "low", label: "low" }, { value: "max", label: "max" }] },
+    { value: "fixture-model-a", label: "fixture-model-a", efforts: [{ value: "default", label: "default" }, { value: "low", label: "low" }, { value: "ultra", label: "ultra" }] },
+    { value: "fixture-model-c", label: "fixture-model-c", efforts: [{ value: "default", label: "default" }, { value: "low", label: "low" }, { value: "max", label: "max" }] },
   ]);
   assert.doesNotMatch(JSON.stringify(catalog), /hidden|private-account/);
   assert.equal(catalog.source, "runtime");
@@ -43,14 +43,14 @@ test("catalog reads coalesce, serve stale data while refreshing, and retain the 
   now += 300_001;
   const stale = await reader.get("codex", "/fixture/account");
   assert.equal(stale.source, "stale");
-  assert.equal(stale.models[1]?.value, "gpt-6-astra");
+  assert.equal(stale.models[1]?.value, "fixture-model-a");
   assert.equal(reads, 2);
   rejectRefresh?.(new Error("temporary CLI failure"));
   await new Promise<void>(resolve => setImmediate(resolve));
   now += 30_001;
   const staleAgain = await reader.get("codex", "/fixture/account");
   assert.equal(staleAgain.source, "stale");
-  assert.equal(staleAgain.models[1]?.value, "gpt-6-astra");
+  assert.equal(staleAgain.models[1]?.value, "fixture-model-a");
   assert.equal(reads, 3);
 });
 
