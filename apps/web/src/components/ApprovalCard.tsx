@@ -1,6 +1,5 @@
 import { Spinner } from "@/components/ui/spinner";
 import type { TaskActionKind } from "../task-activity";
-import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "./ui/scroll-area";
 import { Check, ShieldCheck, X } from "lucide-react";
 import type { PermissionRequest } from "@palmagent/shared";

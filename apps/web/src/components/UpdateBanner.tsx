@@ -18,7 +18,7 @@ export function UpdateBanner() {
   const failed = stage === "paused";
   const label = stages[stage];
 
-  return <div ref={toastObstacle} role="status" className="flex shrink-0 items-center gap-3 bg-card/95 px-4 pt-2 pb-[calc(8px+var(--safe-bottom))]">
+  return <div ref={toastObstacle} role="status" aria-label="Palmagent update" className="flex shrink-0 items-center gap-3 bg-card/95 px-4 pt-2 pb-[calc(8px+var(--safe-bottom))]">
     <div className="flex min-w-0 flex-1 flex-col gap-2">
       <p className="text-xs text-muted-foreground">{failed ? label : <Pending>{label}</Pending>}</p>
     </div>
