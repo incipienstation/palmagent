@@ -54,7 +54,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
     undefined, undefined, undefined, { readImage: readTaskImage, readVisualization: readTaskVisualization }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
-  const auth = new AuthService(db, settings, webauthn);
+  const auth = new AuthService(db.auth, settings, webauthn);
   const shutdown = new AbortController();
   const repoSettings = createSpaceSettings(join(dir, "state"), settings.repoRoots);
   const modelCatalog = extra.modelCatalog ?? { get: async (agent: AgentKind) => defaultModelCatalog(agent) };

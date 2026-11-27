@@ -144,3 +144,23 @@ test("real HTTPS passkeys protect enrollment, login, removal, and session revoca
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a signed-out browser picks up host login method changes on focus", async ({ page }) => {
+  let credentialCount = 0;
+  let githubEnabled = false;
+  await page.route("**/api/auth/me", route => route.fulfill({
+    json: { authenticated: false, required: true, credentialCount, githubEnabled },
+  }));
+  await page.goto("/");
+  await expect(page.getByText("Set up a login method on your installation host.")).toBeVisible();
+  githubEnabled = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const github = page.getByRole("button", { name: "Sign in with GitHub" });
+  const passkey = page.getByRole("button", { name: "Sign in with passkey" });
+  await expect(github).toBeVisible();
+  await expect(passkey).toHaveCount(0);
+  credentialCount = 1;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(passkey).toBeVisible();
+  await expect(github).toBeVisible();
+});

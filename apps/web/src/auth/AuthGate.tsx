@@ -1,7 +1,10 @@
+import { AuthScreen } from "./AuthScreen";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useUpdateBlocker } from "../update-state";
 import { useEffect, useState, type ReactNode } from "react";
 
+import type { AuthMe } from "@palmagent/shared";
 import { useAuthOperations } from "../hooks/remote-operations";
 import { cacheSession, onCacheSessionReset } from "../query-lifecycle";
 import { navigate, useRoute } from "../router";
@@ -17,6 +20,7 @@ type Phase = "loading" | "authed" | "unauthed";
 export function AuthGate({ children }: { children: ReactNode }) {
   const authOperations = useAuthOperations();
   const route = useRoute();
+  const [methods, setMethods] = useState<Pick<AuthMe, "credentialCount" | "githubEnabled">>();
   const [phase, setPhase] = useState<Phase>("loading");
   useUpdateBlocker(phase === "loading");
 
@@ -26,7 +30,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const generation = cacheSession();
     let alive = true;
     authOperations.me().then(
-      (me) => alive && generation === cacheSession() && setPhase(me.authenticated || !me.required ? "authed" : "unauthed"),
+      me => {
+        if (!alive || generation !== cacheSession()) return;
+        setMethods(me);
+        setPhase(me.authenticated || !me.required ? "authed" : "unauthed");
+      },
       // Offline first-load cannot verify the session — fall back to the login screen.
       () => alive && generation === cacheSession() && setPhase("unauthed"),
     );
@@ -37,11 +45,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
   }, [authOperations]);
 
+  if (route.name === "github-setup") return <Login setupKey={route.token} onAuthenticated={() => navigate("/")} />;
+  if (route.name === "github-verified" || route.name === "github-failed") {
+    const verified = route.name === "github-verified";
+    return <AuthScreen title={verified ? "GitHub account verified" : "GitHub sign-in failed"}
+      subtitle={verified ? "Confirm the displayed account on your installation host to enable sign-in."
+        : "Check the selected GitHub account and try again. For setup, reopen the link from your installation host."}>
+      <Button onClick={() => window.location.replace("/")}>Continue to Palmagent</Button>
+    </AuthScreen>;
+  }
   if (route.name === "enroll") {
     return (
       <Enroll
         token={route.token}
         onAuthenticated={() => {
+          setMethods(previous => ({ ...previous, credentialCount: Math.max(1, previous?.credentialCount ?? 0) }));
           setPhase("authed");
           navigate("/");
         }}
@@ -49,6 +67,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
   if (phase === "loading") return <div role="status" aria-label="Opening Palmagent" className="grid h-app place-items-center bg-background text-muted-foreground"><Spinner className="size-5" /></div>;
-  if (phase === "unauthed") return <Login onAuthenticated={() => setPhase("authed")} />;
+  if (phase === "unauthed") return <Login methods={methods} onAuthenticated={() => setPhase("authed")} />;
   return <>{children}</>;
 }

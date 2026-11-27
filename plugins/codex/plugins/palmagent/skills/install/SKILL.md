@@ -25,7 +25,7 @@ the plugin chooses and configures the reverse proxy and TLS using the actual hos
    missing OS dependencies may require administrator access.
 5. Read `<cli> connection --data-dir <installed-data-dir>`, configure and verify ingress using
    its contract and the shared reference. The CLI's local health success is not HTTPS success.
-6. Once HTTPS works, run `<cli> passkey --data-dir <installed-data-dir>` and give the user the
-   single-use enrollment link. Report runtime, HTTPS, renewal, and external reachability
+6. Once HTTPS works, offer passkey, GitHub, or both for this owner. Configure the chosen
+   methods using [login methods](../.shared/login-methods.md). Report runtime, HTTPS, renewal, and external reachability
    separately, plus any remaining prerequisite. Do not leave setup commands for the user
    when the plugin can complete the already authorized work.

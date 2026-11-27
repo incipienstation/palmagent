@@ -209,6 +209,7 @@ export interface AuthMe {
   // the login gate entirely.
   required: boolean;
   credentialCount: number;
+  githubEnabled?: boolean;
 }
 export interface EnrollTokenResponse {
   token: string;

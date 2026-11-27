@@ -15,7 +15,7 @@ selects an installation; it does not move persistent data. Use `install` if none
 
 For a domain or port change, prepare and record both the application and ingress changes
 before activation. Keep the old route until the new one is verified. A new domain changes
-passkey identity and needs a new device enrollment link. Optional settings use existing
+the passkey RP ID and the GitHub callback URL. Verify each enabled method on the new origin. Optional settings use existing
 values or CLI defaults, not extra configuration questions.
 
 Preview application changes:
@@ -62,5 +62,6 @@ for HTTP 400 and the Rust response marker. Apply the two routine method/path rul
 the probe through ingress. Manual run and stop continue through Node. To roll back just the
 writes, remove the two routine rules and reload ingress. Connection diagnosis covers the five reads.
 
-Verify runtime and public HTTPS separately. For a changed domain mint a fresh link with
-`<cli> passkey` only after HTTPS succeeds. Report any retained old routes or recovery work.
+Verify runtime and public HTTPS separately. For login method changes, recovery or a changed
+domain follow [login methods](../.shared/login-methods.md). Preserve unrelated login methods.
+Report any retained old routes or recovery work.

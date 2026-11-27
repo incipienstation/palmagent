@@ -48,6 +48,7 @@ export function useAuthOperations() {
   return useMemo(() => ({
     setUnauthorizedHandler: (handler: (() => void) | null) => setOnUnauthorized(handler),
     me: () => api.auth.me(),
+    githubStart: api.auth.githubStart,
     loginOptions: () => api.auth.loginOptions(),
     loginVerify: (response: Parameters<typeof api.auth.loginVerify>[0]) => api.auth.loginVerify(response),
     registerOptions: (token: string) => api.auth.registerOptions(token),

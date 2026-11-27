@@ -139,6 +139,7 @@ Commands:
   session        Dispatch an active native CLI session back to Palmagent
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove application units (proxy/TLS preserved; --purge removes data)
+  auth         Manage host-owned sign-in methods (run auth --help)
   passkey      Mint a fresh device-enroll link for an existing install
   start        Run the web server directly (dev/manual; reads env)
 
@@ -185,6 +186,7 @@ async function main(): Promise<void> {
     process.exitCode = prepareIndependentRuntime(parseFlags(rest), PKG_DIR, process.execPath);
     return;
   }
+  if (cmd === "auth") return (await import("../composition/host-login.js")).hostLoginCommand(rest);
   if (cmd === "view") return viewCommand(rest);
   if (cmd === "terminal") return terminalCommand(rest);
   if (cmd === "connection") return connectionCommand(rest);

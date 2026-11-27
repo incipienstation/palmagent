@@ -3,6 +3,7 @@ import { openDatabase } from "../platform/sqlite/connection.js";
 import type { SpaceCatalogWriter } from "../modules/spaces/application/ports/outbound/spaces.js";
 import { SqliteSpaces } from "../modules/spaces/adapters/outbound/sqlite-spaces.js";
 import { SqliteRoutines } from "../modules/routines/adapters/outbound/sqlite-routines.js";
+import { SqliteGitHubBindings } from "../modules/auth/adapters/outbound/sqlite-github-bindings.js";
 import { SqliteAuth } from "../modules/auth/adapters/outbound/sqlite-auth.js";
 import { SqliteTasks } from "../modules/tasks/adapters/outbound/sqlite-tasks.js";
 
@@ -29,6 +30,8 @@ export class Db {
   readonly runningRoutineRuns: SqliteRoutines["runningRoutineRuns"];
   readonly interruptRoutineRuns: SqliteRoutines["interruptRoutineRuns"];
   readonly listRoutineRuns: SqliteRoutines["listRoutineRuns"];
+  readonly auth: SqliteAuth;
+  readonly gitHubBindings: SqliteGitHubBindings;
   readonly insertCredential: SqliteAuth["insertCredential"];
   readonly getCredential: SqliteAuth["getCredential"];
   readonly listCredentials: SqliteAuth["listCredentials"];
@@ -128,7 +131,8 @@ export class Db {
     this.runningRoutineRuns = routines.runningRoutineRuns.bind(routines);
     this.interruptRoutineRuns = routines.interruptRoutineRuns.bind(routines);
     this.listRoutineRuns = routines.listRoutineRuns.bind(routines);
-    const auth = new SqliteAuth(this.connection);
+    this.gitHubBindings = new SqliteGitHubBindings(this.connection);
+    const auth = this.auth = new SqliteAuth(this.connection);
     this.insertCredential = auth.insertCredential.bind(auth);
     this.getCredential = auth.getCredential.bind(auth);
     this.listCredentials = auth.listCredentials.bind(auth);

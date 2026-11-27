@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { AuthenticationSchema, RegistrationSchema, RegisterOptionsSchema, ReauthenticationOptionsSchema, AuthorizationSchema, RemovePasskeySchema } from "@palmagent/shared/requests";
+import { GitHubLoginStartSchema, AuthenticationSchema, RegistrationSchema, RegisterOptionsSchema, ReauthenticationOptionsSchema, AuthorizationSchema, RemovePasskeySchema } from "@palmagent/shared/requests";
 import type { AuthCredentials, IssuedToken } from "../../domain/session.js";
 const CHALLENGE_COOKIE_NAME = "wa_chal";
 import { jsonBody } from "../../../../platform/http/input.js";
@@ -17,6 +17,26 @@ export function authRoutes({ auth, config }: Pick<HttpDependencies, "auth" | "co
   const credentials = (c: Context) => authCredentials(c, config.cookieName);
   return app
     .get("/me", (c) => c.json(auth.status(credentials(c)), 200))
+    .post("/github/start", jsonBody(GitHubLoginStartSchema), c => {
+      const { setupKey, returnHash } = c.req.valid("json");
+      const start = auth.beginGitHub(setupKey, returnHash ?? "#/");
+      applyToken(c, "__Host-pa_github", start.cookie);
+      c.header("Cache-Control", "no-store");
+      return c.json({ url: start.url }, 200);
+    })
+    .get("/github/callback", async c => {
+      c.header("Cache-Control", "no-store");
+      c.header("Referrer-Policy", "no-referrer");
+      try {
+        const result = await auth.finishGitHub(credentials(c), getCookie(c, "__Host-pa_github") ?? "",
+          c.req.query("state") ?? "", c.req.query("code") ?? "");
+        applyToken(c, "__Host-pa_github", { value: "", maxAge: 0 });
+        if (result.session) applyToken(c, config.cookieName, result.session);
+        return c.redirect(result.location, 303);
+      } catch {
+        return c.redirect("/#/github-failed", 303);
+      }
+    })
     .post("/login/options", async (c) => {
       const result = await auth.beginAuthentication();
       applyToken(c, CHALLENGE_COOKIE_NAME, result.challenge);

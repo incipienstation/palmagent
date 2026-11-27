@@ -20,6 +20,7 @@ type Confirmation = { action: "revoke-sessions" } | { action: "remove-passkey"; 
 export function SecuritySettings() {
   const operations = useSecurityOperations();
   const [passkeys, setPasskeys] = useState<Passkey[]>();
+  const [github, setGithub] = useState(false);
   const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -33,7 +34,10 @@ export function SecuritySettings() {
     void operations.me().then(async status => {
       if (!alive) return;
       setEnabled(status.required);
-      if (status.required) {
+      setGithub(Boolean(status.githubEnabled));
+      if (status.required && status.credentialCount === 0) {
+        setPasskeys([]);
+      } else if (status.required) {
         const keys = await operations.passkeys();
         if (alive) setPasskeys(keys);
       }
@@ -72,6 +76,10 @@ export function SecuritySettings() {
   }
   if (!enabled) return <p className="text-sm text-muted-foreground">Enable sign-in to manage passkeys and devices.</p>;
   return <SettingsPanel aria-label="Security settings">
+    {github && <SettingsCard><SettingsField orientation="vertical"><FieldLabel>GitHub login</FieldLabel>
+      <p className="text-sm text-muted-foreground">Enabled. Manage login methods on the installation host.</p>
+    </SettingsField></SettingsCard>}
+    {github && passkeys?.length === 0 ? <p className="text-sm text-muted-foreground">To sign out all devices, run <code>palmagent auth logout-all</code> on the installation host.</p> : <>
     <p className="text-sm text-muted-foreground">Verify your passkey to change access. Sign-in requires your device PIN or biometrics.</p>
     <SettingsCard>
       <SettingsField orientation="vertical">
@@ -97,7 +105,7 @@ export function SecuritySettings() {
         </>}
       </SettingsField>
     </SettingsCard>
-    <Button variant="destructive" disabled={busy} onClick={() => { setError(undefined); setConfirmation({ action: "revoke-sessions" }); }}>Sign out all devices</Button>
+    <Button variant="destructive" disabled={busy} onClick={() => { setError(undefined); setConfirmation({ action: "revoke-sessions" }); }}>Sign out all devices</Button></>}
     {busy && !confirmation && <p role="status" className="text-sm"><Pending>Waiting for passkey verification…</Pending></p>}
     {error && !confirmation && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open && !busy) setConfirmation(undefined); }}>

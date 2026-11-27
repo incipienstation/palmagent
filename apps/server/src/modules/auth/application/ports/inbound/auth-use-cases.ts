@@ -3,6 +3,8 @@ import type { RegistrationResponse, AuthenticationResponse, RegistrationOptions,
 
 /** Operations accepted by the auth module. */
 export interface AuthUseCases {
+  beginGitHub(setupKey: string | undefined, returnHash: string): { url: string; cookie: IssuedToken };
+  finishGitHub(credentials: AuthCredentials, cookie: string, state: string, code: string): Promise<{ location: string; session?: IssuedToken }>;
   beginReauthentication(credentials: AuthCredentials, action: import("@palmagent/shared").AuthAction): Promise<{ options: AuthenticationOptions; challenge: IssuedToken }>;
   finishReauthentication(credentials: AuthCredentials, response: AuthenticationResponse): Promise<{ authorization: string }>;
   authorizeEnrollment(credentials: AuthCredentials, authorization: string): { token: string; expiresAt: number };

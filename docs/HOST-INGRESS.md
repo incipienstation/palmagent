@@ -7,8 +7,7 @@ its current ingress owner. The application CLI manages its runtime, not nginx or
 
 Prepare a domain pointing to the host. Ask the plugin to install or reconfigure Palmagent
 with that domain. It resolves available permissions, DNS/routing and authentication
-prerequisites, installs the runtime, configures ingress, and verifies HTTPS before providing
-a passkey enrollment link. External firewalls and interactive provider login may still
+prerequisites, installs the runtime, configures ingress, and verifies HTTPS before configuring the selected login methods. External firewalls and interactive provider login may still
 require your action. Installation never means replacing unrelated sites.
 
 ## Existing installations
@@ -22,8 +21,7 @@ certificate renewal mechanism until any deliberate replacement is verified.
 The CLI's install/setup/update commands no longer provision routing, and uninstall (even
 with --purge) no longer removes it. Use the plugin for changes to the domain or internal
 port, and for complete removal. Standalone CLI users must coordinate those changes with
-their own ingress manager. Changing domains changes passkey identity and requires device
-re-enrollment; changing a port requires updating the proxy upstream.
+their own ingress manager. After changing domains, enroll passkeys on the new origin and update the callback URL for enabled GitHub login. Changing a port requires updating the proxy upstream.
 
 Application updates leave routing intact. Recovery to an older application cannot establish
 that its public transport works: verify ingress separately. If an older CLI is explicitly
@@ -52,7 +50,7 @@ on older releases; the bare `connection` command remains a read-only JSON contra
 
 `palmagent terminal diagnose` provides a separate end-to-end terminal WebSocket check.
 Local requests to a public hostname are not proof of off-host reachability.
-A first enrollment link is minted with `palmagent passkey` after HTTPS works.
+Once HTTPS works, configure [the owner's login methods](SECURITY.md#github-sign-in).
 
 For an existing native user installation, `setup --dry-run` lists the prepared files and
 fingerprints, changed installation/runtime fields, public origin, bootstrap selection and activation effects.
