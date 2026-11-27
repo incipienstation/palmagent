@@ -1,3 +1,4 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink, X } from "lucide-react";
 import { downloadImage, isRemoteImage } from "../image-download";
@@ -42,14 +43,14 @@ function ImageViewerBody({ src, label, kind, onError }: ImageViewerProps) {
         {kind === "image" && (isRemoteImage(src) ? <Button asChild variant="ghost" size="icon-lg">
           <a href={src} target="_blank" rel="noopener noreferrer" aria-label="Open original image" title="Open original image"><ExternalLink /></a>
         </Button> : <Button type="button" variant="ghost" size="icon-lg" onClick={() => void download()}
-          disabled={downloading} aria-busy={downloading} aria-label={downloading ? "Downloading image" : "Download image"} title={downloading ? "Downloading…" : "Download image"}><Download /></Button>)}
+          disabled={downloading} aria-busy={downloading} aria-label={downloading ? "Downloading image" : "Download image"} title={downloading ? "Downloading…" : "Download image"}>{downloading ? <Spinner /> : <Download />}</Button>)}
         <DialogClose asChild>
           <Button type="button" variant="ghost" size="icon-lg" aria-label={`Exit ${kind} fullscreen`} title="Close"><X /></Button>
         </DialogClose>
       </div>
     </DialogHeader>
     {downloadFailed && <p role="alert" className="shrink-0 px-3 py-2 text-sm text-destructive">Could not download image. Please try again.</p>}
-    <Suspense fallback={<p className="p-3 text-sm text-muted-foreground" role="status">Loading viewer…</p>}>
+    <Suspense fallback={<p className="p-3 text-sm text-muted-foreground" role="status"><Pending>Loading viewer…</Pending></p>}>
       <ZoomableImage src={src} label={label} kind={kind} onError={onError} />
     </Suspense>
   </>;

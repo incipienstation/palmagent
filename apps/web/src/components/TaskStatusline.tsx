@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useId, useRef, useState, type RefObject } from "react";
 import { ChevronDown, Minimize2 } from "lucide-react";
 import { contextRemaining, type AccountLimits, type LimitWindow, type TaskState } from "@palmagent/shared";
@@ -17,7 +18,7 @@ function AllowanceGauge({ remaining }: { remaining: number }) {
 
 function WindowSummary({ name, limit, now, stale }: { name: string; limit: LimitWindow; now: number; stale: boolean }) {
   const { expired, remaining, low } = windowState(limit, now, stale);
-  const value = expired ? "Refreshing" : remaining === null ? "Unknown" : `${Number(remaining.toFixed(1))}%`;
+  const value = expired ? "Awaiting refresh" : remaining === null ? "Unknown" : `${Number(remaining.toFixed(1))}%`;
   return <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", low && "text-destructive")}>
     <span>{name}</span>
     {!expired && remaining !== null && <AllowanceGauge remaining={remaining} />}
@@ -35,8 +36,8 @@ function limitWindows(report: AccountLimits | null) {
   return windows.filter((entry): entry is { name: string; limit: LimitWindow } => !!entry.limit);
 }
 
-export function TaskStatusline({ task, compacting, compactReason, onCompact, triggerRef }: {
-  task: TaskState; compacting: boolean; compactReason?: string; onCompact: () => void; triggerRef: RefObject<HTMLButtonElement | null>;
+export function TaskStatusline({ task, compactionLabel, compactReason, onCompact, triggerRef }: {
+  task: TaskState; compactionLabel?: string; compactReason?: string; onCompact: () => void; triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
   const { report: received, failed, now } = useTaskAccountLimits(task.taskId);
   const report = received?.agent === task.agent ? received : null;
@@ -48,10 +49,10 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
   const lowWindows = available.filter(({ limit }) => windowState(limit, now, stale).low && limit.resetsAt !== null);
   const primary = report?.state === "ready" && report.agent === "codex" ? report.buckets[0] : undefined;
   const usage = task.contextUsage;
-  const remaining = compacting ? null : contextRemaining(usage);
+  const remaining = compactionLabel ? null : contextRemaining(usage);
   const contextValue = remaining === null ? "—" : `${Number(remaining.toFixed(1))}%`;
   const contextLabel = remaining === null ? contextValue : `${contextValue} left`;
-  const accountLabel = !report ? failed ? "Limits unavailable" : "Checking limits…"
+  const accountLabel = !report ? failed ? "Limits unavailable" : <Pending>Checking limits…</Pending>
     : report.state !== "ready" ? report.state === "error" ? "Limits unavailable" : "Limits not reported"
     : task.agent === "claude" ? "Claude account limits" : "Codex account credits";
   return <section aria-label="Session usage" className="min-w-0">
@@ -61,7 +62,7 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
           <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left text-xs font-normal text-muted-foreground">
             {primary && primary.id !== "codex" && <span className="truncate">{primary.name}</span>}
             <span className="flex flex-wrap items-center gap-x-2">
-              {task.agent === "codex" && <span className="inline-flex items-center gap-1 whitespace-nowrap" aria-label={`Context ${contextLabel}`}>
+              {compactionLabel ? <span role="status"><Pending>{compactionLabel}</Pending></span> : task.agent === "codex" && <span className="inline-flex items-center gap-1 whitespace-nowrap" aria-label={`Context ${contextLabel}`}>
                 <span>Context</span>
                 {remaining !== null && <AllowanceGauge remaining={remaining} />}
                 <span className={cn("tabular-nums", remaining !== null && "text-foreground")}>{contextValue}{remaining !== null && <span className="sr-only"> left</span>}</span>
@@ -88,9 +89,9 @@ export function TaskStatusline({ task, compacting, compactReason, onCompact, tri
           <section aria-label="Session context" className="flex flex-col gap-3 text-sm">
             <h3 className="font-semibold">Session context</h3>
             {task.agent === "codex" && <>
-              <p>{compacting ? "Compacting context…" : remaining !== null ? `${Number(remaining.toFixed(1))}% context remaining` : usage?.stale ? "Waiting for an updated context reading." : "Context not reported yet."}</p>
+              <p>{compactionLabel ? <Pending>{compactionLabel}</Pending> : remaining !== null ? `${Number(remaining.toFixed(1))}% context remaining` : usage?.stale ? "Waiting for an updated context reading." : "Context not reported yet."}</p>
               {usage && <>
-                <p className="tabular-nums">{usage.stale || compacting ? "Last reading: " : ""}{usage.usedTokens.toLocaleString()} / {usage.windowTokens?.toLocaleString() ?? "unknown"} tokens used</p>
+                <p className="tabular-nums">{usage.stale || compactionLabel ? "Last reading: " : ""}{usage.usedTokens.toLocaleString()} / {usage.windowTokens?.toLocaleString() ?? "unknown"} tokens used</p>
                 <p className="text-muted-foreground">Updated {new Date(usage.updatedAt).toLocaleTimeString()}</p>
               </>}
             </>}

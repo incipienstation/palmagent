@@ -1,3 +1,4 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { onTerminalsChanged } from "../terminal-events";
 import { TERMINAL_POLICY } from "@palmagent/shared/terminals";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,6 +29,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   const [capabilities, setCapabilities] = useState<TerminalCapabilities>();
   const [selected, setSelected] = useUpdateState(scope + ":selected", "");
   const [busy, setBusy] = useState(false);
+  const retryList = useRef<() => void>(() => {});
   const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const revision = useRef(0);
@@ -57,14 +59,16 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   useEffect(() => {
     let live = true;
     let pending = false, dirty = false;
-    setLoaded(false);
+    setLoaded(false); setError("");
     const load = () => {
       if (!live) return;
       if (pending || document.visibilityState === "hidden") { dirty = true; return; }
       dirty = false;
       pending = true;
+      setError("");
       void refresh().catch(e => { if (live) setError(e.message); }).finally(() => { pending = false; if (dirty) load(); });
     };
+    retryList.current = load;
     const off = onTerminalsChanged(load);
     const foreground = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", foreground);
@@ -125,10 +129,10 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     >
 
         <Select value={selected} onValueChange={value => { setSelected(value); setRenaming(false); }} disabled={!terminals.length || busy}>
-          <SelectTrigger className="min-w-0 flex-1 border-0 bg-transparent shadow-none" aria-label="Select terminal"><SelectValue placeholder={loaded ? "No terminal yet" : "Loading terminals…"} /></SelectTrigger>
+          <SelectTrigger className="min-w-0 flex-1 border-0 bg-transparent shadow-none" aria-label="Select terminal"><SelectValue placeholder={loaded ? "No terminal yet" : "Select terminal"} /></SelectTrigger>
           <SelectContent><SelectGroup>{terminals.map(t => <SelectItem key={t.id} value={t.id}>{t.title}{t.state !== "running" ? ` · ${terminalStateLabels[t.state]}` : ""}</SelectItem>)}</SelectGroup></SelectContent>
         </Select>
-        <Button variant="ghost" size="icon" className="shrink-0" aria-label="New terminal" disabled={!canCreate} onClick={() => void create()}><Plus /></Button>
+        <Button variant="ghost" size="icon" className="shrink-0" aria-label="New terminal" disabled={!canCreate} onClick={() => void create()}>{creating && !showCreate ? <Spinner /> : <Plus />}</Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="shrink-0" aria-label="Terminal actions" disabled={busy}><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -150,7 +154,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
         <Input aria-label="Terminal name" value={title} onChange={e => setTitle(e.target.value)} maxLength={TERMINAL_POLICY.maxTitleLength} autoFocus />
         <Button size="icon-lg" aria-label="Save terminal name" disabled={busy || !title.trim()}><Check /></Button>
       </form>}
-      {(busy || !loaded) && <p role="status" className="text-xs text-muted-foreground">{busy ? creating ? "Creating terminal…" : "Updating terminal…" : "Loading terminals…"}</p>}
+      {busy && !creating && <p role="status" className="text-xs text-muted-foreground"><Pending>Updating terminal…</Pending></p>}
       {error && <Alert variant="destructive">{error}</Alert>}
       {active?.state === "starting" && active.startError && capabilities?.available && <Alert variant="destructive">{active.startError}</Alert>}
       {capabilities && !capabilities.available && <Alert>{capabilities.reason ?? "Terminals are unavailable on this platform."}</Alert>}
@@ -159,7 +163,9 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
       : <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="my-auto">
           <EmptyState icon={TerminalIcon}
-            title={active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? "Shell stopped unexpectedly" : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : creating ? "Creating terminal…" : !loaded ? error ? "Could not load terminals." : "Loading terminals…" : "Open a terminal"}
+            pending={(!loaded && !error) || active?.state === "closing" || (active?.state === "starting" && !active.startError)}
+            action={!loaded && error ? { label: "Retry terminals", onClick: () => retryList.current() } : undefined}
+            title={active ? active.state === "starting" ? active.startError ? "Shell could not start" : "Starting shell…" : active.state === "closing" ? "Closing shell…" : active.state === "lost" ? "Shell stopped unexpectedly" : "Shell exited" + (active.exitCode !== undefined ? " · " + active.exitCode : "") : !loaded ? error ? "Could not load terminals." : "Loading terminals…" : "Open a terminal"}
             subtitle={stopped ? active?.startError ?? "Open a new terminal to continue." : !active && loaded ? target ? "Terminals keep running when you leave this screen." : "Choose a Space to get started." : undefined}
           >
             {showCreate && <>
@@ -168,7 +174,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
                 <SelectContent><SelectGroup>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>}
               <Button disabled={!canCreate} onClick={() => void create()}>
-                <Plus data-icon="inline-start" />{creating ? "Opening terminal…" : stopped ? "Open new terminal" : "Open terminal"}
+                {creating ? <Pending>Opening terminal…</Pending> : <><Plus data-icon="inline-start" />{stopped ? "Open new terminal" : "Open terminal"}</>}
               </Button>
             </>}
           </EmptyState>

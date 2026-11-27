@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import type { PendingMessage } from "@palmagent/shared";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
@@ -39,5 +40,5 @@ export function MessageDelivery({ message, paused, disabled, resumeDisabled, onD
     <Button variant="ghost" size="sm" disabled={disabled || resumeDisabled} onClick={onResume}>Resume delivery</Button>
   </div>;
   return message.status === "sending" && pendingHint
-    ? <p role="status" className="mb-3 font-sans text-sm text-muted-foreground">{pendingHint}</p> : null;
+    ? <p role="status" className="mb-3 font-sans text-sm text-muted-foreground"><Pending>{pendingHint}</Pending></p> : null;
 }

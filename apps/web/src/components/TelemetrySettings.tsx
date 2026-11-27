@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import { useId, useState } from "react";
 import { useTelemetrySettings } from "../hooks/useTelemetrySettings";
 import { Button } from "./ui/button";
@@ -52,8 +53,8 @@ export function TelemetrySettings() {
           {status?.pendingDisclosure ? "Accept 180-day retention to start sharing." : "Aggregate metrics are kept for up to 180 days. Applies to this installation."}
         </FieldDescription>
       </FieldContent>
-      <Switch id={id} checked={status?.enabled ?? true} disabled={busy || !status?.available}
-        aria-describedby={`${id}-description`} onCheckedChange={enabled => void request(enabled)} />
+      {status ? <Switch id={id} checked={status.enabled} disabled={busy || !status.available}
+        aria-describedby={`${id}-description`} onCheckedChange={enabled => void request(enabled)} /> : !error && <span role="status" aria-label="Loading sharing preference"><Spinner /></span>}
     </SettingsField>
     <div className="flex flex-col gap-2 pb-1">
       <SharingDetails />

@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useRequestScope } from "../hooks/request-scope";
 import { useBackLayer } from "../hooks/useBackLayer";
 import { registerRepo, removeRepo as removeRegisteredRepo, useRepoMutations } from "../repo-mutations";
@@ -120,6 +121,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const [discovered, setDiscovered] = useState<DiscoveredRepo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [browseTrail, setBrowseTrail] = useUpdateState<FsListResponse[]>("picker:browse-trail", []);
+  const [browsing, setBrowsing] = useState(false);
   const browseRequest = useRequestScope(open);
   const discoveryRequest = useRequestScope(open);
   const [browse, setBrowse] = useUpdateState<FsListResponse | null>("picker:browse", null);
@@ -138,10 +140,10 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   const busy = mutations.registering.size > 0;
   const [error, setError] = useState("");
   const debounceRef = useRef<number | undefined>(undefined);
-  const backToSearch = () => { browseRequest.cancel(); setMode("search"); setBrowseTrail([]); };
+  const backToSearch = () => { browseRequest.cancel(); setBrowsing(false); setMode("search"); setBrowseTrail([]); };
   useBackLayer(open && mode !== "search", backToSearch, 150);
   useBackLayer(open && mode === "browse" && browseTrail.length > 0, () => {
-    browseRequest.cancel();
+    browseRequest.cancel(); setBrowsing(false);
     setBrowse(browseTrail.at(-1)!);
     setBrowseTrail(browseTrail.slice(0, -1));
   }, 160);
@@ -156,7 +158,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   // current scan rather than offering persisted results from old settings.
   useEffect(() => {
     if (!open) return;
-    setValidating(false);
+    setBrowsing(false); setValidating(false);
     if (!restoring.current) {
       setSelectionReady(true);
       setMode("search"); setBrowseTrail([]); setQuery(""); setPicked(null);
@@ -232,7 +234,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
   async function openBrowse(path?: string) {
     const request = browseRequest.begin();
     const previous = mode === "browse" ? browse : null;
-    setMode("browse");
+    setMode("browse"); setBrowsing(true);
     setError("");
     try {
       const next = await browser.listDirectory(path, request.signal);
@@ -242,6 +244,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
       setBrowse(next);
     } catch (e) {
       if (request.isCurrent()) setError(errMsg(e));
+    } finally {
+      if (request.isCurrent()) setBrowsing(false);
     }
   }
 
@@ -289,7 +293,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               disabled={scanning}
               aria-label="Rescan folders"
             >
-              <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
+              <RefreshCw className={cn("size-3.5", scanning && "motion-safe:animate-spin")} />
             </Button>
             <Button ref={closeRef} variant="outline" size="icon-lg" onClick={onClose} aria-label="Close">
               <X className="size-3.5" />
@@ -315,8 +319,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
         <DrawerBody className="px-0">
           <div role="listbox" aria-label="Folders">
-          {mutations.removing.size > 0 && <p role="status" className="px-4 py-2 text-sm text-muted-foreground">Removing Space…</p>}
-          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-4 py-2 text-sm text-muted-foreground">{tilde(path)} · Connecting…</p>)}
+          {mutations.removing.size > 0 && <p role="status" className="px-4 py-2 text-sm text-muted-foreground"><Pending>Removing Space…</Pending></p>}
+          {[...mutations.registering].map(path => <p key={path} role="status" className="break-all px-4 py-2 text-sm text-muted-foreground"><Pending>{tilde(path)} · Connecting…</Pending></p>)}
           {error && (
             <Alert variant="destructive" className="mx-4 my-2.5 w-auto">
               {error}
@@ -365,7 +369,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                   />
                 );
               })}
-              {results.length === 0 && !scanning && (
+              {results.length === 0 && !error && !scanning && (
                 <div className="px-6 py-12 text-center text-sm text-faint">
                   No folders match — try Browse or a manual path.
                 </div>
@@ -375,7 +379,8 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
             </>
           )}
 
-          {mode === "browse" && (
+          {mode === "browse" && browsing && <p role="status" className="px-4 py-2 text-sm text-muted-foreground"><Pending>Loading folders</Pending></p>}
+          {mode === "browse" && !browsing && (
             <>
               <div className="px-4 pt-2.5 pb-1 font-mono text-xs break-all text-muted-foreground">
                 {tilde(browse?.path ?? "")}
@@ -441,7 +446,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                 spellCheck={false}
                 autoFocus
               />
-              <div role="status" className="min-h-5 text-[13px] text-muted-foreground">{validating ? "Checking…" : ""}</div>
+              <div role="status" className="min-h-5 text-[13px] text-muted-foreground">{validating ? <Pending>Checking…</Pending> : ""}</div>
               {validation && !validation.isDir && (
                 <div className="text-[13px] text-destructive">
                   ✗ {validation.exists ? "Not a directory" : "No such directory"} — {tilde(validation.resolved)}
@@ -490,7 +495,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
               </div>
               <PathText>{tilde(picked.path)}</PathText>
               <div className="mt-0.5 text-[13px] text-green">
-                {validating ? "Checking selected path…" : !selectionReady ? "Choose a valid directory to continue." : picked.branch ? `✓ git repo · branch ${picked.branch}` : "✓ plain folder · tasks run in place"}
+                {validating ? <Pending>Checking selected path…</Pending> : !selectionReady ? "Choose a valid directory to continue." : picked.branch ? `✓ git repo · branch ${picked.branch}` : "✓ plain folder · tasks run in place"}
               </div>
             </div>
             {picked.branch && !registeredByPath.has(picked.path) && <FieldGroup>
@@ -507,7 +512,7 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
         {picked && (
           <DrawerFooter>
             <Button onClick={() => void register()} disabled={busy || validating || !selectionReady}>
-              {busy ? "Connecting…" : registeredByPath.has(picked.path) ? "Open Space" : "Connect Space"}
+              {busy ? "Connect Space" : registeredByPath.has(picked.path) ? "Open Space" : "Connect Space"}
             </Button>
           </DrawerFooter>
         )}

@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { ScrollArea } from "./ui/scroll-area";
 import { TERMINAL_POLICY, terminalSize } from "@palmagent/shared/terminals";
 import { type TouchEvent as ReactTouchEvent, useEffect, useRef, useState } from "react";
@@ -199,10 +200,10 @@ export function TerminalScreen({ id, initialCwd, readOnly, onEnableInput }: { id
     };
   }, [id]);
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-    <p role="status" className={cn("px-3 py-1 text-xs text-muted-foreground", connected && "sr-only")} title={"Started in " + initialCwd}>{readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
+    <p role="status" className={cn("px-3 py-1 text-xs text-muted-foreground", connected && "sr-only")} title={"Started in " + initialCwd}>{!connected && state !== "Shell exited" ? <Pending>{state}</Pending> : readOnly && connected ? "Read-only" : state} · {initialCwd.split(/[\\/]/).filter(Boolean).at(-1) || initialCwd}</p>
     {connected && !writable && <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-1">
-      <p role="status" className="text-xs text-muted-foreground">{claiming ? "Enabling input…" : readOnly ? "Viewing terminal output" : notice}</p>
-      <Button variant="outline" size="sm" disabled={claiming} onClick={() => { termRef.current?.focus(); if (readOnly) onEnableInput(); else claim.current(); }}>{claiming ? "Connecting…" : "Type here"}</Button>
+      <p role="status" className="text-xs text-muted-foreground">{readOnly ? "Viewing terminal output" : notice}</p>
+      <Button variant="outline" size="sm" disabled={claiming} onClick={() => { termRef.current?.focus(); if (readOnly) onEnableInput(); else claim.current(); }}>{claiming ? <Pending>Enabling input…</Pending> : "Type here"}</Button>
     </div>}
     <div
       ref={container}

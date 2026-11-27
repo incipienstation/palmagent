@@ -1,7 +1,9 @@
+import { Spinner } from "@/components/ui/spinner";
+import type { TaskActionKind } from "../task-activity";
 import { useUpdateState } from "../update-state";
 import { useId, useLayoutEffect, useRef } from "react";
 import type { AskQuestion, QuestionAnswer } from "@palmagent/shared";
-import { Check, CircleHelp, ChevronLeft, ChevronRight, LoaderCircle } from "lucide-react";
+import { Check, CircleHelp, ChevronLeft, ChevronRight } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 
 import { Button } from "@/components/ui/button";
@@ -23,12 +25,13 @@ import { cn } from "@/lib/utils";
 export function QuestionCard({
   questions,
   checkpointKey,
-  busy,
+  busy, action,
   onSubmit,
 }: {
   questions: AskQuestion[];
   checkpointKey: string;
   busy: boolean;
+  action?: TaskActionKind;
   onSubmit: (answers: QuestionAnswer[], skip: boolean) => void;
 }) {
   // One selection array + note per question, indexed positionally.
@@ -79,7 +82,7 @@ export function QuestionCard({
     notes: notes[qi].trim() || undefined,
   }));
   const hasAny = answers.some((a) => a.selected.length > 0 || a.notes);
-  const progress = <p role="status" className="text-xs text-muted-foreground">{busy ? "Sending…" : `${questions.filter((_q, qi) => answeredAt(qi)).length} of ${questions.length} answered`}</p>;
+  const progress = <p role="status" className="text-xs text-muted-foreground">{action === "skipQuestion" ? "Skipping question…" : action === "answer" ? "Sending answer…" : `${questions.filter((_q, qi) => answeredAt(qi)).length} of ${questions.length} answered`}</p>;
 
   return (
     // The whole panel is height-capped (max-h) so it can't grow up and bury the
@@ -220,14 +223,14 @@ export function QuestionCard({
           disabled={busy}
           onClick={() => onSubmit(answers, true)}
         >
-          Skip
+          {action === "skipQuestion" && <Spinner />}Skip
         </Button>
         <Button
           className="flex-[2]"
           disabled={busy || !hasAny}
           onClick={() => onSubmit(answers, false)}
         >
-          {busy && <LoaderCircle data-icon="inline-start" className="motion-safe:animate-spin" />}
+          {action === "answer" && <Spinner />}
           Send answer
         </Button>
       </div>
