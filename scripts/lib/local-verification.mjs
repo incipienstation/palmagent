@@ -42,25 +42,27 @@ export function localScope(cwd, baseRef = 'origin/develop') {
   }
 }
 
-export function verificationSteps({ scope, base, head }) {
+export function verificationSteps({ scope, base, head, paths }, { extended = false } = {}) {
   const steps = [];
   const add = (id, command, args, env) => steps.push({ id, command, args,
     timeoutMs: id === 'web-tests' ? 15 * 60_000 : 10 * 60_000, ...(env ? { env } : {}) });
   const node = (id, ...args) => add(id, process.execPath, args);
   const pnpm = (id, ...args) => add(id, 'pnpm', args);
-  node('scope-tests', '--test', 'scripts/tests/ci-scope.test.mjs', 'scripts/tests/repository-skills.test.mjs');
-  node('skills', 'scripts/sync-skills.mjs', '--check');
   node('source-leaks', 'scripts/validate.mjs');
-  node('release', 'scripts/check-release.mjs');
   add('working-diff', 'git', ['diff', '--check']);
   add('staged-diff', 'git', ['diff', '--cached', '--check']);
   if (base && head) add('committed-diff', 'git', ['diff', '--check', `${base}...${head}`, '--']);
-  if (scope.types) pnpm('types', 'typecheck');
-  if (scope.tooling) {
-    pnpm('tooling', 'pkg:check');
-    // pkg:check already includes the scope and repository-skill test files.
-    steps.splice(steps.findIndex(({ id }) => id === 'scope-tests'), 1);
+  const backendPath = /^(?:apps\/(?:server|palmagentd|palmagent-runtime)\/|packages\/(?:shared|native-telemetry)\/|Cargo\.(?:toml|lock)$)/;
+  if (!paths || paths.some(path => backendPath.test(path) && !path.endsWith('.md'))) {
+    pnpm('architecture', 'architecture:check');
   }
+  if (!extended && paths) return steps;
+
+  if (!scope.tooling) node('scope-tests', '--test', 'scripts/tests/ci-scope.test.mjs', 'scripts/tests/repository-skills.test.mjs');
+  node('skills', 'scripts/sync-skills.mjs', '--check');
+  node('release', 'scripts/check-release.mjs');
+  if (scope.types) pnpm('types', 'typecheck');
+  if (scope.tooling) pnpm('tooling', 'pkg:check');
   if (scope.server) {
     pnpm('server-contracts', 'server:contracts');
     pnpm('server-smoke', 'server:smoke');
