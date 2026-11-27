@@ -4,6 +4,7 @@ import { isActiveTaskStatus, needsTaskAttention, type Repo, type TaskState, type
 import { Archive, Check, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { useStoredPreference } from "../hooks/useStoredPreference";
@@ -339,12 +340,7 @@ export const InboxView = memo(function InboxView({
     <ReposContext.Provider value={repos}>
       <AppShell wide>
         <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")}
-          className={mobileHome ? "gap-x-0 px-2" : undefined} conn={mobileHome ? undefined : conn}>
-          {mobileHome && <ToggleGroup type="single" aria-label="Group tasks by" className="w-auto shrink-0" value={grouping}
-            onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
-            <ToggleGroupItem value="status" className="min-w-11">Status</ToggleGroupItem>
-            <ToggleGroupItem value="space" className="min-w-11">Space</ToggleGroupItem>
-          </ToggleGroup>}
+          conn={mobileHome ? undefined : conn}>
           {!loading && <TaskFilters {...filters} />}
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
@@ -354,12 +350,12 @@ export const InboxView = memo(function InboxView({
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
           placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} action={
             <Button type="button" size="icon-lg" className="size-12 shrink-0 rounded-full"
-              ref={desktop ? undefined : toastObstacle} aria-label="Dispatch new task" title="New task" onClick={newTask}
+              ref={desktop || mobileHome ? undefined : toastObstacle} aria-label="Dispatch new task" title="New task" onClick={newTask}
               disabled={!!repoId && (!space || reposLoading)}><Plus /></Button>
           } />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${mode}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
-          <div data-testid="inbox-content" className="pb-4">
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${mode}:${directory}:${statusFilter}:${query}` : undefined} className={cn("min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14", mobileHome && "[&_[data-radix-scroll-area-viewport]]:scroll-pb-16")} onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
+          <div data-testid="inbox-content" className={mobileHome ? "pb-16" : "pb-4"}>
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && (search || statusFilter !== "all" || (repoId && directory !== "all")) && <div className="flex flex-col gap-2 px-4 pt-2">
@@ -388,6 +384,12 @@ export const InboxView = memo(function InboxView({
             )}
           </div>
         </PullToRefresh>
+        {mobileHome && <ToggleGroup ref={toastObstacle} type="single" variant="floating" aria-label="Group tasks by"
+          className="absolute bottom-0 left-1/2 z-20 -translate-x-1/2" value={grouping}
+          onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
+          <ToggleGroupItem value="status">Status</ToggleGroupItem>
+          <ToggleGroupItem value="space">Space</ToggleGroupItem>
+        </ToggleGroup>}
         </div>
         </div>
       </AppShell>
