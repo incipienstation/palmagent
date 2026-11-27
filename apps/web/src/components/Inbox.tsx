@@ -10,6 +10,7 @@ import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { useStoredPreference } from "../hooks/useStoredPreference";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
+import { cn } from "@/lib/utils";
 import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
 import { statusLabel, statusSection } from "@/lib/status";
@@ -354,8 +355,9 @@ export const InboxView = memo(function InboxView({
               disabled={!!repoId && (!space || reposLoading)}><Plus /></Button>
           } />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${mode}:${directory}:${statusFilter}:${query}` : undefined} className="min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14" onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
-          <div data-testid="inbox-content" className="pb-4">
+        <PullToRefresh scrollKey={!loading && repos.size ? `inbox:${scopeKey}:${mode}:${directory}:${statusFilter}:${query}` : undefined} className={cn("min-h-0 min-w-0 flex-1 [&_[data-radix-scroll-area-viewport]]:scroll-pt-14",
+          mobileHome && "[&_[data-radix-scroll-area-viewport]]:scroll-pb-16")} onRefresh={async () => { await Promise.all([onRefresh(), refresh()]); }}>
+          <div data-testid="inbox-content" className={mobileHome ? "pb-16" : "pb-4"}>
             {reposError && <Alert variant="destructive" className="mx-4 mt-3 w-auto">{reposError}<Button variant="outline" onClick={() => void refresh().catch(() => {})}>Retry</Button></Alert>}
             {missingSpace && <Alert className="mx-4 mt-3 w-auto">This Space is no longer connected. Choose another Space to start a task.<Button variant="outline" onClick={() => navigate("/spaces")}>Open Spaces</Button></Alert>}
             {!loading && (search || statusFilter !== "all" || (repoId && directory !== "all")) && <div className="flex flex-col gap-2 px-4 pt-2">
@@ -385,7 +387,7 @@ export const InboxView = memo(function InboxView({
           </div>
         </PullToRefresh>
         {mobileHome && <ToggleGroup ref={toastObstacle} type="single" variant="floating" aria-label="Group tasks by"
-          className="mt-1 shrink-0 self-center" value={grouping}
+          className="absolute bottom-0 left-1/2 z-20 -translate-x-1/2" value={grouping}
           onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
           <ToggleGroupItem value="status">Status</ToggleGroupItem>
           <ToggleGroupItem value="space">Space</ToggleGroupItem>
