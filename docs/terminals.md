@@ -63,8 +63,7 @@ handoff. Starting a Claude terminal creates a new conversation.
 ## Installation and scope
 
 The public npm package remains **palmagent**. Its package dependencies supply
-node-pty and the terminal emulators; no tmux, ttyd, separate terminal daemon package,
-or extra user-managed process is required. The Linux package installer provisions
+node-pty and the terminal emulators. The Linux package installer provisions
 the host services and private IPC. Normal Node/npm and host setup prerequisites
 still apply, including native-module build tools on targets without prebuilt binaries.
 
