@@ -4,8 +4,7 @@ New Preview publication uses the signed standalone path exclusively. The retaine
 filename `npm-publish.yml` now publishes both distributions. Use `standalone-preview` for
 Preview and the existing protected `npm-latest` for Stable. Before first publication, complete
 [release hosting setup](../../../../docs/RELEASE-HOSTING.md). Missing configuration fails before
-tag creation. Historical npm procedures below apply only to Stable/legacy recovery, never to
-new Preview. The controller discovers success from the signed channel and GitHub assets;
+tag creation. The npm procedures below apply to Stable. The controller discovers success from the signed channel and GitHub assets;
 version allocation no longer depends on registry visibility. A public release whose channel
 activation failed resumes from its retained candidate run.
 
@@ -31,7 +30,7 @@ exceptions. Tooling tests run through `pkg:check`; mixed changes retain all affe
 lanes, and unknown test/helper paths default to the full gate.
 
 All workflows use the exact Node version in the workflow checkout's `.nvmrc`, shared
-with local verification. Candidate and legacy source checkouts may predate this file;
+with local verification. Candidate source checkouts may predate this file;
 the workflow revision supplies the pin independently of the reviewed artifact/source.
 
 Release preparation PRs also use the metadata gate when their complete diff changes only
@@ -197,8 +196,7 @@ pushes from causing a release loop. A retained draft or open preparation PR rema
 
 Concurrency keeps the active Preview and coalesces later pushes into one pending comparison.
 Standalone publication and Pages recovery serialize through `release-pages-publication` and
-retain queued runs using `queue: max`. Legacy npm publication retains its per-channel queue
-and refuses to move a dist-tag backward. See
+retain queued runs using `queue: max`. See
 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 For an approval-held preparation, inspect the PR's exact source, head, and metadata-only diff.
@@ -225,7 +223,7 @@ all eligible product changes since the last successful Preview, not just the ena
 ## Protected npm publication
 
 `npm-publish.yml` takes one exact `commit`, invokes the candidate workflow, then selects its
-channel environment. `npm-next` has no reviewer gate. `npm-latest` is the single Stable human
+channel environment. Preview uses `standalone-preview`. `npm-latest` is the single Stable human
 approval, after the exact candidate and checks are available and before any Stable tag, npm
 publication, or public Release is created. The maintainer reviews compatibility and acceptance
 evidence alongside the candidate summary. Do not add a second conversational approval.
@@ -270,11 +268,11 @@ existing assets and tags must match exactly, and published assets are never over
    restriction if present. Keep the tag update/deletion prohibition active with no bypass, and
    preserve branch protections. This permits writers to create new release tags; it does not
    grant automatic publication to arbitrary tags or permit changing an existing tag.
-3. Keep `npm-next` without reviewers or a wait timer; keep `npm-latest` with a required reviewer,
-   no administrator bypass, and self-review allowed for a sole maintainer. Allow the intended
-   `develop`/`main` workflow refs (and `v*` only if legacy retries need them).
-4. Configure npm Trusted Publishers for repository workflow `npm-publish.yml` and each channel
-   environment. Keep `NPM_PUBLISH_ENABLED=true` only with verified trust bindings. The workflow
+3. Configure `npm-latest` with a required reviewer,
+   no administrator bypass, and self-review allowed for a sole maintainer. Restrict
+   `npm-latest` to `main` and `standalone-preview` to `develop`.
+4. Configure npm Trusted Publishers for repository workflow `npm-publish.yml` and the
+   `npm-latest` environment. Keep `NPM_PUBLISH_ENABLED=true` only with verified trust bindings. The workflow
    uses Node 24 and npm 11.11.1. See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
 5. Make the workflows available on the repository default branch for dispatch through its normal
    reviewed PR path. Confirm source eligibility, App installation (or fallback Actions PR permission),
@@ -291,7 +289,7 @@ do not use that run as a substitute for the maintainer-approved PR workflow. See
 and [bot-created PR approvals](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/).
 Until the Preview switch is enabled, the controller job is skipped. App-created PRs trigger native
 CI without the built-in token's approval hold. Verify the first eligible product change through
-preparation PR CI, squash merge, publication run, public Release, and npm `next`; merely configuring
+preparation PR CI, squash merge, publication run, public Release, and signed Preview channel; merely configuring
 the App or a successful no-change run does not prove unattended publication. Do not self-approve
 held workflows with the bot token or copy a maintainer credential into Actions.
 
@@ -305,12 +303,6 @@ A reported integrity mismatch or registry lookup error stops immediately. Retry 
 identical registry bytes skip npm upload, and the job verifies the channel before exposing the
 Release. Automatic Preview searches earlier recovery runs for the original producer artifact.
 Changed or expired evidence requires deliberate recovery; do not silently rebuild reviewed bytes.
-
-Legacy already-public releases can still be retried with `-f tag='v<version>'`, omitting `commit`.
-This path uses the original release assets and tagged validation code, retains channel gates,
-and never creates a new tag or Release. Tag pushes and manually publishing a Release no longer
-start the new release train. Older immutable workflow revisions can retain their historical
-behavior; use the current branch workflow for the new policy.
 
 ```bash
 npm view palmagent dist-tags --json
