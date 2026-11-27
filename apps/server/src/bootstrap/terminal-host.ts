@@ -30,7 +30,10 @@ function finish(code: number, lost = false) {
   finishing = true; clearTimeout(diagnosticExpiry); clearTimeout(startupExpiry);
   if (lost) launchFinished("error");
   if (lost) store.noteStartError(id, "initialization_failed", "Shell initialization failed. Check the terminal service log.");
-  store.update(id, { state: "closing", exitCode: lost ? undefined : code });
+  const cliUnavailable = record?.agent === "claude" && (code === 126 || code === 127);
+  store.update(id, { state: "closing", exitCode: lost ? undefined : code,
+    ...(cliUnavailable ? { startError: "Could not run Claude Code. Check that claude is executable in the installation owner’s login shell." } : {}),
+  });
   // Allow the exit frame to reach attached clients before closing IPC.
   setTimeout(() => { host?.close(); unlisten?.(); store.close(); process.exit(lost ? 1 : 0); }, 50);
 }

@@ -2,7 +2,7 @@ import { onTerminalsChanged } from "../terminal-events";
 import { TERMINAL_POLICY } from "@palmagent/shared/terminals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, Eye, Keyboard, Info } from "lucide-react";
-import type { TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
+import type { CreateTerminalRequest, TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
 import { useTerminalOperations } from "../hooks/remote-operations";
 import { useRepos } from "../hooks/useRepos";
 import { Button } from "./ui/button";
@@ -43,9 +43,8 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
   });
   const [renaming, setRenaming] = useUpdateState(scope + ":renaming", false);
   const [title, setTitle] = useUpdateState(scope + ":title", "");
-  const requestId = useRef<string | undefined>(undefined);
+  const creationRequests = useRef(new Map<string, string>());
   const generation = useRef(0);
-  useEffect(() => { requestId.current = undefined; }, [space, taskId, selected]);
   const refresh = useCallback(async () => {
     const currentGeneration = generation.current;
     const currentRevision = ++revision.current;
@@ -85,20 +84,23 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     catch (e) { setError(e instanceof Error ? e.message : "Terminal action failed"); }
     finally { setBusy(false); }
   }
-  const create = async () => {
+  const create = async (agent?: CreateTerminalRequest["agent"]) => {
     if (!canCreate || !target) return;
     setCreating(true);
     try {
       await act(async () => {
-        requestId.current ??= crypto.randomUUID();
+        const key = JSON.stringify([target, agent]);
+        const requestId = creationRequests.current.get(key) ?? crypto.randomUUID();
+        creationRequests.current.set(key, requestId);
         const currentGeneration = generation.current;
-        const result = await terminalOperations.create({ target, requestId: requestId.current, cols: 80, rows: 24 });
+        const result = await terminalOperations.create({ target, requestId, agent, cols: 80, rows: 24 });
+        creationRequests.current.delete(key);
         if (generation.current !== currentGeneration) return;
         // Publish the returned session and its selection together. An older
         // read must not remove it while the post-create refresh is in flight.
         revision.current++;
         setTerminals(current => [...current.filter(t => t.id !== result.terminal.id), result.terminal]);
-        setSelected(result.terminal.id); requestId.current = undefined;
+        setSelected(result.terminal.id);
       });
     } finally { setCreating(false); }
   };
@@ -131,6 +133,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="shrink-0" aria-label="Terminal actions" disabled={busy}><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
+              <DropdownMenuItem disabled={!canCreate} onSelect={() => void create("claude")}><TerminalIcon />Start Claude Code</DropdownMenuItem>
               {active && <DropdownMenuItem onSelect={() => { setTitle(active.title); setRenaming(true); }}><Pencil />Rename terminal</DropdownMenuItem>}
               {active?.state === "running" && <DropdownMenuItem onSelect={() => setReadOnly(!readOnly)}>{readOnly ? <Keyboard /> : <Eye />}{readOnly ? "Enable input" : "View read-only"}</DropdownMenuItem>}
               <DropdownMenuItem onSelect={() => setDetails(true)}><Info />Terminal details</DropdownMenuItem>
@@ -174,7 +177,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     <Dialog open={details} onOpenChange={setDetails}>
       <DialogContent><DialogHeader><DialogTitle>Terminal details</DialogTitle>
         <DialogDescription>Leaving this screen keeps the shell and its commands running.</DialogDescription></DialogHeader>
-        <DialogBody>{spacePicker}<dl className="flex flex-col gap-2 text-sm">{active && <><dt className="text-muted-foreground">Started in</dt><dd className="break-all select-text">{active.initialCwd}</dd></>}</dl></DialogBody>
+        <DialogBody>{spacePicker}<dl className="flex flex-col gap-2 text-sm">{active && <><dt className="text-muted-foreground">Started in</dt><dd className="break-all select-text">{active.initialCwd}</dd><dt className="text-muted-foreground">Attach from host</dt><dd className="break-all select-text font-mono">palmagent terminal attach {active.id}</dd></>}</dl></DialogBody>
       </DialogContent>
     </Dialog>
     <AlertDialog open={confirm} onOpenChange={setConfirm}>

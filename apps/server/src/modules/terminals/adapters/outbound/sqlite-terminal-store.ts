@@ -75,6 +75,7 @@ export class TerminalStore {
       const existing = this.byRequest(input.requestId);
       if (existing) {
         if (existing.taskId !== input.taskId || existing.repoId !== input.repoId) throw new Error("Creation request already belongs to another target");
+        if (existing.agent !== input.agent) throw new Error("Request belongs to another terminal launch");
         return { record: existing, created: false };
       }
       const occupied = this.activeRecords().filter(record => Boolean(record.diagnostic) === Boolean(input.diagnostic));

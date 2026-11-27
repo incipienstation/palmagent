@@ -25,7 +25,9 @@ export class TerminalHost {
   constructor(record: TerminalRecord, driver: TerminalDriver, shell: ShellResolver, private onExit: (code: number) => void) {
     this.screen = new Terminal({ cols: record.cols, rows: record.rows, scrollback: TERMINAL_POLICY.scrollback, allowProposedApi: true });
     this.screen.loadAddon(this.serializer);
-    this.process = driver.spawn(shell.resolve(), record.initialCwd, record.cols, record.rows);
+    const profile = shell.resolve(record.agent);
+    if (record.agent === "claude") profile.env.PALMAGENT_TERMINAL_ID = record.id;
+    this.process = driver.spawn(profile, record.initialCwd, record.cols, record.rows);
     // Only the authoritative emulator answers terminal queries. Viewers never send replies.
     this.screen.onData(data => this.process.write(data));
     this.process.onOutput(data => {
