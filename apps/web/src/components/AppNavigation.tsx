@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { onConversationNotification } from "../conversation-notifications";
 import { needsTaskAttention } from "@palmagent/shared";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -42,8 +43,8 @@ export const useAppNavigation = () => useContext(NavigationContext);
 
 // Keep navigation outside route views so closing a drawer never loses its
 // animation, focus restoration, or the app's single shared inbox stream.
-export function AppNavigation({ tasks, conn, children }: {
-  tasks: TaskState[]; conn: ConnState; children: ReactNode;
+export function AppNavigation({ tasks, conn, loading, children }: {
+  tasks: TaskState[]; conn: ConnState; loading: boolean; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [desktop, setDesktop] = useState(() => window.matchMedia(desktopQuery).matches);
@@ -155,7 +156,8 @@ export function AppNavigation({ tasks, conn, children }: {
   const recentNavigation = (
         <div className="px-3 py-4">
           <h2 className="px-3 pb-2 text-xs font-medium text-muted-foreground">Recent tasks</h2>
-          {recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
+          {loading && <span role="status" className="px-3 text-xs text-muted-foreground"><Pending>Loading recent tasks</Pending></span>}
+          {!loading && recent.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">Your tasks will appear here.</p>}
           {recent.map(task => <Button key={task.taskId} variant={route.name === "task" && route.id === task.taskId ? "selected" : "ghost"}
             className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
             aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}

@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useUpdateBlocker } from "../update-state";
 import { useRef, useState } from "react";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -70,7 +71,7 @@ export function Enroll({ token, onAuthenticated }: { token: string; onAuthentica
     >
       <Button size="lg" className="w-full" disabled={busy} onClick={register}>
         <KeyRound className="size-5" />
-        {busy ? "Creating passkey…" : "Register this device"}
+        {busy ? <Pending>Creating passkey…</Pending> : "Register this device"}
       </Button>
       {error && <p role="alert" className="text-center text-sm text-destructive">{error}</p>}
       <p className="mt-4 text-center text-xs text-faint">

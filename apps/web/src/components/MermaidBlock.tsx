@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { ScrollArea } from "./ui/scroll-area";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useTheme } from "../ThemeProvider";
@@ -43,7 +44,7 @@ export function MermaidBlock({ source }: { source: string }) {
     style={{ height: blockHeight }}>
     {current?.url ? <>
       <div className="min-h-0 flex-1">
-        <Suspense fallback={<p className="p-3 text-xs text-muted-foreground" role="status">Loading diagram controls…</p>}>
+        <Suspense fallback={<p className="p-3 text-xs text-muted-foreground" role="status"><Pending>Loading diagram controls…</Pending></p>}>
           <MermaidViewport key={current.url} url={current.url} />
         </Suspense>
       </div>
@@ -53,7 +54,7 @@ export function MermaidBlock({ source }: { source: string }) {
       </details>
     </> : <>
       <p className="shrink-0 px-3 pt-2 text-xs text-muted-foreground" role="status">
-        {current ? "Diagram unavailable — showing source." : "Rendering diagram…"}
+        {current ? "Diagram unavailable — showing source." : <Pending>Rendering diagram…</Pending>}
       </p>
       <ScrollArea orientation="both" className="flex-1" contentClassName="w-max min-w-full" viewportProps={{ tabIndex: 0, "aria-label": "Diagram source" }}>{code}</ScrollArea>
     </>}

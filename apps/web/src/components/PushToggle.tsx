@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useEffect, useId, useSyncExternalStore } from "react";
 
 import { FieldContent, FieldLabel } from "@/components/ui/field";
@@ -27,7 +28,7 @@ export function PushToggle() {
       <SettingsField>
         <FieldContent>
           <FieldLabel variant="setting" htmlFor={id}>Push notifications</FieldLabel>
-          {description && <p id={descriptionId} role="status" className="text-xs text-muted-foreground">{description}</p>}
+          {description && <p id={descriptionId} role="status" className="text-xs text-muted-foreground">{requestingPermission ? <Pending>{description}</Pending> : description}</p>}
         </FieldContent>
         <Switch
           id={id}

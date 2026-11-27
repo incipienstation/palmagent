@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
@@ -168,7 +169,7 @@ export function PullToRefresh({
               hidden until a pull translates the content down into view. */}
           <div ref={spinnerRef} className="-mt-12 flex h-12 items-center justify-center opacity-0" aria-hidden>
             <span className="flex size-8 items-center justify-center rounded-full border border-border bg-card/95 shadow-sm backdrop-blur-md">
-              <RefreshCw className={cn("size-4 text-primary", refreshing && "animate-spin")} />
+              <RefreshCw className={cn("size-4 text-primary", refreshing && "motion-safe:animate-spin")} />
             </span>
           </div>
           {error && <p role="alert" className="px-4 py-2 text-sm text-destructive">{error}</p>}
@@ -176,7 +177,7 @@ export function PullToRefresh({
         </div>
       </ScrollAreaPrimitive.Viewport>
       {refreshing && <div role="status" className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
-        <span className="rounded-full bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm">Refreshing…</span>
+        <span className="rounded-full bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm"><Pending>Refreshing…</Pending></span>
       </div>}
       <ScrollBar />
     </ScrollAreaPrimitive.Root>
