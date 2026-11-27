@@ -340,12 +340,7 @@ export const InboxView = memo(function InboxView({
     <ReposContext.Provider value={repos}>
       <AppShell wide>
         <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")}
-          className={mobileHome ? "gap-x-0 px-2" : undefined} conn={mobileHome ? undefined : conn}>
-          {mobileHome && <ToggleGroup type="single" aria-label="Group tasks by" className="w-auto shrink-0" value={grouping}
-            onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
-            <ToggleGroupItem value="status" className="min-w-11">Status</ToggleGroupItem>
-            <ToggleGroupItem value="space" className="min-w-11">Space</ToggleGroupItem>
-          </ToggleGroup>}
+          conn={mobileHome ? undefined : conn}>
           {!loading && <TaskFilters {...filters} />}
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
@@ -355,7 +350,7 @@ export const InboxView = memo(function InboxView({
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
           placeholder={repoId ? `Search tasks in ${selectedName}…` : "Search all tasks…"} value={query} onChange={setQuery} action={
             <Button type="button" size="icon-lg" className="size-12 shrink-0 rounded-full"
-              ref={desktop ? undefined : toastObstacle} aria-label="Dispatch new task" title="New task" onClick={newTask}
+              ref={desktop || mobileHome ? undefined : toastObstacle} aria-label="Dispatch new task" title="New task" onClick={newTask}
               disabled={!!repoId && (!space || reposLoading)}><Plus /></Button>
           } />
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -389,6 +384,12 @@ export const InboxView = memo(function InboxView({
             )}
           </div>
         </PullToRefresh>
+        {mobileHome && <ToggleGroup ref={toastObstacle} type="single" variant="floating" aria-label="Group tasks by"
+          className="mt-1 shrink-0 self-center" value={grouping}
+          onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
+          <ToggleGroupItem value="status">Status</ToggleGroupItem>
+          <ToggleGroupItem value="space">Space</ToggleGroupItem>
+        </ToggleGroup>}
         </div>
         </div>
       </AppShell>
