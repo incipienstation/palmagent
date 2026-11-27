@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { previewSource, attachmentExpired } from "../image-source";
-import { Maximize } from "lucide-react";
 import { ImageViewerContent } from "./ImageViewerContent";
 import { Button } from "./ui/button";
 import { Dialog, DialogTrigger } from "./ui/dialog";
@@ -57,17 +56,17 @@ function Preview({ src, alt, title, dimensions, onLoad, linked, layout }: {
       rememberDimensions(src, img.naturalWidth, img.naturalHeight);
       onLoad?.();
     }} onError={() => { setFailed(true); onLoad?.(); }}
-    className={cn("rounded-lg", layout === "tile" ? "size-full object-cover" : "max-h-96 max-w-full object-contain", layout !== "inline" && "rounded-2xl")} />;
+    className={cn("rounded-lg", layout === "tile" ? "size-full object-cover" : "max-h-96 max-w-full object-contain", layout !== "inline" && "rounded-2xl", layout === "single" && "h-auto w-auto")} />;
   // A linked Markdown image keeps its existing link without nesting buttons.
   if (linked) return image;
   return <Dialog>
     <DialogTrigger asChild>
-      <Button type="button" variant="ghost" className={cn("relative h-auto max-w-full cursor-zoom-in p-0",
-        layout === "inline" ? "my-2" : "border-0",
+      <Button type="button" variant="ghost" className={cn("h-auto max-w-full cursor-zoom-in p-0",
+        layout === "inline" ? "my-2" : "overflow-hidden rounded-2xl border-0",
+        layout === "single" && "block w-fit",
         layout === "tile" && "aspect-square w-full",
       )} aria-label={`Enlarge image: ${label}`}>
         {image}
-        <span aria-hidden="true" className="pointer-events-none absolute top-1 right-1 rounded-md bg-muted p-1.5"><Maximize /></span>
       </Button>
     </DialogTrigger>
     <ImageViewerContent src={src} label={label} kind="image" onError={() => setFailed(true)} />
