@@ -67,9 +67,8 @@ test("Compact from usage details reuses confirmation, restores focus, and waits 
   await page.getByRole("dialog").getByRole("button", { name: "Compact context", exact: true }).click();
   await intro.getByRole("button", { name: "Compact context", exact: true }).click();
   await expect.poll(() => f.requests.length).toBe(1); await f.snapshot();
-  await expect(f.line.getByLabel("Context —", { exact: true })).toBeVisible();
-  await expect(f.line).not.toContainText("Compacting");
-  await expect(page.getByRole("status").filter({ hasText: "Compacting context…" })).toBeVisible();
+  await expect(f.line.getByRole("status")).toHaveText("Compacting context");
+  await expect(page.getByRole("button", { name: "Stop compaction" })).toBeEnabled();
   await trigger.click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Compact context", exact: true })).toBeDisabled();
   await page.keyboard.press("Escape");

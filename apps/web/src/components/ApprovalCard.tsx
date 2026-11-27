@@ -1,5 +1,8 @@
+import { Spinner } from "@/components/ui/spinner";
+import type { TaskActionKind } from "../task-activity";
+import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "./ui/scroll-area";
-import { Check, LoaderCircle, ShieldCheck, X } from "lucide-react";
+import { Check, ShieldCheck, X } from "lucide-react";
 import type { PermissionRequest } from "@palmagent/shared";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
@@ -25,8 +28,8 @@ export function ApprovalRequest({ payload, full, expanded, onToggle }: {
 
 // Uses the same explicit-review layout as the question card. Decisions remain
 // controlled by the task action lifecycle, including retry after a failed send.
-export function ApprovalCard({ busy, request, onDecision }: {
-  busy: boolean; request?: PermissionRequest; onDecision: (decision: "approve" | "deny") => void;
+export function ApprovalCard({ busy, action, request, onDecision }: {
+  busy: boolean; action?: TaskActionKind; request?: PermissionRequest; onDecision: (decision: "approve" | "deny") => void;
 }) {
   const input = request?.input && typeof request.input === "object" ? request.input as Record<string, unknown> : undefined;
   const detail = typeof input?.command === "string" ? input.command
@@ -40,12 +43,12 @@ export function ApprovalCard({ busy, request, onDecision }: {
     </CardHeader>
     <CardContent className="px-3 pb-3">
       {detail && <ScrollArea className="mb-3 max-h-32 rounded-lg bg-background" viewportProps={{ tabIndex: 0, "aria-label": "Permission details" }}><pre className="p-2 font-mono text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{detail}</pre></ScrollArea>}
-      <p role="status" className="text-xs text-muted-foreground">{busy ? "Sending your decision…" : "The agent is waiting for your decision."}</p>
+      <p role="status" className="text-xs text-muted-foreground">{action === "approve" ? "Approving…" : action === "deny" ? "Denying…" : "The agent is waiting for your decision."}</p>
     </CardContent>
     <CardFooter className="p-3 pt-0">
-      <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => onDecision("deny")}><X data-icon="inline-start" />Deny</Button>
+      <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => onDecision("deny")}>{action === "deny" ? <Spinner /> : <X data-icon="inline-start" />}Deny</Button>
       <Button className="flex-1" disabled={busy} onClick={() => onDecision("approve")}>
-        {busy ? <LoaderCircle data-icon="inline-start" className="motion-safe:animate-spin" /> : <Check data-icon="inline-start" />}Approve
+        {action === "approve" ? <Spinner /> : <Check data-icon="inline-start" />}Approve
       </Button>
     </CardFooter>
   </Card>;

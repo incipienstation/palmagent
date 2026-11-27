@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import type { ReactNode } from "react";
 import type { ConversationContentRef, TranscriptRow } from "@palmagent/shared";
 import { useConversationContent } from "../hooks/useConversationDetails";
@@ -13,7 +14,7 @@ export function ConversationContent({ taskId, content, preview, render }: {
     {preview}
     {query.isError && <Alert role="alert">Couldn’t load the full content. Try again after the message finishes updating.</Alert>}
     <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
-      {query.isFetching ? "Loading content…" : content.label}
+      {query.isFetching ? <Pending>Loading content…</Pending> : content.label}
     </Button>
   </div>;
 }

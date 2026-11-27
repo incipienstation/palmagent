@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useId } from "react";
 import { Check, RefreshCw } from "lucide-react";
 import type { UpdateDiscoveryFailure, UpdateReceipt, UpdateSettingsState } from "@palmagent/shared";
@@ -81,14 +82,14 @@ export function UpdateSettings() {
           </span> : busy ? <Skeleton className="h-5 w-28" aria-label="Loading current version" /> : <span>Unavailable</span>}
           {settings && <div role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {current && !progress && <Check className="size-3.5" aria-hidden="true" />}
-            <span>{progress ?? (paused ? last?.status === "failed" ? "Update paused" : "Updating…"
+            <span>{progress ? <Pending>{progress}</Pending> : (paused ? last?.status === "failed" ? "Update paused" : <Pending>Updating…</Pending>
               : pending ? "Update scheduled" : last?.status === "deferred" ? "Update postponed"
               : discovery?.error ? "Check failed" : newer ? discovery.targetVersion === status?.currentVersion ? discovery.packagePending ? "Installation update available" : "Plugin updates available" : `Version ${discovery.targetVersion} is available.`
               : current ? "Up to date" : "Not checked yet")}</span>
           </div>}
         </div>
         <Button variant="ghost" size="icon-lg" disabled={busy} aria-label="Check again" title="Check again" onClick={() => void reload()}>
-          <RefreshCw className={cn(busy && "animate-spin")} />
+          <RefreshCw className={cn(!status && busy && "motion-safe:animate-spin")} />
         </Button>
       </div>
 
@@ -104,7 +105,7 @@ export function UpdateSettings() {
           {last && (paused || last.status === "deferred") && <Alert variant={last.status === "failed" ? "warning" : "default"}>{updateMessage(last)}</Alert>}
         </div>}
         {newer && discovery?.eligible && !settings.autoUpdate && <Button disabled={disabled || busy || Boolean(pending) || paused}
-          onClick={() => void install(discovery.targetVersion!)}>{last?.status === "applying" ? "Updating…" : pending ? "Update scheduled" : "Update"}</Button>}
+          onClick={() => void install(discovery.targetVersion!)}>{pending ? "Update scheduled" : "Update"}</Button>}
 
         <SettingsCard>
           {settings.distribution && <>
@@ -114,7 +115,7 @@ export function UpdateSettings() {
             </SettingsField>
             {settings.distribution === "npm" && <div className="flex flex-col gap-2 pb-3">
               <Button variant="outline" disabled={disabled || busy || Boolean(pending) || paused}
-                onClick={() => void migrate()}>{action === "migrate" ? "Preparing migration…" : "Move to standalone"}</Button>
+                onClick={() => void migrate()}>Move to standalone</Button>
               <p className="text-xs text-muted-foreground">Installs the latest compatible {settings.channel === "preview" ? "Preview" : "Stable"} release. Your data and settings are kept.</p>
             </div>}
             <Separator />

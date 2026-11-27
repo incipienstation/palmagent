@@ -100,7 +100,7 @@ export function AttachmentMenu({ open, onOpenChange, disabled, preparing, onAdd,
           disabled={!voiceActive && disabled}
           onClick={() => { if (voiceActive) onCancelVoice?.(); }}>
           <span className={cn("inline-flex transition-transform duration-200 motion-reduce:transition-none", voiceActive && "rotate-45")}>
-            {preparing && !voiceActive ? <Loader2 className="animate-spin" /> : <Plus />}
+            {preparing && !voiceActive ? <Loader2 className="motion-safe:animate-spin" /> : <Plus />}
           </span>
         </Button>
       </DropdownMenuTrigger>

@@ -59,6 +59,13 @@ for (const width of [360]) test(`first send keeps the conversation and composer 
 });
 
 test("unknown creation checks its ID before retry and never changes the submitted payload", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("pref:dispatch-model", JSON.stringify({ claude: "fixture-claude" }));
+    localStorage.setItem("pref:dispatch-effort", JSON.stringify({ claude: "medium" }));
+  });
+  let releaseCatalog!: () => void;
+  const catalog = new Promise<void>(resolve => { releaseCatalog = resolve; });
+  await page.route("**/api/model-catalog?*", async route => { await catalog; await route.continue(); });
   const posts: any[] = []; const checks: string[] = [];
   await page.route("**/api/tasks", route => {
     if (route.request().method() !== "POST") return route.continue();
@@ -77,6 +84,8 @@ test("unknown creation checks its ID before retry and never changes the submitte
   await page.getByRole("button", { name: "Check status", exact: true }).click();
   await expect(page.getByText("Creation is not confirmed yet.", { exact: false })).toBeVisible();
   expect(posts).toHaveLength(1);
+  expect(posts[0]).toMatchObject({ model: "fixture-claude", effort: "medium" });
+  releaseCatalog();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect.poll(() => posts.length).toBe(2);
   expect(posts[1]).toEqual(posts[0]); expect(checks).toHaveLength(2);

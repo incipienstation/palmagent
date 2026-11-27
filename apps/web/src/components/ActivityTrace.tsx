@@ -1,3 +1,4 @@
+import { Pending, Spinner } from "@/components/ui/spinner";
 import { Brain, FileText, Wrench } from "lucide-react";
 import { traceStepTitle, type Activity, type ConversationItem, type LogItem, type TraceOperation, type TraceStep } from "@palmagent/shared";
 import { useUpdateState } from "../update-state";
@@ -8,13 +9,13 @@ import { Trace, TraceLine, TraceIcon, TraceTitle, TraceCollapsible, TraceCollaps
 import type { ReactNode } from "react";
 
 type Props = {
-  activity: Activity; running: boolean; sourceLog: LogItem[]; revision: number; taskId?: string; open: boolean; openSteps: Set<number>;
+  activity: Activity; running: boolean; waiting?: boolean; sourceLog: LogItem[]; revision: number; taskId?: string; open: boolean; openSteps: Set<number>;
   onToggle: (activity: Activity, open: boolean) => void;
   onStepOpenChange: (key: number, open: boolean) => void;
   render: (row: ConversationItem) => ReactNode;
 };
 
-export function ActivityTrace({ activity, running: executing, sourceLog, revision, taskId, open, openSteps, onToggle, onStepOpenChange, render }: Props) {
+export function ActivityTrace({ activity, running: executing, waiting, sourceLog, revision, taskId, open, openSteps, onToggle, onStepOpenChange, render }: Props) {
   const query = useTraceSteps(taskId, activity.key, revision, open && !!activity.details, activity.disclosureKey);
   const [localCount, setLocalCount] = useUpdateState(`trace:${taskId}:${activity.disclosureKey ?? activity.key}:count`, 50);
   const steps = activity.details ? query.data?.pages.flatMap(page => page.steps) ?? [] : (activity.operations ?? []).slice(0, localCount);
@@ -22,15 +23,15 @@ export function ActivityTrace({ activity, running: executing, sourceLog, revisio
   const label = activityLabel(activity, "compact");
   return <Trace data-activity className="mb-3">
     <TraceCollapsible open={open} onOpenChange={next => onToggle(activity, next)}>
-      <TraceCollapsibleTrigger aria-label={running ? `${label} · Running: ${running}` : label} title={label}>
-        <TraceLine status={running ? "running" : undefined}>
+      <TraceCollapsibleTrigger aria-label={running ? `${label} · Running: ${running}` : executing && waiting ? label + " · Working" : label} title={label}>
+        <TraceLine status={running || executing && waiting ? "running" : undefined}>
           <TraceIcon><Wrench /></TraceIcon><TraceTitle>{running ? `Running: ${running}` : label}</TraceTitle>
         </TraceLine>
         {running && <span className="sr-only">{label}</span>}
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
         {open && <>
-          {activity.details && query.isPending && <p role="status">Loading activity…</p>}
+          {activity.details && query.isPending && <p role="status"><Pending>Loading activity…</Pending></p>}
           {activity.details && query.isError && <LoadError onRetry={() => void (query.isFetchNextPageError ? query.fetchNextPage({ cancelRefetch: false }) : query.refetch())} />}
           <Trace>
             {steps.map(source => {
@@ -52,7 +53,7 @@ export function ActivityTrace({ activity, running: executing, sourceLog, revisio
             })}
           </Trace>
           {!activity.details && (activity.operations?.length ?? 0) > localCount && <Button variant="outline" size="sm" onClick={() => setLocalCount(count => count + 50)}>Load more steps</Button>}
-          {query.hasNextPage && <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>Load more steps</Button>}
+          {query.hasNextPage && <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>{query.isFetchingNextPage && <Spinner />}Load more steps</Button>}
           {!steps.length && !query.isPending && !query.isError && <p className="text-sm">No additional steps. Other events are available in Execution records.</p>}
         </>}
       </TraceCollapsibleContent>
@@ -68,10 +69,10 @@ function StepDetails({ taskId, activityKey, step, revision, render }: { taskId: 
   const query = useTraceStepDetails(taskId, activityKey, step.key, revision);
   const items = new Map(query.data?.pages.flatMap(page => page.items).map(item => [item.key, item]));
   return <div className="min-w-0 text-foreground">
-    {query.isPending && <p role="status">Loading step details…</p>}
+    {query.isPending && <p role="status"><Pending>Loading step details…</Pending></p>}
     {[...items.values()].map(row => <div key={row.key}>{render(row)}</div>)}
     {query.isError && <LoadError onRetry={() => void (query.isFetchNextPageError ? query.fetchNextPage({ cancelRefetch: false }) : query.refetch())} />}
-    {query.hasNextPage && <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>Load more step details</Button>}
+    {query.hasNextPage && <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>{query.isFetchingNextPage && <Spinner />}Load more step details</Button>}
   </div>;
 }
 
@@ -83,7 +84,7 @@ function LocalStepDetails({ taskId, sourceLog, activity, step, render }: { taskI
   const queries = useLegacyTraceDetails(taskId, deferred);
   const loaded = new Map<number, LogItem>(queries.flatMap(query => query.data ?? []).map(item => [item.key, item]));
   return <div className="min-w-0 text-foreground">
-    {queries.some(query => query.isPending) && <p role="status">Loading step details…</p>}
+    {queries.some(query => query.isPending) && <p role="status"><Pending>Loading step details…</Pending></p>}
     {members.filter(item => item.kind === "assistant_text" || !item.detailsDeferred || loaded.has(item.key)).map(item => <div key={item.key}>
       {render({ type: "message", key: item.key, endSeq: item.endSeq ?? item.key, revision: 0, item: loaded.get(item.key) ?? item })}
     </div>)}

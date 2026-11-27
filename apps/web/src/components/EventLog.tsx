@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { AssistantMessage, UserBubble } from "./ChatMessage";
 export { UserBubble } from "./ChatMessage";
 import { ConversationContent } from "./ConversationDetails";
@@ -160,7 +161,7 @@ type TranscriptRow = { key: string; seq: number; content?: ConversationContentRe
   | { type: "delivery"; message: PendingMessage }
   | { type: "working" }
   | { type: "message"; item: LogItem; delivery?: PendingMessage }
-  | { type: "activity"; activity: Activity; open: boolean; detailsLoading?: boolean; detailsError?: boolean; retryDetails?: () => unknown }
+  | { type: "activity"; activity: Activity; open: boolean; waiting?: boolean; detailsLoading?: boolean; detailsError?: boolean; retryDetails?: () => unknown }
   | { type: "failure"; failure: RunFailure; open: boolean }
 );
 type HistoryControls = {
@@ -291,7 +292,7 @@ function HistoryHeader({ context }: { context?: HistoryControls }) {
       <span role="alert" className="text-destructive">{error.message}</span>
       <Button variant="ghost" onClick={error.retry}>{error.label}</Button>
     </> : paused || earlier?.status === "loading" ? <div role="status" className="absolute inset-x-0 bottom-0 h-4 text-center text-xs leading-4 text-muted-foreground">
-      {paused ? "Waiting for connection…" : "Loading earlier messages…"}
+      {paused ? "Waiting for connection…" : <Pending>Loading earlier messages…</Pending>}
     </div> : null}
   </div>;
 }
@@ -613,7 +614,7 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
               : row.failure.items.map(item => <EventRow key={item.key} item={item} live={false} expanded raw toggle={() => {}} onImageLoad={followBottom} />)}
           </div>
         </RunFailureSummary> : row.type === "activity" ?
-        <ActivityTrace activity={row.activity} running={running} sourceLog={sourceLog} open={row.open} revision={row.revision ?? 0} taskId={taskId}
+        <ActivityTrace activity={row.activity} running={running && row.activity.live} waiting={row.waiting} sourceLog={sourceLog} open={row.open} revision={row.revision ?? 0} taskId={taskId}
           openSteps={toggled} onToggle={toggleActivityRow}
           onStepOpenChange={(key, open) => {
             if (!open) rememberDisclosure(row.key, key);
@@ -713,7 +714,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
         rows.push({ key: `failure-${row.key}`, seq: row.key, type: "failure", failure: row, open });
       } else {
         const open = row.details ? openActivity.has(row.disclosureKey ?? row.key) : row.items.some((item) => openActivity.has(item.key));
-        rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, open, revision: "revision" in row ? Number(row.revision) : undefined });
+        rows.push({ key: activityRowKey(row, historyFloor), seq: row.key, type: "activity", activity: row, waiting: activity === "working", open, revision: "revision" in row ? Number(row.revision) : undefined });
       }
     }
     const pending = [...messages.values()].filter(message => !seen.has(message.id));
@@ -723,8 +724,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       for (const row of rows) if (row.type === "activity" && row.activity.live) row.activity = { ...row.activity, live: false };
       for (const message of pending) rows.push({ key: `delivery-${message.id}`, seq: seq + 1, type: "delivery", message });
     }
-    const traceIsWorking = rows.some(row => row.type === "activity" && row.activity.live &&
-      (row.activity.summary?.running || row.activity.operations?.some(step => step.state === "running")));
+    const traceIsWorking = rows.some(row => row.type === "activity" && row.activity.live);
     if (activity === "working" && !traceIsWorking) {
       rows.push({ key: "working", seq: seq + 2, type: "working" });
     }
@@ -746,7 +746,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
       <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
         <HistoryHeader context={{ history }} />
         {history.initial.status === "loading" ? <ConversationLoading /> : !initialPending && <div className="mb-1.5 text-faint">
-          {log.length ? "No messages in this view." : "waiting for events…"}
+          {log.length ? "No messages in this view." : "No messages yet."}
         </div>}
       </ScrollAreaPrimitive.Viewport>}
       </MessageScroller>

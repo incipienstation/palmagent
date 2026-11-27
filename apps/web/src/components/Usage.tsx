@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { AgentInstallation, AgentKind, AgentUsage, AgentUsageMetric } from "@palmagent/shared";
@@ -65,9 +66,9 @@ function Installation({ status, canUpdate, stale }: { status?: AgentInstallation
     {mutation.error && <Alert variant="destructive">{errMsg(mutation.error)}</Alert>}
     {status.update.state === "failed" && <Alert variant="destructive">{status.update.message}</Alert>}
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <span role="status" className="text-xs text-muted-foreground">{running ? "Updating…" : status.update.message ?? `Checked ${new Date(status.checkedAt).toLocaleTimeString()}`}</span>
+      <span role="status" className="text-xs text-muted-foreground">{running ? <Pending>Updating…</Pending> : status.update.message ?? `Checked ${new Date(status.checkedAt).toLocaleTimeString()}`}</span>
       {status.installation === "native" && <AlertDialog>
-        <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={!canUpdate || stale || running || status.latestVersion === status.version || status.releaseState === "error"} aria-label={`Update ${agentName(status.agent)}`}>{running ? "Updating…" : "Update"}</Button></AlertDialogTrigger>
+        <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={!canUpdate || stale || running || status.latestVersion === status.version || status.releaseState === "error"} aria-label={`Update ${agentName(status.agent)}`}>Update</Button></AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Update {agentName(status.agent)}?</AlertDialogTitle>
@@ -85,9 +86,9 @@ function Installation({ status, canUpdate, stale }: { status?: AgentInstallation
   </div>;
 }
 
-function AgentCard({ agent, installation, canUpdate, stale, usage, usageUnavailable, now }: {
+function AgentCard({ agent, installation, canUpdate, stale, loadingInstallation, usage, usageUnavailable, now }: {
   agent: AgentKind; installation?: AgentInstallation; canUpdate: boolean; stale: boolean;
-  usage: AgentUsage | null | undefined; usageUnavailable: boolean; now: number;
+  loadingInstallation: boolean; usage: AgentUsage | null | undefined; usageUnavailable: boolean; now: number;
 }) {
   const limits = useQuery({ ...agentLimitsQueryOptions(agent), enabled: Boolean(installation?.version) });
   return <Card role="region" aria-label={agentName(agent)}>
@@ -100,7 +101,7 @@ function AgentCard({ agent, installation, canUpdate, stale, usage, usageUnavaila
       <Separator />
       <section aria-label={`${agentName(agent)} account limits`} className="flex flex-col gap-3">
         <div className="flex flex-col gap-1"><h3 className="text-sm font-medium">Account limits</h3><p className="text-xs text-muted-foreground">Remaining allowance shared across this account’s sessions.</p></div>
-        {limits.data ? <AccountLimitDetails report={limits.data} now={now} /> : limits.isFetching ? <Skeleton className="h-16 w-full" aria-label="Loading account limits" />
+        {limits.data ? <AccountLimitDetails report={limits.data} now={now} /> : loadingInstallation || limits.isFetching ? <Skeleton className="h-16 w-full" aria-label="Loading account limits" />
           : <p className="text-sm text-muted-foreground">{installation?.installation === "missing" ? "Install the CLI to read account limits." : "Limits unavailable"}</p>}
         {limits.error && limits.data && <p className="text-xs text-muted-foreground">Couldn’t refresh account limits. Showing the last report.</p>}
         {limits.data && <p className="text-xs text-muted-foreground">Checked {new Date(limits.data.checkedAt).toLocaleTimeString()}</p>}
@@ -134,13 +135,13 @@ export function UsageView() {
       {installations.error && <Alert variant="destructive">Couldn’t load agent installations. {errMsg(installations.error)}</Alert>}
       {error && <Alert variant="destructive" className="flex flex-col gap-2" aria-busy={query.isFetching}>
         <p>Couldn't load usage. {error}</p>
-        {query.isFetching && <span role="status">Retrying usage…</span>}
+        {query.isFetching && <span role="status"><Pending>Retrying usage…</Pending></span>}
         <Button variant="outline" disabled={query.isFetching} onClick={() => { void query.refetch(); }}>Retry usage</Button>
       </Alert>}
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {(["claude", "codex"] as const).map(agent => <AgentCard key={agent} agent={agent}
           installation={installations.data?.installations.find(item => item.agent === agent)}
-          canUpdate={installations.data?.canUpdate ?? false} stale={installations.isError}
+          loadingInstallation={installations.isPending} canUpdate={installations.data?.canUpdate ?? false} stale={installations.isError}
           usage={query.data ? query.data.find(item => item.agent === agent) : null} usageUnavailable={Boolean(error)} now={now} />)}
       </div>
     </ScrollArea>

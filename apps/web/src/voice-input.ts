@@ -3,7 +3,7 @@ import { api } from "./api";
 import { beginBrowserWork } from "./update-state";
 import { beginVoiceAudioUse, getVoiceAudioContext } from "./voice-audio-context";
 
-export type VoiceState = "idle" | "recording" | "stopping";
+export type VoiceState = "idle" | "starting" | "recording" | "stopping";
 export const VOICE_METER_BARS = 128;
 export const VOICE_METER_INTERVAL_MS = 100;
 const elapsedMs = (start: number) => Math.round((performance.now() - start) * 10) / 10;
@@ -50,7 +50,7 @@ export class VoiceInput {
 
   async start() {
     this.startedAt = performance.now();
-    this.status("recording");
+    this.status("starting");
     this.timers.push(setTimeout(() => this.fail("Voice input could not connect. Try again."), 25_000));
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection || !window.AudioContext) {
@@ -80,6 +80,7 @@ export class VoiceInput {
       this.clientTimings.microphoneRequestMs = elapsedMs(microphoneRequestAt);
       if (this.closed) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
+      this.status("recording");
       const peer = this.peer = new RTCPeerConnection();
       for (const track of stream.getTracks()) track.onended = () => { if (!this.finishing) this.fail("The microphone disconnected. Start it again."); };
       const analyser = this.analyser = this.audio.createAnalyser(); analyser.fftSize = 1024;

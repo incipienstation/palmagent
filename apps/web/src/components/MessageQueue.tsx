@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { SkillChips } from "./SkillPicker";
 import { useState } from "react";
 import type { MessageQueue as Queue, PendingMessage } from "@palmagent/shared";
@@ -21,7 +22,7 @@ function QueueItem({ message, index, disabled, pending, onEdit, onSend, onDelete
         disabled={disabled} aria-label={`Queued message ${index + 1}: ${message.text}`} aria-haspopup="dialog" aria-expanded={!!panel} {...press.handlers}>
         <span className="shrink-0">{index + 1}.</span><span className="truncate">{message.text}</span>
         {imageCount ? <span className="shrink-0">· {imageCount} attachment(s)</span> : null}
-        <span className="ml-auto shrink-0">{pending ?? (editing ? "Editing" : message.status === "queued" ? "" : message.status)}</span>
+        <span className="ml-auto shrink-0">{pending ? <Pending>{pending}</Pending> : (editing ? "Editing" : message.status === "queued" ? "" : message.status)}</span>
       </Button>
     </PopoverAnchor>
     <PopoverContent onOpenAutoFocus={press.onOpenAutoFocus} side="top" align="start" className="p-0" aria-label="Queued message">

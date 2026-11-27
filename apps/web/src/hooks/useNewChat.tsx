@@ -1,3 +1,4 @@
+import { Pending } from "@/components/ui/spinner";
 import { composePrompt, sameAttachments } from "../images";
 import { gameDelivery } from "../games/play-events";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
@@ -36,7 +37,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
   const operations = useDispatchOperations();
   const mounted = useRef(false);
   useLayoutEffect(() => { mounted.current = enabled; return () => { mounted.current = false; }; }, [enabled]);
-  const { repos: registered, loaded, error: reposError, refresh } = useRepos();
+  const { repos: registered, loaded, loading: reposLoading, refreshing, error: reposError, refresh } = useRepos();
   const mutations = useRepoMutations();
   const repos = useMemo(() => [...registered.values()].filter(repo => !mutations.removed.has(repo.id)), [registered, mutations.removed]);
   const initialized = useRef(false);
@@ -212,7 +213,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
       selectSpace(value);
     }}>
       <SelectTrigger aria-label="Space" className="min-h-11 min-w-0 flex-1 rounded-full">
-        <Folder className="size-4 shrink-0" /><SelectValue placeholder="Choose a Space" />
+        <Folder className="size-4 shrink-0" /><SelectValue placeholder={reposLoading ? <Pending>Loading Spaces</Pending> : "Choose a Space"} />
       </SelectTrigger>
       <SelectContent><SelectGroup>
         {repos.map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}{spaceQualifier(repo, registered) && <span className="text-muted-foreground"> · {spaceQualifier(repo, registered)}</span>}</SelectItem>)}
@@ -221,7 +222,7 @@ export function useNewChat(enabled: boolean, onCreated?: (task: TaskState) => vo
     </Select>
     {isGit && isolate && <Badge variant="secondary"><GitBranch className="size-3" />Isolated</Badge>}
   </div>;
-  const notices = <>{(error || reposError) && <Alert variant="destructive">{error || reposError}</Alert>}{spaceNotice && !skills.length && <Alert>{spaceNotice}</Alert>}</>;
+  const notices = <>{(error || reposError) && <Alert variant="destructive">{error || reposError}{reposError && <Button variant="outline" disabled={refreshing} onClick={() => void refresh().catch(() => {})}>Retry Spaces</Button>}</Alert>}{spaceNotice && !skills.length && <Alert>{spaceNotice}</Alert>}</>;
   const picker = <><RepoPicker open={enabled && pickerOpen} repos={[...registered.values()]} onClose={() => setPickerOpen(false)}
     onRegistered={repo => { setPickerOpen(false); selectSpace(repo.id); }}
     onChanged={() => { void refresh().catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} />
