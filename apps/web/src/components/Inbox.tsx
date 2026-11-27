@@ -16,7 +16,7 @@ import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
 
 import { goBackTo, navigate } from "../router";
-import { AppBar, AppShell } from "./AppShell";
+import { AppBar, AppShell, ConnPill } from "./AppShell";
 import { StatusBadge } from "./chips";
 import { SpaceDetails, TaskFilterChips, TaskFilters, taskFilterDirectories, type TaskFilter } from "./SpaceTools";
 import { useActionState } from "../action-state";
@@ -72,6 +72,7 @@ function requestPreview(task: TaskState) {
   if (task.status === "awaiting_input") return task.pendingInput?.questions[0]?.question;
   return task.pendingApproval?.reason?.trim() || task.pendingApproval?.tool;
 }
+
 // Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
 // a short date past a week so the dense list stays scannable.
 function relTime(ms: number): string {
@@ -337,7 +338,8 @@ export const InboxView = memo(function InboxView({
   return (
     <ReposContext.Provider value={repos}>
       <AppShell wide>
-        <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")} conn={conn}>
+        <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")}
+          className={mobileHome ? "gap-x-0 px-2" : undefined} conn={mobileHome ? undefined : conn}>
           {mobileHome && <ToggleGroup type="single" aria-label="Group tasks by" className="w-auto shrink-0" value={grouping}
             onValueChange={value => { if (value === "status" || value === "space") setGrouping(value); }}>
             <ToggleGroupItem value="status" className="min-w-11">Status</ToggleGroupItem>
@@ -346,6 +348,7 @@ export const InboxView = memo(function InboxView({
           {!loading && <TaskFilters {...filters} />}
           {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
         </AppBar>
+        {mobileHome && conn === "reconnecting" && <div role="status" className="px-4 pb-2"><ConnPill conn={conn} /></div>}
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Archiving task…</p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"

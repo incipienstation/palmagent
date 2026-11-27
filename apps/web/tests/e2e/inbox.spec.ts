@@ -126,6 +126,8 @@ for (const width of [320]) test(`attention rows keep Space context, search and n
   await expect(page.getByTestId("inbox-content").getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
   await send(page, { type: "tasks", tasks: [tasks[0], { ...tasks[1], repoId: repos[1].id }] });
   const attention = page.getByRole("region", { name: "Needs you", exact: true });
+  const title = page.getByRole("heading", { name: "Tasks", exact: true }).locator("span").first();
+  expect(await title.evaluate(el => el.clientWidth >= el.scrollWidth)).toBe(true);
   const context = attention.locator("[title]").filter({ hasText: longName });
   await expect(context).toHaveCount(2);
   await expect(context.filter({ hasText: "second/work" })).toHaveCount(1);
