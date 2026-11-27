@@ -30,6 +30,12 @@ Treat every committed byte and commit as public. Never include secrets, personal
 domains, host inventories, production data, transcripts, databases, or private-repository
 references. Use explicit placeholders for environment-specific examples.
 
+Describe Palmagent features, visuals and examples in their own terms throughout repository
+documentation, including README files, change notes, skills and asset prompts. Omit unrelated
+product names, comparisons and design references. Keep external names needed for accurate
+integration or dependency instructions, licenses and required attribution. Review changed
+prose, captions and links for standalone names that automated wording checks can miss.
+
 ## Task routing
 
 Read the relevant skill before its stage or action; load supporting references only as needed.

@@ -8,8 +8,9 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join, dirname, relative, extname } from 'node:path';
+import { join, dirname, relative, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { documentationReferenceLines, documentationReferencePatterns } from './lib/documentation-references.mjs';
 import { validateRepositorySkills } from './lib/repository-skills.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -124,9 +125,15 @@ const allFiles = execFileSync(
   { cwd: ROOT, encoding: 'utf8' },
 ).split('\0').filter(Boolean).map((path) => join(ROOT, path));
 
-// ---- 6. relative-link existence in markdown -------------------------------
-for (const f of allFiles.filter((p) => p.endsWith('.md'))) {
+// ---- 6. documentation wording and relative links -------------------------------
+const docPatterns = documentationReferencePatterns(process.env.PALMAGENT_DOC_EXCLUDED_NAMES);
+for (const f of allFiles.filter((p) => /\.(?:md|mdx|markdown)$/i.test(p) && existsSync(p))) {
   const txt = readFileSync(f, 'utf8');
+  if (!/^(?:licen[cs]e|notice|third[-_]party[-_]notices)(?:\.|$)/i.test(basename(f))) {
+    for (const line of documentationReferenceLines(txt, docPatterns)) {
+      fail(`${relative(ROOT, f)}:${line}: review the external reference against the public documentation guidance in AGENTS.md`);
+    }
+  }
   for (const m of txt.matchAll(/\]\(([^)]+)\)/g)) {
     let t = m[1].trim();
     if (/^(https?:|mailto:|#)/.test(t)) continue;

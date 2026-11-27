@@ -23,9 +23,8 @@ description):
 ## Layout (verified against codex 0.154.0)
 
 This directory **is a Codex marketplace root**: it holds `.agents/plugins/marketplace.json`
-and a sibling `plugins/` dir, exactly like the installed `openai-curated` marketplace
-(`~/.codex/.tmp/plugins/`). Each marketplace entry's `source.path` resolves relative to this
-root.
+and a sibling `plugins/` directory. Each marketplace entry's `source.path` resolves relative
+to this root.
 
 ```
 plugins/codex/                                  ← marketplace ROOT (pass THIS to `marketplace add`)
