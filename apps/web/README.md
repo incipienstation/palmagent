@@ -17,9 +17,8 @@ the same style. Gotcha to keep: Radix `Select` inside a `<form>` echoes a stale
 `""` through `onValueChange` when value + items land in the same render — keep
 the `v && set…(v)` guards.
 
-The CLI uses `radix-rhea`. Components adapt Rhea's rounded surfaces, filled inputs,
-spacing and focus rings while retaining Palmagent's theme colors, system font and
-mobile control sizes. The radius scale lives in `src/index.css`; the Tailwind spacing
+The CLI uses `radix-rhea`. Components use rounded surfaces, filled inputs and visible
+focus rings with Palmagent's theme colors, system font and mobile control sizes. The radius scale lives in `src/index.css`; the Tailwind spacing
 scale is unchanged. When refreshing components, merge the visual changes and retain
 Back handling, non-modal menus, drawer scrolling, composer refs and draft continuity.
 

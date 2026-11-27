@@ -5,4 +5,5 @@
 ## Verification
 
 <!-- Commands, evidence, and remaining limits. For test changes, name the distinct risk,
-coverage reused or reduced, and justify costly cases under .harness/skills/plan/references/testing.md. -->
+coverage reused or reduced, and justify costly cases under .harness/skills/plan/references/testing.md.
+For documentation changes, check names, captions and links against the public-content guidance in AGENTS.md. -->

@@ -33,6 +33,8 @@ jobs:
         id: scope
         run: node scripts/ci-scope.mjs
       - name: Verify repository metadata, skills, links, and public content
+        env:
+          PALMAGENT_DOC_EXCLUDED_NAMES: ${{ vars.PALMAGENT_DOC_EXCLUDED_NAMES }}
         run: |
           node --test scripts/tests/ci-scope.test.mjs scripts/tests/repository-skills.test.mjs
           node scripts/sync-skills.mjs --check
