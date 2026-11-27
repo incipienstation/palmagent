@@ -3,7 +3,7 @@
 Palmagent uses optional aggregate performance metrics to investigate regressions and evaluate
 backend migration work. Sharing is selected by default. Collection and upload start only after
 the signed-in installation owner acknowledges the disclosure. Closing the disclosure leaves
-sharing pending. **Settings → Performance → Share performance metrics** changes the saved choice.
+sharing pending. **Settings → Installation → Share performance metrics** changes the saved choice.
 
 The choice lives in `telemetry.json` beside the shared user configuration (`PALMAGENT_HOME`,
 normally `~/.palmagent`). It survives application updates and service reinstalls. A missing,
