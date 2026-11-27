@@ -3,7 +3,7 @@ import { SecuritySettings } from "./SecuritySettings";
 import { TelemetrySettings } from "./TelemetrySettings";
 import { useBackLayer } from "../hooks/useBackLayer";
 import { useSignOut } from "../auth/useSignOut";
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { Fragment, useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { ArrowLeft, ArrowUpCircle, ChevronRight, FolderSearch, GitBranch, Monitor, Moon, Shield, Sun, X } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -46,7 +46,15 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   const spaceSettingsLink = useRef<HTMLButtonElement>(null);
   const securityLink = useRef<HTMLButtonElement>(null);
   const updatesLink = useRef<HTMLButtonElement>(null);
-  const previousSection = useRef(section);
+  const destinations = [
+    { section: "base-branches", label: "Space settings", icon: GitBranch, ref: spaceSettingsLink },
+    { section: "spaces", label: "Repository search paths", icon: FolderSearch, ref: searchPathsLink },
+    { section: "updates", label: "Updates", icon: ArrowUpCircle, ref: updatesLink },
+    { section: "security", label: "Security", icon: Shield, ref: securityLink },
+  ];
+  const destination = destinations.find(item => item.section === section);
+  const activeLink = destination?.ref;
+  const previousLink = useRef(activeLink);
   const appearanceId = useId();
   const shortcutId = useId();
   const arcadeId = useId();
@@ -57,15 +65,15 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
   useBackLayer(open && !home, () => setSection("general"), 150);
 
   useLayoutEffect(() => {
-    const previous = previousSection.current;
-    previousSection.current = section;
-    if (!open || previous === section) return;
-    if (section === "general") {
-      (previous === "security" ? securityLink : previous === "spaces" ? searchPathsLink : previous === "base-branches" ? spaceSettingsLink : updatesLink).current?.focus({ preventScroll: true });
+    const previous = previousLink.current;
+    previousLink.current = activeLink;
+    if (!open || previous === activeLink) return;
+    if (!activeLink) {
+      previous?.current?.focus({ preventScroll: true });
     } else {
       title.current?.focus({ preventScroll: true });
     }
-  }, [section, open]);
+  }, [activeLink, open]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} autoFocus>
@@ -76,7 +84,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               <ArrowLeft />
             </Button>}
             <SheetTitle asChild className="outline-none">
-              <h2 ref={title} tabIndex={-1}>{home ? "Settings" : section === "security" ? "Security" : section === "spaces" ? "Repository search paths" : section === "base-branches" ? "Space settings" : "Updates"}</h2>
+              <h2 ref={title} tabIndex={-1}>{destination?.label ?? "Settings"}</h2>
             </SheetTitle>
             <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
           </SheetHeaderRow>
@@ -125,7 +133,7 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
                   <FieldContent>
                     <FieldLabel variant="setting" htmlFor={shakeId}>Shake to dictate</FieldLabel>
                     <FieldDescription id={shakeDescriptionId}>
-                      Motion and mic permission required. In a conversation, shake to toggle; audio is used only while dictating.
+                      {shake.enabled ? "Shake again to stop dictation." : "Requires motion and microphone access."}
                     </FieldDescription>
                     {shake.error && <p id={shakeErrorId} role="status" className="text-xs text-destructive">{shake.error}</p>}
                   </FieldContent>
@@ -137,40 +145,22 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
               </SettingsCard>
             </SettingsGroup>
 
-            <SettingsGroup label="Performance">
-              <TelemetrySettings />
-            </SettingsGroup>
-
             <SettingsGroup label="Installation">
+              <TelemetrySettings />
               <div className="flex flex-col">
-                <Button ref={spaceSettingsLink} variant="ghost" aria-label="Space settings" onClick={() => setSection("base-branches")}
-                  className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
-                  <GitBranch data-icon="inline-start" />
-                  <span className="min-w-0 flex-1">Space settings</span>
-                  <ChevronRight data-icon="inline-end" />
-                </Button>
-                <Separator />
-                <Button ref={searchPathsLink} variant="ghost" aria-label="Repository search paths" onClick={() => setSection("spaces")}
-                  className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
-                  <FolderSearch data-icon="inline-start" />
-                  <span className="min-w-0 flex-1">Repository search paths</span>
-                  <ChevronRight data-icon="inline-end" />
-                </Button>
-                <Separator />
-                <Button ref={updatesLink} variant="ghost" aria-label="Updates" onClick={() => setSection("updates")}
-                  className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
-                  <ArrowUpCircle data-icon="inline-start" />
-                  <span className="min-w-0 flex-1">Updates</span>
-                  <ChevronRight data-icon="inline-end" />
-                </Button>
+                {destinations.map(({ section, label, icon: Icon, ref }, index) => (
+                  <Fragment key={section}>
+                    {index > 0 && <Separator />}
+                    <Button ref={ref} variant="ghost" onClick={() => setSection(section)}
+                      className="h-auto min-h-12 justify-start gap-3 whitespace-normal px-1 py-2 text-left">
+                      <Icon data-icon="inline-start" />
+                      <span className="min-w-0 flex-1">{label}</span>
+                      <ChevronRight data-icon="inline-end" />
+                    </Button>
+                  </Fragment>
+                ))}
               </div>
             </SettingsGroup>
-
-            <Button ref={securityLink} variant="ghost" onClick={() => setSection("security")} className="justify-start px-1">
-              <Shield data-icon="inline-start" />
-              <span className="flex-1 text-left">Security</span>
-              <ChevronRight data-icon="inline-end" />
-            </Button>
 
             <div className="flex items-center justify-between gap-3">
               <AlertDialog>
