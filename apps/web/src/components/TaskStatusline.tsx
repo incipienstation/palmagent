@@ -62,7 +62,7 @@ export function TaskStatusline({ task, compactionLabel, compactReason, onCompact
           <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left text-xs font-normal text-muted-foreground">
             {primary && primary.id !== "codex" && <span className="truncate">{primary.name}</span>}
             <span className="flex flex-wrap items-center gap-x-2">
-              {compactionLabel ? <span role="status"><Pending>{compactionLabel}</Pending></span> : task.agent === "codex" && <span className="inline-flex items-center gap-1 whitespace-nowrap" aria-label={`Context ${contextLabel}`}>
+              {compactionLabel ? <span role="status" className="flex"><Pending>{compactionLabel}</Pending></span> : task.agent === "codex" && <span className="inline-flex items-center gap-1 whitespace-nowrap" aria-label={`Context ${contextLabel}`}>
                 <span>Context</span>
                 {remaining !== null && <AllowanceGauge remaining={remaining} />}
                 <span className={cn("tabular-nums", remaining !== null && "text-foreground")}>{contextValue}{remaining !== null && <span className="sr-only"> left</span>}</span>
