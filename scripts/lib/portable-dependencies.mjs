@@ -2,7 +2,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, r
 import { createRequire } from 'node:module';
 import { basename, dirname, join, relative, sep } from 'node:path';
 
-function resolveDependency(name, from) {
+export function resolveDependency(name, from) {
   const require = createRequire(join(from, 'package.json'));
   for (const directory of require.resolve.paths(name) ?? []) {
     const candidate = join(directory, name);

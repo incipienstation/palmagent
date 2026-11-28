@@ -525,6 +525,38 @@ for (const agent of ["claude", "codex"]) test(`${agent}: independent host surviv
   assert.equal(c.rows(task.taskId).filter(row => row.kind === "result").length, 1);
 });
 
+test("Claude ACP approval survives API restart and a follow-up resumes the same session", options, async t => {
+  const c = await harness(t, "independent");
+  const peer = join(serverDir, "tests/support/claude-acp-peer.mjs");
+  writeFileSync(join(c.dir, "bin", "claude-agent-acp"),
+    `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(peer)}\n`, { mode: 0o700 });
+  const { task } = await c.api("tasks", { repoId: c.repo.id, agent: "claude", permission: "manual",
+    prompt: "first", isolate: true });
+  const route = "tasks/" + task.taskId;
+  const waiting = await c.waitTask(task.taskId, task => !!task.pendingApproval);
+  await c.restart();
+  assert.deepEqual((await c.task(task.taskId)).pendingApproval, waiting.pendingApproval);
+  await c.api(route + "/approve", { decision: "approve" });
+  const question = (await c.waitTask(task.taskId, task => !!task.pendingInput)).pendingInput;
+  await c.api(route + "/answer", { requestId: question.requestId,
+    answers: [{ question: "Continue?", selected: ["Yes"], notes: "First turn" }] });
+  await c.waitTask(task.taskId, task => task.status === "idle");
+  const log = () => readFileSync(join(c.dir, "control/acp.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+  const first = log();
+  assert.deepEqual(first.slice(0, 4).map(row => row.method ?? row.mode ?? row.decision),
+    ["session/new", "default", "session/prompt", "once"]);
+  assert.deepEqual(first[4].answer, { question_0: "Yes", question_0_custom: "First turn" });
+  assert.equal(first[2].pid, first[3].pid);
+  assert.equal(c.rows(task.taskId).filter(row => row.kind === "assistant_text").length, 1);
+  await c.api(route + "/followup", { prompt: "second" });
+  await c.waitTask(task.taskId, task => !!task.pendingApproval);
+  assert.deepEqual(log()[first.length], { method: "session/resume", sessionId: waiting.sessionId });
+  await c.api(route + "/stop", {});
+  await c.waitTask(task.taskId, task => task.status !== "running" && !task.pendingApproval);
+  await until("Claude ACP cancellation", () => log().some(row => row.method === "session/cancel"));
+  assert.equal(log().filter(row => row.decision === "once").length, 1);
+});
+
 test("independent admission survives web absence and queued Stop prevents a provider launch", options, async t => {
   const c = await harness(t, "independent");
   const first = await c.create("codex", "slot-one");
