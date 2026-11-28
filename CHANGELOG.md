@@ -11,7 +11,6 @@ An entry does not mean a version has been published.
 - Agents can deliver images from temporary folders as task attachments. Readers can open
   them inline and in the viewer after the original files have been removed.
 
-
 ## 0.2.0-alpha.72
 
 ### Changed
