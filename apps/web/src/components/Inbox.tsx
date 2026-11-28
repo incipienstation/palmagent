@@ -377,7 +377,7 @@ export const InboxView = memo(function InboxView({
         <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")}
           conn={mobileHome ? undefined : conn}>
           {!loading && <TaskFilters {...filters} />}
-          {space ? <SpaceDetails repo={space} /> : <IconButton aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></IconButton>}
+          {space ? <SpaceDetails key={space.id} repo={space} /> : <IconButton aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></IconButton>}
         </AppBar>
         {mobileHome && <ReconnectStatus conn={conn} className="px-4 pb-2" />}
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground"><Pending>Archiving task…</Pending></p>}

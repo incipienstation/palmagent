@@ -1,8 +1,13 @@
 import { useRef, useState, type RefObject } from "react";
 import type { Repo, TaskState, TaskStatus } from "@palmagent/shared";
-import { MoreHorizontal, SlidersHorizontal, Terminal, X } from "lucide-react";
+import { MoreHorizontal, SlidersHorizontal, Terminal, Trash2, X } from "lucide-react";
 import { navigate } from "../router";
-import { taskDirectoryFor } from "../space-context";
+import { navigationHash } from "../navigation";
+import { removeRepo, useRepoMutations } from "../repo-mutations";
+import { BaseBranchForm } from "./SpaceSettings";
+import { RemoveSpaceDialog } from "./RemoveSpaceDialog";
+import { Pending } from "./ui/spinner";
+import { spacePath, taskDirectoryFor } from "../space-context";
 import { statusLabel } from "../lib/status";
 import { Badge } from "./ui/badge";
 import { Button, IconButton } from "./ui/button";
@@ -95,17 +100,31 @@ export function TaskFilterChips({ trigger, repo, directories, directory, onDirec
 export function SpaceDetails({ repo }: { repo: Repo }) {
   const [open, setOpen] = useState(false);
   const close = useRef<HTMLButtonElement>(null);
+  const removeButton = useRef<HTMLButtonElement>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const removing = useRepoMutations().removing.has(repo.id);
+  async function remove() {
+    const removed = await removeRepo(repo);
+    if (removed && navigationHash() === "#" + spacePath(repo.id)) navigate("/spaces", { replace: true });
+  }
   return <Drawer open={open} onOpenChange={setOpen}>
     <DrawerTrigger asChild><IconButton aria-label="Space details"><MoreHorizontal /></IconButton></DrawerTrigger>
     <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
       <DrawerHeader><DrawerHeaderRow><DrawerTitle className="min-w-0 break-words">{repo.name}</DrawerTitle><IconButton ref={close} aria-label="Close Space details" onClick={() => setOpen(false)}><X /></IconButton></DrawerHeaderRow>
-        <DrawerDescription>Space information and tools.</DrawerDescription>
+        <DrawerDescription className="sr-only">Space information and tools.</DrawerDescription>
       </DrawerHeader>
       <DrawerBody className="flex flex-col gap-4">
         <Button variant="outline" className="justify-start" onClick={() => { setOpen(false); navigate("/terminals/repo/" + encodeURIComponent(repo.id)); }}><Terminal data-icon="inline-start" />Terminals</Button>
-        <div><p className="text-sm font-medium">Connected folder</p><p className="mt-1 break-all text-sm text-muted-foreground">{repo.path}</p></div>
-        <p className="text-sm text-muted-foreground">This Space includes tasks in all of its Worktrees.</p>
+        <div><p className="text-sm font-medium">Connected folder</p><p className="mt-1 break-all text-sm text-muted-foreground">{repo.path}</p>
+          {repo.vcs !== "none" && <p className="mt-1 text-sm text-muted-foreground">Includes tasks in all Worktrees.</p>}
+        </div>
+        {repo.vcs !== "none" && <BaseBranchForm key={repo.id} repo={repo} />}
+        <Button ref={removeButton} variant="destructive" className="justify-start" disabled={removing} onClick={() => setConfirmRemove(true)}>
+          {removing ? <Pending>Removing Space…</Pending> : <><Trash2 data-icon="inline-start" />Remove Space</>}
+        </Button>
       </DrawerBody>
+      {confirmRemove && <RemoveSpaceDialog repo={repo} onClose={() => setConfirmRemove(false)}
+        onConfirm={() => void remove()} returnFocus={() => removeButton.current?.disabled ? close.current : removeButton.current} />}
     </DrawerContent>
   </Drawer>;
 }
