@@ -51,8 +51,8 @@ did not measure this overlapping producer/consumer arrangement.
 
 ## Public documentation checks
 
-Local verification and pull request CI scan repository Markdown for product-comparison
+Extended local verification and pull request CI scan repository Markdown for product-comparison
 phrases. To flag a standalone product name, add it on its own line in the
 `PALMAGENT_DOC_EXCLUDED_NAMES` Actions repository variable. Use public names only.
-The same environment variable configures local verification. Matches report the file
+The same environment variable configures the extended local check. Matches report the file
 and line. Dedicated license and notice files retain their attributions. Review the meaning of new names and links as part of the documentation change.

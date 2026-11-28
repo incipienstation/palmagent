@@ -10,8 +10,8 @@ Guidance for coding agents maintaining the Palmagent repository.
   In Palmagent tasks, use the deliver-image skill for temporary captures. Verify the conversation
   can serve the image before linking it.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
-- For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) and verify
-  module and layer boundaries with `pnpm architecture:check`. Rust migrations also follow
+- For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) for module and layer
+  boundaries. Required CI runs the architecture checker through the server typecheck. Rust migrations also follow
   the [migration gates](docs/RUST-MIGRATION.md).
 - Before adding or expanding tests, apply the [test selection policy](.harness/skills/plan/references/testing.md).
 
