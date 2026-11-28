@@ -30,6 +30,7 @@ export class NativeTaskMetadata implements TaskMetadata {
   setTaskPinOrder(pins: { taskId: string; pinnedAt: number }[], now: number) {
     this.transaction(() => { for (const pin of pins) this.write({ kind: "movePin", ...pin, now }); });
   }
+  setProviderTitle(taskId: string, title: string | undefined, firstPrompt?: string) { this.write({ kind: "providerTitle", taskId, title, firstPrompt }); }
   setTaskTitle(taskId: string, title: string, now: number) { this.write({ kind: "rename", taskId, title, now }); }
   setTaskStatus(taskId: string, status: TaskStatus, interrupted: boolean, now: number) {
     this.write({ kind: "status", taskId, status, interrupted, now });

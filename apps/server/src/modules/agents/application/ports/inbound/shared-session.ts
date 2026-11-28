@@ -4,6 +4,8 @@ import type { RawEvent } from "../../../domain/execution.js";
 export interface SharedSessionSnapshot {
   historyMode: "legacy" | "paginated";
   status: "idle" | "running";
+  title?: string | null;
+  firstPrompt?: string;
   turnId?: string;
   model?: string;
   effort?: string;

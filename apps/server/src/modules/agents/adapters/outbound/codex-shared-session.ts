@@ -84,7 +84,7 @@ class CodexConnection implements SharedSessionConnection {
       }
       const p = row.params ?? {};
       if (p.threadId !== this.target.sessionId && p.thread?.id !== this.target.sessionId) return;
-      if (row.id === undefined && !["serverRequest/resolved", "turn/started", "turn/completed", "item/started", "item/completed", "item/agentMessage/delta", "thread/status/changed", "hook/completed"].includes(row.method)) return;
+      if (row.id === undefined && !["serverRequest/resolved", "turn/started", "turn/completed", "item/started", "item/completed", "item/agentMessage/delta", "thread/status/changed", "thread/name/updated", "hook/completed"].includes(row.method)) return;
       if (row.id !== undefined) this.requests.set(JSON.stringify(row.id), { id: row.id, method: row.method, params: p });
       if (row.method === "serverRequest/resolved") {
         const key = JSON.stringify(p.requestId), pending = this.responding.get(key);
@@ -178,7 +178,7 @@ class CodexConnection implements SharedSessionConnection {
         approval = { requestId, tool: request.method === "item/fileChange/requestApproval" ? "file_change" : "bash", input: p, reason: p.reason };
       }
     }
-    return { historyMode: thread.historyMode === "paginated" ? "paginated" : "legacy", status: active ? "running" : "idle", turnId: this.turnId, model: thread.model ?? undefined, effort: thread.reasoningEffort ?? undefined, question, approval };
+    return { title: typeof thread.name === "string" ? thread.name : null, firstPrompt: typeof thread.preview === "string" ? thread.preview : undefined, historyMode: thread.historyMode === "paginated" ? "paginated" : "legacy", status: active ? "running" : "idle", turnId: this.turnId, model: thread.model ?? undefined, effort: thread.reasoningEffort ?? undefined, question, approval };
   }
   async history(): Promise<SharedSessionEvent[]> {
     let history: SharedSessionEvent[] = [];

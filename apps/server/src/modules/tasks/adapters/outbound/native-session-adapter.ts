@@ -2,6 +2,7 @@ import { readFileSync, realpathSync, readdirSync, readlinkSync, statSync } from 
 import { basename, dirname } from "node:path";
 import type { DispatchSessionRequest, TaskState } from "@palmagent/shared";
 import type { NativeSessionOperations } from "../../application/ports/outbound/native-session.js";
+import { readSessionTitles } from "./session-titles.js";
 import { ApplicationError } from "../../../../kernel/errors.js";
 import { checkpointSession, emptyTranscriptHash, locateSession, nativeHome, processIdentity, resumeCommand, synchronizeSession } from "./native-session.js";
 
@@ -10,6 +11,7 @@ export class LocalNativeSessionAdapter implements NativeSessionOperations {
   constructor(private readonly databasePath: string) {}
   readonly emptyTranscriptHash = emptyTranscriptHash;
   home = nativeHome;
+  readTitles = readSessionTitles;
   realpath(path: string) { return realpathSync(path); }
   processIdentity = processIdentity;
   sharedSocket(task: TaskState): string | undefined {

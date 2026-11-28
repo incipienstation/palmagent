@@ -32,6 +32,10 @@ pub(super) fn persist(db: &Connection, changes: &[Change]) -> Result<Option<i64>
                 "UPDATE tasks SET pinned_at=?1,updated_at=?2 WHERE id=?3",
                 params![pinned_at, now, id],
             )?,
+            Action::ProviderTitle { title, first_prompt } => db.execute(
+                "UPDATE tasks SET provider_title=?1,prompt=coalesce(?2,prompt) WHERE id=?3",
+                params![title, first_prompt, id],
+            )?,
             Action::Rename { title, now } => db.execute(
                 "UPDATE tasks SET title=?1,updated_at=?2 WHERE id=?3",
                 params![title, now, id],
@@ -110,6 +114,7 @@ struct NewTask {
     repo_id: String,
     agent: String,
     title: Option<String>,
+    provider_title: Option<String>,
     pinned_at: Option<i64>,
     prompt: String,
     status: String,
@@ -134,16 +139,17 @@ pub fn create(db: &mut Connection, task: &str) -> Result<()> {
     let row: NewTask = serde_json::from_str(task)?;
     let tx = super::sqlite_write::Write::begin(db)?;
     tx.execute(
-        "INSERT INTO tasks(id,repo_id,agent,title,pinned_at,prompt,status,
+        "INSERT INTO tasks(id,repo_id,agent,title,provider_title,pinned_at,prompt,status,
         interrupted,session_id,branch,worktree_path,permission,model,effort,
         pr_url,pr_urls,pending_input,pending_approval,session_control,skills_json,created_at,
         updated_at,last_activity_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             row.id,
             row.repo_id,
             row.agent,
             row.title,
+            row.provider_title,
             row.pinned_at,
             row.prompt,
             row.status,

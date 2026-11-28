@@ -25,6 +25,10 @@ pub enum Action {
         pinned_at: i64,
         now: i64,
     },
+    ProviderTitle {
+        title: Option<String>,
+        first_prompt: Option<String>,
+    },
     Rename {
         title: String,
         now: i64,

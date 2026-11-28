@@ -44,6 +44,24 @@ for (const width of [360]) test(`first send keeps the conversation and composer 
   expect(await input!.evaluate(el => el === document.querySelector('textarea'))).toBe(true);
   await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(1);
   await send(page, "t-run", { type: "tasks", tasks: [task], historyThrough: 0 });
+  await page.clock.install({ time: new Date("2030-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2030-01-01T00:01:00Z"));
+  const providerTitle = "새 대화의 제목 🌱";
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...task, providerTitle }], historyThrough: 0 });
+  const heading = page.getByRole("heading", { name: providerTitle, exact: true });
+  await expect(heading).toBeVisible();
+  await page.clock.runFor(96);
+  const remaining = await heading.locator(".invisible").textContent();
+  expect(remaining?.length).toBeGreaterThan(0);
+  expect(remaining!.length).toBeLessThan(providerTitle.length);
+  await page.clock.runFor(800);
+  await expect(heading.locator(".invisible")).toHaveCount(0);
+  await page.clock.resume();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await send(page, "t-run", { type: "tasks", tasks: [{ ...task, providerTitle: "두 번째 제목" }], historyThrough: 0 });
+  const reduced = page.getByRole("heading", { name: "두 번째 제목", exact: true });
+  await expect(reduced).toBeVisible();
+  await expect(reduced.locator(".invisible")).toHaveCount(0);
   await send(page, "t-run", { type: "event", event: { taskId: "t-run", agent: task.agent, ts: 1, kind: "status",
     payload: { subtype: "dispatch", text: "First message", messageId: request.clientRequestId } } }, 1);
   await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(1);

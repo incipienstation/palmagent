@@ -124,6 +124,9 @@ function start(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emi
 
   const app = client({ name: "palmagent" })
     .onNotification("session/update", ({ params }) => {
+      if (params.sessionId === sessionId && params.update.sessionUpdate === "session_info_update" && params.update.title !== undefined) {
+        emit({ taskId: args.taskId, sessionId, kind: "status", payload: { subtype: "provider_title", providerTitle: params.update.title } });
+      }
       if (prompting && params.sessionId === sessionId) update(params.update);
     })
     .onRequest("session/request_permission", () => ({ outcome: { outcome: "cancelled" } }))
