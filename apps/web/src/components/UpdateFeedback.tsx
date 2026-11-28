@@ -32,7 +32,7 @@ export function UpdateFeedback({ children }: { children: ReactNode }) {
       <div className="min-h-0 flex-1">{children}</div>
       {active && <div ref={toastObstacle} role="status" aria-label="Palmagent update"
         className="flex shrink-0 items-center justify-center gap-3 bg-card px-4 pt-2 pb-[calc(8px+var(--safe-bottom))] text-xs text-muted-foreground">
-        {paused ? label : <Pending>{label}</Pending>}
+        {paused ? <span>{label}</span> : <Pending>{label}</Pending>}
         {(paused || slow) && <Button variant="outline" size="sm" onClick={paused ? retryUpdate : retryServerReads}>Retry</Button>}
       </div>}
     </div>
