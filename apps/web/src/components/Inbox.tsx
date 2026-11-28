@@ -2,9 +2,10 @@ import { Pending } from "@/components/ui/spinner";
 import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { isActiveTaskStatus, needsTaskAttention, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { Archive, Check, ChevronRight, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
+import { Archive, Check, ChevronRight, Inbox as InboxIcon, Search, Folder, FolderOpen, GitPullRequest, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
@@ -26,7 +27,7 @@ import { SpaceDetails, TaskFilterChips, TaskFilters, taskFilterDirectories, type
 import { useActionState } from "../action-state";
 import { Alert } from "./ui/alert";
 import { EmptyState } from "./EmptyState";
-import { PrChip } from "./PrChip";
+import { PrChip, PrSheet } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
 import { SessionActionsMenu } from "./SessionActionsMenu";
 import { ArchiveTaskDialog } from "./ArchiveTaskDialog";
@@ -68,18 +69,17 @@ function readGrouping(): Grouping {
 }
 
 const MOBILE_STATUS_ORDER = [
-  "Working", "Queued", "Local shell", "Live preview", "Reconnecting", "Sync issue",
+  "Needs input", "Needs approval", "Working", "Queued", "Local shell", "Live preview", "Reconnecting", "Sync issue",
   "Failed", "Stopped", "Done", "Cancelled", "Archived",
 ];
 
-function requestPreview(task: TaskState) {
-  if (!needsResponse(task)) return;
-  if (task.status === "awaiting_input") return task.pendingInput?.questions[0]?.question;
-  return task.pendingApproval?.reason?.trim() || task.pendingApproval?.tool;
+function mobileStatus(task: TaskState) {
+  if (needsResponse(task) && task.status === "awaiting_input") return "Needs input";
+  return statusLabel(task.status, task.interrupted, task.sessionControl);
 }
 
 // A single quiet metadata line; provider and prompt remain in task details.
-function TaskMeta({ task, spaceLabel, showState }: { task: TaskState; spaceLabel?: string; showState: boolean }) {
+function TaskMeta({ task, spaceLabel }: { task: TaskState; spaceLabel?: string }) {
   const done = statusLabel(task.status, task.interrupted, task.sessionControl) === "Done";
   const state = done ? <span className="inline-flex shrink-0 items-center gap-1.5"><Check aria-hidden="true" className="size-3.5" />Done</span>
     : <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />;
@@ -88,12 +88,11 @@ function TaskMeta({ task, spaceLabel, showState }: { task: TaskState; spaceLabel
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
       {spaceLabel ? <div className="flex w-full min-w-0 items-center gap-2">
-        {showState && <>{state}<span aria-hidden="true">·</span></>}
+        {state}<span aria-hidden="true">·</span>
         <span className="min-w-0 flex-1 truncate" title={spaceLabel}>{spaceLabel}</span>
-        {!showState && prs}
         {time}
       </div> : state}
-      {showState && prs && <>{!spaceLabel && <span aria-hidden="true">·</span>}{prs}</>}
+      {prs && <>{!spaceLabel && <span aria-hidden="true">·</span>}{prs}</>}
       {!spaceLabel && <><span aria-hidden="true">·</span>{time}</>}
     </div>
   );
@@ -121,46 +120,58 @@ function navIfInRow(e: { currentTarget: HTMLElement; target: EventTarget | null 
   navigate(`/task/${encodeURIComponent(taskId)}`);
 }
 
-// One compact row treatment for every state; attention stays explicit in metadata.
-const TaskRow = memo(function TaskRow({ task, showSpace, hideState, preview }: { task: TaskState; showSpace: boolean; hideState: boolean; preview: boolean }) {
+const TaskRow = memo(function TaskRow({ task, showSpace, compact, groupedByStatus }: { task: TaskState; showSpace: boolean; compact: boolean; groupedByStatus: boolean }) {
   const repos = useContext(ReposContext);
   const repo = showSpace ? repos.get(task.repoId) : undefined;
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const spaceLabel = showSpace ? [qualifier, repo?.name ?? "Unavailable Space"].filter(Boolean).join(" · ") : undefined;
-  const summary = preview ? requestPreview(task) : undefined;
+  const [prsOpen, setPrsOpen] = useState(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const prs = task.prs;
+  const singlePr = prs?.length === 1 ? prs[0] : undefined;
   const pending = useTaskMutations().get(task.taskId)?.pending;
   const canArchive = !pending && !isActiveTaskStatus(task.status) && task.status !== "archived"
     && (!task.sessionControl || task.sessionControl.owner === "palmagent"
       || task.sessionControl.owner === "shared" && task.sessionControl.connection === "connected")
     && task.messageQueue?.compaction?.status !== "running";
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const actionsTrigger = useRef<HTMLButtonElement>(null);
   const requestArchive = () => setConfirmArchive(true);
   return (
     <SwipeToArchive disabled={!canArchive || confirmArchive} onArchive={requestArchive}>
       <div className="relative">
         <button
           data-swipe-surface=""
-          className="block w-full px-4 py-3 text-left outline-none transition-colors focus-visible:inset-ring-2 focus-visible:inset-ring-ring active:bg-accent"
+          className={cn("w-full text-left outline-none transition-colors focus-visible:inset-ring-2 focus-visible:inset-ring-ring active:bg-accent",
+            compact ? "flex min-h-11 items-center gap-2 pr-13 pl-4" : "block px-4 py-3")}
           onClick={(e) => navIfInRow(e, task.taskId)}
         >
-          <CardHeadline task={task} />
-          {summary && <div className="mt-0.5 line-clamp-2 break-words pr-8 text-sm">{summary}</div>}
-          <TaskMeta task={task} spaceLabel={spaceLabel} showState={!hideState} />
+          {compact ? <>
+            <span className="min-w-0 truncate font-medium text-strong">{taskTitle(task)}</span>
+            {spaceLabel && <span className="max-w-[30%] min-w-0 truncate text-xs text-muted-foreground" title={spaceLabel}>{spaceLabel}</span>}
+            {!groupedByStatus && needsResponse(task) && <Badge variant="attention" className="ml-auto">{mobileStatus(task)}</Badge>}
+          </> : <>
+            <CardHeadline task={task} />
+            <TaskMeta task={task} spaceLabel={spaceLabel} />
+          </>}
         </button>
-        <div className="absolute top-2 right-1">
-          <SessionActionsMenu task={task} triggerRef={actionsTrigger} restoreFocus={!confirmArchive} label={`Actions for ${taskTitle(task)}`} lifecycle={
+        <div className={cn("absolute right-1", compact ? "top-1/2 -translate-y-1/2" : "top-2")}>
+          <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} triggerRef={menuTrigger} restoreFocus={!prsOpen && !confirmArchive} lifecycle={
             <DropdownMenuItem disabled={!canArchive} onSelect={requestArchive}><Archive />Archive</DropdownMenuItem>
-          } />
+          }>
+            {compact && !!prs?.length && (singlePr
+              ? <DropdownMenuItem asChild><a href={singlePr.url} target="_blank" rel="noreferrer"><GitPullRequest />PR #{singlePr.number}</a></DropdownMenuItem>
+              : <DropdownMenuItem onSelect={() => setPrsOpen(true)}><GitPullRequest />Pull requests ({prs.length})</DropdownMenuItem>)}
+          </SessionActionsMenu>
         </div>
+        {prsOpen && prs && <PrSheet prs={prs} open={prsOpen} onOpenChange={setPrsOpen} returnFocus={menuTrigger} />}
       </div>
-      {confirmArchive && <ArchiveTaskDialog triggerRef={actionsTrigger} disabled={!canArchive}
+      {confirmArchive && <ArchiveTaskDialog triggerRef={menuTrigger} disabled={!canArchive}
         onArchive={() => void mutateTask(task.taskId, { hidden: true })} onClose={() => setConfirmArchive(false)} />}
     </SwipeToArchive>
   );
 });
 
-function TaskGroup({ preferenceKey, label, accessibleName = label, description, tasks, showSpace = false, attention = false, hideState = false, preview = false, actions }: {
+function TaskGroup({ preferenceKey, label, accessibleName = label, description, tasks, showSpace = false, attention = false, groupedByStatus = false, compact = false, actions }: {
   label: string;
   preferenceKey?: string;
   accessibleName?: string;
@@ -168,8 +179,8 @@ function TaskGroup({ preferenceKey, label, accessibleName = label, description, 
   tasks: TaskState[];
   showSpace?: boolean;
   attention?: boolean;
-  hideState?: boolean;
-  preview?: boolean;
+  groupedByStatus?: boolean;
+  compact?: boolean;
   actions?: ReactNode;
 }) {
   const [open, setOpen] = useState(() => {
@@ -206,19 +217,19 @@ function TaskGroup({ preferenceKey, label, accessibleName = label, description, 
         {actions && <div className="flex shrink-0 items-center gap-1 pr-2">{actions}</div>}
       </div>
       <CollapsibleContent className="divide-y divide-border/60 border-t">
-        {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} hideState={hideState} preview={preview} />)}
+        {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} groupedByStatus={groupedByStatus} compact={compact} />)}
       </CollapsibleContent>
     </section>
   </Collapsible>;
 }
 
-function SpaceTaskGroup({ repoId, tasks, preview, preferenceKey }: { preferenceKey?: string; repoId: string; tasks: TaskState[]; preview: boolean }) {
+function SpaceTaskGroup({ repoId, tasks, compact, preferenceKey }: { preferenceKey?: string; repoId: string; tasks: TaskState[]; compact: boolean }) {
   const repos = useContext(ReposContext);
   const repo = repos.get(repoId);
   const name = repo?.name ?? "Unavailable Space";
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const label = qualifier ? `${name} · ${qualifier}` : name;
-  return <TaskGroup preferenceKey={preferenceKey} label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks} preview={preview}
+  return <TaskGroup preferenceKey={preferenceKey} label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks} compact={compact}
     actions={repo && <>
       <IconButton aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
         onClick={() => navigate(spacePath(repoId))}><FolderOpen /></IconButton>
@@ -313,7 +324,7 @@ export const InboxView = memo(function InboxView({
   const attentionTasks: TaskState[] = [];
   const pinnedTasks: TaskState[] = [];
   for (const task of filtered) {
-    if ((mode === "desktop" || mode === "status") && needsResponse(task)) {
+    if (mode === "desktop" && needsResponse(task)) {
       attentionTasks.push(task);
       continue;
     }
@@ -322,7 +333,7 @@ export const InboxView = memo(function InboxView({
       continue;
     }
     let key = task.repoId;
-    if (mode === "status") key = statusLabel(task.status, task.interrupted, task.sessionControl);
+    if (mode === "status") key = mobileStatus(task);
     if (mode === "scoped") key = GROUP_ORDER[taskPriority(task)];
     const group = groups.get(key) ?? [];
     group.push(task);
@@ -398,13 +409,13 @@ export const InboxView = memo(function InboxView({
               />
             ) : (
               <div key={JSON.stringify([repoId, mode, search])} className="mt-3 flex flex-col max-md:first:mt-0 md:gap-3">
-                <TaskGroup preferenceKey={groupPreference("attention")} label="Needs you" tasks={attentionTasks} showSpace attention preview={mobileHome} />
-                <TaskGroup preferenceKey={groupPreference("pinned")} label="Pinned" accessibleName="Pinned tasks" tasks={pinnedTasks} showSpace={!repoId} preview={mobileHome} />
+                <TaskGroup preferenceKey={groupPreference("attention")} label="Needs you" tasks={attentionTasks} showSpace attention />
+                <TaskGroup preferenceKey={groupPreference("pinned")} label="Pinned" accessibleName="Pinned tasks" tasks={pinnedTasks} showSpace={!repoId} compact={mobileHome} />
                 {orderedGroups.map(([key, group]) => {
                   if (mode === "space" || mode === "desktop")
-                    return <SpaceTaskGroup key={key} preferenceKey={groupPreference(`space:${key}`)} repoId={key} tasks={group} preview={mobileHome} />;
+                    return <SpaceTaskGroup key={key} preferenceKey={groupPreference(`space:${key}`)} repoId={key} tasks={group} compact={mobileHome} />;
                   return <TaskGroup key={key} preferenceKey={groupPreference(`status:${key}`)} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
-                    tasks={group} showSpace={mobileHome} hideState={mobileHome} />;
+                    tasks={group} showSpace={mobileHome} compact={mobileHome} groupedByStatus />;
                 })}
               </div>
             )}
