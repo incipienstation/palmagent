@@ -141,12 +141,20 @@ another name. If that lookup is unavailable, it uses the cached remote default,
 then the current checkout. Detection uses locally available commits; it does not
 fetch branches. An explicit value overrides detection.
 
-Use **Settings → Space settings → Base branch** to change a registered Space's
-starting point. Enter a locally available branch or Git ref, such as `develop` or
+Open a Git Space and choose **Space details (…) → Base branch** to change its
+starting point. You can also edit it under **Settings → Space settings**.
+Enter a locally available branch or Git ref, such as `develop` or
 `origin/develop`. The saved choice is preserved across restarts and registration.
 Changes apply to future isolated tasks and routine runs. Existing tasks and the
 original checkout stay unchanged. Regular chats without isolation run in the
 original directory; plain folders have no base branch.
+
+## Removing a Space
+
+Open the Space, choose **Space details (…) → Remove Space**, and confirm.
+Removal deletes its archived task history and routines and keeps the connected
+folder on disk. Archive its tasks, close its terminals, and stop any running
+scripts before removing it.
 
 ## Routines
 
