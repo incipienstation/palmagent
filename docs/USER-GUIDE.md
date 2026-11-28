@@ -107,6 +107,11 @@ use the same rule after their display records are rebuilt on upgrade; the origin
 execution records remain intact.
 Very large messages and images offer a separate load button for their full content.
 
+Select a file link in a reply to read the current working copy in the conversation.
+References such as `src/app.ts:42` or `src/app.ts#L42` highlight the specified line.
+The viewer opens UTF-8 text files up to 1 MiB inside the task’s working directory.
+Close it to return to the link.
+
 The chat uses one display style. Older Compact/Verbose preferences no longer change
 it. Use **Task actions → Execution records** to inspect recorded events, including
 lifecycle metadata that does not appear in the conversation. Records load in pages,

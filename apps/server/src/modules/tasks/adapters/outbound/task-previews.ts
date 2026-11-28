@@ -20,13 +20,21 @@ export async function readTaskImage(cwd: string | undefined, path: string, nativ
   return { bytes, mediaType };
 }
 
+export async function readTaskFile(cwd: string | undefined, path: string) {
+  const bytes = await readPreview(cwd, path, "file");
+  const unsupported = () => new ApplicationError("unsupported_media_type", "Only UTF-8 text files can be previewed");
+  if (bytes.includes(0)) throw unsupported();
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch { throw unsupported(); }
+}
+
 export function readTaskVisualization(cwd: string | undefined, path: string) {
   return readPreview(cwd, path, "visualization");
 }
 
-async function readPreview(cwd: string | undefined, path: string, kind: "image" | "visualization", nativeSession?: NativeSession) {
-  const limit = kind === "image" ? MAX_IMAGE_BYTES : MAX_VISUALIZATION_BYTES;
-  const label = kind === "image" ? "Image" : "Visualization";
+async function readPreview(cwd: string | undefined, path: string, kind: "image" | "visualization" | "file", nativeSession?: NativeSession) {
+  const limit = { image: MAX_IMAGE_BYTES, visualization: MAX_VISUALIZATION_BYTES, file: 1024 * 1024 }[kind];
+  const label = { image: "Image", visualization: "Visualization", file: "File" }[kind];
   const unavailable = () => new ApplicationError("not_found", `${label} unavailable in this task's directories`);
   if (!cwd) throw unavailable();
   try {
@@ -45,7 +53,7 @@ async function readPreview(cwd: string | undefined, path: string, kind: "image" 
     try {
       const stat = await handle.stat();
       if (!stat.isFile()) throw unavailable();
-      if (stat.size > limit) throw new ApplicationError("payload_too_large", `${label} exceeds the 5 MB preview limit`);
+      if (stat.size > limit) throw new ApplicationError("payload_too_large", `${label} exceeds the ${limit / (1024 * 1024)} MB preview limit`);
       // Check the opened descriptor too on Linux, closing directory-swap races.
       const openedFile = process.platform === "linux" ? await realpath(`/proc/self/fd/${handle.fd}`) : file;
       if (!inside(root, openedFile)) throw unavailable();
