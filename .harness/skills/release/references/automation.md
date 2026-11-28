@@ -194,6 +194,9 @@ product changes after the current publication completes. The controller resumes
 its own merged preparations and tags before allocating another version, preventing metadata
 pushes from causing a release loop. A retained draft or open preparation PR remains inspectable.
 
+Preview preparation uses the same `develop-merge` Actions concurrency group as task PRs.
+The group covers the preparation merge and its CI. The publish job consumes the prepared
+commit and version after releasing the merge turn.
 Concurrency keeps the active Preview and coalesces later pushes into one pending comparison.
 Standalone publication and Pages recovery serialize through `release-pages-publication` and
 retain queued runs using `queue: max`. See
