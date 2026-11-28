@@ -81,11 +81,12 @@ test("short, cancelled, and right swipes leave navigation and Archive closed", a
 });
 
 test("vertical gestures scroll the list without revealing Archive", async ({ page }) => {
-  await send(page, { type: "tasks", tasks: [idle, ...Array.from({ length: 10 }, (_, i) => ({ ...idle, taskId: `scroll-${i}`, title: `Scroll task ${i}` }))] });
+  await send(page, { type: "tasks", tasks: [idle, ...Array.from({ length: 24 }, (_, i) => ({ ...idle, taskId: `scroll-${i}`, title: `Scroll task ${i}` }))] });
   const target = row(page);
+  const viewport = page.locator('[data-radix-scroll-area-viewport]').filter({ has: page.getByTestId("inbox-content") });
+  await expect.poll(() => viewport.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(120);
   await swipe(page, target, -12, -120);
   await expect(page.getByRole("button", { name: "Archive", exact: true })).toHaveCount(0);
-  const viewport = page.locator('[data-radix-scroll-area-viewport]').filter({ has: page.getByTestId("inbox-content") });
   await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(30);
   await assertViewportLocked(page);
 });
