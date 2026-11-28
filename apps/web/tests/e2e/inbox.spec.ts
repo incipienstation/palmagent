@@ -74,6 +74,37 @@ test.describe("inbox", () => {
 
 });
 
+test("an open task list reveals streamed provider titles and respects reduced motion", async ({ page }) => {
+  await installInbox(page);
+  await page.goto("/");
+  const content = page.getByTestId("inbox-content");
+  await expect(content.getByText(tasks[0].title!, { exact: true })).toBeVisible();
+  const task = { ...tasks[0], title: undefined, prompt: "First message" };
+  await send(page, { type: "tasks", tasks: [task] });
+  await expect(content.getByText(task.prompt, { exact: true })).toBeVisible();
+
+  await page.clock.install({ time: new Date("2030-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2030-01-01T00:01:00Z"));
+  const providerTitle = "새 대화의 제목 🌱";
+  await send(page, { type: "tasks", tasks: [{ ...task, providerTitle }] });
+  const row = content.getByRole("button", { name: /^새 대화의 제목 🌱/ });
+  await expect(row).toBeVisible();
+  await page.clock.runFor(96);
+  const remaining = await row.locator(".invisible").textContent();
+  expect(remaining?.length).toBeGreaterThan(0);
+  expect(remaining!.length).toBeLessThan(providerTitle.length);
+  await page.clock.runFor(800);
+  await expect(row.getByText(providerTitle, { exact: true })).toBeVisible();
+  await expect(row.locator(".invisible")).toHaveCount(0);
+  await page.clock.resume();
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await send(page, { type: "tasks", tasks: [{ ...task, providerTitle: "두 번째 제목" }] });
+  const reduced = content.getByRole("button", { name: /^두 번째 제목/ });
+  await expect(reduced.getByText("두 번째 제목", { exact: true })).toBeVisible();
+  await expect(reduced.locator(".invisible")).toHaveCount(0);
+});
+
 test("response requests move between Needs input and Working once as work resumes", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
