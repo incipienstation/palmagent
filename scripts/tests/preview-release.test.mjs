@@ -1,7 +1,8 @@
+import { pullRequestValidation, assertPullRequestRun, mergeVerifiedPR } from '../lib/verified-pr.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isProductPath, productChanges, nextPreviewVersion, assertPreparation } from '../lib/preview-plan.mjs';
-import { releaseBot, planPreview, preparationMarker, preparationValidation, assertPreparationRun, mergePreparation, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
+import { checkoutPrepared, releaseBot, planPreview, preparationMarker, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
 import { prepareVersion } from '../release-version.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -94,28 +95,28 @@ test('preparation merge obeys exact CI identity, successful validate, updated ba
   };
   const pages = () => [{ name: 'validate', head_sha: head, status: 'completed', conclusion: 'success' }];
   const adapters = { api, pages, validation: async () => 42 };
-  assert.equal(await mergePreparation('', repository, { number: 1 }, head, source, adapters), merged);
-  await assert.rejects(mergePreparation('', repository, { number: 1 }, 'd'.repeat(40), source, adapters), /identity changed/);
+  assert.equal(await mergeVerifiedPR(repository, { number: 1 }, head, source, adapters), merged);
+  await assert.rejects(mergeVerifiedPR(repository, { number: 1 }, 'd'.repeat(40), source, adapters), /identity changed/);
   didMerge = false;
-  assert.equal(await mergePreparation('', repository, { number: 1 }, head, 'd'.repeat(40), adapters), null);
-  await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
+  assert.equal(await mergeVerifiedPR(repository, { number: 1 }, head, 'd'.repeat(40), adapters), null);
+  await assert.rejects(mergeVerifiedPR(repository, { number: 1 }, head, source, {
     ...adapters, api: (repo, path, options) => path === 'actions/runs/42' ? { ...run, conclusion: 'failure' } : api(repo, path, options),
   }), /CI failed/);
-  await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
+  await assert.rejects(mergeVerifiedPR(repository, { number: 1 }, head, source, {
     ...adapters, pages: () => [{ ...pages()[0], conclusion: 'skipped' }],
   }), /no successful validate/);
-  await assert.rejects(mergePreparation('', repository, { number: 1 }, head, source, {
+  await assert.rejects(mergeVerifiedPR(repository, { number: 1 }, head, source, {
     ...adapters, api: (repo, path, options) => { if (path.endsWith('/merge')) throw new Error('review required'); return api(repo, path, options); },
   }), /review required/);
   run.conclusion = 'action_required';
   let approved = false;
-  assert.equal(await mergePreparation('', repository, { number: 1 }, head, source, {
+  assert.equal(await mergeVerifiedPR(repository, { number: 1 }, head, source, {
     ...adapters, sleep: async () => { assert(!didMerge); approved = true; run.conclusion = 'success'; },
   }), merged);
   assert(approved, 'must wait for approval rather than treating the held run as a success');
   for (const change of [{ head_sha: source }, { head_branch: 'develop' }, { event: 'workflow_dispatch' },
     { path: '.github/workflows/other.yml' }, { repository: { full_name: 'other/repo' } }]) {
-    assert.throws(() => assertPreparationRun({ ...run, ...change }, repository, branch, head), /identity differs/);
+    assert.throws(() => assertPullRequestRun({ ...run, ...change }, repository, branch, head), /identity differs/);
   }
 });
 
@@ -124,11 +125,11 @@ test('preparation selects the latest native PR workflow for its exact head and P
   const run = { id: 42, head_sha: head, pull_requests: [{ number: 1 }], status: 'completed', conclusion: 'action_required' };
   let calls = 0;
   const pages = (_repo, path) => {
-    assert.equal(path, 'actions/workflows/ci.yml/runs?event=pull_request');
+    assert.equal(path, `actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}`);
     if (!calls++) return []; // GitHub may create the run after returning the PR.
     return [{ ...run, id: 44, pull_requests: [{ number: 2 }] }, { ...run, id: 43, head_sha: 'c'.repeat(40) }, run, { ...run, id: 41 }];
   };
-  assert.equal(await preparationValidation(repository, pr, head, { pages, sleep: async () => {} }), 42);
+  assert.equal(await pullRequestValidation(repository, pr, head, { pages, sleep: async () => {} }), 42);
   assert.equal(calls, 2);
 });
 
@@ -198,7 +199,7 @@ test('a lease-updated preparation waits for its known previous PR head before ch
     assert.equal(options.body.sha, head);
     didMerge = true;
   };
-  const result = await mergePreparation('', repository, pr, head, source, {
+  const result = await mergeVerifiedPR(repository, pr, head, source, {
     previousHead: previous, api,
     sleep: async (ms) => { assert.equal(ms, 1000); assert(!didMerge); sleeps++; },
     validation: async (_repo, current, expected) => { assert.equal(current.head.sha, head); assert.equal(expected, head); validations++; return 42; },
@@ -223,7 +224,7 @@ test('PR propagation allowance is bounded and rejects unknown heads, changed ref
     [{ ...current, merged: true }, 0],
   ]) {
     let sleeps = 0;
-    await assert.rejects(mergePreparation('', repository, pr, head, source, {
+    await assert.rejects(mergeVerifiedPR(repository, pr, head, source, {
       previousHead: previous,
       api: (_repo, path) => { assert.equal(path, 'pulls/1'); return value; },
       sleep: async () => { sleeps++; },
@@ -237,7 +238,7 @@ test('a PR reverting after the expected head was observed does not regain the pr
   const source = 'a'.repeat(40), head = 'b'.repeat(40), previous = 'c'.repeat(40);
   const branch = 'feature/preview-0.1.0-alpha.2', pr = { number: 1, head: { ref: branch } };
   let reads = 0, sleeps = 0;
-  await assert.rejects(mergePreparation('', repository, pr, head, source, {
+  await assert.rejects(mergeVerifiedPR(repository, pr, head, source, {
     previousHead: previous,
     api: (_repo, path) => {
       if (path === 'pulls/1') return { ...pr, head: { ref: branch, sha: ++reads === 1 ? head : previous }, base: { ref: 'develop' }, state: 'open' };
@@ -249,4 +250,13 @@ test('a PR reverting after the expected head was observed does not regain the pr
     sleep: async (ms) => { assert.equal(ms, 15000); sleeps++; },
   }), /identity changed/);
   assert.equal(sleeps, 1);
+});
+
+test('publication uses the prepared commit after another PR advances develop', t => {
+  const f = releaseFixture(t);
+  f.put('docs/change.md', 'Another merged PR.\n');
+  f.git('update-ref', 'refs/remotes/origin/develop', f.commit());
+  checkoutPrepared(f.root, f.source, '0.1.0-alpha.1');
+  assert.equal(f.git('rev-parse', 'HEAD'), f.source);
+  assert.throws(() => checkoutPrepared(f.root, f.source, '0.1.0-alpha.2'), /identity changed/);
 });

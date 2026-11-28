@@ -16,7 +16,13 @@ concurrency:
   # Keep the active release; the default single pending run coalesces later pushes.
 
 jobs:
-  release:
+  prepare:
+    concurrency:
+      group: develop-merge
+      queue: max
+    outputs:
+      commit: ${{ steps.prepare.outputs.commit }}
+      version: ${{ steps.prepare.outputs.version }}
     if: github.ref == 'refs/heads/develop' && vars.PREVIEW_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 55
@@ -26,37 +32,44 @@ jobs:
         with:
           path: tooling
           persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: tooling/.nvmrc
-      - name: Check out the latest develop source
-        uses: actions/checkout@v4
-        with:
-          ref: develop
-          path: source
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Create repository-scoped release App token
-        if: vars.RELEASE_APP_CLIENT_ID != ''
-        id: release-app
-        uses: actions/create-github-app-token@v3
+      - uses: ./tooling/.github/actions/preview-setup
+        id: setup
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-actions: write
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: tooling/package.json
-      - name: Install release tool dependencies
-        working-directory: tooling
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Prepare, verify, and publish eligible product changes
+      - name: Prepare and merge eligible product changes
+        id: prepare
         run: node tooling/scripts/preview-release.mjs source
         env:
-          GH_TOKEN: ${{ vars.RELEASE_APP_CLIENT_ID == '' && github.token || steps.release-app.outputs.token }}
+          GH_TOKEN: ${{ vars.RELEASE_APP_CLIENT_ID == '' && github.token || steps.setup.outputs.token }}
           RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          RELEASE_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
+          RELEASE_APP_SLUG: ${{ steps.setup.outputs.slug }}
           GH_REPO: ${{ github.repository }}
           PREVIEW_RELEASE_ENABLED: ${{ vars.PREVIEW_RELEASE_ENABLED }}
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.commit != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out workflow tools
+        uses: actions/checkout@v4
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: ./tooling/.github/actions/preview-setup
+        id: setup
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - name: Publish the verified preparation
+        run: node tooling/scripts/preview-release.mjs source publish
+        env:
+          GH_TOKEN: ${{ vars.RELEASE_APP_CLIENT_ID == '' && github.token || steps.setup.outputs.token }}
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_SLUG: ${{ steps.setup.outputs.slug }}
+          GH_REPO: ${{ github.repository }}
+          PREVIEW_RELEASE_ENABLED: ${{ vars.PREVIEW_RELEASE_ENABLED }}
+          PREVIEW_COMMIT: ${{ needs.prepare.outputs.commit }}
+          PREVIEW_VERSION: ${{ needs.prepare.outputs.version }}

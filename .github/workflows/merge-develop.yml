@@ -1,0 +1,52 @@
+name: Merge into develop
+run-name: Merge PR ${{ inputs.pr }} at ${{ inputs.head }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Authorized PR number
+        required: true
+        type: string
+      head:
+        description: Verified task commit
+        required: true
+        type: string
+      base:
+        description: Pin develop for source-specific verification
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    if: github.ref == 'refs/heads/develop'
+    concurrency:
+      group: develop-merge
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: read
+      - name: Update and merge the requested PR after required CI
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          PR_HEAD: ${{ inputs.head }}
+          PINNED_BASE: ${{ inputs.base }}
+        run: node scripts/merge-develop.mjs
