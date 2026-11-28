@@ -8,6 +8,9 @@ description: Scope a Palmagent implementation or an explicitly requested plan. G
 Identify the affected contracts, proportionate verification, and delivery boundary. A plan-only
 request stops before implementation; authorized implementation continues to [start](../start/SKILL.md).
 
+When a plan depends on a lasting design trade-off, check the [decision index](../../../docs/decisions/README.md)
+and link the relevant record. If the choice is open, use the template there to propose it for review.
+
 ## Repository boundaries
 
 The root `palmagent` package is private and owns the product version; generated public artifacts
