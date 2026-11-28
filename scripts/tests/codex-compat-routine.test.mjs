@@ -41,7 +41,7 @@ else if (args.includes('generate-json-schema')) {
   const out = args[args.indexOf('--out') + 1], schemas = JSON.parse(fs.readFileSync(process.env.TEST_SCHEMAS));
   if (version === (process.env.TEST_FAIL_VERSION || (process.env.TEST_FAIL && '0.160.1'))) schemas.ClientRequest.oneOf[0].properties.params.properties.clientInfo.properties.version.type = 'integer';
   if (process.env.TEST_RENAME && version === '0.160.1') {
-    for (const name of ['v2/ThreadStartResponse', 'v2/ThreadResumeResponse']) {
+    for (const name of ['v2/ThreadStartResponse', 'v2/ThreadResumeResponse', 'v2/ThreadReadResponse']) {
       schemas[name].properties.thread.properties.key=schemas[name].properties.thread.properties.id;
       delete schemas[name].properties.thread.properties.id;
     }
@@ -64,7 +64,7 @@ else if (args.includes('generate-json-schema')) {
     if (process.env.TEST_REPAIR_OK) {
       fs.appendFileSync('apps/server/src/modules/agents/adapters/outbound/codex.ts','// Repaired fixture adapter.\\n');
       const file='scripts/lib/codex-protocol-contract.mjs';
-      fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('const thread = { id: true };','const thread = { key: true };'));
+      fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace("const thread = fields('id',", "const thread = fields('key',"));
       process.exit(0);
     }
     process.exit(42);
