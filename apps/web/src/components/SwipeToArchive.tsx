@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Archive } from "lucide-react";
-import { Button } from "./ui/button";
+import { IconButton } from "./ui/button";
 
-const WIDTH = 104;
+const WIDTH = 56;
 
 /** A horizontal touch reveals an explicit action; dragging never archives. */
 export function SwipeToArchive({ children, disabled, onArchive }: {
@@ -105,10 +105,10 @@ export function SwipeToArchive({ children, disabled, onArchive }: {
       event.preventDefault(); event.stopPropagation();
     }
   }}>
-    <div className="absolute inset-y-0 right-0 w-26" aria-hidden={!open || disabled} inert={!open || disabled ? true : undefined}>
-      <Button variant="secondary" className="size-full flex-col rounded-none" onClick={onArchive} disabled={disabled || !open}>
-        <Archive />Archive
-      </Button>
+    <div className="absolute inset-y-0 right-0" style={{ width: WIDTH }} aria-hidden={!open || disabled} inert={!open || disabled ? true : undefined}>
+      <IconButton aria-label="Archive" variant="secondary" className="size-full rounded-none" onClick={onArchive} disabled={disabled || !open}>
+        <Archive aria-hidden="true" />
+      </IconButton>
     </div>
     <div ref={surface} className="relative bg-background">{children}</div>
   </div>;
