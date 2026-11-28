@@ -1,3 +1,4 @@
+import { DISTRIBUTION } from '../lib/product.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -8,7 +9,7 @@ import { prepareVersion } from '../release-version.mjs';
 function fixture(t, version = '0.1.0-alpha.1') {
   const root = mkdtempSync(join(tmpdir(), 'palmagent-version-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const paths = ['package.json', 'plugins/claude/.claude-plugin/plugin.json', 'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'];
+  const paths = DISTRIBUTION.versionedManifests;
   for (const p of paths) { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), JSON.stringify({ name: 'palmagent', private: true, version })); }
   writeFileSync(join(root, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased\n\n- Reviewed fix.\n\n## 0.0.1\n\n- Older changes.\n');
   return { root, paths };

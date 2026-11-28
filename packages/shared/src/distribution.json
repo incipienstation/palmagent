@@ -5,7 +5,11 @@
   "installerUrl": "https://palmagent.dev/install.sh",
   "versionedManifests": [
     "package.json",
+    "plugin.json",
+    "plugins/claude/plugin.json",
+    "plugins/codex/plugins/palmagent/plugin.json",
     "plugins/claude/.claude-plugin/plugin.json",
     "plugins/codex/plugins/palmagent/.codex-plugin/plugin.json"
-  ]
+  ],
+  "agentPluginSchema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 }

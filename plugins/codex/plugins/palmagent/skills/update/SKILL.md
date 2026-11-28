@@ -24,8 +24,9 @@ Inspect the current platform's installed Palmagent manifest, plus participating
 Palmagent installations in the other available platform and scopes, using their
 native inventories. Pass each actual installed manifest path, not an assumed
 version from a marketplace catalog. Managed installations must remain managed.
-The manifest relative to this skill is `../../.claude-plugin/plugin.json` or
-`../../.codex-plugin/plugin.json`.
+Use the installed native manifest at `../../.claude-plugin/plugin.json` or
+`../../.codex-plugin/plugin.json` when available so older updaters recognize the
+installation. A portable-only package uses `../../plugin.json`.
 
 ```bash
 <cli> update --plan --plugin-manifest <installed-manifest>

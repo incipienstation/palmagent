@@ -18,5 +18,5 @@ For skill authoring or edits, use these canonical sources:
   `pnpm plugins:check` validates them. Keep Claude-specific hooks and settings under `.claude/`.
 - Author operator skills in `skills/<name>/SKILL.md` and shared references in `skills/.shared/`.
   Run `node scripts/sync-skills.mjs` to update Claude and Codex copies; never edit generated copies
-  by hand or add `SKILL.md` under `.shared/`. Keep platform manifests and Codex
-  `agents/openai.yaml` files platform-specific.
+  by hand or add `SKILL.md` under `.shared/`. Edit shared plugin metadata in the root `plugin.json`. The sync
+  command generates both native manifests. Keep Codex `agents/openai.yaml` files platform-specific.
