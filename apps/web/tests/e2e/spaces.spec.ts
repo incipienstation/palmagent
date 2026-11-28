@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { repos, tasks } from "../fixtures.mjs";
 import { assertViewportLocked, captureForReview } from "./_helpers";
+import { compactActivityTime } from "../../src/format";
 import { spaceActivities, spaceActivitySummary } from "../../src/space-context";
 import type { TaskState } from "@palmagent/shared";
 
@@ -36,7 +37,8 @@ test("Space activity groups counts once and preserves summary priorities and arc
   expect(activities.get("main")).toEqual({ latest: 4, attention: 2, running: 1, queued: 1 });
   expect(spaceActivitySummary(activities.get("main"))).toBe("2 need attention · 1 working");
   expect(spaceActivitySummary(activities.get("other"))).toBe("1 queued");
-  expect(spaceActivitySummary(activities.get("idle"), 120000)).toBe("Last active 1m ago");
+  expect(spaceActivitySummary(activities.get("idle"))).toBe("");
+  expect(compactActivityTime(activities.get("idle")!.latest, { now: 120000, ago: true })).toBe("1m ago");
   expect(spaceActivitySummary(activities.get("missing"))).toBe("No tasks yet");
 });
 

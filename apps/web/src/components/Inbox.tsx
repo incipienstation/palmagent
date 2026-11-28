@@ -12,6 +12,7 @@ import { useStoredPreference } from "../hooks/useStoredPreference";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSearch } from "./ListSearch";
 import { cn } from "@/lib/utils";
+import { compactActivityTime } from "../format";
 import { compareTasks } from "@/lib/task-order";
 import { taskTitle } from "@/lib/task-title";
 import { statusLabel, statusSection } from "@/lib/status";
@@ -76,27 +77,13 @@ function requestPreview(task: TaskState) {
   return task.pendingApproval?.reason?.trim() || task.pendingApproval?.tool;
 }
 
-// Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
-// a short date past a week so the dense list stays scannable.
-function relTime(ms: number): string {
-  const diff = Date.now() - ms;
-  if (diff < 60_000) return "now";
-  const m = Math.floor(diff / 60_000);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
 // A single quiet metadata line; provider and prompt remain in task details.
 function TaskMeta({ task, spaceLabel, showState }: { task: TaskState; spaceLabel?: string; showState: boolean }) {
   const done = statusLabel(task.status, task.interrupted, task.sessionControl) === "Done";
   const state = done ? <span className="inline-flex shrink-0 items-center gap-1.5"><Check aria-hidden="true" className="size-3.5" />Done</span>
     : <StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} />;
   const prs = task.prs?.length ? <PrChip prs={task.prs} subtle /> : null;
-  const time = <time className="shrink-0" dateTime={new Date(task.lastActivityAt).toISOString()}>{relTime(task.lastActivityAt)}</time>;
+  const time = <time className="shrink-0" dateTime={new Date(task.lastActivityAt).toISOString()}>{compactActivityTime(task.lastActivityAt)}</time>;
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
       {spaceLabel ? <div className="flex w-full min-w-0 items-center gap-2">

@@ -36,13 +36,11 @@ export function spaceActivities(tasks: readonly TaskState[]): Map<string, SpaceA
   return spaces;
 }
 
-export function spaceActivitySummary(activity?: SpaceActivity, now = Date.now()): string {
-  const { latest, attention, running, queued } = activity ?? { latest: 0, attention: 0, running: 0, queued: 0 };
-  const summary = [
-    attention ? `${attention} need attention` : "",
+export function spaceActivitySummary(activity?: SpaceActivity): string {
+  if (!activity) return "No tasks yet";
+  const { attention, running, queued } = activity;
+  return [
+    attention ? `${attention} ${attention === 1 ? "needs" : "need"} attention` : "",
     running ? `${running} working` : queued ? `${queued} queued` : "",
   ].filter(Boolean).join(" · ");
-  const minutes = Math.max(0, Math.floor((now - latest) / 60_000));
-  const time = minutes < 1 ? "just now" : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
-  return summary || (latest ? `Last active ${time}` : "No tasks yet");
 }
