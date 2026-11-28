@@ -11,6 +11,12 @@ An entry does not mean a version has been published.
 - Agents can deliver images from temporary folders as task attachments. Readers can open
   them inline and in the viewer after the original files have been removed.
 
+## 0.2.0-alpha.74
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/4b141598c2088b02248babe3e5e0269bce652cc8...40061a4ee3850085f2128aac25347d1d6afa2a13) for details.
+
 ## 0.2.0-alpha.73
 
 ### Changed
