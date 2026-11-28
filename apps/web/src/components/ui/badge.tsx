@@ -14,6 +14,7 @@ const badgeVariants = cva(
         outline: "border border-input text-foreground text-xs",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
+        attention: "bg-status-approval-bg text-status-approval-fg",
         destructive: "bg-status-failed-bg text-status-failed-fg",
       },
     },

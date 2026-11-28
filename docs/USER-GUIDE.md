@@ -31,10 +31,12 @@ A missing Stable release never falls back to Preview.
 ## Spaces
 
 On a phone, open **Tasks** and choose **Status** or **Space** below the list.
-Status starts with **Needs you**, where you can preview a pending question or approval.
-Both views collect pinned tasks in **Pinned**, in your saved pin order. Tasks already
-in **Needs you** appear there once. In Space view, the remaining tasks are grouped
-by folder, with requests you can answer first in each group.
+Both views show **Pinned** first in your saved pin order. Each task appears once.
+Status groups the remaining tasks by state, starting with **Needs input** and
+**Needs approval**. Each row shows the task title and Space. Space view groups
+the remaining tasks by folder and puts requests you can answer first in each group.
+Pinned and Space rows show a badge on the right when a task needs your response.
+Open the row menu to view its pull requests.
 Switching views keeps your search and filters. The app remembers your last view.
 
 All groups start expanded. Select a heading to collapse or expand its tasks. The app

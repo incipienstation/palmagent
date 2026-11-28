@@ -22,7 +22,7 @@ test.describe("inbox", () => {
   test("status filters work across Spaces and restore on Back", async ({ page }) => {
     const group = page.getByRole("region", { name: "sample-app tasks", exact: true });
     await filterStatus(page, "Needs answer");
-    const attention = page.getByRole("region", { name: "Needs you", exact: true });
+    const attention = page.getByRole("region", { name: "Needs input", exact: true });
     await expect(attention.getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
     await expect(page.getByTestId("inbox-content").getByRole("button", { name: /^Actions for / })).toHaveCount(tasks.filter(task => task.status === "awaiting_input").length);
     await attention.getByRole("button", { name: /Scaffold a new settings screen/ }).first().click();
@@ -74,11 +74,11 @@ test.describe("inbox", () => {
 
 });
 
-test("response requests move between Needs you and Working once as work resumes", async ({ page }) => {
+test("response requests move between Needs input and Working once as work resumes", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
   const content = page.getByTestId("inbox-content");
-  const attention = content.getByRole("region", { name: "Needs you", exact: true });
+  const attention = content.getByRole("region", { name: "Needs input", exact: true });
   const group = content.getByRole("region", { name: "Working", exact: true });
   await expect(group).toBeVisible();
   const request = { ...tasks[0], taskId: "new-request", repoId: "repo-notes", title: "Choose a release target" };
@@ -87,6 +87,10 @@ test("response requests move between Needs you and Working once as work resumes"
   await expect(row).toBeVisible();
   await expect(row.getByText("notes", { exact: true })).toBeVisible();
   await expect(content.getByRole("button", { name: `Actions for ${request.title}`, exact: true })).toHaveCount(1);
+  await send(page, { type: "tasks", tasks: [...tasks, { ...request, pinnedAt: 1 }] });
+  const pinned = content.getByRole("region", { name: "Pinned tasks" });
+  await expect(pinned.getByText("Needs input", { exact: true })).toBeVisible();
+  await expect(content.getByText(request.title, { exact: true })).toHaveCount(1);
   await send(page, { type: "tasks", tasks: [...tasks, { ...request, status: "running", pendingInput: undefined }] });
   await expect(row).toHaveCount(0);
   await expect(group.getByText(request.title, { exact: true })).toBeVisible();
@@ -96,7 +100,7 @@ test("response requests move between Needs you and Working once as work resumes"
   await expect(page.getByRole("heading", { name: "No tasks yet" })).toHaveCount(0);
 });
 
-test("local and disconnected requests keep their real control state outside Needs you", async ({ page }) => {
+test("local and disconnected requests keep their real control state outside Needs input", async ({ page }) => {
   await installInbox(page);
   await page.goto("/");
   await expect(page.getByTestId("inbox-content").getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
@@ -105,13 +109,13 @@ test("local and disconnected requests keep their real control state outside Need
     { ...tasks[0], taskId: "local-request", title: "Local request", sessionControl: control },
     { ...tasks[0], taskId: "disconnected-request", title: "Disconnected request", sessionControl: { ...control, owner: "shared", connection: "reconnecting" } },
   ] });
-  await expect(page.getByRole("region", { name: "Needs you", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Needs input", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Local shell", exact: true })).toContainText("Local request");
   await expect(page.getByRole("region", { name: "Reconnecting", exact: true })).toContainText("Disconnected request");
   await send(page, { type: "tasks", tasks: [
     { ...tasks[0], taskId: "disconnected-request", title: "Reconnected request", sessionControl: { ...control, owner: "shared", connection: "connected" } },
   ] });
-  await expect(page.getByRole("region", { name: "Needs you", exact: true }).getByText("Reconnected request", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Needs input", exact: true }).getByText("Reconnected request", { exact: true })).toBeVisible();
 });
 
 for (const width of [320]) test(`attention rows keep Space context, search and navigation at ${width}px`, async ({ page }) => {
@@ -125,33 +129,34 @@ for (const width of [320]) test(`attention rows keep Space context, search and n
   await page.goto("/");
   await expect(page.getByTestId("inbox-content").getByText("Scaffold a new settings screen", { exact: true })).toBeVisible();
   await send(page, { type: "tasks", tasks: [tasks[0], { ...tasks[1], repoId: repos[1].id }] });
-  const attention = page.getByRole("region", { name: "Needs you", exact: true });
+  const attention = page.getByRole("region", { name: "Needs input", exact: true });
   const title = page.getByRole("heading", { name: "Tasks", exact: true }).locator("span").first();
   expect(await title.evaluate(el => el.clientWidth >= el.scrollWidth)).toBe(true);
-  const context = attention.locator("[title]").filter({ hasText: longName });
+  const content = page.getByTestId("inbox-content");
+  const context = content.locator("[title]").filter({ hasText: longName });
   await expect(context).toHaveCount(2);
   await expect(context.filter({ hasText: "second/work" })).toHaveCount(1);
   const names = await context.allTextContents();
   expect(names[0]).not.toBe(names[1]);
-  for (const row of await attention.locator("[data-swipe-surface]").all()) {
+  for (const row of await content.locator("[data-swipe-surface]").all()) {
     expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     const contextBox = (await row.locator("[title]").boundingBox())!;
-    const timeBox = (await row.locator("time").boundingBox())!;
-    expect(Math.abs(contextBox.y - timeBox.y)).toBeLessThan(2);
-    expect(contextBox.x + contextBox.width).toBeLessThan(timeBox.x);
+    const headline = (await row.locator("span").first().boundingBox())!;
+    expect(Math.abs((headline.y + headline.height / 2) - (contextBox.y + contextBox.height / 2))).toBeLessThan(2);
+    expect(contextBox.x).toBeGreaterThanOrEqual(headline.x + headline.width);
   }
   await assertViewportLocked(page);
   await captureForReview(page, `tasks-attention-${width}.png`);
   const search = page.getByRole("searchbox", { name: "Search tasks" });
   await search.fill("Scaffold");
   await expect(attention.locator("[data-swipe-surface]")).toHaveCount(1);
-  await expect(attention).toContainText(tasks[0].pendingInput!.questions[0].question);
+  await expect(attention).not.toContainText(tasks[0].pendingInput!.questions[0].question);
   await page.getByRole("radio", { name: "Space", exact: true }).click();
   await expect(search).toHaveValue("Scaffold");
   await expect(attention).toHaveCount(0);
   const match = page.getByTestId("inbox-content").locator("[data-swipe-surface]");
   await expect(match).toHaveCount(1);
-  await expect(match).toContainText("Needs answer");
+  await expect(match).toContainText("Needs input");
   await match.focus();
   await expect(match).toBeFocused();
   await match.press("Enter");
@@ -201,19 +206,17 @@ test("compact rows retain prompt search and PR actions without opening the task"
   await expect(row).toHaveCount(1);
   await expect(row.getByText(task.prompt, { exact: true })).toHaveCount(0);
   await expect(row.getByText(task.agent, { exact: true })).toHaveCount(0);
-  const prs = row.getByRole("button", { name: `${task.prs!.length} pull requests` });
-  const time = row.locator("time");
-  const prBox = (await prs.boundingBox())!;
-  const timeBox = (await time.boundingBox())!;
-  expect(Math.abs(prBox.y - timeBox.y)).toBeLessThan(3);
+  await expect(row.locator("time")).toHaveCount(0);
   const listUrl = page.url();
-  await prs.focus();
-  await prs.press("Enter");
+  const actions = page.getByRole("button", { name: `Actions for ${task.title}` });
+  await actions.press("Enter");
+  await page.getByRole("menuitem", { name: /Pull requests/ }).press("Enter");
   await expect(page.getByRole("dialog", { name: "Pull requests" })).toBeVisible();
   await expect(page.getByRole("dialog").getByRole("link")).toHaveCount(task.prs!.length);
   await expect(page).toHaveURL(listUrl);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Pull requests" })).toHaveCount(0);
+  await expect(actions).toBeFocused();
   await expect(search).toHaveValue(task.prompt);
   await expect(page).toHaveURL(listUrl);
   await assertViewportLocked(page);

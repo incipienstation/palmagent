@@ -1,6 +1,6 @@
 import type { PrRef } from "@palmagent/shared";
 import { ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -93,10 +93,13 @@ export function PrChip({ prs, subtle = false }: { prs?: PrRef[]; subtle?: boolea
   );
 }
 
-function PrSheet({ prs, open, onOpenChange }: { prs: PrRef[]; open: boolean; onOpenChange: (o: boolean) => void }) {
+export function PrSheet({ prs, open, onOpenChange, returnFocus }: { prs: PrRef[]; open: boolean; onOpenChange: (o: boolean) => void; returnFocus?: RefObject<HTMLButtonElement | null> }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
+      <SheetContent onCloseAutoFocus={returnFocus ? event => {
+        event.preventDefault();
+        returnFocus.current?.focus({ preventScroll: true });
+      } : undefined}>
         <SheetHeader>
           <SheetTitle>Pull requests</SheetTitle>
           <SheetDescription>{prs.length} opened in this task</SheetDescription>
