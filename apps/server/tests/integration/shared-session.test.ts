@@ -14,6 +14,7 @@ import { Hub } from "../../src/platform/events/hub.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
 import { LocalNativeSessionAdapter } from "../../src/modules/tasks/adapters/outbound/native-session-adapter.js";
 import { LocalRepositoryPaths } from "../../src/modules/spaces/adapters/outbound/repository-paths.js";
+import { stageImageFile } from "../../src/modules/tasks/adapters/outbound/image-delivery.js";
 import { NodeIdentifierGenerator } from "../../src/platform/process/id-generator.js";
 import { ProcessSupervisor } from "../../src/modules/agents/adapters/outbound/supervisor.js";
 import { WorktreeManager } from "../../src/modules/spaces/adapters/outbound/worktree.js";
@@ -85,8 +86,21 @@ async function setup(t: test.TestContext, preview = false) {
 test("shared tool input_image output is visible and deduplicated across reconnects", { skip: process.platform !== "linux" }, async t => {
   const f = await setup(t), id = f.task.taskId;
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
-  f.event("image-tool", "tool_result", { tool_use_id: "preview", content: [{ type: "input_image", image_url: `data:image/png;base64,${png}` }] });
+  const home = f.task.sessionControl!.home, path = join(home, "temporary.png");
+  writeFileSync(path, Buffer.from(png, "base64"));
+  const staged = stageImageFile({ agent: "codex", sessionId: f.task.sessionId!, home, cwd: f.task.worktreePath! }, path);
+  rmSync(path);
+  f.event("image-tool", "tool_result", { tool_use_id: "preview", content: [{ type: "text", text: `![Image](sandbox:${staged.path})` }, { type: "input_image", image_url: `data:image/png;base64,${png}` }] });
   await f.refresh();
+  assert.ok(f.db.deliveredImageId(id, path), "the tool result registers the image before any reader opens it");
+  // Some providers expose only the assistant's streamed link.
+  writeFileSync(path, Buffer.from(png, "base64"));
+  const revised = stageImageFile({ agent: "codex", sessionId: f.task.sessionId!, home, cwd: f.task.worktreePath! }, path);
+  rmSync(path);
+  f.event("delta/1", "assistant_text", { text: revised.path.slice(0, 8), messageId: "reply" });
+  f.event("delta/2", "assistant_text", { text: revised.path.slice(8), messageId: "reply" });
+  await f.refresh();
+  assert.ok(f.db.deliveredImageId(id, revised.path));
   const rows = () => f.db.eventsAfterSeq(id, 0).filter(row => ["tool_result", "output_image"].includes(row.event.kind));
   assert.deepEqual(rows().map(row => row.event.kind), ["tool_result", "output_image"]);
   assert.equal(JSON.stringify(rows()[0].event.payload).includes(png), false);

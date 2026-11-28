@@ -3,7 +3,7 @@ import type { MessageAction, MessageQueue, MessageSettings, PendingMessage, Subm
 import type { QueueOperation, QueueReceipt, RetainedTurns } from "../ports/outbound/retained-turns.js";
 import type { MessageState, StoredMessage } from "../../domain/models.js";
 import { clearEmptyQueuePause, MessagePolicy } from "../../domain/message-policy.js";
-import type { AttachmentStorage } from "../ports/outbound/attachments.js";
+import type { AttachmentContentStorage } from "../ports/outbound/attachments.js";
 import type { MessageStateRepository } from "../ports/outbound/persistence.js";
 import type { MessageTiming } from "../ports/outbound/message-timing.js";
 export { MessageConflict } from "../../domain/message-policy.js";
@@ -23,7 +23,7 @@ interface Host {
 export class MessageController {
   private closed = false;
   private readonly cancelPolling: () => void;
-  constructor(private db: MessageStateRepository, private host: Host, private attachments: AttachmentStorage,
+  constructor(private db: MessageStateRepository, private host: Host, private attachments: AttachmentContentStorage,
     private readonly ids: IdentifierGenerator, private readonly timing: MessageTiming, private readonly native?: RetainedTurns) {
     this.cancelPolling = timing.every(1000, () => {
       if (this.closed) return;

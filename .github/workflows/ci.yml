@@ -119,6 +119,8 @@ jobs:
       - uses: actions/download-artifact@v4
         if: steps.run-pwa.outputs.artifact_id != ''
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           artifact-ids: ${{ steps.run-pwa.outputs.artifact_id }}
           merge-multiple: true
           path: .
@@ -238,6 +240,8 @@ jobs:
         run: node scripts/ci-web-artifact.mjs wait
       - uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           artifact-ids: ${{ steps.shared-pwa.outputs.artifact_id }}
           merge-multiple: true
           path: .
@@ -321,6 +325,8 @@ jobs:
         run: node scripts/ci-web-artifact.mjs wait
       - uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           artifact-ids: ${{ steps.shared-pwa.outputs.artifact_id }}
           merge-multiple: true
           path: .
@@ -380,6 +386,8 @@ jobs:
         run: node scripts/ci-web-artifact.mjs wait
       - uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           artifact-ids: ${{ steps.shared-pwa.outputs.artifact_id }}
           merge-multiple: true
           path: .

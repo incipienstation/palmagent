@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { stageImageFile } from "../../src/modules/tasks/adapters/outbound/image-delivery.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
 import { sanitizeImages } from "../../src/modules/tasks/application/attachments/image-input.js";
@@ -14,7 +15,7 @@ import { codexInput } from "../../src/modules/agents/adapters/outbound/codex-int
 import { Db } from "../../src/composition/database.js";
 import { MessageController } from "../../src/modules/tasks/application/use-cases/message-controller.js";
 
-const image = { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
+const image = { mediaType: "image/png" as const, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
 function fixture(t: test.TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-attachments-")), path = join(dir, "state.db");
   let db = new Db(path), storage = createAttachmentStorage(db);
@@ -38,6 +39,29 @@ test("private attachments survive restart, deduplicate within a task, and reject
   const [other] = f.storage.save("two", [image])!;
   assert.notEqual(other.id, ref.id);
   assert.equal(f.db.attachmentIds().size, 2);
+});
+
+test("delivered path versions survive restart and expire with archived attachments", t => {
+  const f = fixture(t), dir = join(f.db.path, "..");
+  const path = join(dir, "preview.png"), session = { agent: "codex" as const, sessionId: randomUUID(), cwd: dir, home: dir };
+  const deliver = (content: Buffer) => {
+    writeFileSync(path, content);
+    const staged = stageImageFile(session, path);
+    unlinkSync(path);
+    f.storage.acceptDelivery("one", session, staged.receipt);
+    f.storage.acceptDelivery("one", session, staged.receipt);
+    return f.storage.deliveredImageId("one", staged.path)!;
+  };
+  const png = Buffer.from(image.data, "base64"), first = deliver(png);
+  const revision = Buffer.concat([png, Buffer.from([0])]), next = deliver(revision);
+  assert.notEqual(next, first);
+  f.restart();
+  assert.equal(f.storage.deliveredImageId("one", path), first);
+  assert.deepEqual(f.db.attachmentReferences("one").history, new Set([first, next]));
+  assert.deepEqual(f.storage.read("one", next).bytes, revision);
+  f.db.setTaskStatus("one", "archived", false, 10);
+  createAttachmentStorage(f.db, { ...policy, retentionMs: 100 }, () => 111).prune();
+  for (const id of [first, next]) assert.throws(() => f.storage.read("one", id), { code: "gone" });
 });
 
 test("invalid batches and missing tasks never leave partially stored images", t => {

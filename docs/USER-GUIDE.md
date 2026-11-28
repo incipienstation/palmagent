@@ -107,6 +107,11 @@ use the same rule after their display records are rebuilt on upgrade; the origin
 execution records remain intact.
 Very large messages and images offer a separate load button for their full content.
 
+Select a file link in a reply to read the current working copy in the conversation.
+References such as `src/app.ts:42` or `src/app.ts#L42` highlight the specified line.
+The viewer opens UTF-8 text files up to 1 MiB inside the task’s working directory.
+Close it to return to the link.
+
 The chat uses one display style. Older Compact/Verbose preferences no longer change
 it. Use **Task actions → Execution records** to inspect recorded events, including
 lifecycle metadata that does not appear in the conversation. Records load in pages,
@@ -281,6 +286,12 @@ Codex environment updates are retained as execution records and hidden from conv
 messages. Dispatched Codex sessions can display local raster images from their own generated-image
 directory as well as the task directory. Image previews and original-image links require sign-in;
 other sessions' generated images and unrelated provider files remain inaccessible.
+
+Agents can use the **deliver-image** skill to return a PNG, JPEG, GIF, or WebP
+from a temporary directory (up to 4.5 MiB). Delivery stores a copy with the task.
+The image opens inline and in the viewer after the source is removed, subject to
+the task's attachment retention policy. The CLI returns a stable link for each
+version. An original path link keeps the first version delivered at that path.
 
 Structured tool image outputs stay inside Trace. Expand a step to inspect its images.
 PNG, JPEG, WebP, and GIF data are supported (up to 5 MiB each, four images per event).

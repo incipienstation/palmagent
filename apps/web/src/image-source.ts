@@ -1,3 +1,5 @@
+import { taskFileLink } from "./task-file-link";
+import { receiptFromImagePath } from "@palmagent/shared";
 import { defaultUrlTransform } from "react-markdown";
 
 // Keep react-markdown’s restrictive URL policy: Streamdown’s default allows
@@ -34,7 +36,9 @@ export function isLocalImageLink(value: string): boolean {
 }
 
 export function markdownUrlTransform(value: string, key: string): string {
-  return key === "src" || key === "href" && isLocalImageLink(value) ? imageSource(value) : defaultUrlTransform(value);
+  if (key === "src" || key === "href" && isLocalImageLink(value)) return imageSource(value);
+  const safe = defaultUrlTransform(value);
+  return key === "href" && !safe ? taskFileLink(value)?.href ?? "" : safe;
 }
 
 export function previewSource(value: string, taskId?: string): string {
@@ -51,9 +55,15 @@ export function previewSource(value: string, taskId?: string): string {
   } catch { return ""; }
 }
 
-/** Probe only generated local attachments; never fetch a Markdown remote URL. */
+/** Only local attachment endpoints can report archival expiration. */
+export function canCheckImageExpiry(src: string): boolean {
+  if (/^\/api\/tasks\/[^/]+\/attachments\/[0-9a-f-]{36}$/.test(src)) return true;
+  const query = /^\/api\/tasks\/[^/]+\/image\?(.+)$/.exec(src);
+  return !!query && !!receiptFromImagePath(new URLSearchParams(query[1]).get("path") ?? "");
+}
+
 export async function attachmentExpired(src: string, signal: AbortSignal): Promise<boolean> {
-  if (!/^\/api\/tasks\/[^/]+\/attachments\/[0-9a-f-]{36}$/.test(src)) return false;
+  if (!canCheckImageExpiry(src)) return false;
   const response = await fetch(src, { cache: "no-store", signal });
   await response.body?.cancel();
   return response.status === 410;

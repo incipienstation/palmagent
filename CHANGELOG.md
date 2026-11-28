@@ -6,6 +6,25 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.2.0-alpha.78
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/2d59165717e79357b7bfc25b4ef6044eb18c6031...a0e62fc654868b0be6d26ea9e774c52598c2b5c7) for details.
+
+## 0.2.0-alpha.77
+
+### Fixed
+
+- Agents can deliver images from temporary folders as task attachments. Readers can open
+  them inline and in the viewer after the original files have been removed.
+
+## 0.2.0-alpha.76
+
+### Changed
+
+- Product maintenance update. See the [source changes](https://github.com/incipienstation/palmagent/compare/5c5fe2e7cfdca8c98d5ace51873671a6622a1a76...e360b38e105fc6477e35028f4efe4805fd656588) for details.
+
 ## 0.2.0-alpha.75
 
 ### Changed

@@ -8,6 +8,9 @@ import { createTaskService } from "../../src/composition/task-service.js";
 import { webauthn } from "../../src/modules/auth/adapters/outbound/webauthn.js";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { sharedCodexServer } from "../support/codex-shared-server.js";
 import { createServer, request } from "node:http";
@@ -25,7 +28,7 @@ import { nativeHome } from "../../src/modules/tasks/adapters/outbound/native-ses
 import { config } from "../../src/composition/config.js";
 import { Db } from "../../src/composition/database.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
-import { readTaskImage, readTaskVisualization } from "../../src/modules/tasks/adapters/outbound/task-previews.js";
+import { readTaskFile, readTaskImage, readTaskVisualization } from "../../src/modules/tasks/adapters/outbound/task-previews.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import type { RunnerBackend } from "../../src/modules/agents/api.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
@@ -52,7 +55,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { readImage: readTaskImage, readVisualization: readTaskVisualization }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
+    undefined, undefined, undefined, { readFile: readTaskFile, readImage: readTaskImage, readVisualization: readTaskVisualization }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db.auth, settings, webauthn);
   const shutdown = new AbortController();
@@ -889,7 +892,7 @@ test("display-only task edits leave reads alone; repo deletion signals persisted
   assert.deepEqual(await f.service.usage(), []);
 });
 
-test("task previews require a session and serve bounded raster images or isolated HTML inside the task directory", async (t) => {
+test("task previews require a session and serve bounded text, raster images or isolated HTML inside the task directory", async (t) => {
   const f = fixture(t);
   const cwd = join(f.dir, "task");
   mkdirSync(cwd);
@@ -928,6 +931,23 @@ test("task previews require a session and serve bounded raster images or isolate
     assert.equal((await f.app.request(`/api/tasks/images/image${query}`, { headers })).status, 400);
   }
   assert.equal((await f.app.request("/api/tasks/missing/image?path=preview.png", { headers })).status, 404);
+  const file = (path: string) => `/api/tasks/images/file?${new URLSearchParams({ path })}`;
+  const source = "<b>plain text</b>\nsecond line";
+  writeFileSync(join(cwd, "sample.ts"), source);
+  assert.equal((await f.app.request(file("sample.ts"))).status, 401);
+  for (const path of ["sample.ts", join(cwd, "sample.ts")]) {
+    const response = await f.app.request(file(path), { headers });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type")!, /^application\/json/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.deepEqual(await response.json(), { text: source });
+  }
+  for (const path of ["../outside.png", "escape.png", "missing.ts"]) {
+    assert.equal((await f.app.request(file(path), { headers })).status, 404);
+  }
+  assert.equal((await f.app.request(file("preview #1.png"), { headers })).status, 415);
+  assert.equal((await f.app.request(file("large.png"), { headers })).status, 413);
   const preview = (path: string) => `/api/tasks/images/visualization?${new URLSearchParams({ path })}`;
   const html = "<button>Inspect</button>";
   writeFileSync(join(cwd, "spec.html"), html);
@@ -992,6 +1012,40 @@ test("dispatched Codex images stay scoped to the registered session and preserve
   rmSync(generated, { recursive: true }); symlinkSync(other, generated);
   assert.equal((await f.app.request(url(join(generated, "other.png")), { headers })).status, 404);
   assert.equal((await f.app.request(url("local.png"), { headers })).status, 200);
+});
+
+test("a session delivers a temporary image through the CLI and keeps its original link after removal", async t => {
+  const f = fixture(t), cwd = join(f.dir, "workspace"), home = join(f.dir, "provider");
+  for (const dir of [cwd, home]) mkdirSync(dir);
+  f.db.insertRepo({ id: "r", name: "Fixture", path: cwd, vcs: "none", defaultBaseRef: "", createdAt: 1 });
+  for (const taskId of ["producer", "neighbor"]) {
+    f.db.insertTask({ taskId, repoId: "r", agent: "codex", prompt: "Image", worktreePath: cwd, sessionId: taskId,
+      sessionControl: { owner: "local", home, transcript: "", cursor: 0, prefixHash: "" },
+      permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
+  }
+  await f.service.init();
+  f.db.createSession("delivery-session", Date.now(), Date.now() + 60_000);
+  const headers = { cookie: `${f.settings.cookieName}=delivery-session` };
+  const file = join(f.dir, "temporary #1.png");
+  const png = readFileSync(new URL("../../../web/public/icon-512.png", import.meta.url));
+  writeFileSync(file, png);
+  const preview = (task: string) => `/api/tasks/${task}/image?${new URLSearchParams({ path: file })}`;
+  assert.equal((await f.app.request(preview("producer"), { headers })).status, 404);
+  const cli = fileURLToPath(new URL("../../src/bootstrap/cli.ts", import.meta.url));
+  const { stdout } = await promisify(execFile)(process.execPath, ["--import", "tsx", cli, "session", "attach-image",
+    "--agent", "codex", "--file", file, "--cwd", cwd], { env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1", CODEX_THREAD_ID: "producer", CODEX_HOME: home } });
+  const staged = /!\[Delivered image\]\(sandbox:(\/[^)]+)\)/.exec(stdout)?.[1];
+  assert.ok(staged, stdout);
+  const url = (task: string) => `/api/tasks/${task}/image?${new URLSearchParams({ path: staged })}`;
+  rmSync(file);
+  assert.equal((await f.app.request(preview("producer"))).status, 401);
+  assert.equal((await f.app.request(url("neighbor"), { headers })).status, 404);
+  for (const link of [url("producer"), preview("producer")]) {
+    const reply = await f.app.request(link, { headers });
+    assert.equal(reply.status, 200);
+    assert.deepEqual(Buffer.from(await reply.arrayBuffer()), png);
+  }
+  assert.equal((await f.app.request(preview("neighbor"), { headers })).status, 404);
 });
 
 test("browser terminal access fails closed when sign-in is disabled", async (t) => {

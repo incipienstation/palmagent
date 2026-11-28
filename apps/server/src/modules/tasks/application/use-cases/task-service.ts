@@ -15,7 +15,8 @@ import type { SubmitMessage, MessageAction, MessageSettings } from "@palmagent/s
 import type {
   DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
-import { DEFAULT_PERMISSION, taskTitle } from "@palmagent/shared";
+import { DEFAULT_PERMISSION, receiptFromImagePath, taskTitle } from "@palmagent/shared";
+import { ImageDeliveryReceipts } from "../attachments/image-delivery.js";
 import { extractOutputImages, toolImagePayload } from "../attachments/output-images.js";
 import type { AttachmentStorage, TaskPreviewReader } from "../ports/outbound/attachments.js";
 import type { PrStatusSink, TaskDefaults, TaskSupervisor, TaskWorktreeManager, TerminalTaskLifecycle } from "../ports/outbound/task-runtime.js";
@@ -38,6 +39,8 @@ const conflict = (m: string) => new ApplicationError("conflict", m);
 // The state machine + persistence + lifecycle glue. Everything agent-specific
 // stays behind the injected execution backend — this file never branches on agent kind.
 export class TaskService implements PrStatusSink {
+
+  private readonly deliveryReceipts = new ImageDeliveryReceipts();
 
   providerHome(agent: AgentKind): string { return this.nativeSession.home(agent); }
 
@@ -72,6 +75,12 @@ export class TaskService implements PrStatusSink {
     return this.attachments.read(taskId, attachmentId);
   }
 
+  async readTaskFile(taskId: string, requestedPath: string) {
+    const task = this.getTask(taskId);
+    if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "File preview unavailable");
+    return this.taskPreviews.readFile(task.worktreePath, requestedPath);
+  }
+
   async readTaskVisualization(taskId: string, requestedPath: string) {
     const task = this.getTask(taskId);
     if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "Visualization preview unavailable");
@@ -80,6 +89,15 @@ export class TaskService implements PrStatusSink {
 
   async readTaskImage(taskId: string, requestedPath: string) {
     const task = this.getTask(taskId);
+    let delivered = requestedPath.startsWith("/") && this.attachments.deliveredImageId(taskId, requestedPath);
+    // Some providers omit shell stdout from their history. A scoped staged receipt
+    // can still be claimed when its image is first opened.
+    const receipt = !delivered && receiptFromImagePath(requestedPath);
+    if (receipt && task.sessionId && task.worktreePath) {
+      this.claimImage(task, task.sessionId, receipt);
+      delivered = this.attachments.deliveredImageId(taskId, requestedPath);
+    }
+    if (delivered) return this.attachments.read(taskId, delivered);
     if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "Task image reading is unavailable");
     const nativeSession = task.sessionControl && task.sessionId
       ? { agent: task.agent, home: task.sessionControl.home, sessionId: task.sessionId } : undefined;
@@ -586,6 +604,28 @@ export class TaskService implements PrStatusSink {
     return { task, command: this.nativeSession.resumeCommand(task) };
   }
 
+  private claimImage(task: TaskState, sessionId: string, receipt: string) {
+    if (task.worktreePath) this.attachments.acceptDelivery(task.taskId, { agent: task.agent, sessionId,
+      cwd: task.worktreePath, home: task.sessionControl?.home ?? this.providerHome(task.agent) }, receipt);
+  }
+
+  private acceptDeliveredImages(task: TaskState, events: AgentEvent[]): void {
+    for (const event of events) {
+      const sessionId = event.sessionId ?? task.sessionId;
+      if (!sessionId) continue;
+      for (const receipt of this.deliveryReceipts.from(event)) {
+        try { this.claimImage(task, sessionId, receipt); }
+        catch {
+          // Keep the receipt available for a reader to retry. A full attachment
+          // store must not discard the agent's reply or stop provider replay.
+          if (event.kind === "tool_result" && event.payload && typeof event.payload === "object") {
+            event.payload = { ...event.payload, imageDeliveryError: "Image storage unavailable. Open the delivered link to retry." };
+          }
+        }
+      }
+    }
+  }
+
   // This entry point is exposed only on the owner-only local control socket.
   async dispatchSession(req: DispatchSessionRequest): Promise<TaskState> {
     this.assertTaskAdmission();
@@ -721,6 +761,7 @@ export class TaskService implements PrStatusSink {
         && JSON.stringify(task.pendingInput) === JSON.stringify(snapshot.question) && JSON.stringify(task.pendingApproval) === JSON.stringify(snapshot.approval)) return;
       const results = imported ? providerEvents.filter(({ event }) => event.kind === "result" ||
         event.kind === "error" && (event.payload as { code?: string } | null)?.code === AGENT_HOOK_STOPPED) : [];
+      this.acceptDeliveredImages(task, events);
       const rows = this.db.importSessionEvents(update, events, imported ? undefined : providerEvents.map(event => event.key),
         results.length ? { events: results.map(({ event }) => event), ids: results.map(({ key }) => key) } : undefined);
       task.sessionControl = update.sessionControl;
@@ -806,6 +847,7 @@ export class TaskService implements PrStatusSink {
         const synced = this.nativeSession.synchronize(task, { preview });
         if (preview && synced.control.cursor === control.cursor && !control.error) continue;
         const updated = { ...task, sessionControl: synced.control };
+        this.acceptDeliveredImages(task, synced.events);
         const rows = this.db.importSessionEvents(updated, synced.events);
         if (rows.some(row => row.event.kind === "result")) this.hub.emitReadChange({ type: "read-change", usage: true });
         this.refreshPrs(task);
@@ -1212,6 +1254,7 @@ export class TaskService implements PrStatusSink {
     const event = { ...raw, agent: task.agent, ts: now };
 
     const events = [event, ...output.images.map((image) => ({ ...event, kind: "output_image" as const, payload: toolImagePayload(image, event) }))];
+    if (!replayed) this.acceptDeliveredImages(task, events);
     if (this.retainedTurns && !replayed) {
       const payload = event.kind === "status" ? event.payload as { subtype?: string; messageId?: string; requestId?: string } | null : undefined;
       const rows = this.db.appendAgentEvents(task.taskId, events, rawSeq, {
