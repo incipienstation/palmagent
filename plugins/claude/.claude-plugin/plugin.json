@@ -1,8 +1,17 @@
 {
   "name": "palmagent",
-  "description": "Palmagent skills for settings, installation, diagnosis, updates, and dispatching a local Claude or Codex session to the self-hosted dispatcher.",
   "version": "0.2.0-alpha.63",
+  "description": "Palmagent skills for settings, installation, diagnosis, updates, and dispatching a local Claude or Codex session to the self-hosted dispatcher.",
   "author": {
     "name": "Palmagent"
-  }
+  },
+  "license": "MIT",
+  "keywords": [
+    "palmagent",
+    "self-host",
+    "systemd",
+    "nginx",
+    "ops",
+    "doctor"
+  ]
 }

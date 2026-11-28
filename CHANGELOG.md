@@ -6,6 +6,11 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- The operator plugin ships a portable Agent Plugins manifest for clients that load skills from the standard package layout.
+- Update checks now recognize Claude Code built-in plugins without installation paths.
+
 ## 0.2.0-alpha.63
 
 ### Changed
