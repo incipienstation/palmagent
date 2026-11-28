@@ -6,7 +6,7 @@ import { Plus, Terminal as TerminalIcon, Trash2, Pencil, Check, MoreHorizontal, 
 import type { CreateTerminalRequest, TerminalCapabilities, TerminalSession } from "@palmagent/shared/terminals";
 import { useTerminalOperations } from "../hooks/remote-operations";
 import { useRepos } from "../hooks/useRepos";
-import { Button } from "./ui/button";
+import { Button, IconButton } from "./ui/button";
 import { Input } from "./ui/input";
 import { Alert } from "./ui/alert";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from "./ui/dropdown-menu";
@@ -132,9 +132,9 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
           <SelectTrigger className="min-w-0 flex-1 border-0 bg-transparent shadow-none" aria-label="Select terminal"><SelectValue placeholder={loaded ? "No terminal yet" : "Select terminal"} /></SelectTrigger>
           <SelectContent><SelectGroup>{terminals.map(t => <SelectItem key={t.id} value={t.id}>{t.title}{t.state !== "running" ? ` · ${terminalStateLabels[t.state]}` : ""}</SelectItem>)}</SelectGroup></SelectContent>
         </Select>
-        <Button variant="ghost" size="icon" className="shrink-0" aria-label="New terminal" disabled={!canCreate} onClick={() => void create()}>{creating && !showCreate ? <Spinner /> : <Plus />}</Button>
+        <IconButton aria-label="New terminal" disabled={!canCreate} onClick={() => void create()}>{creating && !showCreate ? <Spinner /> : <Plus />}</IconButton>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="shrink-0" aria-label="Terminal actions" disabled={busy}><MoreHorizontal /></Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild><IconButton aria-label="Terminal actions" disabled={busy}><MoreHorizontal /></IconButton></DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
               <DropdownMenuItem disabled={!canCreate} onSelect={() => void create("claude")}><TerminalIcon />Start Claude Code</DropdownMenuItem>

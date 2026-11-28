@@ -9,7 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -80,13 +80,13 @@ export function SettingsSheet({ conn, open, onOpenChange, onCloseAutoFocus }: {
       <SheetContent showClose={false} size="panel" className="max-w-lg" onCloseAutoFocus={onCloseAutoFocus}>
         <SheetHeader>
           <SheetHeaderRow>
-            {!home && <Button variant="ghost" size="icon-lg" aria-label="Back to settings" onClick={() => setSection("general")}>
+            {!home && <IconButton aria-label="Back to settings" onClick={() => setSection("general")}>
               <ArrowLeft />
-            </Button>}
+            </IconButton>}
             <SheetTitle asChild className="outline-none">
               <h2 ref={title} tabIndex={-1}>{destination?.label ?? "Settings"}</h2>
             </SheetTitle>
-            <SheetClose asChild><Button variant="ghost" size="icon-lg" aria-label="Close settings"><X /></Button></SheetClose>
+            <SheetClose asChild><IconButton aria-label="Close settings"><X /></IconButton></SheetClose>
           </SheetHeaderRow>
           <SheetDescription className="sr-only">
             {home ? "Preferences and installation" : section === "security" ? "Manage passkeys and signed-in devices." : section === "spaces" ? "Manage folders searched for repositories on this installation." : section === "base-branches" ? "Manage base branches for new tasks and routines." : "Manage Palmagent updates on this installation."}

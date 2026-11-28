@@ -23,7 +23,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "./ui/scroll-area";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -383,16 +383,14 @@ export function RoutinesView() {
                 <span className="text-[11px] font-semibold tracking-wide text-faint uppercase">
                   New routine
                 </span>
-                <Button
+                <IconButton
                   type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="-mr-1.5 text-faint"
+                  className="-mr-1.5"
                   disabled={busy} onClick={() => setShowForm(false)}
                   aria-label="Close"
                 >
-                  <X className="size-5" />
-                </Button>
+                  <X />
+                </IconButton>
               </div>
 
               <div className="space-y-1.5">

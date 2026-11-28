@@ -4,7 +4,7 @@ import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 
-import { Button } from "./button";
+import { IconButton } from "./button";
 import { ScrollArea } from "./scroll-area";
 import { cn } from "@/lib/utils";
 
@@ -60,9 +60,9 @@ function DialogContent({
         {children}
         {showClose && (
           <DialogPrimitive.Close asChild>
-            <Button variant="ghost" size="icon" className="absolute top-0.5 right-0.5 size-11" aria-label="Close">
+            <IconButton className="absolute top-0.5 right-0.5" aria-label="Close">
               <X />
-            </Button>
+            </IconButton>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
