@@ -61,7 +61,13 @@ and line. Dedicated license and notice files retain their attributions. Review t
 
 ## Merging into develop
 
-When a task PR is ready to merge, submit its number and verified head from the repository checkout:
+Open ordinary task PRs into `develop` from a `feature/<slug>` branch in the same
+repository. The `feature/preview-*` prefix is reserved for Preview preparation.
+If a managed worktree uses an `agent/*` branch, push the verified commit to a new
+task-specific ref (for example, `git push origin HEAD:refs/heads/feature/docs-audit`)
+and select that feature branch as the PR head. The worktree keeps its registered branch.
+
+When the PR is ready to merge, submit its number and verified head from the repository checkout:
 
 ```bash
 node scripts/queue-develop.mjs <pr-number> <verified-head>

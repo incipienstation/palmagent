@@ -16,10 +16,10 @@ hosts, while source and legacy installations can use a daemon or in-process back
 See [session lifecycle](SESSION-LIFECYCLE.md) for process ownership and durable replay.
 
 A logical run may receive several Send messages. Queued messages each start a
-separate run. Each run retains a dedicated process, including Codex App Server,
-which closes after the terminal turn result. Claude
-may interrupt and continue inside that process when it receives a Send. A
-process exit without a terminal Codex result is a failure.
+separate run. For ordinary packaged tasks, the execution host retains the ACP
+bridge until the run finishes. The native Codex task runner likewise closes its
+dedicated App Server after the terminal result. A process exit without a
+terminal Codex result is a failure.
 
 ## Persistence and delivery
 
@@ -38,11 +38,15 @@ request is rejected. Sending claims a message synchronously before adapter I/O.
 Settings are captured per queued prompt; active Send does not change model or
 permissions. A queued message promoted to Send uses the active run's settings.
 
-Codex uses App Server `turn/steer` with its native active turn ID and waits for
-the RPC response. Claude requests an interrupt, waits for the result, sends the
-new user message and waits for the echoed message UUID. A successful stdin
-write alone is not a delivery acknowledgement. The legacy exec adapter remains
-available for reattaching processes started before this change.
+For a Send during an active ACP turn, Codex confirms delivery when the steering
+request returns `injected`. Claude waits for a fresh provider echo matching the
+submitted text and images. Both reject the Send if the bridge requires a new prompt.
+
+On the native path, Codex targets the active turn ID with App Server `turn/steer`
+and waits for the RPC response. Native Claude interrupts the active turn before
+sending the message and waits for its echoed UUID. A successful stdin write alone
+cannot confirm delivery. The legacy exec adapter remains available for reattaching
+older processes.
 
 A transport error or lost acknowledgement produces `unknown`, pauses automatic
 queue execution, and never automatically resends the prompt. Replayed delivery

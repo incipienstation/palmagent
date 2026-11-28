@@ -52,11 +52,12 @@ channel when available; an existing user file always wins. Pass the same custom
 ## Automatic updates
 
 Automatic updates are off unless the user explicitly enables them. The optional
-`autoUpdate` boolean lives in the same user file; absent means false. Describe the
-policy before enabling it: check when the signed-in app connects or returns to the foreground, follow the saved channel,
-keep the existing `x.x.x` compatibility line and plugins, preserve active runs,
-and pause retries after an installation failure. Independent execution hosts
-continue through updates; the first legacy migration waits for idle.
+`autoUpdate` boolean lives in the same user file and defaults to false. Before
+enabling it, explain that the signed-in app checks on connection and foreground
+return. Updates follow the saved channel within the existing `x.x.x` compatibility
+line and refresh older compatible installed plugins even when the app is current.
+An installation failure pauses automatic retries. Active runs on independent
+execution hosts continue through updates. The first legacy migration waits for idle.
 A new version line needs the `update` skill to coordinate plugin changes.
 On Stable, a new patch release also needs that flow. Do not describe this first
 automatic-update policy as fully unattended Stable upgrades.
@@ -81,9 +82,8 @@ applying update finish safely. `--dry-run` previews enable/disable without write
 Service removal removes the update executor while retaining the preference for reinstall.
 
 Settings in the signed-in app offer **Check again**, and **Update** when automatic
-updates are disabled. Enabled automatic updates refresh both the app and older
-compatible installed plugins, even when only plugins need updating, without an
-additional update click. New skills load in a new agent session. Ordinary access
+updates are disabled. Eligible automatic updates apply without an additional
+click. New skills load in a new agent session. Ordinary access
 reuses successful discovery for 15 minutes and failed discovery for one minute;
 explicit checks bypass those caches. Elapsed time alone never triggers a check.
 An explicit Update pins the displayed version and activates independently of
@@ -95,7 +95,7 @@ cancels the old request and checks the new channel without immediately installin
 
 For repository discovery, use the public `settings` CLI as the installation owner.
 Keep the server's custom `--data-dir`; these settings belong to that installation,
-in `<data-dir>/settings.json`, and are shared with **Settings → Space search paths**.
+in `<data-dir>/settings.json`, and are shared with **Settings → Repository search paths**.
 Check `<cli> settings --help` before use on older installations.
 
 ```bash
