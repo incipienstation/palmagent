@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { captureForReview } from "./_helpers";
+import { test, expect, type Locator } from "@playwright/test";
 import { tasks } from "../fixtures.mjs";
 
 test.use({ serviceWorkers: "block" });
@@ -87,16 +88,55 @@ test("Spaces refresh failures retain rows and allow another pull without reloadi
   let calls = 0, loads = 0;
   page.on("load", () => loads++);
   await page.route("**/api/tasks", route => { calls++; return route.fulfill({ status: 503, json: { error: "Try again" } }); });
-  const pull = () => page.locator("[data-radix-scroll-area-viewport]").filter({ has: row }).evaluate(el => {
+  const viewport = page.locator("[data-radix-scroll-area-viewport]").filter({ has: row });
+  await pull(viewport);
+  await expect(page.getByRole("alert")).toContainText("Could not refresh");
+  expect(await node!.evaluate(el => el.isConnected)).toBe(true);
+  await pull(viewport);
+  await expect.poll(() => calls).toBe(2);
+  expect(loads).toBe(0);
+});
+
+function pull(viewport: Locator) {
+  return viewport.evaluate(el => {
     el.scrollTop = 0;
     for (const [type, y] of [["touchstart", 20], ["touchmove", 180], ["touchend", 180]] as const) {
       el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: [new Touch({ identifier: 1, target: el, clientX: 100, clientY: y })] }));
     }
   });
-  await pull();
-  await expect(page.getByRole("alert")).toContainText("Could not refresh");
+}
+
+test("an owner restart has one update notice and refreshes cached Tasks in place", async ({ page }) => {
+  await page.goto("/?__theme=light");
+  const content = page.getByTestId("inbox-content");
+  const title = "Refactor the SSE hub fan-out";
+  const row = content.getByText(title, { exact: true });
+  await expect(row).toBeVisible();
+  const search = page.getByRole("searchbox", { name: "Search tasks" });
+  await search.fill("SSE");
+  const node = await row.elementHandle();
+  let restarting = true;
+  const unavailable = { status: 503, json: { error: "Application owner is restarting", code: "update_in_progress" } };
+  await page.route("**/api/repos", route => restarting ? route.fulfill(unavailable) : route.continue());
+  await page.route("**/api/tasks", route => route.fulfill(restarting ? unavailable : {
+    json: { tasks: tasks.map(task => task.title === title ? { ...task, title: "Updated SSE task" } : task) },
+  }));
+  await page.route("**/api/stream?*", route => route.abort());
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("Reconnecting…", { exact: true })).toBeVisible();
+
+  await pull(page.locator("[data-radix-scroll-area-viewport]").filter({ has: content }));
+  const notice = page.getByRole("status", { name: "Palmagent update" });
+  await expect(notice).toHaveText("Updating Palmagent…");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("Reconnecting…", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Refreshing…", { exact: true })).toHaveCount(0);
   expect(await node!.evaluate(el => el.isConnected)).toBe(true);
-  await pull();
-  await expect.poll(() => calls).toBe(2);
-  expect(loads).toBe(0);
+  await captureForReview(page, "tasks-during-update.png");
+
+  restarting = false;
+  await expect(content.getByText("Updated SSE task", { exact: true })).toBeVisible();
+  await expect(notice).toHaveCount(0);
+  await expect(search).toHaveValue("SSE");
+  await expect(page.getByText("Reconnecting…", { exact: true })).toBeVisible();
 });

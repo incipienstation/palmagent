@@ -86,6 +86,23 @@ test("typed API reads leave caching to TanStack Query", async () => {
   assert.equal((await api.listRepos())[0]?.id, "3");
 });
 
+test("cancelled update reads cannot retry after navigation or a session change", async () => {
+  let reads = 0;
+  const api = createApi({ version: () => "fixture", observeServerVersion() {}, beginBrowserWork: () => () => {}, onUnauthorized() {} }, async () => {
+    reads++;
+    return Response.json({ code: "update_in_progress" }, { status: 503 });
+  });
+  const navigation = new AbortController();
+  const scoped = api.listRepos(navigation.signal);
+  const session = api.listTasks();
+  // Let both responses enter their retry wait.
+  await new Promise<void>(resolve => setImmediate(resolve));
+  navigation.abort();
+  resetClientSession();
+  await Promise.all([assert.rejects(scoped, { name: "AbortError" }), assert.rejects(session, /Session changed/)]);
+  assert.equal(reads, 2);
+});
+
 for (const operation of ["read", "logout"] as const) {
   test(`a delayed ${operation} 401 cannot invalidate a newer session`, async () => {
     let complete!: (response: Response) => void;
