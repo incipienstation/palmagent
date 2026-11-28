@@ -126,8 +126,8 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   };
 
   return (
-    <div className={terminalOpen || side.open ? "mx-auto flex max-w-[1600px]" : undefined}>
-    <div className={side.open ? "hidden min-w-0 flex-1 lg:block" : terminalOpen ? "hidden min-w-0 flex-1 md:block" : "w-full"}>
+    <div className={terminalOpen || side.open ? "mx-auto flex h-full max-w-[1600px]" : "h-full"}>
+    <div className={side.open ? "hidden min-w-0 flex-1 lg:block" : terminalOpen ? "hidden min-w-0 flex-1 md:block" : "h-full w-full"}>
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <AppBar title={heading} conn={creating ? undefined : conn} conversation>

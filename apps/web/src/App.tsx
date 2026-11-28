@@ -1,3 +1,4 @@
+import { UpdateFeedback } from "./components/UpdateFeedback";
 import { TelemetryDisclosure } from "./components/TelemetrySettings";
 import { NavigationGestureProvider } from "./NavigationGestureProvider";
 import { TerminalsView } from "./components/Terminals";
@@ -74,8 +75,8 @@ export function App() {
   // AuthGate decides login vs app vs enrollment; AppInner (and its live SSE
   // stream) only mounts once authenticated.
   return (
-    <NavigationGestureProvider><AuthGate>
+    <NavigationGestureProvider><UpdateFeedback><AuthGate>
       <AppInner />
-    </AuthGate></NavigationGestureProvider>
+    </AuthGate></UpdateFeedback></NavigationGestureProvider>
   );
 }

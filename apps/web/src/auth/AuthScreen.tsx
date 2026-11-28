@@ -42,7 +42,7 @@ export function AuthScreen({
   children: ReactNode;
 }) {
   return (
-    <div className="relative flex h-app flex-col bg-background pt-[var(--safe-top)] pb-[calc(24px+var(--safe-bottom))]">
+    <div className="relative flex h-full flex-col bg-background pt-[var(--safe-top)] pb-[calc(24px+var(--safe-bottom))]">
       <div className="absolute end-2 top-[calc(8px+var(--safe-top))]">
         <AuthThemeToggle />
       </div>

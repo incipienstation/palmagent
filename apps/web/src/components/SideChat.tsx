@@ -49,7 +49,7 @@ export function SideChat({ side, task, onClose, onAddToDraft, draftDisabled }: {
     task.status === "queued" ? "Main task queued" : closed ? "Main task closed" : task.status === "failed" ? "Main task failed" : "Main task idle";
   return <aside hidden={!side.open} aria-label="Side chat"
     onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); onClose(); } }}
-    className={side.open ? "flex h-[var(--app-height,100dvh)] min-w-0 flex-1 flex-col bg-background lg:max-w-[480px] lg:border-l" : "hidden"}>
+    className={side.open ? "flex h-full min-w-0 flex-1 flex-col bg-background lg:max-w-[480px] lg:border-l" : "hidden"}>
     <header className="flex shrink-0 items-center gap-2 border-b px-3 pb-2 pt-[calc(8px+var(--safe-top))]">
       <Button variant="ghost" size="icon-lg" aria-label="Back to main chat" onClick={onClose}><ArrowLeft /></Button>
       <div className="min-w-0 flex-1"><h2 className="text-base font-semibold">Side chat</h2>

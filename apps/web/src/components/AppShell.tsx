@@ -1,17 +1,14 @@
 import { Spinner } from "@/components/ui/spinner";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronLeft, Menu } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ConnState } from "../hooks/useInbox";
-import { usePwaUpdate } from "../pwa";
 import { goBack } from "../router";
 import { useAppNavigation } from "./AppNavigation";
-import { UpdateBanner } from "./UpdateBanner";
+import { useUpdateFeedback } from "./UpdateFeedback";
 
-// Shared viewport shell. The update banner stays in flow; fixed actions read
-// its height so content remains reachable above device safe areas.
 export function AppShell({
   children,
   wide,
@@ -19,20 +16,7 @@ export function AppShell({
   children: ReactNode;
   wide?: boolean;
 }) {
-  const updateReady = usePwaUpdate();
-  return (
-    <div
-      className={cn("mx-auto flex h-app flex-col", wide ? "max-w-[1100px]" : "max-w-[720px]")}
-      style={
-        {
-          "--banner-h": updateReady ? "60px" : "0px",
-        } as CSSProperties
-      }
-    >
-      {children}
-      {updateReady && <UpdateBanner />}
-    </div>
-  );
+  return <div className={cn("mx-auto flex h-full flex-col", wide ? "max-w-[1100px]" : "max-w-[720px]")}>{children}</div>;
 }
 
 // Standard focused views preserve Back; conversations use a compact floating toolbar.
@@ -77,13 +61,13 @@ export function AppBar({
         {menu}
         <h1 className="sr-only">{title}</h1>
         {children && <div role="group" aria-label="Header actions" className="relative z-10 ml-auto inline-flex shrink-0 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
-        {conn && <LiveDot conn={conn} visuallyHidden />}
+        {conn && <ReconnectStatus conn={conn} visuallyHidden />}
       </> : compactHeader ? <>
         {back && <IconButton className={floatingButton} onClick={onBack ?? (() => goBack())} aria-label={backLabel}><ChevronLeft /></IconButton>}
         <h1 className="sr-only">{title}</h1>
         {children && <div role="group" aria-label="Header actions" className="relative z-10 inline-flex min-w-0 flex-1 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
         {menu}
-        {conn && <LiveDot conn={conn} visuallyHidden />}
+        {conn && <ReconnectStatus conn={conn} visuallyHidden />}
       </> : <>
         {!back && menu}
         {back && (
@@ -93,7 +77,7 @@ export function AppBar({
         )}
         <h1 className="flex min-w-0 flex-1 items-center gap-2 truncate text-[17px] font-semibold text-strong">
           <span className="min-w-0 truncate">{title}</span>
-          {conn && <LiveDot conn={conn} />}
+          {conn && <ReconnectStatus conn={conn} />}
         </h1>
         {back && children && menu ? (
           <div role="group" aria-label="Header actions" className="-my-px inline-flex shrink-0 items-center rounded-full border border-border bg-card/90 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">
@@ -111,20 +95,14 @@ export function AppBar({
   );
 }
 
-// Connection state in the AppBar title row, "calm" by design: a healthy/open
-// link — and the brief initial `connecting` — render NOTHING. Green is reserved
-// app-wide for a running task state indicator, not for "we're
-// connected", so the header never competes for that meaning. Only a real
-// `reconnecting` surfaces, as an amber pulse dot + short label, so a connection
-// problem is the single thing that ever draws the eye here. The all-states
-// labeled form still lives in ConnPill (the Settings → Connection row).
-function LiveDot({ conn, compact = false, visuallyHidden = false }: { conn: ConnState; compact?: boolean; visuallyHidden?: boolean }) {
-  if (conn !== "reconnecting") return null;
+export function ReconnectStatus({ conn, visuallyHidden, className }: { conn: ConnState; visuallyHidden?: boolean; className?: string }) {
+  const updating = useUpdateFeedback();
+  if (updating || conn !== "reconnecting") return null;
   if (visuallyHidden) return <span role="status" title="Reconnecting…" className="sr-only">Reconnecting…</span>;
   return (
-    <span role="status" title="Reconnecting…" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber">
+    <span role="status" title="Reconnecting…" className={cn("inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber", className)}>
       <span aria-hidden className="size-2 shrink-0 motion-safe:animate-pulse rounded-full bg-amber" />
-      <span className={compact ? "sr-only" : undefined}>Reconnecting…</span>
+      Reconnecting…
     </span>
   );
 }

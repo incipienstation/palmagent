@@ -5,6 +5,7 @@ import { hc } from "hono/client";
 import type { AppType } from "@palmagent/server/http-api";
 import type { ApiErrorResponse } from "@palmagent/shared/http";
 import { MESSAGE_PROTOCOL_HEADER, MESSAGE_PROTOCOL_VERSION, TURN_CONTROL_HEADER, TURN_CONTROL_VERSION } from "@palmagent/shared/http";
+import { recoverUpdateRead } from "./update-recovery";
 import { retryMessage } from "./message-retry";
 import type {
   AgentKind, AnswerRequest, ApproveRequest, CreateRepoRequest, CreateRoutineRequest,
@@ -99,6 +100,13 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       } finally { finish?.(); }
     }
   }
+  const read = <T>(send: () => Promise<JsonResponse<T>>, signal?: AbortSignal, authProbe = false) => {
+    const generation = cacheSession();
+    return recoverUpdateRead(() => {
+      if (generation !== cacheSession()) throw new ApiError(401, "Session changed. Please try again.");
+      return request(send, { authProbe });
+    }, error => error instanceof ApiError && error.status === 503 && error.code === "update_in_progress", signal);
+  };
   const write = <T>(send: () => Promise<JsonResponse<T>>, authProbe = false, sessionChange = false, invalidates: readonly ClientReadScope[] = []) =>
     request(send, { write: true, authProbe, sessionChange, invalidates });
   const attachmentOptions = (input: object) => {
@@ -109,7 +117,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
 
   const api = {
     sideChat: {
-      get: (id: string) => request(() => tasks["side-chat"].$get({ param: idParam(id) })).then(r => r.sideChat),
+      get: (id: string) => read(() => tasks["side-chat"].$get({ param: idParam(id) })).then(r => r.sideChat),
       open: (id: string) => write(() => tasks["side-chat"].$post({ param: idParam(id), json: {} })).then(r => r.sideChat),
       send: (id: string, json: import("@palmagent/shared").SideChatSend) => write(() => tasks["side-chat"].messages.$post({ param: idParam(id), json })).then(r => r.sideChat),
       stop: (id: string, sessionId: string) => write(() => tasks["side-chat"].stop.$post({ param: idParam(id), json: { sessionId } })).then(r => r.sideChat),
@@ -121,20 +129,20 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       stop: (id: string, timings: import("@palmagent/shared").VoiceClientTimings) => request(() =>
         client.voice[":id"].$delete({ param: idParam(id), json: { timings } }, { init: { keepalive: true } })),
     },
-    skills: (query: import("@palmagent/shared").SkillContext, signal?: AbortSignal) => request(() => client.skills.$get({ query }, requestOptions(signal))),
+    skills: (query: import("@palmagent/shared").SkillContext, signal?: AbortSignal) => read(() => client.skills.$get({ query }, requestOptions(signal)), signal),
     terminals: {
-      list: (query: { taskId?: string; repoId?: string } = {}) => request(() => client.terminals.$get({ query })),
+      list: (query: { taskId?: string; repoId?: string } = {}) => read(() => client.terminals.$get({ query })),
       create: (json: CreateTerminalRequest) => write(() => client.terminals.$post({ json })),
       rename: (id: string, title: string) => write(() => client.terminals[":id"].$patch({ param: idParam(id), json: { title } })),
       terminate: (id: string) => write(() => client.terminals[":id"].terminate.$post({ param: idParam(id) })),
       ticket: (id: string) => write(() => client.terminals[":id"]["attach-ticket"].$post({ param: idParam(id) })),
     },
     telemetry: {
-      get: () => request(() => client.settings.telemetry.$get()),
+      get: () => read(() => client.settings.telemetry.$get()),
       change: (enabled: boolean) => write(() => client.settings.telemetry.$patch({ json: { enabled, retentionDays: 180 } })),
     },
     repoSettings: {
-      get: () => request(() => client.settings.repos.$get()),
+      get: () => read(() => client.settings.repos.$get()),
       change: (json: RepoSettingsChange) => write(() => client.settings.repos.$patch({ json })),
     },
     submitMessage: (id: string, input: SubmitMessage) => {
@@ -152,47 +160,47 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     compact: (id: string, json: import("@palmagent/shared").CompactTaskRequest) => write(() => tasks.compact.$post({ param: idParam(id), json })).then(r => r.task),
     updateSettings: {
       action: (json: UpdateAction) => write(() => client.settings.updates.$post({ json })),
-      get: () => request(() => client.settings.updates.$get()),
+      get: () => read(() => client.settings.updates.$get()),
       change: (json: UpdateSettingsChange) => write(() => client.settings.updates.$patch({ json })),
     },
-    listRepos: (signal?: AbortSignal) => request(() => client.repos.$get({}, requestOptions(signal))).then((r) => r.repos),
-    modelCatalog: (agent: AgentKind, taskId?: string, signal?: AbortSignal) => request(() => client["model-catalog"].$get({ query: taskId ? { taskId } : { agent } }, requestOptions(signal))),
+    listRepos: (signal?: AbortSignal) => read(() => client.repos.$get({}, requestOptions(signal)), signal).then((r) => r.repos),
+    modelCatalog: (agent: AgentKind, taskId?: string, signal?: AbortSignal) => read(() => client["model-catalog"].$get({ query: taskId ? { taskId } : { agent } }, requestOptions(signal)), signal),
     createRepo: (json: CreateRepoRequest) => write(() => client.repos.$post({ json }), false, false, ["repos"]).then((r) => r.repo),
     updateRepo: (id: string, json: UpdateRepoRequest) => write(() => client.repos[":id"].$patch({ param: idParam(id), json }), false, false, ["repos"]).then(r => r.repo),
     deleteRepo: (id: string) => write(() => client.repos[":id"].$delete({ param: idParam(id) }), false, false, ["repos"]).then((r) => r.repo),
-    discoverRepos: (refresh = false, signal?: AbortSignal) => request(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} }, requestOptions(signal))),
-    validateRepoPath: (path: string, signal?: AbortSignal) => request(() => client.repos.validate.$get({ query: { path } }, requestOptions(signal))),
-    listFs: (path?: string, signal?: AbortSignal) => request(() => client.fs.list.$get({ query: { path } }, requestOptions(signal))),
-    listTasks: (status?: TaskStatus) => request(() => client.tasks.$get({ query: { status } })).then((r) => r.tasks),
-    taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false) => request(() => tasks.history.$get({
+    discoverRepos: (refresh = false, signal?: AbortSignal) => read(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} }, requestOptions(signal)), signal),
+    validateRepoPath: (path: string, signal?: AbortSignal) => read(() => client.repos.validate.$get({ query: { path } }, requestOptions(signal)), signal),
+    listFs: (path?: string, signal?: AbortSignal) => read(() => client.fs.list.$get({ query: { path } }, requestOptions(signal)), signal),
+    listTasks: (status?: TaskStatus) => read(() => client.tasks.$get({ query: { status } })).then((r) => r.tasks),
+    taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false) => read(() => tasks.history.$get({
       param: idParam(id), query: { ...(transcript ? { format: "transcript" as const } : {}), ...(before === undefined ? {} : { before: String(before) }), ...(details === "summary" ? { details } : {}) },
-    }, { init: { signal } })),
-    taskHistoryChanges: (id: string, after: number, through: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false, afterKey?: number) => request(() => tasks.history.changes.$get({
+    }, { init: { signal } }), signal),
+    taskHistoryChanges: (id: string, after: number, through: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false, afterKey?: number) => read(() => tasks.history.changes.$get({
       param: idParam(id), query: { ...(transcript ? { format: "transcript" as const } : {}), ...(afterKey === undefined ? {} : { afterKey: String(afterKey) }), after: String(after), through: String(through), ...(details === "summary" ? { details } : {}) },
-    }, { init: { signal } })),
-    conversationSteps: (id: string, key: number, after?: number, signal?: AbortSignal) => request(() => tasks.history.steps.$get({
+    }, { init: { signal } }), signal),
+    conversationSteps: (id: string, key: number, after?: number, signal?: AbortSignal) => read(() => tasks.history.steps.$get({
       param: idParam(id), query: { key: String(key), ...(after === undefined ? {} : { after: String(after) }) },
-    }, { init: { signal } })),
-    conversationStepDetails: (id: string, key: number, step: number, after?: number, signal?: AbortSignal) => request(() => tasks.history["step-details"].$get({
+    }, { init: { signal } }), signal),
+    conversationStepDetails: (id: string, key: number, step: number, after?: number, signal?: AbortSignal) => read(() => tasks.history["step-details"].$get({
       param: idParam(id), query: { key: String(key), step: String(step), ...(after === undefined ? {} : { after: String(after) }) },
-    }, { init: { signal } })),
-    executionRecords: (id: string, before?: number, signal?: AbortSignal) => request(() => tasks.history.records.$get({
+    }, { init: { signal } }), signal),
+    executionRecords: (id: string, before?: number, signal?: AbortSignal) => read(() => tasks.history.records.$get({
       param: idParam(id), query: { ...(before === undefined ? {} : { before: String(before) }) },
-    }, { init: { signal } })),
-    executionRecordContent: (id: string, key: number, version: string, offset: number, signal?: AbortSignal) => request(() => tasks.history["record-content"].$get({
+    }, { init: { signal } }), signal),
+    executionRecordContent: (id: string, key: number, version: string, offset: number, signal?: AbortSignal) => read(() => tasks.history["record-content"].$get({
       param: idParam(id), query: { key: String(key), version, offset: String(offset) },
-    }, { init: { signal } })),
-    conversationDetails: (id: string, key: number, after?: number, signal?: AbortSignal) => request(() => tasks.history.items.$get({
+    }, { init: { signal } }), signal),
+    conversationDetails: (id: string, key: number, after?: number, signal?: AbortSignal) => read(() => tasks.history.items.$get({
       param: idParam(id), query: { key: String(key), ...(after === undefined ? {} : { after: String(after) }) },
-    }, { init: { signal } })),
-    conversationContent: (id: string, ref: import("@palmagent/shared").ConversationContentRef, offset: number, signal?: AbortSignal) => request(() => tasks.history.content.$get({
+    }, { init: { signal } }), signal),
+    conversationContent: (id: string, ref: import("@palmagent/shared").ConversationContentRef, offset: number, signal?: AbortSignal) => read(() => tasks.history.content.$get({
       param: idParam(id), query: { key: String(ref.key), version: ref.version, offset: String(offset), ...(ref.member === undefined ? {} : { member: String(ref.member) }) },
-    }, { init: { signal } })),
-    taskActivityDetails: (id: string, from: number, through: number, signal?: AbortSignal) => request(() => tasks.history.details.$get({
+    }, { init: { signal } }), signal),
+    taskActivityDetails: (id: string, from: number, through: number, signal?: AbortSignal) => read(() => tasks.history.details.$get({
       param: idParam(id), query: { from: String(from), through: String(through) },
-    }, { init: { signal } })),
-    getTask: (id: string) => request(() => tasks.$get({ param: idParam(id) })).then((r) => r.task),
-    getAccountLimits: (id: string) => request(() => tasks["account-limits"].$get({ param: idParam(id) })),
+    }, { init: { signal } }), signal),
+    getTask: (id: string) => read(() => tasks.$get({ param: idParam(id) })).then((r) => r.task),
+    getAccountLimits: (id: string) => read(() => tasks["account-limits"].$get({ param: idParam(id) })),
     createTask: (input: CreateTaskRequest) => {
       const json = snapshotRequest(input);
       // Legacy callers without an idempotency key must never be replayed.
@@ -214,10 +222,10 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     moveTaskPin: (id: string, targetId: string, placement: "before" | "after") => write(() => tasks["pin-position"].$patch({ param: idParam(id), json: { targetId, placement } })).then((r) => r.tasks),
     pinTask: (id: string, pinned: boolean) => write(() => tasks.pin.$patch({ param: idParam(id), json: { pinned } })).then((r) => r.task),
     renameTask: (id: string, json: RenameTaskRequest) => write(() => tasks.$patch({ param: idParam(id), json })).then((r) => r.task),
-    agentInstallations: (signal?: AbortSignal) => request(() => client.agents.$get({}, requestOptions(signal))),
-    agentLimits: (agent: AgentKind, signal?: AbortSignal) => request(() => client.agents[":agent"].limits.$get({ param: { agent } }, requestOptions(signal))),
+    agentInstallations: (signal?: AbortSignal) => read(() => client.agents.$get({}, requestOptions(signal)), signal),
+    agentLimits: (agent: AgentKind, signal?: AbortSignal) => read(() => client.agents[":agent"].limits.$get({ param: { agent } }, requestOptions(signal)), signal),
     updateAgent: (agent: AgentKind, expectedVersion: string) => write(() => client.agents[":agent"].update.$post({ param: { agent }, json: { expectedVersion } }), false, false, ["agents", "modelCatalog"]),
-    getUsage: (signal?: AbortSignal) => request(() => client.usage.$get({}, requestOptions(signal))).then((r) => r.usage),
+    getUsage: (signal?: AbortSignal) => read(() => client.usage.$get({}, requestOptions(signal)), signal).then((r) => r.usage),
     followup: (id: string, json: FollowupRequest) => write(() => tasks.followup.$post({ param: idParam(id), json }, attachmentOptions(json))).then((r) => r.task),
     steer: (id: string, json: SteerRequest) => write(() => tasks.steer.$post({ param: idParam(id), json }, attachmentOptions(json))),
     approve: (id: string, json: ApproveRequest) => write(() => tasks.approve.$post({ param: idParam(id), json })).then((r) => r.task),
@@ -227,15 +235,15 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       expectedRunId === undefined ? {} : { headers: { [TURN_CONTROL_HEADER]: TURN_CONTROL_VERSION } })).then((r) => r.task),
     cancel: (id: string) => write(() => tasks.cancel.$post({ param: idParam(id), json: {} })).then((r) => r.task),
     archive: (id: string) => write(() => tasks.$delete({ param: idParam(id) })).then((r) => r.task),
-    listRoutines: (signal?: AbortSignal) => request(() => client.routines.$get({}, requestOptions(signal))).then((r) => r.routines),
+    listRoutines: (signal?: AbortSignal) => read(() => client.routines.$get({}, requestOptions(signal)), signal).then((r) => r.routines),
     createRoutine: (json: CreateRoutineRequest) => write(() => client.routines.$post({ json }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
     updateRoutine: (id: string, json: UpdateRoutineRequest) => write(() => routines.$patch({ param: idParam(id), json }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
     deleteRoutine: (id: string) => write(() => routines.$delete({ param: idParam(id) }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
     runRoutine: (id: string) => write(() => routines.run.$post({ param: idParam(id) }), false, false, ["routines", "routineRuns"]).then((r) => r.routine),
     stopRoutine: (id: string) => write(() => routines.stop.$post({ param: idParam(id) }), false, false, ["routines", "routineRuns"]).then(r => r.routine),
-    routineRuns: (id: string, signal?: AbortSignal) => request(() => routines.runs.$get({ param: idParam(id) }, requestOptions(signal))).then((r) => r.runs),
+    routineRuns: (id: string, signal?: AbortSignal) => read(() => routines.runs.$get({ param: idParam(id) }, requestOptions(signal)), signal).then((r) => r.runs),
     auth: {
-      me: () => request(() => client.auth.me.$get(), { authProbe: true }),
+      me: () => read(() => client.auth.me.$get(), undefined, true),
       githubStart: (json: { setupKey?: string; returnHash?: string }) => write(() => client.auth.github.start.$post({ json }), true),
       loginOptions: () => write(() => client.auth.login.options.$post(), true),
       loginVerify: (json: AuthenticationResponseJSON) => write(() => client.auth.login.verify.$post({ json: { ...json, clientExtensionResults: { ...json.clientExtensionResults } } }), true, true),
@@ -245,12 +253,12 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
       reauthenticateOptions: (action: import("@palmagent/shared").AuthAction) => write(() => client.auth.reauthenticate.options.$post({ json: { action } })),
       reauthenticateVerify: (json: AuthenticationResponseJSON) => write(() => client.auth.reauthenticate.verify.$post({ json: { ...json, clientExtensionResults: { ...json.clientExtensionResults } } })),
       enrollToken: (authorization: string) => write(() => client.auth["enroll-token"].$post({ json: { authorization } })),
-      passkeys: () => request(() => client.auth.passkeys.$get()).then(result => result.passkeys),
+      passkeys: () => read(() => client.auth.passkeys.$get()).then(result => result.passkeys),
       removePasskey: (authorization: string, credentialId: string) => write(() => client.auth.passkeys.remove.$post({ json: { authorization, credentialId } }), false, true),
       logoutAll: (authorization: string) => write(() => client.auth["logout-all"].$post({ json: { authorization } }), false, true),
     },
     push: {
-      key: () => request(() => client.push.key.$get()),
+      key: () => read(() => client.push.key.$get()),
       subscribe: (subscription: PushSubscribeRequest["subscription"]) => write(() => client.push.subscribe.$post({ json: { subscription } })),
       unsubscribe: (endpoint: string) => write(() => client.push.unsubscribe.$post({ json: { endpoint } })),
     },
