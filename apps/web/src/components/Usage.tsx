@@ -5,7 +5,7 @@ import type { AgentInstallation, AgentKind, AgentUsage, AgentUsageMetric } from 
 import { RefreshCw } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { ScrollArea } from "./ui/scroll-area";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -130,7 +130,7 @@ export function UsageView() {
   const error = query.error ? errMsg(query.error) : query.isFetching ? lastError : "";
   const refresh = () => { void query.refetch(); void client.invalidateQueries({ queryKey: clientReadKeys.agents() }); };
   return <AppShell wide>
-    <AppBar title="Agents"><Button variant="ghost" size="icon-lg" aria-label="Refresh agents" disabled={installations.isFetching || query.isFetching} onClick={refresh}><RefreshCw /></Button></AppBar>
+    <AppBar title="Agents"><IconButton aria-label="Refresh agents" disabled={installations.isFetching || query.isFetching} onClick={refresh}><RefreshCw /></IconButton></AppBar>
     <ScrollArea className="flex-1" contentClassName="flex flex-col gap-4 px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
       {installations.error && <Alert variant="destructive">Couldn’t load agent installations. {errMsg(installations.error)}</Alert>}
       {error && <Alert variant="destructive" className="flex flex-col gap-2" aria-busy={query.isFetching}>

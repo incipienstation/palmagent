@@ -5,7 +5,7 @@ import { navigate } from "../router";
 import { taskDirectoryFor } from "../space-context";
 import { statusLabel } from "../lib/status";
 import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
+import { Button, IconButton } from "./ui/button";
 import { Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeaderRow, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer";
 import { Field, FieldGroup, FieldLabel } from "./ui/field";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -40,14 +40,14 @@ export function TaskFilters({ trigger, repo, directories, directory, onDirectory
   const activeCount = Number(status !== "all") + Number(!!repo && directory !== "all");
   return <Drawer open={open} onOpenChange={setOpen}>
     <DrawerTrigger asChild>
-      <Button ref={trigger} size="icon-lg" variant={activeCount ? "secondary" : "ghost"} className="relative"
+      <IconButton ref={trigger} variant={activeCount ? "secondary" : "ghost"} className="relative"
         title="Filters" aria-label={activeCount ? `Filters, ${activeCount} active` : "Filters"}>
         <SlidersHorizontal />
         {activeCount > 0 && <Badge className="absolute -top-0.5 -right-0.5 size-4 p-0" aria-hidden="true">{activeCount}</Badge>}
-      </Button>
+      </IconButton>
     </DrawerTrigger>
     <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
-      <DrawerHeader><DrawerHeaderRow><DrawerTitle>Task filters</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close filters" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
+      <DrawerHeader><DrawerHeaderRow><DrawerTitle>Task filters</DrawerTitle><IconButton ref={close} aria-label="Close filters" onClick={() => setOpen(false)}><X /></IconButton></DrawerHeaderRow>
         <DrawerDescription>{repo ? `Tasks in ${repo.name}. Worktree filters only change this list.` : "Tasks across all your Spaces."}</DrawerDescription>
       </DrawerHeader>
       <DrawerBody><FieldGroup>
@@ -96,9 +96,9 @@ export function SpaceDetails({ repo }: { repo: Repo }) {
   const [open, setOpen] = useState(false);
   const close = useRef<HTMLButtonElement>(null);
   return <Drawer open={open} onOpenChange={setOpen}>
-    <DrawerTrigger asChild><Button variant="ghost" size="icon-lg" aria-label="Space details"><MoreHorizontal /></Button></DrawerTrigger>
+    <DrawerTrigger asChild><IconButton aria-label="Space details"><MoreHorizontal /></IconButton></DrawerTrigger>
     <DrawerContent showClose={false} onOpenAutoFocus={event => { event.preventDefault(); close.current?.focus(); }}>
-      <DrawerHeader><DrawerHeaderRow><DrawerTitle className="min-w-0 break-words">{repo.name}</DrawerTitle><Button ref={close} variant="ghost" size="icon-lg" aria-label="Close Space details" onClick={() => setOpen(false)}><X /></Button></DrawerHeaderRow>
+      <DrawerHeader><DrawerHeaderRow><DrawerTitle className="min-w-0 break-words">{repo.name}</DrawerTitle><IconButton ref={close} aria-label="Close Space details" onClick={() => setOpen(false)}><X /></IconButton></DrawerHeaderRow>
         <DrawerDescription>Space information and tools.</DrawerDescription>
       </DrawerHeader>
       <DrawerBody className="flex flex-col gap-4">

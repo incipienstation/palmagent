@@ -5,7 +5,7 @@ import { isActiveTaskStatus, needsTaskAttention, type Repo, type TaskState, type
 import { Archive, Check, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { useStoredPreference } from "../hooks/useStoredPreference";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -205,10 +205,10 @@ function SpaceTaskGroup({ repoId, tasks, preview }: { repoId: string; tasks: Tas
   const label = qualifier ? `${name} · ${qualifier}` : name;
   return <TaskGroup label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks} preview={preview}
     actions={repo && <>
-      <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
-        onClick={() => navigate(spacePath(repoId))}><FolderOpen /></Button>
-      <Button variant="ghost" size="icon-lg" aria-label={`New task in ${label}`} title={`New task in ${label}`}
-        onClick={() => navigate(newTaskPath(repoId))}><Plus /></Button>
+      <IconButton aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
+        onClick={() => navigate(spacePath(repoId))}><FolderOpen /></IconButton>
+      <IconButton aria-label={`New task in ${label}`} title={`New task in ${label}`}
+        onClick={() => navigate(newTaskPath(repoId))}><Plus /></IconButton>
     </>} />;
 }
 
@@ -343,7 +343,7 @@ export const InboxView = memo(function InboxView({
         <AppBar title={repoId ? selectedName : "Tasks"} back={!!repoId} onBack={() => goBackTo("/spaces")}
           conn={mobileHome ? undefined : conn}>
           {!loading && <TaskFilters {...filters} />}
-          {space ? <SpaceDetails repo={space} /> : <Button variant="ghost" size="icon-lg" aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></Button>}
+          {space ? <SpaceDetails repo={space} /> : <IconButton aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></IconButton>}
         </AppBar>
         {mobileHome && conn === "reconnecting" && <div role="status" className="px-4 pb-2"><ConnPill conn={conn} /></div>}
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground"><Pending>Archiving task…</Pending></p>}

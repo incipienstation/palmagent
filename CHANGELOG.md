@@ -6,6 +6,10 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+### Changed
+
+- Add Space now puts removal in each connected folder’s actions menu and asks for confirmation before deleting its archived task history and routines. Header controls use consistent touch targets across pickers, conversations, and terminals.
+
 ## 0.2.0-alpha.65
 
 ### Changed

@@ -13,7 +13,7 @@ import { EmptyState } from "./EmptyState";
 import { PullToRefresh } from "./PullToRefresh";
 import { RepoPicker } from "./RepoPicker";
 import { Alert } from "./ui/alert";
-import { Button } from "./ui/button";
+import { Button, IconButton } from "./ui/button";
 import { ListSearch } from "./ListSearch";
 import { Skeleton } from "./ui/skeleton";
 
@@ -38,7 +38,7 @@ export function SpacesView({ tasks, conn, loading, onRefresh }: { tasks: TaskSta
   const clear = () => { setQuery(""); searchRef.current?.focus(); };
   return <AppShell wide>
     <AppBar title="Spaces" conn={conn}>
-      <Button variant="ghost" size="icon-lg" aria-label="Add Space" onClick={() => setAdding(true)}><Plus /></Button>
+      <IconButton aria-label="Add Space" onClick={() => setAdding(true)}><Plus /></IconButton>
     </AppBar>
     <div className="flex min-h-0 flex-1 flex-col">
       <ListSearch inputRef={searchRef} label="Search Spaces" clearLabel="Clear Space search" placeholder="Search Spaces…" value={query} onChange={setQuery} />

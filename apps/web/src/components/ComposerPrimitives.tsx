@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type ComponentProps, type RefObject } from "react";
-import { ArrowUp, Loader2, Square } from "lucide-react";
+import { ArrowUp, ListPlus, Loader2, Square } from "lucide-react";
 import { useSendShortcut } from "../SendShortcutProvider";
 import { useKeyboardDismiss } from "../hooks/useKeyboardDismiss";
 import { useFadingPlaceholder } from "../hooks/useFadingPlaceholder";
@@ -82,11 +82,12 @@ export function ComposerInput({ textarea, composing: externalComposing, expanded
   </div>;
 }
 
-export function ComposerAction({ stop, busy, ...props }: Omit<ComponentProps<typeof Button>, "children"> & { stop?: boolean; busy?: boolean }) {
-  return <Button type="button" variant="ghost" size="icon-lg" className="group shrink-0 active:bg-transparent" {...props}>
+export function ComposerAction({ stop, busy, queue, className, ...props }: Omit<ComponentProps<typeof Button>, "children"> & { stop?: boolean; busy?: boolean; queue?: boolean }) {
+  const SendIcon = queue ? ListPlus : ArrowUp;
+  return <Button type="button" variant="ghost" size="icon-lg" className={cn("group shrink-0 active:bg-transparent", className)} {...props}>
     <span data-stop-visual={stop || undefined} data-send-visual={!stop || undefined} aria-hidden="true"
       className="pointer-events-none flex size-10 items-center justify-center rounded-full border border-primary-active bg-primary text-primary-foreground group-active:bg-primary-active">
-      {stop ? <Square className="size-[18px]" fill="currentColor" /> : busy ? <Loader2 className="size-[18px] motion-safe:animate-spin" /> : <ArrowUp className="size-[18px]" />}
+      {stop ? <Square className="size-[18px]" fill="currentColor" /> : busy ? <Loader2 className="size-[18px] motion-safe:animate-spin" /> : <SendIcon className="size-[18px]" />}
     </span>
   </Button>;
 }

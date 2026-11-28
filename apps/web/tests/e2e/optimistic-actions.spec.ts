@@ -276,14 +276,21 @@ test("repository removal hides its row immediately and restores it on a server c
   const delayed = gate(); let calls = 0;
   await page.route("**/api/repos/discover*", route => route.fulfill({ json: { repos: repos.map(r => ({ ...r, branch: "main", lastActivityAt: 1 })) } }));
   await page.route("**/api/repos/repo-app", async route => { calls++; await delayed.wait; await route.fulfill({ status: 409, json: { error: "Repository has active tasks" } }); });
-  page.on("dialog", dialog => void dialog.accept());
   await page.goto("/#/new/space/repo-app"); await page.getByRole("combobox", { name: "Space" }).click();
   await page.getByRole("option", { name: "Add Space", exact: true }).click();
-  await page.getByRole("button", { name: "Remove sample-app", exact: true }).click();
+  const actions = page.getByRole("button", { name: "Actions for sample-app", exact: true });
+  const remove = page.getByRole("menuitem", { name: "Remove Space", exact: true });
+  const confirm = page.getByRole("alertdialog", { name: "Remove sample-app from Spaces?" });
+  await actions.click(); await remove.click();
+  await confirm.getByRole("button", { name: "Keep Space" }).click();
+  await expect(actions).toBeFocused();
+  expect(calls).toBe(0);
+  await actions.click(); await remove.click();
+  await confirm.getByRole("button", { name: "Remove Space", exact: true }).click();
   await expect(page.getByRole("option", { name: /sample-app/ })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: "Removing Space…" })).toBeVisible();
   expect(calls).toBe(1); delayed.release();
-  await expect(page.getByRole("button", { name: "Remove sample-app", exact: true })).toBeVisible();
+  await expect(actions).toBeVisible();
   await expect(page.getByTestId("toast")).toContainText("Repository has active tasks");
 });
 
