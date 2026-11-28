@@ -30,12 +30,17 @@ A missing Stable release never falls back to Preview.
 
 ## Spaces
 
-On a phone, open **Tasks** and choose **Status** or **Space** in the top bar.
+On a phone, open **Tasks** and choose **Status** or **Space** below the list.
 Status starts with **Needs you**, where you can preview a pending question or approval.
-Space groups the same tasks by folder, with requests you can answer first in each group.
+Both views collect pinned tasks in **Pinned**, in your saved pin order. Tasks already
+in **Needs you** appear there once. In Space view, the remaining tasks are grouped
+by folder, with requests you can answer first in each group.
 Switching views keeps your search and filters. The app remembers your last view.
 
-On desktop, **Needs you** appears above the Space groups. Each Space heading stays in
+All groups start expanded. Select a heading to collapse or expand its tasks. The app
+remembers your choice on this device. Search temporarily expands matching groups.
+
+On desktop, **Needs you** and **Pinned** appear above the Space groups. Each Space heading stays in
 view as you scroll its tasks. Use its folder or plus button to open the Space or start a
 task there. Open **Spaces** to search by name or folder, enter a Space, or connect
 another folder with **Add Space**.

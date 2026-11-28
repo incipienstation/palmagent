@@ -2,10 +2,11 @@ import { Pending } from "@/components/ui/spinner";
 import { queueTaskArchive, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { isActiveTaskStatus, needsTaskAttention, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
-import { Archive, Check, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
+import { Archive, Check, ChevronRight, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { useStoredPreference } from "../hooks/useStoredPreference";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -167,8 +168,9 @@ const TaskRow = memo(function TaskRow({ task, showSpace, hideState, preview }: {
   );
 });
 
-function TaskGroup({ label, accessibleName = label, description, tasks, showSpace = false, attention = false, hideState = false, preview = false, actions }: {
+function TaskGroup({ preferenceKey, label, accessibleName = label, description, tasks, showSpace = false, attention = false, hideState = false, preview = false, actions }: {
   label: string;
+  preferenceKey?: string;
   accessibleName?: string;
   description?: string;
   tasks: TaskState[];
@@ -178,32 +180,53 @@ function TaskGroup({ label, accessibleName = label, description, tasks, showSpac
   preview?: boolean;
   actions?: ReactNode;
 }) {
+  const [open, setOpen] = useState(() => {
+    try { return !preferenceKey || localStorage.getItem(preferenceKey) !== "collapsed"; }
+    catch { return true; }
+  });
+  function toggle(next: boolean) {
+    setOpen(next);
+    if (!preferenceKey) return;
+    try {
+      if (next) localStorage.removeItem(preferenceKey);
+      else localStorage.setItem(preferenceKey, "collapsed");
+    } catch { /* Keep the header usable when storage is unavailable. */ }
+  }
   if (!tasks.length) return null;
-  return <section aria-label={accessibleName} className="overflow-clip border-t bg-card last:border-b md:mx-4 md:rounded-2xl md:border">
-    <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b bg-muted py-1 pr-2 pl-4">
-      {attention && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
-      <div className="min-w-0 flex-1">
-        <h2 className="flex items-center gap-1.5 text-sm font-medium text-strong">
-          <span className="truncate">{label}</span>
-          <span className="shrink-0 text-muted-foreground">· {tasks.length}</span>
+  return <Collapsible asChild open={open} onOpenChange={toggle}>
+    <section aria-label={accessibleName} className="overflow-clip border-t bg-card last:border-b md:mx-4 md:rounded-2xl md:border">
+      <div className="sticky top-0 z-10 flex items-center bg-muted">
+        <h2 className="min-w-0 flex-1">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="h-auto min-h-11 w-full justify-start rounded-none px-4 py-1 text-left">
+              <ChevronRight aria-hidden="true" className="text-muted-foreground group-aria-expanded/button:rotate-90" />
+              {attention && <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-amber" />}
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate">{label}</span>
+                  <span className="shrink-0 text-muted-foreground">· {tasks.length}</span>
+                </span>
+                {description && <span className="block truncate text-xs font-normal text-muted-foreground">{description}</span>}
+              </span>
+            </Button>
+          </CollapsibleTrigger>
         </h2>
-        {description && <p className="truncate text-xs text-muted-foreground">{description}</p>}
+        {actions && <div className="flex shrink-0 items-center gap-1 pr-2">{actions}</div>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
-    </div>
-    <div className="divide-y divide-border/60">
-      {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} hideState={hideState} preview={preview} />)}
-    </div>
-  </section>;
+      <CollapsibleContent className="divide-y divide-border/60 border-t">
+        {tasks.map(task => <TaskRow key={task.taskId} task={task} showSpace={showSpace} hideState={hideState} preview={preview} />)}
+      </CollapsibleContent>
+    </section>
+  </Collapsible>;
 }
 
-function SpaceTaskGroup({ repoId, tasks, preview }: { repoId: string; tasks: TaskState[]; preview: boolean }) {
+function SpaceTaskGroup({ repoId, tasks, preview, preferenceKey }: { preferenceKey?: string; repoId: string; tasks: TaskState[]; preview: boolean }) {
   const repos = useContext(ReposContext);
   const repo = repos.get(repoId);
   const name = repo?.name ?? "Unavailable Space";
   const qualifier = repo ? spaceQualifier(repo, repos) : undefined;
   const label = qualifier ? `${name} · ${qualifier}` : name;
-  return <TaskGroup label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks} preview={preview}
+  return <TaskGroup preferenceKey={preferenceKey} label={name} accessibleName={`${label} tasks`} description={qualifier} tasks={tasks} preview={preview}
     actions={repo && <>
       <Button variant="ghost" size="icon-lg" aria-label={`Open Space ${label}`} title={`Open Space ${label}`}
         onClick={() => navigate(spacePath(repoId))}><FolderOpen /></Button>
@@ -296,9 +319,14 @@ export const InboxView = memo(function InboxView({
   const clearSearch = () => { setQuery(""); searchInput.current?.focus(); };
   const groups = new Map<string, TaskState[]>();
   const attentionTasks: TaskState[] = [];
+  const pinnedTasks: TaskState[] = [];
   for (const task of filtered) {
     if ((mode === "desktop" || mode === "status") && needsResponse(task)) {
       attentionTasks.push(task);
+      continue;
+    }
+    if (task.pinnedAt !== undefined) {
+      pinnedTasks.push(task);
       continue;
     }
     let key = task.repoId;
@@ -309,13 +337,14 @@ export const InboxView = memo(function InboxView({
     groups.set(key, group);
   }
   attentionTasks.sort(compareTasks);
+  pinnedTasks.sort(compareTasks);
   for (const group of groups.values()) {
     group.sort((a, b) => {
       if (mode === "space") {
         const priority = Number(needsResponse(b)) - Number(needsResponse(a));
         if (priority) return priority;
       }
-      if ((mode === "desktop" || mode === "space") && a.pinnedAt === undefined && b.pinnedAt === undefined)
+      if (mode === "desktop" || mode === "space")
         return taskPriority(a) - taskPriority(b) || compareTasks(a, b);
       return compareTasks(a, b);
     });
@@ -332,6 +361,8 @@ export const InboxView = memo(function InboxView({
   const groupOrder: readonly string[] = mode === "status" ? MOBILE_STATUS_ORDER : mode === "scoped" ? GROUP_ORDER : spaceOrder;
   const orderedGroups = [...groups].sort(([a], [b]) => groupOrder.indexOf(a) - groupOrder.indexOf(b));
 
+  // Search results start open and never overwrite browsing preferences.
+  const groupPreference = (group: string) => search ? undefined : `pref:task-group:${JSON.stringify([repoId, group])}`;
   const isEmpty = !loading && filtered.length === 0;
   const selectedName = space?.name ?? "Space";
   const missingSpace = !!repoId && reposLoaded && !space;
@@ -374,12 +405,13 @@ export const InboxView = memo(function InboxView({
                 action={search ? { label: "Clear search", onClick: clearSearch } : directory !== "all" || statusFilter !== "all" ? { label: "Clear filters", onClick: () => { setDirectory("all"); setStatusFilter("all"); } } : missingSpace ? { label: "Open Spaces", onClick: () => navigate("/spaces") } : undefined}
               />
             ) : (
-              <div className="mt-3 flex flex-col max-md:first:mt-0 md:gap-3">
-                <TaskGroup label="Needs you" tasks={attentionTasks} showSpace attention preview={mobileHome} />
+              <div key={JSON.stringify([repoId, mode, search])} className="mt-3 flex flex-col max-md:first:mt-0 md:gap-3">
+                <TaskGroup preferenceKey={groupPreference("attention")} label="Needs you" tasks={attentionTasks} showSpace attention preview={mobileHome} />
+                <TaskGroup preferenceKey={groupPreference("pinned")} label="Pinned" accessibleName="Pinned tasks" tasks={pinnedTasks} showSpace={!repoId} preview={mobileHome} />
                 {orderedGroups.map(([key, group]) => {
                   if (mode === "space" || mode === "desktop")
-                    return <SpaceTaskGroup key={key} repoId={key} tasks={group} preview={mobileHome} />;
-                  return <TaskGroup key={key} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
+                    return <SpaceTaskGroup key={key} preferenceKey={groupPreference(`space:${key}`)} repoId={key} tasks={group} preview={mobileHome} />;
+                  return <TaskGroup key={key} preferenceKey={groupPreference(`status:${key}`)} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
                     tasks={group} showSpace={mobileHome} hideState={mobileHome} />;
                 })}
               </div>
