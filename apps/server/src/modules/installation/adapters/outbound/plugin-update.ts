@@ -1,29 +1,19 @@
-import { BRANDING, DISTRIBUTION } from "@palmagent/shared";
+import { DISTRIBUTION } from "@palmagent/shared";
 // Native managers own their installation records. Never edit their caches or
 // settings; retain exact marketplace checkouts and a private recovery receipt.
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import { installedPlugin } from "./agent-plugin-package.js";
+import { installedPlugins, managers, pluginId, pluginManagers } from "./plugin-managers.js";
 import { writePrivateFileAtomic, ensurePrivateParent } from "../../../../platform/filesystem/private-files.js";
 import type { InstallConfig } from "./config.js";
 import { readPluginVersions, type PluginVersion, type UpdatePlan } from "./update-plan.js";
 import { run } from "./sh.js";
-import { compatiblePlugin, compareProductVersions } from "../../domain/release-policy.js";
-import { discoveryCommandFailure, discoveryStep, UpdateDiscoveryError } from "./update-discovery-error.js";
+import { compatiblePlugin, compareProductVersions, productVersion } from "../../domain/release-policy.js";
+import { discoveryCommandFailure, UpdateDiscoveryError } from "./update-discovery-error.js";
 
-const id = `${BRANDING.packageName}@${BRANDING.packageName}`;
 const repository = `${DISTRIBUTION.repositoryUrl}.git`;
-const version = z.string().regex(/^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/);
-const codexInventory = z.object({ installed: z.array(z.object({
-  pluginId: z.string(), version: z.string(), enabled: z.boolean(), installPolicy: z.string(),
-})) });
-const claudeInventory = z.array(z.object({
-  id: z.string(), version: z.string(), enabled: z.boolean(), scope: z.string(),
-  installPath: z.string(), projectPath: z.string().optional(),
-}));
-
 import type { NativePlugin } from "../../domain/installation-observations.js";
 export type { NativePlugin } from "../../domain/installation-observations.js";
 type Context = Pick<NativePlugin, "manager" | "home" | "cwd">;
@@ -31,7 +21,7 @@ export type PluginCommand = typeof run;
 
 function command(context: Context, args: string[], execute: PluginCommand, timeout?: number): string {
   const result = execute(context.manager, ["plugin", ...args], {
-    env: { ...process.env, [context.manager === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: context.home },
+    env: { ...process.env, [pluginManagers[context.manager].homeVariable]: context.home },
     cwd: context.cwd, timeout: timeout ?? (args.includes("--help") || args[0] === "list" || args[1] === "list" ? 5_000 : 120_000),
   });
   if (!result.ok) throw new UpdateDiscoveryError(discoveryCommandFailure(`${context.manager}-plugins`, result), `${context.manager} plugin ${args[0]} failed; inspect the native manager before retrying`);
@@ -46,9 +36,7 @@ export function discoverPlugins(cfg: Pick<InstallConfig, "claudeConfigDir">, exe
   // at most 25s, leaving room for npm's 30s lookup inside the 60s CLI bridge.
   let retried = false;
   function readInventory(context: Context): string {
-    // Unfiltered Codex inventories also query unrelated remote marketplaces.
-    // Only this dedicated marketplace participates in Palmagent updates.
-    const args = ["list", "--json", ...(context.manager === "codex" ? ["--marketplace", "palmagent"] : [])];
+    const args = pluginManagers[context.manager].listArgs;
     try { return command(context, args, execute); }
     catch (error) {
       if (retried || !(error instanceof UpdateDiscoveryError) || error.failure.code !== "timeout") throw error;
@@ -56,84 +44,45 @@ export function discoverPlugins(cfg: Pick<InstallConfig, "claudeConfigDir">, exe
       return command(context, args, execute, 10_000);
     }
   }
-  const codexHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
-  if (existsSync(join(codexHome, "plugins"))) {
-    discoveryStep({ source: "codex-plugins", code: "invalid-plugin" }, "Could not verify installed Codex plugin manifests", () => {
-      const context = { manager: "codex" as const, home: codexHome, cwd: codexHome };
-      const inventory = discoveryStep({ source: "codex-plugins", code: "invalid-response" }, "Codex returned an invalid plugin inventory",
-        () => codexInventory.parse(JSON.parse(readInventory(context))));
-      if (inventory.installed.some((p) => p.pluginId.endsWith("@palmagent") && p.pluginId !== id)) throw new Error("Palmagent marketplace has unrelated installed plugins");
-      for (const plugin of inventory.installed.filter((p) => p.pluginId === id)) {
-        version.parse(plugin.version);
-        result.push({ ...context, scope: "user", enabled: plugin.enabled, policy: plugin.installPolicy,
-          ...readPluginVersions([join(codexHome, "plugins/cache/palmagent/palmagent", plugin.version, ".codex-plugin/plugin.json")])[0] });
-        if (result.at(-1)!.version !== plugin.version) throw new UpdateDiscoveryError({ source: "codex-plugins", code: "invalid-plugin" }, "Codex installed manifest does not match its inventory");
-      }
-    });
-  }
-  const homes = new Set([process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), cfg.claudeConfigDir].filter(Boolean).map((p) => resolve(p)));
-  for (const home of homes) {
-    if (!existsSync(join(home, "plugins"))) continue;
-    discoveryStep({ source: "claude-plugins", code: "invalid-plugin" }, "Could not verify installed Claude plugin manifests", () => {
-      const context = { manager: "claude" as const, home, cwd: home };
-      const inventory = discoveryStep({ source: "claude-plugins", code: "invalid-response" }, "Claude returned an invalid plugin inventory",
-        () => claudeInventory.parse(JSON.parse(readInventory(context))));
-      for (const plugin of inventory.filter((p) => p.id === id)) {
-        version.parse(plugin.version);
-        const manifest = readPluginVersions([join(plugin.installPath, ".claude-plugin/plugin.json")])[0];
-        if (manifest.version !== plugin.version) throw new Error("Claude installed manifest does not match its inventory");
-        result.push({ ...context, ...manifest, scope: plugin.scope, enabled: plugin.enabled,
-          cwd: plugin.projectPath || home });
-      }
-    });
+  for (const manager of managers) {
+    for (const home of pluginManagers[manager].homes(cfg)) {
+      if (!existsSync(join(home, "plugins"))) continue;
+      result.push(...installedPlugins(manager, home, () => readInventory({ manager, home, cwd: home })));
+    }
   }
   return result;
 }
 
 export function participatingPlugins(native: NativePlugin[], manifests: string[]): PluginVersion[] {
-  return readPluginVersions([...native.map((plugin) => plugin.manifest), ...manifests]);
+  // Older skills pass the native compatibility manifest. Its inventory entry
+  // already verified that it agrees with the portable manifest in this package.
+  const participants = new Map(native.map(({ manifest, version }) => [manifest, { manifest, version }]));
+  const overlays = new Set<string>();
+  for (const plugin of native) {
+    const directory = dirname(plugin.manifest);
+    const nativeDirectory = pluginManagers[plugin.manager].nativeDirectory;
+    if (basename(directory) !== nativeDirectory) overlays.add(join(directory, nativeDirectory, "plugin.json"));
+  }
+  for (const plugin of readPluginVersions(manifests)) {
+    if (!overlays.has(plugin.manifest)) participants.set(plugin.manifest, plugin);
+  }
+  return [...participants.values()];
 }
 
 function dedicatedCatalog(root: string, manager: NativePlugin["manager"]): void {
-  const catalog = JSON.parse(readFileSync(join(root, manager === "codex" ? ".agents/plugins/marketplace.json" : ".claude-plugin/marketplace.json"), "utf8"));
+  const catalog = JSON.parse(readFileSync(join(root, pluginManagers[manager].marketplaceFile), "utf8"));
   if (catalog.name !== "palmagent" || !Array.isArray(catalog.plugins) || catalog.plugins.length !== 1 || catalog.plugins[0].name !== "palmagent") {
     throw new Error("Only a dedicated Palmagent marketplace can be refreshed automatically");
   }
 }
 
-type Registration = { root: string; args: string[] };
-function registration(plugin: NativePlugin, execute: PluginCommand): Registration {
+function registration(plugin: NativePlugin, execute: PluginCommand) {
   const raw = JSON.parse(command(plugin, ["marketplace", "list", "--json"], execute));
-  if (plugin.manager === "codex") {
-    const entry = z.object({ marketplaces: z.array(z.object({ name: z.string(), root: z.string(),
-      marketplaceSource: z.object({ sourceType: z.string(), source: z.string(), ref: z.string().optional() }).optional(),
-    })) }).parse(raw).marketplaces.find((p) => p.name === "palmagent");
-    if (!entry?.marketplaceSource) throw new Error("Cannot preserve the Codex marketplace source");
-    const source = entry.marketplaceSource;
-    if (!["local", "git"].includes(source.sourceType)) throw new Error("Unsupported Codex marketplace source");
-    return { root: entry.root, args: [source.source, ...(source.ref ? ["--ref", source.ref] : [])] };
-  }
-  const entry = z.array(z.object({ name: z.string(), source: z.string(), installLocation: z.string(),
-    path: z.string().optional(), repo: z.string().optional(), url: z.string().optional(), ref: z.string().optional(),
-  })).parse(raw).find((p) => p.name === "palmagent");
-  if (!entry) throw new Error("Cannot preserve the Claude marketplace source");
-  const source = entry.source === "directory" ? entry.path : entry.source === "github" ? entry.repo : entry.source === "git" ? entry.url : undefined;
-  if (!source) throw new Error("Unsupported Claude marketplace source");
-  return { root: entry.installLocation, args: [source + (entry.ref ? `#${entry.ref}` : ""), "--scope", plugin.scope] };
-}
-
-function assertRefreshable(plugin: NativePlugin): void {
-  if (plugin.manager === "codex" && (plugin.policy !== "AVAILABLE" || !plugin.enabled)) {
-    throw new Error("Codex managed or disabled plugins require their native administrator; state was preserved");
-  }
-  if (plugin.manager === "claude" && (!["user", "project", "local"].includes(plugin.scope) ||
-      (plugin.scope !== "user" && plugin.cwd === plugin.home))) {
-    throw new Error("Claude plugin scope cannot be refreshed safely; managed installations remain managed");
-  }
+  return pluginManagers[plugin.manager].registration(raw, plugin);
 }
 
 function stageRelease(dataDir: string, target: string, execute: PluginCommand): string {
-  version.parse(target);
+  productVersion(target);
   const parent = join(dataDir, "operator-plugins");
   ensurePrivateParent(parent);
   const checkout = join(parent, `${target}-${randomUUID()}`);
@@ -142,12 +91,13 @@ function stageRelease(dataDir: string, target: string, execute: PluginCommand): 
   }
   const ref = execute("git", ["-C", checkout, "describe", "--tags", "--exact-match", "HEAD"], { timeout: 10_000 });
   if (!ref.ok || ref.stdout.trim() !== `v${target}`) throw new Error("Staged plugin tag does not match the planned release");
-  for (const [root, manager, manifest] of [
-    [join(checkout, "plugins/codex"), "codex", "plugins/palmagent/.codex-plugin/plugin.json"],
-    [checkout, "claude", "plugins/claude/.claude-plugin/plugin.json"],
-  ] as const) {
+  for (const manager of managers) {
+    const adapter = pluginManagers[manager];
+    const root = join(checkout, adapter.marketplaceRoot);
     dedicatedCatalog(root, manager);
-    if (readPluginVersions([join(root, manifest)])[0].version !== target) throw new Error("Staged plugin manifest does not match the planned release");
+    if (installedPlugin(join(root, adapter.packagePath), adapter.nativeDirectory).version !== target) {
+      throw new Error("Staged plugin manifest does not match the planned release");
+    }
   }
   return checkout;
 }
@@ -164,10 +114,11 @@ export function refreshPlugins(cfg: InstallConfig, plan: UpdatePlan, native: Nat
   // Validate every participant before mutating even the first registration.
   const originals = selected.map((plugin) => {
     if (compareProductVersions(plugin.version, plan.targetVersion) > 0) throw new Error("Refusing to downgrade a newer operator plugin; review the compatibility boundary separately");
-    assertRefreshable(plugin);
+    const adapter = pluginManagers[plugin.manager];
+    adapter.assertRefreshable(plugin);
     const original = registration(plugin, execute);
     dedicatedCatalog(original.root, plugin.manager);
-    for (const args of [["marketplace", "add"], ...(plugin.manager === "codex" ? [["marketplace", "remove"]] : []), [plugin.manager === "codex" ? "add" : "update"]]) {
+    for (const args of [["marketplace", "add"], ...(adapter.removeBeforeAdd ? [["marketplace", "remove"]] : []), [adapter.installCommand]]) {
       command(plugin, [...args, "--help"], execute);
     }
     return { plugin, original };
@@ -181,7 +132,8 @@ export function refreshPlugins(cfg: InstallConfig, plan: UpdatePlan, native: Nat
   }) + "\n");
   save("applying");
   for (const { plugin, original } of originals) {
-    const targetRoot = plugin.manager === "codex" ? join(checkout, "plugins/codex") : checkout;
+    const adapter = pluginManagers[plugin.manager];
+    const targetRoot = join(checkout, adapter.marketplaceRoot);
     let registrationChanged = false;
     try {
       const current = discoverPlugins(cfg, execute).find((p) => p.manager === plugin.manager && p.home === plugin.home && p.scope === plugin.scope && p.cwd === plugin.cwd);
@@ -194,14 +146,14 @@ export function refreshPlugins(cfg: InstallConfig, plan: UpdatePlan, native: Nat
           (!sharedRefresh && JSON.stringify(source) !== JSON.stringify(original))) {
         throw new Error("Plugin installation changed while staging; check again before refreshing it");
       }
-      if (plugin.manager === "codex") {
+      if (adapter.removeBeforeAdd) {
         command(plugin, ["marketplace", "remove", "palmagent"], execute);
         registrationChanged = true;
       }
-      command(plugin, ["marketplace", "add", targetRoot, ...(plugin.manager === "claude" ? ["--scope", plugin.scope] : [])], execute);
+      command(plugin, ["marketplace", "add", targetRoot, ...adapter.scopeArgs(plugin)], execute);
       registrationChanged = true;
       if (resolve(registration(plugin, execute).root) !== resolve(targetRoot)) throw new Error("Native manager retained the previous marketplace source");
-      command(plugin, plugin.manager === "codex" ? ["add", id] : ["update", id, "--scope", plugin.scope], execute);
+      command(plugin, [adapter.installCommand, pluginId, ...adapter.scopeArgs(plugin)], execute);
       const actual = discoverPlugins(cfg, execute).find((p) => p.manager === plugin.manager && p.home === plugin.home && p.scope === plugin.scope && p.cwd === plugin.cwd);
       if (!actual || actual.version !== plan.targetVersion || actual.enabled !== plugin.enabled) throw new Error("Native plugin installation did not preserve the expected version and enabled state");
       updated.push(actual);
@@ -212,16 +164,16 @@ export function refreshPlugins(cfg: InstallConfig, plan: UpdatePlan, native: Nat
       let restored = !registrationChanged;
       if (registrationChanged) {
         try {
-          if (plugin.manager === "codex") execute("codex", ["plugin", "marketplace", "remove", "palmagent"], {
-            env: { ...process.env, CODEX_HOME: plugin.home }, cwd: plugin.cwd, timeout: 120_000,
+          if (adapter.removeBeforeAdd) execute(plugin.manager, ["plugin", "marketplace", "remove", "palmagent"], {
+            env: { ...process.env, [adapter.homeVariable]: plugin.home }, cwd: plugin.cwd, timeout: 120_000,
           });
           command(plugin, ["marketplace", "add", ...original.args], execute);
           restored = resolve(registration(plugin, execute).root) === resolve(original.root);
-          if (restored && plugin.manager === "codex") {
+          if (restored && adapter.removeBeforeAdd) {
             // Removing a Codex marketplace also unregisters its plugin. Merely
             // adding the old catalog would leave the user without the plugin.
-            command(plugin, ["add", id], execute);
-            const actual = discoverPlugins(cfg, execute).find((p) => p.manager === "codex" && p.home === plugin.home);
+            command(plugin, [adapter.installCommand, pluginId, ...adapter.scopeArgs(plugin)], execute);
+            const actual = discoverPlugins(cfg, execute).find((p) => p.manager === plugin.manager && p.home === plugin.home);
             restored = Boolean(actual && actual.enabled === plugin.enabled && compatiblePlugin(plan.currentVersion, actual.version));
           }
         } catch { restored = false; }

@@ -80,6 +80,11 @@ Ask **“Install Palmagent for example.com”**, using your domain. The plugin i
 configures HTTPS, and helps you set up passkeys, GitHub sign-in, or both. Once signed in,
 choose a Space and start a task. See [login setup](docs/SECURITY.md#github-sign-in).
 
+The operator plugin uses the [Agent Plugins 1.0.0 format](https://agent-plugins.org/specification).
+Its [manifest](plugin.json) and [skills](skills/) are shared across clients. Each published
+marketplace package includes the portable manifest and a native compatibility manifest.
+Codex and Claude Code manage their own installations, versions and scopes.
+
 ## Before you expose Palmagent
 
 > [!IMPORTANT]

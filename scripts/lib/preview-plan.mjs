@@ -12,7 +12,7 @@ export function isProductPath(path) {
   if (/(?:^|\/)(?:playwright|vitest)\.config\.[^/]+$/.test(path)) return false;
   if (['apps/server/scripts/cli-render-check.ts', 'apps/web/scripts/test-sw-update.mjs'].includes(path)) return false;
   return /^(?:apps\/(?:server|web)\/|packages\/shared\/|skills\/|plugins\/claude\/|plugins\/codex\/plugins\/palmagent\/)/.test(path)
-    || ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'LICENSE',
+    || ['package.json', 'plugin.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'LICENSE',
       '.claude-plugin/marketplace.json', 'plugins/codex/.agents/plugins/marketplace.json',
       'scripts/build-pkg.ts', 'scripts/build-standalone.mjs', 'scripts/build-daemon.mjs',
       'scripts/lib/portable-dependencies.mjs', 'scripts/templates/install.sh', 'scripts/render-installer.mjs'].includes(path);

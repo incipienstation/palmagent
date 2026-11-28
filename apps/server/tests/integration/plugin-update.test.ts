@@ -3,7 +3,8 @@ import { test, type TestContext } from "node:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { discoverPlugins, refreshPlugins, type PluginCommand } from "../../src/modules/installation/adapters/outbound/plugin-update.js";
+import { DISTRIBUTION } from "@palmagent/shared";
+import { discoverPlugins, participatingPlugins, refreshPlugins, type PluginCommand } from "../../src/modules/installation/adapters/outbound/plugin-update.js";
 import { planUpdate } from "../../src/modules/installation/adapters/outbound/update-plan.js";
 import type { InstallConfig } from "../../src/modules/installation/adapters/outbound/config.js";
 
@@ -56,7 +57,7 @@ function fixture(t: TestContext) {
     if (args.includes("--help")) return ok("native help");
     if (args[1] === "list") return ok(JSON.stringify(manager === "codex" ? { installed: [{
       pluginId: "palmagent@palmagent", version: versions.codex, enabled: enabled.codex, installPolicy: options.managed ? "FORCE_INSTALLED" : "AVAILABLE",
-    }] } : [{ id: "palmagent@palmagent", version: versions.claude, enabled: enabled.claude,
+    }] } : [{ id: "example@builtin" }, { id: "palmagent@palmagent", version: versions.claude, enabled: enabled.claude,
       scope: options.scope, ...(options.scope !== "user" ? { projectPath: options.project } : {}),
       installPath: join(homes.claude, "plugins/cache/palmagent/palmagent", versions.claude),
     }]));
@@ -96,7 +97,17 @@ test("native inventories discover both installed plugins and verify their actual
   const f = fixture(t);
   const inventory = discoverPlugins(f.cfg, f.execute);
   assert.deepEqual(inventory.map((p) => p.version), [old, old]);
-  json(inventory[0].manifest, { name: "palmagent", version: target });
+  const legacy = inventory[0].manifest;
+  const portable = join(dirname(dirname(legacy)), "plugin.json");
+  json(portable, { $schema: DISTRIBUTION.agentPluginSchema, name: "palmagent", version: old });
+  const mixed = discoverPlugins(f.cfg, f.execute);
+  assert.equal(mixed[0].manifest, portable);
+  assert.deepEqual(participatingPlugins(mixed, [legacy, portable]).map(p => p.manifest), [portable, inventory[1].manifest]);
+  json(legacy, { name: "palmagent", version: target });
+  assert.throws(() => discoverPlugins(f.cfg, f.execute), /Could not verify installed codex plugin manifests/);
+  rmSync(legacy);
+  assert.equal(discoverPlugins(f.cfg, f.execute)[0].manifest, portable);
+  json(portable, { $schema: DISTRIBUTION.agentPluginSchema, name: "palmagent", version: target });
   assert.throws(() => discoverPlugins(f.cfg, f.execute), /does not match its inventory/);
 });
 
@@ -122,6 +133,19 @@ test("an absent Codex Palmagent marketplace still discovers participating Claude
     ? { ok: true, code: 0, stdout: JSON.stringify({ installed: [], available: [] }), stderr: "" }
     : f.execute(cmd, args, opts));
   assert.deepEqual(inventory.map((p) => p.manager), ["claude"]);
+});
+
+test("Claude built-ins leave Codex eligible while unreadable Palmagent installations block discovery", (t) => {
+  const f = fixture(t);
+  const discover = (rows: unknown[]) => discoverPlugins(f.cfg, (cmd, args, opts) => cmd === "claude"
+    ? { ok: true, code: 0, stdout: JSON.stringify(rows), stderr: "" } : f.execute(cmd, args, opts));
+  assert.deepEqual(discover([{ id: "example@builtin" }]).map(p => p.manager), ["codex"]);
+  for (const entry of [{}, { id: "palmagent@palmagent", scope: "user", version: old, enabled: true }]) {
+    assert.throws(() => discover([entry]), (error: unknown) => {
+      assert.deepEqual((error as { failure: unknown }).failure, { source: "claude-plugins", code: "invalid-response" });
+      return true;
+    });
+  }
 });
 
 test("scoped Codex discovery still rejects unrelated plugins in the Palmagent marketplace", (t) => {

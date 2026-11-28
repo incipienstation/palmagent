@@ -1,3 +1,4 @@
+import { DISTRIBUTION } from '../lib/product.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -139,8 +140,7 @@ test('only synchronized version fields and release notes qualify for preparation
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const git = (...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test.invalid', ...args],
     { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const manifests = ['package.json', 'plugins/claude/.claude-plugin/plugin.json',
-    'plugins/codex/plugins/palmagent/.codex-plugin/plugin.json'];
+  const manifests = DISTRIBUTION.versionedManifests;
   const write = (path, value) => {
     mkdirSync(dirname(join(cwd, path)), { recursive: true });
     writeFileSync(join(cwd, path), JSON.stringify(value));

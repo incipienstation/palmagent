@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Canonical operator skill bodies and shared references are copied verbatim into
 // both plugin packages. Real files keep each installed plugin self-contained.
-// Platform manifests and agents/openai.yaml remain outside this sync boundary.
+// Generate portable and compatibility manifests alongside the distributed skills.
 import {
   readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync,
 } from 'node:fs';
+import { DISTRIBUTION } from './lib/product.mjs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -17,6 +18,34 @@ function sharedFiles(base) {
     }
     return join('.shared', entry.name);
   });
+}
+
+export function syncPluginManifests(root, { check = false } = {}) {
+  const portable = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8'));
+  const { $schema, extensions, ...metadata } = portable;
+  if ($schema !== DISTRIBUTION.agentPluginSchema || metadata.name !== 'palmagent') {
+    throw new Error('Expected a Palmagent Agent Plugins 1.0.0 manifest');
+  }
+  const codex = 'plugins/codex/plugins/palmagent';
+  const claude = 'plugins/claude';
+  const outputs = [
+    [join(codex, 'plugin.json'), portable],
+    [join(claude, 'plugin.json'), portable],
+    [join(codex, '.codex-plugin/plugin.json'), { ...metadata, skills: './skills/', ...extensions['com.openai'] }],
+    [join(claude, '.claude-plugin/plugin.json'), metadata],
+  ];
+  const drift = [];
+  for (const [path, data] of outputs) {
+    const destination = join(root, path);
+    const content = JSON.stringify(data, null, 2) + '\n';
+    if (check) {
+      if (!existsSync(destination) || readFileSync(destination, 'utf8') !== content) drift.push(path);
+    } else {
+      mkdirSync(dirname(destination), { recursive: true });
+      writeFileSync(destination, content);
+    }
+  }
+  return drift;
 }
 
 export function syncSkills(root, { check = false } = {}) {
@@ -85,8 +114,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const check = process.argv.includes('--check');
     const root = join(dirname(fileURLToPath(import.meta.url)), '..');
     const result = syncSkills(root, { check });
+    result.drift.push(...syncPluginManifests(root, { check }));
     if (result.drift.length) {
-      console.error('✗ skills or shared references out of sync (run: node scripts/sync-skills.mjs):');
+      console.error('✗ operator package out of sync (run: node scripts/sync-skills.mjs):');
       for (const path of result.drift) console.error(`  - ${path}`);
       process.exitCode = 1;
     } else {

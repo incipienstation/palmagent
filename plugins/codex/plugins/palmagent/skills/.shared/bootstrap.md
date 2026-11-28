@@ -59,8 +59,9 @@ commands must not replace the installed service package.
 
 ## Check compatibility before CLI operations
 
-Read the invoking installed plugin's manifest at `../../.claude-plugin/plugin.json` or
-`../../.codex-plugin/plugin.json`, relative to that skill directory, then run:
+Read the invoking plugin’s installed `../../plugin.json` relative to the skill directory.
+For older packages use the native manifest under `.claude-plugin/` or `.codex-plugin/`
+at the same plugin root, then run:
 
 ```bash
 <cli> compatibility --plugin-version <installed-plugin-version>
