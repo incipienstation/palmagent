@@ -21,20 +21,17 @@ if (!planOnly) {
   try { requireVerificationNode(cwd); }
   catch (error) { console.error(error.message); process.exit(1); }
 }
-const result = localScope(cwd, base);
-if (result.reason) console.log(result.reason);
-console.log(`Scope: ${JSON.stringify(result.scope)}`);
-// Resume receipts belong to the extended suite. Missing history keeps the full fallback.
-extended = extended || Boolean(resume) || !result.paths;
-console.log(`Local mode: ${extended ? 'extended' : 'focused'}`);
+extended = extended || Boolean(resume);
+const result = localScope(cwd, base, { extended });
+if (result.reason) {
+  console.error(result.reason);
+  process.exit(1);
+}
+if (result.head) console.log(`Outgoing range: ${result.base}..${result.head}`);
+if (extended) console.log(`Scope: ${JSON.stringify(result.scope)}`);
+console.log(`Local mode: ${extended ? 'extended' : 'pre-push'}`);
 const steps = verificationSteps(result, { extended });
 console.log(`Checks: ${steps.map(step => step.id).join(', ')}`);
-if (!extended && result.paths.length) {
-  console.log('Exercise the changed behavior with a focused test or direct inspection and record the result in the PR.');
-  if (result.paths.some(path => path.startsWith('apps/web/src/'))) {
-    console.log('Web UI: inspect the affected interaction or build the PWA and run the relevant browser spec.');
-  }
-}
 if (!planOnly) {
   const controller = new AbortController();
   const interrupt = () => controller.abort('SIGINT');

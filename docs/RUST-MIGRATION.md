@@ -116,8 +116,8 @@ delivery continue through Node. Reverting ingress selects the mediated path agai
    where relevant. Rollback must select one compatible owner without replaying accepted
    work; incompatible retained state must fail closed. Product database migrations remain
    in the current bootstrap until their ownership is explicitly transferred.
-5. **Pass the harness.** Run `node scripts/verify-local.mjs` with the pinned Node version for the backend
-   architecture check. Exercise parity and recovery locally. Required native CI checks include format,
+5. **Pass the harness.** Required CI checks backend architecture. Verify parity and recovery in CI, and
+   exercise cases requiring a specific host or existing installation locally. Native CI includes format,
    Clippy and workspace tests; real-process contracts cover the native/TypeScript boundary.
    Architecture fixtures must demonstrate rejection of any newly supported bypass mechanism.
 6. **Record the result.** Update this inventory when ownership changes. Distinguish local
