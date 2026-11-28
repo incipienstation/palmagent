@@ -32,6 +32,11 @@ jobs:
       - name: Select checks from the complete change scope
         id: scope
         run: node scripts/ci-scope.mjs
+      - name: Check the PR diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA" --
       - name: Verify repository metadata, skills, links, and public content
         env:
           PALMAGENT_DOC_EXCLUDED_NAMES: ${{ vars.PALMAGENT_DOC_EXCLUDED_NAMES }}

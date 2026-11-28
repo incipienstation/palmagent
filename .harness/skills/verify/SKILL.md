@@ -8,23 +8,22 @@ description: Run Palmagent checks appropriate to the change scope before deliver
 For changed tests, review distinct risks and existing coverage under the
 [test selection policy](../plan/references/testing.md); record coverage decisions in the PR.
 
-Use the exact Node version in `.nvmrc`:
+After committing, use the Node version in `.nvmrc` before pushing the verified HEAD:
 
 ```bash
 node scripts/verify-local.mjs
 ```
 
-For ordinary PRs the default checks public content, diff integrity, and applicable backend architecture
-across the complete task diff. Exercise the changed behavior before pushing. Use the nearest test or
-direct inspection: check layout at the affected viewport, reproduce the server failure, or exercise
-recovery with existing data. Record the result in the PR. Keep local-only device, host, migration,
-and contract evidence required for the change.
+The default scans outgoing commit messages, filenames and changed file contents from the PR
+base through HEAD, including intermediate commits. Review outgoing assets and environment-specific
+content for private material that patterns cannot recognize. Rerun after amending or adding commits.
+If the base cannot be fetched, pass its known full SHA with `--base` from complete local history.
 
-Required CI runs the selected regression suites on the current PR head. For offline work or to
-investigate a CI failure, `--extended` runs the previous scope-selected suites locally.
-`--plan` lists the checks. Named bases refresh even for plans; use `--base <full-sha>` for an
-available offline base. Unavailable history selects the full local gate. Install dependencies and
-Chromium as needed.
+Require additional local evidence only for behavior CI cannot reproduce, such as a specific device,
+host integration or existing installation state. Record that result in the PR. Focused tests during
+development are optional. Required CI checks the PR diff, architecture, and applicable regression
+suites on the current head. Use `--extended` for offline regression testing or CI diagnosis and
+`--plan` to list the selected checks. Install dependencies and Chromium as needed for extended runs.
 
 `--resume <previous-log-directory>` selects extended mode and reuses successful source checks with
 matching inputs and environment. Build and artifact checks rerun. Use a fresh run after external

@@ -17,7 +17,7 @@ gh pr checks <number> --watch --fail-fast --interval 30
 ```
 
 Follow [Waiting for checks](../verify/SKILL.md#waiting-for-checks). Reverify affected checks if the
-head or base changes. Once local evidence covers the changed behavior and local-only requirements,
+head or base changes. Once the outgoing commits and any local-only requirements are verified,
 required CI passes on the current head, and applicable reviews are complete, merge promptly.
 CI supplies the regression results even when the same suite can run locally. Confirm the base and
 merge the verified head:
