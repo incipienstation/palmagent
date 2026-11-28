@@ -68,7 +68,7 @@ menu-to-dialog transitions do not accumulate entries.
 | Surface | Back behavior |
 | --- | --- |
 | Navigation drawer, Spaces drawer | Close, retaining the underlying page |
-| Settings → Spaces / Updates | Return to general settings, then close |
+| Settings subpages (Space settings, Repository search paths, Updates, Security) | Return to general settings, then close |
 | Repository picker → browse / manual path | Return to search; browsing first retraces visited folders |
 | Session details and pull-request sheets | Close, retaining the conversation |
 | Rename dialog, image and diagram previews | Dismiss; pending saves retain their close guard |

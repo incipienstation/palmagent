@@ -82,12 +82,12 @@ configuration and confirm both hooks are enabled and trusted. For an app-server
 integration, `hooks/list` exposes that state; configuration reload and trust updates
 must target the actual server and provider home serving the session.
 
-Installation does not establish protection for an already running turn. Palmagent
-normally starts a separate stdio app-server for each run; listing hooks on Codex's
-shared daemon does not verify those processes. Finish or explicitly stop existing
-work before restarting it. Verify the installed script and trusted hooks from a
-fresh process with the same provider home and working directory. Shared sessions
-require verification against their owning server and loaded thread instead.
+Installation does not establish protection for an already running turn. Ordinary
+packaged tasks start Codex through a [per-run ACP bridge](USER-GUIDE.md#agents-and-usage).
+Finish or explicitly stop existing work before restarting it. Verify the installed
+script and trusted hooks from a fresh process with the same provider home and
+working directory. A hook listing from a separate shared daemon covers only that
+daemon. For a shared session, check its owning server and loaded thread.
 
 To disable the safeguard, disable or remove just these two hook entries. Existing
 transcripts remain intact, and there is no database migration to undo.

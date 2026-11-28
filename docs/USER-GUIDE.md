@@ -211,7 +211,7 @@ agent work.
 
 ## Space search paths
 
-In **Settings → Space search paths**, add or remove folders where Palmagent
+In **Settings → Repository search paths**, add or remove folders where Palmagent
 should find Git repositories. These are folders on the server, shared across
 devices. Changes take effect on the next search without a restart.
 

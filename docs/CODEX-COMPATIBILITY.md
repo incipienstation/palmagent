@@ -30,7 +30,7 @@ terminal result when determining task completion. Top-level `error` and
 event is also an error, including exit code zero and daemon replay. Hermetic
 regressions cover both distinctions.
 
-Reproduce the authenticated checks with an already authenticated CLI:
+Run the current matrix with an already authenticated CLI:
 
 ```bash
 codex --version
@@ -38,6 +38,10 @@ pnpm server:contracts
 pnpm server:contracts:live -- --agent codex --matrix
 ```
 
+The matrix exercises native `exec` and the selected interactive task runner.
+To repeat the native App Server checks in the table, set
+`PALMAGENT_CODEX_TRANSPORT=native` for the matrix command. See the
+[user guide](USER-GUIDE.md#agents-and-usage) for default transport selection.
 Without `--matrix`, the live command remains a single-turn transport smoke.
 The matrix checks actual normalized events, uses temporary working directories,
 and consumes account usage. CLI-managed session records remain in the selected
