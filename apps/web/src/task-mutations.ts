@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { api } from "./api";
 import { cacheSession, onCacheSessionReset } from "./query-lifecycle";
-import { dismissToast, toast } from "./components/ui/toaster";
+import { toast } from "./components/ui/toaster";
 
 type Change = { title?: string; pinnedAt?: number | null; hidden?: boolean; pending: boolean; acknowledgedAt?: number };
 const renameDrafts = new Map<string, string>();
@@ -14,41 +14,6 @@ const publish = () => { changes = new Map(changes); listeners.forEach(fn => fn()
 const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const useTaskMutations = () => useSyncExternalStore(subscribe, () => changes);
 
-// Archive removes the worktree permanently. Keep list archives local until the
-// undo feedback expires; several quick archives share one undo window. If that
-// feedback is dismissed or replaced, restore them instead of committing early.
-const queuedArchives = new Map<string, Change | undefined>();
-let archiveToast: number | undefined;
-export function queueTaskArchive(taskId: string) {
-  if (changes.get(taskId)?.pending) return;
-  queuedArchives.set(taskId, changes.get(taskId));
-  changes.set(taskId, { ...changes.get(taskId), hidden: true, pending: true });
-  if (archiveToast !== undefined) {
-    const previous = archiveToast;
-    archiveToast = undefined;
-    dismissToast(previous);
-  }
-  const id = toast({
-    title: queuedArchives.size === 1 ? "Task ready to archive" : `${queuedArchives.size} tasks ready to archive`,
-    description: "Archiving deletes the worktree and ends this conversation.",
-    duration: 8000,
-    action: { label: "Undo", onClick: () => dismissToast(id) },
-    onClose: reason => {
-      if (archiveToast !== id) return;
-      archiveToast = undefined;
-      const queued = [...queuedArchives];
-      queuedArchives.clear();
-      for (const [taskId, previous] of queued) {
-        if (previous) changes.set(taskId, previous); else changes.delete(taskId);
-      }
-      if (reason === "expire") {
-        for (const [taskId] of queued) void mutateTask(taskId, { hidden: true });
-      } else publish();
-    },
-  });
-  archiveToast = id;
-  publish();
-}
 export function projectTask(task: TaskState | undefined, entries: ReadonlyMap<string, Change>) {
   const change = task && entries.get(task.taskId);
   if (!task || !change) return task;
@@ -136,7 +101,5 @@ export async function moveTaskPin(pins: TaskState[], taskId: string, targetId: s
 }
 
 onCacheSessionReset(() => {
-  if (archiveToast !== undefined) dismissToast(archiveToast);
-  queuedArchives.clear();
   changes.clear(); renameDrafts.clear(); publish();
 });
