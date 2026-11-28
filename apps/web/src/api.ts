@@ -1,4 +1,4 @@
-import { invalidateClientReads } from "./query-lifecycle";
+import { cacheSession, invalidateClientReads } from "./query-lifecycle";
 import { createApi } from "./api-client";
 import { beginBrowserWork } from "./update-state";
 import { clientVersion, observeServerVersion } from "./pwa";
@@ -19,13 +19,19 @@ export const api = createApi({
 // EventSource only surfaces an opaque error, never a 401, so on a stream failure
 // the hooks call this to tell "logged out" (→ show login) apart from a transient
 // network/proxy blip (→ keep reconnecting).
-export async function probeAuth(): Promise<void> {
-  try {
-    const me = await api.auth.me();
-    if (me.required && !me.authenticated) { invalidateClientReads(true); onUnauthorized?.(); }
-  } catch {
-    /* network hiccup — not an auth problem */
-  }
+let probe: { generation: number; promise: Promise<void> } | undefined;
+export function probeAuth(): Promise<void> {
+  const generation = cacheSession();
+  if (probe?.generation === generation) return probe.promise;
+  const promise = api.auth.me().then(me => {
+    if (generation === cacheSession() && me.required && !me.authenticated) {
+      invalidateClientReads(true);
+      onUnauthorized?.();
+    }
+  }).catch(() => { /* A network interruption does not change the session. */ })
+    .finally(() => { if (probe?.promise === promise) probe = undefined; });
+  probe = { generation, promise };
+  return promise;
 }
 
 // Per-agent permission catalog + per-agent default live in the shared contract
