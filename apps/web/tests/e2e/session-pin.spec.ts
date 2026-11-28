@@ -20,7 +20,7 @@ for (const width of [360]) test(`pin syncs list, detail and navigation at ${widt
   await other.goto("/#/task/t-idle-rich");
   await expect(other.getByRole("heading", { name: title, exact: true })).toBeVisible();
   await toggle(page, `Actions for ${title}`, "Pin");
-  await expect(page.getByRole("img", { name: "Pinned", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Pinned tasks" }).getByText(title, { exact: true })).toBeVisible();
   await other.getByRole("button", { name: "Task actions", exact: true }).click();
   await expect(other.getByRole("menuitem", { name: "Unpin", exact: true })).toBeVisible();
   await other.keyboard.press("Escape");
@@ -75,9 +75,9 @@ test("pinned tasks keep their order across grouping, collapse, search and reload
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText(otherTitle);
   await expect(rows.last()).toContainText(title);
-  await expect(rows.last()).toContainText("Done");
-  await expect(content.getByRole("region").nth(0)).toHaveAccessibleName("Needs you");
-  await expect(content.getByRole("region").nth(1)).toHaveAccessibleName("Pinned tasks");
+  await expect(rows.last()).not.toContainText("Done");
+  await expect(content.getByRole("region").nth(0)).toHaveAccessibleName("Pinned tasks");
+  await expect(content.getByRole("region").nth(1)).toHaveAccessibleName("Needs input");
   await expect(content.getByRole("region", { name: "Done", exact: true }).getByRole("button", { expanded: true })).toBeVisible();
   await captureForReview(page, "tasks-pinned-expanded.png");
   await header.press("Enter");
