@@ -66,3 +66,18 @@ function stringify(v: unknown): string {
     return String(v);
   }
 }
+
+// Compact relative time for the row meta line ("3m", "2h", "4d"); falls back to
+// a short date past a week so the dense list stays scannable.
+export function compactActivityTime(ms: number, { now = Date.now(), ago = false }: { now?: number; ago?: boolean } = {}): string {
+  const diff = now - ms;
+  if (diff < 60_000) return "now";
+  const suffix = ago ? " ago" : "";
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m}m${suffix}`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h${suffix}`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d${suffix}`;
+  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+}
