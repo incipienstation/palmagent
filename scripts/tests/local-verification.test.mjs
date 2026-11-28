@@ -74,7 +74,7 @@ test('named bases refresh before selection and failed refresh never trusts stale
   assert.deepEqual(localScope(cwd, '0'.repeat(40)).scope, full);
 });
 
-test('CLI plans focus ordinary PRs, retain architecture and restore broad checks on demand', t => {
+test('CLI plans only publication checks by default and selects regressions on demand', t => {
   const { cwd, git, write } = fixture(t);
   write('scripts/verify-local.mjs', readFileSync(resolve('scripts/verify-local.mjs'), 'utf8'));
   symlinkSync(resolve('scripts/lib'), join(cwd, 'scripts/lib'), 'dir');
@@ -83,20 +83,43 @@ test('CLI plans focus ordinary PRs, retain architecture and restore broad checks
   const plan = (...args) => execFileSync(process.execPath,
     ['scripts/verify-local.mjs', '--plan', '--base', base, ...args], { cwd, encoding: 'utf8' });
   write('apps/web/src/Inbox.tsx', 'changed');
-  assert.match(plan(), /^Checks: source-leaks, working-diff, staged-diff, committed-diff$/m);
+  assert.match(plan(), /^Checks: outgoing-content$/m);
   for (const option of [['--extended'], ['--resume', 'earlier-run']]) {
     assert.match(plan(...option), /^Checks: .*web-build, web-tests$/m);
   }
   write('apps/server/old.ts', 'backend');
-  assert.match(plan(), /^Checks: .*committed-diff, architecture$/m);
-  assert.match(plan('--base', '0'.repeat(40)), /^Checks: .*package-smoke$/m);
+  assert.match(plan(), /^Checks: outgoing-content$/m);
+  const unavailable = spawnSync(process.execPath, ['scripts/verify-local.mjs', '--plan', '--base', '0'.repeat(40)], { cwd, encoding: 'utf8' });
+  assert.equal(unavailable.status, 1);
+  assert.match(unavailable.stderr, /known full SHA/);
+  assert.doesNotMatch(unavailable.stdout, /package-smoke/);
+});
+
+test('pre-push scan catches private content removed before a merge and redacts matches', t => {
+  const { cwd, git, write, base } = fixture(t);
+  const scan = () => spawnSync(process.execPath,
+    [resolve('scripts/check-outgoing.mjs'), base, git('rev-parse', 'HEAD')], { cwd, encoding: 'utf8' });
+  git('checkout', '-b', 'side');
+  const secret = 'ghp_' + 'a'.repeat(24);
+  write('notes.txt', secret);
+  git('add', '.'); git('commit', '-m', secret);
+  git('rm', 'notes.txt'); git('commit', '-m', 'remove notes');
+  git('checkout', 'develop');
+  write('README.md', 'updated\n'); git('add', '.'); git('commit', '-m', 'docs');
+  assert.equal(scan().status, 0);
+  git('merge', '--no-ff', 'side', '-m', 'merge');
+  const result = scan();
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /notes\.txt/);
+  assert.match(result.stderr, /commit message/);
+  assert(!result.stderr.includes(secret));
 });
 
 test('check selection deduplicates metadata, scope tests, and shared PWA builds', () => {
   const docs = verificationSteps({ scope: none, paths: ['README.md'] }, { extended: true });
   assert(docs.every(step => step.command !== 'pnpm'));
   assert(docs.some(step => step.id === 'scope-tests'));
-  const steps = verificationSteps({ scope: full, base: 'a'.repeat(40), head: 'b'.repeat(40) });
+  const steps = verificationSteps({ scope: full, base: 'a'.repeat(40), head: 'b'.repeat(40) }, { extended: true });
   assert.equal(new Set(steps.map(step => step.id)).size, steps.length);
   assert.equal(steps.filter(step => step.args[0] === 'web:build').length, 1);
   assert(steps.findIndex(step => step.id === 'web-build') < steps.findIndex(step => step.id === 'package-assemble'));
@@ -144,7 +167,7 @@ test('runner completes source and package steps without repository secrets', asy
     if (value.startsWith('Logs: ')) t.after(() => rmSync(value.slice(6), { recursive: true, force: true }));
   };
   const step = { id: 'source', command: process.execPath, args: ['-e', 'process.exit(0)'] };
-  const packageEnv = verificationSteps({ scope: full }).find(step => step.id === 'package-assemble').env;
+  const packageEnv = verificationSteps({ scope: full }, { extended: true }).find(step => step.id === 'package-assemble').env;
   assert.equal(await runVerification([step, {
     ...step, id: 'package', env: packageEnv,
     args: ['-e', 'if (process.env.PKG_PUBLISHABLE !== "1" || process.env.EXPECT_PUBLISHABLE !== "1") process.exit(9)'],
