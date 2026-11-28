@@ -51,10 +51,9 @@ import { ApprovalCard } from "./ApprovalCard";
 import { SessionHandoff } from "./SessionHandoff";
 import { Alert } from "./ui/alert";
 import { SessionActionsMenu } from "./SessionActionsMenu";
-import { TaskTitle } from "./TaskTitle";
 import { taskTitle } from "@/lib/task-title";
 import { TaskStatusline } from "./TaskStatusline";
-import { Sheet, SheetTrigger, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet";
 
 export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated, initialRepoId }: { initialRepoId?: string; taskId?: string; task?: TaskState; onCreated?: (task: TaskState) => void }) {
   const taskId = existingId ?? "new";
@@ -64,7 +63,6 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
   const newChat = useNewChat(creating, onCreated, initialRepoId);
   const [terminalOpen, setTerminalOpen] = useUpdateState(`task:${taskId}:terminal-open`, false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const detailsFromMenu = useRef(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
   const statuslineTrigger = useRef<HTMLButtonElement>(null);
   const taskActionsTrigger = useRef<HTMLButtonElement>(null);
@@ -132,13 +130,7 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     <div className={side.open ? "hidden min-w-0 flex-1 lg:block" : terminalOpen ? "hidden min-w-0 flex-1 md:block" : "h-full w-full"}>
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <AppBar title={heading} conn={creating ? undefined : conn} conversation conversationTitle={task && (
-          <SheetTrigger asChild>
-            <Button variant="floating" size="sm" className="pointer-events-auto max-w-full rounded-full" onClick={() => { detailsFromMenu.current = false; }}>
-              <span className="truncate"><TaskTitle task={task} /></span>
-            </Button>
-          </SheetTrigger>
-        )}>
+        <AppBar title={heading} conn={creating ? undefined : conn} conversation>
           {navigation?.openGame && <IconButton aria-label="Open arcade" title="Arcade" onClick={event => navigation.openGame?.(event.currentTarget)}><Gamepad2 /></IconButton>}
           <IconButton className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
             <SquarePen />
@@ -146,18 +138,16 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
           {task && <>
             <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} triggerRef={taskActionsTrigger} onTerminal={() => { side.hide(); setTerminalOpen(true); }}
               onSideChat={showSide} sideChatActive={side.hasSession} sideChatUnread={side.unread} sideChatOpen={side.open}
-              onDetails={() => { detailsFromMenu.current = true; setDetailsOpen(true); }} onRecords={() => setRecordsOpen(true)} onCompact={() => compaction.request()} compactReason={compaction.unavailable}
+              onDetails={() => setDetailsOpen(true)} onRecords={() => setRecordsOpen(true)} onCompact={() => compaction.request()} compactReason={compaction.unavailable}
               onCancel={() => void cancel()}
               onArchive={() => { void mutateTask(taskId, { hidden: true }); navigate("/"); }} />
           </>}
         </AppBar>
         <SheetContent onCloseAutoFocus={event => {
-          if (detailsFromMenu.current) {
-            event.preventDefault();
-            taskActionsTrigger.current?.focus({ preventScroll: true });
-          }
+          event.preventDefault();
+          taskActionsTrigger.current?.focus({ preventScroll: true });
         }}>
-          <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription className="break-words">{task ? <TaskTitle task={task} /> : heading}</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle>Session details</SheetTitle><SheetDescription className="break-words">{heading}</SheetDescription></SheetHeader>
           <SheetBody className="flex flex-col gap-4 text-sm [overflow-wrap:anywhere]">
             {task && <div className="flex flex-wrap items-center gap-2"><AgentTag agent={task.agent} /><StatusBadge status={task.status} interrupted={task.interrupted} sessionControl={task.sessionControl} /><ConnPill conn={conn} /></div>}
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
