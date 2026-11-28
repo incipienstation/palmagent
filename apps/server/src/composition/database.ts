@@ -55,6 +55,8 @@ export class Db {
   readonly transaction: SqliteTasks["transaction"];
   readonly attachment: SqliteTasks["attachment"];
   readonly attachmentByDigest: SqliteTasks["attachmentByDigest"];
+  readonly registerDeliveredImage: SqliteTasks["registerDeliveredImage"];
+  readonly deliveredImageId: SqliteTasks["deliveredImageId"];
   readonly insertAttachment: SqliteTasks["insertAttachment"];
   readonly attachmentIds: SqliteTasks["attachmentIds"];
   readonly attachmentInventory: SqliteTasks["attachmentInventory"];
@@ -158,6 +160,8 @@ export class Db {
     this.transaction = tasks.transaction.bind(tasks);
     this.attachment = tasks.attachment.bind(tasks);
     this.attachmentByDigest = tasks.attachmentByDigest.bind(tasks);
+    this.registerDeliveredImage = tasks.registerDeliveredImage.bind(tasks);
+    this.deliveredImageId = tasks.deliveredImageId.bind(tasks);
     this.insertAttachment = tasks.insertAttachment.bind(tasks);
     this.attachmentIds = tasks.attachmentIds.bind(tasks);
     this.attachmentInventory = tasks.attachmentInventory.bind(tasks);

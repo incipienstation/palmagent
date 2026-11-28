@@ -287,6 +287,12 @@ messages. Dispatched Codex sessions can display local raster images from their o
 directory as well as the task directory. Image previews and original-image links require sign-in;
 other sessions' generated images and unrelated provider files remain inaccessible.
 
+Agents can use the **deliver-image** skill to return a PNG, JPEG, GIF, or WebP
+from a temporary directory (up to 4.5 MiB). Delivery stores a copy with the task.
+The image opens inline and in the viewer after the source is removed, subject to
+the task's attachment retention policy. The CLI returns a stable link for each
+version. An original path link keeps the first version delivered at that path.
+
 Structured tool image outputs stay inside Trace. Expand a step to inspect its images.
 PNG, JPEG, WebP, and GIF data are supported (up to 5 MiB each, four images per event).
 Unsupported formats remain a text notice. Arbitrary filesystem paths in tool output are not served.

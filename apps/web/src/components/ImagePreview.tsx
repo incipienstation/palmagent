@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { previewSource, attachmentExpired } from "../image-source";
+import { previewSource, attachmentExpired, canCheckImageExpiry } from "../image-source";
 import { ImageViewerContent } from "./ImageViewerContent";
 import { Button } from "./ui/button";
 import { Dialog, DialogTrigger } from "./ui/dialog";
@@ -34,7 +34,7 @@ export function ImagePreview({ src: source = "", alt = "", title, width, height,
   useEffect(() => {
     // Only probe our attachment endpoint after an image error. Never fetch remote
     // Markdown URLs here, and never cache an expiration response offline.
-    if (!failed || !/^\/api\/tasks\/[^/]+\/attachments\/[0-9a-f-]{36}$/.test(src)) return;
+    if (!failed || !canCheckImageExpiry(src)) return;
     const controller = new AbortController();
     void attachmentExpired(src, controller.signal)
       .then(expired => { if (expired && !controller.signal.aborted) setError({ src, expired }); })
