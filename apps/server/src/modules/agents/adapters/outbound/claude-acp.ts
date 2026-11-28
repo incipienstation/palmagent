@@ -57,6 +57,9 @@ function startClaudeAcp(bridge: AcpBridge, executable: string, args: StartArgs, 
   let messageId: string | undefined;
   const app = client({ name: "palmagent" })
     .onNotification("session/update", ({ params }) => {
+      if (params.sessionId === sessionId && params.update.sessionUpdate === "session_info_update" && params.update.title !== undefined) {
+        emit({ taskId: args.taskId, sessionId, kind: "status", payload: { subtype: "provider_title", providerTitle: params.update.title } });
+      }
       const update = params.update;
       if (running && params.sessionId === sessionId && update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
         emit({ taskId, sessionId, kind: "assistant_text", payload: { text: update.content.text, messageId: messageId ?? update.messageId ?? undefined } });

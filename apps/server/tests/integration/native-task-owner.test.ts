@@ -118,6 +118,8 @@ test("native queue commits before dispatch, rolls back with completion and prese
   assert.equal(db.readMessageState("task")?.messages[0].text, req.text);
   assert.equal(starts, 1);
   native.metadata.setTaskTitle("task", "Current", 6);
+  native.metadata.setProviderTitle("task", "Native session title");
+  assert.equal(db.getTask("task")?.providerTitle, "Native session title");
   assert.throws(() => native.metadata.transaction(() => {
     native.metadata.setTaskTitle("task", "Partial", 7);
     native.metadata.setTaskStatus("missing", "idle", false, 7);

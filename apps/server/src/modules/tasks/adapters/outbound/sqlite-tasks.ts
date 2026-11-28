@@ -13,7 +13,7 @@ import { deferActivityEventDetails, HISTORY_PAGE_EVENTS, makePrRef } from "@palm
 import type { AttachmentRecord, EventRow, MessageState } from "../../domain/models.js";
 
 type TaskRow = {
-  id: string; repo_id: string; agent: string; title: string | null; prompt: string; pinned_at: number | null;
+  id: string; repo_id: string; agent: string; title: string | null; provider_title: string | null; prompt: string; pinned_at: number | null;
   status: string; interrupted: number; session_id: string | null; branch: string | null;
   worktree_path: string | null; permission: string; model: string | null; effort: string | null;
   session_control: string | null;
@@ -52,6 +52,7 @@ function rowToTask(r: TaskRow): TaskState {
     repoId: r.repo_id,
     agent: r.agent as AgentKind,
     title: r.title ?? undefined,
+    providerTitle: r.provider_title ?? undefined,
     prompt: r.prompt,
     status: r.status as TaskStatus,
     interrupted: r.interrupted === 1,
@@ -80,6 +81,7 @@ export function taskToRow(t: TaskState) {
     repo_id: t.repoId,
     agent: t.agent,
     title: t.title ?? null,
+    provider_title: t.providerTitle ?? null,
     prompt: t.prompt,
     status: t.status,
     interrupted: t.interrupted ? 1 : 0,
@@ -312,9 +314,9 @@ deleteAttachment(id: string): void { this.db.prepare("DELETE FROM attachments WH
 
 insertTask(t: TaskState) {
     this.db.prepare(
-      `INSERT INTO tasks (id, repo_id, agent, title, pinned_at, prompt, status, interrupted, session_id,
+      `INSERT INTO tasks (id, repo_id, agent, title, provider_title, pinned_at, prompt, status, interrupted, session_id,
          branch, worktree_path, permission, model, effort, pr_url, pr_urls, pending_input, pending_approval, session_control, skills_json, created_at, updated_at, last_activity_at)
-       VALUES (@id, @repo_id, @agent, @title, @pinned_at, @prompt, @status, @interrupted, @session_id,
+       VALUES (@id, @repo_id, @agent, @title, @provider_title, @pinned_at, @prompt, @status, @interrupted, @session_id,
          @branch, @worktree_path, @permission, @model, @effort, @pr_url, @pr_urls, @pending_input, @pending_approval, @session_control, @skills_json, @created_at, @updated_at, @last_activity_at)`,
     ).run(taskToRow(t));
   }
@@ -349,6 +351,10 @@ setTaskPinOrder(pins: { taskId: string; pinnedAt: number }[], now: number) {
       const update = this.db.prepare("UPDATE tasks SET pinned_at = ?, updated_at = ? WHERE id = ?");
       for (const pin of pins) update.run(pin.pinnedAt, now, pin.taskId);
     })();
+  }
+
+setProviderTitle(id: string, title: string | undefined, firstPrompt?: string) {
+    this.db.prepare("UPDATE tasks SET provider_title = ?, prompt = COALESCE(?, prompt) WHERE id = ?").run(title ?? null, firstPrompt ?? null, id);
   }
 
 setTaskTitle(id: string, title: string, now: number) {

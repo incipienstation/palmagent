@@ -34,7 +34,7 @@ export interface RecoveryResult {
 
 /** The coordinator holds admission and callbacks until recovery commits. */
 export type TaskMetadata = Pick<import("./persistence.js").TaskRepository,
-  "setTaskPin" | "setTaskPinOrder" | "setTaskTitle" | "setTaskStatus" | "setTaskSession" |
+  "setTaskPin" | "setTaskPinOrder" | "setProviderTitle" | "setTaskTitle" | "setTaskStatus" | "setTaskSession" |
   "setSessionControl" | "setTaskSettings" | "setTaskPrs" | "setTaskPendingInput" | "setTaskPendingApproval" | "insertApproval"> & {
     transaction(work: () => void): void;
   };

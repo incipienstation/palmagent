@@ -48,7 +48,7 @@ function AppInner() {
   // title-or-prompt-first-line heading TaskDetail shows. Must run before any
   // early return (rules of hooks).
   const listed = route.name === "task" ? tasks.find(t => t.taskId === route.id) : undefined;
-  const active = route.name === "task" && created?.taskId === route.id && (!listed || created.updatedAt >= listed.updatedAt)
+  const active = route.name === "task" && created?.taskId === route.id && (!listed || created.updatedAt > listed.updatedAt)
     ? created : listed;
   const pageTitle =
     route.name === "terminals" ? "Terminals" : route.name === "new"

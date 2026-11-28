@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { CodexAcpQuestions } from "../../src/modules/agents/adapters/outbound/codex-acp-questions.ts";
+import { readSessionTitles } from "../../src/modules/tasks/adapters/outbound/session-titles.ts";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.ts";
 
 test("Codex ACP keeps native sandbox, skills, steering receipts and thread identity", {
@@ -35,17 +36,20 @@ child.on("exit", code => process.exit(code ?? 1));
   const receiving = Promise.withResolvers(), release = Promise.withResolvers();
   const model = createServer(async (request, response) => {
     if (!request.url?.endsWith("/responses")) { response.writeHead(404).end(); return; }
-    request.resume();
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const titleRequest = JSON.parse(body).text?.format?.schema?.properties?.title;
+    const reply = titleRequest ? JSON.stringify({ title: "Provider session title" }) : "fixture reply";
     receiving.resolve();
     await release.promise;
     const id = randomUUID();
     const item = { id, type: "message", role: "assistant", phase: "final_answer",
-      content: [{ type: "output_text", text: "fixture reply", annotations: [] }] };
+      content: [{ type: "output_text", text: reply, annotations: [] }] };
     response.writeHead(200, { "content-type": "text/event-stream" });
     for (const frame of [
       { type: "response.created", response: { id } },
       { type: "response.output_item.added", output_index: 0, item: { ...item, content: [] } },
-      { type: "response.output_text.delta", output_index: 0, item_id: id, content_index: 0, delta: "fixture reply" },
+      { type: "response.output_text.delta", output_index: 0, item_id: id, content_index: 0, delta: reply },
       { type: "response.output_item.done", output_index: 0, item },
       { type: "response.completed", response: { id, status: "completed", output: [item],
         usage: { input_tokens: 12, output_tokens: 4, total_tokens: 16 } } },
@@ -90,11 +94,13 @@ stream_max_retries = 0
   assert(events.some(e => e.payload?.phase === "final"));
   assert(events.some(e => e.kind === "result" && !e.payload.is_error && e.payload.usage?.input_tokens === 12));
   const sessionId = events.find(e => e.payload?.subtype === "thread_started").sessionId;
+  assert(events.some(e => e.payload?.providerTitle === "Provider session title" && e.sessionId === sessionId));
+  assert.equal((await readSessionTitles("codex", home, [{ sessionId, cwd: repo }])).get(sessionId)?.title, "Provider session title");
   const next = [];
   await runner.start({ ...args, messageId: randomUUID(), permission: "workspace-write", resumeId: sessionId }, e => next.push(e)).done;
   assert(next.some(e => e.kind === "result" && !e.payload.is_error && e.sessionId === sessionId));
   const requests = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line));
-  assert.deepEqual(requests.filter(r => r.method === "turn/start").map(({ params }) =>
+  assert.deepEqual(requests.filter(r => r.method === "turn/start" && r.params.threadId === sessionId).map(({ params }) =>
     [params.threadId, params.approvalPolicy, params.sandboxPolicy.type, params.sandboxPolicy.networkAccess, params.model, params.effort]),
     [[sessionId, "never", "readOnly", false, args.model, "low"], [sessionId, "never", "workspaceWrite", false, args.model, "low"]]);
   assert.deepEqual(requests.find(r => r.method === "turn/steer").params.input.find(block => block.type === "skill"), { type: "skill", ...skill });

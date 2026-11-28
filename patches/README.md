@@ -34,5 +34,6 @@ The pinned Codex ACP bridge uses Palmagent's native turn settings when the execu
 sets `PALMAGENT_CODEX_ACP=1`. This keeps the headless approval policy, model, reasoning
 effort and explicit skill paths on Codex input. A negotiated metadata extension reports
 provider turn starts, message phases, stopped hooks and token counts to the existing task
-history. The client checks the extension before sending input. Recheck these mappings and
+history. Before the per-turn bridge exits, it gives its in-flight title update the same bounded
+settling period used by session loading. The client checks the extension before sending input. Recheck these mappings and
 the Codex ACP contract when upgrading the adapter.

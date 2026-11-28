@@ -131,6 +131,7 @@ export interface TaskState {
   repoId: string;
   agent: AgentKind;
   title?: string;
+  providerTitle?: string;
   skills?: import("./skills.js").SkillSelection[];
   prompt: string; // the initial dispatch prompt
   status: TaskStatus;
@@ -174,3 +175,8 @@ export interface SessionHandoffResponse {
   command: string;
 }
 export type { DispatchSessionRequest } from "./requests.js";
+
+/** The label used by task lists, conversation headings and notifications. */
+export function taskTitle(task: Pick<TaskState, "title" | "providerTitle" | "prompt">, fallback = "(untitled task)"): string {
+  return task.title?.trim() || task.providerTitle?.trim() || task.prompt.split("\n").find(line => line.trim())?.trim() || fallback;
+}

@@ -16,6 +16,7 @@ interface QueryOptions {
   cwd?: string;
   directoryPrefix?: string;
   timeoutMs: number;
+  signal?: AbortSignal;
   maxBytes?: number;
   errors: { unavailable: string; channel: string; timeout: string; tooLarge: string; exited: string };
   initialize(channel: QueryChannel): void;
@@ -28,6 +29,7 @@ export async function readNdjsonQuery(options: QueryOptions): Promise<unknown> {
   const cwd = options.cwd ?? await mkdtemp(join(tmpdir(), options.directoryPrefix ?? "palmagent-query-"));
   try {
     return await new Promise((resolve, reject) => {
+      options.signal?.throwIfAborted();
       const child = spawn(options.command, options.args, { cwd, env: { ...process.env, ...options.env },
         stdio: ["pipe", "pipe", "ignore"], detached: process.platform !== "win32" });
       let done = false, bytes = 0;
@@ -55,10 +57,13 @@ export async function readNdjsonQuery(options: QueryOptions): Promise<unknown> {
       } };
       const timer = setTimeout(() => finish(new Error(options.errors.timeout)), options.timeoutMs);
       timer.unref();
+      const abort = () => finish(new Error("Provider query cancelled"));
+      options.signal?.addEventListener("abort", abort, { once: true });
       child.stdin.on("error", () => finish(new Error(options.errors.channel)));
       child.on("error", () => finish(new Error(options.errors.unavailable)));
       child.on("close", () => {
         clearTimeout(timer); clearTimeout(killTimer);
+        options.signal?.removeEventListener("abort", abort);
         // Kill descendants that retained inherited pipes or survived their parent.
         stop("SIGKILL");
         if (!done || failure) reject(failure ?? new Error(options.errors.exited));
