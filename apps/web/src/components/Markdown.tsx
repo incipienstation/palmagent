@@ -1,5 +1,6 @@
 import { ScrollArea } from "./ui/scroll-area";
 import { memo, useContext, type ReactNode } from "react";
+import { cjk } from "@streamdown/cjk";
 import { Streamdown, type Components, type ExtraProps } from "streamdown";
 import remarkGfm from "remark-gfm";
 import { isLocalImageLink, markdownUrlTransform, previewSource } from "../image-source";
@@ -96,6 +97,7 @@ const COMPONENTS = {
 
 // Stable plugin lists keep completed streaming blocks memoized. Raw HTML remains
 // literal text and all URLs still pass through Palmagent's protocol policy.
+const STREAMDOWN_PLUGINS = { cjk };
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [visualizeMarkers];
 // Static messages render as one document; streaming block segmentation is unused.
@@ -110,6 +112,7 @@ export const Markdown = memo(function Markdown({ children, streaming = false, ca
     parseIncompleteMarkdown={streaming}
     parseMarkdownIntoBlocksFn={streaming ? undefined : staticDocument}
     caret={caret && streaming ? "block" : undefined}
+    plugins={STREAMDOWN_PLUGINS}
     remarkPlugins={REMARK_PLUGINS}
     rehypePlugins={REHYPE_PLUGINS}
     urlTransform={markdownUrlTransform}

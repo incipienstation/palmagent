@@ -260,7 +260,7 @@ test("opening tall Trace output keeps the reading position and enables return to
 
 test("streamed Markdown leaves an open Trace and the reader's draft in place", async ({ page, history }) => {
   history.add([event("assistant_text", { text: "Earlier context.\n\n".repeat(40), phase: "final" }),
-    ...pair(0), event("assistant_text", { text: "## Findings\n\n**Checking", messageId: "answer", phase: "final" })]);
+    ...pair(0), event("assistant_text", { text: "## Findings\n\n**“검토", messageId: "answer", phase: "final" })]);
   await routes(page, history);
   await page.goto(`/#/task/${taskId}`);
   await expect.poll(() => page.evaluate(id => (window as unknown as Harness).hasScopedStream(id), taskId)).toBe(true);
@@ -278,9 +278,9 @@ test("streamed Markdown leaves an open Trace and the reader's draft in place", a
     el.scrollTop -= 150;
   });
   const top = await pane.evaluate(el => el.scrollTop);
-  history.add([event("assistant_text", { text: " complete**\n\n```ts\nconst checked = true;\n```\n\n" + "More findings.\n\n".repeat(15), messageId: "answer", phase: "final" })]);
+  history.add([event("assistant_text", { text: " 결과”**를 확인했습니다.\n\n```ts\nconst checked = true;\n```\n\n" + "More findings.\n\n".repeat(15), messageId: "answer", phase: "final" })]);
   await send(page, taskId, { type: "history-change", taskId, through: history.tasks.eventCursor(taskId) });
-  await expect(page.locator("strong").filter({ hasText: "Checking complete" })).toHaveCount(1);
+  await expect(page.getByRole("strong").filter({ hasText: "검토 결과" })).toHaveText("“검토 결과”");
   await expect(page.locator("[data-code-block] pre")).toHaveText("const checked = true;\n");
   await expect(step).toHaveAttribute("aria-expanded", "true");
   await expect.poll(() => pane.evaluate(el => el.scrollTop)).toBe(top);
