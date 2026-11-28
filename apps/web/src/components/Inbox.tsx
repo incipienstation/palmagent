@@ -1,3 +1,4 @@
+import { TaskTitle } from "./TaskTitle";
 import { Pending } from "@/components/ui/spinner";
 import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
@@ -117,7 +118,7 @@ function CardHeadline({ task }: { task: TaskState }) {
     <div className="flex items-start gap-2 pr-10">
       {task.pinnedAt !== undefined && <Pin className="mt-1 size-4 shrink-0 text-muted-foreground" role="img" aria-label="Pinned" />}
       <span className="min-w-0 flex-1 truncate text-base leading-6 font-medium text-strong">
-        {taskTitle(task)}
+        <TaskTitle task={task} />
       </span>
     </div>
   );
@@ -159,7 +160,7 @@ const TaskRow = memo(function TaskRow({ task, showSpace, compact, groupedByStatu
           onClick={(e) => navIfInRow(e, task.taskId)}
         >
           {compact ? <>
-            <span className="min-w-0 truncate font-medium text-strong">{taskTitle(task)}</span>
+            <span className="min-w-0 truncate font-medium text-strong"><TaskTitle task={task} /></span>
             {spaceLabel && <span className="max-w-[30%] min-w-0 truncate text-xs text-muted-foreground" title={spaceLabel}>{spaceLabel}</span>}
             {!groupedByStatus && needsResponse(task) && <Badge variant="attention" className="ml-auto">{mobileStatus(task)}</Badge>}
           </> : <>

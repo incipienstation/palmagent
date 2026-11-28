@@ -81,7 +81,7 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
         });
       } else if (ev.id === "session") {
         sessionId = ev.result.thread.id;
-        event("status", { subtype: "thread_started" }, seq);
+        event("status", { subtype: "thread_started", providerTitle: ev.result.thread.name }, seq);
         if (!reattach && compacting) rpc("compact", "thread/compact/start", { threadId: sessionId });
         else if (!reattach) rpc("start", "turn/start", { threadId: sessionId, input: codexInput(args.prompt, args.images, args.skills),
           ...(args.messageId ? { clientUserMessageId: args.messageId } : {}),
@@ -95,7 +95,10 @@ export function startCodexInteractive(args: StartArgs, emit: Emit, backend: Proc
     if (p.threadId && sessionId && p.threadId !== sessionId) return;
     switch (ev.method) {
       case "thread/started":
-        sessionId = p.thread.id; event("status", { subtype: "thread_started" }, seq); break;
+        sessionId = p.thread.id; event("status", { subtype: "thread_started", providerTitle: p.thread.name }, seq); break;
+      case "thread/name/updated":
+        if (p.threadId === sessionId) event("status", { subtype: "provider_title", providerTitle: p.threadName ?? null }, seq);
+        break;
       case "turn/started":
         turnId = p.turn.id; clearTimeout(startup); event("status", { subtype: "turn_started", turnId }, seq); break;
       case "hook/completed": {

@@ -143,6 +143,7 @@ export function migrateSchema(db: Database.Database) {
     }).immediate();
     // Additive migrations preserve existing native sessions and task events.
     const taskCols = (db.pragma("table_info(tasks)") as { name: string }[]).map((c) => c.name);
+    if (!taskCols.includes("provider_title")) db.exec("ALTER TABLE tasks ADD COLUMN provider_title TEXT");
     if (!taskCols.includes("pinned_at")) db.exec("ALTER TABLE tasks ADD COLUMN pinned_at INTEGER");
     if (!taskCols.includes("skills_json")) db.exec("ALTER TABLE tasks ADD COLUMN skills_json TEXT");
     if (!taskCols.includes("session_control")) db.exec("ALTER TABLE tasks ADD COLUMN session_control TEXT");

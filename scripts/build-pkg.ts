@@ -155,6 +155,8 @@ async function main(): Promise<void> {
   const codexBridge = resolveDependency("@agentclientprotocol/codex-acp", SERVER);
   cpSync(join(codexBridge, "dist/index.js"), join(OUT, "codex-acp.mjs"));
   writeFileSync(join(OUT, "codex-acp.LICENSE.txt"), codexBridgeNotices(codexBridge, readFileSync(join(codexBridge, "dist/index.js"), "utf8")));
+  await build({ ...common, entryPoints: [join(SERVER, "src/modules/tasks/adapters/outbound/claude-session-titles.mjs")],
+    outfile: join(OUT, "claude-session-titles.mjs") });
   writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, viewControl: 1, updateAdmission: 1, standaloneUpdate: 1, taskStorage: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
@@ -222,6 +224,7 @@ async function main(): Promise<void> {
       "codex-acp.mjs",
       "codex-acp.LICENSE.txt",
       "claude-agent-acp.mjs",
+      "claude-session-titles.mjs",
       "claude-agent-acp.LICENSE.txt",
       "execution-launcher.js",
       "runtime-contract.json",

@@ -1,7 +1,7 @@
 // Only project the fields Palmagent sends or consumes. Descriptions, unrelated
 // methods, and additive optional fields are not compatibility failures.
 const fields = (...names) => Object.fromEntries(names.map(name => [name, true]));
-const thread = { id: true };
+const thread = fields('id', 'name');
 const turn = { id: true, status: true, error: { message: true } };
 const input = { $items: { $variants: {
   text: true, image: true, skill: true,
@@ -23,6 +23,7 @@ export const protocolContracts = [
   ['ClientRequest', 'out', {
     initialize: { clientInfo: fields('name', 'version'), capabilities: {} },
     'thread/start': session,
+    'thread/read': fields('threadId', 'includeTurns'),
     'thread/resume': { ...session, threadId: true },
     'thread/compact/start': fields('threadId'),
     'turn/start': { ...fields('threadId', 'clientUserMessageId', 'model', 'effort'), input },
@@ -34,6 +35,7 @@ export const protocolContracts = [
   ['ClientNotification', 'out', { initialized: null }],
   ['ServerNotification', 'in', {
     'thread/started': { thread },
+    'thread/name/updated': fields('threadId', 'threadName'),
     'turn/started': { threadId: true, turn: { id: true } },
     'turn/completed': { threadId: true, turn },
     'hook/completed': { ...fields('threadId', 'turnId'), run: {
@@ -61,6 +63,7 @@ export const responseContracts = {
   'v2/ConfigReadResponse': { config: fields('model', 'model_reasoning_effort') },
   'v2/ModelListResponse': { data: { $items: fields('model', 'isDefault', 'defaultReasoningEffort') }, nextCursor: true },
   'v2/ThreadCompactStartResponse': {},
+  'v2/ThreadReadResponse': { thread: { ...thread, preview: true } },
   'v2/ThreadStartResponse': { thread }, 'v2/ThreadResumeResponse': { thread },
   'v2/TurnStartResponse': { turn: { id: true } },
 };

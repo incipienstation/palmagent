@@ -81,3 +81,13 @@ index 589f10b30568d15692ee2ff80a926cfbf05ef025..035967a3b50a1c46a4e5e5609c84b530
        steering: {
          supported: true
        },
+@@ -57621,6 +57639,9 @@ var CodexAcpServer = class {
+           this.createPromptFallbackTitle(params.prompt)
+         );
+       }
++      // Palmagent releases this per-turn bridge when session/prompt returns.
++      // Let the provider finish its already-started rename before closing it.
++      if (process.env.PALMAGENT_CODEX_ACP === "1") await sessionState.titleGen?.waitForIdle(TITLE_GENERATION_SETTLE_TIMEOUT_MS);
+       return {
+         stopReason: "end_turn",
+         usage: this.buildPromptUsage(sessionState),
