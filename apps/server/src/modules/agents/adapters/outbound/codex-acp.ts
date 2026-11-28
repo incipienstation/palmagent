@@ -52,6 +52,7 @@ function start(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emi
   let deadline: NodeJS.Timeout | undefined;
   let pending = false, uncertain = false;
   let supportsSteer = false;
+  const terminalOutput = new Map<string, string>();
   const delivered = (messageId: string) => event("status", { subtype: "message_delivered", messageId });
 
   function update(value: SessionUpdate) {
@@ -62,6 +63,17 @@ function start(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emi
         break;
       case "tool_call":
       case "tool_call_update": {
+        const delta = value._meta?.terminal_output_delta as { data?: unknown } | undefined;
+        if (typeof delta?.data === "string") {
+          const previous = terminalOutput.get(value.toolCallId) ?? "";
+          // Bound retained output for long-running commands until their exit arrives.
+          const limit = 1024 * 1024;
+          if (previous.length <= limit) {
+            const remaining = limit - previous.length;
+            terminalOutput.set(value.toolCallId, previous + delta.data.slice(0, remaining) +
+              (delta.data.length > remaining ? "\n[output truncated]" : ""));
+          }
+        }
         if (value.sessionUpdate === "tool_call") {
           const input = value.rawInput as { command?: unknown } | undefined;
           event("tool_call", { id: value.toolCallId, name: value.kind === "execute" ? "bash" : value.title,
@@ -70,7 +82,10 @@ function start(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emi
         }
         if (value.status === "completed" || value.status === "failed") {
           const result = value.rawOutput as { formatted_output?: unknown; exit_code?: unknown } | undefined;
-          event("tool_result", { tool_use_id: value.toolCallId, output: result?.formatted_output, exit_code: result?.exit_code,
+          const exit = value._meta?.terminal_exit as { exit_code?: unknown } | undefined;
+          const output = result?.formatted_output ?? terminalOutput.get(value.toolCallId);
+          terminalOutput.delete(value.toolCallId);
+          event("tool_result", { tool_use_id: value.toolCallId, output, exit_code: exit?.exit_code ?? result?.exit_code,
             content: value.rawOutput ?? value.content, is_error: value.status === "failed" });
         }
         break;
@@ -121,7 +136,7 @@ function start(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emi
   const done = (async () => {
     let code = 0;
     try {
-      const init = await rpc.request("initialize", { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } }, setup);
+      const init = await rpc.request("initialize", { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} }, _meta: { terminal_output_delta: true } } }, setup);
       if (init.protocolVersion !== 1 || init._meta?.palmagentCodex !== 1) throw new Error("Codex ACP bridge does not support the required Palmagent turn settings.");
       supportsSteer = (init._meta.steering as { supported?: boolean } | undefined)?.supported === true;
       const options = [{ configId: "mode", value: mode }];
