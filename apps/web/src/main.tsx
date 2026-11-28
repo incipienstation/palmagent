@@ -14,6 +14,7 @@ import { startPwaUpdates } from "./pwa";
 import { restoreScreenPosition, restoreUpdateState } from "./update-state";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./query-client";
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./index.css";
 
 // Mirror window.innerHeight into --app-height before first paint so the h-app
