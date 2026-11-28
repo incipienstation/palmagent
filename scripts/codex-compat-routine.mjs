@@ -391,8 +391,8 @@ async function shipJob(repository, state, save, source, scan) {
   const remoteBase = (await api(stem + '/git/ref/heads/develop')).object.sha;
   assert(current.head.sha === state.head && current.base.ref === 'develop' && remoteBase === state.base && !current.draft,
     'PR head/base changed after verification; retry next scheduled run');
-  await run('gh', ['pr', 'merge', String(pr.number), '--repo', repository, '--squash', '--match-head-commit', state.head],
-    { timeout: 60_000, label: 'Merge verified compatibility PR' });
+  await run(process.execPath, [join(dirname(script), 'queue-develop.mjs'), String(pr.number), state.head, state.base],
+    { directory: work, env: { ...process.env, GH_REPO: repository }, timeout: 60 * 60_000, label: 'Queue verified compatibility PR' });
   const merged = await api(stem + '/pulls/' + pr.number);
   assert(merged.merged && merged.head.sha === state.head, 'Compatibility merge was not confirmed');
   state.stage = 'merged'; state.mergeCommit = merged.merge_commit_sha; await save();

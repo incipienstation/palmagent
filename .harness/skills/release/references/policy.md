@@ -76,6 +76,7 @@ Preview validation does not substitute for acceptance of the exact Stable candid
 
 Repository merge methods are limited to squash and merge commit; rebase merge is
 disabled. Active rulesets enforce squash for `develop` and merge commits for `main`.
+Feature delivery and Preview preparation share the develop merge queue.
 Both branches require a pull request and the GitHub Actions `validate` check, and
 block deletion and force pushes. These rules define branch and approval ownership;
 distribution publication uses channel environments: eligible Preview changes publish after their required

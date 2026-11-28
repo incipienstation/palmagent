@@ -10,23 +10,23 @@ safe task cleanup. Honor draft, PR-only, merge-hold, and retention requests. `ma
 merge-policy changes, and repository visibility changes use [release](../release/SKILL.md).
 
 Commit and push the task branch, preserving intended author and committer identities. Open a PR
-into `develop`. Watch checks in one session:
+into `develop`. Once the task is ready to merge, local-only verification is complete, and
+applicable reviews pass, enqueue the PR and its verified head. Resolve known CI failures
+first. The worker follows any running CI for the selected head.
+The worker shares its turn with Preview preparation, updates the branch when necessary, and
+waits for CI on the resulting head before requesting a protected squash merge. For local
+evidence tied to the base commit, pass that SHA as the third argument. Always pin the base
+for Stable preparations and compatibility promotions.
 
 ```bash
-gh pr checks <number> --watch --fail-fast --interval 30
+node scripts/queue-develop.mjs <number> <verified-head-sha>
 ```
 
-Follow [Waiting for checks](../verify/SKILL.md#waiting-for-checks). Reverify affected checks if the
-head or base changes. Once the outgoing commits and any local-only requirements are verified,
-required CI passes on the current head, and applicable reviews are complete, merge promptly.
-CI supplies the regression results even when the same suite can run locally. Confirm the base and
-merge the verified head:
+Follow the returned Actions run if interrupted. A conflict or changed head requires review
+of the affected changes before a new request. Confirm the merged PR head and merge commit.
+If the queue updated the task branch, fetch the PR head ref and fast-forward the clean
+task worktree to the confirmed merged PR head before running cleanup.
 
-```bash
-gh pr merge <number> --squash --match-head-commit <verified-head-sha>
-```
-
-Never bypass protections with `--admin`. Report the merge identity and validation evidence.
 Ordinary delivery ends with merge and cleanup; CI/CD handles Preview. Load Release or check a host
 only when publication intervention or host verification is requested.
 
