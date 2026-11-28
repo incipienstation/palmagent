@@ -1,4 +1,4 @@
-import type { AgentKind, InputAttachment } from "@palmagent/shared";
+import type { AgentKind, DispatchSessionRequest, InputAttachment } from "@palmagent/shared";
 import type { Attachment } from "@palmagent/shared";
 import type { AttachmentRecord } from "../../../domain/models.js";
 
@@ -8,6 +8,8 @@ export interface AttachmentIndex {
   transaction<T>(work: () => T): T;
   attachment(taskId: string, id: string): AttachmentRecord | undefined;
   attachmentByDigest(taskId: string, digest: string): AttachmentRecord | undefined;
+  registerDeliveredImage(taskId: string, path: string, id: string): void;
+  deliveredImageId(taskId: string, path: string): string | undefined;
   insertAttachment(record: AttachmentRecord): void;
   attachmentInventory(): (AttachmentRecord & { status: string; updatedAt: number })[];
   attachmentReferences(taskId: string): { history: Set<string>; pending: Set<string> };
@@ -22,6 +24,8 @@ export interface AttachmentContentStorage {
 }
 
 export interface AttachmentStorage extends AttachmentContentStorage {
+  acceptDelivery(taskId: string, session: Omit<DispatchSessionRequest, "waitPid">, receipt: string): void;
+  deliveredImageId(taskId: string, path: string): string | undefined;
   start(): void;
   close(): void;
   prune(): void;

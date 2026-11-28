@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
-import type { AgentKind } from "@palmagent/shared";
+import type { AgentKind, DispatchSessionRequest } from "@palmagent/shared";
 import { localSessionRequest } from "./session-control.js";
 
 export function findAgentParent(agent: AgentKind, initial = process.ppid): number {
@@ -16,22 +16,46 @@ export function findAgentParent(agent: AgentKind, initial = process.ppid): numbe
   throw new Error("Run dispatch from the active agent session, or supply its --wait-pid explicitly");
 }
 
-export async function sessionCommand(argv: string[], environment: { resolveDataDir(path?: string): string; loadConfig(options: { dataDir: string; requireInstalled?: boolean }): { dbPath: string } }): Promise<void> {
+const sessionHelp = `Usage:
+  palmagent session dispatch --agent claude|codex [--session-id ID] [--wait-pid PID]
+  palmagent session attach-image --agent claude|codex [--session-id ID] --file PATH
+
+Use --cwd PATH for the session's working directory. Dispatch accepts --data-dir PATH.
+Image delivery prints a Markdown image link for the task response.`;
+
+export async function sessionCommand(argv: string[], environment: {
+  resolveDataDir(path?: string): string;
+  loadConfig(options: { dataDir: string; requireInstalled?: boolean }): { dbPath: string };
+  stageImageFile(session: Omit<DispatchSessionRequest, "waitPid">, path: string): { path: string };
+}): Promise<void> {
   const { resolveDataDir, loadConfig } = environment;
-  if (argv[0] !== "dispatch") throw new Error("usage: palmagent session dispatch --agent claude|codex --session-id ID [--cwd PATH] [--wait-pid PID] [--data-dir PATH]");
-  const { values } = parseArgs({ args: argv.slice(1), strict: true, options: {
+  const [command, ...args] = argv;
+  if (command === "--help" || command === "-h" || args.includes("--help") || args.includes("-h")) { console.log(sessionHelp); return; }
+  if (command !== "dispatch" && command !== "attach-image") throw new Error(sessionHelp);
+  const { values } = parseArgs({ args, strict: true, options: {
     agent: { type: "string" }, "session-id": { type: "string" }, cwd: { type: "string" },
-    "wait-pid": { type: "string" }, "data-dir": { type: "string" },
+    "wait-pid": { type: "string" }, "data-dir": { type: "string" }, file: { type: "string" },
   } });
+  if (command === "attach-image" && (!values.file || values["wait-pid"] !== undefined || values["data-dir"] !== undefined)) throw new Error(sessionHelp);
+  if (command === "dispatch" && values.file !== undefined) throw new Error(sessionHelp);
   if (values.agent !== "claude" && values.agent !== "codex") throw new Error("--agent must be claude or codex");
-  const agent = values.agent;
-  const sessionId = values["session-id"] ?? (agent === "codex" ? process.env.CODEX_THREAD_ID : process.env.CLAUDE_SESSION_ID);
+  const agent: AgentKind = values.agent;
+  const activeSession = agent === "codex" ? process.env.CODEX_THREAD_ID : process.env.CLAUDE_SESSION_ID;
+  const sessionId = values["session-id"] ?? activeSession;
+  if (command === "attach-image" && activeSession && sessionId !== activeSession) throw new Error("Image delivery must use the current native session");
   if (!sessionId) throw new Error("--session-id is required when the CLI does not expose its session identity");
   const home = agent === "claude" ? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude") : process.env.CODEX_HOME ?? join(homedir(), ".codex");
+  const session = { agent, sessionId, cwd: resolve(values.cwd ?? process.cwd()), home: resolve(home) };
+  if (command === "attach-image") {
+    const path = resolve(values.file!);
+    const staged = environment.stageImageFile(session, path);
+    console.log(`![Delivered image](sandbox:${staged.path})`);
+    return;
+  }
   const dataDir = resolveDataDir(values["data-dir"]);
   const socketDir = !values["data-dir"] && process.env.PALMAGENT_SESSION_SOCKET_DIR
     ? resolve(process.env.PALMAGENT_SESSION_SOCKET_DIR) : dirname(loadConfig({ dataDir }).dbPath);
-  const result = await localSessionRequest(socketDir, { agent, sessionId, cwd: resolve(values.cwd ?? process.cwd()), home: resolve(home), waitPid: values["wait-pid"] ? Number(values["wait-pid"]) : findAgentParent(agent) });
+  const result = await localSessionRequest(socketDir, { ...session, waitPid: values["wait-pid"] ? Number(values["wait-pid"]) : findAgentParent(agent) });
   if (result.task.sessionControl?.owner === "shared" && result.task.sessionControl.connection === "connected") {
     console.log(`Session connected as ${result.task.taskId}. Continue in Palmagent or this terminal; both use the same Codex session. You can leave the CLI open.`);
   } else if (result.task.sessionControl?.owner === "shared") {
