@@ -26,7 +26,7 @@ function MarkdownLink({ href, children }: { href?: string; children?: ReactNode 
 // both Just Work, matching the surrounding event log. Defined at module scope so
 // the object identity is stable across renders (keeps the memo below effective).
 const COMPONENTS = {
-  img: ({ src, alt, title }) => <ImagePreview src={src} alt={alt} title={title} />,
+  img: ({ src, alt, title }) => <ImagePreview key={src} src={src} alt={alt} title={title} />,
   h1: ({ children }) => <h1 className="mt-3 mb-1.5 text-[17px] font-semibold text-strong">{children}</h1>,
   h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[16px] font-semibold text-strong">{children}</h2>,
   h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-[15px] font-semibold text-strong">{children}</h3>,
