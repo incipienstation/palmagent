@@ -4,6 +4,9 @@ import { Streamdown, type Components, type ExtraProps } from "streamdown";
 import remarkGfm from "remark-gfm";
 import { isLocalImageLink, markdownUrlTransform, previewSource } from "../image-source";
 import { ImageLinkContext, ImagePreview, ImageTaskContext } from "./ImagePreview";
+import { taskFileLink } from "../task-file-link";
+import { Dialog, DialogTrigger } from "./ui/dialog";
+import { TaskFileViewer } from "./TaskFileViewer";
 import { MermaidBlock } from "./MermaidBlock";
 import { visualizeMarkers } from "../visualize-markers";
 import { VisualizationPreview } from "./VisualizationPreview";
@@ -11,10 +14,19 @@ import { CodeBlock } from "./CodeBlock";
 
 function MarkdownLink({ href, children }: { href?: string; children?: ReactNode } & ExtraProps) {
   const taskId = useContext(ImageTaskContext);
-  const target = href && taskId && isLocalImageLink(href) ? previewSource(href, taskId) : href;
+  const image = !!href && !!taskId && isLocalImageLink(href);
+  const file = href && taskId && !image ? taskFileLink(href) : undefined;
+  const className = "text-primary underline underline-offset-2 [overflow-wrap:anywhere]";
+  if (file && taskId) {
+    return <ImageLinkContext.Provider value={true}><Dialog>
+      <DialogTrigger type="button" className={className + " cursor-pointer text-left"}>{children}</DialogTrigger>
+      <TaskFileViewer taskId={taskId} path={file.path} line={file.line} />
+    </Dialog></ImageLinkContext.Provider>;
+  }
+  const target = image ? previewSource(href, taskId) : href;
   return <ImageLinkContext.Provider value={true}>
     <a href={target} target="_blank" rel="noopener noreferrer"
-      className="text-primary underline underline-offset-2 [overflow-wrap:anywhere]">{children}</a>
+      className={className}>{children}</a>
   </ImageLinkContext.Provider>;
 }
 

@@ -1,3 +1,4 @@
+import { taskFileLink } from "./task-file-link";
 import { receiptFromImagePath } from "@palmagent/shared";
 import { defaultUrlTransform } from "react-markdown";
 
@@ -35,7 +36,9 @@ export function isLocalImageLink(value: string): boolean {
 }
 
 export function markdownUrlTransform(value: string, key: string): string {
-  return key === "src" || key === "href" && isLocalImageLink(value) ? imageSource(value) : defaultUrlTransform(value);
+  if (key === "src" || key === "href" && isLocalImageLink(value)) return imageSource(value);
+  const safe = defaultUrlTransform(value);
+  return key === "href" && !safe ? taskFileLink(value)?.href ?? "" : safe;
 }
 
 export function previewSource(value: string, taskId?: string): string {

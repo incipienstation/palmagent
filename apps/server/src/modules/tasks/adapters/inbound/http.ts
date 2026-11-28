@@ -74,6 +74,14 @@ export function taskRoutes({ service, admission }: Pick<HttpDependencies, "servi
       c.header("Content-Length", String(size));
       return c.body(new Uint8Array(attachment.bytes), 200);
     })
+    .get("/:id/file", params(IdParamsSchema), query(TaskPreviewQuerySchema), async c => {
+      c.header("Cache-Control", "no-store");
+      c.header("X-Content-Type-Options", "nosniff");
+      c.header("Cross-Origin-Resource-Policy", "same-origin");
+      c.header("Content-Security-Policy", "default-src 'none'; sandbox");
+      const text = await service.readTaskFile(c.req.valid("param").id, c.req.valid("query").path);
+      return c.json({ text }, 200);
+    })
     .get("/:id/visualization", params(IdParamsSchema), query(TaskPreviewQuerySchema), async (c) => {
       // The document must keep its opaque origin even when opened outside our iframe.
       c.header("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");

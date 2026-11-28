@@ -45,6 +45,7 @@ export interface TaskAttachmentReader {
 }
 
 export interface TaskPreviewReader {
+  readFile(worktreePath: string | undefined, requestedPath: string): Promise<string>;
   readVisualization(worktreePath: string | undefined, requestedPath: string): Promise<Uint8Array>;
   readImage(worktreePath: string | undefined, requestedPath: string, nativeSession?: {
     agent: AgentKind; home: string; sessionId: string;

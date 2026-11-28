@@ -75,6 +75,12 @@ export class TaskService implements PrStatusSink {
     return this.attachments.read(taskId, attachmentId);
   }
 
+  async readTaskFile(taskId: string, requestedPath: string) {
+    const task = this.getTask(taskId);
+    if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "File preview unavailable");
+    return this.taskPreviews.readFile(task.worktreePath, requestedPath);
+  }
+
   async readTaskVisualization(taskId: string, requestedPath: string) {
     const task = this.getTask(taskId);
     if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "Visualization preview unavailable");
