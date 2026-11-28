@@ -67,10 +67,15 @@ test("Tasks ignores legacy filters and Spaces has searchable, distinct rows", as
 });
 
 test("Space scope survives reload and search is restored when returning to the list", async ({ page }) => {
-  await setup(page);
+  await setup(page, "/", [{ ...fixtureTasks[0], pinnedAt: 1 }, ...fixtureTasks.slice(1)]);
   await page.getByRole("button", { name: "Open Spaces" }).click();
   await mainSpace(page).click();
-  await expect(page.getByText("Worktree task", { exact: true })).toBeVisible();
+  const content = page.getByTestId("inbox-content");
+  const pinned = content.getByRole("region", { name: "Pinned tasks" });
+  await expect(pinned.getByRole("button", { name: "Review Space navigation Needs input", exact: true })).toBeVisible();
+  const needsInput = content.getByRole("region", { name: "Needs input", exact: true });
+  await expect(needsInput.getByRole("button", { name: "Worktree task", exact: true })).toBeVisible();
+  await expect(content.locator("time")).toHaveCount(0);
   await expect(page.getByText("Separate Space task", { exact: true })).toHaveCount(0);
   await page.getByRole("searchbox", { name: "Search tasks" }).fill("Worktree");
   await page.getByRole("button", { name: "Back", exact: true }).click();
