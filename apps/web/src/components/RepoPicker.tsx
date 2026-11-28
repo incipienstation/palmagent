@@ -20,7 +20,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
+import { RemoveSpaceDialog } from "./RemoveSpaceDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -533,22 +533,11 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
             </Button>
           </DrawerFooter>
         )}
-        {removeTarget && <AlertDialog open onOpenChange={next => { if (!next) setRemoveTarget(null); }}>
-          <AlertDialogContent onCloseAutoFocus={event => {
-            event.preventDefault();
+        {removeTarget && <RemoveSpaceDialog repo={removeTarget} onClose={() => setRemoveTarget(null)}
+          onConfirm={() => void removeRepo(removeTarget)} returnFocus={() => {
             const target = actionTrigger.current;
-            (target?.isConnected ? target : closeRef.current)?.focus({ preventScroll: true });
-          }}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remove {removeTarget.name} from Spaces?</AlertDialogTitle>
-              <AlertDialogDescription>Its archived task history and routines will be deleted. The folder will stay on disk.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Keep Space</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" onClick={() => void removeRepo(removeTarget)}>Remove Space</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>}
+            return target?.isConnected ? target : closeRef.current;
+          }} />}
       </DrawerContent>
     </Drawer>
   );

@@ -26,26 +26,32 @@ export async function registerRepo(path: string, defaultBaseRef?: string): Promi
   }
   finally { if (generation === cacheSession()) { snapshot.registering.delete(path); publish(); } }
 }
-export async function removeRepo(repo: Repo) {
-  if (snapshot.removing.has(repo.id) || snapshot.removed.has(repo.id)) return;
+export async function removeRepo(repo: Repo): Promise<boolean> {
+  if (snapshot.removing.has(repo.id) || snapshot.removed.has(repo.id)) return false;
   const generation = cacheSession();
   snapshot.removing.add(repo.id); snapshot.removed.add(repo.id); publish();
   try {
     await api.deleteRepo(repo.id);
-    if (generation === cacheSession()) queryClient.setQueryData<Repo[]>(clientReadKeys.repos(), (current) => current?.filter((item) => item.id !== repo.id));
+    if (generation !== cacheSession()) return false;
+    queryClient.setQueryData<Repo[]>(clientReadKeys.repos(), (current) => current?.filter((item) => item.id !== repo.id));
+    return true;
   }
   catch (error) {
-    if (generation !== cacheSession()) return;
+    if (generation !== cacheSession()) return false;
     snapshot.removed.delete(repo.id); publish();
     toast({ title: "Couldn't remove repository", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
     try {
       const actual = await queryClient.fetchQuery({ ...reposQueryOptions(), staleTime: 0 });
       if (generation === cacheSession()) {
         queryClient.setQueryData(clientReadKeys.repos(), actual);
-        if (!actual.some((item) => item.id === repo.id)) snapshot.removed.add(repo.id);
+        if (!actual.some((item) => item.id === repo.id)) {
+          snapshot.removed.add(repo.id);
+          return true;
+        }
       }
     }
     catch { /* Preserve the confirmed row when reconciliation is unavailable. */ }
+    return false;
   } finally { if (generation === cacheSession()) { snapshot.removing.delete(repo.id); publish(); } }
 }
 onCacheSessionReset(() => { snapshot = { removed: new Set(), removing: new Set(), registering: new Set() }; publish(); });
