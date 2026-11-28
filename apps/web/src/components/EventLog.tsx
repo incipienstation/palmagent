@@ -158,7 +158,7 @@ function MachineryLine({
 
 type TranscriptRow = { key: string; seq: number; content?: ConversationContentRef; revision?: number } & (
   | { type: "prompt"; text: string }
-  | { type: "delivery"; message: PendingMessage }
+  | { type: "delivery"; delivery: PendingMessage }
   | { type: "working" }
   | { type: "message"; item: LogItem; delivery?: PendingMessage }
   | { type: "activity"; activity: Activity; open: boolean; waiting?: boolean; detailsLoading?: boolean; detailsError?: boolean; retryDetails?: () => unknown }
@@ -186,8 +186,10 @@ function visible(item: LogItem): boolean {
 }
 
 const EventRow = memo(function EventRow({ item, live, expanded, toggle, onImageLoad, raw = false }: {
-  item: LogItem; live: boolean; expanded: boolean; toggle: (key: number) => void; onImageLoad: () => void; raw?: boolean;
+  item: LogItem | PendingMessage; live: boolean; expanded: boolean; toggle: (key: number) => void; onImageLoad: () => void; raw?: boolean;
 }) {
+
+  if (!("kind" in item)) return <UserBubble {...item} onImageLoad={onImageLoad} />;
 
   // status events with subtype steer/followup + text → render as a user bubble
   if (item.kind === "status") {
@@ -603,11 +605,7 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
     context={{ ...context, onScrollPosition }}
     itemContent={(_index, row) => <div className="flow-root px-4" data-row-key={row.key}
       data-message-key={row.type === "message" ? row.item.key : row.type === "failure" ? row.failure.key : undefined}>
-      {row.type === "working" ? <div className="mb-3 py-2"><WorkingLabel /></div> : row.type === "delivery" ?
-        <div role="status" aria-label="Pending message">
-          <UserBubble text={row.message.text} imageOnly={row.message.imageOnly} skills={row.message.skills} attachments={row.message.attachments} images={row.message.images} onImageLoad={followBottom} />
-          {delivery && <MessageDelivery {...delivery} message={row.message} />}
-        </div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
+      {row.type === "working" ? <div className="mb-3 py-2"><WorkingLabel /></div> : row.type === "prompt" ? <UserBubble text={row.text} /> : row.type === "failure" ?
         <RunFailureSummary failure={row.failure} open={row.open} toggle={() => toggleRow(row.failure.key)}>
           <div className="font-mono text-xs">
             {taskId ? <ConversationRecord taskId={taskId} row={row.failure} onImageLoad={followBottom} />
@@ -622,9 +620,9 @@ function VirtualTranscript({ taskId, rows, running, sourceLog, liveKey, toggled,
           }}
           render={item => taskId ? <ConversationRecord taskId={taskId} row={item} onImageLoad={followBottom} />
             : item.type === "message" ? <EventRow item={item.item} live={false} expanded raw toggle={() => {}} onImageLoad={followBottom} /> : null} />
-        : row.content && taskId ? <ConversationRecord taskId={taskId} row={{ type: "message", key: row.seq, item: row.item, content: row.content }} onImageLoad={followBottom} /> : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined}>
-          <EventRow item={row.item} live={row.item.key === liveKey}
-            expanded={toggled.has(row.item.key)} toggle={toggleRow} onImageLoad={followBottom} />
+        : row.type === "message" && row.content && taskId ? <ConversationRecord taskId={taskId} row={{ type: "message", key: row.seq, item: row.item, content: row.content }} onImageLoad={followBottom} /> : <div role={row.delivery ? "status" : undefined} aria-label={row.delivery ? "Pending message" : undefined}>
+          <EventRow item={row.type === "delivery" ? row.delivery : row.item} live={row.type === "message" && row.item.key === liveKey}
+            expanded={row.type === "message" && toggled.has(row.item.key)} toggle={toggleRow} onImageLoad={followBottom} />
           {row.delivery && delivery && <MessageDelivery {...delivery} message={row.delivery} />}
         </div>}
     </div>}
@@ -722,7 +720,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
     if (pending.length) {
       // A new optimistic message starts after the current activity.
       for (const row of rows) if (row.type === "activity" && row.activity.live) row.activity = { ...row.activity, live: false };
-      for (const message of pending) rows.push({ key: `delivery-${message.id}`, seq: seq + 1, type: "delivery", message });
+      for (const message of pending) rows.push({ key: `delivery-${message.id}`, seq: seq + 1, type: "delivery", delivery: message });
     }
     const traceIsWorking = rows.some(row => row.type === "activity" && row.activity.live);
     if (activity === "working" && !traceIsWorking) {
