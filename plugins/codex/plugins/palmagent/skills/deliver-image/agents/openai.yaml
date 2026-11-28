@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deliver a task image"
+  short_description: "Attach a generated image to the current Palmagent task"
+  default_prompt: "Use $deliver-image to return this image in the current Palmagent conversation."

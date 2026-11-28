@@ -1,8 +1,8 @@
 import { decodeBase64, encodeBase64, ascii, startsWith, readNumber } from "./binary.js";
-import type { AgentEvent, ImageAttachment } from "@palmagent/shared";
+import type { AgentEvent, ImageAttachment, IMAGE_MEDIA_TYPES } from "@palmagent/shared";
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export function rasterMediaType(bytes: Uint8Array): ImageAttachment["mediaType"] | undefined {
+export function rasterMediaType(bytes: Uint8Array): (typeof IMAGE_MEDIA_TYPES)[number] | undefined {
   if (startsWith(bytes, [137,80,78,71,13,10,26,10])) return "image/png";
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
   if (/^GIF8[79]a$/.test(ascii(bytes, 0, 6))) return "image/gif";

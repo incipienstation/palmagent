@@ -35,6 +35,13 @@ export function migrateSchema(db: Database.Database) {
         digest TEXT NOT NULL,
         UNIQUE(task_id, digest)
       );
+      CREATE TABLE IF NOT EXISTS delivered_images (
+        id INTEGER PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        source_path TEXT NOT NULL,
+        attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+        UNIQUE(task_id, source_path, attachment_id)
+      );
       CREATE TABLE IF NOT EXISTS task_message_state (
         task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
         state TEXT NOT NULL

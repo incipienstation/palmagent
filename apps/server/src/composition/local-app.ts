@@ -7,16 +7,20 @@ import type { RoutineUseCases } from "../modules/routines/api.js";
 import { routineRoutes } from "../modules/routines/adapters/inbound/http.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { DispatchSessionSchema } from "@palmagent/shared/requests";
+import { INPUT_IMAGE_POLICY } from "@palmagent/shared";
+import { DeliverSessionImageSchema, DispatchSessionSchema } from "@palmagent/shared/requests";
 import { jsonBody } from "../platform/http/input.js";
 import { handleError } from "../platform/http/errors.js";
 import type { TaskService } from "../modules/tasks/application/use-cases/task-service.js";
 
 // A separate app: never mount this capability on the browser's TCP listener.
-export function createSessionApp(service: Pick<TaskService, "dispatchSession">, terminals?: TerminalService, routines?: RoutineUseCases, view?: import("../modules/installation/api.js").ViewControl) {
+export function createSessionApp(service: Pick<TaskService, "dispatchSession" | "deliverSessionImage">, terminals?: TerminalService, routines?: RoutineUseCases, view?: import("../modules/installation/api.js").ViewControl) {
   const app = new Hono();
   app.onError(handleError);
   app.notFound((c) => c.json({ error: "not found" }, 404));
+  app.post("/deliver-image",
+    bodyLimit({ maxSize: Math.ceil(INPUT_IMAGE_POLICY.maxBytes / 3) * 4 + 64 * 1024, onError: c => c.json({ error: "Image delivery too large" }, 413) }),
+    jsonBody(DeliverSessionImageSchema), c => c.json(service.deliverSessionImage(c.req.valid("json"))));
   app.use("*", bodyLimit({ maxSize: 16_384, onError: (c) => c.json({ error: "request body too large" }, 413) }));
   const terminalService = () => { if (!terminals) throw new ApplicationError("service_unavailable", "Terminals unavailable"); return terminals; };
   const id = params(z.object({ id: TerminalId }));

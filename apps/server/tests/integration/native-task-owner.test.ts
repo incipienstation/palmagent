@@ -43,11 +43,18 @@ test("native queue commits before dispatch, rolls back with completion and prese
   const task = { taskId: "task", repoId: "space", agent: "codex", prompt: "Initial", status: "idle",
     permission: "read-only", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 } as const;
   const file = { id: ids.uuid(), taskId: "task", mediaType: "image/png" as const, size: 8, digest: "fixture", unusedSince: null, expiredAt: null };
-  const stage = () => native.attachments.transaction(() => native.attachments.insertAttachment(file));
+  const source = "/artifacts/image.png";
+  const stage = () => native.attachments.transaction(() => {
+    native.attachments.insertAttachment(file);
+    native.attachments.registerDeliveredImage(task.taskId, source, file.id);
+  });
   assert.throws(() => native.create(task, () => { stage(); throw new Error("staging failed"); }), /staging failed/);
   assert.equal(db.getTask("task"), undefined);
   assert.equal(db.attachment("task", file.id), undefined);
+  assert.equal(native.attachments.deliveredImageId(task.taskId, source), undefined);
   native.create(task, stage);
+  assert.equal(native.attachments.deliveredImageId(task.taskId, source), file.id);
+  assert.deepEqual(native.attachments.attachmentReferences(task.taskId).history, new Set([file.id]));
   assert.deepEqual(native.attachments.attachmentByDigest("task", file.digest), db.attachment("task", file.id));
   const events = [{ taskId: "task", agent: "codex" as const, kind: "assistant_text" as const, payload: { text: "stream" }, ts: 2 }];
   assert.equal(db.appendAgentEvents("task", events, 1)[0].seq, 1);

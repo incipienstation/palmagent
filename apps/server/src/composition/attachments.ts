@@ -10,6 +10,8 @@ export function createAttachmentStorage(index: AttachmentIndex, policy: Attachme
   const maintenance = new AttachmentMaintenanceDriver(createAttachmentMaintenance(index, files, policy, now), () => index.isOpen);
   return {
     save: (taskId, input) => files.save(taskId, input), read: (taskId, id) => files.read(taskId, id),
+    deliverImage: (taskId, path, image) => files.save(taskId, [image], path)![0],
+    deliveredImageId: (taskId, path) => index.deliveredImageId(taskId, path),
     load: (taskId, attachments) => files.load(taskId, attachments),
     start: () => maintenance.start(), close: () => maintenance.close(), prune: () => maintenance.prune(),
   };

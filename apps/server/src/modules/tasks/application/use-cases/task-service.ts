@@ -13,7 +13,7 @@ import type { SkillContext, SkillSelection, VoiceClientTimings } from "@palmagen
 import { MessageController } from "./message-controller.js";
 import type { SubmitMessage, MessageAction, MessageSettings } from "@palmagent/shared";
 import type {
-  DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
+  DeliverSessionImage, DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
 import { DEFAULT_PERMISSION } from "@palmagent/shared";
 import { extractOutputImages, toolImagePayload } from "../attachments/output-images.js";
@@ -80,6 +80,8 @@ export class TaskService implements PrStatusSink {
 
   async readTaskImage(taskId: string, requestedPath: string) {
     const task = this.getTask(taskId);
+    const delivered = requestedPath.startsWith("/") && this.attachments.deliveredImageId(taskId, requestedPath);
+    if (delivered) return this.attachments.read(taskId, delivered);
     if (!this.taskPreviews) throw new ApplicationError("service_unavailable", "Task image reading is unavailable");
     const nativeSession = task.sessionControl && task.sessionId
       ? { agent: task.agent, home: task.sessionControl.home, sessionId: task.sessionId } : undefined;
@@ -541,6 +543,21 @@ export class TaskService implements PrStatusSink {
     task.sessionControl = control;
     this.broadcastTask(task.taskId);
     return { task, command: this.nativeSession.resumeCommand(task) };
+  }
+
+  // The owner-only socket supplies bytes. The path is a label, never a file to open.
+  deliverSessionImage(req: DeliverSessionImage) {
+    this.assertTaskAdmission();
+    const matches = [...this.cache.values()].filter(task => task.agent === req.agent && task.sessionId === req.sessionId);
+    if (matches.length !== 1) throw conflict("Image delivery requires a unique task for the native session");
+    const task = matches[0];
+    if (isClosedTaskStatus(task.status) || !task.worktreePath
+      || this.nativeSession.realpath(task.worktreePath) !== this.nativeSession.realpath(req.cwd)
+      || this.nativeSession.realpath(task.sessionControl?.home ?? this.providerHome(task.agent)) !== this.nativeSession.realpath(req.home)) {
+      throw conflict("Image delivery requires the open task's working directory and provider home");
+    }
+    const ref = this.attachments.deliverImage(task.taskId, req.path, req.image);
+    return { taskId: task.taskId, attachmentId: ref.id };
   }
 
   // This entry point is exposed only on the owner-only local control socket.

@@ -14,7 +14,7 @@ import { codexInput } from "../../src/modules/agents/adapters/outbound/codex-int
 import { Db } from "../../src/composition/database.js";
 import { MessageController } from "../../src/modules/tasks/application/use-cases/message-controller.js";
 
-const image = { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
+const image = { mediaType: "image/png" as const, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==" };
 function fixture(t: test.TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "palmagent-attachments-")), path = join(dir, "state.db");
   let db = new Db(path), storage = createAttachmentStorage(db);
@@ -38,6 +38,22 @@ test("private attachments survive restart, deduplicate within a task, and reject
   const [other] = f.storage.save("two", [image])!;
   assert.notEqual(other.id, ref.id);
   assert.equal(f.db.attachmentIds().size, 2);
+});
+
+test("delivered path versions survive restart and expire with archived attachments", t => {
+  const f = fixture(t), path = "/artifacts/preview.png";
+  const first = f.storage.deliverImage("one", path, image);
+  assert.equal(f.storage.deliverImage("one", path, image).id, first.id);
+  const revision = { ...image, data: Buffer.concat([Buffer.from(image.data, "base64"), Buffer.from([0])]).toString("base64") };
+  const next = f.storage.deliverImage("one", path, revision);
+  assert.notEqual(next.id, first.id);
+  f.restart();
+  assert.equal(f.storage.deliveredImageId("one", path), first.id);
+  assert.deepEqual(f.db.attachmentReferences("one").history, new Set([first.id, next.id]));
+  assert.deepEqual(f.storage.read("one", next.id).bytes, Buffer.from(revision.data, "base64"));
+  f.db.setTaskStatus("one", "archived", false, 10);
+  createAttachmentStorage(f.db, { ...policy, retentionMs: 100 }, () => 111).prune();
+  for (const ref of [first, next]) assert.throws(() => f.storage.read("one", ref.id), { code: "gone" });
 });
 
 test("invalid batches and missing tasks never leave partially stored images", t => {

@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
-import type { AgentKind } from "@palmagent/shared";
-import { localSessionRequest } from "./session-control.js";
+import { attachmentUrl, INPUT_IMAGE_POLICY, type AgentKind } from "@palmagent/shared";
+import { rasterMediaType } from "../../application/attachments/output-images.js";
+import { deliverLocalImage, localSessionRequest } from "./session-control.js";
 
 export function findAgentParent(agent: AgentKind, initial = process.ppid): number {
   let pid = initial;
@@ -16,22 +17,62 @@ export function findAgentParent(agent: AgentKind, initial = process.ppid): numbe
   throw new Error("Run dispatch from the active agent session, or supply its --wait-pid explicitly");
 }
 
+const sessionHelp = `Usage:
+  palmagent session dispatch --agent claude|codex [--session-id ID] [--wait-pid PID]
+  palmagent session attach-image --agent claude|codex [--session-id ID] --file PATH
+
+Both commands accept --cwd PATH and --data-dir PATH. Image delivery prints a Markdown
+image link and registers the original absolute path with the current session's task.`;
+
+function readDeliveryImage(path: string) {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const stat = fstatSync(fd), size = stat.size;
+    if (!stat.isFile() || size > INPUT_IMAGE_POLICY.maxBytes) throw new Error("Image must be a regular file of at most 4.5 MiB");
+    const bytes = Buffer.alloc(size + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const count = readSync(fd, bytes, length, bytes.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    if (length !== size) throw new Error("Image changed during delivery");
+    const content = bytes.subarray(0, length);
+    const mediaType = rasterMediaType(content);
+    if (!mediaType) throw new Error("Image delivery supports PNG, JPEG, GIF and WebP");
+    return { mediaType, data: content.toString("base64") };
+  } finally { closeSync(fd); }
+}
+
 export async function sessionCommand(argv: string[], environment: { resolveDataDir(path?: string): string; loadConfig(options: { dataDir: string; requireInstalled?: boolean }): { dbPath: string } }): Promise<void> {
   const { resolveDataDir, loadConfig } = environment;
-  if (argv[0] !== "dispatch") throw new Error("usage: palmagent session dispatch --agent claude|codex --session-id ID [--cwd PATH] [--wait-pid PID] [--data-dir PATH]");
-  const { values } = parseArgs({ args: argv.slice(1), strict: true, options: {
+  const [command, ...args] = argv;
+  if (command === "--help" || command === "-h" || args.includes("--help") || args.includes("-h")) { console.log(sessionHelp); return; }
+  if (command !== "dispatch" && command !== "attach-image") throw new Error(sessionHelp);
+  const { values } = parseArgs({ args, strict: true, options: {
     agent: { type: "string" }, "session-id": { type: "string" }, cwd: { type: "string" },
-    "wait-pid": { type: "string" }, "data-dir": { type: "string" },
+    "wait-pid": { type: "string" }, "data-dir": { type: "string" }, file: { type: "string" },
   } });
+  if (command === "attach-image" && (!values.file || values["wait-pid"] !== undefined)) throw new Error(sessionHelp);
+  if (command === "dispatch" && values.file !== undefined) throw new Error(sessionHelp);
   if (values.agent !== "claude" && values.agent !== "codex") throw new Error("--agent must be claude or codex");
-  const agent = values.agent;
-  const sessionId = values["session-id"] ?? (agent === "codex" ? process.env.CODEX_THREAD_ID : process.env.CLAUDE_SESSION_ID);
+  const agent: AgentKind = values.agent;
+  const activeSession = agent === "codex" ? process.env.CODEX_THREAD_ID : process.env.CLAUDE_SESSION_ID;
+  const sessionId = values["session-id"] ?? activeSession;
+  if (command === "attach-image" && activeSession && sessionId !== activeSession) throw new Error("Image delivery must use the current native session");
   if (!sessionId) throw new Error("--session-id is required when the CLI does not expose its session identity");
   const home = agent === "claude" ? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude") : process.env.CODEX_HOME ?? join(homedir(), ".codex");
   const dataDir = resolveDataDir(values["data-dir"]);
   const socketDir = !values["data-dir"] && process.env.PALMAGENT_SESSION_SOCKET_DIR
     ? resolve(process.env.PALMAGENT_SESSION_SOCKET_DIR) : dirname(loadConfig({ dataDir }).dbPath);
-  const result = await localSessionRequest(socketDir, { agent, sessionId, cwd: resolve(values.cwd ?? process.cwd()), home: resolve(home), waitPid: values["wait-pid"] ? Number(values["wait-pid"]) : findAgentParent(agent) });
+  const session = { agent, sessionId, cwd: resolve(values.cwd ?? process.cwd()), home: resolve(home) };
+  if (command === "attach-image") {
+    const path = resolve(values.file!);
+    const { taskId, attachmentId } = await deliverLocalImage(socketDir, { ...session, path, image: readDeliveryImage(path) });
+    console.log(`![Delivered image](${attachmentUrl(taskId, attachmentId)})`);
+    return;
+  }
+  const result = await localSessionRequest(socketDir, { ...session, waitPid: values["wait-pid"] ? Number(values["wait-pid"]) : findAgentParent(agent) });
   if (result.task.sessionControl?.owner === "shared" && result.task.sessionControl.connection === "connected") {
     console.log(`Session connected as ${result.task.taskId}. Continue in Palmagent or this terminal; both use the same Codex session. You can leave the CLI open.`);
   } else if (result.task.sessionControl?.owner === "shared") {

@@ -255,6 +255,15 @@ attachmentByDigest(taskId: string, digest: string): AttachmentRecord | undefined
       .get(taskId, digest) as AttachmentRecord | undefined;
   }
 
+registerDeliveredImage(taskId: string, path: string, id: string): void {
+    this.db.prepare("INSERT INTO delivered_images(task_id, source_path, attachment_id) VALUES(?,?,?) ON CONFLICT DO NOTHING").run(taskId, path, id);
+  }
+
+deliveredImageId(taskId: string, path: string): string | undefined {
+    return this.db.prepare("SELECT attachment_id FROM delivered_images WHERE task_id=? AND source_path=? ORDER BY id LIMIT 1")
+      .pluck().get(taskId, path) as string | undefined;
+  }
+
 insertAttachment(record: AttachmentRecord): void {
     this.db.prepare("INSERT INTO attachments (id, task_id, media_type, size, digest) VALUES (?, ?, ?, ?, ?)")
       .run(record.id, record.taskId, record.mediaType, record.size, record.digest);
@@ -272,6 +281,7 @@ attachmentInventory(): (AttachmentRecord & { status: string; updatedAt: number }
 
 attachmentReferences(taskId: string): { history: Set<string>; pending: Set<string> } {
     const history = new Set<string>(), pending = new Set<string>();
+    for (const id of this.db.prepare("SELECT attachment_id FROM delivered_images WHERE task_id=?").pluck().iterate(taskId)) history.add(id as string);
     // Stream only user-message events, not the potentially large assistant transcript.
     const rows = this.db.prepare("SELECT payload_json FROM events WHERE task_id = ? AND kind = 'status'")
       .iterate(taskId) as Iterable<{ payload_json: string }>;

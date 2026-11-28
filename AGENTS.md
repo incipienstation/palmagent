@@ -6,9 +6,9 @@ Guidance for coding agents maintaining the Palmagent repository.
 
 - Load only task-relevant skills and references; reuse unchanged instructions across stages and
   checkouts. Keep full test logs outside the repository and inspect relevant excerpts.
-- Deliver screenshot links from the conversation's registered working directory or its supported
-  attachment storage. Copy temporary captures there before linking them, and verify image access;
-  a successful local image preview does not prove the conversation can serve that path.
+- Deliver screenshots from the conversation's registered working directory or attachment storage.
+  In Palmagent tasks, use the deliver-image skill for temporary captures. Verify the conversation
+  can serve the image before linking it.
 - Write human-facing guidance in `README.md` or `docs/`; keep agent workflow in `AGENTS.md` and skills.
 - For backend changes, follow the [architecture policy](docs/ARCHITECTURE.md) and verify
   module and layer boundaries with `pnpm architecture:check`. Rust migrations also follow
