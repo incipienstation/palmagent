@@ -14,6 +14,10 @@ export class NativeAttachmentIndex implements AttachmentIndex {
   attachmentByDigest(taskId: string, digest: string) {
     return this.files({ kind: "digest", taskId, digest }) as AttachmentRecord | null ?? undefined;
   }
+  registerDeliveredImage(taskId: string, path: string, id: string) { this.files({ kind: "registerDelivery", taskId, path, id }); }
+  deliveredImageId(taskId: string, path: string) {
+    return this.files({ kind: "deliveredImage", taskId, path }) as string | null ?? undefined;
+  }
   insertAttachment(record: AttachmentRecord) { this.files({ kind: "insert", ...record }); }
   setAttachmentLifecycle(id: string, unusedSince: number | null, expiredAt: number | null) {
     this.files({ kind: "lifecycle", id, unusedSince, expiredAt });

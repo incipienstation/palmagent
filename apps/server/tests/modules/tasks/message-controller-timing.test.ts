@@ -3,7 +3,7 @@ import test from "node:test";
 import { MessageController } from "../../../src/modules/tasks/application/use-cases/message-controller.js";
 import type { MessageState } from "../../../src/modules/tasks/domain/models.js";
 import type { MessageStateRepository } from "../../../src/modules/tasks/application/ports/outbound/persistence.js";
-import type { AttachmentStorage } from "../../../src/modules/tasks/application/ports/outbound/attachments.js";
+import type { AttachmentContentStorage } from "../../../src/modules/tasks/application/ports/outbound/attachments.js";
 
 function fixture(t: test.TestContext) {
   let persisted: MessageState | undefined;
@@ -29,8 +29,8 @@ function fixture(t: test.TestContext) {
       return "delivered";
     },
   };
-  const attachments: AttachmentStorage = {
-    start() {}, close() {}, prune() {}, save: () => undefined, load: () => undefined,
+  const attachments: AttachmentContentStorage = {
+    save: () => undefined, load: () => undefined,
     read: () => { throw new Error("unused"); },
   };
   const controller = new MessageController(repo, host, attachments, {

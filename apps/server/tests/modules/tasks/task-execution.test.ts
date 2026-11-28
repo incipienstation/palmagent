@@ -26,7 +26,7 @@ function fixture(t: test.TestContext, independent = false, capacity = 2) {
     writeMessageState: (_id, state) => { saved = structuredClone(state); },
   }, {
     assertWritable() {}, canStart: () => false, settings: () => ({}), changed() {}, start() {}, steer: async () => "delivered",
-  }, { start() {}, close() {}, prune() {}, save: () => undefined, load: () => undefined, read: () => { throw new Error("unused"); } },
+  }, { save: () => undefined, load: () => undefined, read: () => { throw new Error("unused"); } },
   { next: () => "unused", uuid: () => `run-${++ids}`, digest: value => value }, { now: () => 100, every: () => () => {} });
   const supervisor = new ProcessSupervisor(capacity);
   const starts: { args: StartArgs; emit: (event: RawEvent, seq?: number) => void; done: ReturnType<typeof deferred<void>>; handle: RunHandle; cancelled: number }[] = [];

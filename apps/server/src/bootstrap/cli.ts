@@ -136,7 +136,7 @@ Commands:
   settings     Manage Space search paths (run settings --help)
   terminal     Manage persistent shells (run terminal --help)
   daemon       Inspect or replace the native supervisor (status|hosts|restart)
-  session        Dispatch an active native CLI session back to Palmagent
+  session        Dispatch a native session or deliver a generated image
   compatibility  Check the installed CLI against an operator plugin version
   uninstall    Remove application units (proxy/TLS preserved; --purge removes data)
   auth         Manage host-owned sign-in methods (run auth --help)
@@ -209,6 +209,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(await daemonRequest(cfg.dataDir, action === "hosts" ? { action: "list", after: values.after } : { action: action === "restart" ? "replace" : "status" })));
     return;
   }
+  if (cmd === "session") return sessionCommand(rest);
   if (cmd === "routine") return routineCommand(rest);
   if (cmd === "settings") return settingsCommand(rest);
   if (rest.includes("--help") || rest.includes("-h")) {
@@ -278,8 +279,6 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(config));
       return;
     }
-    case "session":
-      return sessionCommand(process.argv.slice(3));
     case "compatibility": {
       const pluginVersion = flags.get("plugin-version");
       if (!pluginVersion) { console.log(JSON.stringify({ version: version(), agents: AGENT_CLI_COMPATIBILITY })); return; }

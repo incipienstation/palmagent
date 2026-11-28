@@ -36,6 +36,15 @@ pub enum FileCommand {
     Delete {
         id: String,
     },
+    RegisterDelivery {
+        task_id: String,
+        path: String,
+        id: String,
+    },
+    DeliveredImage {
+        task_id: String,
+        path: String,
+    },
     Inventory,
     References {
         task_id: String,
@@ -69,6 +78,10 @@ pub fn files(db: &Connection, command: FileCommand) -> Result<Value> {
             )
             .optional()?
             .unwrap_or(Value::Null)),
+        DeliveredImage { task_id, path } => Ok(json!(db.query_row(
+            "SELECT attachment_id FROM delivered_images WHERE task_id=? AND source_path=? ORDER BY id LIMIT 1",
+            params![task_id, path], |row| row.get::<_, String>(0),
+        ).optional()?)),
         Inventory => {
             let mut query=db.prepare(&format!("SELECT {COLUMNS},t.status,t.updated_at FROM attachments a JOIN tasks t ON t.id=a.task_id"))?;
             let items = query
@@ -85,7 +98,9 @@ pub fn files(db: &Connection, command: FileCommand) -> Result<Value> {
             // Extract only references. Unrelated status output can exceed the size
             // of an attachment and does not need to pass through the control pipe.
             let mut refs=db.prepare("SELECT json_extract(payload_json,'$.attachments') FROM events WHERE task_id=? AND kind='status'")?;
-            let mut history = BTreeSet::new();
+            let mut deliveries = db.prepare("SELECT attachment_id FROM delivered_images WHERE task_id=?")?;
+            let mut history = deliveries.query_map([&task_id], |row| row.get(0))?
+                .collect::<rusqlite::Result<BTreeSet<String>>>()?;
             let mut pending = BTreeSet::new();
             for entry in refs.query_map([&task_id], |row| row.get::<_, Option<String>>(0))? {
                 if let Some(entry) = entry? {
@@ -124,6 +139,10 @@ pub fn files(db: &Connection, command: FileCommand) -> Result<Value> {
                 } => db.execute(
                     "UPDATE attachments SET unused_since=?,expired_at=? WHERE id=?",
                     params![unused_since, expired_at, id],
+                )?,
+                RegisterDelivery { task_id, path, id } => db.execute(
+                    "INSERT INTO delivered_images(task_id,source_path,attachment_id) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+                    params![task_id, path, id],
                 )?,
                 Delete { id } => db.execute("DELETE FROM attachments WHERE id=?", [id])?,
                 _ => unreachable!(),
