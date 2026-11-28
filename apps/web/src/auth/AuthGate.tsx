@@ -66,7 +66,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       />
     );
   }
-  if (phase === "loading") return <div role="status" aria-label="Opening Palmagent" className="grid h-app place-items-center bg-background text-muted-foreground"><Spinner className="size-5" /></div>;
+  if (phase === "loading") return <div role="status" aria-label="Opening Palmagent" className="grid h-full place-items-center bg-background text-muted-foreground"><Spinner className="size-5" /></div>;
   if (phase === "unauthed") return <Login methods={methods} onAuthenticated={() => setPhase("authed")} />;
   return <>{children}</>;
 }

@@ -21,7 +21,7 @@ import type { ConnState } from "../hooks/useInbox";
 import { useRepos } from "../hooks/useRepos";
 
 import { goBackTo, navigate } from "../router";
-import { AppBar, AppShell, ConnPill } from "./AppShell";
+import { AppBar, AppShell, ReconnectStatus } from "./AppShell";
 import { StatusBadge } from "./chips";
 import { SpaceDetails, TaskFilterChips, TaskFilters, taskFilterDirectories, type TaskFilter } from "./SpaceTools";
 import { useActionState } from "../action-state";
@@ -379,7 +379,7 @@ export const InboxView = memo(function InboxView({
           {!loading && <TaskFilters {...filters} />}
           {space ? <SpaceDetails repo={space} /> : <IconButton aria-label="Open Spaces" onClick={() => navigate("/spaces")}><Folder /></IconButton>}
         </AppBar>
-        {mobileHome && conn === "reconnecting" && <div role="status" className="px-4 pb-2"><ConnPill conn={conn} /></div>}
+        {mobileHome && <ReconnectStatus conn={conn} className="px-4 pb-2" />}
         {archiving && <p role="status" className="px-4 py-2 text-xs text-muted-foreground"><Pending>Archiving task…</Pending></p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
         <ListSearch inputRef={searchInput} label="Search tasks" clearLabel="Clear task search"
