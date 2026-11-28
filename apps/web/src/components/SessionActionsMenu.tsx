@@ -4,7 +4,7 @@ import { RenameTaskSchema } from "@palmagent/shared/requests";
 import { MoreVertical, Pencil, Pin, PinOff } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -37,10 +37,10 @@ export function SessionActionsMenu({ task, children, lifecycle, label = "Task ac
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button ref={node => { trigger.current = node; if (triggerRef) triggerRef.current = node; }} variant="ghost" size="icon" className="relative size-11 shrink-0" aria-label={label} aria-describedby={notification ? notificationId : undefined}>
+          <IconButton ref={node => { trigger.current = node; if (triggerRef) triggerRef.current = node; }} className="relative" aria-label={label} aria-describedby={notification ? notificationId : undefined}>
             <MoreVertical />
             {notification && <><span aria-hidden="true" className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" /><span id={notificationId} className="sr-only">{notification}</span></>}
-          </Button>
+          </IconButton>
         </DropdownMenuTrigger>
         {/* Remove the closed menu immediately so its exit animation cannot
             restore focus after the editor has already been closed and reopened. */}

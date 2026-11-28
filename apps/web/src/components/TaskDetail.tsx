@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useTaskStream } from "../hooks/useTaskStream";
@@ -130,10 +130,10 @@ export function TaskDetailView({ taskId: existingId, task: inboxTask, onCreated,
     <AppShell>
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <AppBar title={heading} conn={creating ? undefined : conn} conversation>
-          {navigation?.openGame && <Button variant="ghost" size="icon-lg" aria-label="Open arcade" title="Arcade" onClick={event => navigation.openGame?.(event.currentTarget)}><Gamepad2 /></Button>}
-          <Button variant="ghost" size="icon-lg" className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
+          {navigation?.openGame && <IconButton aria-label="Open arcade" title="Arcade" onClick={event => navigation.openGame?.(event.currentTarget)}><Gamepad2 /></IconButton>}
+          <IconButton className="pointer-events-auto touch-pan-y" aria-label="New task" title="New task" onClick={() => navigate(newTaskPath(task?.repoId ?? initialRepoId))}>
             <SquarePen />
-          </Button>
+          </IconButton>
           {task && <>
             <TaskActionsMenu task={task} busy={busy} canCancel={canCancel} canArchive={canArchive} triggerRef={taskActionsTrigger} onTerminal={() => { side.hide(); setTerminalOpen(true); }}
               onSideChat={showSide} sideChatActive={side.hasSession} sideChatUnread={side.unread} sideChatOpen={side.open}

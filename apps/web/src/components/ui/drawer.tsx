@@ -5,7 +5,7 @@ import { ScrollArea } from "./scroll-area";
 import { Drawer as DrawerPrimitive } from "vaul";
 
 import { X } from "lucide-react";
-import { Button } from "./button";
+import { IconButton } from "./button";
 import { cn } from "@/lib/utils";
 
 // Keep one primitive tree through viewport changes so drafts, focus and scroll survive.
@@ -76,7 +76,7 @@ function DrawerContent({
         {side === "bottom" && <div aria-hidden="true" data-slot="drawer-handle" className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input sm:hidden" />}
         {children}
         {showClose && <DrawerClose asChild>
-          <Button variant="ghost" size="icon" className="absolute top-2 right-2 size-11" aria-label="Close"><X /></Button>
+          <IconButton className="absolute top-2 right-2" aria-label="Close"><X /></IconButton>
         </DrawerClose>}
       </DrawerPrimitive.Content>
     </DrawerPortal>

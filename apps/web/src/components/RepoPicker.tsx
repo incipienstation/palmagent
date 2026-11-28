@@ -6,10 +6,10 @@ import { toast } from "./ui/toaster";
 import { readUpdateSnapshot, useUpdateState } from "../update-state";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DiscoveredRepo, FsListResponse, Repo, ValidateRepoPathResponse } from "@palmagent/shared";
-import { ArrowUp, ChevronLeft, Folder, FolderSearch, GitBranch, Keyboard, RefreshCw, X } from "lucide-react";
+import { ArrowUp, ChevronLeft, Ellipsis, Folder, FolderSearch, GitBranch, Keyboard, RefreshCw, Trash2, X } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import {
   Drawer,
   DrawerBody,
@@ -20,6 +20,8 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
@@ -112,8 +114,37 @@ function Row(props: {
   );
 }
 
+function SpaceActions({ repo, onRequestRemove }: {
+  repo: Repo;
+  onRequestRemove: (repo: Repo, trigger: HTMLButtonElement) => void;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const openingConfirmation = useRef(false);
+  return <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <IconButton ref={trigger} aria-label={`Actions for ${repo.name}`}><Ellipsis /></IconButton>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent onCloseAutoFocus={event => {
+      if (openingConfirmation.current) event.preventDefault();
+      openingConfirmation.current = false;
+    }}>
+      <DropdownMenuGroup>
+        <DropdownMenuItem variant="destructive" onSelect={() => {
+          if (!trigger.current) return;
+          openingConfirmation.current = true;
+          onRequestRemove(repo, trigger.current);
+        }}>
+          <Trash2 />Remove Space
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+
 export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const actionTrigger = useRef<HTMLButtonElement | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Repo | null>(null);
   const browser = useRepositoryBrowserOperations();
   const restoring = useRef(open && readUpdateSnapshot("picker:mode") !== undefined);
   const [mode, setMode] = useUpdateState<Mode>(`picker:mode`, "search");
@@ -263,7 +294,6 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
 
   async function removeRepo(repo: Repo) {
     if (mutations.removing.has(repo.id)) return;
-    if (!window.confirm(`Remove "${repo.name}" from Palmagent? Its archived task history and routines will be deleted. The folder will be kept.`)) return;
     setError("");
     await removeRegisteredRepo(repo);
     onChanged();
@@ -275,29 +305,25 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
         <DrawerHeader>
           <DrawerHeaderRow>
             {mode !== "search" && (
-              <Button
-                variant="ghost"
-                size="icon-lg"
-                className="-ml-1.5 text-primary"
+              <IconButton
+                className="-ml-1.5"
                 aria-label="Back to Spaces"
                 onClick={backToSearch}
               >
-                <ChevronLeft className="size-5" />
-              </Button>
+                <ChevronLeft />
+              </IconButton>
             )}
             <DrawerTitle>Add Space</DrawerTitle>
-            <Button
-              variant="outline"
-              size="icon-lg"
+            <IconButton
               onClick={() => void refresh(true)}
               disabled={scanning}
               aria-label="Rescan folders"
             >
-              <RefreshCw className={cn("size-3.5", scanning && "motion-safe:animate-spin")} />
-            </Button>
-            <Button ref={closeRef} variant="outline" size="icon-lg" onClick={onClose} aria-label="Close">
-              <X className="size-3.5" />
-            </Button>
+              <RefreshCw className={scanning ? "motion-safe:animate-spin" : undefined} />
+            </IconButton>
+            <IconButton ref={closeRef} onClick={onClose} aria-label="Close">
+              <X />
+            </IconButton>
           </DrawerHeaderRow>
           <DrawerDescription className="sr-only">
             Connect a discovered folder, browse folders, or enter a path manually.
@@ -353,19 +379,10 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
                       setValidation(null);
                       setPicked({ path: r.path, name: r.name, branch: r.branch });
                     }}
-                    trailing={
-                      reg && (
-                        <Button
-                          variant="outline"
-                          size="icon-lg"
-                          className="border-destructive-border text-destructive"
-                          aria-label={`Remove ${r.name}`}
-                          onClick={() => void removeRepo(reg)}
-                        >
-                          <X className="size-3.5" />
-                        </Button>
-                      )
-                    }
+                    trailing={reg && <SpaceActions repo={reg} onRequestRemove={(target, trigger) => {
+                      actionTrigger.current = trigger;
+                      setRemoveTarget(target);
+                    }} />}
                   />
                 );
               })}
@@ -516,6 +533,22 @@ export function RepoPicker({ open, repos, onClose, onRegistered, onChanged }: Pr
             </Button>
           </DrawerFooter>
         )}
+        {removeTarget && <AlertDialog open onOpenChange={next => { if (!next) setRemoveTarget(null); }}>
+          <AlertDialogContent onCloseAutoFocus={event => {
+            event.preventDefault();
+            const target = actionTrigger.current;
+            (target?.isConnected ? target : closeRef.current)?.focus({ preventScroll: true });
+          }}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove {removeTarget.name} from Spaces?</AlertDialogTitle>
+              <AlertDialogDescription>Its archived task history and routines will be deleted. The folder will stay on disk.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep Space</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={() => void removeRepo(removeTarget)}>Remove Space</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>}
       </DrawerContent>
     </Drawer>
   );

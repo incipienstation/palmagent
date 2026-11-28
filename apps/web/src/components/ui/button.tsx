@@ -52,4 +52,8 @@ const Button = React.forwardRef<
 });
 Button.displayName = "Button";
 
-export { Button, buttonVariants };
+function IconButton(props: Omit<React.ComponentProps<typeof Button>, "size"> & { "aria-label": string }) {
+  return <Button type="button" variant="ghost" size="icon-lg" {...props} />;
+}
+
+export { Button, IconButton, buttonVariants };
