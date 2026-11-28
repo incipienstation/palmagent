@@ -171,6 +171,7 @@ export function createApi(lifecycle: ApiLifecycle, fetcher: typeof fetch = (...a
     discoverRepos: (refresh = false, signal?: AbortSignal) => read(() => client.repos.discover.$get({ query: refresh ? { refresh: "1" } : {} }, requestOptions(signal)), signal),
     validateRepoPath: (path: string, signal?: AbortSignal) => read(() => client.repos.validate.$get({ query: { path } }, requestOptions(signal)), signal),
     listFs: (path?: string, signal?: AbortSignal) => read(() => client.fs.list.$get({ query: { path } }, requestOptions(signal)), signal),
+    taskFile: (id: string, path: string, signal: AbortSignal) => read(() => tasks.file.$get({ param: idParam(id), query: { path } }, requestOptions(signal)), signal),
     listTasks: (status?: TaskStatus) => read(() => client.tasks.$get({ query: { status } })).then((r) => r.tasks),
     taskHistory: (id: string, before?: number, details: "summary" | "full" = "full", signal?: AbortSignal, transcript = false) => read(() => tasks.history.$get({
       param: idParam(id), query: { ...(transcript ? { format: "transcript" as const } : {}), ...(before === undefined ? {} : { before: String(before) }), ...(details === "summary" ? { details } : {}) },

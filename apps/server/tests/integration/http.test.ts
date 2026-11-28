@@ -25,7 +25,7 @@ import { nativeHome } from "../../src/modules/tasks/adapters/outbound/native-ses
 import { config } from "../../src/composition/config.js";
 import { Db } from "../../src/composition/database.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
-import { readTaskImage, readTaskVisualization } from "../../src/modules/tasks/adapters/outbound/task-previews.js";
+import { readTaskFile, readTaskImage, readTaskVisualization } from "../../src/modules/tasks/adapters/outbound/task-previews.js";
 import { Hub } from "../../src/platform/events/hub.js";
 import type { RunnerBackend } from "../../src/modules/agents/api.js";
 import { InProcessBackend } from "../../src/modules/agents/adapters/outbound/inproc-backend.js";
@@ -52,7 +52,7 @@ function fixture(t: test.TestContext, authEnabled = true, extra: Partial<Pick<Ht
   const hub = new Hub();
   const service = createTaskService(db, hub, new ProcessSupervisor(1), backend, new WorktreeManager(), createAttachmentStorage(db),
     new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator(),
-    undefined, undefined, undefined, { readImage: readTaskImage, readVisualization: readTaskVisualization }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
+    undefined, undefined, undefined, { readFile: readTaskFile, readImage: readTaskImage, readVisualization: readTaskVisualization }, undefined, undefined, new VoiceSessions(), new SkillDiscovery(), new AccountLimitReader(async agent => agent === "claude" ? { rate_limits_available: false } : { rateLimits: {} }), usageReader, activityReader, transcriptReader);
   const settings = { ...config, authEnabled, rpId: "localhost", authOrigin: authEnabled ? "https://localhost" : "", repoRoots: [dir], staticDir: join(dir, "web") };
   const auth = new AuthService(db.auth, settings, webauthn);
   const shutdown = new AbortController();
@@ -889,7 +889,7 @@ test("display-only task edits leave reads alone; repo deletion signals persisted
   assert.deepEqual(await f.service.usage(), []);
 });
 
-test("task previews require a session and serve bounded raster images or isolated HTML inside the task directory", async (t) => {
+test("task previews require a session and serve bounded text, raster images or isolated HTML inside the task directory", async (t) => {
   const f = fixture(t);
   const cwd = join(f.dir, "task");
   mkdirSync(cwd);
@@ -928,6 +928,23 @@ test("task previews require a session and serve bounded raster images or isolate
     assert.equal((await f.app.request(`/api/tasks/images/image${query}`, { headers })).status, 400);
   }
   assert.equal((await f.app.request("/api/tasks/missing/image?path=preview.png", { headers })).status, 404);
+  const file = (path: string) => `/api/tasks/images/file?${new URLSearchParams({ path })}`;
+  const source = "<b>plain text</b>\nsecond line";
+  writeFileSync(join(cwd, "sample.ts"), source);
+  assert.equal((await f.app.request(file("sample.ts"))).status, 401);
+  for (const path of ["sample.ts", join(cwd, "sample.ts")]) {
+    const response = await f.app.request(file(path), { headers });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type")!, /^application\/json/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.deepEqual(await response.json(), { text: source });
+  }
+  for (const path of ["../outside.png", "escape.png", "missing.ts"]) {
+    assert.equal((await f.app.request(file(path), { headers })).status, 404);
+  }
+  assert.equal((await f.app.request(file("preview #1.png"), { headers })).status, 415);
+  assert.equal((await f.app.request(file("large.png"), { headers })).status, 413);
   const preview = (path: string) => `/api/tasks/images/visualization?${new URLSearchParams({ path })}`;
   const html = "<button>Inspect</button>";
   writeFileSync(join(cwd, "spec.html"), html);

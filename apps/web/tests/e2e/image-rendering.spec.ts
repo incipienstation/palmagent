@@ -59,6 +59,29 @@ test("a visualize marker renders in the conversation and opens an interactive vi
   await assertViewportLocked(page);
 });
 
+test("chat file links open at the referenced line and return focus to the conversation", async ({ page }) => {
+  const reference = "[Inspect source](<src/sample%20file.ts:142>)";
+  const contents = Array.from({ length: 200 }, (_, i) => i === 141 ? "<b>Selected source</b>" : String(i + 1)).join("\n");
+  await page.route("**/api/tasks/t-idle-rich/file?*", route => {
+    const path = new URL(route.request().url()).searchParams.get("path");
+    return path === "src/sample file.ts" ? route.fulfill({ json: { text: contents } }) : route.fulfill({ status: 404, json: { error: "File unavailable in this task directory" } });
+  });
+  await reply(page, reference + "\n\n[Missing file](/workspace/moved.md#L2)");
+  const trigger = page.getByRole("button", { name: "Inspect source" });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "src/sample file.ts:142" });
+  const selected = dialog.locator("mark");
+  await expect(selected).toHaveText("<b>Selected source</b>");
+  await expect(selected).toBeInViewport({ ratio: 1 });
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await page.getByRole("button", { name: "Missing file" }).click();
+  await expect(page.getByRole("alert")).toHaveText("File unavailable in this task directory");
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await assertViewportLocked(page);
+});
+
 for (const parser of ["static", "streaming", "long"] as const) {
   if (parser === "streaming") test(`${parser} Markdown opens dispatched generated images through the authenticated task endpoint`, async ({ page }) => {
     const path = "/provider/generated_images/11111111-1111-4111-8111-111111111111/comparison #1.png";
@@ -77,7 +100,7 @@ for (const parser of ["static", "streaming", "long"] as const) {
       await expect(page.getByRole("link", { name, exact: true })).toHaveAttribute("href", endpoint);
     }
     await expect(page.getByRole("link", { name: "Remote original" })).toHaveAttribute("href", "https://example.invalid/image.png");
-    await expect(page.getByRole("link", { name: "Other local file" })).toHaveAttribute("href", "/workspace/readme.md");
+    await expect(page.getByRole("button", { name: "Other local file" })).toBeVisible();
     await expect(page.getByText("Unsafe original", { exact: true })).toHaveAttribute("href", "");
     await assertViewportLocked(page);
   });
