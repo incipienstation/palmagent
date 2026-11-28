@@ -7,6 +7,7 @@ import { skillsQueryOptions } from "../client-queries";
 import { useDraft } from "../hooks/useDraft";
 import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
+import { ButtonGroup, ButtonGroupText } from "./ui/button-group";
 import { Badge } from "./ui/badge";
 import { PopoverContent } from "./ui/popover";
 import palmIcon from "../assets/palm.svg?inline";
@@ -24,17 +25,28 @@ export function useSkillDraft(key: string): [SkillSelection[], Dispatch<SetState
 
 function SkillIcon({ skill }: { skill: SkillSelection }) {
   return skill.pluginId?.split("@")[0] === "palmagent"
-    ? <span role="img" aria-label="Palmagent plugin" className="size-4 shrink-0 bg-primary"
+    ? <span data-icon="inline-start" role="img" aria-label="Palmagent plugin" className="size-4 shrink-0 bg-primary"
         style={{ mask: `url("${palmIcon}") center / contain no-repeat` }} />
-    : <BookOpen className="size-4 shrink-0" aria-hidden />;
+    : <BookOpen data-icon="inline-start" className="shrink-0" aria-hidden />;
 }
 export function SkillChips({ skills, onRemove, disabled }: { skills?: SkillSelection[]; onRemove?: () => void; disabled?: boolean }) {
   if (!skills?.length) return null;
-  return <div className="flex min-w-0 flex-wrap gap-1" aria-label="Selected skills">
-    {skills.map(skill => <Badge key={skill.id} variant="outline" className="min-w-0 max-w-full gap-1.5" title={`${skill.source} · ${skill.name}`}>
-      <SkillIcon skill={skill} /><span className="truncate">{skill.name}</span>
-      {onRemove && <Button type="button" variant="ghost" size="icon-sm" disabled={disabled} aria-label={`Remove ${skill.name} skill`} onClick={onRemove}><X /></Button>}
-    </Badge>)}
+  return <div role="group" aria-label="Selected skills" className="flex min-w-0 max-w-full flex-wrap gap-1">
+    {skills.map(skill => {
+      const title = `${skill.source} · ${skill.name}`;
+      const label = <><SkillIcon skill={skill} /><span className="truncate">{skill.name}</span></>;
+      return onRemove ? (
+        <ButtonGroup key={skill.id} aria-label={skill.name} className="min-w-0 max-w-full">
+          <ButtonGroupText className="min-w-0" title={title}>{label}</ButtonGroupText>
+          <Button type="button" variant="outline" size="icon-sm" disabled={disabled}
+            aria-label={`Remove ${skill.name} skill`} onClick={onRemove}>
+            <X aria-hidden />
+          </Button>
+        </ButtonGroup>
+      ) : (
+        <Badge key={skill.id} variant="outline" className="max-w-full" title={title}>{label}</Badge>
+      );
+    })}
   </div>;
 }
 

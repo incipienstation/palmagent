@@ -148,7 +148,12 @@ export function Composer({ id, value, onChange, placeholder, label, action, onSe
     {voice.error && <InputGroupAddon align="block-start" className="px-3">
       <Alert variant="destructive">{voice.error}</Alert>
     </InputGroupAddon>}
-    {!!skills?.length && <InputGroupAddon align="block-start" className="px-3 pt-2"><SkillChips skills={skills} disabled={disabled || busy} onRemove={() => onSkillsChange?.([])} /></InputGroupAddon>}
+    {!!skills?.length && <InputGroupAddon align="block-start" className="px-3 pt-2">
+      <SkillChips skills={skills} disabled={disabled || busy} onRemove={onSkillsChange && (() => {
+        onSkillsChange([]);
+        textarea.current?.focus();
+      })} />
+    </InputGroupAddon>}
     {header && <InputGroupAddon align="block-start" className="px-3">{header}</InputGroupAddon>}
     {attachments.images.length > 0 && <InputGroupAddon align="block-start" className="px-3 pt-2">
       <AttachmentTray images={attachments.images} disabled={busy} onRemove={attachments.remove} />

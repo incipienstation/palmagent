@@ -101,7 +101,10 @@ test("slash picker protects IME, Enter, literal paths and Escape; button works o
   await expect(page.getByRole("option")).toHaveCount(2);
   await page.getByRole("option", { name: /palmagent:doctor/ }).tap();
   await expect(input).toHaveValue("Check this "); expect(sends).toBe(0);
-  await page.getByRole("button", { name: "Remove palmagent:doctor skill" }).tap();
+  const remove = page.getByRole("button", { name: "Remove palmagent:doctor skill" });
+  await expect(remove).toBeInViewport({ ratio: 1 });
+  await remove.tap();
+  await expect(input).toBeFocused();
   await expect(page.getByLabel("Selected skills")).toHaveCount(0);
 });
 
