@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.2.0-alpha.64
+
 ### Changed
 
 - The operator plugin ships a portable Agent Plugins manifest for clients that load skills from the standard package layout.
