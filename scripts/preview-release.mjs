@@ -11,6 +11,7 @@ import { inspectSource, candidateArtifact } from './release-candidate.mjs';
 import { readChannel } from './lib/standalone-release.mjs';
 import { StandaloneManifestSchema, RELEASE_PUBLIC_KEYS } from '../packages/shared/src/standalone.ts';
 import { verifySignedPayload } from '../apps/server/src/platform/filesystem/release-artifact.ts';
+import { mergeVerifiedPR } from './lib/verified-pr.mjs';
 import { releaseBot } from './lib/release-bot.mjs';
 import { github, githubPages, registryMetadata, registryTarball, delay } from './lib/release-github.mjs';
 
@@ -150,77 +151,6 @@ export async function waitForPublication(repository, commit, { api = github, pag
   return run;
 }
 
-export async function preparationValidation(repository, pr, expectedHead, { pages = githubPages, sleep = delay } = {}) {
-  const deadline = Date.now() + 60000;
-  do {
-    const runs = pages(repository, 'actions/workflows/ci.yml/runs?event=pull_request', 'workflow_runs')
-      .filter((run) => run.head_sha === expectedHead && run.pull_requests?.some((item) => item.number === pr.number))
-      .sort((a, b) => b.id - a.id);
-    if (runs.length) return runs[0].id;
-    await sleep(3000);
-  } while (Date.now() < deadline);
-  throw new Error('Preparation PR CI is not visible; inspect Actions before retrying');
-}
-
-export function assertPreparationRun(run, repository, branch, expectedHead) {
-  assert(run.repository?.full_name === repository && run.path === '.github/workflows/ci.yml'
-    && run.event === 'pull_request' && run.head_branch === branch && run.head_sha === expectedHead,
-  'Preparation CI identity differs from the selected PR');
-}
-
-export async function mergePreparation(cwd, repository, pr, expectedHead, source, { api = github, pages = githubPages, sleep = delay, validation = preparationValidation, previousHead } = {}) {
-  let runId, approvalReported = false, observedHead = false, propagationRetries = 0;
-  const deadline = Date.now() + 20 * 60 * 1000;
-  while (Date.now() < deadline) {
-    const current = api(repository, `pulls/${pr.number}`);
-    assert(current.base.ref === 'develop' && (!pr.head?.ref || current.head.ref === pr.head.ref), 'Preparation PR identity changed');
-    if (current.head.sha !== expectedHead) {
-      // After our lease-protected push, GitHub's PR API can briefly report the
-      // previous head. Wait only for that known head, before ever trusting the new
-      // one. Unknown changes, reversions after observation, and persistent lag fail closed.
-      if (!observedHead && previousHead && current.head.sha === previousHead && !current.merged
-        && current.state === 'open' && !current.draft && propagationRetries < 5) {
-        propagationRetries++;
-        await sleep(1000);
-        continue;
-      }
-      throw new Error('Preparation PR identity changed');
-    }
-    observedHead = true;
-    if (current.merged) return current.merge_commit_sha;
-    assert(current.state === 'open' && !current.draft, 'Preparation PR was closed or held as a draft');
-    const head = api(repository, 'git/ref/heads/develop').object.sha;
-    if (head !== source) return null; // Reprepare the same owned branch against the newer source.
-    runId ??= await validation(repository, current, expectedHead, { api, pages, sleep });
-    const run = api(repository, `actions/runs/${runId}`);
-    assertPreparationRun(run, repository, current.head.ref, expectedHead);
-    if (run.conclusion === 'action_required' && !approvalReported) {
-      console.log(`Preparation CI needs maintainer approval: ${run.html_url}`);
-      approvalReported = true;
-    }
-    assert(run.status !== 'completed' || ['success', 'action_required'].includes(run.conclusion), 'Preparation CI failed; inspect its run');
-    if (run.status === 'completed' && run.conclusion === 'success' && current.mergeable) {
-      const jobs = pages(repository, `actions/runs/${runId}/jobs?filter=latest`, 'jobs');
-      const validate = jobs.filter((job) => job.name === 'validate');
-      assert(validate.length === 1 && validate[0].head_sha === expectedHead && validate[0].status === 'completed'
-        && validate[0].conclusion === 'success', 'Preparation CI has no successful validate job on the selected head');
-      try {
-        api(repository, `pulls/${pr.number}/merge`, { method: 'PUT', body: { sha: expectedHead, merge_method: 'squash' } });
-      } catch (error) {
-        const result = api(repository, `pulls/${pr.number}`);
-        if (result.merged && result.head.sha === expectedHead) return result.merge_commit_sha;
-        if (api(repository, 'git/ref/heads/develop').object.sha !== source) return null;
-        throw error; // Never bypass protections or a review hold.
-      }
-      const result = api(repository, `pulls/${pr.number}`);
-      assert(result.merged && result.head.sha === expectedHead, 'Preparation merge was not confirmed');
-      return result.merge_commit_sha;
-    }
-    await sleep(15000);
-  }
-  throw new Error('Preparation CI or review requirements did not finish; approve the retained PR workflow if required, then resume Preview');
-}
-
 async function prepare(cwd, repository, baseline, registry, tags, bot) {
   let pr, version;
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -244,7 +174,7 @@ async function prepare(cwd, repository, baseline, registry, tags, bot) {
       assert(oldHead === pr.head.sha, 'Preparation branch changed');
       assertPreparation(cwd, marker.source, oldHead, version);
       if (marker.source === source) {
-        const merged = await mergePreparation(cwd, repository, pr, oldHead, source);
+        const merged = await mergeVerifiedPR(repository, pr, oldHead, source);
         if (merged) return { action: 'publish', commit: merged, version };
         continue;
       }
@@ -260,7 +190,7 @@ async function prepare(cwd, repository, baseline, registry, tags, bot) {
     const body = `Prepare Preview ${version} from ${source}. This PR changes only product versions and release notes. Required CI and develop protections apply.\n\n<!-- palmagent-preview:${JSON.stringify({ source, version })} -->\n`;
     pr = pr ? github(repository, `pulls/${pr.number}`, { method: 'PATCH', body: { body } })
       : github(repository, 'pulls', { method: 'POST', body: { title: `chore(release): prepare ${version}`, head: branch, base: 'develop', body } });
-    const merged = await mergePreparation(cwd, repository, pr, head, source, { previousHead: oldHead });
+    const merged = await mergeVerifiedPR(repository, pr, head, source, { previousHead: oldHead });
     if (merged) {
       git(cwd, 'fetch', 'origin', 'develop');
       assert(git(cwd, 'rev-parse', `${merged}^{tree}`) === git(cwd, 'rev-parse', `${head}^{tree}`), 'Merged preparation differs from its verified tree');
@@ -297,12 +227,23 @@ export async function runPreview(cwd, env) {
   }
   const currentBase = JSON.parse(git(cwd, 'show', `${source}:package.json`)).version.split('-')[0];
   const resume = pending.filter((item) => item.version.split('-')[0] === currentBase && ancestor(cwd, item.commit, source)).sort((a, b) => compareVersions(a.version, b.version))[0];
-  let plan = resume ? { action: 'publish', ...resume } : await prepare(cwd, repository, baseline, registry, tags, bot);
+  const plan = resume ? { action: 'publish', ...resume } : await prepare(cwd, repository, baseline, registry, tags, bot);
   if (plan.action === 'skip') return plan;
   git(cwd, 'fetch', 'origin', 'develop');
   git(cwd, 'checkout', '--detach', plan.commit);
   const identity = inspectSource(cwd, plan.commit);
   assert(identity.channel === 'next' && identity.version === plan.version, 'Preview source version or channel differs');
+  return plan;
+}
+
+async function publishPrepared(cwd, env) {
+  assert(env.GITHUB_ACTIONS === 'true' && env.GITHUB_REF === 'refs/heads/develop', 'Expected develop publication workflow');
+  const repository = env.GH_REPO;
+  const commit = env.PREVIEW_COMMIT;
+  assert(/^[a-f0-9]{40}$/.test(commit) && ancestor(cwd, commit, 'origin/develop'), 'Expected a prepared develop commit');
+  const identity = inspectSource(cwd, commit);
+  assert(identity.channel === 'next' && identity.version === env.PREVIEW_VERSION, 'Prepared Preview identity changed');
+  const plan = { action: 'publish', commit, version: identity.version };
   const run = await waitForPublication(repository, plan.commit);
   const result = { ...plan, runUrl: run.html_url };
   // A resumed release can predate already-merged changes. Explicitly queue another comparison;
@@ -317,7 +258,13 @@ export async function runPreview(cwd, env) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    const result = await runPreview(resolve(process.argv[2] ?? '.'), process.env);
+    const cwd = resolve(process.argv[2] ?? '.');
+    const result = process.argv[3] === 'publish'
+      ? await publishPrepared(cwd, process.env)
+      : await runPreview(cwd, process.env);
+    if (process.env.GITHUB_OUTPUT && result.action === 'publish') {
+      appendFileSync(process.env.GITHUB_OUTPUT, `commit=${result.commit}\nversion=${result.version}\n`);
+    }
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Preview result\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
     console.log(JSON.stringify(result));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
