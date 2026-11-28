@@ -32,7 +32,10 @@ pub(super) fn persist(db: &Connection, changes: &[Change]) -> Result<Option<i64>
                 "UPDATE tasks SET pinned_at=?1,updated_at=?2 WHERE id=?3",
                 params![pinned_at, now, id],
             )?,
-            Action::ProviderTitle { title, first_prompt } => db.execute(
+            Action::ProviderTitle {
+                title,
+                first_prompt,
+            } => db.execute(
                 "UPDATE tasks SET provider_title=?1,prompt=coalesce(?2,prompt) WHERE id=?3",
                 params![title, first_prompt, id],
             )?,
