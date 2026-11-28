@@ -2,7 +2,7 @@ import { pullRequestValidation, assertPullRequestRun, mergeVerifiedPR } from '..
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isProductPath, productChanges, nextPreviewVersion, assertPreparation } from '../lib/preview-plan.mjs';
-import { releaseBot, planPreview, preparationMarker, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
+import { checkoutPrepared, releaseBot, planPreview, preparationMarker, waitForPublication, successfulPreview, addMaintenanceNotes } from '../preview-release.mjs';
 import { prepareVersion } from '../release-version.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -250,4 +250,13 @@ test('a PR reverting after the expected head was observed does not regain the pr
     sleep: async (ms) => { assert.equal(ms, 15000); sleeps++; },
   }), /identity changed/);
   assert.equal(sleeps, 1);
+});
+
+test('publication uses the prepared commit after another PR advances develop', t => {
+  const f = releaseFixture(t);
+  f.put('docs/change.md', 'Another merged PR.\n');
+  f.git('update-ref', 'refs/remotes/origin/develop', f.commit());
+  checkoutPrepared(f.root, f.source, '0.1.0-alpha.1');
+  assert.equal(f.git('rev-parse', 'HEAD'), f.source);
+  assert.throws(() => checkoutPrepared(f.root, f.source, '0.1.0-alpha.2'), /identity changed/);
 });

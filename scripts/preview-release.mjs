@@ -230,20 +230,23 @@ export async function runPreview(cwd, env) {
   const plan = resume ? { action: 'publish', ...resume } : await prepare(cwd, repository, baseline, registry, tags, bot);
   if (plan.action === 'skip') return plan;
   git(cwd, 'fetch', 'origin', 'develop');
-  git(cwd, 'checkout', '--detach', plan.commit);
-  const identity = inspectSource(cwd, plan.commit);
-  assert(identity.channel === 'next' && identity.version === plan.version, 'Preview source version or channel differs');
+  checkoutPrepared(cwd, plan.commit, plan.version);
   return plan;
+}
+
+export function checkoutPrepared(cwd, commit, version) {
+  assert(/^[a-f0-9]{40}$/.test(commit) && ancestor(cwd, commit, 'origin/develop'), 'Expected a prepared develop commit');
+  git(cwd, 'checkout', '--detach', commit);
+  const identity = inspectSource(cwd, commit);
+  assert(identity.channel === 'next' && identity.version === version, 'Prepared Preview identity changed');
 }
 
 async function publishPrepared(cwd, env) {
   assert(env.GITHUB_ACTIONS === 'true' && env.GITHUB_REF === 'refs/heads/develop', 'Expected develop publication workflow');
   const repository = env.GH_REPO;
   const commit = env.PREVIEW_COMMIT;
-  assert(/^[a-f0-9]{40}$/.test(commit) && ancestor(cwd, commit, 'origin/develop'), 'Expected a prepared develop commit');
-  const identity = inspectSource(cwd, commit);
-  assert(identity.channel === 'next' && identity.version === env.PREVIEW_VERSION, 'Prepared Preview identity changed');
-  const plan = { action: 'publish', commit, version: identity.version };
+  checkoutPrepared(cwd, commit, env.PREVIEW_VERSION);
+  const plan = { action: 'publish', commit, version: env.PREVIEW_VERSION };
   const run = await waitForPublication(repository, plan.commit);
   const result = { ...plan, runUrl: run.html_url };
   // A resumed release can predate already-merged changes. Explicitly queue another comparison;
