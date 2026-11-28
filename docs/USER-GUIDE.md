@@ -289,6 +289,14 @@ Set `PALMAGENT_CLAUDE_TRANSPORT=native` on the execution host to use that integr
 for subsequent turns. Source runs select ACP when `claude-agent-acp` is on the host's
 `PATH`.
 
+Packaged Palmagent uses its bundled Codex ACP bridge for ordinary Codex task turns.
+It starts the installed `codex` in the selected account and workspace. The task's
+sandbox applies with approval set to `never`. Shell-connected shared sessions,
+Side Chat, manual compaction, slash commands and older workspace-with-network tasks
+use the native integration. Set `PALMAGENT_CODEX_TRANSPORT=native` on the execution
+host to select it for subsequent turns. Source runs use the workspace's pinned
+`codex-acp` executable when it is on `PATH`.
+
 **Update** runs the native CLI updater after confirmation and verifies the
 installed version afterward. It requires Palmagent sign-in and a recognized
 native installation. Package-manager and custom installations are updated on the

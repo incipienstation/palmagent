@@ -49,7 +49,7 @@ execFileSync("/usr/bin/sudo", ["-n", "systemctl", "start", "--no-block", ${JSON.
 `, { mode: 0o700 });
   const units = renderExecutionUnits(cfg, join(pkg, "execution-launcher.js"));
   const template = units.template.replace("Slice=palmagent-executions.slice", `Slice=${sliceName}`) +
-    `Environment=HOME=${join(root, "home")}\nEnvironment=PROBE_CONTROL=${join(root, "control")}\n`;
+    `Environment=HOME=${join(root, "home")}\nEnvironment=PALMAGENT_CODEX_TRANSPORT=native\nEnvironment=PROBE_CONTROL=${join(root, "control")}\n`;
   for (const [i, text] of [template, units.slice].entries()) {
     const file = join(root, i + ".unit"); writeFileSync(file, text);
     command("install", "-m", "0644", file, unitFiles[i]!);

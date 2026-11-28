@@ -1,7 +1,6 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { Readable, Writable } from "node:stream";
-import { client, ndJsonStream, type ContentBlock, type NewSessionRequest } from "@agentclientprotocol/sdk";
+import { startAcpProcess, type AcpBridge } from "./acp-process.js";
+import { client, type ContentBlock, type NewSessionRequest } from "@agentclientprotocol/sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk/core";
 import { normalizePermission, sampledAgentInput, type InputAttachment } from "@palmagent/shared";
 import { z } from "zod";
@@ -20,8 +19,6 @@ function content(text: string, images?: InputAttachment[]): ContentBlock[] {
     ({ type: "image" as const, data: image.data, mimeType: image.mediaType }))];
 }
 
-type Bridge = { command: string; argv: string[] };
-
 function matchesEcho(prompt: ContentBlock[], echoed: Extract<SDKMessage, { type: "user" }>["message"]["content"]) {
   if (typeof echoed === "string") return prompt.length === 1 && prompt[0].type === "text" && prompt[0].text === echoed;
   return echoed.length === prompt.length && echoed.every((block, i) => {
@@ -34,30 +31,19 @@ function matchesEcho(prompt: ContentBlock[], echoed: Extract<SDKMessage, { type:
 
 /** The retained execution host owns the bridge for a whole turn. The API
  * reconnects to that host's journal, never to a second Claude process. */
-export function claudeAcpRunner(bridge: Bridge, executable: string): AgentRunner {
+export function claudeAcpRunner(bridge: AcpBridge, executable: string): AgentRunner {
   return { agent: "claude", start: (args, emit) => startClaudeAcp(bridge, executable, args, emit) };
 }
 
-function startClaudeAcp(bridge: Bridge, executable: string, args: StartArgs, emit: Emit): RunHandle {
-  const child = spawn(bridge.command, bridge.argv, { cwd: args.cwd, stdio: ["pipe", "pipe", "pipe"],
-    detached: process.platform !== "win32",
-    env: { ...process.env, CLAUDE_CODE_EXECUTABLE: executable, CLAUDE_AGENT_ACP_PROTOCOL: "v1",
-      ...(args.providerHome ? { CLAUDE_CONFIG_DIR: args.providerHome } : {}) } });
-  child.stderr.resume();
+function startClaudeAcp(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emit): RunHandle {
+  const peer = startAcpProcess(bridge, args.cwd, { ...process.env, CLAUDE_CODE_EXECUTABLE: executable,
+    CLAUDE_AGENT_ACP_PROTOCOL: "v1", ...(args.providerHome ? { CLAUDE_CONFIG_DIR: args.providerHome } : {}) });
   let sessionId = args.resumeId, stopped = false, running = false, supportsSteer = false;
   const taskId = args.taskId;
   const project = claudeOutput(args);
   const input = new ClaudeAcpInput(event => emit({ ...event, taskId, sessionId }));
   let finished = false;
   let cancelTimeout: NodeJS.Timeout | undefined;
-  function terminate(signal: NodeJS.Signals) {
-    if (!child.pid) return;
-    try {
-      if (process.platform === "win32") child.kill(signal);
-      else process.kill(-child.pid, signal);
-    } catch { /* The process group has exited. */ }
-  }
-  const exited = new Promise<void>(resolve => child.once("close", () => resolve()));
   let pending: { blocks: ContentBlock[]; id: string; resolve: (r: Receipt) => void } | undefined;
   function confirm(id: string) {
     emit({ taskId, sessionId, kind: "status", payload: { subtype: "message_delivered", messageId: id } });
@@ -105,9 +91,8 @@ function startClaudeAcp(bridge: Bridge, executable: string, args: StartArgs, emi
       }
     });
   let lastResult: Extract<SDKMessage, { type: "result" }> | undefined;
-  const connection = app.connect(ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>));
-  child.once("error", error => connection.close(error));
-  child.stdin.on("error", error => connection.close(error));
+  const connection = app.connect(peer.stream);
+  peer.onError(error => connection.close(error));
   const rpc = connection.agent;
   const setup = { cancellationSignal: AbortSignal.timeout(30_000), stopWaitingOnCancel: true };
   const mode = normalizePermission("claude", args.permission);
@@ -143,11 +128,7 @@ function startClaudeAcp(bridge: Bridge, executable: string, args: StartArgs, emi
       finished = true;
       clearTimeout(cancelTimeout);
       connection.close();
-      child.stdin.end();
-      terminate("SIGTERM");
-      const kill = setTimeout(() => terminate("SIGKILL"), 2000);
-      await exited;
-      clearTimeout(kill);
+      await peer.close();
       emit({ taskId, sessionId, kind: "status", payload: { subtype: "process_exit", code } });
     }
   })();

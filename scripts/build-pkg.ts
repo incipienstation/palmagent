@@ -23,6 +23,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -68,6 +69,27 @@ const common = {
   // and the assembled tarball is leak-scanned independently.
   minify: true,
 };
+
+/** Collect notices from the packages embedded in the upstream esbuild artifact.
+ * The native Codex distribution is external and is never copied into Palmagent. */
+function codexBridgeNotices(root: string, bundle: string): string {
+  const embedded = new Set(Array.from(bundle.matchAll(/^\/\/ node_modules\/((?:@[^/]+\/)?[^/]+)\//gm), match => match[1]));
+  const visited = new Set<string>();
+  const notices: string[] = [];
+  function collect(directory: string) {
+    if (visited.has(directory)) return;
+    visited.add(directory);
+    const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+    const filename = readdirSync(directory).find(name => /^licen[cs]e(?:\.\w+)?$/i.test(name));
+    if (!filename) throw new Error(`Missing license for ${manifest.name}`);
+    notices.push(manifest.name + "\n" + readFileSync(join(directory, filename), "utf8"));
+    for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })) {
+      if (embedded.has(dependency)) collect(resolveDependency(dependency, directory));
+    }
+  }
+  collect(root);
+  return notices.join("\n\n");
+}
 
 async function main(): Promise<void> {
   console.log(`[build-pkg] cleaning ${OUT}`);
@@ -129,6 +151,10 @@ async function main(): Promise<void> {
   ].map(([directory, file]) => JSON.parse(readFileSync(join(directory, "package.json"), "utf8")).name
     + "\n" + readFileSync(join(directory, file), "utf8"));
   writeFileSync(join(OUT, "claude-agent-acp.LICENSE.txt"), notices.join("\n\n"));
+  // The upstream Codex bridge is already bundled. CODEX_PATH selects the host's CLI.
+  const codexBridge = resolveDependency("@agentclientprotocol/codex-acp", SERVER);
+  cpSync(join(codexBridge, "dist/index.js"), join(OUT, "codex-acp.mjs"));
+  writeFileSync(join(OUT, "codex-acp.LICENSE.txt"), codexBridgeNotices(codexBridge, readFileSync(join(codexBridge, "dist/index.js"), "utf8")));
   writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, viewControl: 1, updateAdmission: 1, standaloneUpdate: 1, taskStorage: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
@@ -193,6 +219,8 @@ async function main(): Promise<void> {
       "routine-host.js",
       "terminal-launcher.js",
       "execution-host.js",
+      "codex-acp.mjs",
+      "codex-acp.LICENSE.txt",
       "claude-agent-acp.mjs",
       "claude-agent-acp.LICENSE.txt",
       "execution-launcher.js",

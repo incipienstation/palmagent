@@ -12,6 +12,7 @@ allowBuilds:
   node-pty: true
 
 patchedDependencies:
+  '@agentclientprotocol/codex-acp@2.12.1': patches/@agentclientprotocol__codex-acp@2.12.1.patch
   react-virtuoso@4.18.13: patches/react-virtuoso@4.18.13.patch
 
 # Vaul drawers and Radix overlays must share the toast dismissal context.
