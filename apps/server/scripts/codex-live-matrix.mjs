@@ -17,8 +17,8 @@ export async function codexLiveMatrix() {
     const events = [];
     let stopped = false;
     let stoppedAt;
-    const handle = new CodexRunner().start({ taskId: randomUUID(), messageId: randomUUID(), cwd,
-      permission: "read-only", interactive, ...args }, event => {
+    const input = { taskId: randomUUID(), messageId: randomUUID(), cwd, permission: "read-only", interactive, ...args };
+    const observe = event => {
       events.push(event);
       if (stop && !stopped && event.kind === "tool_call") {
         stopped = true;
@@ -26,7 +26,8 @@ export async function codexLiveMatrix() {
         if (interactive) assert.equal(handle.interrupt(), true);
         else handle.cancel();
       }
-    }, backend);
+    };
+    const handle = interactive ? backend.agentRunner("codex").start(input, observe) : new CodexRunner().start(input, observe, backend);
     let timer;
     try {
       await Promise.race([handle.done, new Promise((_, reject) => {
@@ -52,7 +53,7 @@ export async function codexLiveMatrix() {
   };
   try {
     for (const interactive of [false, true]) {
-      const mode = interactive ? "app-server" : "exec";
+      const mode = interactive ? "task runner" : "exec";
       const marker = `CONTEXT_${randomUUID().replaceAll("-", "")}`;
       const fresh = await run(interactive, { prompt: `Remember ${marker}. Reply with exactly that token. Do not use tools.` });
       success(fresh); assert(text(fresh).includes(marker));

@@ -142,7 +142,8 @@ function start(bridge: AcpBridge, executable: string, args: StartArgs, emit: Emi
       deadline = setTimeout(() => connection.close(new Error("Codex did not start the requested turn.")), 30_000);
       const result = await rpc.request("session/prompt", { sessionId, prompt: prompt(args.prompt, args.images, args.skills) });
       if (first && result.stopReason === "end_turn") delivered(first);
-      event("result", { subtype: stoppedHook ? "hook_stopped" : result.stopReason === "end_turn" ? "completed" : result.stopReason,
+      const status = result.stopReason === "end_turn" ? "completed" : result.stopReason === "cancelled" ? "interrupted" : result.stopReason;
+      event("result", { subtype: stoppedHook ? "hook_stopped" : status,
         is_error: !!stoppedHook || result.stopReason !== "end_turn", usage,
         ...(stoppedHook ? { providerStatus: "completed", error: { message: stoppedHook.message } } : {}) });
     } catch (error) {
