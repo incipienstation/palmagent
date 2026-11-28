@@ -28,7 +28,10 @@ for (const width of [360]) test(`first send keeps the conversation and composer 
   const input = await composer(page).getByRole("textbox").elementHandle();
   await page.getByRole("button", { name: "Send now", exact: true }).click();
   await expect(page.getByRole("group", { name: "Your message" })).toContainText("First message");
-  await expect(page.getByAltText("Attached image 1", { exact: true })).toBeVisible();
+  const image = page.getByRole("img", { name: "Attached image 1", exact: true });
+  await expect(image).toBeVisible();
+  await image.evaluate((img: HTMLImageElement) => img.decode());
+  const localSrc = await image.getAttribute("src");
   await expect(page.getByText("Sending attachments…", { exact: true })).toBeVisible();
   await expect(page.getByText("Working…", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop sending", exact: true })).toBeEnabled();
@@ -62,8 +65,24 @@ for (const width of [360]) test(`first send keeps the conversation and composer 
   const reduced = page.getByRole("heading", { name: "두 번째 제목", exact: true });
   await expect(reduced).toBeVisible();
   await expect(reduced.locator(".invisible")).toHaveCount(0);
+  const id = "8a763360-febd-4f5f-943b-040b3bf26575";
+  const path = `/api/tasks/t-run/attachments/${id}`;
+  const storedRequest = page.waitForRequest(request => new URL(request.url()).pathname === path);
+  let releaseImage!: () => void;
+  const imageGate = new Promise<void>(resolve => { releaseImage = resolve; });
+  await page.route(`**${path}`, async route => {
+    await imageGate;
+    await route.fulfill({ contentType: "image/png", body: png });
+  });
   await send(page, "t-run", { type: "event", event: { taskId: "t-run", agent: task.agent, ts: 1, kind: "status",
-    payload: { subtype: "dispatch", text: "First message", messageId: request.clientRequestId } } }, 1);
+    payload: { subtype: "dispatch", text: "First message", messageId: request.clientRequestId,
+      attachments: [{ id, mediaType: "image/png", size: png.length, width: 1, height: 1 }] } } }, 1);
+  try {
+    await storedRequest;
+    // Keep the decoded local pixels on screen while the stored image is loading.
+    expect(await image.evaluate((img: HTMLImageElement) => [img.currentSrc, img.naturalWidth])).toEqual([localSrc, 1]);
+  } finally { releaseImage(); }
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.currentSrc)).toBe(new URL(path, page.url()).href);
   await expect(page.getByRole("group", { name: "Your message" })).toHaveCount(1);
   await expect(page.getByRole("group", { name: "Your message" })).toContainText("First message");
   expect(await composer(page).evaluate(el => el.getBoundingClientRect().bottom)).toBeCloseTo(pendingBottom, 0);
