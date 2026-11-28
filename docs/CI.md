@@ -56,3 +56,22 @@ phrases. To flag a standalone product name, add it on its own line in the
 `PALMAGENT_DOC_EXCLUDED_NAMES` Actions repository variable. Use public names only.
 The same environment variable configures the extended local check. Matches report the file
 and line. Dedicated license and notice files retain their attributions. Review the meaning of new names and links as part of the documentation change.
+
+## Merging into develop
+
+When a task PR is ready to merge, submit its number and verified head from the repository checkout:
+
+```bash
+node scripts/queue-develop.mjs <pr-number> <verified-head>
+```
+
+The command prints the Actions run URL and follows it to completion. The merge job and
+Preview preparation share one turn at a time. PR CI can run concurrently, and Preview
+releases its turn before building and publishing the candidate. The worker requests a
+squash merge only after the current head passes the required check against the latest
+`develop`. If verification depends on a particular base, pass its full SHA as a third
+argument. A changed source then returns to its owner for verification.
+
+Use the printed run URL to inspect a failure or resume monitoring after disconnecting.
+A conflicting PR needs a resolution from the task owner and a new request for the
+reviewed head. The queue uses the repository-scoped App configured for Preview.

@@ -97,7 +97,15 @@ fs.appendFileSync(process.env.TEST_CALLS, JSON.stringify(['gh', args]) + '\\n');
 if (args[0] === 'repo') console.log(JSON.stringify({nameWithOwner:'example/palmagent'}));
 else if (args[0] === 'api') {
   const endpoint = args[1], method = args[args.indexOf('--method') + 1];
-  if (method === 'PATCH') { let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => {
+  if (endpoint.endsWith('/merge-develop.yml/dispatches')) {
+    let data=''; process.stdin.on('data', c => data+=c); process.stdin.on('end', () => {
+      const request=JSON.parse(data), pr=read();
+      if (request.ref!=='develop' || request.inputs.pr!==String(pr.number) ||
+          request.inputs.head!==pr.head.sha || request.inputs.base!==git('rev-parse','origin/develop')) process.exit(94);
+      console.log(JSON.stringify({workflow_run_id:42,html_url:'https://example.invalid/run/42'}));
+    });
+  }
+  else if (method === 'PATCH') { let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => {
     const pr = {...read(), ...JSON.parse(data)}; write(pr); console.log(JSON.stringify(pr));
   }); }
   else if (method === 'POST') { let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => {
@@ -110,6 +118,9 @@ else if (args[0] === 'api') {
   else if (endpoint.endsWith('git/ref/heads/develop')) console.log(JSON.stringify({object:{sha:git('rev-parse','origin/develop')}}));
   else process.exit(96);
 } else if (args[0] === 'run') {
+  if (args[1] === 'watch' && args[2] === '42') {
+    const pr=read(); pr.merged=true; pr.merged_at='2026-01-01T00:00:00Z'; pr.merge_commit_sha=pr.head.sha; write(pr); process.exit(0);
+  }
   if (args[1] === 'rerun') { fs.writeFileSync(file+'.retried',read().head.sha); process.exit(0); }
   if (args.includes('--log-failed')) console.log('DOMException [TimeoutError]: The operation was aborted due to timeout');
   else console.log(JSON.stringify({databaseId:12,attempt:fs.existsSync(file+'.retried') && fs.readFileSync(file+'.retried','utf8')===read().head.sha ? 2 : 1,headSha:read().head.sha,headBranch:read().head.ref,event:'pull_request',workflowName:'ci',
@@ -119,8 +130,6 @@ else if (args[0] === 'api') {
 } else if (args[1] === 'checks') {
   if (args.includes('--json')) console.log(JSON.stringify([{name:'validate', link:'https://example.com/actions/runs/12/job/21', state:process.env.TEST_CI_FAIL ? 'FAILURE' : 'SUCCESS', bucket:process.env.TEST_CI_FAIL ? 'fail' : 'pass'}]));
   if (process.env.TEST_CI_FAIL) process.exit(1);
-} else if (args[1] === 'merge') {
-  const pr=read(); pr.merged=true; pr.merged_at='2026-01-01T00:00:00Z'; pr.merge_commit_sha=pr.head.sha; write(pr);
 } else process.exit(95);
 `;
 function fixture(t) {
@@ -175,7 +184,7 @@ test('check-only exercises the two native CLIs but never mutates support or open
   assert.equal(result.code,0,result.output); assert.match(result.output,/schema-contract/);
   assert.equal(paid(f.calls()).length,0); assert.equal(f.git('rev-parse','HEAD'),head);
   assert.equal(f.git('status','--porcelain'),''); assert.equal(f.states().length,0);
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,0);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST') && call[1][1].endsWith('/pulls')).length,0);
 });
 test('scheduled promotion can retry a failed checkout and creates one verified PR without model calls', async t=>{
   const f=fixture(t);
@@ -193,7 +202,7 @@ test('scheduled promotion can retry a failed checkout and creates one verified P
   assert.equal(f.states()[0].stage,'merged');
   assert.equal(JSON.parse(readFileSync(join(f.states()[0].worktree,'packages/shared/src/agent-compatibility.json'),'utf8')).codex.exclusiveMaximum,'0.160.2');
   assert.equal((await f.run(['--apply','--allow-codex-repair'])).code,0);
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,1);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST') && call[1][1].endsWith('/pulls')).length,1);
 });
 test('a real schema mismatch starts one mocked repair; a failed process is never retried on the next schedule', async t=>{
   const f=fixture(t), orphan=join(f.root,'orphan'), result=await f.run(['--apply','--allow-codex-repair'],{TEST_FAIL:'1',TEST_BACKGROUND:orphan});
@@ -201,7 +210,7 @@ test('a real schema mismatch starts one mocked repair; a failed process is never
   assert.equal(f.states()[0].repairAttempts,1);
   assert.equal((await f.run(['--apply','--allow-codex-repair'],{TEST_FAIL:'1'})).code,1);
   assert.equal(paid(f.calls()).length,1);
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,0);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST') && call[1][1].endsWith('/pulls')).length,0);
   await new Promise(ok=>setTimeout(ok,1200));
   assert.ok(!readdirSync(f.root).includes('orphan'), 'Repair descendants must not outlive the bounded command');
 });
@@ -224,12 +233,12 @@ test('a blocked PR scans newer versions, promotes only the contiguous passes and
   const repeated=await f.run(args,newer);
   assert.equal(repeated.code,1,repeated.output);
   assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1][1]==='rerun').length,1);
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1][1]==='merge').length,0);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].some(arg=>arg.endsWith('/merge-develop.yml/dispatches'))).length,0);
   assert.equal(inspected(),1,'resume should reuse later passing evidence');
   const recovered=await f.run(args,{...newer,TEST_CI_FAIL:''});
   assert.equal(recovered.code,0,recovered.output);
   assert.equal(f.states()[0].stage,'merged');
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,1);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST') && call[1][1].endsWith('/pulls')).length,1);
   assert.equal(paid(f.calls()).length,0);
 });
 test('a failed schema recheck after rebase cannot be skipped by the next schedule', async t=>{
@@ -241,7 +250,7 @@ test('a failed schema recheck after rebase cannot be skipped by the next schedul
     const result=await f.run(['--apply','--allow-codex-repair'],{TEST_FAIL:'1'});
     assert.equal(result.code,1,result.output);
     assert.equal(f.states()[0].needsCompatibilityCheck,true);
-    assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1][1]==='merge').length,0);
+    assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].some(arg=>arg.endsWith('/merge-develop.yml/dispatches'))).length,0);
     assert.equal(paid(f.calls()).length,0);
   }
   const recovered=await f.run(['--apply','--allow-codex-repair']);
@@ -259,7 +268,7 @@ test('a failed local verification can rebase and create its first remote branch 
   const recovered=await f.run(['--apply','--allow-codex-repair']);
   assert.equal(recovered.code,0,recovered.output); assert.equal(f.states()[0].stage,'merged');
   assert.equal(f.git('ls-remote','origin',ref).split(/\s+/)[0],f.states()[0].head);
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,1);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST') && call[1][1].endsWith('/pulls')).length,1);
   assert.equal(paid(f.calls()).length,0);
 });
 test('retry preserves an unexpected remote branch and does not create a PR', async t=>{
@@ -270,7 +279,7 @@ test('retry preserves an unexpected remote branch and does not create a PR', asy
   const retry=await f.run(['--apply','--allow-codex-repair']);
   assert.equal(retry.code,1,retry.output); assert.match(retry.output,/remote branch changed/);
   assert.equal(f.git('ls-remote','origin',ref).split(/\s+/)[0],unrelated);
-  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST')).length,0);
+  assert.equal(f.calls().filter(call=>call[0]==='gh' && call[1].includes('POST') && call[1][1].endsWith('/pulls')).length,0);
   assert.equal(paid(f.calls()).length,0);
 });
 test('a successful repair rereads the updated consumed schema and runs exactly one live matrix', async t=>{
