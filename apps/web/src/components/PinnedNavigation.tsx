@@ -1,3 +1,4 @@
+import { TaskTitle } from "./TaskTitle";
 import { useRef, useState, type DragEvent } from "react";
 import type { TaskState } from "@palmagent/shared";
 import { ArrowDown, ArrowUp, GripVertical, MoreVertical } from "lucide-react";
@@ -63,7 +64,7 @@ export function PinnedNavigation({ tasks, activeId, onNavigate }: {
         }}
         onDragEnd={clearDrag}
         onClick={() => onNavigate(task.taskId)}>
-        <GripVertical data-icon="inline-start" className="cursor-grab" /><span className="truncate">{taskTitle(task)}</span>
+        <GripVertical data-icon="inline-start" className="cursor-grab" /><span className="truncate"><TaskTitle task={task} /></span>
       </Button>
       {tasks.length > 1 && <DropdownMenu open={menuTaskId === task.taskId} onOpenChange={open => {
         setMenuTaskId(current => open ? task.taskId : current === task.taskId ? null : current);

@@ -15,7 +15,7 @@ import type { SubmitMessage, MessageAction, MessageSettings } from "@palmagent/s
 import type {
   DispatchSessionRequest, SessionHandoffResponse, AgentKind, AgentUsage, AnswerRequest, CreateRepoRequest, UpdateRepoRequest, CreateTaskRequest, InputAttachment, PrRef, QuestionRequest, Repo, SteerResponse, TaskState, TaskStatus,
 } from "@palmagent/shared";
-import { DEFAULT_PERMISSION } from "@palmagent/shared";
+import { DEFAULT_PERMISSION, taskTitle } from "@palmagent/shared";
 import { extractOutputImages, toolImagePayload } from "../attachments/output-images.js";
 import type { AttachmentStorage, TaskPreviewReader } from "../ports/outbound/attachments.js";
 import type { PrStatusSink, TaskDefaults, TaskSupervisor, TaskWorktreeManager, TerminalTaskLifecycle } from "../ports/outbound/task-runtime.js";
@@ -147,6 +147,8 @@ export class TaskService implements PrStatusSink {
 
   private shuttingDown = false;
   sharedSessions?: SharedSessionConnector;
+  private readonly titleReads = new AbortController();
+  private readonly pendingTitleReads = new Map<string, symbol>();
   private sharedConnections = new Map<string, SharedSessionConnection>();
   private sharedRefreshing = new Set<string>();
   private sharedSending = new Set<string>();
@@ -155,6 +157,7 @@ export class TaskService implements PrStatusSink {
   private sharedTerminal = new Map<string, boolean>();
   beginShutdown(): void {
     this.shuttingDown = true;
+    this.titleReads.abort();
     this.execution.close();
     this.sideChats?.close();
     for (const connection of this.sharedConnections.values()) connection.close();
@@ -408,6 +411,7 @@ export class TaskService implements PrStatusSink {
     }
     for (const task of shared) void this.refreshShared(task);
     this.hub.emitTasks(this.listTasks());
+    void this.refreshProviderTitles([...this.cache.values()].filter(task => !task.title && task.sessionControl?.owner !== "shared"));
   }
 
   private async recoverExecutions() {
@@ -508,6 +512,45 @@ export class TaskService implements PrStatusSink {
     return ordered;
   }
 
+  private observeProviderTitle(task: TaskState, value: string | null, prompt?: string) {
+    const title = value?.trim() || undefined;
+    const firstPrompt = !task.prompt && task.sessionControl?.transcript ? prompt?.trim() || undefined : undefined;
+    if (task.providerTitle === title && !firstPrompt) return;
+    this.metadata.setProviderTitle(task.taskId, title, firstPrompt);
+    task.providerTitle = title;
+    if (firstPrompt) task.prompt = firstPrompt;
+    this.broadcastTask(task.taskId);
+  }
+
+  private async refreshProviderTitles(tasks: TaskState[]) {
+    const ticket = Symbol();
+    const groups = new Map<string, { agent: AgentKind; home: string; tasks: TaskState[] }>();
+    for (const task of tasks) {
+      if (!task.sessionId || !task.worktreePath || task.title) continue;
+      const home = task.sessionControl?.home ?? this.nativeSession.home(task.agent);
+      const key = JSON.stringify([task.agent, home]);
+      const group = groups.get(key) ?? { agent: task.agent, home, tasks: [] };
+      group.tasks.push(task);
+      groups.set(key, group);
+      this.pendingTitleReads.set(task.taskId, ticket);
+    }
+    for (const { agent, home, tasks: group } of groups.values()) {
+      for (let i = 0; i < group.length && !this.shuttingDown; i += 32) {
+        const batch = group.slice(i, i + 32);
+        const targets = batch.map(task => ({ sessionId: task.sessionId!, cwd: task.worktreePath! }));
+        const labels = await this.nativeSession.readTitles(agent, home, targets, this.titleReads.signal).catch(() => undefined);
+        for (const [j, task] of batch.entries()) {
+          if (this.pendingTitleReads.get(task.taskId) !== ticket) continue;
+          this.pendingTitleReads.delete(task.taskId);
+          const label = labels?.get(targets[j].sessionId);
+          if (label && !this.shuttingDown && this.db.isOpen && this.cache.get(task.taskId) === task && task.sessionId === targets[j].sessionId) {
+            this.observeProviderTitle(task, label.title, label.firstPrompt);
+          }
+        }
+      }
+    }
+  }
+
   rename(id: string, title: string): TaskState {
     const task = this.getTask(id);
     if (task.title === title) return task;
@@ -560,7 +603,7 @@ export class TaskService implements PrStatusSink {
       // Recheck ownership after remote discovery yielded to another import.
       if (this.listTasks().some(t => t.agent === req.agent && t.sessionId === req.sessionId)) return this.dispatchSession(req);
       this.assertTaskAdmission();
-      task = { taskId: this.ids.next("t"), repoId: repo.id, agent: req.agent, prompt: "Imported local session", title: "Local session", status: "idle", interrupted: false,
+      task = { taskId: this.ids.next("t"), repoId: repo.id, agent: req.agent, prompt: "", status: "idle", interrupted: false,
         sessionId: req.sessionId, worktreePath: cwd, permission: DEFAULT_PERMISSION[req.agent], createdAt: now, updatedAt: now, lastActivityAt: now,
         sessionControl: { owner: "local", home, transcript, cursor: 0, prefixHash: this.nativeSession.emptyTranscriptHash } };
       this.insertTask(task);
@@ -575,6 +618,7 @@ export class TaskService implements PrStatusSink {
     this.metadata.setSessionControl(task.taskId, control);
     task.sessionControl = control;
     if (this.sharedSessions && req.agent === "codex") await this.refreshShared(task);
+    if (!this.sharedConnected(task)) void this.refreshProviderTitles([task]);
     this.broadcastTask(task.taskId);
     return task;
   }
@@ -667,6 +711,10 @@ export class TaskService implements PrStatusSink {
         return [{ key, event: normalized }, ...output.images.map((image, index) => ({ key: `${key}/image/${index}`, event: { ...normalized, kind: "output_image" as const, payload: toolImagePayload(image, event) } }))];
       });
       const events = imported?.events ?? providerEvents.map(({ event }) => event);
+      if (snapshot.title !== undefined) {
+        this.pendingTitleReads.delete(id);
+        this.observeProviderTitle(task, snapshot.title, snapshot.firstPrompt);
+      }
       const nextStatus = snapshot.question ? "awaiting_input" : snapshot.approval ? "awaiting_approval" : snapshot.status;
       if (!events.length && !history.length && task.sessionControl?.owner === "shared" && task.sessionControl.connection === "connected" && !task.sessionControl.error
         && task.status === nextStatus && task.model === snapshot.model && task.effort === snapshot.effort && task.permission === "managed"
@@ -763,6 +811,12 @@ export class TaskService implements PrStatusSink {
         this.refreshPrs(task);
         this.refreshContextUsage(task);
         task.sessionControl = synced.control;
+        if (!task.prompt) {
+          const first = synced.events.find(event => event.kind === "status" && (event.payload as { subtype?: string })?.subtype === "followup");
+          const prompt = (first?.payload as { text?: string } | undefined)?.text;
+          if (prompt) this.observeProviderTitle(task, task.providerTitle ?? null, prompt);
+        }
+        if (task.agent === "claude" && synced.control.cursor !== control.cursor) void this.refreshProviderTitles([task]);
         if (rows.length) task.lastActivityAt = Date.now();
         for (const row of rows) this.hub.emitEvent(row);
         this.broadcastTask(task.taskId);
@@ -1146,6 +1200,12 @@ export class TaskService implements PrStatusSink {
   // Persist task effects only for lines beyond the recovery baseline.
   private onRaw(task: TaskState, raw: RawEvent, rawSeq: number | undefined, replayed: boolean): void {
     if (this.shuttingDown) return;
+    const status = raw.kind === "status" ? raw.payload as { subtype?: string; providerTitle?: string | null } | null : undefined;
+    if (!replayed && status?.providerTitle !== undefined && (typeof status.providerTitle === "string" || status.providerTitle === null)) {
+      this.pendingTitleReads.delete(task.taskId);
+      this.observeProviderTitle(task, status.providerTitle);
+    }
+    if (status?.subtype === "provider_title") return;
     const now = Date.now();
     const output = raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status" ? extractOutputImages(raw.payload) : { payload: raw.payload, images: [] };
     if (raw.kind === "tool_result" || raw.kind === "tool_call" || raw.kind === "status") raw = { ...raw, payload: output.payload };
@@ -1249,6 +1309,7 @@ export class TaskService implements PrStatusSink {
 
   private finishTurn(task: TaskState, evidence: TurnEvidence): void {
     if (this.shuttingDown) return;
+    if (task.agent === "claude" || !task.providerTitle) void this.refreshProviderTitles([task]);
     const stopped = this.stopping.delete(task.taskId);
     // The turn is over — no question can be pending anymore (e.g. Stop while
     // awaiting_input, or the CLI declined). Clear it so the UI drops the answer form.
@@ -1418,7 +1479,7 @@ function firstQuestionText(qr: QuestionRequest): string {
 }
 
 function headline(task: TaskState): string {
-  const t = task.title?.trim() || task.prompt.split("\n").find((l) => l.trim())?.trim() || task.taskId;
+  const t = taskTitle(task, task.taskId);
   return t.length > 60 ? t.slice(0, 57) + "…" : t;
 }
 

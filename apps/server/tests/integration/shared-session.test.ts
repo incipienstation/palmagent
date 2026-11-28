@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { AGENT_HOOK_STOPPED } from "@palmagent/shared";
+import { AGENT_HOOK_STOPPED, taskTitle } from "@palmagent/shared";
 import type { SharedSessionConnection, SharedSessionEvent, SharedSessionSnapshot } from "../../src/modules/agents/api.js";
 import { createTaskService } from "../../src/composition/task-service.js";
 import { Db } from "../../src/composition/database.js";
@@ -32,6 +32,7 @@ async function setup(t: test.TestContext, preview = false) {
   const db = new Db(join(dir, "palmagent.db"));
   const native = new LocalNativeSessionAdapter(db.path);
   native.home = () => home;
+  native.readTitles = async () => new Map();
   native.sharedSocket = () => join(dir, "native.sock");
   const writer = spawn(process.execPath, ["-e", "process.title = 'codex'; setInterval(() => {}, 1000); process.send('ready')"],
     { argv0: "codex", stdio: ["ignore", "ignore", "ignore", "ipc"] });
@@ -98,6 +99,18 @@ test("shared tool input_image output is visible and deduplicated across reconnec
 
 test("dispatch joins the live writer; browser input, questions and stop use that connection", { skip: process.platform !== "linux" }, async t => {
   const f = await setup(t), id = f.task.taskId;
+  f.snapshot.title = null;
+  f.snapshot.firstPrompt = "First line\nMore detail";
+  await f.refresh();
+  assert.equal(taskTitle(f.task), "First line");
+  f.snapshot.title = "Provider title";
+  await f.refresh();
+  assert.equal(taskTitle(f.task), "Provider title");
+  f.service.rename(id, "My title");
+  f.snapshot.title = "Later provider rename";
+  await f.refresh();
+  assert.equal(f.db.getTask(id)?.providerTitle, "Later provider rename");
+  assert.equal(taskTitle(f.db.getTask(id)!), "My title");
   assert.equal(f.task.sessionControl?.owner, "shared");
   assert.equal(f.task.status, "running");
   assert.equal(f.writer.exitCode, null);

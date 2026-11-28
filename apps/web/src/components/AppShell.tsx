@@ -27,6 +27,7 @@ export function AppBar({
   onBack,
   conn,
   conversation,
+  conversationTitle,
   transparent,
   compactHeader,
   className,
@@ -40,6 +41,7 @@ export function AppBar({
   conn?: ConnState;
   /** Minimal navigation and task actions over a scrolling conversation. */
   conversation?: boolean;
+  conversationTitle?: ReactNode;
   /** Static translucent header that overlays its view content. */
   transparent?: boolean;
   /** Let the header action replace the visible title on narrow views. */
@@ -59,7 +61,7 @@ export function AppBar({
       {floating && <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[calc(96px+var(--safe-top))] bg-linear-to-b from-background/70 via-background/35 to-transparent" />}
       {conversation ? <>
         {menu}
-        <h1 className="sr-only">{title}</h1>
+        <h1 className={conversationTitle ? "relative min-w-0 flex-1" : "sr-only"}>{conversationTitle ?? title}</h1>
         {children && <div role="group" aria-label="Header actions" className="relative z-10 ml-auto inline-flex shrink-0 items-center rounded-full border border-border bg-card/85 backdrop-blur-md pointer-events-auto [&_button]:touch-pan-y">{children}</div>}
         {conn && <ReconnectStatus conn={conn} visuallyHidden />}
       </> : compactHeader ? <>

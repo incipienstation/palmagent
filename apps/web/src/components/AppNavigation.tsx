@@ -1,3 +1,4 @@
+import { TaskTitle } from "./TaskTitle";
 import { Pending } from "@/components/ui/spinner";
 import { onConversationNotification } from "../conversation-notifications";
 import { needsTaskAttention } from "@palmagent/shared";
@@ -10,7 +11,6 @@ import { useUpdateState } from "../update-state";
 import { navigate, useRoute } from "../router";
 import { compareTasks } from "../lib/task-order";
 import { PinnedNavigation } from "./PinnedNavigation";
-import { taskTitle } from "../lib/task-title";
 import { useRepos } from "../hooks/useRepos";
 import { newTaskPath, spaceActivities, spacePath } from "../space-context";
 import { ScrollArea } from "./ui/scroll-area";
@@ -162,7 +162,7 @@ export function AppNavigation({ tasks, conn, loading, children }: {
             className="h-11 w-full justify-start rounded-xl px-3 text-sm font-normal"
             aria-current={route.name === "task" && route.id === task.taskId ? "page" : undefined}
             onClick={() => go(`/task/${encodeURIComponent(task.taskId)}`)}>
-            <span className="truncate">{taskTitle(task)}</span>
+            <span className="truncate"><TaskTitle task={task} /></span>
           </Button>)}
         </div>
   );

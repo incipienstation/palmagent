@@ -67,6 +67,7 @@ export class Db {
   readonly setSessionControl: SqliteTasks["setSessionControl"];
   readonly setTaskPin: SqliteTasks["setTaskPin"];
   readonly setTaskPinOrder: SqliteTasks["setTaskPinOrder"];
+  readonly setProviderTitle: SqliteTasks["setProviderTitle"];
   readonly setTaskTitle: SqliteTasks["setTaskTitle"];
   readonly selectTaskOwner: (owner: Parameters<SqliteTasks["selectEventWriter"]>[0] & { spaces: SpaceCatalogWriter }) => void;
   readonly appendAgentEvents: SqliteTasks["appendAgentEvents"];
@@ -169,6 +170,7 @@ export class Db {
     this.setSessionControl = tasks.setSessionControl.bind(tasks);
     this.setTaskPin = tasks.setTaskPin.bind(tasks);
     this.setTaskPinOrder = tasks.setTaskPinOrder.bind(tasks);
+    this.setProviderTitle = tasks.setProviderTitle.bind(tasks);
     this.setTaskTitle = tasks.setTaskTitle.bind(tasks);
     this.selectTaskOwner = owner => { tasks.selectEventWriter(owner); this.spaceWriter = owner.spaces; };
     this.appendAgentEvents = tasks.appendAgentEvents.bind(tasks);

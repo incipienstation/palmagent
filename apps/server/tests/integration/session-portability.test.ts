@@ -58,10 +58,25 @@ function setup(t: test.TestContext, agent: AgentKind = "codex") {
     sessionControl: { owner: "returning", home, transcript, cursor: 0, prefixHash: emptyTranscriptHash } };
   return { dir, cwd, home, transcript, task, defer: (cleanup: () => unknown) => cleanups.push(cleanup) };
 }
+// These ownership fixtures simulate the native writer with Node and JSONL.
+function nativeWriterFixture(db: Db) {
+  const adapter = new LocalNativeSessionAdapter(db.path);
+  adapter.readTitles = async () => new Map();
+  return adapter;
+}
 function message(agent: AgentKind, role: string, text: string) {
   return agent === "codex" ? { type: "response_item", payload: { type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] } }
     : { type: role, message: { role, content: [{ type: "text", text }] } };
 }
+
+test("Claude session metadata reads the pinned home and preserves the first prompt", async t => {
+  const f = setup(t, "claude");
+  appendFileSync(f.transcript, line({ ...message("claude", "user", "Original question"), sessionId: id, cwd: f.cwd }));
+  appendFileSync(f.transcript, line({ type: "ai-title", aiTitle: "Provider summary", sessionId: id }));
+  const reader = new LocalNativeSessionAdapter(join(f.dir, "state.sqlite"));
+  const titles = await reader.readTitles("claude", f.home, [{ sessionId: id, cwd: f.cwd }]);
+  assert.deepEqual(titles.get(id), { title: "Provider summary", firstPrompt: "Original question" });
+});
 
 test("CLI compatibility ranges reject unknown, prerelease and out-of-lane versions", () => {
   for (const version of ["0.154.0", "0.154.99", "0.155.0", "0.155.1", "0.156.0", "0.156.1", "0.157.0", "0.157.1", "0.157.2", "0.158.0", "0.159.0", "0.160.0"]) assert.equal(compatibleAgentCli("codex", version), true);
@@ -223,7 +238,7 @@ test("handoff persists ownership; socket dispatch previews a live writer and tra
   db.insertRepo({ id: "repo-1", name: "fixture", path: f.cwd, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   delete f.task.sessionControl;
   db.insertTask(f.task);
-  const makeService = () => createTaskService(db, new Hub(), new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
+  const makeService = () => createTaskService(db, new Hub(), new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), nativeWriterFixture(db), new NodeIdentifierGenerator());
   let service = makeService(); await service.init();
   const handoff = service.handoff(f.task.taskId);
   assert.match(handoff.command, /'codex' 'resume'/);
@@ -275,7 +290,7 @@ test("a first local import preserves cwd, waits for exit, and fails closed on tr
   f.defer(() => { if (originalHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = originalHome; });
   const db = new Db(join(f.dir, "state/palmagent.db"));
   f.defer(() => db.close());
-  const service = createTaskService(db, new Hub(), new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
+  const service = createTaskService(db, new Hub(), new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), nativeWriterFixture(db), new NodeIdentifierGenerator());
   await service.init();
   const writer = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { argv0: "codex", stdio: "ignore" });
   await once(writer, "spawn");
@@ -293,6 +308,7 @@ test("a first local import preserves cwd, waits for exit, and fails closed on tr
   writer.kill(); await once(writer, "exit");
   service.reconcileLocalSessions();
   assert.equal(task.sessionControl?.owner, "palmagent");
+  assert.equal(db.getTask(task.taskId)?.prompt, "Local work");
   assert.deepEqual(db.eventsAfterSeq(task.taskId, 0).map((row) => row.event.kind), ["status", "tool_call", "tool_result", "output_image"]);
   service.handoff(task.taskId);
   const writer2 = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { argv0: "codex", stdio: "ignore" });
@@ -322,7 +338,7 @@ test("the dispatch CLI detects its native parent and queues a transfer through t
   const stateDir = join(f.dir, "state");
   const db = new Db(join(stateDir, "palmagent.db"));
   f.defer(() => db.close());
-  const service = createTaskService(db, new Hub(), new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), new LocalNativeSessionAdapter(db.path), new NodeIdentifierGenerator());
+  const service = createTaskService(db, new Hub(), new ProcessSupervisor(1), new InProcessBackend(), new WorktreeManager(), createAttachmentStorage(db), new LocalRepositoryPaths(), nativeWriterFixture(db), new NodeIdentifierGenerator());
   await service.init();
   const socket = await startSessionControl(stateDir, service);
   f.defer(() => closeControl(socket));

@@ -15,7 +15,7 @@ overrides:
   glob@>=9.0.0 <14.0.2: ^14.0.2
 
 patchedDependencies:
-  '@agentclientprotocol/codex-acp@2.12.1': 1b11e1815973e6450256bf36e64d3c58f23eaad83311b847100c7cfa2332f4cf
+  '@agentclientprotocol/codex-acp@2.12.1': f930efb2f4ee9262cc4f8b51e67c6865d8ab07993f9a013292a2df7977613135
   react-virtuoso@4.18.13: bd157c0c0547ff7febe1b5841b0b1435ef2adb94ba496f25759c4a966b8f2548
 
 importers:
@@ -85,7 +85,7 @@ importers:
         version: 0.113.0(@anthropic-ai/sdk@1.14.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))
       '@agentclientprotocol/codex-acp':
         specifier: 2.12.1
-        version: 2.12.1(patch_hash=1b11e1815973e6450256bf36e64d3c58f23eaad83311b847100c7cfa2332f4cf)
+        version: 2.12.1(patch_hash=f930efb2f4ee9262cc4f8b51e67c6865d8ab07993f9a013292a2df7977613135)
       '@types/better-sqlite3':
         specifier: ^7.6.12
         version: 7.6.13
@@ -5816,7 +5816,7 @@ snapshots:
       - '@modelcontextprotocol/sdk'
       - '@modelcontextprotocol/server'
 
-  '@agentclientprotocol/codex-acp@2.12.1(patch_hash=1b11e1815973e6450256bf36e64d3c58f23eaad83311b847100c7cfa2332f4cf)':
+  '@agentclientprotocol/codex-acp@2.12.1(patch_hash=f930efb2f4ee9262cc4f8b51e67c6865d8ab07993f9a013292a2df7977613135)':
     dependencies:
       '@agentclientprotocol/sdk': 2.9.1(zod@4.6.7)
       '@openai/codex': 0.172.0
