@@ -124,11 +124,14 @@ test("bundled runtime retention reuses matching bytes and rejects a corrupted re
 test("domain reconfiguration preserves saved environment even when the caller changes or unsets it", t => {
   const f = fixture(t);
   process.env.CODEX_HOME = join(f.root, "provider-home");
+  process.env.PALMAGENT_CLAUDE_TRANSPORT = "native";
   process.env.HTTPS_PROXY = "http://fixture-user:fixture-password@proxy.example.com";
   process.env.NODE_EXTRA_CA_CERTS = join(f.root, "ca.pem");
   delete process.env.SSL_CERT_DIR;
   configureDaemon(f.cfg);
   const before = daemonConfiguration(f.cfg);
+  assert.equal(before.environment.PALMAGENT_CLAUDE_TRANSPORT, "native");
+  delete process.env.PALMAGENT_CLAUDE_TRANSPORT;
   delete process.env.CODEX_HOME;
   process.env.HTTPS_PROXY = "http://other.example.com";
   delete process.env.NODE_EXTRA_CA_CERTS;

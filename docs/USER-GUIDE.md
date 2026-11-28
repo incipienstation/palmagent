@@ -280,6 +280,15 @@ Open **Agents** to see Codex and Claude Code installed on the Palmagent host. Ea
 agent has the same sections: installed and latest release versions, account
 limits, and activity recorded by Palmagent. Existing Usage bookmarks still work.
 
+Packaged Palmagent runs new Claude task turns through its bundled
+[Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp)
+using ACP v1. It uses the host's installed `claude` executable, the task's selected
+Claude account, and its working directory. The **Don't ask** permission mode, manual
+context compaction, and legacy runner sockets use the native Claude integration.
+Set `PALMAGENT_CLAUDE_TRANSPORT=native` on the execution host to use that integration
+for subsequent turns. Source runs select ACP when `claude-agent-acp` is on the host's
+`PATH`.
+
 **Update** runs the native CLI updater after confirmation and verifies the
 installed version afterward. It requires Palmagent sign-in and a recognized
 native installation. Package-manager and custom installations are updated on the

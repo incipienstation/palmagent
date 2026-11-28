@@ -16,6 +16,7 @@
 // the protected Trusted Publishing workflow.
 import { build, type Plugin } from "esbuild";
 import { importNativeArtifacts } from "./lib/native-artifacts.mjs";
+import { resolveDependency } from "./lib/portable-dependencies.mjs";
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -115,6 +116,19 @@ async function main(): Promise<void> {
   for (const entry of ["view", "update-gateway", "execution-host", "execution-launcher", "terminal-host", "terminal-launcher", "routine-host"]) {
     await build({ ...common, entryPoints: [join(SERVER, `src/bootstrap/${entry}.ts`)], outfile: join(OUT, `${entry}.js`) });
   }
+  // Package the ACP bridge with the supported Node runtime. It launches the
+  // account's installed Claude executable, so its optional CLI binary is redundant.
+  const bridgeRoot = resolveDependency("@agentclientprotocol/claude-agent-acp", SERVER);
+  await build({ ...common, entryPoints: [join(bridgeRoot, "dist/index.js")], outfile: join(OUT, "claude-agent-acp.mjs") });
+  const notices = [
+    [bridgeRoot, "LICENSE"],
+    [resolveDependency("@agentclientprotocol/sdk", bridgeRoot), "LICENSE"],
+    [resolveDependency("@anthropic-ai/claude-agent-sdk", bridgeRoot), "LICENSE.md"],
+    [resolveDependency("diff", bridgeRoot), "LICENSE"],
+    [resolveDependency("zod", bridgeRoot), "LICENSE"],
+  ].map(([directory, file]) => JSON.parse(readFileSync(join(directory, "package.json"), "utf8")).name
+    + "\n" + readFileSync(join(directory, file), "utf8"));
+  writeFileSync(join(OUT, "claude-agent-acp.LICENSE.txt"), notices.join("\n\n"));
   writeFileSync(join(OUT, "runtime-contract.json"), JSON.stringify({ executionProtocol: 1, productStorage: 1, applicationApi: 1, terminalProtocol: 1, hostSetup: 1, terminalDiagnostics: 1, viewControl: 1, updateAdmission: 1, standaloneUpdate: 1, taskStorage: 1, daemonProtocol: 1, routineProtocol: 1, ingressOwner: "plugin" }) + "\n");
 
   // Static assets: require and copy the built PWA.
@@ -179,6 +193,8 @@ async function main(): Promise<void> {
       "routine-host.js",
       "terminal-launcher.js",
       "execution-host.js",
+      "claude-agent-acp.mjs",
+      "claude-agent-acp.LICENSE.txt",
       "execution-launcher.js",
       "runtime-contract.json",
       "daemon",

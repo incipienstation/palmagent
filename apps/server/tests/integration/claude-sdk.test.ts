@@ -17,7 +17,7 @@ test("Claude SDK Stop withdraws a replacement before the interrupted result", { 
   const fixture = fileURLToPath(new URL("../support/lifecycle-cli.cjs", import.meta.url));
   writeFileSync(join(directory, "claude"),
     `#!${process.execPath}\nprocess.argv.splice(2, 0, "claude"); require(${JSON.stringify(fixture)});\n`, { mode: 0o700 });
-  const saved = { PATH: process.env.PATH, PROBE_CONTROL: process.env.PROBE_CONTROL };
+  const saved = { PALMAGENT_CLAUDE_TRANSPORT: process.env.PALMAGENT_CLAUDE_TRANSPORT, PATH: process.env.PATH, PROBE_CONTROL: process.env.PROBE_CONTROL };
   const backend = new InProcessBackend();
   t.after(async () => {
     await backend.close();
@@ -28,6 +28,7 @@ test("Claude SDK Stop withdraws a replacement before the interrupted result", { 
   });
   process.env.PATH = directory + ":" + saved.PATH;
   process.env.PROBE_CONTROL = directory;
+  process.env.PALMAGENT_CLAUDE_TRANSPORT = "native";
   const waitFor = async (suffix: string) => {
     const path = join(directory, "first." + suffix);
     while (!existsSync(path)) await delay(10, undefined, { signal: t.signal });

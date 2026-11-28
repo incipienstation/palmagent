@@ -1,9 +1,14 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { makeNdjsonSplitter } from "../../../../platform/process/ndjson.js";
 import type { ProcHandle, ProcessBackend, SpawnSpec } from "../../application/ports/outbound/provider-process.js";
 import type { ExecutionRunner, RunnerBackend } from "../../application/ports/inbound/execution.js";
 import type { AgentKind } from "@palmagent/shared";
+import { claudeAcpRunner } from "./claude-acp.js";
+import { findAgentExecutable } from "./agent-installations.js";
+import { normalizePermission } from "@palmagent/shared";
 import { claudeSdkRunner } from "./claude-sdk.js";
 import { startWithInputFiles } from "./input-files.js";
 import type { RunHandle } from "../../domain/run-handle.js";
@@ -17,22 +22,32 @@ import { bindRunner } from "./runner.js";
 export class InProcessBackend implements RunnerBackend, ProcessBackend {
   private children = new Set<ChildProcessWithoutNullStreams>();
 
-  private sdkRuns = new Set<RunHandle>();
+  private claudeRuns = new Set<RunHandle>();
 
   agentRunner(agent: AgentKind): ExecutionRunner {
     if (agent !== "claude") return bindRunner(agent, this);
     return { agent, start: (args, emit) => {
-      const handle = startWithInputFiles(claudeSdkRunner, args, emit, this);
-      this.sdkRuns.add(handle);
-      const release = () => this.sdkRuns.delete(handle);
+      // Older installations and Claude modes outside the bridge's ACP catalog
+      // keep their native runner. Select before sending any provider input.
+      const bundled = fileURLToPath(new URL("./claude-agent-acp.mjs", import.meta.url));
+      const bridge = existsSync(bundled) ? { command: process.execPath, argv: [bundled] } : undefined;
+      const sourceBridge = bridge ? undefined : findAgentExecutable("claude-agent-acp");
+      const transport = bridge ?? (sourceBridge ? { command: sourceBridge, argv: [] } : undefined);
+      const executable = findAgentExecutable("claude");
+      const useAcp = process.env.PALMAGENT_CLAUDE_TRANSPORT !== "native" && !args.reattach && !args.operation
+        && normalizePermission("claude", args.permission) !== "dontAsk";
+      const runner = useAcp && transport && executable ? claudeAcpRunner(transport, executable) : claudeSdkRunner;
+      const handle = startWithInputFiles(runner, args, emit, this);
+      this.claudeRuns.add(handle);
+      const release = () => this.claudeRuns.delete(handle);
       void handle.done.then(release, release);
       return handle;
     } };
   }
 
   async close(): Promise<void> {
-    const sdkRuns = [...this.sdkRuns];
-    for (const handle of sdkRuns) handle.cancel();
+    const claudeRuns = [...this.claudeRuns];
+    for (const handle of claudeRuns) handle.cancel();
     await Promise.all([...this.children].map(async (child) => {
       if (child.exitCode !== null || child.signalCode !== null) return;
       const exited = once(child, "exit");
@@ -44,7 +59,7 @@ export class InProcessBackend implements RunnerBackend, ProcessBackend {
         child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
       }
     }));
-    await Promise.allSettled(sdkRuns.map(handle => handle.done));
+    await Promise.allSettled(claudeRuns.map(handle => handle.done));
   }
   start(spec: SpawnSpec): ProcHandle {
     const child: ChildProcessWithoutNullStreams = spawn(spec.command, spec.argv, {

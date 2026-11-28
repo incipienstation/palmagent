@@ -39,7 +39,7 @@ function environment(agent: AgentKind, home: string): NodeJS.ProcessEnv {
   return { ...process.env, NO_COLOR: "1", DISABLE_AUTOUPDATER: "1", [agent === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"]: home };
 }
 
-export function findAgentExecutable(agent: AgentKind): string | undefined {
+export function findAgentExecutable(agent: AgentKind | "claude-agent-acp"): string | undefined {
   for (const directory of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
     const candidate = resolve(directory, agent);
     try { accessSync(candidate, constants.X_OK); return candidate; } catch { /* next PATH entry */ }
