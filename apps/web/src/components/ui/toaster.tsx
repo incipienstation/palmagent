@@ -86,6 +86,6 @@ export function Toaster() {
   return createPortal(<DismissableLayer.Branch asChild><Sonner ref={region} theme={resolved} position="bottom-center" visibleToasts={1}
     closeButton={false} swipeDirections={["bottom"]}
     offset={{ bottom }} mobileOffset={{ bottom }}
-    style={{ width: "min(400px, calc(100vw - 32px))", left: "50%", right: "auto", transform: "translateX(-50%)", pointerEvents: "none" }}
+    style={{ fontFamily: "inherit", width: "min(400px, calc(100vw - 32px))", left: "50%", right: "auto", transform: "translateX(-50%)", pointerEvents: "none" }}
     toastOptions={{ unstyled: true, className: "compact-toast" }} /></DismissableLayer.Branch>, document.body);
 }

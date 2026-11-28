@@ -140,7 +140,7 @@ function MachineryLine({
   return (
     <div
       className={cn(
-        "mb-1.5 flex gap-2 border-l-2 pl-3 break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
+        "mb-1.5 flex gap-2 border-l-2 pl-3 font-mono break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
         KIND_RAIL[kind],
         canExpand && "cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
       )}
@@ -305,7 +305,7 @@ const TranscriptScroller = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElem
     return <ScrollAreaPrimitive.Viewport asChild>
       <MessageScrollerViewport {...props} ref={ref} aria-label="Session transcript"
         preserveScrollOnPrepend={false}
-        className="h-full w-full font-mono text-[13px] [overflow-anchor:none]"
+        className="h-full w-full text-[13px] [overflow-anchor:none]"
         onScroll={(event) => {
           context.onScrollPosition?.(event.currentTarget);
           onScroll?.(event);
@@ -741,7 +741,7 @@ export function EventLog({ log, transcript, live, blocked = false, prompt, taskI
     {!showInitialState && rows.length > 0 ? <VirtualTranscript rows={rows} running={live} sourceLog={log}
       taskId={taskId} liveKey={live && (!transcript || history.activity === "output") ? log.at(-1)?.key : undefined} toggled={toggled} toggle={toggle} toggleStep={toggleStep} toggleActivity={toggleActivity} following={following} onFollowingChange={onFollowingChange} delivery={delivery} history={history} /> : !showInitialState && empty ?
       <div role="region" aria-label="Session transcript" className="flex h-full items-center justify-center px-4 pt-[calc(64px+var(--safe-top))]">{empty}</div> :
-      <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 font-mono text-[13px]">
+      <ScrollAreaPrimitive.Viewport aria-label="Session transcript" className="h-full w-full px-4 text-[13px]">
         <HistoryHeader context={{ history }} />
         {history.initial.status === "loading" ? <ConversationLoading /> : !initialPending && <div className="mb-1.5 text-faint">
           {log.length ? "No messages in this view." : "No messages yet."}
