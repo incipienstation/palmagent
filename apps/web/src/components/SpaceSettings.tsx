@@ -14,7 +14,7 @@ import { Separator } from "./ui/separator";
 import { SettingsCard, SettingsField, SettingsHelp, SettingsPanel } from "./SettingsLayout";
 import { Skeleton } from "./ui/skeleton";
 
-function BaseBranchForm({ repo }: { repo: Repo }) {
+export function BaseBranchForm({ repo }: { repo: Repo }) {
   const id = useId();
   const operations = useSpaceOperations();
   const [value, setValue] = useState(repo.defaultBaseRef);
@@ -43,26 +43,19 @@ function BaseBranchForm({ repo }: { repo: Repo }) {
   }
   return <form aria-label={`Base branch for ${repo.name}`}
     onSubmit={event => { event.preventDefault(); void save(); }}>
-    <SettingsCard>
-      <div className="flex min-h-14 min-w-0 flex-col justify-center gap-1 py-2">
-        <h3 className="text-sm font-medium">{repo.name}</h3>
-        <p className="break-all text-xs text-muted-foreground">{repo.path}</p>
+    <SettingsField orientation="vertical" data-invalid={!!error} data-disabled={busy}>
+      <FieldLabel variant="setting" htmlFor={id}>Base branch</FieldLabel>
+      <div className="flex items-center gap-2">
+        <Input id={id} value={value} disabled={busy} aria-invalid={!!error}
+          onChange={event => { setValue(event.target.value); setError(""); setNotice(""); }}
+          autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+        <Button type="submit" variant="outline" disabled={busy || !value.trim() || value.trim() === repo.defaultBaseRef} aria-label="Save base branch">
+          {busy ? <Pending>Saving…</Pending> : "Save"}
+        </Button>
       </div>
-      <Separator />
-      <SettingsField orientation="vertical" data-invalid={!!error} data-disabled={busy}>
-        <FieldLabel variant="setting" htmlFor={id}>Base branch</FieldLabel>
-        <div className="flex items-center gap-2">
-          <Input id={id} value={value} disabled={busy} aria-invalid={!!error}
-            onChange={event => { setValue(event.target.value); setError(""); setNotice(""); }}
-            autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-          <Button type="submit" variant="outline" disabled={busy || !value.trim() || value.trim() === repo.defaultBaseRef} aria-label="Save base branch">
-            {busy ? <Pending>Saving…</Pending> : "Save"}
-          </Button>
-        </div>
-        {error && <Alert variant="destructive">{error}</Alert>}
-        {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
-      </SettingsField>
-    </SettingsCard>
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
+    </SettingsField>
   </form>;
 }
 
@@ -73,7 +66,14 @@ export function SpaceSettings() {
     {loading && <Skeleton className="h-24 w-full" aria-label="Loading spaces" />}
     {error && <><Alert variant="destructive">{error}</Alert><Button variant="outline" disabled={refreshing} onClick={() => void refresh().catch(() => {})}>Retry</Button></>}
     {!loading && !error && gitRepos.length === 0 && <p className="text-sm text-muted-foreground">No Git spaces registered. Plain folders do not have a base branch.</p>}
-    {gitRepos.map(repo => <BaseBranchForm key={repo.id} repo={repo} />)}
+    {gitRepos.map(repo => <SettingsCard key={repo.id}>
+      <div className="flex min-h-14 min-w-0 flex-col justify-center gap-1 py-2">
+        <h3 className="text-sm font-medium">{repo.name}</h3>
+        <p className="break-all text-xs text-muted-foreground">{repo.path}</p>
+      </div>
+      <Separator />
+      <BaseBranchForm repo={repo} />
+    </SettingsCard>)}
     <SettingsHelp title="Space details">
       <p>Base branches apply to new isolated tasks and routines.</p>
       <p>Use an existing local branch or Git ref, such as main or origin/develop. Branches are not fetched automatically.</p>
