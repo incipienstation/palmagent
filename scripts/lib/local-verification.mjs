@@ -14,8 +14,8 @@ export function requireVerificationNode(cwd, version = process.versions.node) {
 }
 
 // Refresh named bases; immutable commit arguments deliberately select that exact base.
-// Unavailable refs, fetch failures, or incomplete history can never select fewer checks.
-export function localScope(cwd, baseRef = 'origin/develop') {
+// Extended regression selection also considers changes still in the index and working tree.
+export function localScope(cwd, baseRef = 'origin/develop', { extended = true } = {}) {
   const git = (...args) => execFileSync('git', args, {
     cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 60_000, maxBuffer: 16 * 1024 * 1024,
@@ -30,6 +30,7 @@ export function localScope(cwd, baseRef = 'origin/develop') {
     }
     const base = git('rev-parse', '--verify', `${baseRef}^{commit}`).trim();
     const head = git('rev-parse', '--verify', 'HEAD').trim();
+    if (!extended) return { base, head };
     const paths = [...new Set([
       ...changedPaths(cwd, base, head),
       ...git('diff', '--cached', '--name-only', '--no-renames', '-z', '--').split('\0'),
@@ -38,26 +39,22 @@ export function localScope(cwd, baseRef = 'origin/develop') {
     ].filter(Boolean))];
     return { scope: classifyChanges(paths), base, head, paths };
   } catch {
-    return { scope: classifyChanges(undefined), reason: 'Base refresh or change history unavailable; selecting every check.' };
+    return { scope: classifyChanges(undefined), reason: 'Base or history unavailable. Fetch the base or supply its known full SHA with --base.' };
   }
 }
 
-export function verificationSteps({ scope, base, head, paths }, { extended = false } = {}) {
+export function verificationSteps({ scope, base, head }, { extended = false } = {}) {
   const steps = [];
   const add = (id, command, args, env) => steps.push({ id, command, args,
     timeoutMs: id === 'web-tests' ? 15 * 60_000 : 10 * 60_000, ...(env ? { env } : {}) });
   const node = (id, ...args) => add(id, process.execPath, args);
   const pnpm = (id, ...args) => add(id, 'pnpm', args);
-  node('source-leaks', 'scripts/validate.mjs');
+  node('outgoing-content', 'scripts/check-outgoing.mjs', base, head);
+  if (!extended) return steps;
+  node('repository', 'scripts/validate.mjs');
   add('working-diff', 'git', ['diff', '--check']);
   add('staged-diff', 'git', ['diff', '--cached', '--check']);
   if (base && head) add('committed-diff', 'git', ['diff', '--check', `${base}...${head}`, '--']);
-  const backendPath = /^(?:apps\/(?:server|palmagentd|palmagent-runtime)\/|packages\/(?:shared|native-telemetry)\/|Cargo\.(?:toml|lock)$)/;
-  if (!paths || paths.some(path => backendPath.test(path) && !path.endsWith('.md'))) {
-    pnpm('architecture', 'architecture:check');
-  }
-  if (!extended && paths) return steps;
-
   if (!scope.tooling) node('scope-tests', '--test', 'scripts/tests/ci-scope.test.mjs', 'scripts/tests/repository-skills.test.mjs');
   node('skills', 'scripts/sync-skills.mjs', '--check');
   node('release', 'scripts/check-release.mjs');

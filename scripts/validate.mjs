@@ -11,6 +11,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname, relative, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documentationReferenceLines, documentationReferencePatterns } from './lib/documentation-references.mjs';
+import { leakLines } from './lib/source-leaks.mjs';
 import { validateRepositorySkills } from './lib/repository-skills.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -144,28 +145,13 @@ for (const f of allFiles.filter((p) => /\.(?:md|mdx|markdown)$/i.test(p) && exis
 }
 
 // ---- 7. leak guard (generic patterns) -------------------
-const SELF = fileURLToPath(import.meta.url);
-const GENERIC = [
-  /\/(?:home|Users)\/[A-Za-z0-9._-]+/,                    // host home path
-  /\b(?:\d{1,3}\.){3}\d{1,3}\b/,                          // IPv4
-  /\bgh[pousr]_[A-Za-z0-9]{16,}\b/,                       // GitHub token
-  /\bsk-[A-Za-z0-9]{16,}\b/,                              // OpenAI-style key
-  /\bAKIA[0-9A-Z]{16}\b/,                                 // AWS access key id
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,                   // PEM private key
-];
 const hits = new Set();
 for (const f of allFiles) {
-  if (f === SELF) continue;                               // scanner defines the patterns
   if (['.png', '.jpg', '.jpeg', '.gif', '.ico'].includes(extname(f).toLowerCase())) continue;
   let txt;
   try { txt = readFileSync(f, 'utf8'); } catch { continue; }
-  txt.split('\n').forEach((line, i) => {
-    // Registry-authored deprecation prose is immutable third-party metadata,
-    // not repository context. Keep scanning every other lockfile field.
-    if (relative(ROOT, f) === 'pnpm-lock.yaml' && /^\s*deprecated:/.test(line)) return;
-    const at = `${relative(ROOT, f)}:${i + 1}`;
-    if (GENERIC.some((re) => re.test(line))) { hits.add(at); return; }
-  });
+  const path = relative(ROOT, f);
+  for (const line of leakLines(txt, path)) hits.add(`${path}:${line}`);
 }
 if (hits.size) {
   fail(`leak guard: ${hits.size} match(es) — values redacted, inspect these locally:\n    ${[...hits].join('\n    ')}`);
