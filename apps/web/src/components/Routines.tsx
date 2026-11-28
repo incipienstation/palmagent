@@ -342,7 +342,7 @@ export function RoutinesView() {
   return (
     <AppShell>
       <AppBar title="Routines" />
-      <ScrollArea className="flex-1" contentClassName="flex flex-col gap-3 px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
+      <ScrollArea className="flex-1" contentClassName="flex flex-col gap-3 px-4 py-4 pb-[calc(var(--safe-bottom)+24px)]">
         {(error || mutationError) && <Alert variant="destructive">{error || mutationError}</Alert>}
         {readError && <Alert variant="destructive"><p>{readError}</p><Button variant="outline" disabled={refreshing} onClick={() => void refresh()}>Retry routines</Button></Alert>}
         {repoError && <Alert variant="destructive"><p>{repoError}</p><Button variant="outline" disabled={reposRefreshing} onClick={() => void refreshRepos().catch(() => {})}>Retry Spaces</Button></Alert>}

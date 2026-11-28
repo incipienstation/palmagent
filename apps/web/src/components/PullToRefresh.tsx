@@ -1,3 +1,4 @@
+import { useUpdateFeedback } from "./UpdateFeedback";
 import { Pending } from "@/components/ui/spinner";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
@@ -30,6 +31,7 @@ export function PullToRefresh({
   className?: string;
   children: ReactNode;
 }) {
+  const updating = useUpdateFeedback();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const spinnerRef = useRef<HTMLDivElement>(null);
@@ -176,7 +178,7 @@ export function PullToRefresh({
           {children}
         </div>
       </ScrollAreaPrimitive.Viewport>
-      {refreshing && <div role="status" className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+      {refreshing && !updating && <div role="status" className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
         <span className="rounded-full bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm"><Pending>Refreshing…</Pending></span>
       </div>}
       <ScrollBar />

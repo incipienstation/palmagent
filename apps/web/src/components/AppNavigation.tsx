@@ -175,8 +175,8 @@ export function AppNavigation({ tasks, conn, loading, children }: {
     <span>Palmagent</span>
   </>;
   return <NavigationContext.Provider value={context}>
-    <div className="flex">
-      {desktopSidebar && <aside data-app-navigation aria-label="Space navigation" className="flex h-app w-60 shrink-0 flex-col border-r">
+    <div className="flex h-full">
+      {desktopSidebar && <aside data-app-navigation aria-label="Space navigation" className="flex h-full w-60 shrink-0 flex-col border-r">
         <div className="flex shrink-0 items-center gap-2 px-4 pb-4 pt-[calc(12px+var(--safe-top))]">
           <p className="flex min-w-0 flex-1 items-center gap-2.5 text-lg font-semibold">{brand}</p>
           <Button ref={collapseButton} variant="ghost" size="icon-lg" aria-label="Collapse navigation" onClick={() => { focusNavigation.current = true; setSidebar("closed"); }}><PanelLeftClose /></Button>

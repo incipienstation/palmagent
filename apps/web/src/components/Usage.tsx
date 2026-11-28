@@ -131,7 +131,7 @@ export function UsageView() {
   const refresh = () => { void query.refetch(); void client.invalidateQueries({ queryKey: clientReadKeys.agents() }); };
   return <AppShell wide>
     <AppBar title="Agents"><IconButton aria-label="Refresh agents" disabled={installations.isFetching || query.isFetching} onClick={refresh}><RefreshCw /></IconButton></AppBar>
-    <ScrollArea className="flex-1" contentClassName="flex flex-col gap-4 px-4 py-4 pb-[calc(var(--banner-h)+var(--safe-bottom)+24px)]">
+    <ScrollArea className="flex-1" contentClassName="flex flex-col gap-4 px-4 py-4 pb-[calc(var(--safe-bottom)+24px)]">
       {installations.error && <Alert variant="destructive">Couldn’t load agent installations. {errMsg(installations.error)}</Alert>}
       {error && <Alert variant="destructive" className="flex flex-col gap-2" aria-busy={query.isFetching}>
         <p>Couldn't load usage. {error}</p>

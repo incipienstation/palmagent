@@ -118,7 +118,7 @@ export function TerminalsView({ taskId, repoId, onClose }: { taskId?: string; re
     </SelectTrigger>
     <SelectContent><SelectGroup><SelectItem value="__all__">All spaces</SelectItem>{[...repos.values()].map(repo => <SelectItem key={repo.id} value={repo.id}>{repo.name}</SelectItem>)}</SelectGroup></SelectContent>
   </Select>;
-  return <section className="flex h-app min-w-0 flex-1 flex-col bg-background" aria-label="Terminals">
+  return <section className="flex h-full min-w-0 flex-1 flex-col bg-background" aria-label="Terminals">
     <AppBar
       title={space && repos.get(space) ? `Terminals · ${repos.get(space)!.name}` : "Terminals"}
       back
