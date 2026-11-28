@@ -29,7 +29,8 @@ export function UserBubble({ text, imageOnly, meta, skills, attachments, images,
       const poster = stored ? attachmentUrl(taskId!, item.video.frames[0].id) : attachmentPreviewUrl(item.video.frames[0].image);
       return <VideoPreview key={key} src={src} poster={poster} label={`Attached video ${index + 1}`} onLoad={onImageLoad} />;
     }
-    return <ImagePreview key={key} src={src} alt={`Attached image ${index + 1}`} width={item.width} height={item.height}
+    // A submitted photo keeps its slot when the server assigns its attachment ID.
+    return <ImagePreview key={index} localUpload={!stored} src={src} alt={`Attached image ${index + 1}`} width={item.width} height={item.height}
       layout={tiled ? "tile" : photosOnly ? "single" : "inline"} onLoad={onImageLoad} />;
   });
   return (
