@@ -1,5 +1,5 @@
 import { Pending } from "@/components/ui/spinner";
-import { queueTaskArchive, useTaskMutations } from "../task-mutations";
+import { mutateTask, useTaskMutations } from "../task-mutations";
 import { useToastObstacle } from "../hooks/useToastObstacle";
 import { isActiveTaskStatus, needsTaskAttention, type Repo, type TaskState, type TaskStatus } from "@palmagent/shared";
 import { Archive, Check, ChevronRight, Inbox as InboxIcon, Search, Folder, FolderOpen, Pin, Plus } from "lucide-react";
@@ -29,6 +29,7 @@ import { EmptyState } from "./EmptyState";
 import { PrChip } from "./PrChip";
 import { PullToRefresh } from "./PullToRefresh";
 import { SessionActionsMenu } from "./SessionActionsMenu";
+import { ArchiveTaskDialog } from "./ArchiveTaskDialog";
 import { SwipeToArchive } from "./SwipeToArchive";
 import { DropdownMenuItem } from "./ui/dropdown-menu";
 import { newTaskPath, spacePath, spaceQualifier, taskDirectoryFor } from "../space-context";
@@ -132,9 +133,11 @@ const TaskRow = memo(function TaskRow({ task, showSpace, hideState, preview }: {
     && (!task.sessionControl || task.sessionControl.owner === "palmagent"
       || task.sessionControl.owner === "shared" && task.sessionControl.connection === "connected")
     && task.messageQueue?.compaction?.status !== "running";
-  const archive = () => queueTaskArchive(task.taskId);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const actionsTrigger = useRef<HTMLButtonElement>(null);
+  const requestArchive = () => setConfirmArchive(true);
   return (
-    <SwipeToArchive disabled={!canArchive} onArchive={archive}>
+    <SwipeToArchive disabled={!canArchive || confirmArchive} onArchive={requestArchive}>
       <div className="relative">
         <button
           data-swipe-surface=""
@@ -146,11 +149,13 @@ const TaskRow = memo(function TaskRow({ task, showSpace, hideState, preview }: {
           <TaskMeta task={task} spaceLabel={spaceLabel} showState={!hideState} />
         </button>
         <div className="absolute top-2 right-1">
-          <SessionActionsMenu task={task} label={`Actions for ${taskTitle(task)}`} lifecycle={
-            <DropdownMenuItem disabled={!canArchive} onSelect={archive}><Archive />Archive</DropdownMenuItem>
+          <SessionActionsMenu task={task} triggerRef={actionsTrigger} restoreFocus={!confirmArchive} label={`Actions for ${taskTitle(task)}`} lifecycle={
+            <DropdownMenuItem disabled={!canArchive} onSelect={requestArchive}><Archive />Archive</DropdownMenuItem>
           } />
         </div>
       </div>
+      {confirmArchive && <ArchiveTaskDialog triggerRef={actionsTrigger} disabled={!canArchive}
+        onArchive={() => void mutateTask(task.taskId, { hidden: true })} onClose={() => setConfirmArchive(false)} />}
     </SwipeToArchive>
   );
 });

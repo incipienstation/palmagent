@@ -1,3 +1,4 @@
+import { ArchiveTaskDialog } from "./ArchiveTaskDialog";
 import { Pending } from "@/components/ui/spinner";
 import { useContextCompaction } from "../hooks/useContextCompaction";
 import { sideChatCommand, useSideChat } from "../hooks/useSideChat";
@@ -300,7 +301,7 @@ function TaskActionsMenu({
 
   return (
     <>
-      <SessionActionsMenu task={task} renameDisabled={busy} triggerRef={triggerRef} restoreFocus={!sideChatOpen} notification={sideChatUnread ? "Side chat has a new reply" : undefined} lifecycle={<>
+      <SessionActionsMenu task={task} renameDisabled={busy} triggerRef={triggerRef} restoreFocus={!sideChatOpen && !confirm} notification={sideChatUnread ? "Side chat has a new reply" : undefined} lifecycle={<>
         <DropdownMenuItem disabled={busy || !canArchive || mutationPending} onSelect={() => setConfirm("archive")}>
           <Archive />Archive
         </DropdownMenuItem>
@@ -343,24 +344,8 @@ function TaskActionsMenu({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={confirm === "archive"} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent onCloseAutoFocus={event => {
-          event.preventDefault();
-          triggerRef.current?.focus({ preventScroll: true });
-        }}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive this task?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Archiving removes the task from your inbox and deletes its git worktree. You won't be
-              able to send further turns.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={onArchive}>Archive task</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {confirm === "archive" && <ArchiveTaskDialog triggerRef={triggerRef} disabled={busy || !canArchive || !!mutationPending}
+        onArchive={onArchive} onClose={() => setConfirm(null)} />}
     </>
   );
 }

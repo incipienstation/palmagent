@@ -90,7 +90,7 @@ test("vertical gestures scroll the list without revealing Archive", async ({ pag
   await assertViewportLocked(page);
 });
 
-test("swipe archive can be undone before any destructive request", async ({ page }) => {
+test("Keep dismisses swipe archive without sending a destructive request", async ({ page }) => {
   let deletes = 0;
   await page.route(`**/api/tasks/${idle.taskId}`, route => {
     if (route.request().method() === "DELETE") deletes++;
@@ -98,72 +98,38 @@ test("swipe archive can be undone before any destructive request", async ({ page
   });
   await swipe(page, row(page), -130);
   await row(page).getByRole("button", { name: "Archive", exact: true }).tap();
-  await expect(row(page)).toHaveCount(0);
-  await expect(page.getByTestId("toast")).toContainText("worktree");
-  expect(deletes).toBe(0);
-  await page.locator('[data-testid="toast"][data-removed="false"]').getByRole("button", { name: "Undo", exact: true }).click();
+  const dialog = page.getByRole("alertdialog", { name: "Archive this task?" });
+  await expect(dialog).toContainText("deletes its git worktree");
+  await dialog.getByRole("button", { name: "Keep" }).click();
+  await expect(row(page).getByRole("button", { name: `Actions for ${idle.title}` })).toBeFocused();
   await expect(row(page)).toBeVisible();
   expect(deletes).toBe(0);
 });
 
-test("menu archive supports keyboard access and Undo restores a batch", async ({ page }) => {
-  for (const task of [idle, failed]) {
-    await row(page, task.taskId).getByRole("button", { name: `Actions for ${taskTitle(task)}`, exact: true }).click();
-    const archive = page.getByRole("menuitem", { name: "Archive", exact: true });
-    await archive.focus();
-    await page.keyboard.press("Enter");
-    await expect(row(page, task.taskId)).toHaveCount(0);
-  }
-  const feedback = page.getByTestId("toast").filter({ hasText: "2 tasks ready to archive" });
-  await expect(feedback).toBeVisible();
-  await feedback.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(row(page)).toBeVisible();
-  await expect(row(page, failed.taskId)).toBeVisible();
-});
-
-test("dismissing Undo cancels the pending archive instead of committing early", async ({ page }) => {
-  await page.clock.install();
-  let deletes = 0;
-  await page.route(`**/api/tasks/${idle.taskId}`, route => {
-    if (route.request().method() === "DELETE") deletes++;
-    return route.fulfill({ json: { task: idle } });
-  });
-  await row(page).getByRole("button", { name: `Actions for ${idle.title}`, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-  await page.locator('[data-testid="toast"][data-removed="false"]').getByRole("button", { name: "Undo", exact: true }).focus();
-  await page.keyboard.press("Escape");
-  await expect(row(page)).toBeVisible();
-  await page.clock.runFor(9000);
-  expect(deletes).toBe(0);
-});
-
-for (const succeeds of [true, false]) test(`archive waits for Undo to expire and ${succeeds ? "commits once" : "restores the row on failure"}`, async ({ page }) => {
-  await page.clock.install();
+test("keyboard menu archive sends one request only after explicit confirmation", async ({ page }) => {
   let deletes = 0;
   await page.route(`**/api/tasks/${idle.taskId}`, route => {
     if (route.request().method() !== "DELETE") return route.fulfill({ json: { task: idle } });
     deletes++;
-    return succeeds
-      ? route.fulfill({ json: { task: { ...idle, status: "archived", updatedAt: idle.updatedAt + 1 } } })
-      : route.fulfill({ status: 503, json: { error: "Archive unavailable" } });
+    return route.fulfill({ json: { task: { ...idle, status: "archived", updatedAt: idle.updatedAt + 1 } } });
   });
-  await row(page).getByRole("button", { name: `Actions for ${idle.title}`, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-  await expect(row(page)).toHaveCount(0);
-  await expect(page.locator('[data-testid="toast"][data-removed="false"]').getByRole("button", { name: "Undo", exact: true })).toBeVisible();
-  await page.mouse.move(0, 0);
-  await page.clock.runFor(7000);
+  const actions = row(page).getByRole("button", { name: `Actions for ${idle.title}` });
+  const dialog = page.getByRole("alertdialog", { name: "Archive this task?" });
+  const openArchive = async () => {
+    await actions.press("Enter");
+    await page.getByRole("menuitem", { name: "Archive", exact: true }).press("Enter");
+    await expect(dialog.getByRole("button", { name: "Keep" })).toBeFocused();
+  };
+  await openArchive();
+  await page.keyboard.press("Escape");
+  await expect(actions).toBeFocused();
+  await openArchive();
   expect(deletes).toBe(0);
-  // Route changes must not abandon the pending archive.
-  await page.evaluate(() => { location.hash = "/spaces"; });
-  await page.clock.runFor(2000);
-  await expect.poll(() => deletes).toBe(1);
-  await page.evaluate(() => { location.hash = "/"; });
-  if (succeeds) await expect(row(page)).toHaveCount(0);
-  else {
-    await expect(row(page)).toBeVisible();
-    await expect(page.getByTestId("toast")).toContainText("Couldn't archive this task");
-  }
+  await dialog.getByRole("button", { name: "Archive task" }).press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect(row(page)).toHaveCount(0);
+  await expect(row(page, failed.taskId)).toBeVisible();
+  expect(deletes).toBe(1);
 });
 
 test("active and locally owned tasks cannot be archived from the list", async ({ page }) => {
