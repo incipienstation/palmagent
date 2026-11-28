@@ -69,7 +69,7 @@ try {
     environment: { HOME: join(root, "home"), USER: userInfo().username, LOGNAME: userInfo().username,
       PATH: `${join(root, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin`, NODE_ENV: "development", AUTH_DISABLED: "1", HOST: "localhost", PORT: String(port),
       // This daemon recovery probe drives the native CLI fixture and its request IDs.
-      PALMAGENT_CLAUDE_TRANSPORT: "native",
+      PALMAGENT_CLAUDE_TRANSPORT: "native", PALMAGENT_CODEX_TRANSPORT: "native",
       PROBE_CONTROL: join(root, "control"), PALMAGENT_HOME: join(root, "home/preferences"),
       DISPATCH_CONCURRENCY: "2", PALMAGENT_EXECUTION_CONCURRENCY: "2", DISPATCHER_DATA_DIR: dataDir,
       DISPATCHER_DB: join(dataDir, "dispatcher.db"), REPO_ROOTS: join(root, "repo"), EXECUTION_RELEASE: release, EXECUTION_NODE: node, STATIC_DIR: join(release, "web") },

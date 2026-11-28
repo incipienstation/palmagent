@@ -1,0 +1,83 @@
+diff --git a/dist/index.js b/dist/index.js
+index 589f10b30568d15692ee2ff80a926cfbf05ef025..035967a3b50a1c46a4e5e5609c84b530cd590aeb 100755
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -40285,6 +40285,16 @@ ${diff}`, "");
+   async handleNotification(notification) {
+     const threadId = notification.params.threadId;
+     if (this.subagents instanceof StandardSubagentEventRouter && this.subagents.isRetired() && typeof threadId === "string" && threadId !== this.sessionState.sessionId) return;
++    if (process.env.PALMAGENT_CODEX_ACP === "1" && threadId === this.sessionState.sessionId) {
++      const { method, params } = notification;
++      let lifecycle;
++      if (method === "turn/started") lifecycle = { method, turnId: params.turn.id };
++      if (method === "hook/completed" && params.run.status === "stopped") lifecycle = { method, turnId: params.turnId, run: params.run };
++      if (method === "thread/tokenUsage/updated") lifecycle = { method, tokenUsage: params.tokenUsage };
++      if ((method === "item/completed" || method === "item/started") && params.item.type === "agentMessage")
++        lifecycle = { method, messageId: params.item.id, phase: params.item.phase };
++      if (lifecycle) await this.session.update({ sessionUpdate: "session_info_update", _meta: { palmagentCodex: lifecycle } });
++    }
+     this.recordTerminalTurnError(notification);
+     if (notification.method === "item/started" && notification.params.threadId === this.sessionState.sessionId && isModelOutputItem(notification.params.item)) {
+       this.sessionState.promptTokenUsage?.observeModelOutput();
+@@ -40692,6 +40702,7 @@ ${params.turnId}`;
+     return createAgentTextMessageChunk(text, itemId, meta3);
+   }
+   async createConfigWarningEvent(event) {
++    if (process.env.PALMAGENT_CODEX_ACP === "1") return { sessionUpdate: "session_info_update", _meta: { palmagentNotice: event.details ? event.summary + "\n" + event.details : event.summary } };
+     if (this.supportsNotices) {
+       return createSessionNotice("warning", event.summary.trim() || "Configuration warning", event.details);
+     }
+@@ -40715,6 +40726,7 @@ ${event.details}` : event.summary;
+     );
+   }
+   createWarningEvent(event) {
++    if (process.env.PALMAGENT_CODEX_ACP === "1") return { sessionUpdate: "session_info_update", _meta: { palmagentNotice: event.message } };
+     if (this.supportsNotices) {
+       return createSessionNotice("warning", event.message.trim() || "Codex warning");
+     }
+@@ -40730,6 +40742,7 @@ ${event.details}` : event.summary;
+    * an empty turn and no reason. Other hook results do not change what Codex does, so they stay silent.
+    */
+   createHookCompletedEvent({ run }) {
++    if (process.env.PALMAGENT_CODEX_ACP === "1" && run.status === "stopped") return null;
+     if (run.status !== "blocked" && run.status !== "stopped") return null;
+     const eventName = run.eventName.charAt(0).toUpperCase() + run.eventName.slice(1);
+     const title = `${eventName} hook ${run.status === "blocked" ? `blocked ${hookBlockTarget(run.eventName)}` : "stopped the turn"}`;
+@@ -45568,15 +45581,15 @@ var CodexAcpClient = class _CodexAcpClient {
+     return await this.runPromptTurn({
+       threadId: request.sessionId,
+       input: input2,
+-      approvalPolicy: agentMode.approvalPolicy,
++      approvalPolicy: process.env.PALMAGENT_CODEX_ACP === "1" ? "never" : agentMode.approvalPolicy,
+       approvalsReviewer: agentMode.approvalsReviewer,
+       ...permissionProfileId ? {
+         permissions: permissionProfileId,
+         runtimeWorkspaceRoots: [cwd, ...additionalDirectories]
+       } : { sandboxPolicy: addAdditionalDirectoriesToSandboxPolicy(agentMode.sandboxPolicy, additionalDirectories) },
+       summary: disableSummary ? "none" : "auto",
+-      effort,
+-      model: modelId.model,
++      effort: process.env.PALMAGENT_CODEX_ACP === "1" ? this.config.model_reasoning_effort ?? effort : effort,
++      model: process.env.PALMAGENT_CODEX_ACP === "1" ? this.config.model ?? modelId.model : modelId.model,
+       serviceTier,
+       ...clientUserMessageId !== void 0 ? { clientUserMessageId } : {}
+     }, onTurnStarted, shouldCancel, stopSignal);
+@@ -45739,6 +45752,10 @@ var CodexAcpClient = class _CodexAcpClient {
+ };
+ function buildPromptItems(prompt) {
+   return prompt.map((block) => {
++    const skill = block._meta?.palmagentSkill;
++    if (process.env.PALMAGENT_CODEX_ACP === "1" && block.type === "resource_link" && typeof skill?.name === "string" && typeof skill.path === "string") {
++      return { type: "skill", name: skill.name, path: skill.path };
++    }
+     switch (block.type) {
+       case "text":
+         return { type: "text", text: block.text, text_elements: [] };
+@@ -53397,6 +53414,7 @@ var CodexAcpServer = class {
+       ...this.sessionIndex.agentCapabilities()
+     ];
+     return {
++      ...(process.env.PALMAGENT_CODEX_ACP === "1" && { palmagentCodex: 1 }),
+       steering: {
+         supported: true
+       },

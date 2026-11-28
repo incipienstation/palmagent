@@ -24,7 +24,7 @@ export async function smokeRetainedView(pkgDir, scratch, parent, inspect) {
   const env = { ...smokeEnv(parent, root, port), PATH: join(root, "bin") + ":" + dirname(node) + ":/usr/bin:/bin",
     PALMAGENT_HOME: join(root, "home/.palmagent"), STATIC_DIR: join(release, "web"),
     EXECUTION_RELEASE: release, EXECUTION_NODE: node, REPO_ROOTS: join(root, "repo"),
-    PROBE_CONTROL: join(root, "control"), DISPATCH_CONCURRENCY: "2", PALMAGENT_EXECUTION_CONCURRENCY: "2" };
+    PALMAGENT_CODEX_TRANSPORT: "native", PROBE_CONTROL: join(root, "control"), DISPATCH_CONCURRENCY: "2", PALMAGENT_EXECUTION_CONCURRENCY: "2" };
   delete env.AUTH_DISABLED;
   Object.assign(env, { AUTH_ENABLED: "1", AUTH_RP_ID: "fixture.example", AUTH_ORIGIN: "https://fixture.example" });
   const session = crypto.randomUUID();

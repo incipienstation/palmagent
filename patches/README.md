@@ -27,3 +27,12 @@ When upgrading Virtuoso, review `upwardScrollFixSystem` and remove or rebase the
 scroll, and loading suites. The regressions measure continuous row movement, final reading
 distance, and an intentionally delayed size measurement. A large jump must not pass merely
 because its old anchor left the viewport.
+
+## Codex ACP
+
+The pinned Codex ACP bridge uses Palmagent's native turn settings when the execution host
+sets `PALMAGENT_CODEX_ACP=1`. This keeps the headless approval policy, model, reasoning
+effort and explicit skill paths on Codex input. A negotiated metadata extension reports
+provider turn starts, message phases, stopped hooks and token counts to the existing task
+history. The client checks the extension before sending input. Recheck these mappings and
+the Codex ACP contract when upgrading the adapter.
