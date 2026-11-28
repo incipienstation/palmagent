@@ -4,11 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useRepos } from "../hooks/useRepos";
 import { useRoutines } from "../hooks/useRoutines";
 import { useActionState } from "../action-state";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AgentKind, Permission, Routine, RoutinePreset, RoutineRun } from "@palmagent/shared";
-import { CalendarClock, ChevronRight, MoreVertical, Play, Plus, Trash2, X } from "lucide-react";
+import { CalendarClock, ChevronRight, MoreHorizontal, Play, Plus, Square, Trash2, X } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { Alert } from "@/components/ui/alert";
 import {
@@ -24,11 +24,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "./ui/scroll-area";
 import { Button, IconButton } from "@/components/ui/button";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -51,7 +53,6 @@ import { effortChoices, modelChoices, modelSelection, useAgentCatalog } from "..
 import { useDraft, clearDraft, usePersistedMapEntry } from "../hooks/useDraft";
 import { navigate } from "../router";
 import { AppBar, AppShell } from "./AppShell";
-import { AgentTag } from "./chips";
 import { EmptyState } from "./EmptyState";
 import { PermissionPicker, selectablePermission } from "./PermissionPicker";
 
@@ -69,7 +70,7 @@ const RUN_LABEL: Record<RoutineRun["status"], string> = {
   running: "Script running", succeeded: "Script succeeded", failed: "Failed", interrupted: "Interrupted",
 };
 
-// Friendly one-line cadence for a routine card. Custom routines show their raw
+// Friendly one-line cadence for a routine row. Custom routines show their raw
 // cron; preset routines read the hour/dow back out of the compiled cron.
 function scheduleLabel(r: Routine): string {
   const f = r.schedule.split(/\s+/);
@@ -113,7 +114,7 @@ function fmtNext(ms?: number): string {
   return fmtTime(ms);
 }
 
-function RoutineCard({ r, action, saving, stale, onToggle, onRun, onStop, onDelete }: {
+function RoutineRow({ r, action, saving, stale, onToggle, onRun, onStop, onDelete }: {
   r: Routine;
   action?: "run" | "stop" | "delete";
   saving: boolean;
@@ -136,49 +137,84 @@ function RoutineCard({ r, action, saving, stale, onToggle, onRun, onStop, onDele
   }, [historyQuery.error, historyQuery.isSuccess, historyQuery.isFetching]);
   const historyError = historyQuery.error ? errMsg(historyQuery.error) : historyLoading ? lastHistoryError : "";
   const loadHistory = () => historyQuery.refetch();
-  function toggleHistory() { setShowHistory(value => !value); }
+  const content = r.script?.command ?? r.prompt;
+  const title = r.title?.trim() || content.trim().split("\n")[0];
+  const blocked = busy || saving || stale;
 
   return (
-    <Card>
-      <CardContent className="p-4 pb-0">
-        <div className="flex items-start gap-3">
-          <span className="min-w-0 flex-1 truncate text-[15px] leading-5 font-semibold text-strong">
-            {r.title?.trim() || (r.script?.command ?? r.prompt).split("\n")[0]}
-          </span>
-          <Switch
-            checked={r.enabled}
-            aria-busy={saving}
-            onCheckedChange={onToggle}
-            disabled={busy || stale}
-            aria-label="Enabled"
-          />
+    <Collapsible asChild open={showHistory} onOpenChange={setShowHistory}>
+      <li>
+        <div className="flex items-center gap-1">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="h-auto min-h-14 min-w-0 flex-1 justify-start gap-2 rounded-lg px-2 py-2 text-left"
+              id={`routine-row-${r.id}`} aria-describedby={`schedule-${r.id}`} aria-label={`Details and history for ${title}`}>
+              <ChevronRight aria-hidden className="text-muted-foreground group-aria-expanded/button:rotate-90" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5 whitespace-normal">
+                <span className="line-clamp-2 break-words text-[15px] leading-5">{title}</span>
+                <span id={`schedule-${r.id}`} className="flex flex-wrap gap-x-2 text-xs font-normal text-muted-foreground">
+                  <span className={cn(r.preset === "custom" && "font-mono")}>{scheduleLabel(r)}</span>
+                  {r.enabled && r.preset !== "manual" && r.nextRunAt && <span>Next {fmtNext(r.nextRunAt)}</span>}
+                </span>
+              </span>
+            </Button>
+          </CollapsibleTrigger>
+          <Switch checked={r.enabled} aria-busy={saving} onCheckedChange={onToggle} disabled={busy || stale}
+            aria-label={`Enabled for ${title}`} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton aria-label={`Actions for ${title}`}><MoreHorizontal /></IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuGroup>
+                <DropdownMenuItem disabled={blocked} onSelect={onRun}><Play />Run now</DropdownMenuItem>
+                {r.kind === "script" && <DropdownMenuItem disabled={blocked} onSelect={onStop}><Square />Stop script</DropdownMenuItem>}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      aria-label="Delete routine"
+                      // Keep the menu's close-on-select from racing the dialog open.
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      <Trash2 /> Delete routine
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this routine?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        It will stop firing on its schedule. Tasks it already created stay in your
+                        inbox. Script files stay on disk. This can't be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Keep</AlertDialogCancel>
+                      <AlertDialogAction variant="destructive" disabled={busy || saving} onClick={onDelete}>
+                        Delete routine
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{r.script?.command ?? r.prompt}</p>
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-          {r.kind === "script" ? <Badge variant="secondary">Script</Badge> : <AgentTag agent={r.agent} />}
-          {r.preset === "custom" ? (
-            <span className="font-mono text-[12.5px] text-faint">{r.schedule}</span>
-          ) : (
-            <span className="text-[12.5px] text-faint">{scheduleLabel(r)}</span>
-          )}
-          {r.preset !== "manual" && (
-            <span className="text-[12.5px] text-faint">{saving ? <Pending>Saving schedule…</Pending> : stale ? "Refresh to check schedule" : `next ${fmtNext(r.nextRunAt)}`}</span>
-          )}
-          {r.lastRunAt && (
-            <span className="text-[12.5px] text-faint">last {fmtTime(r.lastRunAt)}</span>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => void toggleHistory()}
-          aria-expanded={showHistory}
-          className="mt-1 -ml-3"
-        >
-          {showHistory ? "Hide history" : "History"}
-        </Button>
-        {showHistory && (
-          <div className="mt-2 flex flex-col gap-1.5 border-t border-border pt-2.5" aria-busy={historyLoading}>
+        {(saving || stale || action === "run" || action === "stop") && (
+          <p role="status" className="px-8 pb-2 text-xs text-muted-foreground">
+            {stale ? "Refresh to check schedule" : <Pending>{saving ? "Saving schedule…" : action === "run" ? "Requesting run…" : "Stopping script…"}</Pending>}
+          </p>
+        )}
+        <CollapsibleContent className="flex min-w-0 flex-col gap-2 px-2 pb-3 sm:pl-8">
+          <p className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+            <span>{r.kind === "script" ? "Script" : r.agent}</span>
+            {r.lastRunAt && <span>Last run {fmtTime(r.lastRunAt)}</span>}
+          </p>
+          <p className={cn("whitespace-pre-wrap break-words text-sm", r.kind === "script" && "font-mono")}>{content}</p>
+          <h3 className="text-sm font-medium">History</h3>
+          <div className="flex min-w-0 flex-col gap-1.5" aria-busy={historyLoading}>
             {historyError && <Alert variant="destructive" className="flex flex-col gap-2">
               <p>Couldn't load history. {historyError}</p>
               <Button variant="outline" disabled={historyLoading} onClick={() => void loadHistory()}>Retry history</Button>
@@ -213,59 +249,9 @@ function RoutineCard({ r, action, saving, stale, onToggle, onRun, onStop, onDele
               ))
             ))}
           </div>
-        )}
-      </CardContent>
-      <CardFooter className="mt-3 p-4 pt-0">
-        <Button
-          variant="secondary"
-          className="flex-1"
-          disabled={busy || saving || stale}
-          onClick={onRun}
-        >
-          {action === "run" ? <Pending>Requesting run…</Pending> : <><Play className="size-4" />Run now</>}
-        </Button>
-        {r.kind === "script" && <Button variant="secondary" disabled={busy || saving || stale} onClick={onStop}>{action === "stop" ? <Pending>Stopping script…</Pending> : "Stop script"}</Button>}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon" className="size-11 text-faint" aria-label="More">
-              <MoreVertical className="size-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {/* Destructive confirm: a routine delete is irreversible. The trigger
-                keeps the accessible name "Delete routine"; the same REST call
-                fires only on confirm. */}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem
-                  variant="destructive"
-                  aria-label="Delete routine"
-                  // Keep the menu's close-on-select from racing the dialog open.
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <Trash2 /> Delete routine
-                </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this routine?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    It will stop firing on its schedule. Tasks it already created stay in your
-                    inbox. Script files stay on disk. This can't be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Keep</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" disabled={busy || saving} onClick={onDelete}>
-                    Delete routine
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </CardFooter>
-    </Card>
+        </CollapsibleContent>
+      </li>
+    </Collapsible>
   );
 }
 
@@ -277,6 +263,28 @@ export function RoutinesView() {
   const busy = creating !== null;
   const [createdIds, setCreatedIds] = useState<string[]>([]);
   const [showForm, setShowForm] = useActionState(`routine:showForm`, false);
+
+  const createToggle = useRef<HTMLButtonElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const listScrollTop = useRef(0);
+  const createdRow = useRef<string | null>(null);
+  const wasShowingForm = useRef(showForm);
+  useLayoutEffect(() => {
+    if (showForm === wasShowingForm.current) return;
+    wasShowingForm.current = showForm;
+    if (viewport.current) viewport.current.scrollTop = showForm ? 0 : listScrollTop.current;
+    if (!showForm) {
+      const row = createdRow.current && document.getElementById(`routine-row-${createdRow.current}`);
+      if (row) row.focus();
+      else createToggle.current?.focus({ preventScroll: true });
+      createdRow.current = null;
+    }
+  }, [showForm]);
+
+  function toggleForm() {
+    if (!showForm) listScrollTop.current = viewport.current?.scrollTop ?? 0;
+    setShowForm(!showForm);
+  }
 
   const [kind, setKind] = useActionState<"agent" | "script">("routine:kind", "agent");
   const [command, setCommand] = useDraft("routine:command");
@@ -325,12 +333,14 @@ export function RoutinesView() {
         ...(title.trim() ? { title: title.trim() } : {}),
       });
     if (created) {
+      createdRow.current = created.id;
       setCreatedIds(ids => [...ids, created.id]);
       // Clear the one-shot fields only — model/effort/permission persist per
       // agent so the next routine re-opens with the same settings.
       clearDraft("routine:title", kind === "script" ? "routine:command" : "routine:prompt");
       if (kind === "script") setCommand(""); else setPrompt("");
       setTitle("");
+      setError("");
       setPreset("daily");
       setShowForm(false);
     }
@@ -341,58 +351,44 @@ export function RoutinesView() {
 
   return (
     <AppShell>
-      <AppBar title="Routines" />
-      <ScrollArea className="flex-1" contentClassName="flex flex-col gap-3 px-4 py-4 pb-[calc(var(--safe-bottom)+24px)]">
+      <AppBar title={showForm ? "New routine" : "Routines"}>
+        <Button ref={createToggle} variant="secondary" className="rounded-full" disabled={busy}
+          aria-expanded={showForm} onClick={toggleForm}>
+          {showForm ? <><X data-icon="inline-start" />Close</> : <><Plus data-icon="inline-start" />New routine</>}
+        </Button>
+      </AppBar>
+      <ScrollArea className="flex-1" viewportProps={{ ref: viewport }} contentClassName="flex flex-col gap-3 px-4 pt-2 pb-[calc(var(--safe-bottom)+24px)] md:px-6">
         {(error || mutationError) && <Alert variant="destructive">{error || mutationError}</Alert>}
         {readError && <Alert variant="destructive"><p>{readError}</p><Button variant="outline" disabled={refreshing} onClick={() => void refresh()}>Retry routines</Button></Alert>}
         {repoError && <Alert variant="destructive"><p>{repoError}</p><Button variant="outline" disabled={reposRefreshing} onClick={() => void refreshRepos().catch(() => {})}>Retry Spaces</Button></Alert>}
         {[...actions].some(([, action]) => action === "delete") && <p role="status" className="text-sm text-muted-foreground"><Pending>Deleting routine…</Pending></p>}
 
-        {loading && (
-          <>
-            <Skeleton className="h-[148px] w-full rounded-xl" />
-            <Skeleton className="h-[148px] w-full rounded-xl" />
-          </>
+        {loading && !showForm && (
+          <div aria-label="Loading routines" aria-busy="true">
+            {[0, 1, 2].map(i => <div key={i} className="flex min-h-14 items-center gap-3 px-2">
+              <Skeleton className="h-4 w-1/3" /><Skeleton className="ml-auto h-5 w-10" />
+            </div>)}
+          </div>
         )}
 
-        {isEmpty && !showForm && (
-          <EmptyState
-            icon={CalendarClock}
-            title="No routines yet"
-            subtitle="Schedule an agent task or a script to run on your cadence."
-            action={{ label: "New routine", onClick: () => setShowForm(true) }}
-          />
-        )}
+        {isEmpty && !showForm && <EmptyState icon={CalendarClock} title="No routines yet"
+          subtitle="Schedule an agent task or a script to run on your cadence." />}
 
-        {[...(routines ?? []).filter(r => !createdIds.includes(r.id)), ...createdIds.flatMap(id => (routines ?? []).filter(r => r.id === id))].map((r) => (
-          <RoutineCard
-            key={r.id}
-            r={r}
-            action={actions.get(r.id)} saving={saving.has(r.id)} stale={stale.has(r.id)}
-            onToggle={() => toggle(r)}
-            onRun={() => void run(r.id)}
-            onStop={() => void stop(r.id)}
-            onDelete={() => void remove(r.id)}
-          />
-        ))}
+        {!!routines?.length && <ul aria-label="Routines" hidden={showForm} className="divide-y divide-border/60">
+          {[...routines.filter(r => !createdIds.includes(r.id)), ...createdIds.flatMap(id => routines.filter(r => r.id === id))].map(r => (
+            <RoutineRow key={r.id} r={r}
+              action={actions.get(r.id)} saving={saving.has(r.id)} stale={stale.has(r.id)}
+              onToggle={() => toggle(r)}
+              onRun={() => void run(r.id)}
+              onStop={() => void stop(r.id)}
+              onDelete={() => void remove(r.id)}
+            />
+          ))}
+        </ul>}
 
-        {showForm ? (
-          <Card>
-            <form aria-busy={busy} className="relative flex flex-col gap-5 p-4" onSubmit={create}><fieldset disabled={busy} className="flex min-w-0 flex-col gap-5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold tracking-wide text-faint uppercase">
-                  New routine
-                </span>
-                <IconButton
-                  type="button"
-                  className="-mr-1.5"
-                  disabled={busy} onClick={() => setShowForm(false)}
-                  aria-label="Close"
-                >
-                  <X />
-                </IconButton>
-              </div>
-
+        {showForm && (
+          <form aria-busy={busy} onSubmit={create}>
+            <fieldset disabled={busy} className="flex min-w-0 flex-col gap-5">
               <div className="space-y-1.5">
                 <Label>Repo</Label>
                 {/* "" guard: see DispatchForm — Radix's form-bridge select can echo
@@ -592,17 +588,8 @@ export function RoutinesView() {
               <Button type="submit" className="w-full" disabled={busy || !repoId}>
                 {busy ? <Pending>Creating routine…</Pending> : "Create routine"}
               </Button>
-            </fieldset></form>
-          </Card>
-        ) : (
-          // Only the EmptyState CTA shows when there are no routines yet, so
-          // gate this bottom toggle on a non-empty list to avoid two
-          // simultaneous "New routine" buttons.
-          routines !== null && !isEmpty && (
-            <Button variant="secondary" onClick={() => setShowForm(true)}>
-              <Plus /> New routine
-            </Button>
-          )
+            </fieldset>
+          </form>
         )}
       </ScrollArea>
     </AppShell>

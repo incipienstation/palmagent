@@ -98,7 +98,7 @@ for (const width of [360]) {
     await page.route("**/api/routines", route => route.fulfill({ json: { routines: [{ ...routines[0], kind: "script", script: { command: "node scripts/report.mjs", timeoutSeconds: 60 } }] } }));
     await page.route("**/api/routines/*/runs", route => route.fulfill({ json: { runs: [{ id: 1, routineId: routines[0].id, firedAt: Date.now(), status: "failed", exitCode: 7, note: "script timed out", output: "<script>doNotExecute()</script>\n" + "Failure details\n".repeat(60) + "Last output line" }] } }));
     await page.goto("/#/routines");
-    await page.getByRole("button", { name: "History", exact: true }).click();
+    await page.getByRole("button", { name: /^Details and history for / }).click();
     await expect(page.getByText("Exit code: 7", { exact: true })).toBeVisible();
     await expect(page.getByText("script timed out", { exact: true })).toBeVisible();
     await expect(page.locator("pre")).toContainText("<script>doNotExecute()</script>");
@@ -118,7 +118,7 @@ test("open script history refreshes from SSE without idle polling", async ({ pag
   await page.route("**/api/routines", route => route.fulfill({ json: { routines: [{ ...routines[0], kind: "script", script: { command: "true", timeoutSeconds: 60 } }] } }));
   await page.route("**/api/routines/*/runs", route => route.fulfill({ json: { runs: [{ id: 1, routineId: routines[0].id, firedAt: Date.now(), status: ++reads === 1 ? "running" : "succeeded" }] } }));
   await page.goto("/#/routines");
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: /^Details and history for / }).click();
   await expect(page.getByText("Script running", { exact: true })).toBeVisible();
   await page.clock.fastForward(30_000);
   expect(reads).toBe(1);
