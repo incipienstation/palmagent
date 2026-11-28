@@ -11,7 +11,9 @@ alongside it, avoiding an extra serial dependency. Unselected scopes do not
 install dependencies or build/upload a PWA. Consumers prepare concurrently: browsers install their
 dependencies and Chromium before looking for the artifact. A bounded wait locates
 `ci-pwa` only within the current workflow run and downloads its immutable artifact
-ID. This avoids making runner setup wait for the build job to finish. The wait
+ID directly from the archive endpoint. Incomplete listings and transient archive errors
+are retried with bounded backoff. The artifact ID stays pinned across download retries.
+This avoids making runner setup wait for the build job to finish. The wait
 requires read-only Actions access and fails if usable output does not arrive
 within the deadline, or if artifact identity or API access is invalid; consumers
 never silently rebuild. The final `validate` gate
