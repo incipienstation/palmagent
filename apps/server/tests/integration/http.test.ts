@@ -998,7 +998,7 @@ test("dispatched Codex images stay scoped to the registered session and preserve
 });
 
 test("a session delivers a temporary image through the CLI and keeps its original link after removal", async t => {
-  const f = fixture(t), cwd = join(f.dir, "workspace"), home = join(f.dir, "provider"), state = join(f.dir, "state");
+  const f = fixture(t), cwd = join(f.dir, "workspace"), home = join(f.dir, "provider");
   for (const dir of [cwd, home]) mkdirSync(dir);
   f.db.insertRepo({ id: "r", name: "Fixture", path: cwd, vcs: "none", defaultBaseRef: "", createdAt: 1 });
   for (const taskId of ["producer", "neighbor"]) {
@@ -1007,7 +1007,6 @@ test("a session delivers a temporary image through the CLI and keeps its origina
       permission: "read-only", status: "idle", interrupted: false, createdAt: 1, updatedAt: 1, lastActivityAt: 1 });
   }
   await f.service.init();
-  f.closeListener(await startSessionControl(state, f.service));
   f.db.createSession("delivery-session", Date.now(), Date.now() + 60_000);
   const headers = { cookie: `${f.settings.cookieName}=delivery-session` };
   const file = join(f.dir, "temporary #1.png");
@@ -1017,19 +1016,19 @@ test("a session delivers a temporary image through the CLI and keeps its origina
   assert.equal((await f.app.request(preview("producer"), { headers })).status, 404);
   const cli = fileURLToPath(new URL("../../src/bootstrap/cli.ts", import.meta.url));
   const { stdout } = await promisify(execFile)(process.execPath, ["--import", "tsx", cli, "session", "attach-image",
-    "--agent", "codex", "--file", file, "--cwd", cwd], { env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1", CODEX_THREAD_ID: "producer", CODEX_HOME: home, PALMAGENT_SESSION_SOCKET_DIR: state } });
-  const url = /^!\[Delivered image\]\((\/api\/tasks\/producer\/attachments\/[a-f0-9-]{36})\)$/.exec(stdout.trim())?.[1];
-  assert.ok(url, stdout);
+    "--agent", "codex", "--file", file, "--cwd", cwd], { env: { ...process.env, PALMAGENT_CLI_FORWARDED: "1", CODEX_THREAD_ID: "producer", CODEX_HOME: home } });
+  const staged = /!\[Delivered image\]\(sandbox:(\/[^)]+)\)/.exec(stdout)?.[1];
+  assert.ok(staged, stdout);
+  const url = (task: string) => `/api/tasks/${task}/image?${new URLSearchParams({ path: staged })}`;
   rmSync(file);
   assert.equal((await f.app.request(preview("producer"))).status, 401);
-  for (const link of [url, preview("producer")]) {
+  assert.equal((await f.app.request(url("neighbor"), { headers })).status, 404);
+  for (const link of [url("producer"), preview("producer")]) {
     const reply = await f.app.request(link, { headers });
     assert.equal(reply.status, 200);
     assert.deepEqual(Buffer.from(await reply.arrayBuffer()), png);
   }
   assert.equal((await f.app.request(preview("neighbor"), { headers })).status, 404);
-  assert.equal((await f.app.request(url.replace("producer", "neighbor"), { headers })).status, 404);
-  assert.equal((await f.app.request("/deliver-image", { method: "POST", headers })).status, 404);
 });
 
 test("browser terminal access fails closed when sign-in is disabled", async (t) => {

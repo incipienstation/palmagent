@@ -40,3 +40,10 @@ export const AttachmentParamsSchema = z.object({ id: z.string().min(1), attachme
 export function attachmentUrl(taskId: string, attachmentId: string): string {
   return `/api/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`;
 }
+
+/** Task-local link returned by the image delivery CLI. The receipt is scoped to its native session. */
+export const DELIVERED_IMAGE_PREFIX = "/.palmagent/delivered-images/";
+export const DELIVERED_IMAGE_PATTERN = String.raw`/\.palmagent/delivered-images/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(?:png|jpeg|gif|webp)`;
+const deliveredImageLink = new RegExp(`^${DELIVERED_IMAGE_PATTERN}$`);
+export const receiptFromImagePath = (path: string) => deliveredImageLink.exec(path)?.[1];
+export const imageDeliveryPath = (id: string, mediaType: string) => `${DELIVERED_IMAGE_PREFIX}${id}.${mediaType.slice(6)}`;

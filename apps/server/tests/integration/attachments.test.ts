@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { stageImageFile } from "../../src/modules/tasks/adapters/outbound/image-delivery.js";
 import { createAttachmentStorage } from "../../src/composition/attachments.js";
 import { INPUT_FILE_POLICY, INPUT_IMAGE_POLICY, INPUT_VIDEO_POLICY, AttachmentSchema, type InputAttachment } from "@palmagent/shared";
 import { sanitizeImages } from "../../src/modules/tasks/application/attachments/image-input.js";
@@ -41,19 +42,26 @@ test("private attachments survive restart, deduplicate within a task, and reject
 });
 
 test("delivered path versions survive restart and expire with archived attachments", t => {
-  const f = fixture(t), path = "/artifacts/preview.png";
-  const first = f.storage.deliverImage("one", path, image);
-  assert.equal(f.storage.deliverImage("one", path, image).id, first.id);
-  const revision = { ...image, data: Buffer.concat([Buffer.from(image.data, "base64"), Buffer.from([0])]).toString("base64") };
-  const next = f.storage.deliverImage("one", path, revision);
-  assert.notEqual(next.id, first.id);
+  const f = fixture(t), dir = join(f.db.path, "..");
+  const path = join(dir, "preview.png"), session = { agent: "codex" as const, sessionId: randomUUID(), cwd: dir, home: dir };
+  const deliver = (content: Buffer) => {
+    writeFileSync(path, content);
+    const staged = stageImageFile(session, path);
+    unlinkSync(path);
+    f.storage.acceptDelivery("one", session, staged.receipt);
+    f.storage.acceptDelivery("one", session, staged.receipt);
+    return f.storage.deliveredImageId("one", staged.path)!;
+  };
+  const png = Buffer.from(image.data, "base64"), first = deliver(png);
+  const revision = Buffer.concat([png, Buffer.from([0])]), next = deliver(revision);
+  assert.notEqual(next, first);
   f.restart();
-  assert.equal(f.storage.deliveredImageId("one", path), first.id);
-  assert.deepEqual(f.db.attachmentReferences("one").history, new Set([first.id, next.id]));
-  assert.deepEqual(f.storage.read("one", next.id).bytes, Buffer.from(revision.data, "base64"));
+  assert.equal(f.storage.deliveredImageId("one", path), first);
+  assert.deepEqual(f.db.attachmentReferences("one").history, new Set([first, next]));
+  assert.deepEqual(f.storage.read("one", next).bytes, revision);
   f.db.setTaskStatus("one", "archived", false, 10);
   createAttachmentStorage(f.db, { ...policy, retentionMs: 100 }, () => 111).prune();
-  for (const ref of [first, next]) assert.throws(() => f.storage.read("one", ref.id), { code: "gone" });
+  for (const id of [first, next]) assert.throws(() => f.storage.read("one", id), { code: "gone" });
 });
 
 test("invalid batches and missing tasks never leave partially stored images", t => {

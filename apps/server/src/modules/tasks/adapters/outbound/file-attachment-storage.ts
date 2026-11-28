@@ -23,7 +23,7 @@ export class LocalAttachmentFiles implements AttachmentContentStorage, Attachmen
   constructor(private readonly db: AttachmentIndex, private readonly policy: AttachmentPolicy = ATTACHMENT_DEFAULTS) {
     this.directory = join(dirname(db.path), "attachments", basename(db.path));
   }
-  save(taskId: string, images?: readonly InputAttachment[], deliveryPath?: string): Attachment[] | undefined {
+  save(taskId: string, images?: readonly InputAttachment[], deliveryPaths?: readonly string[]): Attachment[] | undefined {
     const normalized = sanitizeImages(images);
     if (!normalized) return undefined;
     const flat = normalized.flatMap(image => [image, ...(image.video?.frames.map(frame => frame.image) ?? [])]);
@@ -64,7 +64,7 @@ export class LocalAttachmentFiles implements AttachmentContentStorage, Attachmen
           return { ...ref, video: { duration: image.video.duration,
             frames: image.video.frames.map(frame => ({ ...refs[offset++], timestamp: frame.timestamp })) } };
         });
-        if (deliveryPath) this.db.registerDeliveredImage(taskId, deliveryPath, attachments[0].id);
+        for (const path of deliveryPaths ?? []) this.db.registerDeliveredImage(taskId, path, attachments[0].id);
         return attachments;
       });
     } catch (error) {

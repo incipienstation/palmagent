@@ -15,8 +15,8 @@ palmagent session attach-image --agent codex --file "<generated-image-path>"
 
 For Claude Code use `--agent claude --session-id "${CLAUDE_SESSION_ID}"`. Codex
 reads `CODEX_THREAD_ID`. Run from the task's original working directory or pass
-`--cwd` with that directory. Preserve the session's provider home and installation
-binding. A successful command prints ready-to-use Markdown for the final response.
+`--cwd` with that directory. Preserve the session's provider home. Leave the command output visible to the task and
+include the printed Markdown image link in the final response.
 Use that link when a filename is reused for revised images. The first delivered
 version also resolves through its original absolute or sandbox-prefixed path.
 

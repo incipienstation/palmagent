@@ -95,11 +95,11 @@ export const ExecutionRecordsQuerySchema = z.object({ before: historyCursor.opti
 export const ConversationContentQuerySchema = z.object({ key: historyCursor, version: z.string().regex(/^[a-f0-9]{64}$/), offset: eventCursor, member: historyCursor.optional() });
 export const ActivityDetailsQuerySchema = z.object({ from: historyCursor, through: historyCursor });
 export const TaskPreviewQuerySchema = z.object({ path: text.min(1).max(4096).regex(/^[^\u0000-\u001f\u007f]*$/) });
-export const DeliverSessionImageSchema = DispatchSessionSchema.omit({ waitPid: true }).extend({
+export const DeliveredImageSchema = z.object({
   path: TaskPreviewQuerySchema.shape.path.startsWith("/"),
   image: z.object({ mediaType: z.enum(IMAGE_MEDIA_TYPES), data: required }),
 });
-export type DeliverSessionImage = z.infer<typeof DeliverSessionImageSchema>;
+export type DeliveredImage = z.infer<typeof DeliveredImageSchema>;
 export const StreamQuerySchema = z.object({
   format: z.literal("transcript").optional(),
   taskChanges: z.literal("1").optional(), task: text.optional(), snapshots: z.literal("1").optional(), details: z.enum(["summary", "full"]).optional(),

@@ -1,4 +1,4 @@
-import type { AgentKind, DeliverSessionImage, InputAttachment } from "@palmagent/shared";
+import type { AgentKind, DispatchSessionRequest, InputAttachment } from "@palmagent/shared";
 import type { Attachment } from "@palmagent/shared";
 import type { AttachmentRecord } from "../../../domain/models.js";
 
@@ -24,7 +24,7 @@ export interface AttachmentContentStorage {
 }
 
 export interface AttachmentStorage extends AttachmentContentStorage {
-  deliverImage(taskId: string, path: string, image: DeliverSessionImage["image"]): Attachment;
+  acceptDelivery(taskId: string, session: Omit<DispatchSessionRequest, "waitPid">, receipt: string): void;
   deliveredImageId(taskId: string, path: string): string | undefined;
   start(): void;
   close(): void;
