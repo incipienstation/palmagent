@@ -69,10 +69,23 @@ function readGrouping(): Grouping {
   catch { return "status"; }
 }
 
-const MOBILE_STATUS_ORDER = [
-  "Needs input", "Needs approval", "Working", "Queued", "Local shell", "Live preview", "Reconnecting", "Sync issue",
-  "Failed", "Stopped", "Done", "Cancelled", "Archived",
-];
+// Existing Space groups keep their stored collapse keys when rendered on mobile.
+const MOBILE_STATUS_KEYS: Record<string, string> = {
+  "Needs input": "awaiting_input",
+  "Needs approval": "awaiting_approval",
+  Working: "running",
+  Queued: "queued",
+  "Local shell": "local",
+  "Live preview": "returning",
+  Reconnecting: "reconnecting",
+  "Sync issue": "sync_issue",
+  Failed: "failed",
+  Stopped: "stopped",
+  Done: "idle",
+  Cancelled: "cancelled",
+  Archived: "archived",
+};
+const MOBILE_STATUS_ORDER = Object.keys(MOBILE_STATUS_KEYS);
 
 function mobileStatus(task: TaskState) {
   if (needsResponse(task) && task.status === "awaiting_input") return "Needs input";
@@ -304,7 +317,7 @@ export const InboxView = memo(function InboxView({
   const scopeKey = repoId ?? "all";
   const [grouping, setGrouping] = useStoredPreference(groupingPreference, readGrouping);
   const mobileHome = !repoId && !desktop;
-  const mode = repoId ? "scoped" : desktop ? "desktop" : grouping;
+  const mode = desktop ? (repoId ? "scoped" : "desktop") : (repoId ? "status" : grouping);
   const [query, setQuery] = useActionState(`inbox:${scopeKey}:query`, "");
   const [directory, setDirectory] = useActionState(`inbox:${scopeKey}:directory`, "all");
   const [statusFilter, setStatusFilter] = useActionState<TaskFilter>(`inbox:${scopeKey}:status`, "all");
@@ -411,12 +424,13 @@ export const InboxView = memo(function InboxView({
             ) : (
               <div key={JSON.stringify([repoId, mode, search])} className="mt-3 flex flex-col max-md:first:mt-0 md:gap-3">
                 <TaskGroup preferenceKey={groupPreference("attention")} label="Needs you" tasks={attentionTasks} showSpace attention />
-                <TaskGroup preferenceKey={groupPreference("pinned")} label="Pinned" accessibleName="Pinned tasks" tasks={pinnedTasks} showSpace={!repoId} compact={mobileHome} />
+                <TaskGroup preferenceKey={groupPreference("pinned")} label="Pinned" accessibleName="Pinned tasks" tasks={pinnedTasks} showSpace={!repoId} compact={!desktop} />
                 {orderedGroups.map(([key, group]) => {
                   if (mode === "space" || mode === "desktop")
-                    return <SpaceTaskGroup key={key} preferenceKey={groupPreference(`space:${key}`)} repoId={key} tasks={group} compact={mobileHome} />;
-                  return <TaskGroup key={key} preferenceKey={groupPreference(`status:${key}`)} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
-                    tasks={group} showSpace={mobileHome} compact={mobileHome} groupedByStatus />;
+                    return <SpaceTaskGroup key={key} preferenceKey={groupPreference(`space:${key}`)} repoId={key} tasks={group} compact={!desktop} />;
+                  const statusKey = repoId && mode === "status" ? MOBILE_STATUS_KEYS[key] : key;
+                  return <TaskGroup key={key} preferenceKey={groupPreference(`status:${statusKey}`)} label={mode === "scoped" ? statusSection(key as InboxStatus) : key}
+                    tasks={group} showSpace={mobileHome} compact={!desktop} groupedByStatus />;
                 })}
               </div>
             )}
