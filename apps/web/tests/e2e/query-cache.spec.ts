@@ -170,7 +170,7 @@ test.describe("routine cache invalidation", () => {
       await route.fulfill({ json: { routine: list[0] } });
     });
     await page.goto("/#/routines");
-    const history = page.getByRole("button", { name: /^(History|Hide history)$/ }).first();
+    const history = page.getByRole("button", { name: /^Details and history for / }).first();
     await history.click();
     await expect(page.getByText("Skipped (server was down)")).toBeVisible();
     expect(historyReads).toBe(1);

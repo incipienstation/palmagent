@@ -108,7 +108,7 @@ test("routine history refresh is scoped and preserves its error during a slow re
       : { json: { runs: [] } });
   });
   await page.goto("/#/routines");
-  await page.getByRole("button", { name: /History/ }).first().click();
+  await page.getByRole("button", { name: /^Details and history for / }).first().click();
   await expect(page.getByRole("alert")).toContainText("Couldn't load history");
   await page.waitForFunction(() => (window as Window & { inboxSnapshots?: number }).inboxSnapshots === 1);
   await sendInboxFrame(page, { type: "read-change", routineId: "r-triage" });
