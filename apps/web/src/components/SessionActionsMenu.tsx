@@ -140,7 +140,7 @@ function RenameSessionDialog({ taskId, initialTitle, onClose, restoreFocus }: {
       >
         <DialogHeader><DialogTitle>Rename session</DialogTitle></DialogHeader>
         <form ref={form} className="flex min-h-0 flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          <DialogBody><FieldGroup>
+          <DialogBody className="-mx-1 -mb-1" contentClassName="px-1 pb-1"><FieldGroup>
             <Field data-invalid={!!fieldError || undefined}>
               <FieldLabel htmlFor={id}>Session name</FieldLabel>
               <Input
