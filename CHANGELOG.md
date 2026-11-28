@@ -6,6 +6,8 @@ An entry does not mean a version has been published.
 
 ## Unreleased
 
+## 0.2.0-alpha.77
+
 ### Fixed
 
 - Agents can deliver images from temporary folders as task attachments. Readers can open
