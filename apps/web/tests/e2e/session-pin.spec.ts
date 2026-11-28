@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { assertViewportLocked } from "./_helpers";
+import { assertViewportLocked, captureForReview } from "./_helpers";
 
 const title = "Wire the web QA harness";
 const path = "/api/tasks/t-idle-rich/pin";
@@ -64,18 +64,37 @@ test("failed pin rolls back and blocks duplicate requests while pending", async 
 });
 
 
-test("pins keep creation order within their Space group and respect search and Space filters", async ({ page, request }) => {
+test("pinned tasks keep their order across grouping, collapse, search and reload", async ({ page, request }) => {
   await page.goto("/");
   await request.patch("/api/tasks/t-idle-interrupted/pin", { data: { pinned: true } });
   await request.patch(path, { data: { pinned: true } });
+  const content = page.getByTestId("inbox-content");
+  const group = content.getByRole("region", { name: "Pinned tasks" });
+  const header = group.getByRole("button", { name: /Pinned ·/ });
+  const rows = group.locator("[data-swipe-surface]");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText(otherTitle);
+  await expect(rows.last()).toContainText(title);
+  await expect(rows.last()).toContainText("Done");
+  await expect(content.getByRole("region").nth(0)).toHaveAccessibleName("Needs you");
+  await expect(content.getByRole("region").nth(1)).toHaveAccessibleName("Pinned tasks");
+  await expect(content.getByRole("region", { name: "Done", exact: true }).getByRole("button", { expanded: true })).toBeVisible();
+  await captureForReview(page, "tasks-pinned-expanded.png");
+  await header.press("Enter");
+  await expect(header).toBeFocused();
+  await expect(content.getByText(title, { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(header).toHaveAttribute("aria-expanded", "false");
   await page.getByRole("radio", { name: "Space", exact: true }).click();
-  const done = page.getByRole("region", { name: "sample-app tasks", exact: true });
-  const rows = done.getByRole("button", { name: /^Actions for / });
-  await expect(rows.first()).toHaveAccessibleName("Actions for Scaffold a new settings screen");
-  const pinnedRows = done.locator("[data-swipe-surface]").filter({ has: page.getByRole("img", { name: "Pinned" }) });
-  await expect(pinnedRows).toHaveCount(2);
-  await expect(pinnedRows.nth(0)).toContainText(otherTitle);
-  await expect(pinnedRows.nth(1)).toContainText(title);
+  await expect(content.getByRole("region").first()).toHaveAccessibleName("Pinned tasks");
+  const search = page.getByRole("searchbox", { name: "Search tasks" });
+  await search.fill("Wire the web");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(title);
+  await search.fill("");
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await header.click();
+  await expect(content.getByText(title, { exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "Open navigation" }).click();
   const pinned = page.getByRole("region", { name: "Pinned", exact: true });
   await expect(pinned.locator("[data-pinned-task] > button[draggable]").nth(0)).toHaveText("Interrupted across a deploy");
