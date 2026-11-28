@@ -9,8 +9,9 @@ Authorized implementation includes squash merge into `develop`, updating local `
 safe task cleanup. Honor draft, PR-only, merge-hold, and retention requests. `main` merges,
 merge-policy changes, and repository visibility changes use [release](../release/SKILL.md).
 
-Commit and push the task branch, preserving intended author and committer identities. Open a PR
-into `develop`. Once the task is ready to merge, local-only verification is complete, and
+Preserve intended author and committer identities. Push the verified commit and open a PR
+using the [queue's branch requirements](../../../docs/CI.md#merging-into-develop), including
+for managed worktrees. Once the task is ready to merge, local-only verification is complete, and
 applicable reviews pass, enqueue the PR and its verified head. Resolve known CI failures
 first. The worker follows any running CI for the selected head.
 The worker shares its turn with Preview preparation, updates the branch when necessary, and
